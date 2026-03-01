@@ -1,0 +1,30 @@
+# Dependencies
+code/node_modules/
+code/src-tauri/target/
+
+# Python runtime (downloaded via setup-python.sh)
+code/src-tauri/python-runtime/
+
+# Build output
+code/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
