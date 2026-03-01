@@ -26,7 +26,7 @@
 //!         ├── notes/           # Analysis notes
 //!         ├── uploads/         # Physical uploaded files
 //!         ├── generated/       # Physical generated files
-//!         └── run.lock         # PID-based agent lock
+//!         └── run.lock         # Session-based agent lock (SESSION_ID:TIMESTAMP)
 //! ```
 
 pub mod analysis;
@@ -59,6 +59,10 @@ pub struct AppStorage {
     base_dir: PathBuf,
     /// Serializes all mutating file operations to prevent read-modify-write races.
     write_lock: Mutex<()>,
+    /// Unique identifier for this process session, generated at startup.
+    /// Used by run.lock to detect orphaned tasks without relying on PIDs
+    /// (which can be reused by the OS after a crash).
+    session_id: String,
 }
 
 impl AppStorage {
@@ -67,9 +71,10 @@ impl AppStorage {
         let storage = Self {
             base_dir: base_dir.to_path_buf(),
             write_lock: Mutex::new(()),
+            session_id: uuid::Uuid::new_v4().to_string(),
         };
         storage.initialize()?;
-        info!("File storage initialized at {:?}", base_dir);
+        info!("File storage initialized at {:?} (session={})", base_dir, &storage.session_id[..8]);
         Ok(storage)
     }
 
@@ -473,9 +478,11 @@ impl AppStorage {
     /// Record that an agent task has started for a conversation.
     pub fn insert_active_task(&self, conversation_id: &str) -> Result<()> {
         let lock_path = conversations::conv_dir(&self.base_dir, conversation_id).join("run.lock");
-        // Format: "PID:UNIX_TIMESTAMP" — enables 24h staleness detection in get_orphaned_tasks()
+        // Format: "SESSION_ID:UNIX_TIMESTAMP"
+        // Session ID is unique per process instance, so a restart always gets a new one.
+        // This avoids PID-reuse problems where the OS assigns the same PID to the new process.
         let content = format!("{}:{}",
-            std::process::id(),
+            self.session_id,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -497,7 +504,15 @@ impl AppStorage {
         Ok(())
     }
 
-    /// Get all orphaned tasks (run.lock files with dead PIDs or stale timestamps).
+    /// Get all orphaned tasks (run.lock files from different sessions or stale timestamps).
+    ///
+    /// Detection logic:
+    /// 1. If lock's session_id != current session_id → orphan (crash + restart)
+    /// 2. If lock is older than 24 hours → orphan (stale safety net)
+    /// 3. If lock file is corrupted → orphan
+    ///
+    /// This avoids the PID-reuse problem: even if the OS reuses the same PID,
+    /// the session UUID will be different after a restart.
     pub fn get_orphaned_tasks(&self) -> Result<Vec<String>> {
         let conversations_dir = self.base_dir.join("conversations");
         if !conversations_dir.exists() {
@@ -512,28 +527,35 @@ impl AppStorage {
             let conv_id = entry.file_name().to_string_lossy().to_string();
             let lock_path = entry.path().join("run.lock");
             if lock_path.exists() {
-                // Parse "PID:TIMESTAMP" format (backward compatible with old "PID" format)
                 let content = fs::read_to_string(&lock_path).unwrap_or_default();
                 let parts: Vec<&str> = content.trim().splitn(2, ':').collect();
-                let pid = parts.first().and_then(|p| p.parse::<u32>().ok());
-                let timestamp = parts.get(1).and_then(|t| t.parse::<u64>().ok());
 
-                match pid {
-                    Some(pid) => {
-                        let is_dead = !io::process_alive(pid);
-                        let is_stale = timestamp.map_or(false, |ts| {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
-                            now.saturating_sub(ts) > 86400 // 24 hours
-                        });
-                        if is_dead || is_stale {
-                            orphans.push(conv_id);
-                        }
-                    }
-                    None => {
-                        // Corrupted lock file
+                if parts.len() < 2 {
+                    // Corrupted or old-format lock file → treat as orphan
+                    warn!("[orphan] Corrupted run.lock for conversation {}: {:?}", conv_id, content);
+                    orphans.push(conv_id);
+                    continue;
+                }
+
+                let lock_session = parts[0];
+                let timestamp = parts[1].parse::<u64>().ok();
+
+                // Primary check: different session → definitely orphan
+                if lock_session != self.session_id {
+                    info!("[orphan] Session mismatch for conversation {} (lock={}, current={})",
+                        conv_id, &lock_session[..lock_session.len().min(8)], &self.session_id[..8]);
+                    orphans.push(conv_id);
+                    continue;
+                }
+
+                // Safety net: same session but older than 24 hours → stale
+                if let Some(ts) = timestamp {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    if now.saturating_sub(ts) > 86400 {
+                        warn!("[orphan] Stale run.lock for conversation {} ({}s old)", conv_id, now - ts);
                         orphans.push(conv_id);
                     }
                 }
