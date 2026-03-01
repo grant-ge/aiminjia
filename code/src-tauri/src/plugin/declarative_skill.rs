@@ -200,17 +200,15 @@ impl Skill for DeclarativeSkill {
         if current_skill != "daily-assistant" {
             return false;
         }
-        if self.requires_files && !has_files {
-            return false;
-        }
         let lower = message.to_lowercase();
 
-        // Primary keywords always match
+        // Primary keywords always match (explicit analysis requests don't require files)
         if self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
             return true;
         }
 
-        // Secondary: file_keywords only match when has_files is true
+        // Secondary: file_keywords require files to be present
+        // (requires_files gate only applies to this secondary path)
         if has_files && !self.file_keywords.is_empty() {
             if self.file_keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
                 return true;
