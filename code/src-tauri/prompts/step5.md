@@ -82,7 +82,7 @@
    用 export_data 导出完整的调薪测算表
 
 5. 保存并结束
-   ⚠️ 必须在步骤结束前调用 save_analysis_note：
+   ⚠️ 必须在步骤结束前调用 save_analysis_note（步骤间信息传递的唯一通道）：
    key: "step5_summary"
    content: 必须包括：三档调薪方案对比（人数、预算、调幅）、推荐方案及理由、ROI 测算结果、生成的文件清单
    调用 update_progress 更新为已完成

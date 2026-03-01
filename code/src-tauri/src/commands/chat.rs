@@ -988,7 +988,10 @@ async fn agent_loop(
                 }
 
                 let mut ctx = String::from("\n\n[前序分析记录]\n");
-                ctx.push_str("说明：以下是之前步骤保存的分析结论和自动捕获的关键数据。当前步骤应基于这些记录继续分析，所有数据必须来自 execute_python 实际执行。\n\n");
+                ctx.push_str("⚠️ 重要：以下是之前步骤保存的分析结论和关键数据，是当前步骤的唯一数据来源。\n");
+                ctx.push_str("· 当前步骤必须基于这些记录继续分析\n");
+                ctx.push_str("· 所有数据必须来自 execute_python 实际执行，禁止凭空推断\n");
+                ctx.push_str("· 当前步骤结束前必须调用 save_analysis_note 保存关键结论，否则下一步将丢失数据\n\n");
 
                 // Non-step notes (e.g., analysis_direction) — always full
                 for (name, value) in &non_step_notes {
