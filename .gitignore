@@ -17,6 +17,10 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+.serena/
+
+# Tauri generated
+code/src-tauri/gen/
 
 # Claude Code
 .claude/
