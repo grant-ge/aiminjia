@@ -10,9 +10,8 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use anyhow::Result;
-use tokio::sync::Mutex;
 
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::LlmProviderTrait;
@@ -171,7 +170,7 @@ impl LlmGateway {
 
         // Store active task in per-conversation map
         {
-            let mut tasks = self.active_tasks.lock().await;
+            let mut tasks = self.active_tasks.lock().unwrap();
             tasks.insert(conv_id.clone(), ActiveTask {
                 id: task_id.clone(),
                 conversation_id: conv_id,
@@ -191,10 +190,11 @@ impl LlmGateway {
 
     /// Cancel the streaming task for a specific conversation.
     ///
-    /// If there is no active task for this conversation, this is a no-op.
-    pub async fn cancel_conversation(&self, conversation_id: &str) -> Result<()> {
-        let mut tasks = self.active_tasks.lock().await;
-        if let Some(task) = tasks.remove(conversation_id) {
+    /// Sends the cancel signal but does NOT remove the task from the map.
+    /// The AgentGuard is responsible for cleanup after the agent loop exits.
+    pub fn cancel_conversation(&self, conversation_id: &str) -> Result<()> {
+        let tasks = self.active_tasks.lock().unwrap();
+        if let Some(task) = tasks.get(conversation_id) {
             let _ = task.cancel.send(true);
             log::info!("Cancelled streaming task for conversation: {} (task_id={})", conversation_id, task.id);
         }
@@ -241,27 +241,27 @@ impl LlmGateway {
     }
 
     /// Returns true if there is at least one active task.
-    pub async fn is_busy(&self) -> bool {
-        let tasks = self.active_tasks.lock().await;
+    pub fn is_busy(&self) -> bool {
+        let tasks = self.active_tasks.lock().unwrap();
         !tasks.is_empty()
     }
 
     /// Returns true if a specific conversation has an active task.
-    pub async fn is_conversation_busy(&self, conversation_id: &str) -> bool {
-        let tasks = self.active_tasks.lock().await;
+    pub fn is_conversation_busy(&self, conversation_id: &str) -> bool {
+        let tasks = self.active_tasks.lock().unwrap();
         tasks.contains_key(conversation_id)
     }
 
     /// Get all conversation IDs that currently have active tasks.
-    pub async fn get_busy_conversations(&self) -> Vec<String> {
-        let tasks = self.active_tasks.lock().await;
+    pub fn get_busy_conversations(&self) -> Vec<String> {
+        let tasks = self.active_tasks.lock().unwrap();
         tasks.keys().cloned().collect()
     }
 
     /// Clear the active task for a specific conversation.
     /// Called when the agent loop finishes.
-    pub async fn clear_task(&self, conversation_id: &str) {
-        let mut tasks = self.active_tasks.lock().await;
+    pub fn clear_task(&self, conversation_id: &str) {
+        let mut tasks = self.active_tasks.lock().unwrap();
         if let Some(task) = tasks.remove(conversation_id) {
             log::info!("Cleared active task: id={}, conversation_id={}", task.id, task.conversation_id);
         }
@@ -270,8 +270,8 @@ impl LlmGateway {
     /// Mark the gateway as busy for a given conversation.
     /// Used to reserve the agent before spawning the agent loop.
     /// Returns an error string if the conversation is already busy or max concurrency reached.
-    pub async fn set_busy(&self, conversation_id: &str) -> Result<(), String> {
-        let mut tasks = self.active_tasks.lock().await;
+    pub fn set_busy(&self, conversation_id: &str) -> Result<(), String> {
+        let mut tasks = self.active_tasks.lock().unwrap();
         if tasks.contains_key(conversation_id) {
             return Err("This conversation is already processing.".to_string());
         }

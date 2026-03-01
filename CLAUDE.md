@@ -58,6 +58,7 @@ analysis/
             │   ├── providers/         # DeepSeek V3/R1, Volcano, OpenAI, Claude, Qwen, Custom
             │   ├── prompts.rs         # System Prompt 库（通用 prompt 加载）
             │   ├── orchestrator.rs    # 分析步骤状态管理（step state + advance）
+            │   ├── checkpoint.rs      # 步骤检查点提取（结构化 LLM 提取 + JSON 解析，extract prompt 由 Skill 提供）
             │   ├── masking.rs         # PII 脱敏（mask_text/unmask，3 级别）
             │   └── streaming.rs       # SSE 解析
             ├── search/                # 搜索模块
@@ -211,13 +212,19 @@ Rust Backend
 - Skill 的 prompt 由各 Skill 的 `system_prompt()` 方法提供
 - 内置 Skill 的 prompt 文件位于 `src-tauri/src/llm/prompts.rs`
 - 声明式 Skill 的 prompt 文件位于插件目录的 `prompts/` 子目录
+- 所有 LLM 调用路径均自动注入当前日期（`【当前时间】今天是 YYYY年MM月DD日`），防止 LLM 使用训练数据截止日期
 
 **Modifying analysis workflow:**
-- 内置分析流程由 `plugin/builtin/skills/comp_analysis.rs` 的 `Skill` 实现控制
+- 薪酬分析流程由声明式 Skill 插件 `plugins/comp-analysis/` 控制（plugin.toml + workflow.toml + prompts）
 - 步骤流转、确认检测、工具过滤均在 Skill 内定义
 - 步骤状态持久化由 `orchestrator.rs` 的 `advance_step()` / `get_step_state()` 管理
-- 步骤间上下文保留：`chat.rs` 的 `auto_capture_step_context()` 在步骤切换前自动捕获 assistant 结论和 execute_python 输出，保存为 `step{N}_auto_context` note，作为 LLM `save_analysis_note` 的兜底机制
-- 前序分析记录注入：`chat.rs` 的 `analysis_notes_context` 按步骤分组注入系统提示词，旧步骤的 auto_context 压缩至 2000 字符，最近步骤保留 4000 字符
+- 步骤间上下文保留（三层保障）：
+  1. `checkpoint.rs` 的 `checkpoint_extract()` — 步骤切换时独立非流式 LLM 调用，提取结构化 JSON（StepCheckpoint），30 秒超时，失败降级。Extract prompt 由 Skill 的 `extract_prompt()` 方法提供（声明式 Skill 从 `prompts/extract/` 子目录加载）
+  2. `chat.rs` 的 `auto_capture_step_context()` — 机械捕获 assistant 消息和 tool 输出，始终执行作为兜底
+  3. LLM 主动调用 `save_analysis_note` — 分析过程中保存，作为补充
+- 注入优先级：checkpoint > summary > auto_context（`analysis_notes_context` 按此优先级选择注入内容）
+- checkpoint 的 summary/key_findings/next_step_input 永不截断，data_artifacts 对远步骤衰减到 2000 字符
+- step_display_name 从 Skill 的 `workflow()` 定义获取（存入 `StepConfig.step_display_names`），不再硬编码
 
 **Adding frontend components:**
 - Follow `docs/visual-standard.md` design tokens

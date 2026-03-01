@@ -15,7 +15,7 @@ use crate::llm::providers::{
 };
 
 /// Fields that contain sensitive API keys and should be encrypted at rest.
-const SENSITIVE_KEYS: &[&str] = &["primaryApiKey", "tavilyApiKey"];
+const SENSITIVE_KEYS: &[&str] = &["primaryApiKey", "tavilyApiKey", "bochaApiKey"];
 
 /// Check if a key is sensitive (standard fields or per-provider apiKey:* prefix).
 fn is_sensitive_key(key: &str) -> bool {
@@ -45,6 +45,7 @@ pub async fn get_settings(
     if let Some(ss) = crypto.as_ref() {
         settings.primary_api_key = decrypt_if_encrypted(ss, &settings.primary_api_key);
         settings.tavily_api_key = decrypt_if_encrypted(ss, &settings.tavily_api_key);
+        settings.bocha_api_key = decrypt_if_encrypted(ss, &settings.bocha_api_key);
     }
 
     Ok(settings)

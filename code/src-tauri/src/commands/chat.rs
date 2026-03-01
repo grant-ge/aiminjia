@@ -179,6 +179,91 @@ fn auto_capture_step_context(
     }
 }
 
+/// Detect if a user message is a general daily question unrelated to the
+/// current analysis workflow.
+///
+/// Returns `true` when the message looks like a general HR question or
+/// casual chat, not a step confirmation, abort, or analysis feedback.
+/// Used during `confirming`/`analyzing` mode to allow daily chat without
+/// leaving the analysis workflow.
+fn is_daily_question(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    // Short messages (≤20 chars) are likely confirmations or abort — don't intercept
+    if trimmed.chars().count() <= 20 {
+        return false;
+    }
+
+    // If the message matches confirmation or abort keywords, it's not a daily question
+    if crate::plugin::skill_trait::is_confirm_keyword(trimmed)
+        || crate::plugin::skill_trait::is_abort_keyword(trimmed)
+    {
+        return false;
+    }
+
+    let lower = trimmed.to_lowercase();
+
+    // Patterns that indicate a general question (not analysis feedback)
+    let question_patterns = [
+        "请问", "什么是", "怎么", "如何", "能不能",
+        "帮我查", "帮忙查", "有没有",
+        "是什么意思", "是多少", "怎么算", "怎么计算",
+        "政策", "规定", "法规", "标准",
+        "社保", "公积金", "个税", "年假", "病假", "产假",
+        "劳动法", "劳动合同", "试用期", "离职", "辞退",
+        "what is", "how to", "how do", "can you",
+        "please explain", "tell me about",
+    ];
+
+    // Messages containing question patterns are likely daily questions
+    if question_patterns.iter().any(|p| lower.contains(p)) {
+        // But exclude if they also contain analysis-specific feedback terms
+        let feedback_patterns = [
+            "这一步", "上一步", "当前步骤", "分析结果", "重新分析",
+            "调整", "修改", "补充", "岗位族", "职级", "公平性",
+        ];
+        if feedback_patterns.iter().any(|p| lower.contains(p)) {
+            return false; // Analysis feedback, not a daily question
+        }
+        return true;
+    }
+
+    false
+}
+
+/// Clear all analysis-related notes for a conversation.
+///
+/// Called when analysis finishes (Finish) or is aborted (Abort) to prevent
+/// stale notes from polluting a future re-analysis in the same conversation.
+/// Cleans up: step checkpoints, auto_context, summaries, analysis_direction,
+/// and the active_skill marker.
+///
+/// Also stores a completion timestamp to enable cooldown (P4).
+fn clear_analysis_notes(db: &AppStorage, conversation_id: &str) {
+    let prefix = format!("note:{}:", conversation_id);
+    match db.delete_memories_by_prefix(&prefix) {
+        Ok(count) => {
+            if count > 0 {
+                log::info!(
+                    "[cleanup] Cleared {} analysis notes for conversation {}",
+                    count, conversation_id
+                );
+            }
+        }
+        Err(e) => log::warn!(
+            "[cleanup] Failed to clear analysis notes for {}: {}",
+            conversation_id, e
+        ),
+    }
+
+    // Store completion timestamp for cooldown detection
+    let cooldown_key = format!("note:{}:analysis_completed_at", conversation_id);
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Err(e) = db.set_memory(&cooldown_key, &now, Some("system")) {
+        log::warn!("[cleanup] Failed to store analysis cooldown timestamp: {}", e);
+    }
+}
+
 /// Build a [`StepConfig`] from an active Skill and its current state.
 ///
 /// Replaces `orchestrator::build_step_config()` — configuration now comes
@@ -196,6 +281,15 @@ async fn build_config_from_skill(
     let tool_filter = skill.tool_filter(state);
     let tool_defs = tool_registry.get_schemas_filtered(&tool_filter).await;
 
+    // Build step display names from the workflow definition
+    let step_display_names = skill.workflow()
+        .map(|wf| {
+            wf.steps.iter().enumerate().map(|(i, s)| {
+                (i as u32, s.display_name.clone())
+            }).collect()
+        })
+        .unwrap_or_default();
+
     StepConfig {
         step: step_num,
         system_prompt: skill.system_prompt(state),
@@ -203,6 +297,7 @@ async fn build_config_from_skill(
         max_iterations: skill.max_iterations(state),
         requires_confirmation: true,
         token_budget: skill.token_budget(state),
+        step_display_names,
     }
 }
 
@@ -227,7 +322,7 @@ impl AgentGuard {
     async fn clear(&mut self) {
         if !self.cleared {
             self.cleared = true;
-            self.gateway.clear_task(&self.conversation_id).await;
+            self.gateway.clear_task(&self.conversation_id);
             self.db.remove_active_task(&self.conversation_id).ok();
             // streaming:done MUST fire so frontend clears isStreaming state.
             // finish_agent() also emits this, but if the agent panicked before
@@ -251,26 +346,19 @@ impl AgentGuard {
 impl Drop for AgentGuard {
     fn drop(&mut self) {
         if !self.cleared {
-            // Synchronous DB cleanup — works even if tokio runtime is shutting down
+            // Synchronous cleanup — gateway.clear_task() is now sync (std::sync::Mutex)
             self.db.remove_active_task(&self.conversation_id).ok();
+            self.gateway.clear_task(&self.conversation_id);
 
-            // Async cleanup for gateway + event emission via spawn
-            // (may not execute if runtime is shutting down, but we have crash recovery
-            // in lib.rs to handle that case on next startup)
-            let gateway = self.gateway.clone();
-            let app = self.app.clone();
-            let conversation_id = self.conversation_id.clone();
-            tokio::spawn(async move {
-                gateway.clear_task(&conversation_id).await;
-                let _ = app.emit("streaming:done", serde_json::json!({
-                    "conversationId": conversation_id,
-                    "messageId": "",
-                }));
-                let _ = app.emit("agent:idle", serde_json::json!({
-                    "conversationId": conversation_id
-                }));
-                log::info!("[AgentGuard] Drop fallback: cleared active task for conversation {} and emitted streaming:done + agent:idle", conversation_id);
-            });
+            // Event emission is also sync (Tauri emit is sync)
+            let _ = self.app.emit("streaming:done", serde_json::json!({
+                "conversationId": self.conversation_id,
+                "messageId": "",
+            }));
+            let _ = self.app.emit("agent:idle", serde_json::json!({
+                "conversationId": self.conversation_id
+            }));
+            log::info!("[AgentGuard] Drop fallback: cleared active task for conversation {} and emitted streaming:done + agent:idle", self.conversation_id);
         }
     }
 }
@@ -282,7 +370,7 @@ impl Drop for AgentGuard {
 pub async fn is_agent_busy(
     gateway: State<'_, Arc<LlmGateway>>,
 ) -> Result<Vec<String>, String> {
-    Ok(gateway.get_busy_conversations().await)
+    Ok(gateway.get_busy_conversations())
 }
 
 /// Send a user message and trigger the LLM agent loop.
@@ -308,13 +396,13 @@ pub async fn send_message(
         conversation_id, content.len(), file_ids);
 
     // Guard: reject if THIS conversation is already busy
-    if gateway.is_conversation_busy(&conversation_id).await {
+    if gateway.is_conversation_busy(&conversation_id) {
         log::warn!("send_message rejected: conversation {} is already processing", conversation_id);
         return Err("This conversation is already processing.".to_string());
     }
 
     // Guard: reject if max concurrent agents reached
-    let busy_count = gateway.get_busy_conversations().await.len();
+    let busy_count = gateway.get_busy_conversations().len();
     if busy_count >= crate::llm::gateway::MAX_CONCURRENT_AGENTS {
         log::warn!("send_message rejected: max concurrent agents reached ({}/{})",
             busy_count, crate::llm::gateway::MAX_CONCURRENT_AGENTS);
@@ -385,25 +473,22 @@ pub async fn send_message(
     log::info!("Settings loaded: primary_model={}, masking={}, auto_routing={}",
         settings.primary_model, settings.data_masking_level, settings.auto_model_routing);
 
-    // Log raw key info (before decryption) for diagnostics
+    // Log key metadata only — NEVER log key characters (security)
     let raw_pk_len = settings.primary_api_key.len();
     let raw_pk_has_colon = settings.primary_api_key.contains(':');
-    log::info!("Raw primary_api_key: len={}, contains_colon={}, first_10='{}'",
-        raw_pk_len, raw_pk_has_colon,
-        settings.primary_api_key.chars().take(10).collect::<String>());
+    log::info!("Raw primary_api_key: len={}, contains_colon={}", raw_pk_len, raw_pk_has_colon);
 
     // Decrypt API keys if SecureStorage is available
     if let Some(ss) = crypto.as_ref() {
         log::info!("SecureStorage available, decrypting API keys...");
         settings.primary_api_key = decrypt_key(ss, &settings.primary_api_key);
         settings.tavily_api_key = decrypt_key(ss, &settings.tavily_api_key);
+        settings.bocha_api_key = decrypt_key(ss, &settings.bocha_api_key);
     } else {
         log::warn!("SecureStorage NOT available, using raw key values");
     }
 
-    log::info!("After decryption: primary_api_key len={}, first_10='{}'",
-        settings.primary_api_key.len(),
-        settings.primary_api_key.chars().take(10).collect::<String>());
+    log::info!("After decryption: primary_api_key len={}", settings.primary_api_key.len());
 
     // Fall back to built-in default key ONLY for DeepSeek provider
     // (the built-in key is a DeepSeek key, using it for other providers would cause 401)
@@ -413,9 +498,7 @@ pub async fn send_message(
         settings.primary_api_key = defaults.primary_api_key.clone();
     }
 
-    log::info!("Final primary_api_key: len={}, first_10='{}'",
-        settings.primary_api_key.len(),
-        settings.primary_api_key.chars().take(10).collect::<String>());
+    log::info!("Final primary_api_key: len={}", settings.primary_api_key.len());
 
     // Check if API key is configured
     if settings.primary_api_key.is_empty() {
@@ -495,48 +578,126 @@ pub async fn send_message(
 
     let step_config: Option<StepConfig> = match conversation_mode.as_str() {
         "daily" => {
-            // Check if a Skill with a workflow should activate
-            let detected = skill_registry.detect_activation(
-                &content, has_files, skill_registry.default_skill_id()
-            ).await;
+            // First, check if there's a pending skill activation from the previous message.
+            // This is set when detect_activation fires but we want user confirmation first.
+            let pending_key = format!("note:{}:pending_skill", conversation_id);
+            let pending_skill_id = db.get_memory(&pending_key).ok().flatten();
+
+            if let Some(ref skill_id) = pending_skill_id {
+                // Clear the pending marker regardless of outcome
+                if let Err(e) = db.delete_memories_by_prefix(&pending_key) {
+                    log::warn!("Failed to clear pending_skill: {}", e);
+                }
+
+                // Check if user confirmed the activation
+                if crate::plugin::skill_trait::is_confirm_keyword(&content)
+                    || crate::plugin::skill_trait::is_abort_keyword(&content)
+                {
+                    if crate::plugin::skill_trait::is_abort_keyword(&content) {
+                        log::info!("User rejected pending skill activation for conversation {}", conversation_id);
+                        None // process as daily
+                    } else {
+                        // User confirmed → proceed with activation
+                        log::info!("User confirmed pending skill '{}' for conversation {}", skill_id, conversation_id);
+                        let skill = skill_registry.get(skill_id).await;
+                        match skill {
+                            Some(skill) if skill.workflow().is_some() => {
+                                let workflow = skill.workflow().unwrap();
+                                let initial_step = &workflow.initial_step;
+                                let step_num = initial_step.strip_prefix("step")
+                                    .and_then(|n| n.parse::<u32>().ok())
+                                    .unwrap_or(0);
+
+                                if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
+                                    log::error!("Failed to set mode to 'confirming': {}", e);
+                                }
+                                let skill_key = format!("note:{}:active_skill", conversation_id);
+                                if let Err(e) = db.set_memory(&skill_key, skill_id, Some("system")) {
+                                    log::error!("Failed to store active skill ID: {}", e);
+                                }
+                                if let Err(e) = orchestrator::advance_step(
+                                    &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                                ) {
+                                    log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
+                                }
+
+                                let mut state = SkillState::new(skill_id);
+                                state.current_step = Some(initial_step.clone());
+                                Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
+                            }
+                            _ => {
+                                log::warn!("Pending skill '{}' not found or has no workflow", skill_id);
+                                None
+                            }
+                        }
+                    }
+                } else {
+                    // User sent a non-confirmation message → treat as daily, ignore pending
+                    log::info!("Pending skill '{}' expired (user sent non-confirmation), processing as daily", skill_id);
+                    None
+                }
+            } else {
+            // No pending skill — check if a Skill with a workflow should activate.
+            // P4: Skip detection during cooldown period after recent analysis.
+            let in_cooldown = {
+                let cooldown_key = format!("note:{}:analysis_completed_at", conversation_id);
+                db.get_memory(&cooldown_key).ok().flatten().map_or(false, |ts| {
+                    chrono::DateTime::parse_from_rfc3339(&ts).map_or(false, |completed_at| {
+                        let elapsed = chrono::Utc::now().signed_duration_since(completed_at);
+                        elapsed.num_seconds() < 60 // 60-second cooldown
+                    })
+                })
+            };
+
+            let detected = if in_cooldown {
+                log::info!(
+                    "Skipping skill detection for conversation {} (analysis cooldown active)",
+                    conversation_id
+                );
+                None
+            } else {
+                skill_registry.detect_activation(
+                    &content, has_files, skill_registry.default_skill_id()
+                ).await
+            };
 
             if let Some(skill_id) = detected {
                 let skill = skill_registry.get(&skill_id).await;
                 match skill {
                     Some(skill) if skill.workflow().is_some() => {
-                        let workflow = skill.workflow().unwrap();
-                        let initial_step = &workflow.initial_step;
-                        let step_num = initial_step.strip_prefix("step")
-                            .and_then(|n| n.parse::<u32>().ok())
-                            .unwrap_or(0);
-
                         log::info!(
-                            "Skill '{}' activated for conversation {}, starting workflow at {}",
-                            skill_id, conversation_id, initial_step
+                            "Skill '{}' detected for conversation {}, asking user for confirmation",
+                            skill_id, conversation_id
                         );
 
-                        // Transition: daily → confirming (run initial step)
-                        if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
-                            log::error!("Failed to set mode to 'confirming': {}", e);
+                        // Store as pending — don't activate yet
+                        if let Err(e) = db.set_memory(&pending_key, &skill_id, Some("system")) {
+                            log::error!("Failed to store pending skill ID: {}", e);
                         }
 
-                        // Store the active skill ID so we can look it up in confirming/analyzing
-                        let skill_key = format!("note:{}:active_skill", conversation_id);
-                        if let Err(e) = db.set_memory(&skill_key, &skill_id, Some("system")) {
-                            log::error!("Failed to store active skill ID: {}", e);
+                        // Save a confirmation message to the chat
+                        let skill_display = skill.display_name();
+                        let confirm_msg = format!(
+                            "检测到您可能想要进行「{}」。如果确认开始，请回复「确认」或「开始」；如果不需要，直接继续提问即可。",
+                            skill_display
+                        );
+                        let confirm_id = uuid::Uuid::new_v4().to_string();
+                        let content_json = serde_json::json!({"text": confirm_msg}).to_string();
+
+                        if let Err(e) = db.insert_message(&confirm_id, &conversation_id, "assistant", &content_json) {
+                            log::error!("Failed to save confirmation message: {}", e);
+                        }
+                        if let Err(e) = app.emit("message:updated", serde_json::json!({
+                            "id": confirm_id,
+                            "conversationId": conversation_id,
+                            "role": "assistant",
+                            "content": {"text": confirm_msg},
+                        })) {
+                            log::warn!("Failed to emit confirmation message: {}", e);
                         }
 
-                        // Initialize step as in_progress in DB
-                        if let Err(e) = orchestrator::advance_step(
-                            &db.inner().clone(), &conversation_id, step_num, "in_progress",
-                        ) {
-                            log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
-                        }
-
-                        let mut state = SkillState::new(&skill_id);
-                        state.current_step = Some(initial_step.clone());
-
-                        Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
+                        // Return Ok early — skip agent_loop for this turn
+                        return Ok(());
                     }
                     _ => {
                         log::debug!("No workflow skill activated, staying in daily mode");
@@ -546,16 +707,45 @@ pub async fn send_message(
             } else {
                 None // daily chat, no analysis
             }
+            }
         }
 
         "confirming" | "analyzing" => {
+            // P2: Allow daily chat during analysis — detect general questions
+            // that are unrelated to the current analysis workflow.
+            // If the message looks like a daily question (not confirmation, not abort,
+            // and matches daily-question patterns), handle it as daily chat without
+            // changing the conversation mode.
+            if is_daily_question(&content) {
+                log::info!(
+                    "Detected daily question during '{}' mode for conversation {}, routing to daily chat",
+                    conversation_mode, conversation_id
+                );
+                None // step_config = None → daily mode agent_loop
+            } else {
             // Active workflow: look up the stored skill ID for this conversation.
             let skill_key = format!("note:{}:active_skill", conversation_id);
-            let active_skill_id = db.get_memory(&skill_key)
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| "comp-analysis".to_string()); // backward compat
+            let active_skill_id = match db.get_memory(&skill_key).ok().flatten() {
+                Some(id) => id,
+                None => {
+                    // No skill ID found — memory lost (crash, corruption).
+                    // Reset to daily mode rather than assuming comp-analysis.
+                    log::warn!(
+                        "No active_skill stored for conversation {} in mode '{}', resetting to daily",
+                        conversation_id, conversation_mode
+                    );
+                    if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                        log::error!("Failed to reset mode to 'daily': {}", e);
+                    }
+                    // Fall through to daily mode (step_config = None)
+                    String::new()
+                }
+            };
 
+            // If skill ID was lost, skip workflow lookup and run in daily mode
+            if active_skill_id.is_empty() {
+                None
+            } else {
             match skill_registry.get(&active_skill_id).await {
                 None => {
                     log::error!(
@@ -604,6 +794,7 @@ pub async fn send_message(
                         if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
                             log::error!("Failed to finalize analysis as aborted: {}", e);
                         }
+                        clear_analysis_notes(&db, &conversation_id);
                         None
                     } else {
                         log::warn!(
@@ -634,6 +825,7 @@ pub async fn send_message(
                             if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
                                 log::error!("Failed to finalize analysis as aborted: {}", e);
                             }
+                            clear_analysis_notes(&db, &conversation_id);
                             None
                         }
 
@@ -646,6 +838,7 @@ pub async fn send_message(
                             if let Err(e) = db.finalize_analysis(&conversation_id, "completed") {
                                 log::error!("Failed to finalize analysis: {}", e);
                             }
+                            clear_analysis_notes(&db, &conversation_id);
                             None
                         }
 
@@ -695,10 +888,37 @@ pub async fn send_message(
                                 log::error!("Failed to mark step {} as in_progress: {}", next_step_num, e);
                             }
 
-                            // Auto-capture step context BEFORE wiping message history.
-                            // This preserves assistant conclusions and key tool outputs
-                            // even if the LLM didn't call save_analysis_note.
-                            if step_num >= 1 {
+                            // Emit step-reset so the frontend:
+                            // 1. Resets the streaming content for the new step
+                            // 2. Updates the watchdog activity timer (prevents 30s timeout
+                            //    during checkpoint extraction which can take up to 30s)
+                            let _ = app.emit("streaming:step-reset", serde_json::json!({
+                                "conversationId": conversation_id,
+                                "step": next_step_num,
+                            }));
+
+                            // --- Checkpoint extraction (Layer 1) ---
+                            // Make a dedicated non-streaming LLM call to extract structured
+                            // step conclusions BEFORE wiping message history. Falls back to
+                            // auto_capture on any failure. Runs for ALL steps (including step 0
+                            // which carries critical file info and analysis direction).
+                            {
+                                let (base_ep, step_ep) = skill.extract_prompt(&format!("step{}", step_num));
+                                let extract_prompt = if base_ep.is_empty() && step_ep.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("{}\n\n{}", base_ep, step_ep)
+                                };
+                                let cp_result = crate::llm::checkpoint::checkpoint_extract(
+                                    &gateway, &settings, &conversation_id, step_num, &chat_messages, &db, &extract_prompt,
+                                ).await;
+                                if cp_result.is_some() {
+                                    log::info!("[step_advance] Checkpoint extraction succeeded for step {}", step_num);
+                                } else {
+                                    log::warn!("[step_advance] Checkpoint extraction failed for step {}, auto_capture will serve as fallback", step_num);
+                                }
+
+                                // --- Auto-capture (Layer 3) --- always runs as fallback
                                 auto_capture_step_context(&db, &conversation_id, step_num, &chat_messages);
                             }
 
@@ -756,6 +976,8 @@ pub async fn send_message(
 
                 } // Some(skill)
             } // match skill_registry.get
+            } // else (active_skill_id not empty)
+            } // else (not daily question)
         }
 
         // Unknown mode — treat as daily
@@ -781,12 +1003,12 @@ pub async fn send_message(
         assistant_id, step_config.as_ref().map(|c| c.step));
 
     // Mark gateway as busy BEFORE spawning so concurrent calls are blocked immediately
-    gateway.set_busy(&conversation_id).await.map_err(|e| e)?;
+    gateway.set_busy(&conversation_id).map_err(|e| e)?;
 
     // Record in DB for crash recovery. If this fails, rollback the gateway busy state.
     if let Err(e) = db.insert_active_task(&conversation_id) {
         log::error!("Failed to insert active task, rolling back gateway busy state: {}", e);
-        gateway.clear_task(&conversation_id).await;
+        gateway.clear_task(&conversation_id);
         return Err(e.to_string());
     }
 
@@ -824,7 +1046,7 @@ pub async fn send_message(
                 log::error!("[AgentGuard] agent_loop TIMED OUT after {}s for conversation {}",
                     AGENT_TIMEOUT_SECS, conversation_id_clone);
                 // Cancel any active streaming for this conversation
-                guard.gateway.cancel_conversation(&conversation_id_clone).await.ok();
+                guard.gateway.cancel_conversation(&conversation_id_clone).ok();
                 let _ = app_clone.emit(
                     "streaming:error",
                     serde_json::json!({
@@ -880,6 +1102,11 @@ async fn agent_loop(
         None
     } else {
         Some(settings.tavily_api_key.clone())
+    };
+    let bocha_api_key = if settings.bocha_api_key.is_empty() {
+        None
+    } else {
+        Some(settings.bocha_api_key.clone())
     };
 
     // Build file context: query ALL uploaded files for this conversation
@@ -959,27 +1186,42 @@ async fn agent_loop(
     let system_prompt = format!("{}{}", system_prompt, file_context);
 
     // Inject accumulated analysis notes from previous steps into the system prompt.
-    // Groups notes by step number, compresses older steps to save tokens while
-    // keeping the most recent completed step at full detail.
+    // Three-layer priority: checkpoint (structured) > summary (LLM-curated) > auto_context (fallback).
+    // Checkpoints use field-level decay: summary/key_findings/next_step_input never truncated,
+    // data_artifacts truncated for older steps.
     let analysis_notes_context = {
         let notes_prefix = format!("note:{}:", conversation_id);
         match db.get_memories_by_prefix(&notes_prefix) {
             Ok(notes) if !notes.is_empty() => {
-                // Determine the current step number (for compression decisions)
                 let current_step = current_step_config.as_ref().map(|c| c.step).unwrap_or(0);
 
-                // Group notes by step number for organized output
-                // Notes follow patterns: step{N}_summary, step{N}_auto_context, analysis_direction
+                // Separate notes by type: checkpoint, step-grouped, non-step
+                let mut checkpoints: std::collections::BTreeMap<u32, crate::llm::checkpoint::StepCheckpoint> = std::collections::BTreeMap::new();
                 let mut step_notes: std::collections::BTreeMap<u32, Vec<(String, String)>> = std::collections::BTreeMap::new();
                 let mut non_step_notes: Vec<(String, String)> = Vec::new();
 
                 for (key, value) in &notes {
                     let note_name = key.strip_prefix(&notes_prefix).unwrap_or(key);
-                    // Parse step number from note names like "step1_summary", "step2_auto_context"
+
+                    // Try to parse checkpoint notes (highest priority)
+                    if note_name.starts_with("step") && note_name.ends_with("_checkpoint") {
+                        if let Some(step_str) = note_name.strip_prefix("step") {
+                            if let Some(num_str) = step_str.strip_suffix("_checkpoint") {
+                                if let Ok(sn) = num_str.parse::<u32>() {
+                                    if let Ok(cp) = serde_json::from_str::<crate::llm::checkpoint::StepCheckpoint>(value) {
+                                        checkpoints.insert(sn, cp);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Group remaining notes by step number
                     if note_name.starts_with("step") {
                         if let Some(step_str) = note_name.strip_prefix("step") {
-                            if let Some(step_num) = step_str.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
-                                step_notes.entry(step_num).or_default().push((note_name.to_string(), value.clone()));
+                            if let Some(sn) = step_str.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
+                                step_notes.entry(sn).or_default().push((note_name.to_string(), value.clone()));
                                 continue;
                             }
                         }
@@ -998,45 +1240,67 @@ async fn agent_loop(
                     ctx.push_str(&format!("### {}\n{}\n\n", name, value));
                 }
 
-                // Step notes — compress older steps, keep recent steps full
+                // Collect all step numbers that have any notes
+                let all_steps: std::collections::BTreeSet<u32> = checkpoints.keys()
+                    .chain(step_notes.keys())
+                    .copied()
+                    .collect();
+
                 let max_completed_step = if current_step > 0 { current_step - 1 } else { 0 };
                 const OLDER_STEP_MAX_CHARS: usize = 3000;
                 const RECENT_STEP_MAX_CHARS: usize = 6000;
 
-                for (&step_num, notes_for_step) in &step_notes {
-                    ctx.push_str(&format!("## 第 {} 步记录\n", step_num));
+                for &sn in &all_steps {
+                    // The immediately preceding step is "recent" (full detail);
+                    // all earlier steps are "older" (truncated data_artifacts).
+                    let is_recent = current_step == 0 || sn >= current_step.saturating_sub(1);
 
-                    for (name, value) in notes_for_step {
-                        let is_recent_step = step_num >= max_completed_step && max_completed_step > 0;
-                        let is_summary = name.contains("_summary");
+                    // Priority: checkpoint > summary > auto_context
+                    if let Some(cp) = checkpoints.get(&sn) {
+                        let display_name = current_step_config.as_ref()
+                            .and_then(|c| c.step_display_names.iter().find(|(n, _)| *n == sn))
+                            .map(|(_, name)| name.as_str())
+                            .unwrap_or("未知步骤");
+                        ctx.push_str(&crate::llm::checkpoint::format_checkpoint_for_injection(
+                            cp,
+                            sn,
+                            display_name,
+                            is_recent,
+                        ));
+                    } else if let Some(notes_for_step) = step_notes.get(&sn) {
+                        // Fallback: use existing note-based injection
+                        ctx.push_str(&format!("## 第 {} 步记录\n", sn));
 
-                        // LLM-curated summaries are always included in full (they're already concise)
-                        if is_summary {
-                            ctx.push_str(&format!("### {}\n{}\n\n", name, value));
-                        } else if is_recent_step {
-                            // Most recent completed step: full auto_context
-                            let truncated = if value.len() > RECENT_STEP_MAX_CHARS {
-                                let end = truncate_at_char_boundary(value, RECENT_STEP_MAX_CHARS);
-                                format!("{}...(truncated)", &value[..end])
+                        for (name, value) in notes_for_step {
+                            let is_summary = name.contains("_summary");
+
+                            if is_summary {
+                                ctx.push_str(&format!("### {}\n{}\n\n", name, value));
+                            } else if is_recent {
+                                let truncated = if value.len() > RECENT_STEP_MAX_CHARS {
+                                    let end = truncate_at_char_boundary(value, RECENT_STEP_MAX_CHARS);
+                                    format!("{}...(truncated)", &value[..end])
+                                } else {
+                                    value.clone()
+                                };
+                                ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
                             } else {
-                                value.clone()
-                            };
-                            ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
-                        } else {
-                            // Older steps: truncated auto_context
-                            let truncated = if value.len() > OLDER_STEP_MAX_CHARS {
-                                let end = truncate_at_char_boundary(value, OLDER_STEP_MAX_CHARS);
-                                format!("{}...(truncated)", &value[..end])
-                            } else {
-                                value.clone()
-                            };
-                            ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                                let truncated = if value.len() > OLDER_STEP_MAX_CHARS {
+                                    let end = truncate_at_char_boundary(value, OLDER_STEP_MAX_CHARS);
+                                    format!("{}...(truncated)", &value[..end])
+                                } else {
+                                    value.clone()
+                                };
+                                ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                            }
                         }
                     }
                 }
 
-                log::info!("[notes_injection] Injected {} notes ({} step groups + {} non-step) for conversation {}, current_step={}",
-                    notes.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step);
+                log::info!(
+                    "[notes_injection] Injected {} notes ({} checkpoints + {} step groups + {} non-step) for conversation {}, current_step={}",
+                    notes.len(), checkpoints.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step
+                );
 
                 ctx
             }
@@ -1096,14 +1360,7 @@ async fn agent_loop(
                         "error": e.to_string(),
                     }),
                 );
-                // Must emit streaming:done so frontend clears streaming state
-                let _ = app.emit(
-                    "streaming:done",
-                    serde_json::json!({
-                        "conversationId": conversation_id,
-                        "messageId": current_assistant_id,
-                    }),
-                );
+                // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                 return;
             }
         };
@@ -1143,11 +1400,7 @@ async fn agent_loop(
                         "conversationId": conversation_id,
                         "error": "响应超时，请重试。",
                     }));
-                    // Must emit streaming:done so frontend clears streaming state
-                    let _ = app.emit("streaming:done", serde_json::json!({
-                        "conversationId": conversation_id,
-                        "messageId": current_assistant_id,
-                    }));
+                    // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                     return;
                 }
                 // Normal stream event
@@ -1227,14 +1480,7 @@ async fn agent_loop(
                                     "error": error,
                                 }),
                             );
-                            // Must emit streaming:done so frontend clears streaming state
-                            let _ = app.emit(
-                                "streaming:done",
-                                serde_json::json!({
-                                    "conversationId": conversation_id,
-                                    "messageId": current_assistant_id,
-                                }),
-                            );
+                            // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                             return;
                         }
                         None => {
@@ -1272,6 +1518,7 @@ async fn agent_loop(
             workspace_path: workspace_path.clone(),
             conversation_id: conversation_id.clone(),
             tavily_api_key: tavily_api_key.clone(),
+            bocha_api_key: bocha_api_key.clone(),
             app_handle: Some(app.clone()),
         };
 
@@ -1347,11 +1594,28 @@ async fn agent_loop(
                 Some(ctx) => ctx.mask_text(&result_content),
                 None => result_content.clone(),
             };
+            // Truncate tool results stored in message history to prevent context bloat.
+            // Long execute_python outputs can produce megabytes; cap at 8KB per result.
+            const MAX_TOOL_RESULT_CHARS: usize = 8000;
+            let truncated_result = if masked_result.len() > MAX_TOOL_RESULT_CHARS {
+                let end = truncate_at_char_boundary(&masked_result, MAX_TOOL_RESULT_CHARS);
+                format!("{}...\n[output truncated — {} chars total]", &masked_result[..end], masked_result.len())
+            } else {
+                masked_result
+            };
             messages.push(ChatMessage::tool_result(
                 &tc.id,
                 &tc.name,
-                masked_result,
+                truncated_result,
             ));
+
+            // Check cancel signal between tool executions so we don't wait
+            // for all queued tools to finish when the user requests stop.
+            if *cancel_rx.borrow() {
+                log::info!("[AGENT] Cancel signal detected between tool executions for conversation {}", conversation_id);
+                stream_cancelled = true;
+                break;
+            }
         }
     }
 
@@ -1412,14 +1676,13 @@ async fn agent_loop(
 
             if !has_any_note {
                 log::warn!(
-                    "[AGENT] Step {} completed without ANY notes (prefix '{}') — data may be lost in next step",
+                    "[AGENT] Step {} completed without ANY notes (prefix '{}') — auto_capture should have saved context as fallback",
                     completed_step, note_prefix
                 );
-                let _ = app.emit("streaming:error", serde_json::json!({
-                    "conversationId": conversation_id,
-                    "error": format!("⚠️ 第 {} 步完成但未保存任何分析记录，后续步骤可能丢失关键数据。建议在确认前要求 AI 重新保存。", completed_step),
-                    "severity": "warning",
-                }));
+                // NOTE: Do NOT emit streaming:error here. The auto_capture system
+                // saves step context as fallback. Emitting streaming:error causes
+                // the frontend to clear streaming state, which can interfere with
+                // the next step's streaming when the step auto-advances.
             } else if !has_summary {
                 log::info!(
                     "[AGENT] Step {} has auto-captured context but no LLM-curated summary. Auto-capture will serve as fallback.",
@@ -1619,7 +1882,7 @@ pub async fn stop_streaming(
     gateway: State<'_, Arc<LlmGateway>>,
     conversation_id: String,
 ) -> Result<(), String> {
-    gateway.cancel_conversation(&conversation_id).await.map_err(|e| e.to_string())
+    gateway.cancel_conversation(&conversation_id).map_err(|e| e.to_string())
 }
 
 /// Get messages for a conversation.
@@ -1658,13 +1921,13 @@ pub async fn delete_conversation(
     conversation_id: String,
 ) -> Result<(), String> {
     // Guard: if an agent is running on this conversation, cancel it first
-    if gateway.is_conversation_busy(&conversation_id).await {
+    if gateway.is_conversation_busy(&conversation_id) {
         log::info!("delete_conversation: cancelling active agent for conversation {}", conversation_id);
-        gateway.cancel_conversation(&conversation_id).await.ok();
+        gateway.cancel_conversation(&conversation_id).ok();
         // Give the agent loop a moment to exit gracefully
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         // Force-clear the gateway state in case the loop didn't exit
-        gateway.clear_task(&conversation_id).await;
+        gateway.clear_task(&conversation_id);
         db.remove_active_task(&conversation_id).ok();
         let _ = app.emit("streaming:done", serde_json::json!({
             "conversationId": conversation_id,

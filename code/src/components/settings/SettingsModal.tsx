@@ -61,6 +61,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // Show/hide toggles
   const [showApiKey, setShowApiKey] = useState(false)
   const [showTavilyKey, setShowTavilyKey] = useState(false)
+  const [showBochaKey, setShowBochaKey] = useState(false)
 
   // App version (from tauri.conf.json)
   const [appVersion, setAppVersion] = useState('...')
@@ -125,6 +126,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         tempFileRetentionDays: settings.tempFileRetentionDays,
         keepOldVersions: settings.keepOldVersions,
         tavilyApiKey: settings.tavilyApiKey,
+        bochaApiKey: settings.bochaApiKey,
         customModelEndpoint: settings.customModelEndpoint,
         customModelName: settings.customModelName,
       })
@@ -176,6 +178,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           tempFileRetentionDays: settings.tempFileRetentionDays,
           keepOldVersions: settings.keepOldVersions,
           tavilyApiKey: settings.tavilyApiKey,
+          bochaApiKey: settings.bochaApiKey,
           customModelEndpoint: settings.customModelEndpoint,
           customModelName: settings.customModelName,
         })
@@ -470,7 +473,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </FormGroup>
 
           {/* Tavily Search API Key */}
-          <FormGroup label="Tavily Search API Key" desc="用于联网搜索市场薪酬数据（可选）">
+          <FormGroup label="Tavily Search API Key" desc="用于联网搜索（可选，备用）">
             <div className="relative">
               <input
                 type={showTavilyKey ? 'text' : 'password'}
@@ -491,6 +494,32 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 onClick={() => setShowTavilyKey(!showTavilyKey)}
               >
                 {showTavilyKey ? '隐藏' : '显示'}
+              </button>
+            </div>
+          </FormGroup>
+
+          {/* Bocha Search API Key */}
+          <FormGroup label="博查搜索 API Key" desc={<>用于联网搜索市场薪酬数据（推荐）。<a href="https://open.bochaai.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>获取 Key →</a></>}>
+            <div className="relative">
+              <input
+                type={showBochaKey ? 'text' : 'password'}
+                className="h-9 w-full rounded-md border px-3 py-2 pr-16 text-base outline-none"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                placeholder="sk-..."
+                value={settings.bochaApiKey}
+                onChange={(e) => settings.setBochaApiKey(e.target.value)}
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs"
+                style={{ color: 'var(--color-text-muted)' }}
+                onClick={() => setShowBochaKey(!showBochaKey)}
+              >
+                {showBochaKey ? '隐藏' : '显示'}
               </button>
             </div>
           </FormGroup>
@@ -591,7 +620,7 @@ function FormGroup({
   children,
 }: {
   label: string
-  desc?: string
+  desc?: React.ReactNode
   className?: string
   children: React.ReactNode
 }) {

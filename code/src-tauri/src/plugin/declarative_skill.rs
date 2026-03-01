@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::manifest::{PluginManifest, WorkflowManifest};
 use super::skill_trait::*;
@@ -15,21 +15,28 @@ pub struct DeclarativeSkill {
     id: String,
     name: String,
     description: String,
+    priority_val: u32,
     keywords: Vec<String>,
+    file_keywords: Vec<String>,
     requires_files: bool,
     model_pref: Option<ModelPreference>,
     max_iter: usize,
     budget: u32,
+    include_app_base: bool,
     base_prompt: String,
     step_prompts: HashMap<String, String>,
     workflow: Option<WorkflowDefinition>,
     step_configs: HashMap<String, StepToolConfig>,
+    extract_base: String,
+    extract_steps: HashMap<String, String>,
 }
 
 struct StepToolConfig {
     tools_only: Option<Vec<String>>,
     tools_exclude: Option<Vec<String>>,
     max_iterations: Option<usize>,
+    token_budget: Option<u32>,
+    advance_on: AdvanceMode,
 }
 
 impl DeclarativeSkill {
@@ -37,7 +44,12 @@ impl DeclarativeSkill {
     pub fn load(manifest: &PluginManifest, plugin_dir: &Path) -> Result<Self, String> {
         let trigger = manifest.trigger.as_ref();
         let keywords = trigger.map(|t| t.keywords.clone()).unwrap_or_default();
+        let file_keywords = trigger.map(|t| t.file_keywords.clone()).unwrap_or_default();
         let requires_files = trigger.map(|t| t.requires_files).unwrap_or(false);
+
+        let priority_val = manifest.plugin.priority.unwrap_or(0);
+        let description = manifest.plugin.description.clone()
+            .unwrap_or_else(|| format!("{} (plugin)", manifest.plugin.name));
 
         let model_pref = manifest.model.as_ref()
             .and_then(|m| m.preference.as_deref())
@@ -54,8 +66,31 @@ impl DeclarativeSkill {
         let max_iter = defaults.and_then(|d| d.max_iterations).unwrap_or(10);
         let budget = defaults.and_then(|d| d.token_budget).unwrap_or(4096);
 
-        // Load base prompt
+        let include_app_base = manifest.prompts.as_ref()
+            .map(|p| p.include_app_base)
+            .unwrap_or(true);
+
+        // Load plugin-local base prompt
         let base_prompt = Self::load_prompt(plugin_dir, "base.md");
+
+        // Load extract prompts (for checkpoint extraction at step boundaries)
+        let extract_base = Self::load_prompt(plugin_dir, "prompts/extract/base_extract.md");
+        let mut extract_steps = HashMap::new();
+        let extract_dir = plugin_dir.join("prompts/extract");
+        if extract_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&extract_dir) {
+                for entry in entries.flatten() {
+                    let fname = entry.file_name();
+                    let fname = fname.to_string_lossy();
+                    if let Some(step_id) = fname.strip_prefix("extract_").and_then(|s| s.strip_suffix(".md")) {
+                        let content = Self::load_prompt(plugin_dir, &format!("prompts/extract/{}", fname));
+                        if !content.is_empty() {
+                            extract_steps.insert(step_id.to_string(), content);
+                        }
+                    }
+                }
+            }
+        }
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
@@ -76,15 +111,24 @@ impl DeclarativeSkill {
                         prompts.insert(step.id.clone(), prompt);
                     }
                 }
+
+                let advance_on = match step.advance_on.as_str() {
+                    "any" => AdvanceMode::Any,
+                    _ => AdvanceMode::Confirm,
+                };
+
                 configs.insert(step.id.clone(), StepToolConfig {
                     tools_only: step.tools_only.clone(),
                     tools_exclude: step.tools_exclude.clone(),
                     max_iterations: step.max_iterations,
+                    token_budget: step.token_budget,
+                    advance_on: advance_on.clone(),
                 });
                 steps.push(WorkflowStep {
                     id: step.id.clone(),
                     display_name: step.name.clone(),
                     requires_confirmation: step.requires_confirmation,
+                    advance_on,
                 });
             }
 
@@ -98,16 +142,21 @@ impl DeclarativeSkill {
         Ok(Self {
             id: manifest.plugin.id.clone(),
             name: manifest.plugin.name.clone(),
-            description: format!("{} (plugin)", manifest.plugin.name),
+            description,
+            priority_val,
             keywords,
+            file_keywords,
             requires_files,
             model_pref,
             max_iter,
             budget,
+            include_app_base,
             base_prompt,
             step_prompts,
             workflow,
             step_configs,
+            extract_base,
+            extract_steps,
         })
     }
 
@@ -130,6 +179,13 @@ impl DeclarativeSkill {
         let idx = wf.steps.iter().position(|s| s.id == current)?;
         wf.steps.get(idx + 1).map(|s| s.id.clone())
     }
+
+    fn is_last_step(&self, step_id: &str) -> bool {
+        self.workflow.as_ref()
+            .and_then(|wf| wf.steps.last())
+            .map(|s| s.id == step_id)
+            .unwrap_or(false)
+    }
 }
 
 #[async_trait]
@@ -137,6 +193,8 @@ impl Skill for DeclarativeSkill {
     fn id(&self) -> &str { &self.id }
     fn display_name(&self) -> &str { &self.name }
     fn description(&self) -> &str { &self.description }
+
+    fn priority(&self) -> u32 { self.priority_val }
 
     fn should_activate(&self, message: &str, has_files: bool, current_skill: &str) -> bool {
         if current_skill != "daily-assistant" {
@@ -146,20 +204,55 @@ impl Skill for DeclarativeSkill {
             return false;
         }
         let lower = message.to_lowercase();
-        self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
+
+        // Primary keywords always match
+        if self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
+            return true;
+        }
+
+        // Secondary: file_keywords only match when has_files is true
+        if has_files && !self.file_keywords.is_empty() {
+            if self.file_keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {
-        let step_prompt = state.current_step.as_deref()
-            .and_then(|step| self.step_prompts.get(step))
-            .cloned()
-            .unwrap_or_default();
+        // Build prompt: [app_base] + [plugin_base] + [step_prompt]
+        let mut parts = Vec::new();
 
-        if step_prompt.is_empty() {
-            self.base_prompt.clone()
-        } else {
-            format!("{}\n\n{}", self.base_prompt, step_prompt)
+        if self.include_app_base {
+            let app_base = crate::llm::prompts::get_base_prompt();
+            if !app_base.is_empty() {
+                parts.push(app_base);
+            }
         }
+
+        if !self.base_prompt.is_empty() {
+            parts.push(self.base_prompt.clone());
+        }
+
+        if let Some(step) = state.current_step.as_deref() {
+            if let Some(sp) = self.step_prompts.get(step) {
+                if !sp.is_empty() {
+                    parts.push(sp.clone());
+                }
+            }
+        }
+
+        // Inject current date prominently
+        let now = chrono::Local::now();
+        let today = now.format("%Y年%m月%d日");
+        let today_iso = now.format("%Y-%m-%d");
+        parts.push(format!(
+            "【当前时间】今天是 {}（{}）。你的回答中涉及时间时，以此日期为准。",
+            today, today_iso
+        ));
+
+        parts.join("\n\n")
     }
 
     fn tool_filter(&self, state: &SkillState) -> ToolFilter {
@@ -191,7 +284,15 @@ impl Skill for DeclarativeSkill {
         self.max_iter
     }
 
-    fn token_budget(&self, _state: &SkillState) -> u32 {
+    fn token_budget(&self, state: &SkillState) -> u32 {
+        // Per-step budget takes priority over global
+        if let Some(step) = state.current_step.as_deref() {
+            if let Some(config) = self.step_configs.get(step) {
+                if let Some(tb) = config.token_budget {
+                    return tb;
+                }
+            }
+        }
         self.budget
     }
 
@@ -199,29 +300,61 @@ impl Skill for DeclarativeSkill {
         self.workflow.clone()
     }
 
+    fn extract_prompt(&self, step_id: &str) -> (String, String) {
+        let step_specific = self.extract_steps.get(step_id).cloned().unwrap_or_default();
+        (self.extract_base.clone(), step_specific)
+    }
+
     fn on_step_complete(&self, state: &mut SkillState, user_message: &str) -> StepAction {
-        // Check for abort keywords
-        let lower = user_message.trim().to_lowercase();
-        let abort_phrases = ["算了", "取消", "退出", "停止", "cancel", "abort", "stop", "quit"];
-        if lower.chars().count() <= 20 && abort_phrases.iter().any(|p| lower.contains(p)) {
+        let text = user_message.trim();
+
+        // Abort always checked first (shared function)
+        if is_abort_keyword(text) {
             return StepAction::Abort;
         }
 
-        // Simple confirmation detection
-        let confirm_phrases = ["确认", "继续", "好的", "可以", "ok", "yes", "next", "continue", "开始"];
-        let is_confirm = lower.chars().count() <= 20
-            && confirm_phrases.iter().any(|p| lower.contains(p));
+        let current = match state.current_step.as_deref() {
+            Some(s) => s.to_string(),
+            None => {
+                // No current step — advance to the initial step (matches old CompAnalysisSkill behavior)
+                let initial = self.workflow.as_ref()
+                    .map(|wf| wf.initial_step.clone())
+                    .unwrap_or_else(|| "step0".to_string());
+                return StepAction::AdvanceToStep(initial);
+            }
+        };
 
-        if is_confirm {
-            if let Some(current) = state.current_step.as_deref() {
-                if let Some(next) = self.next_step_id(current) {
-                    return StepAction::AdvanceToStep(next);
+        // Get the advance mode for the current step
+        let advance_mode = self.step_configs.get(&current)
+            .map(|c| &c.advance_on)
+            .cloned()
+            .unwrap_or_default();
+
+        match advance_mode {
+            AdvanceMode::Any => {
+                // Any non-abort reply advances
+                if self.is_last_step(&current) {
+                    StepAction::Finish
+                } else if let Some(next) = self.next_step_id(&current) {
+                    StepAction::AdvanceToStep(next)
                 } else {
-                    return StepAction::Finish;
+                    StepAction::Finish
+                }
+            }
+            AdvanceMode::Confirm => {
+                // Requires confirmation keyword
+                if is_confirm_keyword(text) {
+                    if self.is_last_step(&current) {
+                        StepAction::Finish
+                    } else if let Some(next) = self.next_step_id(&current) {
+                        StepAction::AdvanceToStep(next)
+                    } else {
+                        StepAction::Finish
+                    }
+                } else {
+                    StepAction::WaitForUser
                 }
             }
         }
-
-        StepAction::WaitForUser
     }
 }

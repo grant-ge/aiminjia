@@ -55,8 +55,10 @@ import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
 import { useTauriEvent } from './useTauriEvent'
 
-/** How long (ms) before a streaming conversation with no activity is force-cleared. */
-const STALE_STREAM_TIMEOUT_MS = 30_000
+/** How long (ms) before a streaming conversation with no activity is force-cleared.
+ *  Set to 120s to accommodate analysis mode step transitions which involve
+ *  checkpoint extraction (up to 30s) + LLM cold start + first tool execution. */
+const STALE_STREAM_TIMEOUT_MS = 120_000
 
 /** How often (ms) the watchdog checks for stale streams. */
 const WATCHDOG_INTERVAL_MS = 10_000
@@ -194,6 +196,20 @@ export function useStreaming() {
           message.conversationId,
           store.activeConversationId,
         )
+      }
+
+      // When we receive a persisted assistant message, clear the streaming
+      // state IN THE SAME callback so React batches both updates into one
+      // render. This prevents the visual "flash" where StreamingBubble
+      // unmounts (streaming:done) before the persisted MessageItem appears.
+      if (message.role === 'assistant') {
+        const streamState = store.streamStates[message.conversationId]
+        if (streamState?.isStreaming) {
+          console.log('[message:updated] Clearing streaming state for %s (assistant message persisted)', message.conversationId)
+          delete deltaBufferRef.current[message.conversationId]
+          delete lastActivityRef.current[message.conversationId]
+          store.clearConversationStreamState(message.conversationId)
+        }
       }
     }),
   )

@@ -37,6 +37,9 @@ impl Default for SandboxConfig {
                 "urllib".to_string(),
                 "requests".to_string(),
                 "shutil".to_string(),
+                "importlib".to_string(),
+                "ctypes".to_string(),
+                "multiprocessing".to_string(),
             ],
         }
     }
@@ -84,11 +87,18 @@ impl SandboxConfig {
         // Check for dangerous built-in calls
         let dangerous_calls = [
             ("exec(", "exec() is not allowed"),
+            ("exec (", "exec() is not allowed"),
             ("eval(", "eval() is not allowed"),
+            ("eval (", "eval() is not allowed"),
             ("compile(", "compile() is not allowed"),
+            ("compile (", "compile() is not allowed"),
             ("os.system", "os.system() is not allowed"),
             ("os.popen", "os.popen() is not allowed"),
             ("os.exec", "os.exec*() is not allowed"),
+            ("os.fork", "os.fork() is not allowed"),
+            ("os.spawn", "os.spawn*() is not allowed"),
+            ("os.posix_spawn", "os.posix_spawn() is not allowed"),
+            ("builtins.__import__", "builtins.__import__() is not allowed"),
         ];
         for (pattern, msg) in &dangerous_calls {
             if code.contains(pattern) {
@@ -102,12 +112,34 @@ impl SandboxConfig {
     /// Generate Python preamble that sets up resource limits and pre-loaded utilities.
     /// This code is prepended to user code before execution.
     pub fn preamble(&self) -> String {
-        // Part 1: Dynamic setup (uses Rust format! for allowed_paths)
+        // Build the forbidden modules set for the runtime import hook
+        let forbidden_set = format!(
+            "{{{}}}",
+            self.forbidden_modules
+                .iter()
+                .map(|m| format!("'{}'", m))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        // Part 1: Dynamic setup (uses Rust format! for allowed_paths and forbidden_modules)
         let setup = format!(
             r#"import sys
 import os
+import builtins
 import warnings
 warnings.filterwarnings('ignore')
+
+# ── Runtime import hook (security enforcement layer) ──
+# Static validation can be bypassed; this hook blocks forbidden modules at runtime.
+_FORBIDDEN_MODULES = {forbidden_set}
+_real_import = builtins.__import__
+def _safe_import(name, *args, **kwargs):
+    base = name.split('.')[0]
+    if base in _FORBIDDEN_MODULES:
+        raise ImportError(f"Module '{{name}}' is blocked by sandbox policy")
+    return _real_import(name, *args, **kwargs)
+builtins.__import__ = _safe_import
 
 # Force UTF-8 encoding for stdout/stderr (prevents GBK issues on Windows)
 if hasattr(sys.stdout, 'reconfigure'):
@@ -122,8 +154,13 @@ _ALLOWED_PATHS = {allowed_paths}
 sys.setrecursionlimit(2000)
 
 # Working directory (workspace root — first element of _ALLOWED_PATHS)
-os.chdir(_ALLOWED_PATHS[0] if _ALLOWED_PATHS else '.')
+if _ALLOWED_PATHS:
+    try:
+        os.chdir(_ALLOWED_PATHS[0])
+    except OSError:
+        pass
 "#,
+            forbidden_set = forbidden_set,
             allowed_paths = format!(
                 "[{}]",
                 self.allowed_paths
@@ -303,6 +340,41 @@ mod tests {
     fn test_validate_code_exec_blocked() {
         let config = SandboxConfig::default();
         assert!(config.validate_code("exec('print(1)')").is_err());
+        // Also block exec with space before paren
+        assert!(config.validate_code("exec ('print(1)')").is_err());
+    }
+
+    #[test]
+    fn test_validate_code_os_fork_blocked() {
+        let config = SandboxConfig::default();
+        assert!(config.validate_code("os.fork()").is_err());
+    }
+
+    #[test]
+    fn test_validate_code_importlib_blocked() {
+        let config = SandboxConfig::default();
+        assert!(config.validate_code("import importlib").is_err());
+    }
+
+    #[test]
+    fn test_validate_code_ctypes_blocked() {
+        let config = SandboxConfig::default();
+        assert!(config.validate_code("import ctypes").is_err());
+    }
+
+    #[test]
+    fn test_validate_code_builtins_import_blocked() {
+        let config = SandboxConfig::default();
+        assert!(config.validate_code("builtins.__import__('socket')").is_err());
+    }
+
+    #[test]
+    fn test_preamble_contains_import_hook() {
+        let config = SandboxConfig::default();
+        let preamble = config.preamble();
+        assert!(preamble.contains("_FORBIDDEN_MODULES"), "Preamble should define forbidden modules set");
+        assert!(preamble.contains("_safe_import"), "Preamble should define import hook");
+        assert!(preamble.contains("builtins.__import__ = _safe_import"), "Preamble should install import hook");
     }
 
     #[test]

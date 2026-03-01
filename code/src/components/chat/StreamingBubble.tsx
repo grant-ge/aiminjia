@@ -59,12 +59,12 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             </svg>
             <span>{TOOL_LABELS[activeTool.toolName] || activeTool.toolName}</span>
           </div>
-        ) : !content ? (
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        ) : (
+          <div className={`flex items-center gap-2 text-sm${content ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
             <TypingIndicator />
-            <span>正在思考...</span>
+            <span>{content ? '' : '正在思考...'}</span>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   )

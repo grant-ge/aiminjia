@@ -10,6 +10,7 @@ pub struct PluginManifest {
     pub model: Option<ModelConfig>,
     pub defaults: Option<DefaultsConfig>,
     pub capabilities: Option<CapabilitiesConfig>,
+    pub prompts: Option<PromptsConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +19,8 @@ pub struct PluginMeta {
     pub name: String,
     #[serde(rename = "type")]
     pub plugin_type: String, // "tool" or "skill"
+    pub description: Option<String>,
+    pub priority: Option<u32>,
     pub runtime: Option<String>, // "python" for script-based tools
     pub handler: Option<String>, // e.g., "handler.py"
 }
@@ -28,6 +31,9 @@ pub struct TriggerConfig {
     pub keywords: Vec<String>,
     #[serde(default)]
     pub requires_files: bool,
+    /// Secondary keywords: activate when has_files=true AND message matches these.
+    #[serde(default)]
+    pub file_keywords: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +52,14 @@ pub struct CapabilitiesConfig {
     pub file_system: Option<String>, // "workspace", "readonly"
 }
 
+/// Prompt composition config.
+#[derive(Debug, Deserialize)]
+pub struct PromptsConfig {
+    /// Whether to prepend the app's base.md prompt (default true).
+    #[serde(default = "default_true")]
+    pub include_app_base: bool,
+}
+
 /// Workflow definition from workflow.toml.
 #[derive(Debug, Deserialize)]
 pub struct WorkflowManifest {
@@ -61,8 +75,16 @@ pub struct WorkflowStepManifest {
     pub tools_only: Option<Vec<String>>,
     pub tools_exclude: Option<Vec<String>>,
     pub max_iterations: Option<usize>,
+    pub token_budget: Option<u32>,
+    /// "any" or "confirm" (default "confirm").
+    #[serde(default = "default_confirm")]
+    pub advance_on: String,
     #[serde(default = "default_true")]
     pub requires_confirmation: bool,
+}
+
+fn default_confirm() -> String {
+    "confirm".to_string()
 }
 
 fn default_true() -> bool {

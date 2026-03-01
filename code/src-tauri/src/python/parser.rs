@@ -58,15 +58,17 @@ pub fn detect_format(file_path: &Path) -> FileFormat {
 pub async fn parse_file(runner: &PythonRunner, file_path: &Path) -> Result<ParseResult> {
     let format = detect_format(file_path);
     let file_path_str = file_path.to_string_lossy();
+    // Escape single quotes to prevent Python code injection in r'...' strings
+    let escaped_path = file_path_str.replace('\'', "\\'");
 
     let read_code = match format {
         FileFormat::Csv => format!(
             r#"df = smart_read_csv(r'{}', nrows=10000)"#,
-            file_path_str
+            escaped_path
         ),
         FileFormat::Excel => format!(
             r#"df = pd.read_excel(r'{}', nrows=10000)"#,
-            file_path_str
+            escaped_path
         ),
         FileFormat::Json => format!(
             r#"
@@ -75,11 +77,11 @@ try:
 except ValueError:
     df = pd.read_json(r'{}', lines=True)
 "#,
-            file_path_str, file_path_str
+            escaped_path, escaped_path
         ),
         FileFormat::Parquet => format!(
             r#"df = pd.read_parquet(r'{}')"#,
-            file_path_str
+            escaped_path
         ),
         FileFormat::Text => {
             return Ok(ParseResult {
@@ -203,6 +205,7 @@ except Exception as e:
 /// 3. If pdfplumber not installed, try PyPDF2/pypdf as last resort
 async fn parse_pdf(runner: &PythonRunner, file_path: &Path) -> Result<ParseResult> {
     let file_path_str = file_path.to_string_lossy();
+    let escaped_path = file_path_str.replace('\'', "\\'");
 
     let code = format!(
         r#"
@@ -335,7 +338,7 @@ except Exception as e:
     print(json.dumps({{"error": str(e)}}), file=sys.stderr)
     sys.exit(1)
 "#,
-        file_path = file_path_str,
+        file_path = escaped_path,
     );
 
     let exec_result = runner.execute(&code).await?;
@@ -400,6 +403,7 @@ except Exception as e:
 /// structured data. Otherwise returns text content.
 async fn parse_word(runner: &PythonRunner, file_path: &Path) -> Result<ParseResult> {
     let file_path_str = file_path.to_string_lossy();
+    let escaped_path = file_path_str.replace('\'', "\\'");
 
     let code = format!(
         r#"
@@ -474,7 +478,7 @@ except Exception as e:
     print(json.dumps({{"error": str(e)}}), file=sys.stderr)
     sys.exit(1)
 "#,
-        file_path = file_path_str,
+        file_path = escaped_path,
     );
 
     let exec_result = runner.execute(&code).await?;
@@ -537,6 +541,7 @@ except Exception as e:
 /// and tables from table shapes.
 async fn parse_ppt(runner: &PythonRunner, file_path: &Path) -> Result<ParseResult> {
     let file_path_str = file_path.to_string_lossy();
+    let escaped_path = file_path_str.replace('\'', "\\'");
 
     let code = format!(
         r#"
@@ -627,7 +632,7 @@ except Exception as e:
     print(json.dumps({{"error": str(e)}}), file=sys.stderr)
     sys.exit(1)
 "#,
-        file_path = file_path_str,
+        file_path = escaped_path,
     );
 
     let exec_result = runner.execute(&code).await?;

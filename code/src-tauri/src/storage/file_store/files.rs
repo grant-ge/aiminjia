@@ -360,6 +360,21 @@ pub fn find_expired_temp_files(base_dir: &Path) -> StorageResult<Vec<serde_json:
     Ok(results)
 }
 
+/// Delete an uploaded file record from a specific conversation.
+pub fn delete_uploaded_file(
+    base_dir: &Path,
+    id: &str,
+    conversation_id: &str,
+) -> StorageResult<()> {
+    let mut index = read_file_index(base_dir, conversation_id)?;
+    let before = index.files.len();
+    index.files.retain(|f| !(f.id == id && f.source == "upload"));
+    if index.files.len() < before {
+        write_file_index(base_dir, conversation_id, &index)?;
+    }
+    Ok(())
+}
+
 /// Delete a generated file record.
 pub fn delete_generated_file(
     base_dir: &Path,

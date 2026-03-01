@@ -32,6 +32,9 @@ fn resolve_stored_path(
     Err("File not found or does not belong to this conversation".to_string())
 }
 
+/// Maximum upload file size: 200 MB
+const MAX_UPLOAD_SIZE: u64 = 200 * 1024 * 1024;
+
 /// Upload a file to the workspace.
 /// Copies the file to workspace/uploads/ and records it in the database.
 /// Returns a JSON object with fileId and fileSize.
@@ -44,13 +47,25 @@ pub async fn upload_file(
 ) -> Result<serde_json::Value, String> {
     let source = Path::new(&file_path);
 
+    // Check file size before copying
+    let source_size = std::fs::metadata(source)
+        .map(|m| m.len())
+        .map_err(|e| format!("Cannot read file: {}", e))?;
+    if source_size > MAX_UPLOAD_SIZE {
+        return Err(format!(
+            "File too large ({:.1} MB). Maximum allowed: {} MB.",
+            source_size as f64 / (1024.0 * 1024.0),
+            MAX_UPLOAD_SIZE / (1024 * 1024),
+        ));
+    }
+
     // Store in workspace
     let info = file_mgr.store_upload(source).map_err(|e| e.to_string())?;
 
     // Record in database with conversation ownership
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_size = info.file_size;
-    db.insert_uploaded_file(
+    if let Err(e) = db.insert_uploaded_file(
         &file_id,
         &conversation_id,
         &info.file_name,
@@ -58,7 +73,12 @@ pub async fn upload_file(
         &info.file_type,
         file_size as i64,
         None,
-    ).map_err(|e| e.to_string())?;
+    ) {
+        // Rollback: delete the physical file if DB insert fails
+        log::error!("DB insert failed for uploaded file, rolling back physical file: {}", e);
+        let _ = file_mgr.delete_file(&info.stored_path);
+        return Err(e.to_string());
+    }
 
     Ok(serde_json::json!({
         "fileId": file_id,
@@ -270,6 +290,8 @@ pub async fn delete_file(
         }
     }
 
-    // TODO: delete from database (need delete_uploaded_file method)
+    // Delete from database
+    db.delete_uploaded_file(&file_id, &conversation_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

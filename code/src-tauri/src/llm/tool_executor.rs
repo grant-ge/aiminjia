@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use chrono::Datelike;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -19,6 +19,7 @@ use crate::llm::streaming::ToolCall;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
 use crate::search::bing::BingClient;
+use crate::search::bocha::BochaClient;
 use crate::search::tavily::TavilyClient;
 use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
@@ -43,6 +44,7 @@ pub struct ToolContext {
     pub workspace_path: PathBuf,
     pub conversation_id: String,
     pub tavily_api_key: Option<String>,
+    pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
 }
 
@@ -55,6 +57,7 @@ impl ToolContext {
             workspace_path: ctx.workspace_path.clone(),
             conversation_id: ctx.conversation_id.clone(),
             tavily_api_key: ctx.tavily_api_key.clone(),
+            bocha_api_key: ctx.bocha_api_key.clone(),
             app_handle: ctx.app_handle.clone(),
         }
     }
@@ -132,7 +135,7 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 // Tool handlers
 // ─────────────────────────────────────────────────
 
-/// 1. web_search — search the web via Bing (free, primary) or Tavily (paid, fallback).
+/// 1. web_search — search the web via Bocha (primary, if key configured), Bing (free fallback), or Tavily (paid fallback).
 pub(crate) async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result<String> {
     let raw_query = require_str(args, "query")?;
     let max_results = optional_i64(args, "max_results", 5) as u32;
@@ -156,7 +159,30 @@ pub(crate) async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result
         format!("{} {}-{}", raw_query, last_year, this_year)
     };
 
-    // 1. Try Bing first (free, no API key needed)
+    // 1. Try Bocha first (if API key is configured)
+    if let Some(api_key) = ctx.bocha_api_key.as_deref() {
+        let bocha = BochaClient::new(api_key.to_string());
+        match bocha.search(&query, max_results).await {
+            Ok(results) if !results.is_empty() => {
+                let mut output = String::new();
+                for (i, result) in results.iter().enumerate() {
+                    output.push_str(&format!(
+                        "{}. **{}**\n   URL: {}\n   {}\n\n",
+                        i + 1, result.title, result.url, result.summary
+                    ));
+                }
+                return Ok(output);
+            }
+            Ok(_) => {
+                info!("Bocha returned empty results, trying Bing fallback");
+            }
+            Err(e) => {
+                info!("Bocha search failed, trying Bing fallback: {}", e);
+            }
+        }
+    }
+
+    // 2. Try Bing (free, no API key needed)
     let bing = BingClient::new();
     match bing.search(&query, max_results).await {
         Ok(results) if !results.is_empty() => {
@@ -177,7 +203,7 @@ pub(crate) async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result
         }
     }
 
-    // 2. Fallback: use Tavily if an API key is available
+    // 3. Fallback: use Tavily if an API key is available
     if let Some(api_key) = ctx.tavily_api_key.as_deref() {
         let tavily = TavilyClient::new(api_key.to_string());
         match tavily.search(&query, true, max_results).await {
@@ -203,8 +229,8 @@ pub(crate) async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result
         }
     }
 
-    // Both Bing and Tavily failed (or Tavily not configured)
-    Ok("[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。".to_string())
+    // All engines failed (or none configured)
+    Err(anyhow!("[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。"))
 }
 
 /// 2. execute_python — run arbitrary Python code.
@@ -242,7 +268,20 @@ pub(crate) async fn handle_execute_python(ctx: &ToolContext, args: &Value) -> Re
                 let fmt = file_meta.get("format").and_then(|v| v.as_str()).unwrap_or("excel");
 
                 let full_path = ctx.workspace_path.join(rel_path);
-                let file_size = std::fs::metadata(&full_path).map(|m| m.len() as i64).unwrap_or(0);
+                // Path traversal guard: resolve symlinks/.. and reject paths outside workspace
+                let canonical = match full_path.canonicalize() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        warn!("[TOOL:execute_python] Skipping __GENERATED_FILE__: path does not exist: {:?}", full_path);
+                        continue;
+                    }
+                };
+                let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+                if !canonical.starts_with(&workspace_canonical) {
+                    error!("[TOOL:execute_python] Path traversal blocked in __GENERATED_FILE__: {:?} escapes workspace {:?}", canonical, workspace_canonical);
+                    continue;
+                }
+                let file_size = std::fs::metadata(&canonical).map(|m| m.len() as i64).unwrap_or(0);
                 let file_id = Uuid::new_v4().to_string();
 
                 if let Err(e) = ctx.db.insert_generated_file(
@@ -2095,6 +2134,7 @@ mod tests {
             workspace_path: workspace,
             conversation_id: "test_conv_1".to_string(),
             tavily_api_key: None,
+            bocha_api_key: None,
             app_handle: None,
         }
     }

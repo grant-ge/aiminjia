@@ -1,0 +1,49 @@
+[[steps]]
+id = "step0"
+name = "分析方向确认"
+prompt = "prompts/step0.md"
+tools_only = ["analyze_file", "save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "any"
+
+[[steps]]
+id = "step1"
+name = "数据清洗"
+prompt = "prompts/step1.md"
+tools_only = ["analyze_file", "execute_python", "save_analysis_note", "update_progress"]
+max_iterations = 15
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step2"
+name = "岗位归一化"
+prompt = "prompts/step2.md"
+tools_only = ["execute_python", "web_search", "save_analysis_note", "update_progress"]
+max_iterations = 15
+token_budget = 8192
+
+[[steps]]
+id = "step3"
+name = "职级推断"
+prompt = "prompts/step3.md"
+tools_only = ["execute_python", "web_search", "save_analysis_note", "update_progress"]
+max_iterations = 15
+token_budget = 8192
+
+[[steps]]
+id = "step4"
+name = "公平性诊断"
+prompt = "prompts/step4.md"
+tools_only = ["execute_python", "hypothesis_test", "detect_anomalies", "generate_chart", "save_analysis_note", "update_progress"]
+max_iterations = 20
+token_budget = 8192
+
+[[steps]]
+id = "step5"
+name = "行动方案"
+prompt = "prompts/step5.md"
+tools_only = ["execute_python", "generate_report", "generate_chart", "export_data", "save_analysis_note", "update_progress"]
+max_iterations = 15
+token_budget = 8192

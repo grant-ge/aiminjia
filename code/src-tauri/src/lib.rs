@@ -74,6 +74,9 @@ pub fn run() {
             // Auto-cleanup old log files (> 7 days)
             cleanup_old_logs(&logs_dir, 7);
 
+            // Cleanup stale temp files from previous sessions (code_*.py)
+            cleanup_temp_dir(&fm_path.join("temp"));
+
             // Initialize secure storage for API key encryption
             let secure_storage: Option<Arc<storage::crypto::SecureStorage>> =
                 match storage::crypto::SecureStorage::new(&app_data_dir) {
@@ -292,5 +295,33 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, retention_days: u64) {
                 }
             }
         }
+    }
+}
+
+/// Remove stale Python temp files (code_*.py) from the workspace temp directory.
+///
+/// These files are normally cleaned up after each execution, but if the app
+/// crashes or is force-quit during Python execution, temp files may be left behind.
+fn cleanup_temp_dir(temp_dir: &std::path::Path) {
+    let entries = match std::fs::read_dir(temp_dir) {
+        Ok(e) => e,
+        Err(_) => return, // Directory doesn't exist yet — fine
+    };
+
+    let mut count = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("code_") && name.ends_with(".py") {
+                    if std::fs::remove_file(&path).is_ok() {
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    if count > 0 {
+        eprintln!("Cleaned up {} stale temp Python files", count);
     }
 }

@@ -24,6 +24,7 @@ export interface Settings {
   tempFileRetentionDays: number // default 7
   keepOldVersions: number // default 1
   tavilyApiKey: string
+  bochaApiKey: string
 
   // Custom model config
   customModelEndpoint: string
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tempFileRetentionDays: 7,
   keepOldVersions: 1,
   tavilyApiKey: '',
+  bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
 }

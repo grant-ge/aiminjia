@@ -8,3 +8,4 @@ pub mod streaming;
 pub mod prompts;
 pub mod prompt_guard;
 pub mod orchestrator;
+pub mod checkpoint;

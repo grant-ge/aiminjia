@@ -13,5 +13,6 @@ pub struct PluginContext {
     pub workspace_path: PathBuf,
     pub conversation_id: String,
     pub tavily_api_key: Option<String>,
+    pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
 }

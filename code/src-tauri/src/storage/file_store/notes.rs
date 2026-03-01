@@ -95,6 +95,54 @@ pub fn get_memories_by_prefix(
     Ok(results)
 }
 
+/// Delete all enterprise memory entries whose key starts with the given prefix.
+///
+/// Uses the JSONL last-writer-wins mechanism: appends entries with `deleted: true`.
+/// Returns the number of entries marked as deleted.
+pub fn delete_memories_by_prefix(
+    base_dir: &Path,
+    prefix: &str,
+) -> StorageResult<usize> {
+    let entries = read_all_memory_entries(base_dir)?;
+
+    // Build latest state: last-writer-wins per key
+    let mut latest: HashMap<String, MemoryEntry> = HashMap::new();
+    for entry in entries {
+        if entry.key.starts_with(prefix) {
+            latest.insert(entry.key.clone(), entry);
+        }
+    }
+
+    // Find non-deleted keys to mark as deleted
+    let to_delete: Vec<String> = latest
+        .into_values()
+        .filter(|e| !e.deleted)
+        .map(|e| e.key)
+        .collect();
+
+    if to_delete.is_empty() {
+        return Ok(0);
+    }
+
+    let count = to_delete.len();
+    let path = memory_path(base_dir);
+    let now = Utc::now().to_rfc3339();
+
+    for key in &to_delete {
+        let entry = MemoryEntry {
+            key: key.clone(),
+            value: String::new(),
+            source: Some("system_cleanup".to_string()),
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            deleted: true,
+        };
+        append_jsonl_with_split(&path, &entry, MEMORY_MAX_BYTES)?;
+    }
+
+    Ok(count)
+}
+
 // ─── Per-conversation Notes ──────────────────────────────────────────────────
 
 /// Save a note for a conversation.
@@ -210,5 +258,36 @@ mod tests {
         let read = read_note(&base, "c1", "step1_summary").unwrap();
         assert!(read.is_some());
         assert_eq!(read.unwrap()["summary"], "Step 1 completed");
+    }
+
+    #[test]
+    fn test_delete_memories_by_prefix() {
+        let (base, _dir) = setup();
+
+        set_memory(&base, "note:c1:step1", "data1", None).unwrap();
+        set_memory(&base, "note:c1:step2", "data2", None).unwrap();
+        set_memory(&base, "note:c1:active_skill", "comp-analysis", None).unwrap();
+        set_memory(&base, "note:c2:step1", "other", None).unwrap();
+
+        // Delete all c1 notes
+        let count = delete_memories_by_prefix(&base, "note:c1:").unwrap();
+        assert_eq!(count, 3);
+
+        // c1 notes should be gone
+        let results = get_memories_by_prefix(&base, "note:c1:").unwrap();
+        assert!(results.is_empty());
+
+        // c2 notes should be unaffected
+        let results = get_memories_by_prefix(&base, "note:c2:").unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_delete_memories_by_prefix_empty() {
+        let (base, _dir) = setup();
+
+        // Deleting non-existent prefix should return 0
+        let count = delete_memories_by_prefix(&base, "note:nonexistent:").unwrap();
+        assert_eq!(count, 0);
     }
 }

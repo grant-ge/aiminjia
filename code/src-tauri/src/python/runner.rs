@@ -139,18 +139,21 @@ impl PythonRunner {
         let mut child_stderr = child.stderr.take();
 
         // Wait with timeout
+        // Limit reads to max_output_bytes + 1KB margin to prevent OOM from
+        // malicious or runaway Python scripts producing gigabytes of output.
+        let read_limit = (self.sandbox.max_output_bytes as u64) + 1024;
         let result = tokio::time::timeout(timeout, async {
             let stdout_handle = async {
                 let mut buf = Vec::new();
                 if let Some(ref mut stdout) = child_stdout {
-                    let _ = stdout.read_to_end(&mut buf).await;
+                    let _ = stdout.take(read_limit).read_to_end(&mut buf).await;
                 }
                 buf
             };
             let stderr_handle = async {
                 let mut buf = Vec::new();
                 if let Some(ref mut stderr) = child_stderr {
-                    let _ = stderr.read_to_end(&mut buf).await;
+                    let _ = stderr.take(read_limit).read_to_end(&mut buf).await;
                 }
                 buf
             };

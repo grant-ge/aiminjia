@@ -20,6 +20,7 @@ interface SettingsState extends Settings {
   setWorkspacePath: (path: string) => void
   setAutoModelRouting: (enabled: boolean) => void
   setTavilyApiKey: (key: string) => void
+  setBochaApiKey: (key: string) => void
   setCustomModelEndpoint: (endpoint: string) => void
   setCustomModelName: (name: string) => void
   setConfiguredProviders: (providers: LlmProvider[]) => void
@@ -42,6 +43,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAutoModelRouting: (autoModelRouting) => set({ autoModelRouting }),
 
   setTavilyApiKey: (tavilyApiKey) => set({ tavilyApiKey }),
+
+  setBochaApiKey: (bochaApiKey) => set({ bochaApiKey }),
 
   setCustomModelEndpoint: (customModelEndpoint) => set({ customModelEndpoint }),
 

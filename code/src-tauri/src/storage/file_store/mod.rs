@@ -301,6 +301,12 @@ impl AppStorage {
         Ok(())
     }
 
+    pub fn delete_uploaded_file(&self, id: &str, conversation_id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        files::delete_uploaded_file(&self.base_dir, id, conversation_id)?;
+        Ok(())
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Uploaded Files
     // ═══════════════════════════════════════════════════════════════════════
@@ -430,6 +436,11 @@ impl AppStorage {
 
     pub fn get_memories_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>> {
         Ok(notes::get_memories_by_prefix(&self.base_dir, prefix)?)
+    }
+
+    pub fn delete_memories_by_prefix(&self, prefix: &str) -> Result<usize> {
+        let _lock = self.write_lock.lock().unwrap();
+        Ok(notes::delete_memories_by_prefix(&self.base_dir, prefix)?)
     }
 
     // ═══════════════════════════════════════════════════════════════════════

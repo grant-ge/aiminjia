@@ -37,6 +37,9 @@ pub struct StepConfig {
     pub requires_confirmation: bool,
     /// Token budget for LLM output.
     pub token_budget: u32,
+    /// Display names for all workflow steps, used by analysis_notes_context.
+    /// Each entry is (step_number, display_name).
+    pub step_display_names: Vec<(u32, String)>,
 }
 
 /// Status of the current analysis step.
@@ -203,6 +206,14 @@ pub fn build_step_config(step: u32) -> StepConfig {
         },
         requires_confirmation: true, // all steps need user confirmation
         token_budget: 8192, // analysis steps need more output room
+        step_display_names: vec![
+            (0, "分析方向确认".to_string()),
+            (1, "数据清洗".to_string()),
+            (2, "岗位归一化".to_string()),
+            (3, "职级推断".to_string()),
+            (4, "公平性诊断".to_string()),
+            (5, "行动方案".to_string()),
+        ],
     }
 }
 
@@ -573,7 +584,9 @@ mod tests {
     fn test_step_config_has_correct_prompt() {
         let config = build_step_config(1);
         assert_eq!(config.step, 1);
-        assert!(config.system_prompt.contains("Step 1"));
+        // Step prompts are now in the declarative plugin;
+        // build_step_config returns base + date only.
+        assert!(!config.system_prompt.is_empty());
         assert!(config.requires_confirmation);
     }
 
@@ -601,7 +614,9 @@ mod tests {
         assert_eq!(config.step, 0);
         assert_eq!(config.max_iterations, 5);
         assert!(config.requires_confirmation);
-        assert!(config.system_prompt.contains("分析方向确认"));
+        // Step prompts are now in the declarative plugin;
+        // build_step_config returns base + date only.
+        assert!(!config.system_prompt.is_empty());
     }
 
     #[test]

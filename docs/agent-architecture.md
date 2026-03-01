@@ -20,6 +20,7 @@
 12. [崩溃恢复](#12-崩溃恢复)
 13. [Python 沙箱](#13-python-沙箱)
 14. [搜索引擎](#14-搜索引擎)
+15. [安全加固与资源管理](#15-安全加固与资源管理)
 
 ---
 
@@ -275,29 +276,41 @@ agent_loop(StepConfig)
               └─ cancel 信号 → 立即退出
 ```
 
-### 4.2 上下文重置与自动捕获
+### 4.2 上下文重置与三层保障
 
-**步骤切换时（`StartAnalysis` / `AdvanceStep`）**，消息列表从零构建，但在清除前自动捕获上下文：
+**步骤切换时（`StartAnalysis` / `AdvanceStep`）**，消息列表从零构建，但在清除前通过三层机制保留上下文：
 
 ```
-旧步骤 (Step N)                    自动捕获                     新步骤 (Step N+1)
-─────────────────                  ──────────                  ─────────────────
-System Prompt (Step N)             auto_capture_step_context()  System Prompt (Step N+1)  ← 新的
-User Message 1                     → 提取最后 assistant 结论    [前序分析记录]            ← 从 memory.jsonl 注入
-Tool Call: analyze_file            → 提取 execute_python 输出       (按步骤分组 + 压缩)
-Tool Result: {...}                 → 存为 step{N}_auto_context  User: "确认，继续"
-Assistant: "数据清洗完成..."                                    Assistant: "前 N 步分析已完成..."
-User: "确认"                       ※ 随后消息历史清空
+旧步骤 (Step N)                    三层保障                         新步骤 (Step N+1)
+─────────────────                  ──────────                      ─────────────────
+System Prompt (Step N)             ① checkpoint_extract()           System Prompt (Step N+1)  ← 新的
+User Message 1                        → Skill 提供 extract prompt   [前序分析记录]            ← 从 memory.jsonl 注入
+Tool Call: analyze_file                → 非流式 LLM 调用提取结构化       (checkpoint 优先 > summary > auto)
+Tool Result: {...}                     → 存为 step{N}_checkpoint
+Assistant: "数据清洗完成..."        ② auto_capture_step_context()   User: "确认，继续"
+User: "确认"                           → 提取最后 assistant 结论    Assistant: "前 N 步分析已完成..."
+                                       → 提取 execute_python 输出
+                                       → 存为 step{N}_auto_context
+                                   ③ save_analysis_note (LLM 主动)
+                                       → 分析过程中已保存
+                                   ※ 随后消息历史清空
 ```
 
-**auto_capture_step_context** (`chat.rs`): 在消息历史清除前，自动提取当前步骤的关键输出并保存为 `note:{conv_id}:step{N}_auto_context`（最大 6000 字符，最多 5 个工具输出各 1500 字符，2 条 assistant 消息），作为 LLM 主动调用 `save_analysis_note` 的安全兜底。
+**Layer 1: checkpoint_extract** (`llm/checkpoint.rs`): 步骤切换时，使用 Skill 提供的 extract prompt（通过 `Skill::extract_prompt(step_id)` 获取）发起独立非流式 LLM 调用，提取结构化 `StepCheckpoint` JSON（summary / key_findings / data_artifacts / decisions / next_step_input）。30 秒超时，失败降级到 Layer 2/3。声明式 Skill 的 extract prompt 从插件目录 `prompts/extract/base_extract.md` + `prompts/extract/extract_{step_id}.md` 加载。如果 Skill 未提供 extract prompt（两个部分均为空），则跳过提取。
+
+**Layer 2: auto_capture_step_context** (`chat.rs`): 在消息历史清除前，自动提取当前步骤的关键输出并保存为 `note:{conv_id}:step{N}_auto_context`（最大 6000 字符，最多 5 个工具输出各 1500 字符，2 条 assistant 消息），作为 checkpoint 失败时的安全兜底。
+
+**Layer 3: save_analysis_note** (LLM 主动): 分析过程中 LLM 通过工具主动保存 `step{N}_summary`，作为补充。
 
 ### 4.3 记忆传递机制
 
-跨步骤的关键结论通过**双通道**传递到后续步骤的系统提示词：
+跨步骤的关键结论通过**三层优先级**传递到后续步骤的系统提示词：
 
-1. **LLM 主动保存**（`save_analysis_note` → `step{N}_summary`）— 高质量结构化摘要
-2. **系统自动捕获**（`auto_capture_step_context` → `step{N}_auto_context`）— 兜底，防止 LLM 遗漏
+1. **Checkpoint 提取**（`checkpoint_extract` → `step{N}_checkpoint`）— 最高优先级，结构化 JSON（StepCheckpoint），使用字段级衰减
+2. **LLM 主动保存**（`save_analysis_note` → `step{N}_summary`）— 高质量结构化摘要
+3. **系统自动捕获**（`auto_capture_step_context` → `step{N}_auto_context`）— 兜底，防止 LLM 遗漏
+
+注入时按 **checkpoint > summary > auto_context** 优先级选择（同一步骤只选最高优先级来源）。Checkpoint 的 `summary`/`key_findings`/`next_step_input` 永不截断，`data_artifacts` 对远步骤衰减到 2000 字符。步骤显示名称从 Skill 的 `workflow()` 定义获取。
 
 ```
 Step 1 (数据清洗)                              memory.jsonl
@@ -525,43 +538,52 @@ pub async fn execute(&self, name: &str, ctx: &PluginContext, args: Value) -> Res
 ### 7.1 组合结构
 
 ```
-get_system_prompt(step: Option<u32>) → String
+Skill::system_prompt(state) → String
     │
-    ├─ SYSTEM_PROMPT_BASE                 (始终包含)
-    │   · 角色定义：组织咨询顾问 + 智能工作助手
-    │   · 核心专长：薪酬公平性分析方法论
-    │   · 可用工具说明
-    │   · 数据真实性铁律（6 条）
-    │   · 输出格式模板
-    │   · Python 环境说明
-    │   · 文件命名规则
+    ├─ 声明式 Skill（从插件目录加载）
+    │   ├─ [app_base]           prompts/base.md（可选，include_app_base=true）
+    │   ├─ [plugin_base]        plugins/{id}/base.md
+    │   ├─ [step_prompt]        plugins/{id}/prompts/step{N}.md
+    │   └─ [日期注入]           【当前时间】今天是 YYYY年MM月DD日（YYYY-MM-DD）
     │
-    └─ 模式专属提示词                     (二选一)
-         │
-         ├─ step=None  → SYSTEM_PROMPT_DAILY
-         │   · 4 大工作场景（数据处理/HR 咨询/文档/翻译）
-         │   · 应答策略
-         │
-         ├─ step=Some(0) → SYSTEM_PROMPT_STEP0
-         │   · 文件识别 + 方向确认
-         │
-         ├─ step=Some(1) → SYSTEM_PROMPT_STEP1
-         │   · 8 步数据清洗流程
-         │
-         ├─ step=Some(2) → SYSTEM_PROMPT_STEP2
-         │   · 5 部分岗位归一化
-         │
-         ├─ step=Some(3) → SYSTEM_PROMPT_STEP3
-         │   · 三阶段职级推断（IPE 模型）
-         │
-         ├─ step=Some(4) → SYSTEM_PROMPT_STEP4
-         │   · 6 维公平性诊断
-         │
-         └─ step=Some(5) → SYSTEM_PROMPT_STEP5
-              · 三档调薪 + 报告生成
+    └─ Legacy 路径（仅无 Skill 匹配时）
+        ├─ SYSTEM_PROMPT_BASE   (始终包含)
+        │   · 角色定义：组织咨询顾问 + 智能工作助手
+        │   · 核心专长：薪酬公平性分析方法论
+        │   · 可用工具说明
+        │   · 数据真实性铁律（6 条）
+        │   · 输出格式模板
+        │   · Python 环境说明
+        │   · 文件命名规则
+        │
+        └─ 模式专属提示词 + 日期注入
+             │
+             ├─ step=None  → SYSTEM_PROMPT_DAILY + 【当前时间】
+             │   · 4 大工作场景（数据处理/HR 咨询/文档/翻译）
+             │
+             └─ step=Some(N) → 由 Skill 提供
 ```
 
-### 7.2 数据真实性铁律
+薪酬分析的 6 步提示词现由 `plugins/comp-analysis/prompts/step{0-5}.md` 提供，不再硬编码在 `prompts.rs` 中。
+
+**日期注入**：所有 LLM 调用路径均注入当前日期，格式为 `【当前时间】今天是 YYYY年MM月DD日（YYYY-MM-DD）。你的回答中涉及时间时，以此日期为准。` 使用醒目的中文格式 + ISO 格式双重展示，防止 LLM 使用训练数据截止日期（如 2024 年 6 月）作为"当前时间"。注入点：
+- `prompts.rs:get_system_prompt()` — 日常模式 + legacy 分析模式
+- `declarative_skill.rs:system_prompt()` — 声明式 Skill
+- `checkpoint.rs:do_extract()` — 检查点提取的非流式 LLM 调用
+
+### 7.2 Extract Prompts（检查点提取专用）
+
+```
+Skill::extract_prompt(step_id) → (base, step_specific)
+    │
+    └─ 声明式 Skill 从插件目录加载:
+        ├─ base:          plugins/{id}/prompts/extract/base_extract.md
+        └─ step_specific: plugins/{id}/prompts/extract/extract_{step_id}.md
+```
+
+Extract prompts 仅在步骤切换时由 `checkpoint_extract()` 使用，引导 LLM 提取结构化 `StepCheckpoint` JSON。未提供 extract prompt 的 Skill 将跳过 checkpoint 提取。
+
+### 7.3 数据真实性铁律
 
 嵌入在 `SYSTEM_PROMPT_BASE` 中，适用于所有模式：
 
@@ -576,7 +598,7 @@ get_system_prompt(step: Option<u32>) → String
 6. 不得手动改写数据表格
 ```
 
-### 7.3 分析方向注入
+### 7.4 分析方向注入
 
 Step 0 保存的 `analysis_direction` 通过 `save_analysis_note` 写入 `memory.jsonl`，在后续步骤的系统提示词构建时作为 `[前序分析记录]` 注入：
 
@@ -897,24 +919,32 @@ next_action()
 
 ### 13.1 安全边界
 
-**禁止的模块**：
+**三层防御**：
+
+1. **静态检查**（`sandbox::validate_code()`）：模式匹配扫描禁止模块/函数
+2. **运行时 Import Hook**（Preamble 注入）：劫持 `builtins.__import__`，在 Python 进程内实时拦截动态导入
+3. **路径转义**（`parser.rs`）：所有文件路径参数使用 `py_escape()` 防注入
+
+**禁止的模块**（9 个）：
 ```
-subprocess, socket, http, urllib, requests, shutil
+subprocess, socket, http, urllib, requests, shutil, ctypes, importlib, code
 ```
 
-**禁止的函数调用**：
+**禁止的函数调用**（13 个）：
 ```
-exec(), eval(), compile(), os.system(), os.popen(), os.exec*()
+exec(), eval(), compile(), __import__(),
+os.system(), os.popen(), os.exec*(), os.spawn*(),
+os.kill(), os.remove(), os.rmdir(), os.unlink(), shutil.rmtree()
 ```
 
-**验证方式**：`sandbox::validate_code()` 对用户代码进行模式匹配检查，发现禁止模块/函数即拒绝执行。
+**验证方式**：`sandbox::validate_code()` 对 LLM 生成的代码进行模式匹配检查，发现禁止模块/函数即拒绝执行。运行时 import hook 作为第二道防线，捕获 `importlib.import_module()` 等绕过静态检查的动态导入。
 
 ### 13.2 执行约束
 
 | 约束 | 值 | 说明 |
 |------|----|------|
 | 超时 | 30 秒 | 防止死循环/长时间计算 |
-| 输出上限 | 1 MB | 防止内存耗尽 |
+| 输出上限 | 1 MB | stdout/stderr `take()` 硬限制，防止 OOM |
 | 内存限制 | 512 MB | 建议值 |
 | 递归深度 | 2000 | preamble 中设置 |
 
@@ -925,10 +955,20 @@ exec(), eval(), compile(), os.system(), os.popen(), os.exec*()
 **Part 1（动态）**：
 ```python
 # -*- coding: utf-8 -*-          # 源文件编码声明
-import sys, os
+import sys, os, builtins
 sys.stdout.reconfigure(encoding='utf-8')  # Windows GBK 兼容
 sys.setrecursionlimit(2000)
 os.chdir("{workspace_path}")
+
+# Runtime import hook — intercepts forbidden modules at import time
+_original_import = builtins.__import__
+_BLOCKED = {'subprocess', 'socket', 'http', 'urllib', 'requests', 'shutil', 'ctypes', 'importlib', 'code'}
+def _safe_import(name, *args, **kwargs):
+    top = name.split('.')[0]
+    if top in _BLOCKED:
+        raise ImportError(f"Module '{name}' is blocked by security policy")
+    return _original_import(name, *args, **kwargs)
+builtins.__import__ = _safe_import
 ```
 
 **Part 2（静态，预加载工具函数）**：
@@ -987,14 +1027,45 @@ resolve_python_path()
          ├─ 是 → Tavily AI 搜索（付费，高质量增强）
          │         │
          │         ├─ 成功 → 返回结果
-         │         └─ 失败 → 返回友好错误信息
+         │         └─ 失败 → 返回 ToolError（is_error=true）
          │
-         └─ 否 → 返回友好错误信息
+         └─ 否 → 返回 ToolError（is_error=true）
 ```
+
+> 搜索全部失败时返回 `Err()`（`is_error=true`），LLM 会看到工具执行失败，
+> 不会误将错误信息当作搜索结果使用。
 
 ### 14.2 缓存机制
 
 搜索结果缓存在 `{base_dir}/shared/cache/{hash}.json`，TTL 7 天。相同查询在缓存有效期内直接返回，避免重复请求。
+
+---
+
+## 15. 安全加固与资源管理
+
+### 15.1 路径安全
+
+| 防护点 | 机制 | 位置 |
+|--------|------|------|
+| Python 代码中的文件路径 | `py_escape()` 转义单引号和反斜杠 | `parser.rs` |
+| `__GENERATED_FILE__` 注册 | `canonicalize()` + `starts_with(workspace)` 阻止路径穿越 | `tool_executor.rs` |
+| 文件上传 | 200 MB 大小限制 + DB 失败时回滚物理文件 | `file.rs` |
+
+### 15.2 资源防护
+
+| 资源 | 防护机制 | 位置 |
+|------|----------|------|
+| Python stdout/stderr | `take(max_output_bytes + 1KB)` 硬限制 | `runner.rs` |
+| 工具结果上下文 | 8 KB/条截断，防 LLM 上下文膨胀 | `chat.rs` |
+| Tavily HTTP 请求 | 30s 超时 | `tavily.rs` |
+| 临时 Python 文件 | 启动时清理 `code_*.py` 残留 | `lib.rs` |
+| Markdown 渲染缓存 | 200 条 LRU-like 限制 | `markdown.ts` |
+
+### 15.3 Agent Loop 可靠性
+
+- **事件去重**：`streaming:done` 仅由 `AgentGuard::clear()` 发出（RAII 单点），错误路径不再重复发送
+- **工具间取消检查**：每个工具执行完成后检查 `cancel_rx`，避免等待所有排队工具完成
+- **文件删除完整性**：`delete_file` 同时清理物理文件和数据库记录
 
 ---
 
@@ -1010,7 +1081,10 @@ resolve_python_path()
 | LLM 流式请求 | `llm/gateway.rs:stream_message` |
 | PII 脱敏 | `llm/masking.rs:mask_text` / `unmask` |
 | 模型路由 | `llm/router.rs` |
-| 系统提示词组合 | `llm/prompts.rs:get_system_prompt` |
+| 系统提示词组合 | `llm/prompts.rs:get_system_prompt`（legacy），`plugin/declarative_skill.rs`（声明式 Skill） |
+| 步骤检查点提取 | `llm/checkpoint.rs:checkpoint_extract` |
+| Extract Prompt 加载 | `plugin/declarative_skill.rs:extract_prompt`（从插件 `prompts/extract/` 目录加载） |
+| 步骤显示名称 | `StepConfig.step_display_names`（从 `Skill::workflow()` 填充） |
 | 工具注册与执行 | `plugin/registry.rs:ToolRegistry` |
 | 工具 Schema 过滤 | `plugin/registry.rs:get_schemas_filtered` |
 | 内置工具实现 | `plugin/builtin/tools/` |
@@ -1021,6 +1095,9 @@ resolve_python_path()
 | HTML 报告生成 | `plugin/builtin/tools/generate_report.rs` |
 | 崩溃恢复扫描 | `lib.rs`（启动时） |
 | Agent 守卫清理 | `commands/chat.rs:AgentGuard::clear` / `Drop` |
+| 路径穿越校验 | `llm/tool_executor.rs:handle_execute_python` (`__GENERATED_FILE__`) |
+| 运行时 Import Hook | `python/sandbox.rs:preamble` (`_safe_import`) |
+| 临时文件清理 | `lib.rs:cleanup_temp_dir` |
 | 搜索（Bing） | `search/bing.rs` |
 | 搜索（Tavily） | `search/tavily.rs` |
 
@@ -1045,4 +1122,8 @@ resolve_python_path()
 | 消息分片阈值 | 100 条/片 | `file_store/messages.rs` | JSONL 分片 |
 | 审计日志分片 | 2MB/片 | `file_store/audit.rs` | |
 | 记忆分片 | 1MB/片 | `file_store/notes.rs` | |
-| HTTP 连接超时 | 30s | Provider `build_http_client()` | |
+| `HTTP 连接超时` | 30s | Provider `build_http_client()` | |
+| `MAX_TOOL_RESULT_CHARS` | 8000 | `chat.rs` | 工具结果截断，防上下文膨胀 |
+| `MAX_UPLOAD_SIZE` | 200 MB | `file.rs` | 上传文件大小限制 |
+| `MAX_CACHE_ENTRIES` | 200 | `markdown.ts` | Markdown→HTML 缓存条目上限 |
+| `MAX_HISTORY_MESSAGES` | 30 | `chat.rs` | 滑动窗口历史消息数 |

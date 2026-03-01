@@ -69,6 +69,18 @@ pub struct WorkflowStep {
     pub id: String,
     pub display_name: String,
     pub requires_confirmation: bool,
+    #[serde(default)]
+    pub advance_on: AdvanceMode,
+}
+
+/// How a step decides to advance to the next step.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum AdvanceMode {
+    /// Any non-abort reply advances to next step.
+    Any,
+    /// Requires confirmation keyword to advance (default).
+    #[default]
+    Confirm,
 }
 
 /// Model preference for a Skill.
@@ -160,6 +172,57 @@ pub trait Skill: Send + Sync + 'static {
         StepAction::WaitForUser
     }
 
+    /// Extract prompt for checkpoint extraction at step boundaries.
+    /// Returns (base_extract_prompt, step_specific_prompt).
+    /// Default: empty (checkpoint will skip extraction).
+    fn extract_prompt(&self, _step_id: &str) -> (String, String) {
+        (String::new(), String::new())
+    }
+
     /// Called when the Skill is deactivated.
     fn on_deactivate(&self, _state: &SkillState) {}
+}
+
+// ── Shared keyword detection ──
+
+/// Strip trailing punctuation and lowercase for keyword matching.
+fn normalize_for_keyword(text: &str) -> String {
+    text.trim()
+        .trim_end_matches(|c: char| {
+            matches!(c, '.' | '!' | '?' | '。' | '！' | '？' | '~' | '～' | '，' | ',' | '、')
+        })
+        .to_lowercase()
+}
+
+/// Check if the user message is a confirmation keyword (exact match, max 20 chars).
+pub fn is_confirm_keyword(text: &str) -> bool {
+    if text.trim().chars().count() > 20 {
+        return false;
+    }
+    let stripped = normalize_for_keyword(text);
+    const PHRASES: &[&str] = &[
+        "确认", "继续", "好的", "可以", "没问题", "好", "行", "对",
+        "是的", "确定", "通过", "下一步", "继续吧", "没有问题", "同意",
+        "好的好的", "可以可以", "好的继续",
+        "好的，继续", "可以，下一步", "可以，继续",
+        "ok", "okay", "yes", "proceed", "continue", "confirm", "next",
+        "lgtm", "looks good",
+        "开始", "开始分析", "开始吧", "start",
+    ];
+    PHRASES.iter().any(|p| stripped == *p)
+}
+
+/// Check if the user message is an abort keyword (exact match, max 20 chars).
+pub fn is_abort_keyword(text: &str) -> bool {
+    if text.trim().chars().count() > 20 {
+        return false;
+    }
+    let stripped = normalize_for_keyword(text);
+    const PHRASES: &[&str] = &[
+        "算了", "不分析了", "取消", "取消分析", "退出", "退出分析",
+        "停止", "停止分析", "不做了", "不用了", "算了吧", "放弃",
+        "cancel", "abort", "stop", "exit", "quit", "nevermind",
+        "no", "no thanks", "don't analyze", "skip",
+    ];
+    PHRASES.iter().any(|p| stripped == *p)
 }

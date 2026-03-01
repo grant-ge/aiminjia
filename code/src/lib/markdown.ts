@@ -178,8 +178,28 @@ function renderCodeBlock(lines: string[], lang: string): string {
  * This is a lightweight, purpose-built renderer — not a full CommonMark
  * implementation. It handles the subset of markdown that LLMs typically
  * produce in data analysis output.
+ *
+ * Results are memoized to avoid redundant re-rendering on React re-renders.
  */
+const _htmlCache = new Map<string, string>()
+const MAX_CACHE_ENTRIES = 200
+
 export function markdownToHtml(md: string): string {
+  const cached = _htmlCache.get(md)
+  if (cached !== undefined) return cached
+
+  const html = _markdownToHtmlImpl(md)
+
+  // Evict oldest entries when cache exceeds limit
+  if (_htmlCache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = _htmlCache.keys().next().value
+    if (firstKey !== undefined) _htmlCache.delete(firstKey)
+  }
+  _htmlCache.set(md, html)
+  return html
+}
+
+function _markdownToHtmlImpl(md: string): string {
   const lines = md.split('\n')
   const output: string[] = []
   let i = 0

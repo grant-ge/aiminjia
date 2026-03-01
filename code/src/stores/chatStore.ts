@@ -171,6 +171,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!prev) {
         return {} // Nothing to clear
       }
+      // Skip no-op updates to avoid unnecessary re-renders.
+      // This happens when message:updated already cleared the state
+      // and streaming:done / agent:idle fires afterwards.
+      if (!prev.isStreaming && prev.streamingContent === '') {
+        return {}
+      }
       // Reset streaming state but preserve toolExecutions so that late-arriving
       // tool:completed events don't create orphan entries.
       const streamStates = {

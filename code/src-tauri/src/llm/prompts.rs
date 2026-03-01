@@ -16,9 +16,7 @@ use std::sync::{LazyLock, RwLock};
 const BASE_FALLBACK: &str = "你是 AI小家 — 组织咨询专家和智能工作助手。";
 
 /// All recognized prompt names.
-const PROMPT_NAMES: &[&str] = &[
-    "base", "daily", "step0", "step1", "step2", "step3", "step4", "step5",
-];
+const PROMPT_NAMES: &[&str] = &["base", "daily"];
 
 /// Source from which a prompt was loaded (for logging).
 #[derive(Debug, Clone, Copy)]
@@ -160,29 +158,34 @@ pub fn reload_prompts() {
     guard.reload();
 }
 
+/// Get the base prompt content (for plugin composition).
+pub fn get_base_prompt() -> String {
+    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+    guard.get("base").to_string()
+}
+
 /// Compose the full system prompt by combining BASE + mode-specific prompt.
 ///
 /// - `step = None` → daily consultation mode (BASE + DAILY)
-/// - `step = Some(0..=5)` → analysis step mode (BASE + STEP_N)
+/// - `step = Some(_)` → analysis mode (BASE + date only; step prompts are in the plugin)
 pub fn get_system_prompt(step: Option<u32>) -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
 
     let base = guard.get("base");
     let mode_key = match step {
-        None => "daily",
-        Some(0) => "step0",
-        Some(1) => "step1",
-        Some(2) => "step2",
-        Some(3) => "step3",
-        Some(4) => "step4",
-        Some(5) => "step5",
-        Some(_) => "daily", // fallback
+        None => Some("daily"),
+        Some(_) => None, // step prompts now live in the declarative plugin
     };
-    let mode_prompt = guard.get(mode_key);
+    let mode_prompt = mode_key.map(|k| guard.get(k)).unwrap_or("");
 
-    // Inject current date so the LLM knows "today"
-    let today = chrono::Local::now().format("%Y-%m-%d");
-    let date_line = format!("\n\n当前日期：{}", today);
+    // Inject current date prominently so the LLM knows "today"
+    let now = chrono::Local::now();
+    let today = now.format("%Y年%m月%d日");
+    let today_iso = now.format("%Y-%m-%d");
+    let date_line = format!(
+        "\n\n【当前时间】今天是 {}（{}）。你的回答中涉及时间时，以此日期为准。",
+        today, today_iso
+    );
 
     if mode_prompt.is_empty() {
         format!("{}{}", base, date_line)
@@ -289,31 +292,26 @@ mod tests {
         setup_prompts(&bundled, &[
             ("base", "AI小家 base"),
             ("daily", "日常工作助手"),
-            ("step0", "分析方向确认"),
-            ("step1", "数据清洗"),
-            ("step2", "岗位归一化"),
-            ("step3", "职级推断"),
-            ("step4", "公平性诊断"),
-            ("step5", "行动方案"),
         ]);
         fs::create_dir_all(&user).unwrap();
 
         init_prompts(&bundled, &user);
 
-        // All step variants work
+        // Daily mode works
         assert!(get_system_prompt(None).contains("日常工作助手"));
-        assert!(get_system_prompt(Some(0)).contains("分析方向确认"));
-        assert!(get_system_prompt(Some(1)).contains("数据清洗"));
-        assert!(get_system_prompt(Some(2)).contains("岗位归一化"));
-        assert!(get_system_prompt(Some(3)).contains("职级推断"));
-        assert!(get_system_prompt(Some(4)).contains("公平性诊断"));
-        assert!(get_system_prompt(Some(5)).contains("行动方案"));
 
-        // Invalid step falls back to daily
-        assert!(get_system_prompt(Some(99)).contains("日常工作助手"));
+        // Step variants return base + date only (step prompts are in plugins now)
+        let step0 = get_system_prompt(Some(0));
+        assert!(step0.contains("AI小家 base"));
+        assert!(!step0.contains("日常工作助手"));
+
+        // Invalid step also returns base only
+        let step99 = get_system_prompt(Some(99));
+        assert!(step99.contains("AI小家 base"));
+        assert!(!step99.contains("日常工作助手"));
 
         // Base always included
-        for step in [None, Some(0), Some(1), Some(2), Some(3), Some(4), Some(5)] {
+        for step in [None, Some(0), Some(1), Some(5)] {
             assert!(
                 get_system_prompt(step).contains("AI小家 base"),
                 "Step {:?} should include base prompt",
