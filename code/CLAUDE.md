@@ -35,10 +35,10 @@ code/
 │       │   ├── manifest.rs       # plugin.toml / workflow.toml 解析
 │       │   ├── declarative_skill.rs # TOML 声明式 Skill 加载器
 │       │   ├── python_bridge.rs  # Python → ToolPlugin 适配
-│       │   └── builtin/          # 内置 tools（10 个）+ skills（2 个）
+│       │   └── builtin/          # 内置 tools（10 个）+ skills（daily_assistant）
 │       ├── llm/                  # gateway, router, providers/, masking, streaming,
 │       │                         # prompts, orchestrator (步骤状态管理)
-│       ├── search/               # bing (免费，默认优先), tavily (付费增强/降级)
+│       ├── search/               # searxng (免费，默认优先), bocha/tavily (付费增强/降级)
 │       ├── storage/              # file_store (JSON/JSONL), crypto, workspace, file_manager
 │       ├── python/               # runner, parser, sandbox
 │       └── models/               # conversation, message, analysis, settings

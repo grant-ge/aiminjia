@@ -51,7 +51,7 @@ analysis/
             │   ├── python_bridge.rs   # Python 脚本 → ToolPlugin 适配（安全 temp file 协议）
             │   └── builtin/
             │       ├── tools/         # 10 个内置工具（web_search, execute_python, analyze_file 等）
-            │       └── skills/        # 内置 Skill（daily_assistant, comp_analysis）
+            │       └── skills/        # 内置 Skill（daily_assistant；comp_analysis 已迁移为声明式插件）
             ├── llm/                   # LLM 网关 + Agent 编排
             │   ├── gateway.rs         # 流式请求（HashMap 多会话并发，最多 3 个同时运行）
             │   ├── router.rs          # 模型路由（分析任务强制默认模型+工具）
@@ -61,9 +61,10 @@ analysis/
             │   ├── checkpoint.rs      # 步骤检查点提取（结构化 LLM 提取 + JSON 解析，extract prompt 由 Skill 提供）
             │   ├── masking.rs         # PII 脱敏（mask_text/unmask，3 级别）
             │   └── streaming.rs       # SSE 解析
-            ├── search/                # 搜索模块
-            │   ├── tavily.rs          # Tavily 付费搜索（增强/降级）
-            │   └── bing.rs            # Bing 免费搜索（默认优先）
+            │   ├── search/                # 搜索模块
+            │   │   ├── tavily.rs          # Tavily 付费搜索（增强/降级）
+            │   │   ├── bocha.rs           # Bocha 付费搜索（中文优化）
+            │   │   └── searxng.rs         # SearXNG 免费搜索（默认优先）
             ├── storage/               # 存储模块
             │   ├── file_store/        # 文件存储（JSON/JSONL，完全替代 SQLite）
             │   │   ├── mod.rs         # AppStorage（写锁 + 公共 API）
@@ -174,7 +175,7 @@ Rust Backend
     ├── llm/         — LLM gateway, streaming, masking, prompts
     ├── storage/     — File-based storage (JSON/JSONL, replaces SQLite)
     ├── python/      — Sandboxed Python subprocess execution
-    └── search/      — Web search (Bing free + Tavily paid fallback)
+    └── search/      — Web search (SearXNG free + Bocha/Tavily paid fallback)
 ```
 
 ### 常见开发场景 (Common Development Tasks)
