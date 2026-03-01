@@ -60,6 +60,11 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
             reasoning_provider: None,
             models_desc: "主力: 字节跳动大模型",
         },
+        "custom" => ProviderCapabilities {
+            primary_provider: "custom",
+            reasoning_provider: None,
+            models_desc: "自定义 OpenAI 兼容模型",
+        },
         _ => ProviderCapabilities {
             primary_provider: "deepseek-v3",
             reasoning_provider: None,
@@ -87,7 +92,7 @@ pub enum TaskType {
 /// Result of routing: which provider + model to use.
 #[derive(Debug, Clone)]
 pub struct RouteResult {
-    /// Provider identifier, e.g. "deepseek-v3", "openai", "claude", "volcano"
+    /// Provider identifier, e.g. "deepseek-v3", "openai", "claude", "volcano", "custom"
     pub provider: String,
     /// API key for the selected provider
     pub api_key: String,
@@ -95,6 +100,8 @@ pub struct RouteResult {
     pub model_hint: String,
     /// Whether this route supports tool use
     pub use_tools: bool,
+    /// Custom endpoint URL (only used by "custom" provider)
+    pub endpoint_url: String,
 }
 
 /// Infer the task type from the conversation messages.
@@ -160,8 +167,9 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         return RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: String::new(),
+            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
+            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
         };
     }
 
@@ -171,8 +179,9 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         TaskType::Analysis => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: String::new(),
+            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
+            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
         },
         // Reasoning tasks use the reasoning variant if available (same API key)
         TaskType::Reasoning => {
@@ -182,14 +191,16 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
                     api_key: settings.primary_api_key.clone(),
                     model_hint: String::new(),
                     use_tools: false,
+                    endpoint_url: String::new(),
                 }
             } else {
                 // No reasoning variant — use primary model
                 RouteResult {
                     provider: settings.primary_model.clone(),
                     api_key: settings.primary_api_key.clone(),
-                    model_hint: String::new(),
+                    model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
                     use_tools: true,
+                    endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
                 }
             }
         }
@@ -197,8 +208,9 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         _ => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: String::new(),
+            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
+            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
         },
     }
 }

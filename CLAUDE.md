@@ -40,19 +40,29 @@ analysis/
             │   ├── chat.rs            # send_message（编排检测 + Agent Loop）, stop_streaming(conversation_id), is_agent_busy→Vec<String>, get_messages
             │   ├── file.rs            # upload_file, open/reveal/preview/delete_file (均需 conversation_id)
             │   └── settings.rs        # get/update settings, per-provider key CRUD, provider switching
+            ├── plugin/                # 插件系统（Tool + Skill 注册式架构）
+            │   ├── mod.rs             # re-export（ToolRegistry, SkillRegistry, PluginContext, Skill）
+            │   ├── tool_trait.rs      # ToolPlugin trait + ToolOutput + ToolError
+            │   ├── skill_trait.rs     # Skill trait + SkillState + WorkflowDefinition + ToolFilter
+            │   ├── registry.rs        # ToolRegistry + SkillRegistry（运行时注册 + 过滤 + 执行）
+            │   ├── context.rs         # PluginContext（插件共享服务入口）
+            │   ├── manifest.rs        # plugin.toml / workflow.toml 解析
+            │   ├── declarative_skill.rs # TOML + Markdown 声明式 Skill 加载器
+            │   ├── python_bridge.rs   # Python 脚本 → ToolPlugin 适配（安全 temp file 协议）
+            │   └── builtin/
+            │       ├── tools/         # 10 个内置工具（web_search, execute_python, analyze_file 等）
+            │       └── skills/        # 内置 Skill（daily_assistant, comp_analysis）
             ├── llm/                   # LLM 网关 + Agent 编排
             │   ├── gateway.rs         # 流式请求（HashMap 多会话并发，最多 3 个同时运行）
             │   ├── router.rs          # 模型路由（分析任务强制默认模型+工具）
-            │   ├── providers/         # DeepSeek V3/R1, Volcano, OpenAI, Claude, Qwen
-            │   ├── tools.rs           # 10 个 Tool 定义 + 按步骤过滤
-            │   ├── prompts.rs         # System Prompt 库（BASE: 组织咨询+工作助手角色 + DAILY: 4大类场景 + STEP0~5: 薪酬分析）
-            │   ├── orchestrator.rs    # 6 步分析编排器（Step 0 方向确认 + Step 1~5 分析 + 确认卡点）
+            │   ├── providers/         # DeepSeek V3/R1, Volcano, OpenAI, Claude, Qwen, Custom
+            │   ├── prompts.rs         # System Prompt 库（通用 prompt 加载）
+            │   ├── orchestrator.rs    # 分析步骤状态管理（step state + advance）
             │   ├── masking.rs         # PII 脱敏（mask_text/unmask，3 级别）
-            │   ├── streaming.rs       # SSE 解析
-            │   └── tool_executor.rs   # Tool 执行分发（10 个 handler）
+            │   └── streaming.rs       # SSE 解析
             ├── search/                # 搜索模块
-            │   ├── tavily.rs          # Tavily 付费搜索（优先）
-            │   └── searxng.rs         # SearXNG 免费搜索（降级）
+            │   ├── tavily.rs          # Tavily 付费搜索（增强/降级）
+            │   └── bing.rs            # Bing 免费搜索（默认优先）
             ├── storage/               # 存储模块
             │   ├── file_store/        # 文件存储（JSON/JSONL，完全替代 SQLite）
             │   │   ├── mod.rs         # AppStorage（写锁 + 公共 API）
@@ -108,6 +118,19 @@ cd code && bash scripts/setup-python.sh
 
 ## 开发指南
 
+### ⚠️ 扩展优先原则（必须遵守）
+
+增加功能、迭代能力时，**必须优先通过插件扩展方式实现**，而非修改核心引擎代码。
+
+优先级（从高到低）：
+1. **声明式 Skill 插件**（TOML + Markdown）— 新垂直场景首选，零 Rust 代码
+2. **Python Tool 插件**（handler.py）— 数据处理类工具，一个脚本文件
+3. **Rust 内置 Tool**（ToolPlugin trait）— 仅当需要系统 API 或 Rust 库时
+4. **Rust 内置 Skill**（Skill trait）— 仅当需要复杂自定义流转逻辑时
+5. **修改核心引擎**（agent_loop / registry / gateway）— 最后手段，需充分论证
+
+只有当上述 1-4 均无法满足需求时，才允许修改核心引擎代码。详见 `docs/extension-guide.md`。
+
 ### 环境准备 (Setup)
 
 **Prerequisites:**
@@ -133,6 +156,7 @@ cd code && pnpm dev          # Frontend only (WebView, no Rust backend)
 - `docs/agent-design.md` — Product features, agent behavior, 6-step analysis flow
 - `docs/tech-architecture.md` — Module design, data flow, security strategy
 - `docs/visual-standard.md` — UI design tokens, component specs, color system
+- `docs/extension-guide.md` — 扩展指南：如何通过插件系统增加 Tool 和 Skill
 
 **Key entry points:**
 - `src-tauri/src/lib.rs` — App setup, state registration, crash recovery
@@ -145,18 +169,38 @@ Frontend (React + TypeScript + TailwindCSS 4)
     ↓ Tauri IPC
 Rust Backend
     ├── commands/    — IPC command handlers
-    ├── llm/         — LLM gateway, agent orchestrator, tools, prompts
+    ├── plugin/      — Tool + Skill plugin system (registry, traits, builtin, Python bridge)
+    ├── llm/         — LLM gateway, streaming, masking, prompts
     ├── storage/     — File-based storage (JSON/JSONL, replaces SQLite)
     ├── python/      — Sandboxed Python subprocess execution
-    └── search/      — Web search (Tavily + SearXNG fallback)
+    └── search/      — Web search (Bing free + Tavily paid fallback)
 ```
 
 ### 常见开发场景 (Common Development Tasks)
 
-**Adding a new tool:**
-1. Define the tool schema in `src-tauri/src/llm/tools.rs`
-2. Implement the handler in `src-tauri/src/llm/tool_executor.rs`
-3. Add the tool to the appropriate step filter in `tools.rs` (which steps can use it)
+**Adding a new Tool（优先通过插件扩展）：**
+
+方式一：Rust 内置工具
+1. 在 `src-tauri/src/plugin/builtin/tools/` 新建文件，实现 `ToolPlugin` trait
+2. 在 `builtin/tools/mod.rs` 的 `register_builtin_tools()` 中注册
+
+方式二：Python 脚本插件（无需写 Rust）
+1. 在 `src-tauri/plugins/{id}/` 目录创建 `plugin.toml` + `handler.py`
+2. 构建时通过 `tauri.conf.json` 的 `bundle.resources` 打包到应用中
+
+详见 `docs/extension-guide.md`
+
+**Adding a new Skill（垂直场景）：**
+
+方式一：声明式 Skill（TOML + Markdown，无需写 Rust）
+1. 在 `src-tauri/plugins/{id}/` 创建 `plugin.toml` + `workflow.toml` + prompt `.md` 文件
+2. 构建时通过 `tauri.conf.json` 的 `bundle.resources` 打包到应用中
+
+方式二：Rust 内置 Skill
+1. 在 `src-tauri/src/plugin/builtin/skills/` 新建文件，实现 `Skill` trait
+2. 在 `builtin/skills/mod.rs` 的 `register_builtin_skills()` 中注册
+
+详见 `docs/extension-guide.md`
 
 **Adding a new LLM Provider:**
 1. Create a new file in `src-tauri/src/llm/providers/`
@@ -164,14 +208,16 @@ Rust Backend
 3. Register in `src-tauri/src/llm/gateway.rs`
 
 **Modifying system prompts:**
-- Edit prompt constants in `src-tauri/src/llm/prompts.rs`
-- BASE prompt defines the core agent persona
-- DAILY prompt covers daily HR consultation scenarios
-- STEP0~STEP5 prompts control each analysis step's behavior
+- Skill 的 prompt 由各 Skill 的 `system_prompt()` 方法提供
+- 内置 Skill 的 prompt 文件位于 `src-tauri/src/llm/prompts.rs`
+- 声明式 Skill 的 prompt 文件位于插件目录的 `prompts/` 子目录
 
-**Modifying analysis steps:**
-- Edit `src-tauri/src/llm/orchestrator.rs` for flow logic and step transitions
-- Edit step-specific prompts in `src-tauri/src/llm/prompts.rs`
+**Modifying analysis workflow:**
+- 内置分析流程由 `plugin/builtin/skills/comp_analysis.rs` 的 `Skill` 实现控制
+- 步骤流转、确认检测、工具过滤均在 Skill 内定义
+- 步骤状态持久化由 `orchestrator.rs` 的 `advance_step()` / `get_step_state()` 管理
+- 步骤间上下文保留：`chat.rs` 的 `auto_capture_step_context()` 在步骤切换前自动捕获 assistant 结论和 execute_python 输出，保存为 `step{N}_auto_context` note，作为 LLM `save_analysis_note` 的兜底机制
+- 前序分析记录注入：`chat.rs` 的 `analysis_notes_context` 按步骤分组注入系统提示词，旧步骤的 auto_context 压缩至 2000 字符，最近步骤保留 4000 字符
 
 **Adding frontend components:**
 - Follow `docs/visual-standard.md` design tokens
@@ -225,16 +271,18 @@ Build output location: `code/src-tauri/target/release/bundle/`
 | 审计日志 | {base_dir}/audit/audit.jsonl | 自动分片（2MB） |
 | 搜索缓存 | {base_dir}/shared/cache/{hash}.json | TTL 7 天 |
 | 用户上传文件 | workspace/uploads/ | 物理文件，file_index.json 记录绑定 conversation_id |
-| 生成的报告 | workspace/reports/ | HTML/Excel 报告 |
+| 生成的报告 | workspace/reports/ | HTML/PDF/DOCX 报告（PDF/DOCX 从 HTML 自动转换） |
 | 生成的图表 | workspace/charts/ | PNG 图表 |
 | 导出数据 | workspace/exports/ | CSV/Excel/JSON 导出 |
 | 临时文件 | workspace/temp/ | Python 脚本执行临时文件 |
+| 运行日志 | workspace/logs/ | tauri-plugin-log 写入，7 天自动清理 |
 | API Key 加密 | OS Keychain | macOS Keychain / Windows Credential Manager |
 | 各 Provider API Key | config.json | `apiKey:{provider}` 键，AES-256-GCM 加密存储 |
+| 用户插件 | {resource_dir}/plugins/ | Tool / Skill 插件目录，随应用打包分发（plugin.toml + handler/prompts）|
 
 ## 命名约定
 
-- **Rust 模块**：snake_case（`tool_executor.rs`, `file_manager.rs`）
+- **Rust 模块**：snake_case（`file_manager.rs`, `tool_trait.rs`, `registry.rs`）
 - **React 组件**：PascalCase（`AiBubble.tsx`, `SettingsModal.tsx`）
 - **Zustand Store**：camelCase + Store 后缀（`chatStore.ts`, `settingsStore.ts`）
 - **Tauri IPC 命令**：snake_case（`send_message`, `upload_file`, `switch_provider`）

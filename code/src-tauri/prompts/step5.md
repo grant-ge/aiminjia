@@ -82,10 +82,13 @@
    用 export_data 导出完整的调薪测算表
 
 5. 保存并结束
-   调用 save_analysis_note 保存调薪方案摘要
+   ⚠️ 必须在步骤结束前调用 save_analysis_note：
+   key: "step5_summary"
+   content: 必须包括：三档调薪方案对比（人数、预算、调幅）、推荐方案及理由、ROI 测算结果、生成的文件清单
    调用 update_progress 更新为已完成
 
 ⚠️ 所有数据必须来自 execute_python 实际执行结果，禁止构造任何数据。
+⚠️ 不要在消息中展示任何代码，直接展示执行结果。用户是非技术人员。
 
 输出格式（聊天消息中的简要版，完整报告在 HTML 文件中）：
 - 三档方案对比表

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use chrono::Datelike;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,8 +18,8 @@ use uuid::Uuid;
 use crate::llm::streaming::ToolCall;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
+use crate::search::bing::BingClient;
 use crate::search::tavily::TavilyClient;
-use crate::search::searxng::SearxngClient;
 use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
 use tauri::Emitter;
@@ -43,6 +44,20 @@ pub struct ToolContext {
     pub conversation_id: String,
     pub tavily_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
+}
+
+impl ToolContext {
+    /// Create from a PluginContext (for bridging between systems).
+    pub fn from_plugin_context(ctx: &crate::plugin::context::PluginContext) -> Self {
+        Self {
+            db: ctx.storage.clone(),
+            file_manager: ctx.file_manager.clone(),
+            workspace_path: ctx.workspace_path.clone(),
+            conversation_id: ctx.conversation_id.clone(),
+            tavily_api_key: ctx.tavily_api_key.clone(),
+            app_handle: ctx.app_handle.clone(),
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────
@@ -117,15 +132,55 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 // Tool handlers
 // ─────────────────────────────────────────────────
 
-/// 1. web_search — search the web via Tavily (if key configured) or free SearXNG fallback.
-async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result<String> {
-    let query = require_str(args, "query")?;
+/// 1. web_search — search the web via Bing (free, primary) or Tavily (paid, fallback).
+pub(crate) async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result<String> {
+    let raw_query = require_str(args, "query")?;
     let max_results = optional_i64(args, "max_results", 5) as u32;
 
-    // Try Tavily first if an API key is available
+    // Auto-append recent year range if the query doesn't already mention any year
+    let has_year = raw_query.chars().collect::<Vec<_>>()
+        .windows(4)
+        .any(|w| {
+            if let Ok(n) = w.iter().collect::<String>().parse::<u32>() {
+                (2020..=2030).contains(&n)
+            } else {
+                false
+            }
+        });
+    let now = chrono::Local::now();
+    let this_year = now.format("%Y");
+    let last_year = now.year() - 1;
+    let query = if has_year {
+        raw_query.to_string()
+    } else {
+        format!("{} {}-{}", raw_query, last_year, this_year)
+    };
+
+    // 1. Try Bing first (free, no API key needed)
+    let bing = BingClient::new();
+    match bing.search(&query, max_results).await {
+        Ok(results) if !results.is_empty() => {
+            let mut output = String::new();
+            for (i, result) in results.iter().enumerate() {
+                output.push_str(&format!(
+                    "{}. **{}**\n   URL: {}\n   {}\n\n",
+                    i + 1, result.title, result.url, result.content
+                ));
+            }
+            return Ok(output);
+        }
+        Ok(_) => {
+            info!("Bing returned empty results, trying Tavily fallback");
+        }
+        Err(e) => {
+            info!("Bing search failed, trying Tavily fallback: {}", e);
+        }
+    }
+
+    // 2. Fallback: use Tavily if an API key is available
     if let Some(api_key) = ctx.tavily_api_key.as_deref() {
-        let client = TavilyClient::new(api_key.to_string());
-        match client.search(query, true, max_results).await {
+        let tavily = TavilyClient::new(api_key.to_string());
+        match tavily.search(&query, true, max_results).await {
             Ok(response) => {
                 let mut output = String::new();
                 if let Some(answer) = &response.answer {
@@ -143,39 +198,17 @@ async fn handle_web_search(ctx: &ToolContext, args: &Value) -> Result<String> {
                 return Ok(output);
             }
             Err(e) => {
-                info!("Tavily search failed, falling back to SearXNG: {}", e);
+                info!("Tavily search also failed: {}", e);
             }
         }
     }
 
-    // Fallback: use free SearXNG (no API key needed)
-    let client = SearxngClient::new();
-    match client.search(query, max_results).await {
-        Ok(results) => {
-            let mut output = String::new();
-            for (i, result) in results.iter().enumerate() {
-                output.push_str(&format!(
-                    "{}. **{}**\n   URL: {}\n   {}\n\n",
-                    i + 1, result.title, result.url, result.content
-                ));
-            }
-
-            if output.is_empty() {
-                output = "No search results found.".to_string();
-            }
-
-            Ok(output)
-        }
-        Err(e) => {
-            info!("SearXNG search also failed: {}", e);
-            // Return a non-error result so the LLM doesn't retry infinitely
-            Ok("[搜索不可用] Tavily 和 SearXNG 搜索均失败。请基于已有知识回答，不要编造搜索结果。".to_string())
-        }
-    }
+    // Both Bing and Tavily failed (or Tavily not configured)
+    Ok("[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。".to_string())
 }
 
 /// 2. execute_python — run arbitrary Python code.
-async fn handle_execute_python(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_execute_python(ctx: &ToolContext, args: &Value) -> Result<String> {
     let code = require_str(args, "code")?;
     let purpose = optional_str(args, "purpose").unwrap_or("code execution");
 
@@ -274,7 +307,7 @@ async fn handle_execute_python(ctx: &ToolContext, args: &Value) -> Result<String
 }
 
 /// 3. analyze_file — parse and describe an uploaded file.
-async fn handle_analyze_file(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_analyze_file(ctx: &ToolContext, args: &Value) -> Result<String> {
     let file_id = require_str(args, "file_id")?;
     info!("[TOOL:analyze_file] file_id='{}' conversation_id='{}'", file_id, ctx.conversation_id);
 
@@ -321,7 +354,7 @@ async fn handle_analyze_file(ctx: &ToolContext, args: &Value) -> Result<String> 
 }
 
 /// 4. generate_report — create an HTML report and save it.
-async fn handle_generate_report(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_generate_report(ctx: &ToolContext, args: &Value) -> Result<String> {
     let title = require_str(args, "title")?;
     let sections = args
         .get("sections")
@@ -329,13 +362,40 @@ async fn handle_generate_report(ctx: &ToolContext, args: &Value) -> Result<Strin
         .ok_or_else(|| anyhow!("Missing required array argument: sections"))?;
     let format = optional_str(args, "format").unwrap_or("html");
 
-    let content = if format == "markdown" {
-        build_markdown_report(title, sections)
-    } else {
-        build_html_report(title, sections)
+    // Always generate HTML first (it's the universal intermediate format)
+    let html_content = build_html_report(title, sections);
+
+    let (final_content, extension, actual_format) = match format {
+        "markdown" => {
+            let md = build_markdown_report(title, sections);
+            (md.into_bytes(), "md", "markdown")
+        }
+        "pdf" => {
+            // HTML → PDF via Python (weasyprint)
+            match convert_html_to_pdf(ctx, &html_content).await {
+                Ok(pdf_bytes) => (pdf_bytes, "pdf", "pdf"),
+                Err(e) => {
+                    log::warn!("[generate_report] PDF conversion failed: {}. Falling back to HTML.", e);
+                    (html_content.into_bytes(), "html", "html_fallback_from_pdf")
+                }
+            }
+        }
+        "docx" => {
+            // HTML → DOCX via Python (htmldocx)
+            match convert_html_to_docx(ctx, &html_content).await {
+                Ok(docx_bytes) => (docx_bytes, "docx", "docx"),
+                Err(e) => {
+                    log::warn!("[generate_report] DOCX conversion failed: {}. Falling back to HTML.", e);
+                    (html_content.into_bytes(), "html", "html_fallback_from_docx")
+                }
+            }
+        }
+        _ => {
+            // Default: HTML
+            (html_content.into_bytes(), "html", "html")
+        }
     };
 
-    let extension = if format == "markdown" { "md" } else { "html" };
     let file_name = format!(
         "report_{}_{}.{}",
         slugify(title),
@@ -345,7 +405,7 @@ async fn handle_generate_report(ctx: &ToolContext, args: &Value) -> Result<Strin
 
     let file_info = ctx
         .file_manager
-        .write_file("reports", &file_name, content.as_bytes())?;
+        .write_file("reports", &file_name, &final_content)?;
 
     // Record in the database.
     let file_id = Uuid::new_v4().to_string();
@@ -366,17 +426,145 @@ async fn handle_generate_report(ctx: &ToolContext, args: &Value) -> Result<Strin
         None,         // expires_at
     )?;
 
-    Ok(serde_json::to_string_pretty(&json!({
+    let mut result = json!({
         "fileId": file_id,
         "fileName": file_info.file_name,
         "storedPath": file_info.stored_path,
         "fileSize": file_info.file_size,
-        "format": format,
-    }))?)
+        "format": actual_format,
+    });
+
+    // Add fallback notice if conversion failed
+    if actual_format.contains("fallback") {
+        let requested = if actual_format.contains("pdf") { "PDF" } else { "DOCX" };
+        result["notice"] = json!(format!(
+            "{} 转换失败，已保存为 HTML 格式。用户可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 PDF。",
+            requested
+        ));
+    }
+
+    Ok(serde_json::to_string_pretty(&result)?)
+}
+
+/// Convert HTML content to PDF using Python weasyprint.
+///
+/// Returns raw PDF bytes on success.
+async fn convert_html_to_pdf(ctx: &ToolContext, html: &str) -> Result<Vec<u8>> {
+    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+
+    // Write HTML to a temp file, convert to PDF, read back the PDF bytes
+    let html_escaped = html.replace('\\', "\\\\").replace('"', "\\\"");
+    let output_path = ctx.workspace_path.join("temp").join(format!(
+        "report_{}.pdf",
+        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
+    ));
+    let output_path_str = output_path.to_string_lossy().replace('\\', "\\\\");
+
+    // Ensure temp dir exists
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let python_code = format!(r#"
+import sys
+import os
+import tempfile
+
+html_content = """{html_escaped}"""
+output_path = "{output_path_str}"
+
+try:
+    from weasyprint import HTML
+    HTML(string=html_content).write_pdf(output_path)
+    print("OK:" + output_path)
+except ImportError:
+    # weasyprint not available, try pdfkit
+    try:
+        import pdfkit
+        pdfkit.from_string(html_content, output_path)
+        print("OK:" + output_path)
+    except ImportError:
+        print("ERROR:no_pdf_library")
+        sys.exit(1)
+except Exception as exc:
+    print("ERROR:" + str(exc))
+    sys.exit(1)
+"#);
+
+    let result = runner.execute(&python_code).await?;
+
+    if result.exit_code != 0 || result.stdout.trim().starts_with("ERROR:") {
+        let err_msg = if result.stdout.contains("no_pdf_library") {
+            "weasyprint/pdfkit not installed".to_string()
+        } else {
+            format!("exit_code={}, stdout={}, stderr={}", result.exit_code, result.stdout.trim(), result.stderr.trim())
+        };
+        anyhow::bail!("PDF conversion failed: {}", err_msg);
+    }
+
+    // Read the generated PDF file
+    let pdf_bytes = std::fs::read(&output_path)?;
+    // Clean up temp file
+    let _ = std::fs::remove_file(&output_path);
+
+    Ok(pdf_bytes)
+}
+
+/// Convert HTML content to DOCX using Python htmldocx.
+///
+/// Returns raw DOCX bytes on success.
+async fn convert_html_to_docx(ctx: &ToolContext, html: &str) -> Result<Vec<u8>> {
+    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+
+    let html_escaped = html.replace('\\', "\\\\").replace('"', "\\\"");
+    let output_path = ctx.workspace_path.join("temp").join(format!(
+        "report_{}.docx",
+        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
+    ));
+    let output_path_str = output_path.to_string_lossy().replace('\\', "\\\\");
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let python_code = format!(r#"
+import sys
+
+html_content = """{html_escaped}"""
+output_path = "{output_path_str}"
+
+try:
+    from htmldocx import HtmlToDocx
+    from docx import Document
+
+    doc = Document()
+    parser = HtmlToDocx()
+    parser.add_html_to_document(html_content, doc)
+    doc.save(output_path)
+    print("OK:" + output_path)
+except ImportError as exc:
+    print("ERROR:missing_library:" + str(exc))
+    sys.exit(1)
+except Exception as exc:
+    print("ERROR:" + str(exc))
+    sys.exit(1)
+"#);
+
+    let result = runner.execute(&python_code).await?;
+
+    if result.exit_code != 0 || result.stdout.trim().starts_with("ERROR:") {
+        let err_msg = format!("exit_code={}, stdout={}, stderr={}", result.exit_code, result.stdout.trim(), result.stderr.trim());
+        anyhow::bail!("DOCX conversion failed: {}", err_msg);
+    }
+
+    let docx_bytes = std::fs::read(&output_path)?;
+    let _ = std::fs::remove_file(&output_path);
+
+    Ok(docx_bytes)
 }
 
 /// 5. generate_chart — create a matplotlib chart and save the PNG.
-async fn handle_generate_chart(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_generate_chart(ctx: &ToolContext, args: &Value) -> Result<String> {
     let chart_type = require_str(args, "chart_type")?;
     let title = require_str(args, "title")?;
     let data = args
@@ -449,7 +637,7 @@ async fn handle_generate_chart(ctx: &ToolContext, args: &Value) -> Result<String
 }
 
 /// 6. hypothesis_test — run a statistical hypothesis test via Python.
-async fn handle_hypothesis_test(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_hypothesis_test(ctx: &ToolContext, args: &Value) -> Result<String> {
     let test_type = require_str(args, "test_type")?;
     let groups = args
         .get("groups")
@@ -481,7 +669,7 @@ async fn handle_hypothesis_test(ctx: &ToolContext, args: &Value) -> Result<Strin
 }
 
 /// 7. detect_anomalies — find outliers via Z-score, IQR, or Grubbs.
-async fn handle_detect_anomalies(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_detect_anomalies(ctx: &ToolContext, args: &Value) -> Result<String> {
     let column = require_str(args, "column")?;
     let method = optional_str(args, "method").unwrap_or("zscore");
     let threshold = optional_f64(args, "threshold", 3.0);
@@ -507,7 +695,7 @@ async fn handle_detect_anomalies(ctx: &ToolContext, args: &Value) -> Result<Stri
 }
 
 /// 8. save_analysis_note — store an intermediate finding in enterprise memory.
-async fn handle_save_analysis_note(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_save_analysis_note(ctx: &ToolContext, args: &Value) -> Result<String> {
     let key = require_str(args, "key")?;
     let content = require_str(args, "content")?;
     let step = optional_i64(args, "step", 0);
@@ -527,7 +715,7 @@ async fn handle_save_analysis_note(ctx: &ToolContext, args: &Value) -> Result<St
 }
 
 /// 9. export_data — write data to CSV, Excel, or JSON.
-async fn handle_export_data(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_export_data(ctx: &ToolContext, args: &Value) -> Result<String> {
     let data = args
         .get("data")
         .ok_or_else(|| anyhow!("Missing required argument: data"))?;
@@ -588,7 +776,7 @@ async fn handle_export_data(ctx: &ToolContext, args: &Value) -> Result<String> {
 }
 
 /// 10. update_progress — update the analysis progress state.
-async fn handle_update_progress(ctx: &ToolContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_update_progress(ctx: &ToolContext, args: &Value) -> Result<String> {
     let current_step = optional_i64(args, "current_step", 1) as i32;
     let step_status = require_str(args, "step_status")?;
     let summary = optional_str(args, "summary").unwrap_or("");

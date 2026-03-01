@@ -31,8 +31,12 @@ fn build_tool_definitions() -> Vec<ToolDefinition> {
         // ─── 1. Web Search ───────────────────────────────────
         ToolDefinition {
             name: "web_search".to_string(),
-            description: "Search the web for information. Use for market salary data, \
-                industry benchmarks, regulations, and company information."
+            description: "Search the web for up-to-date information. Use proactively when: \
+                (1) answering questions about current events, regulations, policies, or industry trends; \
+                (2) looking up market salary data, industry benchmarks, or company information; \
+                (3) encountering topics you're uncertain about or that may have changed recently; \
+                (4) the user asks about anything that may require recent (last 2 years) information. \
+                Always prefer searching over guessing when factual accuracy matters."
                 .to_string(),
             parameters: json!({
                 "type": "object",

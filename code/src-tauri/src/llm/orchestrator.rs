@@ -35,6 +35,8 @@ pub struct StepConfig {
     pub max_iterations: usize,
     /// Whether the step requires user confirmation before advancing.
     pub requires_confirmation: bool,
+    /// Token budget for LLM output.
+    pub token_budget: u32,
 }
 
 /// Status of the current analysis step.
@@ -200,6 +202,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
             _ => 10,
         },
         requires_confirmation: true, // all steps need user confirmation
+        token_budget: 8192, // analysis steps need more output room
     }
 }
 

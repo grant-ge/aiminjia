@@ -244,6 +244,25 @@ export function deleteFile(fileId: string, conversationId: string): Promise<void
   })
 }
 
+/**
+ * Open a file by its display name, searching across all workspace subdirectories.
+ * Used for inline file name links in chat text.
+ *
+ * @param fileName - The file name to search for (e.g. "report.xlsx")
+ */
+export function openFileByName(fileName: string): Promise<void> {
+  return invoke<void>('open_file_by_name', { fileName })
+}
+
+/**
+ * Reveal a file in the OS file manager by its display name.
+ *
+ * @param fileName - The file name to search for
+ */
+export function revealFileByName(fileName: string): Promise<void> {
+  return invoke<void>('reveal_file_by_name', { fileName })
+}
+
 // ---------------------------------------------------------------------------
 // Settings Commands
 // ---------------------------------------------------------------------------
@@ -339,6 +358,54 @@ export function selectWorkspace(path: string): Promise<void> {
  */
 export function getWorkspaceInfo(): Promise<string> {
   return invoke<string>('get_workspace_info')
+}
+
+/**
+ * Open the logs directory in the system file manager.
+ */
+export function openLogsDirectory(): Promise<void> {
+  return invoke<void>('open_logs_directory')
+}
+
+// ---------------------------------------------------------------------------
+// Plugin Commands
+// ---------------------------------------------------------------------------
+
+/** Info about a registered tool */
+export interface ToolInfo {
+  name: string
+  description: string
+  source: string // "builtin" | "plugin"
+}
+
+/** Info about a registered skill */
+export interface SkillInfo {
+  id: string
+  displayName: string
+  description: string
+  source: string
+  hasWorkflow: boolean
+}
+
+/** Combined plugin info (tools + skills) */
+export interface PluginInfo {
+  tools: ToolInfo[]
+  skills: SkillInfo[]
+}
+
+/** List all registered tools. */
+export function listTools(): Promise<ToolInfo[]> {
+  return invoke<ToolInfo[]>('list_tools')
+}
+
+/** List all registered skills. */
+export function listSkills(): Promise<SkillInfo[]> {
+  return invoke<SkillInfo[]>('list_skills')
+}
+
+/** Get combined tool + skill info. */
+export function getPluginInfo(): Promise<PluginInfo> {
+  return invoke<PluginInfo>('get_plugin_info')
 }
 
 // ---------------------------------------------------------------------------

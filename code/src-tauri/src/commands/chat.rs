@@ -6,10 +6,11 @@ use crate::storage::file_manager::FileManager;
 use crate::llm::gateway::LlmGateway;
 use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent};
 use crate::llm::masking::{MaskingContext, MaskingLevel};
-use crate::llm::tool_executor::{self, ToolContext};
-use crate::llm::orchestrator::{self, AnalysisAction, StepConfig};
+use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompts;
 use crate::llm::prompt_guard;
+use crate::plugin::{PluginContext, ToolRegistry, SkillRegistry};
+use crate::plugin::skill_trait::{SkillState, StepAction};
 use crate::storage::crypto::SecureStorage;
 use crate::models::settings::AppSettings;
 
@@ -78,6 +79,130 @@ fn compress_tool_result(text: &str) -> String {
         text.to_string()
     } else {
         output
+    }
+}
+
+/// Find the largest byte index <= `max_bytes` that falls on a UTF-8 char boundary.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if max_bytes >= s.len() {
+        return s.len();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
+/// Auto-capture step context before message history wipe.
+///
+/// Extracts the last assistant message(s) and key tool result snippets (execute_python
+/// stdout) from the current message history, then saves them as a structured note.
+/// This ensures each step's output is preserved even if the LLM forgets to call
+/// `save_analysis_note`.
+///
+/// Max output: 4000 chars to prevent context bloat.
+fn auto_capture_step_context(
+    db: &AppStorage,
+    conversation_id: &str,
+    step_num: u32,
+    messages: &[ChatMessage],
+) {
+    const MAX_CONTEXT_CHARS: usize = 6000;
+
+    let mut context_parts: Vec<String> = Vec::new();
+
+    // 1. Extract assistant messages (the step's analysis conclusions)
+    // Capture up to 2 substantive assistant messages (the last one often contains
+    // the step summary while the second-to-last contains intermediate findings).
+    let mut assistant_count = 0;
+    for msg in messages.iter().rev() {
+        if msg.role == "assistant" && !msg.content.trim().is_empty() {
+            if msg.content.len() > 20 {
+                context_parts.push(format!("[分析结论]\n{}", msg.content));
+                assistant_count += 1;
+                if assistant_count >= 2 {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2. Extract key tool result outputs (execute_python stdout, truncated)
+    let mut tool_outputs: Vec<String> = Vec::new();
+    for msg in messages.iter() {
+        if msg.role == "tool" && msg.name.as_deref() == Some("execute_python") {
+            let compressed = compress_tool_result(&msg.content);
+            let trimmed = compressed.trim();
+            if !trimmed.is_empty() && trimmed.len() > 10 {
+                // Keep first 1500 chars of each tool output (increased from 800)
+                let snippet = if trimmed.len() > 1500 {
+                    let end = truncate_at_char_boundary(trimmed, 1500);
+                    format!("{}...(truncated)", &trimmed[..end])
+                } else {
+                    trimmed.to_string()
+                };
+                tool_outputs.push(snippet);
+            }
+        }
+    }
+
+    if !tool_outputs.is_empty() {
+        // Keep up to 5 most recent tool outputs (increased from 3)
+        let recent_outputs: Vec<&String> = tool_outputs.iter().rev().take(5).collect();
+        let mut tool_section = String::from("[关键数据输出]\n");
+        for output in recent_outputs.into_iter().rev() {
+            tool_section.push_str(output);
+            tool_section.push_str("\n---\n");
+        }
+        context_parts.push(tool_section);
+    }
+
+    if context_parts.is_empty() {
+        log::warn!("[auto_capture] No content to capture for step {} in conversation {}", step_num, conversation_id);
+        return;
+    }
+
+    // Combine and truncate to MAX_CONTEXT_CHARS
+    let mut combined = context_parts.join("\n\n");
+    if combined.len() > MAX_CONTEXT_CHARS {
+        let end = truncate_at_char_boundary(&combined, MAX_CONTEXT_CHARS);
+        combined.truncate(end);
+        combined.push_str("\n...(auto-truncated)");
+    }
+
+    let note_key = format!("note:{}:step{}_auto_context", conversation_id, step_num);
+    match db.set_memory(&note_key, &combined, Some("auto_capture")) {
+        Ok(_) => log::info!("[auto_capture] Saved step {} auto_context ({} chars) for conversation {}",
+            step_num, combined.len(), conversation_id),
+        Err(e) => log::warn!("[auto_capture] Failed to save step {} auto_context: {}", step_num, e),
+    }
+}
+
+/// Build a [`StepConfig`] from an active Skill and its current state.
+///
+/// Replaces `orchestrator::build_step_config()` — configuration now comes
+/// from the Skill plugin rather than hardcoded step tables.
+async fn build_config_from_skill(
+    skill: &dyn crate::plugin::Skill,
+    state: &SkillState,
+    tool_registry: &ToolRegistry,
+) -> StepConfig {
+    let step_num = state.current_step.as_deref()
+        .and_then(|s| s.strip_prefix("step"))
+        .and_then(|n| n.parse::<u32>().ok())
+        .unwrap_or(0);
+
+    let tool_filter = skill.tool_filter(state);
+    let tool_defs = tool_registry.get_schemas_filtered(&tool_filter).await;
+
+    StepConfig {
+        step: step_num,
+        system_prompt: skill.system_prompt(state),
+        tool_defs,
+        max_iterations: skill.max_iterations(state),
+        requires_confirmation: true,
+        token_budget: skill.token_budget(state),
     }
 }
 
@@ -172,6 +297,8 @@ pub async fn send_message(
     gateway: State<'_, Arc<LlmGateway>>,
     file_mgr: State<'_, Arc<FileManager>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
+    tool_registry: State<'_, Arc<ToolRegistry>>,
+    skill_registry: State<'_, Arc<SkillRegistry>>,
     app: AppHandle,
     conversation_id: String,
     content: String,
@@ -349,12 +476,17 @@ pub async fn send_message(
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| file_mgr.workspace_path().to_path_buf());
 
-    // 8. Determine conversation mode and step configuration
+    // 8. Determine conversation mode and use the Skill system for routing
     //
-    // The conversation.mode column is the single source of truth:
-    //   "daily"      → normal chat (may detect analysis trigger)
-    //   "confirming" → Step 0 done, waiting for user to confirm direction
-    //   "analyzing"  → Steps 1–5 in progress
+    // The conversation.mode column tracks workflow state:
+    //   "daily"      → normal chat (may detect Skill activation)
+    //   "confirming" → workflow step 0 done, waiting for user to confirm direction
+    //   "analyzing"  → workflow steps 1–5 in progress
+    //
+    // The SkillRegistry replaces the hardcoded orchestrator:
+    //   - detect_activation() replaces detect_analysis_mode()
+    //   - Skill.on_step_complete() replaces next_action()
+    //   - Skill methods provide prompt, tool filter, iterations, budget
     let has_files = !file_attachments.is_empty();
     let conversation_mode = db.get_conversation_mode(&conversation_id)
         .unwrap_or_else(|_| "daily".to_string());
@@ -363,205 +495,267 @@ pub async fn send_message(
 
     let step_config: Option<StepConfig> = match conversation_mode.as_str() {
         "daily" => {
-            // Check if user wants to start a structured analysis
-            if orchestrator::detect_analysis_mode(&chat_messages, has_files) {
-                log::info!("Analysis mode detected for conversation {}, transitioning to 'confirming'",
-                    conversation_id);
+            // Check if a Skill with a workflow should activate
+            let detected = skill_registry.detect_activation(
+                &content, has_files, skill_registry.default_skill_id()
+            ).await;
 
-                // Transition: daily → confirming (run Step 0: direction confirmation)
-                if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
-                    log::error!("Failed to set mode to 'confirming': {}", e);
+            if let Some(skill_id) = detected {
+                let skill = skill_registry.get(&skill_id).await;
+                match skill {
+                    Some(skill) if skill.workflow().is_some() => {
+                        let workflow = skill.workflow().unwrap();
+                        let initial_step = &workflow.initial_step;
+                        let step_num = initial_step.strip_prefix("step")
+                            .and_then(|n| n.parse::<u32>().ok())
+                            .unwrap_or(0);
+
+                        log::info!(
+                            "Skill '{}' activated for conversation {}, starting workflow at {}",
+                            skill_id, conversation_id, initial_step
+                        );
+
+                        // Transition: daily → confirming (run initial step)
+                        if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
+                            log::error!("Failed to set mode to 'confirming': {}", e);
+                        }
+
+                        // Store the active skill ID so we can look it up in confirming/analyzing
+                        let skill_key = format!("note:{}:active_skill", conversation_id);
+                        if let Err(e) = db.set_memory(&skill_key, &skill_id, Some("system")) {
+                            log::error!("Failed to store active skill ID: {}", e);
+                        }
+
+                        // Initialize step as in_progress in DB
+                        if let Err(e) = orchestrator::advance_step(
+                            &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                        ) {
+                            log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
+                        }
+
+                        let mut state = SkillState::new(&skill_id);
+                        state.current_step = Some(initial_step.clone());
+
+                        Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
+                    }
+                    _ => {
+                        log::debug!("No workflow skill activated, staying in daily mode");
+                        None
+                    }
                 }
-
-                let config = orchestrator::build_step_config(0);
-                // Initialize step 0 as in_progress in the analysis_states table
-                if let Err(e) = orchestrator::advance_step(
-                    &db.inner().clone(), &conversation_id, 0, "in_progress",
-                ) {
-                    log::error!("Failed to mark step 0 as in_progress: {}", e);
-                }
-
-                Some(config)
             } else {
                 None // daily chat, no analysis
             }
         }
 
         "confirming" | "analyzing" => {
-            // Route through the orchestrator's mode-based state machine
-            let action = orchestrator::next_action(
-                &conversation_mode,
-                &db.inner().clone(),
-                &conversation_id,
-                &content,
-            );
-            log::info!("Orchestrator action for conversation {}: {:?}",
-                conversation_id, std::mem::discriminant(&action));
+            // Active workflow: look up the stored skill ID for this conversation.
+            let skill_key = format!("note:{}:active_skill", conversation_id);
+            let active_skill_id = db.get_memory(&skill_key)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "comp-analysis".to_string()); // backward compat
 
-            match action {
-                AnalysisAction::DailyChat => {
-                    // Shouldn't normally happen in confirming/analyzing mode,
-                    // but handle gracefully (e.g. mode column out of sync)
-                    log::warn!("Orchestrator returned DailyChat while mode='{}', falling through",
-                        conversation_mode);
+            match skill_registry.get(&active_skill_id).await {
+                None => {
+                    log::error!(
+                        "Active skill '{}' not found for conversation {}, falling back to daily mode",
+                        active_skill_id, conversation_id
+                    );
+                    if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                        log::error!("Failed to reset mode to 'daily': {}", e);
+                    }
                     None
                 }
+                Some(skill) => {
 
-                AnalysisAction::StartAnalysis(config) => {
-                    // confirming → analyzing: Step 0 done, user confirmed, start Step 1
-                    log::info!("Starting analysis step {} for conversation {}",
-                        config.step, conversation_id);
+            let db_step_state = orchestrator::get_step_state(&db, &conversation_id);
+            let step_num = db_step_state.as_ref().map(|s| s.step).unwrap_or(0);
 
-                    // Save user's response as analysis direction note.
-                    // In "confirming" mode, any response after Step 0 is treated as
-                    // confirmation + optional direction (e.g. "重点看技术部门").
-                    let direction = content.trim();
-                    if !direction.is_empty() {
-                        let note_key = format!("note:{}:analysis_direction", conversation_id);
-                        match db.set_memory(&note_key, direction, Some("step_0_direction")) {
-                            Ok(_) => log::info!("Saved analysis direction: '{}'", direction),
-                            Err(e) => log::warn!("Failed to save analysis direction: {}", e),
+            let mut skill_state = SkillState::new(skill.id());
+            skill_state.current_step = Some(format!("step{}", step_num));
+
+            // Route based on step status
+            match db_step_state.as_ref().map(|s| &s.status) {
+                Some(&StepStatus::Paused) => {
+                    // Crash recovery: resume paused step
+                    log::info!("Resuming paused step {} for conversation {}",
+                        step_num, conversation_id);
+
+                    if let Err(e) = orchestrator::advance_step(
+                        &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                    ) {
+                        log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
+                    }
+
+                    Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
+                }
+
+                Some(&StepStatus::InProgress) => {
+                    // Edge case: user sent message while step is still running.
+                    let action = skill.on_step_complete(&mut skill_state, &content);
+
+                    if matches!(action, StepAction::Abort) {
+                        log::info!("User aborted analysis (in_progress) for conversation {}",
+                            conversation_id);
+                        if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                            log::error!("Failed to set mode to 'daily': {}", e);
+                        }
+                        if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
+                            log::error!("Failed to finalize analysis as aborted: {}", e);
+                        }
+                        None
+                    } else {
+                        log::warn!(
+                            "User sent message while step {} is in_progress; re-running",
+                            step_num
+                        );
+                        if let Err(e) = orchestrator::advance_step(
+                            &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                        ) {
+                            log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
+                        }
+                        Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
+                    }
+                }
+
+                Some(&StepStatus::Completed) | None => {
+                    let action = skill.on_step_complete(&mut skill_state, &content);
+                    log::info!("Skill action for conversation {} step {}: {:?}",
+                        conversation_id, step_num, std::mem::discriminant(&action));
+
+                    match action {
+                        StepAction::Abort => {
+                            log::info!("User aborted analysis for conversation {}",
+                                conversation_id);
+                            if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                                log::error!("Failed to set mode to 'daily': {}", e);
+                            }
+                            if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
+                                log::error!("Failed to finalize analysis as aborted: {}", e);
+                            }
+                            None
+                        }
+
+                        StepAction::Finish => {
+                            log::info!("Analysis complete for conversation {}",
+                                conversation_id);
+                            if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                                log::error!("Failed to set mode to 'daily': {}", e);
+                            }
+                            if let Err(e) = db.finalize_analysis(&conversation_id, "completed") {
+                                log::error!("Failed to finalize analysis: {}", e);
+                            }
+                            None
+                        }
+
+                        StepAction::AdvanceToStep(next_step_id) => {
+                            let next_step_num = next_step_id.strip_prefix("step")
+                                .and_then(|n| n.parse::<u32>().ok());
+
+                            if next_step_num.is_none() {
+                                log::warn!(
+                                    "Invalid step ID '{}' from skill '{}', expected 'stepN' format; falling back to step {}",
+                                    next_step_id, active_skill_id, step_num + 1
+                                );
+                            }
+                            let next_step_num = next_step_num.unwrap_or(step_num + 1);
+
+                            log::info!("Advancing to step {} for conversation {}",
+                                next_step_num, conversation_id);
+
+                            // Save direction note for step 0 → step 1 transition
+                            if step_num == 0 {
+                                let direction = content.trim();
+                                if !direction.is_empty() {
+                                    let note_key = format!("note:{}:analysis_direction", conversation_id);
+                                    match db.set_memory(&note_key, direction, Some("step_0_direction")) {
+                                        Ok(_) => log::info!("Saved analysis direction: '{}'", direction),
+                                        Err(e) => log::warn!("Failed to save analysis direction: {}", e),
+                                    }
+                                }
+                            }
+
+                            // Transition mode: confirming → analyzing (for step 0 → step 1)
+                            if conversation_mode == "confirming" {
+                                if let Err(e) = db.set_conversation_mode(&conversation_id, "analyzing") {
+                                    log::error!("Failed to set mode to 'analyzing': {}", e);
+                                }
+                            }
+
+                            // Mark current step completed, new step in_progress
+                            if let Err(e) = orchestrator::advance_step(
+                                &db.inner().clone(), &conversation_id, step_num, "completed",
+                            ) {
+                                log::error!("Failed to mark step {} as completed: {}", step_num, e);
+                            }
+                            if let Err(e) = orchestrator::advance_step(
+                                &db.inner().clone(), &conversation_id, next_step_num, "in_progress",
+                            ) {
+                                log::error!("Failed to mark step {} as in_progress: {}", next_step_num, e);
+                            }
+
+                            // Auto-capture step context BEFORE wiping message history.
+                            // This preserves assistant conclusions and key tool outputs
+                            // even if the LLM didn't call save_analysis_note.
+                            if step_num >= 1 {
+                                auto_capture_step_context(&db, &conversation_id, step_num, &chat_messages);
+                            }
+
+                            // Sub-agent context reset
+                            let original_user_msg = chat_messages.iter()
+                                .find(|m| m.role == "user")
+                                .cloned();
+                            let step_summary = if step_num == 0 {
+                                format!(
+                                    "分析方向已确认。关键信息已保存到分析记录中。\n\n\
+                                    请查看系统提示词中 [前序分析记录] 部分获取之前的完整数据。\n\
+                                    所有数据分析必须使用 execute_python 基于实际数据执行，禁止凭空推断。\n\
+                                    如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。\n\n\
+                                    请开始执行第 {} 步。",
+                                    next_step_num
+                                )
+                            } else {
+                                format!(
+                                    "前 {} 步分析已完成。关键结论和数据已保存到分析记录中。\n\n\
+                                    请查看系统提示词中 [前序分析记录] 部分获取之前步骤的完整数据（包括字段映射、岗位归一化结果、职级框架等）。\n\
+                                    所有数据分析必须使用 execute_python 基于实际数据执行，禁止凭空推断。\n\
+                                    如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。\n\n\
+                                    请开始执行第 {} 步。",
+                                    step_num, next_step_num
+                                )
+                            };
+                            chat_messages = Vec::new();
+                            if let Some(user_msg) = original_user_msg {
+                                chat_messages.push(user_msg);
+                            }
+                            chat_messages.push(ChatMessage::text("assistant", &step_summary));
+
+                            // Build config for the new step
+                            let mut new_state = SkillState::new(skill.id());
+                            new_state.current_step = Some(next_step_id);
+
+                            Some(build_config_from_skill(&*skill, &new_state, &tool_registry).await)
+                        }
+
+                        StepAction::WaitForUser => {
+                            log::info!("Re-running step {} with user feedback for conversation {}",
+                                step_num, conversation_id);
+
+                            if let Err(e) = orchestrator::advance_step(
+                                &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                            ) {
+                                log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
+                            }
+
+                            Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
                         }
                     }
-
-                    // Transition: confirming → analyzing
-                    if let Err(e) = db.set_conversation_mode(&conversation_id, "analyzing") {
-                        log::error!("Failed to set mode to 'analyzing': {}", e);
-                    }
-
-                    // Mark step 0 completed, new step as in_progress
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, 0, "completed",
-                    ) {
-                        log::error!("Failed to mark step 0 as completed: {}", e);
-                    }
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, config.step, "in_progress",
-                    ) {
-                        log::error!("Failed to mark step {} as in_progress: {}", config.step, e);
-                    }
-
-                    // Sub-agent context reset: discard Step 0's tool call history,
-                    // keep only the original user message + a synthetic summary.
-                    let original_user_msg = chat_messages.iter()
-                        .find(|m| m.role == "user")
-                        .cloned();
-                    let step_summary = format!(
-                        "分析方向已确认。关键信息已保存到分析记录中（见系统提示词中的[前序分析记录]部分）。\n\
-                        请开始执行第 {} 步。\n\
-                        如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。",
-                        config.step
-                    );
-                    chat_messages = Vec::new();
-                    if let Some(user_msg) = original_user_msg {
-                        chat_messages.push(user_msg);
-                    }
-                    chat_messages.push(ChatMessage::text("assistant", &step_summary));
-
-                    Some(config)
-                }
-
-                AnalysisAction::AdvanceStep(config) => {
-                    // User confirmed current step → advance to next step
-                    log::info!("Advancing to step {} for conversation {}",
-                        config.step, conversation_id);
-
-                    let prev_step = config.step - 1;
-
-                    // Mark previous step completed, new step in_progress
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, prev_step, "completed",
-                    ) {
-                        log::error!("Failed to mark step {} as completed: {}", prev_step, e);
-                    }
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, config.step, "in_progress",
-                    ) {
-                        log::error!("Failed to mark step {} as in_progress: {}", config.step, e);
-                    }
-
-                    // Sub-agent context reset
-                    let original_user_msg = chat_messages.iter()
-                        .find(|m| m.role == "user")
-                        .cloned();
-                    let step_summary = format!(
-                        "前 {} 步分析已完成。关键结论已保存到分析记录中（见系统提示词中的[前序分析记录]部分）。\n\
-                        请基于这些记录继续执行第 {} 步。\n\
-                        如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。",
-                        prev_step, config.step
-                    );
-                    chat_messages = Vec::new();
-                    if let Some(user_msg) = original_user_msg {
-                        chat_messages.push(user_msg);
-                    }
-                    chat_messages.push(ChatMessage::text("assistant", &step_summary));
-
-                    Some(config)
-                }
-
-                AnalysisAction::RerunStep(config) => {
-                    // User gave feedback → re-run current step with feedback in messages
-                    log::info!("Re-running step {} with user feedback for conversation {}",
-                        config.step, conversation_id);
-
-                    // Reset step status to in_progress
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, config.step, "in_progress",
-                    ) {
-                        log::error!("Failed to mark step {} as in_progress: {}", config.step, e);
-                    }
-
-                    // Keep current messages (user's feedback is the last message)
-                    Some(config)
-                }
-
-                AnalysisAction::ResumeStep(config) => {
-                    // Crash recovery → resume a paused step
-                    log::info!("Resuming paused step {} for conversation {}",
-                        config.step, conversation_id);
-
-                    // Mark step as in_progress (was "paused" from crash recovery)
-                    if let Err(e) = orchestrator::advance_step(
-                        &db.inner().clone(), &conversation_id, config.step, "in_progress",
-                    ) {
-                        log::error!("Failed to mark step {} as in_progress: {}", config.step, e);
-                    }
-
-                    Some(config)
-                }
-
-                AnalysisAction::FinishAnalysis => {
-                    // All steps done, user confirmed → exit analysis mode
-                    log::info!("Analysis complete for conversation {}", conversation_id);
-
-                    // Transition: analyzing → daily
-                    if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
-                        log::error!("Failed to set mode to 'daily': {}", e);
-                    }
-                    if let Err(e) = db.finalize_analysis(&conversation_id, "completed") {
-                        log::error!("Failed to finalize analysis: {}", e);
-                    }
-
-                    // Fall through to daily mode for follow-up questions
-                    None
-                }
-
-                AnalysisAction::AbortAnalysis => {
-                    // User explicitly aborted analysis (e.g. "算了", "取消", "cancel")
-                    log::info!("User aborted analysis for conversation {}", conversation_id);
-
-                    // Transition: confirming/analyzing → daily
-                    if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
-                        log::error!("Failed to set mode to 'daily': {}", e);
-                    }
-                    if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
-                        log::error!("Failed to finalize analysis as aborted: {}", e);
-                    }
-
-                    // Fall through to daily mode — agent will respond to confirm abort
-                    None
                 }
             }
+
+                } // Some(skill)
+            } // match skill_registry.get
         }
 
         // Unknown mode — treat as daily
@@ -579,6 +773,7 @@ pub async fn send_message(
     let db_clone = db.inner().clone();
     let gateway_clone = gateway.inner().clone();
     let file_mgr_clone = file_mgr.inner().clone();
+    let tool_registry_clone = tool_registry.inner().clone();
     let app_clone = app.clone();
 
     // 9. Spawn the agent loop in a background task with guard and timeout
@@ -609,6 +804,7 @@ pub async fn send_message(
                 db_clone,
                 gateway_clone,
                 file_mgr_clone,
+                tool_registry_clone,
                 app_clone.clone(),
                 settings,
                 chat_messages,
@@ -670,6 +866,7 @@ async fn agent_loop(
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
     file_mgr: Arc<FileManager>,
+    tool_registry: Arc<ToolRegistry>,
     app: AppHandle,
     settings: AppSettings,
     initial_messages: Vec<ChatMessage>,
@@ -730,6 +927,8 @@ async fn agent_loop(
     }
 
     // Determine system prompt, tool filter, and token budget based on mode
+    // In daily mode, get all tool schemas from the registry.
+    let all_tool_defs = tool_registry.get_all_schemas().await;
     let (system_prompt, tool_defs_override, max_iterations, token_budget, chunk_timeout_secs) = match &current_step_config {
         Some(config) => {
             log::info!("Agent loop in ANALYSIS mode: step={}, tools={}, max_iter={}",
@@ -740,7 +939,7 @@ async fn agent_loop(
                 config.system_prompt.clone(),
                 Some(config.tool_defs.clone()),
                 config.max_iterations,
-                8192u32, // analysis steps need more output room for structured data
+                config.token_budget,
                 180u64,  // analysis mode: tools take time, LLM thinks longer
             )
         }
@@ -748,7 +947,7 @@ async fn agent_loop(
             log::info!("Agent loop in DAILY CONSULTATION mode");
             (
                 prompts::get_system_prompt(None),
-                None, // use all tools
+                Some(all_tool_defs), // use all registered tools from registry
                 MAX_TOOL_ITERATIONS,
                 4096u32, // daily consultation: standard budget
                 CHUNK_TIMEOUT_SECS, // daily mode: 90s
@@ -760,18 +959,82 @@ async fn agent_loop(
     let system_prompt = format!("{}{}", system_prompt, file_context);
 
     // Inject accumulated analysis notes from previous steps into the system prompt.
-    // This ensures the LLM retains key findings even when message history is truncated.
+    // Groups notes by step number, compresses older steps to save tokens while
+    // keeping the most recent completed step at full detail.
     let analysis_notes_context = {
         let notes_prefix = format!("note:{}:", conversation_id);
         match db.get_memories_by_prefix(&notes_prefix) {
             Ok(notes) if !notes.is_empty() => {
-                let mut ctx = String::from("\n\n[前序分析记录（save_analysis_note 保存的关键结论）]\n");
+                // Determine the current step number (for compression decisions)
+                let current_step = current_step_config.as_ref().map(|c| c.step).unwrap_or(0);
+
+                // Group notes by step number for organized output
+                // Notes follow patterns: step{N}_summary, step{N}_auto_context, analysis_direction
+                let mut step_notes: std::collections::BTreeMap<u32, Vec<(String, String)>> = std::collections::BTreeMap::new();
+                let mut non_step_notes: Vec<(String, String)> = Vec::new();
+
                 for (key, value) in &notes {
-                    // Extract the note name from "note:{conv_id}:{name}"
                     let note_name = key.strip_prefix(&notes_prefix).unwrap_or(key);
-                    ctx.push_str(&format!("### {}\n{}\n\n", note_name, value));
+                    // Parse step number from note names like "step1_summary", "step2_auto_context"
+                    if note_name.starts_with("step") {
+                        if let Some(step_str) = note_name.strip_prefix("step") {
+                            if let Some(step_num) = step_str.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
+                                step_notes.entry(step_num).or_default().push((note_name.to_string(), value.clone()));
+                                continue;
+                            }
+                        }
+                    }
+                    non_step_notes.push((note_name.to_string(), value.clone()));
                 }
-                ctx.push_str("说明：以上是之前步骤保存的分析结论，当前步骤应基于这些结论继续分析。\n");
+
+                let mut ctx = String::from("\n\n[前序分析记录]\n");
+                ctx.push_str("说明：以下是之前步骤保存的分析结论和自动捕获的关键数据。当前步骤应基于这些记录继续分析，所有数据必须来自 execute_python 实际执行。\n\n");
+
+                // Non-step notes (e.g., analysis_direction) — always full
+                for (name, value) in &non_step_notes {
+                    ctx.push_str(&format!("### {}\n{}\n\n", name, value));
+                }
+
+                // Step notes — compress older steps, keep recent steps full
+                let max_completed_step = if current_step > 0 { current_step - 1 } else { 0 };
+                const OLDER_STEP_MAX_CHARS: usize = 3000;
+                const RECENT_STEP_MAX_CHARS: usize = 6000;
+
+                for (&step_num, notes_for_step) in &step_notes {
+                    ctx.push_str(&format!("## 第 {} 步记录\n", step_num));
+
+                    for (name, value) in notes_for_step {
+                        let is_recent_step = step_num >= max_completed_step && max_completed_step > 0;
+                        let is_summary = name.contains("_summary");
+
+                        // LLM-curated summaries are always included in full (they're already concise)
+                        if is_summary {
+                            ctx.push_str(&format!("### {}\n{}\n\n", name, value));
+                        } else if is_recent_step {
+                            // Most recent completed step: full auto_context
+                            let truncated = if value.len() > RECENT_STEP_MAX_CHARS {
+                                let end = truncate_at_char_boundary(value, RECENT_STEP_MAX_CHARS);
+                                format!("{}...(truncated)", &value[..end])
+                            } else {
+                                value.clone()
+                            };
+                            ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                        } else {
+                            // Older steps: truncated auto_context
+                            let truncated = if value.len() > OLDER_STEP_MAX_CHARS {
+                                let end = truncate_at_char_boundary(value, OLDER_STEP_MAX_CHARS);
+                                format!("{}...(truncated)", &value[..end])
+                            } else {
+                                value.clone()
+                            };
+                            ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                        }
+                    }
+                }
+
+                log::info!("[notes_injection] Injected {} notes ({} step groups + {} non-step) for conversation {}, current_step={}",
+                    notes.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step);
+
                 ctx
             }
             _ => String::new(),
@@ -1000,8 +1263,8 @@ async fn agent_loop(
             tool_calls.clone(),
         ));
 
-        let tool_ctx = ToolContext {
-            db: db.clone(),
+        let plugin_ctx = PluginContext {
+            storage: db.clone(),
             file_manager: file_mgr.clone(),
             workspace_path: workspace_path.clone(),
             conversation_id: conversation_id.clone(),
@@ -1027,13 +1290,21 @@ async fn agent_loop(
             );
 
             let tool_start = std::time::Instant::now();
-            let result = tool_executor::execute_tool(&tool_ctx, tc).await;
+            let result = tool_registry.execute(&tc.name, &plugin_ctx, tc.arguments.clone()).await;
             let tool_elapsed = tool_start.elapsed();
+
+            let (result_content, result_is_error) = match result {
+                Ok(output) => (output.content, output.is_error),
+                Err(e) => {
+                    log::error!("Tool '{}' failed: {}", tc.name, e);
+                    (format!("Error: {}", e), true)
+                }
+            };
 
             log::info!(
                 "[AGENT] Tool '{}' result: is_error={}, content_len={}, elapsed={:?}, preview='{}'",
-                tc.name, result.is_error, result.content.len(), tool_elapsed,
-                truncate_for_ui(&result.content, 300),
+                tc.name, result_is_error, result_content.len(), tool_elapsed,
+                truncate_for_ui(&result_content, 300),
             );
 
             let _ = app.emit(
@@ -1042,28 +1313,26 @@ async fn agent_loop(
                     "conversationId": conversation_id,
                     "toolName": tc.name,
                     "toolId": tc.id,
-                    "success": !result.is_error,
-                    "summary": truncate_for_ui(&result.content, 200),
+                    "success": !result_is_error,
+                    "summary": truncate_for_ui(&result_content, 200),
                 }),
             );
 
             // Collect fileId from tool results (generate_report, export_data, generate_chart, execute_python)
-            if !result.is_error {
+            if !result_is_error {
                 // Try parsing as JSON first (generate_report, export_data, generate_chart return JSON)
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result.content) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result_content) {
                     if let Some(file_id) = parsed.get("fileId").and_then(|v| v.as_str()) {
                         generated_file_ids.push(file_id.to_string());
                     }
                 }
                 // Also check for "fileId:" pattern in text output (execute_python auto-registered files).
-                // Flexible parsing: handles "fileId: xxx", "fileId:xxx", extra whitespace, etc.
-                for line in result.content.lines() {
+                for line in result_content.lines() {
                     if let Some(pos) = line.find("fileId:") {
                         let after = &line[pos + 7..].trim_start();
                         let id: String = after.chars()
                             .take_while(|c| c.is_ascii_hexdigit() || *c == '-')
                             .collect();
-                        // Validate UUID-like format (at least 32 hex chars + 4 hyphens = 36 chars)
                         if id.len() >= 36 && !generated_file_ids.contains(&id) {
                             generated_file_ids.push(id);
                         }
@@ -1072,8 +1341,8 @@ async fn agent_loop(
             }
 
             let masked_result = match combined_mask_ctx.as_mut() {
-                Some(ctx) => ctx.mask_text(&result.content),
-                None => result.content.clone(),
+                Some(ctx) => ctx.mask_text(&result_content),
+                None => result_content.clone(),
             };
             messages.push(ChatMessage::tool_result(
                 &tc.id,
@@ -1122,25 +1391,37 @@ async fn agent_loop(
     if let Some(ref config) = current_step_config {
         let completed_step = config.step;
 
-        // Validate that the step saved its analysis note (Steps 1-5 should all save notes)
+        // Validate that the step has analysis notes (either LLM-saved summary or auto-captured context).
+        // Auto-capture always saves step{N}_auto_context, so this is a sanity check.
+        // Still warn if the LLM didn't save a curated summary (auto_context is less structured).
         if completed_step >= 1 && completed_step <= 5 {
-            let expected_key = format!("note:{}:step{}_summary", conversation_id, completed_step);
-            let has_note = db.get_memory(&expected_key)
+            let note_prefix = format!("note:{}:step{}_", conversation_id, completed_step);
+            let has_any_note = db.get_memories_by_prefix(&note_prefix)
+                .map(|notes| !notes.is_empty())
+                .unwrap_or(false);
+
+            let summary_key = format!("note:{}:step{}_summary", conversation_id, completed_step);
+            let has_summary = db.get_memory(&summary_key)
                 .ok()
                 .flatten()
                 .map(|v| !v.is_empty())
                 .unwrap_or(false);
 
-            if !has_note {
+            if !has_any_note {
                 log::warn!(
-                    "[AGENT] Step {} completed without saving analysis note '{}' — data may be lost in next step",
-                    completed_step, expected_key
+                    "[AGENT] Step {} completed without ANY notes (prefix '{}') — data may be lost in next step",
+                    completed_step, note_prefix
                 );
                 let _ = app.emit("streaming:error", serde_json::json!({
                     "conversationId": conversation_id,
-                    "error": format!("⚠️ 第 {} 步完成但未保存分析记录（save_analysis_note），后续步骤可能丢失关键数据。建议在确认前要求 AI 重新保存。", completed_step),
+                    "error": format!("⚠️ 第 {} 步完成但未保存任何分析记录，后续步骤可能丢失关键数据。建议在确认前要求 AI 重新保存。", completed_step),
                     "severity": "warning",
                 }));
+            } else if !has_summary {
+                log::info!(
+                    "[AGENT] Step {} has auto-captured context but no LLM-curated summary. Auto-capture will serve as fallback.",
+                    completed_step
+                );
             }
         }
 

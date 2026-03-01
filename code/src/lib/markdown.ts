@@ -17,7 +17,13 @@ function esc(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-/** Apply inline formatting: bold, italic, inline code, strikethrough. */
+/** Inline style for clickable file name links. */
+const FILE_LINK_STYLE = 'cursor:pointer;text-decoration:underline;text-decoration-style:dashed;text-underline-offset:3px;color:var(--color-primary)'
+
+/** Known file extensions that should be rendered as clickable file links. */
+const FILE_EXT_PATTERN = '(?:xlsx|xls|csv|pdf|html|json|png|py|txt|docx)'
+
+/** Apply inline formatting: bold, italic, inline code, strikethrough, links, file names. */
 function inlineFmt(text: string): string {
   let s = esc(text)
   // Restore <br> tags that the LLM uses for line breaks within table cells.
@@ -27,6 +33,46 @@ function inlineFmt(text: string): string {
   s = s.replace(
     /`([^`]+)`/g,
     '<code style="background:var(--color-bg-base);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:0.82em;color:var(--color-text-primary)">$1</code>',
+  )
+  // Markdown links: [text](url) — file:// opens locally, http(s) opens in browser
+  s = s.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (_match: string, linkText: string, url: string) => {
+      if (url.startsWith('file:///')) {
+        try {
+          const filePath = decodeURIComponent(url.slice(7))
+          const fileName = filePath.split('/').pop() || linkText
+          return `<span data-file-link="${esc(fileName)}" style="${FILE_LINK_STYLE}" title="Open file">${linkText}</span>`
+        } catch {
+          return linkText
+        }
+      }
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--color-primary);text-decoration:underline">${linkText}</a>`
+      }
+      return linkText
+    },
+  )
+  // Standalone file:// URLs (not inside markdown links)
+  s = s.replace(
+    /(?<!\()file:\/\/\/([\S]+?)(?=[\s，。、）)；：！？\]|,.]|$)/g,
+    (_match: string, filePath: string) => {
+      try {
+        const decoded = decodeURIComponent(filePath)
+        const fileName = decoded.split('/').pop() || decoded
+        return `<span data-file-link="${esc(fileName)}" style="${FILE_LINK_STYLE}" title="Open file">${esc(fileName)}</span>`
+      } catch {
+        return _match
+      }
+    },
+  )
+  // Plain file names with known extensions (e.g. report.xlsx, 薪酬分析.pdf)
+  // Lookbehind prevents matching inside HTML tags or URLs
+  s = s.replace(
+    new RegExp(`(?<![>\\/"']|file-link=&quot;)([\\w\\u4e00-\\u9fff][\\w\\u4e00-\\u9fff\\-_.]*\\.${FILE_EXT_PATTERN})(?=[\\s，。、）)；：！？<\\]|,.]|$)`, 'gi'),
+    (_match: string, fileName: string) => {
+      return `<span data-file-link="${fileName}" style="${FILE_LINK_STYLE}" title="Open file">${fileName}</span>`
+    },
   )
   // Bold + italic
   s = s.replace(

@@ -180,10 +180,14 @@ pub fn get_system_prompt(step: Option<u32>) -> String {
     };
     let mode_prompt = guard.get(mode_key);
 
+    // Inject current date so the LLM knows "today"
+    let today = chrono::Local::now().format("%Y-%m-%d");
+    let date_line = format!("\n\n当前日期：{}", today);
+
     if mode_prompt.is_empty() {
-        base.to_string()
+        format!("{}{}", base, date_line)
     } else {
-        format!("{}\n\n{}", base, mode_prompt)
+        format!("{}{}\n\n{}", base, date_line, mode_prompt)
     }
 }
 

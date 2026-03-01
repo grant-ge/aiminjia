@@ -160,6 +160,97 @@ pub async fn preview_file(
     Ok(preview.to_string())
 }
 
+/// Search workspace subdirectories for a file by name and open it with the default app.
+#[tauri::command]
+pub async fn open_file_by_name(
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_name: String,
+) -> Result<(), String> {
+    let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Search workspace subdirectories for a file by name and reveal it in the OS file manager.
+#[tauri::command]
+pub async fn reveal_file_by_name(
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_name: String,
+) -> Result<(), String> {
+    let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", full_path.display()))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = full_path.parent().unwrap_or(&full_path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Search workspace subdirectories for a file matching the given name.
+/// Checks: reports/, analysis/, uploads/, scripts/, temp/ and workspace root.
+fn find_file_in_workspace(
+    file_mgr: &FileManager,
+    file_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let ws = file_mgr.workspace_path();
+    let subdirs = ["reports", "analysis", "uploads", "scripts", "temp", "charts", "exports"];
+
+    // First: exact match in subdirectories
+    for subdir in &subdirs {
+        let candidate = ws.join(subdir).join(file_name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    // Second: exact match in workspace root
+    let root_candidate = ws.join(file_name);
+    if root_candidate.exists() {
+        return Ok(root_candidate);
+    }
+
+    // Third: substring match — file name on disk contains the search term
+    for subdir in &subdirs {
+        let dir = ws.join(subdir);
+        if !dir.exists() { continue; }
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains(file_name) && entry.path().is_file() {
+                    return Ok(entry.path());
+                }
+            }
+        }
+    }
+
+    Err(format!("File '{}' not found in workspace", file_name))
+}
+
 /// Delete a file.
 #[tauri::command]
 pub async fn delete_file(

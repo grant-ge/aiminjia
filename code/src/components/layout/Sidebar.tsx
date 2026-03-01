@@ -2,7 +2,7 @@
  * Sidebar — Chat history list, new chat button, settings button.
  * Based on visual-prototype-zh.html sidebar section.
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import type { Conversation } from '@/types/message'
@@ -56,6 +56,13 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const isNewDisabled = busyConversations.size >= 3
 
   const grouped = useMemo(() => groupConversations(conversations), [conversations])
+
+  const [appVersion, setAppVersion] = useState('...')
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(({ getVersion }) =>
+      getVersion().then(setAppVersion)
+    ).catch(() => setAppVersion('0.0.0'))
+  }, [])
 
   return (
     <aside
@@ -171,10 +178,16 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                     onClick={() => switchConversation(conv.id)}
                   >
                     {busyConversations.has(conv.id) ? (
-                      <span
-                        className="h-[18px] w-[18px] shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60"
-                        style={{ color: 'var(--color-text-muted)' }}
-                      />
+                      <span className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+                        <span
+                          className="absolute h-[14px] w-[14px] animate-ping rounded-full opacity-40"
+                          style={{ background: 'var(--color-primary)' }}
+                        />
+                        <span
+                          className="relative h-[8px] w-[8px] rounded-full"
+                          style={{ background: 'var(--color-primary)' }}
+                        />
+                      </span>
                     ) : (
                       <svg
                         className="h-[18px] w-[18px] shrink-0 opacity-60"
@@ -240,7 +253,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           color: 'var(--color-text-muted)',
         }}
       >
-        <span>AI小家 v0.1.0</span>
+        <span>AI小家 v{appVersion}</span>
         <button
           className="flex cursor-pointer items-center gap-1.5 rounded-sm border px-[18px] py-2 text-base font-medium transition-all duration-150"
           style={{

@@ -12,14 +12,14 @@
 - **文档解析**：支持 Excel、Word、PDF、CSV 文件上传，自动解析内容
 - **代码执行**：内置 Python 运行时，自动写代码处理大文件和复杂数据
 - **联网搜索**：遇到知识盲区自动搜索行业薪酬、法规政策等信息
-- **文档生成**：在工作目录中生成 HTML/Excel/PDF 报告
+- **文档生成**：在工作目录中生成 HTML/PDF/DOCX/Excel 报告
 
 **产品形态**：
 - 桌面端应用（Mac + Windows），Tauri 2.x
 - 对话式交互，支持文件上传
 - 内置 Python 运行时
 - 本地工作目录读写
-- 多模型支持：DeepSeek（默认）、火山引擎、OpenAI、Claude、Qwen
+- 多模型支持：DeepSeek（默认）、火山引擎、OpenAI、Claude、Qwen、自定义模型（OpenAI-compatible）
 
 ---
 
@@ -903,7 +903,7 @@ Agent 需要的 Tools：
 7. save_analysis_note(key, value) → 保存分析记录到企业记忆
 
 # 报告生成
-8. generate_report(results, format) → 生成 HTML/Excel 报告
+8. generate_report(results, format) → 生成 HTML/PDF/DOCX/Markdown 报告（PDF/DOCX 从 HTML 自动转换）
 
 # 数据导出
 9. export_data(data, format) → 导出数据文件

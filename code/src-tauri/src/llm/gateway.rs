@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::providers::claude;
+use crate::llm::providers::custom;
 use crate::llm::providers::deepseek_r1;
 use crate::llm::providers::deepseek_v3;
 use crate::llm::providers::openai;
@@ -323,6 +324,14 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             let p = qwen::QwenProvider::new(route.api_key.clone());
             p.stream(request).await
         }
+        "custom" => {
+            let p = custom::CustomProvider::new(
+                route.api_key.clone(),
+                route.endpoint_url.clone(),
+                route.model_hint.clone(),
+            );
+            p.stream(request).await
+        }
         other => {
             log::warn!(
                 "Unknown provider '{}', falling back to deepseek-v3",
@@ -362,6 +371,14 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
         }
         "qwen-plus" => {
             let p = qwen::QwenProvider::new(route.api_key.clone());
+            p.send(request).await
+        }
+        "custom" => {
+            let p = custom::CustomProvider::new(
+                route.api_key.clone(),
+                route.endpoint_url.clone(),
+                route.model_hint.clone(),
+            );
             p.send(request).await
         }
         other => {

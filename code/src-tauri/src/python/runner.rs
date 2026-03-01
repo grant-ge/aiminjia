@@ -84,8 +84,8 @@ impl PythonRunner {
         let file_id = uuid::Uuid::new_v4().to_string();
         let temp_file = temp_dir.join(format!("code_{}.py", file_id));
 
-        // Prepend sandbox preamble to user code
-        let full_code = format!("{}\n# --- User Code ---\n{}", self.sandbox.preamble(), code);
+        // Prepend UTF-8 encoding declaration and sandbox preamble to user code
+        let full_code = format!("# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}", self.sandbox.preamble(), code);
         std::fs::write(&temp_file, &full_code).context("Failed to write temp Python file")?;
 
         // 3. Execute
@@ -118,6 +118,7 @@ impl PythonRunner {
             .stderr(Stdio::piped())
             .env("PYTHONIOENCODING", "utf-8")    // Force UTF-8 output on all platforms
             .env("PYTHONLEGACYWINDOWSSTDIO", "0") // Disable legacy Windows stdio
+            .env("PYTHONUTF8", "1")              // PEP 540: force UTF-8 mode (Windows)
             .kill_on_drop(true);
 
         // When using bundled Python, set PYTHONHOME and clear PYTHONPATH

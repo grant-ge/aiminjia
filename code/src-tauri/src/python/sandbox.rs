@@ -169,7 +169,7 @@ except ImportError:
 
 def _smart_read_csv(path, **kwargs):
     """Read CSV with encoding auto-detection (UTF-8 -> GBK -> latin-1)."""
-    for enc in ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'latin-1']:
+    for enc in ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'latin-1']:
         try:
             return pd.read_csv(path, encoding=enc, **kwargs)
         except (UnicodeDecodeError, UnicodeError):
@@ -181,7 +181,16 @@ def _smart_read_data(path, **kwargs):
     if path.endswith('.csv') or path.endswith('.tsv'):
         return _smart_read_csv(path, **kwargs)
     else:
-        return pd.read_excel(path, **kwargs)
+        df = pd.read_excel(path, **kwargs)
+        # Fix garbled column names from GBK-encoded Excel files
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
+
+def _smart_write_csv(df, path, **kwargs):
+    """Write CSV with UTF-8-BOM encoding (opens correctly in Excel on Windows)."""
+    kwargs.setdefault('encoding', 'utf-8-sig')
+    kwargs.setdefault('index', False)
+    df.to_csv(path, **kwargs)
 
 def _find_data_file(pattern='uploads/*'):
     """Find the first data file matching the pattern."""

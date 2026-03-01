@@ -7,6 +7,7 @@ use crate::models::settings::AppSettings;
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::providers::{
     claude::ClaudeProvider,
+    custom::CustomProvider,
     deepseek_v3::DeepSeekV3Provider,
     openai::OpenAiProvider,
     qwen::QwenProvider,
@@ -257,10 +258,11 @@ pub async fn update_all_provider_keys(
 /// Makes a real HTTP validation call using the provider implementation.
 #[tauri::command]
 pub async fn validate_api_key(
+    db: State<'_, Arc<AppStorage>>,
     provider: String,
     api_key: String,
 ) -> Result<bool, String> {
-    if api_key.trim().is_empty() {
+    if provider != "custom" && api_key.trim().is_empty() {
         return Ok(false);
     }
 
@@ -283,6 +285,20 @@ pub async fn validate_api_key(
         }
         "volcano" => {
             let p = VolcanoProvider::new(api_key, String::new());
+            p.validate_key().await
+        }
+        "custom" => {
+            // For custom provider, read endpoint + model from settings
+            let settings_map = db.get_all_settings().map_err(|e| e.to_string())?;
+            let settings = AppSettings::from_string_map(&settings_map);
+            if settings.custom_model_endpoint.is_empty() || settings.custom_model_name.is_empty() {
+                return Err("请先填写 API Endpoint 和模型名称".to_string());
+            }
+            let p = CustomProvider::new(
+                api_key,
+                settings.custom_model_endpoint,
+                settings.custom_model_name,
+            );
             p.validate_key().await
         }
         _ => {

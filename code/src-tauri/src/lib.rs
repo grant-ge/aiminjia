@@ -4,6 +4,7 @@ mod llm;
 mod search;
 mod storage;
 mod python;
+mod plugin;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -19,15 +20,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // Debug logging
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-
             // Initialize app data directory
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
@@ -60,7 +52,27 @@ pub fn run() {
                 std::fs::create_dir_all(&p).ok();
                 p
             };
-            let file_mgr = Arc::new(storage::file_manager::FileManager::new(fm_path));
+            let file_mgr = Arc::new(storage::file_manager::FileManager::new(fm_path.clone()));
+
+            // Configure logging — write to workspace/logs/ for both debug and release
+            let logs_dir = fm_path.join("logs");
+            std::fs::create_dir_all(&logs_dir).ok();
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::Folder {
+                            path: logs_dir.clone(),
+                            file_name: Some("renlijia".into()),
+                        }
+                    ))
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                    .max_file_size(5_000_000) // 5MB per file
+                    .build(),
+            )?;
+
+            // Auto-cleanup old log files (> 7 days)
+            cleanup_old_logs(&logs_dir, 7);
 
             // Initialize secure storage for API key encryption
             let secure_storage: Option<Arc<storage::crypto::SecureStorage>> =
@@ -77,6 +89,29 @@ pub fn run() {
 
             // Initialize LLM gateway
             let gateway = Arc::new(llm::gateway::LlmGateway::new(db.clone()));
+
+            // Initialize plugin registries
+            let tool_registry = Arc::new(plugin::ToolRegistry::new());
+            let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
+
+            // Register builtin tools and skills
+            tauri::async_runtime::block_on(async {
+                plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
+                plugin::builtin::skills::register_builtin_skills(&skill_registry).await;
+
+                // Scan bundled plugin directory for external plugins
+                let plugins_dir = resource_dir.join("plugins");
+                if plugins_dir.exists() {
+                    scan_external_plugins(
+                        &plugins_dir,
+                        &tool_registry,
+                        &skill_registry,
+                        file_mgr.workspace_path(),
+                    ).await;
+                }
+            });
+
+            log::info!("Plugin system initialized");
 
             // Crash recovery: clean up any tasks that were running when app crashed
             match db.cleanup_orphaned_tasks() {
@@ -99,6 +134,8 @@ pub fn run() {
             app.manage(file_mgr);
             app.manage(gateway);
             app.manage(secure_storage);
+            app.manage(tool_registry);
+            app.manage(skill_registry);
 
             Ok(())
         })
@@ -117,6 +154,8 @@ pub fn run() {
             file::reveal_file_in_folder,
             file::preview_file,
             file::delete_file,
+            file::open_file_by_name,
+            file::reveal_file_by_name,
             // Settings commands
             settings::get_settings,
             settings::update_settings,
@@ -128,9 +167,130 @@ pub fn run() {
             // Workspace commands
             workspace::select_workspace,
             workspace::get_workspace_info,
+            workspace::open_logs_directory,
             // Export commands
             export::export_conversation,
+            // Plugin commands
+            commands::plugin::list_tools,
+            commands::plugin::list_skills,
+            commands::plugin::get_plugin_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Scan bundled plugin directories for external plugins (resource_dir/plugins/).
+async fn scan_external_plugins(
+    plugins_dir: &std::path::Path,
+    tool_registry: &plugin::ToolRegistry,
+    skill_registry: &plugin::SkillRegistry,
+    workspace_path: &std::path::Path,
+) {
+    let entries = match std::fs::read_dir(plugins_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("Failed to read plugins directory: {}", e);
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let manifest_path = path.join("plugin.toml");
+        if !manifest_path.exists() {
+            continue;
+        }
+
+        let manifest_content = match std::fs::read_to_string(&manifest_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to read {:?}: {}", manifest_path, e);
+                continue;
+            }
+        };
+
+        let manifest = match plugin::manifest::parse_plugin_manifest(&manifest_content) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("Invalid plugin.toml in {:?}: {}", path, e);
+                continue;
+            }
+        };
+
+        match manifest.plugin.plugin_type.as_str() {
+            "tool" => {
+                if manifest.plugin.runtime.as_deref() == Some("python") {
+                    match plugin::python_bridge::PythonToolBridge::from_manifest(&manifest, path.clone()) {
+                        Ok(mut bridge) => {
+                            if let Err(e) = bridge.load_schema(workspace_path).await {
+                                log::warn!("Failed to load schema for plugin '{}': {}", manifest.plugin.id, e);
+                                continue;
+                            }
+                            tool_registry.register(
+                                std::sync::Arc::new(bridge),
+                                "plugin",
+                            ).await;
+                            log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to create Python tool bridge for '{}': {}", manifest.plugin.id, e);
+                        }
+                    }
+                }
+            }
+            "skill" => {
+                match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
+                    Ok(skill) => {
+                        skill_registry.register(
+                            std::sync::Arc::new(skill),
+                            "plugin",
+                        ).await;
+                        log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load skill plugin '{}': {}", manifest.plugin.id, e);
+                    }
+                }
+            }
+            other => {
+                log::warn!("Unknown plugin type '{}' in {:?}", other, manifest_path);
+            }
+        }
+    }
+}
+
+/// Remove log files older than `retention_days` days from the logs directory.
+fn cleanup_old_logs(logs_dir: &std::path::Path, retention_days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(retention_days * 86400));
+    let cutoff = match cutoff {
+        Some(c) => c,
+        None => return,
+    };
+
+    let entries = match std::fs::read_dir(logs_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Ok(meta) = path.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if modified < cutoff {
+                    if std::fs::remove_file(&path).is_ok() {
+                        // Log may not be available yet during startup, use eprintln
+                        eprintln!("Cleaned up old log file: {:?}", path);
+                    }
+                }
+            }
+        }
+    }
 }

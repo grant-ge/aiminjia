@@ -38,7 +38,8 @@
     ],
     "resources": {
       "python-runtime": "python-runtime",
-      "prompts": "prompts"
+      "prompts": "prompts",
+      "plugins": "plugins"
     }
   }
 }

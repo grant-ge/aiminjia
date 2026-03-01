@@ -61,6 +61,10 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 bytes = "1"
 
+# Plugin system
+async-trait = "0.1"
+toml = "0.8"
+
 [dev-dependencies]
 tempfile = "3"
 

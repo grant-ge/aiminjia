@@ -14,6 +14,8 @@ import {
   getAllProviderKeys,
   updateAllProviderKeys,
   getConfiguredProviders,
+  switchProvider,
+  openLogsDirectory,
 } from '@/lib/tauri'
 import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
@@ -31,6 +33,7 @@ const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
   { value: 'volcano', label: '火山引擎' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'claude', label: 'Claude' },
+  { value: 'custom', label: '自定义模型' },
 ]
 
 const API_KEY_PLACEHOLDERS: Record<LlmProvider, string> = {
@@ -39,6 +42,7 @@ const API_KEY_PLACEHOLDERS: Record<LlmProvider, string> = {
   'volcano': 'API Key...',
   'openai': 'sk-...',
   'claude': 'sk-ant-...',
+  'custom': 'API Key（可选，本地模型留空）',
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -57,6 +61,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   // Show/hide toggles
   const [showApiKey, setShowApiKey] = useState(false)
   const [showTavilyKey, setShowTavilyKey] = useState(false)
+
+  // App version (from tauri.conf.json)
+  const [appVersion, setAppVersion] = useState('...')
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(({ getVersion }) =>
+      getVersion().then(setAppVersion)
+    ).catch(() => setAppVersion('0.0.0'))
+  }, [])
 
   // Load settings + all provider keys when modal opens
   useEffect(() => {
@@ -113,6 +125,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         tempFileRetentionDays: settings.tempFileRetentionDays,
         keepOldVersions: settings.keepOldVersions,
         tavilyApiKey: settings.tavilyApiKey,
+        customModelEndpoint: settings.customModelEndpoint,
+        customModelName: settings.customModelName,
       })
 
       // Refresh configured providers list
@@ -136,10 +150,58 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   }
 
-  const handleSetAsPrimary = (provider: LlmProvider) => {
+  const handleSetAsPrimary = async (provider: LlmProvider) => {
+    // Update local state
     settings.setPrimaryModel(provider)
     const cachedKey = keyCache[provider] ?? ''
     settings.setPrimaryApiKey(cachedKey)
+
+    // Persist immediately — save the key first, then switch provider
+    try {
+      const keysToSave: Record<string, string> = {}
+      keysToSave[provider] = cachedKey
+      await updateAllProviderKeys(keysToSave)
+      await switchProvider(provider)
+
+      // For custom provider, also persist endpoint/model settings
+      if (provider === 'custom') {
+        await updateSettings({
+          primaryModel: provider,
+          primaryApiKey: cachedKey,
+          autoModelRouting: settings.autoModelRouting,
+          workspacePath: settings.workspacePath,
+          analysisThreshold: settings.analysisThreshold,
+          dataMaskingLevel: settings.dataMaskingLevel,
+          autoCleanupEnabled: settings.autoCleanupEnabled,
+          tempFileRetentionDays: settings.tempFileRetentionDays,
+          keepOldVersions: settings.keepOldVersions,
+          tavilyApiKey: settings.tavilyApiKey,
+          customModelEndpoint: settings.customModelEndpoint,
+          customModelName: settings.customModelName,
+        })
+      }
+
+      notifications.push({
+        level: 'success',
+        title: '已切换默认模型',
+        message: `已设为 ${LLM_PROVIDER_LABELS[provider] ?? provider}`,
+        actions: [],
+        dismissible: true,
+        autoHide: 3,
+        context: 'toast',
+      })
+    } catch (err) {
+      console.error('Failed to switch provider:', err)
+      notifications.push({
+        level: 'error',
+        title: '切换失败',
+        message: err instanceof Error ? err.message : '切换默认模型时发生错误',
+        actions: [],
+        dismissible: true,
+        autoHide: 6,
+        context: 'toast',
+      })
+    }
   }
 
   const currentKeyForProvider = keyCache[activeProvider] ?? ''
@@ -261,9 +323,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }
                 setValidating(false)
               }}
-              disabled={!currentKeyForProvider || validating}
+              disabled={(activeProvider !== 'custom' && !currentKeyForProvider) || validating}
             >
-              {validating ? '验证中...' : '验证 Key'}
+              {validating ? '验证中...' : activeProvider === 'custom' ? '测试连接' : '验证 Key'}
             </Button>
 
             {activeProvider !== settings.primaryModel && (
@@ -286,6 +348,77 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </span>
             )}
           </div>
+
+          {/* Custom model config — only for 'custom' provider */}
+          {activeProvider === 'custom' && (
+            <>
+              <FormGroup
+                label="API Endpoint"
+                desc="OpenAI 兼容的 API 地址（必填，填到 /v1 即可，系统自动拼接 /chat/completions）"
+              >
+                <FormInput
+                  value={settings.customModelEndpoint}
+                  placeholder="http://localhost:11434/v1"
+                  onChange={(v) => settings.setCustomModelEndpoint(v)}
+                />
+              </FormGroup>
+              <FormGroup
+                label="模型名称"
+                desc="要使用的模型 ID（必填）"
+              >
+                <FormInput
+                  value={settings.customModelName}
+                  placeholder="qwen2.5:7b"
+                  onChange={(v) => settings.setCustomModelName(v)}
+                />
+              </FormGroup>
+
+              {/* Common service examples */}
+              <div
+                className="rounded-md border px-3 py-2.5 text-xs"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                <div
+                  className="mb-2 text-xs font-semibold"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  常见服务配置示例
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div>
+                    <span style={{ color: 'var(--color-text-primary)' }}>Ollama（本地）</span>
+                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:11434/v1</code>
+                    ，模型如 <code>qwen2.5:7b</code>
+                    ，Key 留空
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-primary)' }}>LM Studio（本地）</span>
+                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:1234/v1</code>
+                    ，模型如 <code>llama3</code>
+                    ，Key 留空
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-primary)' }}>OpenRouter</span>
+                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>https://openrouter.ai/api/v1</code>
+                    ，模型如 <code>google/gemini-pro</code>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-primary)' }}>硅基流动 SiliconFlow</span>
+                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>https://api.siliconflow.cn/v1</code>
+                    ，模型如 <code>deepseek-ai/DeepSeek-V3</code>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-primary)' }}>其他 OpenAI 兼容服务</span>
+                    ：填入服务提供的 API 地址（到 /v1），填入对应的模型名和 Key
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Model info */}
           {providerCaps && (
@@ -361,8 +494,42 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </button>
             </div>
           </FormGroup>
+
+          {/* System Info */}
+          <div
+            className="mt-6 border-t pt-4"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <div
+              className="mb-3 text-sm font-semibold"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              系统信息
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <span>版本：AI小家 v{appVersion}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>运行日志：</span>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    try {
+                      await openLogsDirectory()
+                    } catch (err) {
+                      console.error('Failed to open logs directory:', err)
+                    }
+                  }}
+                >
+                  打开日志目录
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
+
     </Modal>
   )
 }
