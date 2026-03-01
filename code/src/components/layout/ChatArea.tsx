@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { openFileByName } from '@/lib/tauri'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { MessageList } from '@/components/chat/MessageList'
 import { WelcomeScreen } from '@/components/chat/WelcomeScreen'
 
@@ -94,13 +95,19 @@ export function ChatArea() {
         if (!fileName) return
         openFileByName(fileName).catch((err) => {
           console.warn('[ChatArea] File not found:', fileName, err)
-          const prev = fileTarget.textContent
-          fileTarget.textContent = 'File not found'
           fileTarget.style.color = 'var(--color-semantic-red)'
           setTimeout(() => {
-            fileTarget.textContent = prev
             fileTarget.style.color = 'var(--color-primary)'
           }, 2000)
+          useNotificationStore.getState().push({
+            level: 'error',
+            title: '文件未找到',
+            message: `无法打开文件 "${fileName}"，文件可能尚未生成或已被移动。`,
+            actions: [],
+            dismissible: true,
+            autoHide: 5,
+            context: 'toast',
+          })
         })
       }
     }

@@ -27,11 +27,13 @@ export const TAURI_EVENTS = {
   MESSAGE_UPDATED: 'message:updated',
   ANALYSIS_STEP_CHANGED: 'analysis:step-changed',
   FILE_PARSED: 'file:parsed',
+  FILE_GENERATED: 'file:generated',
   NOTIFICATION: 'notification',
   TOOL_EXECUTING: 'tool:executing',
   TOOL_COMPLETED: 'tool:completed',
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
+  AGENT_PHASE: 'agent:phase',
   STREAMING_STEP_RESET: 'streaming:step-reset',
 } as const
 
@@ -58,6 +60,15 @@ export interface AgentIdlePayload {
   conversationId: string
 }
 
+export interface AgentPhasePayload {
+  conversationId: string
+  iteration: number
+  phase: 'think' | 'act' | 'observe'
+  prevPhaseDurationMs: number
+  toolNames: string[]
+  maxIterations: number
+}
+
 export interface StreamingStepResetPayload {
   conversationId: string
   step: number
@@ -76,6 +87,19 @@ export interface ToolCompletedPayload {
   toolId: string
   success: boolean
   summary?: string
+}
+
+export interface FileGeneratedPayload {
+  conversationId: string
+  fileId: string
+  fileName: string
+  requestedFormat: string
+  actualFormat: string
+  fileSize: number
+  storedPath: string
+  category: string
+  isDegraded: boolean
+  degradationNotice: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +578,20 @@ export function onAgentIdle(
 }
 
 /**
+ * Listen for agent TAOR phase transitions (Think → Act → Observe).
+ *
+ * @param handler - Callback receiving the phase event payload
+ * @returns A function to unlisten (unsubscribe) from the event
+ */
+export function onAgentPhase(
+  handler: (payload: AgentPhasePayload) => void,
+): Promise<() => void> {
+  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, (event) => {
+    handler(event.payload)
+  })
+}
+
+/**
  * Listen for streaming step-reset events during auto-advance between analysis steps.
  *
  * When the backend auto-advances from step N to step N+1, it emits this event
@@ -564,6 +602,21 @@ export function onStreamingStepReset(
   handler: (payload: StreamingStepResetPayload) => void,
 ): Promise<() => void> {
   return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
+    handler(event.payload)
+  })
+}
+
+/**
+ * Listen for file:generated events (emitted directly by the tool execution layer,
+ * bypassing LLM). Used to show immediate file feedback and degradation warnings.
+ *
+ * @param handler - Callback receiving the file generation details
+ * @returns A function to unlisten (unsubscribe) from the event
+ */
+export function onFileGenerated(
+  handler: (payload: FileGeneratedPayload) => void,
+): Promise<() => void> {
+  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, (event) => {
     handler(event.payload)
   })
 }

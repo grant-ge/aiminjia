@@ -9,8 +9,10 @@ use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompts;
 use crate::llm::prompt_guard;
+use crate::llm::taor::PhaseTracker;
 use crate::plugin::{PluginContext, ToolRegistry, SkillRegistry};
 use crate::plugin::skill_trait::{SkillState, StepAction};
+use crate::plugin::tool_trait::FileMeta;
 use crate::storage::crypto::SecureStorage;
 use crate::models::settings::AppSettings;
 
@@ -23,6 +25,15 @@ const AGENT_TIMEOUT_SECS: u64 = 900;
 /// Maximum time to wait for a single chunk from the LLM stream (90 seconds).
 /// If no data arrives within this window, the stream is considered stalled.
 const CHUNK_TIMEOUT_SECS: u64 = 90;
+
+/// Character threshold for triggering context compression in daily mode.
+/// When total message content exceeds this, older messages are summarized.
+/// ~24K chars ≈ 8K tokens (Chinese averages ~3 chars/token).
+const COMPRESS_THRESHOLD_CHARS: usize = 24_000;
+
+/// Number of recent messages to preserve (not compress) during compression.
+/// These are kept verbatim so the LLM has full context for the current exchange.
+const COMPRESS_KEEP_RECENT: usize = 10;
 
 /// Compress tool result text in message history to save context tokens.
 /// Strips verbose headers from execute_python results while keeping the actual output.
@@ -179,6 +190,50 @@ fn auto_capture_step_context(
     }
 }
 
+/// Check if a user message is engaging with the analysis context.
+///
+/// Used in `confirming` mode (Step 0) to distinguish between messages that
+/// are providing analysis direction (e.g. "我关注销售团队的薪酬倒挂") and
+/// messages that are clearly unrelated (e.g. "帮我做个PPT").
+///
+/// Since analysis was auto-activated (no user confirmation), we need to
+/// allow smooth exit: if the user's message doesn't touch any analysis-
+/// related topic, we treat it as an implicit exit from analysis.
+fn is_analysis_engaging(text: &str) -> bool {
+    let lower = text.to_lowercase();
+
+    let keywords = [
+        // Compensation terms
+        "薪酬", "薪资", "工资", "薪金", "底薪", "月薪", "年薪",
+        "salary", "pay", "compensation", "wage",
+        // Analysis/diagnostic terms
+        "分析", "诊断", "对比", "比较",
+        "analyze", "analysis", "diagnose", "compare",
+        // Fairness/equity
+        "公平", "平等", "合理", "equity", "fairness",
+        // Data/file references
+        "数据", "表格", "表", "excel", "csv", "文件", "file", "data",
+        // Org structure
+        "岗位", "职位", "职级", "部门", "职能",
+        "position", "level", "department", "role",
+        // Compensation components
+        "绩效", "奖金", "津贴", "补贴", "提成", "加班费",
+        "bonus", "performance", "allowance",
+        // Analysis focus areas
+        "倒挂", "差异", "偏差", "异常", "差距",
+        "gap", "disparity", "anomaly",
+        // Direction/focus
+        "关注", "侧重", "重点", "方向", "看看",
+        "focus", "check",
+        // Salary adjustment
+        "调薪", "加薪", "涨薪", "raise", "adjustment",
+        // Reporting
+        "报告", "report",
+    ];
+
+    keywords.iter().any(|kw| lower.contains(kw))
+}
+
 /// Detect if a user message is a general daily question unrelated to the
 /// current analysis workflow.
 ///
@@ -256,6 +311,23 @@ fn clear_analysis_notes(db: &AppStorage, conversation_id: &str) {
         ),
     }
 
+    // Also clean up loaded file mappings (loaded:{conv_id}:*)
+    let loaded_prefix = format!("loaded:{}:", conversation_id);
+    match db.delete_memories_by_prefix(&loaded_prefix) {
+        Ok(count) => {
+            if count > 0 {
+                log::info!(
+                    "[cleanup] Cleared {} loaded file markers for conversation {}",
+                    count, conversation_id
+                );
+            }
+        }
+        Err(e) => log::warn!(
+            "[cleanup] Failed to clear loaded file markers for {}: {}",
+            conversation_id, e
+        ),
+    }
+
     // Store completion timestamp for cooldown detection
     let cooldown_key = format!("note:{}:analysis_completed_at", conversation_id);
     let now = chrono::Utc::now().to_rfc3339();
@@ -316,6 +388,25 @@ impl AgentGuard {
         Self { gateway, db, app, conversation_id, cleared: false }
     }
 
+    /// Remove the run.lock file with one retry on failure.
+    fn remove_lock_with_retry(&self) {
+        if let Err(e) = self.db.remove_active_task(&self.conversation_id) {
+            log::error!(
+                "[AgentGuard] Failed to remove run.lock for {} (attempt 1): {}, retrying...",
+                self.conversation_id, e
+            );
+            // Single retry after a short delay (file system transient errors)
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if let Err(e2) = self.db.remove_active_task(&self.conversation_id) {
+                log::error!(
+                    "[AgentGuard] CRITICAL: Failed to remove run.lock for {} (attempt 2): {}. \
+                     Will be cleaned up on next app startup.",
+                    self.conversation_id, e2
+                );
+            }
+        }
+    }
+
     /// Explicitly clear the active task and emit cleanup events.
     /// Always emits both `streaming:done` (so frontend clears streaming UI)
     /// and `agent:idle` (so frontend clears busy state).
@@ -323,7 +414,7 @@ impl AgentGuard {
         if !self.cleared {
             self.cleared = true;
             self.gateway.clear_task(&self.conversation_id);
-            self.db.remove_active_task(&self.conversation_id).ok();
+            self.remove_lock_with_retry();
             // streaming:done MUST fire so frontend clears isStreaming state.
             // finish_agent() also emits this, but if the agent panicked before
             // reaching finish_agent(), this is the only safety net.
@@ -347,7 +438,7 @@ impl Drop for AgentGuard {
     fn drop(&mut self) {
         if !self.cleared {
             // Synchronous cleanup — gateway.clear_task() is now sync (std::sync::Mutex)
-            self.db.remove_active_task(&self.conversation_id).ok();
+            self.remove_lock_with_retry();
             self.gateway.clear_task(&self.conversation_id);
 
             // Event emission is also sync (Tauri emit is sync)
@@ -412,11 +503,19 @@ pub async fn send_message(
         ));
     }
 
+    // Claim the conversation slot immediately to prevent TOCTOU race
+    // (double-click sending duplicate messages between busy check and set_busy).
+    // set_busy is atomic — second caller gets an error even if both pass the check above.
+    gateway.set_busy(&conversation_id).map_err(|e| e)?;
+
     // 1. Look up attached file metadata (single batch query)
     let file_attachments = if file_ids.is_empty() {
         Vec::new()
     } else {
-        db.get_uploaded_files_by_ids(&file_ids).map_err(|e| e.to_string())?
+        match db.get_uploaded_files_by_ids(&file_ids) {
+            Ok(f) => f,
+            Err(e) => { gateway.clear_task(&conversation_id); return Err(e.to_string()); }
+        }
     };
 
     // 2. Save user message to DB (including file references)
@@ -436,8 +535,10 @@ pub async fn send_message(
         serde_json::json!({ "text": content, "files": files_meta }).to_string()
     };
 
-    db.insert_message(&msg_id, &conversation_id, "user", &content_json)
-        .map_err(|e| e.to_string())?;
+    if let Err(e) = db.insert_message(&msg_id, &conversation_id, "user", &content_json) {
+        gateway.clear_task(&conversation_id);
+        return Err(e.to_string());
+    }
 
     // NOTE: We do NOT emit "message:updated" for the user message here.
     // The frontend already adds an optimistic user message to the store
@@ -454,13 +555,16 @@ pub async fn send_message(
             format!("- {} (file_id: \"{}\", 类型: {})", name, fid, ftype)
         }).collect();
         format!(
-            "{}\n\n[已上传文件]\n{}\n\n提示：先调用 analyze_file(file_id) 获取文件的 filePath（绝对路径），然后在 execute_python 中使用该 filePath 读取文件。",
+            "{}\n\n[已上传文件]\n{}\n\n提示：先调用 load_file(file_id) 加载文件数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本）变量。",
             content, file_refs.join("\n")
         )
     };
 
     // 4. Load settings
-    let settings_map = db.get_all_settings().map_err(|e| e.to_string())?;
+    let settings_map = match db.get_all_settings() {
+        Ok(m) => m,
+        Err(e) => { gateway.clear_task(&conversation_id); return Err(e.to_string()); }
+    };
     let mut settings: AppSettings = if settings_map.is_empty() {
         log::info!("No settings in DB, using defaults");
         AppSettings::default()
@@ -511,19 +615,20 @@ pub async fn send_message(
             _ => &settings.primary_model,
         };
         let error_msg = format!("请先在设置中配置 {} 的 API Key", provider_name);
-        app.emit("streaming:error", serde_json::json!({
+        let _ = app.emit("streaming:error", serde_json::json!({
             "conversationId": conversation_id,
             "error": error_msg,
-        }))
-            .map_err(|e| e.to_string())?;
+        }));
+        gateway.clear_task(&conversation_id);
         return Err(error_msg);
     }
 
     // 5. Build initial message history from DB (sliding window: last N messages)
-    //    Uses SQL LIMIT to avoid loading the full history for long conversations.
     const MAX_HISTORY_MESSAGES: u32 = 30;
-    let db_messages = db.get_recent_messages(&conversation_id, MAX_HISTORY_MESSAGES)
-        .map_err(|e| e.to_string())?;
+    let db_messages = match db.get_recent_messages(&conversation_id, MAX_HISTORY_MESSAGES) {
+        Ok(m) => m,
+        Err(e) => { gateway.clear_task(&conversation_id); return Err(e.to_string()); }
+    };
     let mut chat_messages: Vec<ChatMessage> = db_messages.iter().filter_map(|m| {
         let role = m.get("role")?.as_str()?;
         let content_val = m.get("content")?;
@@ -570,7 +675,16 @@ pub async fn send_message(
     //   - detect_activation() replaces detect_analysis_mode()
     //   - Skill.on_step_complete() replaces next_action()
     //   - Skill methods provide prompt, tool filter, iterations, budget
-    let has_files = !file_attachments.is_empty();
+    // Check for files: current message attachments OR any files uploaded earlier in this conversation.
+    // This ensures skill activation detects files even when the user sends a follow-up text message
+    // (e.g., "帮我分析薪酬") without re-attaching the file.
+    let has_files = if !file_attachments.is_empty() {
+        true
+    } else {
+        db.get_uploaded_files_for_conversation(&conversation_id)
+            .map(|files| !files.is_empty())
+            .unwrap_or(false)
+    };
     let conversation_mode = db.get_conversation_mode(&conversation_id)
         .unwrap_or_else(|_| "daily".to_string());
 
@@ -578,67 +692,8 @@ pub async fn send_message(
 
     let step_config: Option<StepConfig> = match conversation_mode.as_str() {
         "daily" => {
-            // First, check if there's a pending skill activation from the previous message.
-            // This is set when detect_activation fires but we want user confirmation first.
-            let pending_key = format!("note:{}:pending_skill", conversation_id);
-            let pending_skill_id = db.get_memory(&pending_key).ok().flatten();
-
-            if let Some(ref skill_id) = pending_skill_id {
-                // Clear the pending marker regardless of outcome
-                if let Err(e) = db.delete_memories_by_prefix(&pending_key) {
-                    log::warn!("Failed to clear pending_skill: {}", e);
-                }
-
-                // Check if user confirmed the activation
-                if crate::plugin::skill_trait::is_confirm_keyword(&content)
-                    || crate::plugin::skill_trait::is_abort_keyword(&content)
-                {
-                    if crate::plugin::skill_trait::is_abort_keyword(&content) {
-                        log::info!("User rejected pending skill activation for conversation {}", conversation_id);
-                        None // process as daily
-                    } else {
-                        // User confirmed → proceed with activation
-                        log::info!("User confirmed pending skill '{}' for conversation {}", skill_id, conversation_id);
-                        let skill = skill_registry.get(skill_id).await;
-                        match skill {
-                            Some(skill) if skill.workflow().is_some() => {
-                                let workflow = skill.workflow().unwrap();
-                                let initial_step = &workflow.initial_step;
-                                let step_num = initial_step.strip_prefix("step")
-                                    .and_then(|n| n.parse::<u32>().ok())
-                                    .unwrap_or(0);
-
-                                if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
-                                    log::error!("Failed to set mode to 'confirming': {}", e);
-                                }
-                                let skill_key = format!("note:{}:active_skill", conversation_id);
-                                if let Err(e) = db.set_memory(&skill_key, skill_id, Some("system")) {
-                                    log::error!("Failed to store active skill ID: {}", e);
-                                }
-                                if let Err(e) = orchestrator::advance_step(
-                                    &db.inner().clone(), &conversation_id, step_num, "in_progress",
-                                ) {
-                                    log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
-                                }
-
-                                let mut state = SkillState::new(skill_id);
-                                state.current_step = Some(initial_step.clone());
-                                Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
-                            }
-                            _ => {
-                                log::warn!("Pending skill '{}' not found or has no workflow", skill_id);
-                                None
-                            }
-                        }
-                    }
-                } else {
-                    // User sent a non-confirmation message → treat as daily, ignore pending
-                    log::info!("Pending skill '{}' expired (user sent non-confirmation), processing as daily", skill_id);
-                    None
-                }
-            } else {
-            // No pending skill — check if a Skill with a workflow should activate.
-            // P4: Skip detection during cooldown period after recent analysis.
+            // Check if a Skill with a workflow should activate.
+            // Skip detection during cooldown period after recent analysis.
             let in_cooldown = {
                 let cooldown_key = format!("note:{}:analysis_completed_at", conversation_id);
                 db.get_memory(&cooldown_key).ok().flatten().map_or(false, |ts| {
@@ -664,72 +719,110 @@ pub async fn send_message(
             if let Some(skill_id) = detected {
                 let skill = skill_registry.get(&skill_id).await;
                 match skill {
-                    Some(skill) if skill.workflow().is_some() => {
+                    Some(skill) if skill.workflow().is_some() && has_files => {
+                        // Files exist → activate skill directly (no confirmation needed)
                         log::info!(
-                            "Skill '{}' detected for conversation {}, asking user for confirmation",
+                            "Skill '{}' detected with files present for conversation {}, activating directly",
                             skill_id, conversation_id
                         );
 
-                        // Store as pending — don't activate yet
-                        if let Err(e) = db.set_memory(&pending_key, &skill_id, Some("system")) {
-                            log::error!("Failed to store pending skill ID: {}", e);
+                        let workflow = skill.workflow().unwrap();
+                        let initial_step = &workflow.initial_step;
+                        let step_num = initial_step.strip_prefix("step")
+                            .and_then(|n| n.parse::<u32>().ok())
+                            .unwrap_or(0);
+
+                        if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
+                            log::error!("Failed to set mode to 'confirming': {}", e);
+                        }
+                        let skill_key = format!("note:{}:active_skill", conversation_id);
+                        if let Err(e) = db.set_memory(&skill_key, &skill_id, Some("system")) {
+                            log::error!("Failed to store active skill ID: {}", e);
+                        }
+                        if let Err(e) = orchestrator::advance_step(
+                            &db.inner().clone(), &conversation_id, step_num, "in_progress",
+                        ) {
+                            log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
                         }
 
-                        // Save a confirmation message to the chat
-                        let skill_display = skill.display_name();
-                        let confirm_msg = format!(
-                            "检测到您可能想要进行「{}」。如果确认开始，请回复「确认」或「开始」；如果不需要，直接继续提问即可。",
-                            skill_display
-                        );
-                        let confirm_id = uuid::Uuid::new_v4().to_string();
-                        let content_json = serde_json::json!({"text": confirm_msg}).to_string();
-
-                        if let Err(e) = db.insert_message(&confirm_id, &conversation_id, "assistant", &content_json) {
-                            log::error!("Failed to save confirmation message: {}", e);
-                        }
-                        if let Err(e) = app.emit("message:updated", serde_json::json!({
-                            "id": confirm_id,
-                            "conversationId": conversation_id,
-                            "role": "assistant",
-                            "content": {"text": confirm_msg},
-                        })) {
-                            log::warn!("Failed to emit confirmation message: {}", e);
-                        }
-
-                        // Return Ok early — skip agent_loop for this turn
-                        return Ok(());
+                        let mut state = SkillState::new(&skill_id);
+                        state.current_step = Some(initial_step.clone());
+                        Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
                     }
                     _ => {
-                        log::debug!("No workflow skill activated, staying in daily mode");
+                        // No files or no workflow → stay in daily mode
+                        // The LLM will naturally respond and can explain what it needs
+                        log::debug!("Skill detected but no files or no workflow, staying in daily mode");
                         None
                     }
                 }
             } else {
                 None // daily chat, no analysis
             }
-            }
         }
 
         "confirming" | "analyzing" => {
-            // P2: Allow daily chat during analysis — detect general questions
-            // that are unrelated to the current analysis workflow.
-            // If the message looks like a daily question (not confirmation, not abort,
-            // and matches daily-question patterns), handle it as daily chat without
-            // changing the conversation mode.
-            if is_daily_question(&content) {
-                log::info!(
-                    "Detected daily question during '{}' mode for conversation {}, routing to daily chat",
-                    conversation_mode, conversation_id
-                );
-                None // step_config = None → daily mode agent_loop
+            // --- Pre-routing: check for exit/daily conditions ---
+            //
+            // Confirming mode (auto-activated Step 0): be lenient about exit.
+            // The user didn't explicitly choose to enter analysis, so any
+            // message that isn't engaging with analysis should exit silently.
+            //
+            // Analyzing mode (Steps 1-5): the user actively confirmed, so
+            // only explicit abort or daily-question routing applies.
+            let should_exit_analysis = if conversation_mode == "confirming" {
+                if crate::plugin::skill_trait::is_abort_keyword(&content) {
+                    log::info!(
+                        "User explicitly aborted analysis (confirming) for conversation {}",
+                        conversation_id
+                    );
+                    true
+                } else if crate::plugin::skill_trait::is_confirm_keyword(&content)
+                    || is_analysis_engaging(&content)
+                {
+                    false // user is engaging with analysis
+                } else {
+                    log::info!(
+                        "User message not analysis-related during confirming mode, \
+                         silently exiting analysis for conversation {}",
+                        conversation_id
+                    );
+                    true
+                }
             } else {
-            // Active workflow: look up the stored skill ID for this conversation.
+                // analyzing mode: only explicit abort exits
+                // (abort keywords are handled inside on_step_complete below)
+                false
+            };
+
+            let route_daily_chat = if !should_exit_analysis && conversation_mode == "analyzing" {
+                is_daily_question(&content)
+            } else {
+                false
+            };
+
+            if should_exit_analysis {
+                // Exit analysis → back to daily mode
+                if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
+                    log::error!("Failed to set mode to 'daily': {}", e);
+                }
+                if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
+                    log::error!("Failed to finalize analysis: {}", e);
+                }
+                clear_analysis_notes(&db, &conversation_id);
+                None // process user's message as daily chat
+            } else if route_daily_chat {
+                log::info!(
+                    "Detected daily question during analyzing mode for conversation {}, routing to daily chat",
+                    conversation_id
+                );
+                None // step_config = None → daily mode agent_loop, keep analysis paused
+            } else {
+            // --- Active workflow routing ---
             let skill_key = format!("note:{}:active_skill", conversation_id);
             let active_skill_id = match db.get_memory(&skill_key).ok().flatten() {
                 Some(id) => id,
                 None => {
-                    // No skill ID found — memory lost (crash, corruption).
-                    // Reset to daily mode rather than assuming comp-analysis.
                     log::warn!(
                         "No active_skill stored for conversation {} in mode '{}', resetting to daily",
                         conversation_id, conversation_mode
@@ -737,12 +830,10 @@ pub async fn send_message(
                     if let Err(e) = db.set_conversation_mode(&conversation_id, "daily") {
                         log::error!("Failed to reset mode to 'daily': {}", e);
                     }
-                    // Fall through to daily mode (step_config = None)
                     String::new()
                 }
             };
 
-            // If skill ID was lost, skip workflow lookup and run in daily mode
             if active_skill_id.is_empty() {
                 None
             } else {
@@ -853,6 +944,26 @@ pub async fn send_message(
                                 );
                             }
                             let next_step_num = next_step_num.unwrap_or(step_num + 1);
+
+                            // Check that the current step saved its summary note (step >= 1).
+                            // This is a safety net: if the LLM forgot to call save_analysis_note,
+                            // the checkpoint extraction below will still capture context, but we
+                            // log a warning so this can be monitored.
+                            if step_num >= 1 {
+                                let note_key = format!("note:{}:step{}_summary", conversation_id, step_num);
+                                match db.get_memory(&note_key) {
+                                    Ok(Some(_)) => {
+                                        log::info!("Step {} summary note found for conversation {}", step_num, conversation_id);
+                                    }
+                                    _ => {
+                                        log::warn!(
+                                            "Step {} summary note MISSING for conversation {} — LLM did not call save_analysis_note. \
+                                             Checkpoint extraction will attempt to compensate.",
+                                            step_num, conversation_id
+                                        );
+                                    }
+                                }
+                            }
 
                             log::info!("Advancing to step {} for conversation {}",
                                 next_step_num, conversation_id);
@@ -977,7 +1088,7 @@ pub async fn send_message(
                 } // Some(skill)
             } // match skill_registry.get
             } // else (active_skill_id not empty)
-            } // else (not daily question)
+            } // else (workflow routing)
         }
 
         // Unknown mode — treat as daily
@@ -990,7 +1101,6 @@ pub async fn send_message(
     // Clone everything needed for the background task
     let assistant_id = uuid::Uuid::new_v4().to_string();
     let assistant_id_clone = assistant_id.clone();
-    let assistant_id_for_timeout = assistant_id.clone();
     let conversation_id_clone = conversation_id.clone();
     let db_clone = db.inner().clone();
     let gateway_clone = gateway.inner().clone();
@@ -1002,9 +1112,7 @@ pub async fn send_message(
     log::info!("=== Spawning agent_loop === assistant_id={}, analysis_step={:?}",
         assistant_id, step_config.as_ref().map(|c| c.step));
 
-    // Mark gateway as busy BEFORE spawning so concurrent calls are blocked immediately
-    gateway.set_busy(&conversation_id).map_err(|e| e)?;
-
+    // Gateway already marked busy (early claim at step 0 to prevent TOCTOU race).
     // Record in DB for crash recovery. If this fails, rollback the gateway busy state.
     if let Err(e) = db.insert_active_task(&conversation_id) {
         log::error!("Failed to insert active task, rolling back gateway busy state: {}", e);
@@ -1054,14 +1162,8 @@ pub async fn send_message(
                         "error": format!("Agent timed out after {} minutes. Please try again.", AGENT_TIMEOUT_SECS / 60),
                     }),
                 );
-                // Must emit streaming:done so frontend clears streaming state
-                let _ = app_clone.emit(
-                    "streaming:done",
-                    serde_json::json!({
-                        "conversationId": conversation_id_clone,
-                        "messageId": assistant_id_for_timeout,
-                    }),
-                );
+                // NOTE: streaming:done is NOT emitted here — guard.clear() below
+                // always emits it. Emitting here would cause a double emission.
             }
         }
 
@@ -1070,6 +1172,118 @@ pub async fn send_message(
     });
 
     Ok(())
+}
+
+/// Compress older messages into a summary to stay within context limits.
+///
+/// When total message content exceeds [`COMPRESS_THRESHOLD_CHARS`], the function:
+/// 1. Splits messages into "old" (to compress) and "recent" (to keep verbatim).
+/// 2. Makes a non-streaming LLM call to summarize the old messages.
+/// 3. Replaces old messages with a single summary message.
+///
+/// Returns the (possibly compressed) message list. On compression failure,
+/// returns the original messages unchanged (graceful degradation).
+async fn compress_context_if_needed(
+    messages: Vec<ChatMessage>,
+    gateway: &LlmGateway,
+    settings: &AppSettings,
+) -> Vec<ChatMessage> {
+    // Estimate total content size
+    let total_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+
+    if total_chars <= COMPRESS_THRESHOLD_CHARS || messages.len() <= COMPRESS_KEEP_RECENT + 2 {
+        return messages; // Under threshold or too few messages to compress
+    }
+
+    let split_point = messages.len().saturating_sub(COMPRESS_KEEP_RECENT);
+
+    log::info!(
+        "[compress] Total content {}chars exceeds threshold {}chars, compressing {} of {} messages",
+        total_chars, COMPRESS_THRESHOLD_CHARS, split_point, messages.len()
+    );
+
+    // Build a text representation of old messages for summarization
+    let old_messages = &messages[..split_point];
+    let mut conversation_text = String::new();
+    for msg in old_messages {
+        let role_label = match msg.role.as_str() {
+            "user" => "用户",
+            "assistant" => "助手",
+            _ => &msg.role,
+        };
+        // Skip empty messages
+        if msg.content.trim().is_empty() {
+            continue;
+        }
+        // Truncate very long individual messages for the summary input
+        let content = if msg.content.len() > 2000 {
+            let end = truncate_at_char_boundary(&msg.content, 2000);
+            format!("{}...", &msg.content[..end])
+        } else {
+            msg.content.clone()
+        };
+        conversation_text.push_str(&format!("{}：{}\n\n", role_label, content));
+    }
+
+    // Cap total input to the compression LLM call
+    if conversation_text.len() > 12000 {
+        let end = truncate_at_char_boundary(&conversation_text, 12000);
+        conversation_text.truncate(end);
+    }
+
+    let compress_prompt = format!(
+        "请将以下对话历史压缩为一段简洁的摘要（不超过 500 字）。\n\
+        保留：关键话题、用户的核心需求、重要结论和数据。\n\
+        省略：寒暄、重复内容、工具调用细节。\n\
+        用中文输出，格式为连贯的段落（不要用列表）。\n\n\
+        ---\n{}\n---",
+        conversation_text
+    );
+
+    let compress_messages = vec![ChatMessage::text("user", &compress_prompt)];
+
+    // Non-streaming call with short timeout
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        gateway.send_message(
+            settings,
+            compress_messages,
+            MaskingLevel::Relaxed, // No masking needed for internal summarization
+            Some("你是一个对话摘要助手。将对话历史压缩为简洁摘要。"),
+            None,  // no tools
+        ),
+    ).await;
+
+    match result {
+        Ok(Ok(response)) if !response.content.trim().is_empty() => {
+            let summary = response.content.trim().to_string();
+            log::info!(
+                "[compress] Summary generated: {} chars (compressed from {} chars, {} messages)",
+                summary.len(), total_chars, split_point
+            );
+
+            // Rebuild messages: [summary] + [recent messages]
+            let mut compressed = Vec::with_capacity(1 + messages.len() - split_point);
+            compressed.push(ChatMessage::text(
+                "assistant",
+                &format!("[之前的对话摘要]\n{}", summary),
+            ));
+            compressed.extend_from_slice(&messages[split_point..]);
+            compressed
+        }
+        Ok(Ok(_)) => {
+            log::warn!("[compress] LLM returned empty summary, keeping original messages");
+            messages
+        }
+        Ok(Err(e)) => {
+            log::warn!("[compress] Summarization LLM call failed: {}, keeping original messages", e);
+            messages
+        }
+        Err(_) => {
+            log::warn!("[compress] Summarization timed out (20s), keeping original messages");
+            messages
+        }
+    }
 }
 
 /// The core agent loop — stream, execute tools, re-stream until done.
@@ -1120,7 +1334,7 @@ async fn agent_loop(
                 format!("- {} (file_id: \"{}\", 类型: {})", name, fid, ftype)
             }).collect();
             format!(
-                "\n\n[本次会话的文件]\n{}\n说明：先调用 analyze_file(file_id) 获取文件信息，返回中的 filePath 字段是文件绝对路径。execute_python 中使用该 filePath 读取文件。",
+                "\n\n[本次会话的文件]\n{}\n⚠️ 使用文件时，先调用 load_file(file_id) 加载数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本内容）。不需要手动处理文件路径。",
                 refs.join("\n")
             )
         }
@@ -1151,6 +1365,11 @@ async fn agent_loop(
             }
             true
         });
+
+        // Auto-compress long conversation history to preserve early context.
+        // Instead of hard-truncating at MAX_HISTORY_MESSAGES (losing everything before),
+        // older messages are summarized into a compact recap by a non-streaming LLM call.
+        messages = compress_context_if_needed(messages, &gateway, &settings).await;
     }
 
     // Determine system prompt, tool filter, and token budget based on mode
@@ -1309,13 +1528,30 @@ async fn agent_loop(
     };
     let system_prompt = format!("{}{}", system_prompt, analysis_notes_context);
 
+    // Build allowed-tool set for execution-time enforcement.
+    // Even though tool_defs_override controls which tools the LLM *sees*,
+    // the LLM may hallucinate tool names not in its schema. This guard
+    // ensures only tools listed in the step's tool_defs can actually execute.
+    let allowed_tools: Option<std::collections::HashSet<String>> = current_step_config.as_ref()
+        .map(|config| config.tool_defs.iter().map(|td| td.name.clone()).collect());
+
     let mut full_content = String::new();
     let mut combined_mask_ctx: Option<MaskingContext> = None;
     let mut generated_file_ids: Vec<String> = Vec::new();
+    let mut all_file_metas: Vec<FileMeta> = Vec::new();
     let mut iteration_count = 0usize;
+    let mut stream_cancelled = false;
+    let mut phase = PhaseTracker::new(
+        settings.enable_taor_tracking,
+        conversation_id.clone(),
+        app.clone(),
+        max_iterations,
+    );
 
     for iteration in 0..max_iterations {
         iteration_count = iteration + 1;
+        phase.next_iteration(iteration);
+        phase.think();
         log::info!(
             "=== [AGENT] iteration={}/{} conversation={} messages={} ===",
             iteration, max_iterations, conversation_id, messages.len()
@@ -1378,7 +1614,6 @@ async fn agent_loop(
         let mut tool_calls = Vec::new();
         let mut stop_reason = StopReason::EndTurn;
         let mut delta_count: u32 = 0;
-        let mut stream_cancelled = false;
 
         loop {
             let chunk_timeout = tokio::time::sleep(
@@ -1438,14 +1673,12 @@ async fn agent_loop(
                                 );
                             }
                         }
-                        Some(StreamEvent::ThinkingDelta { delta }) => {
-                            let _ = app.emit(
-                                "streaming:delta",
-                                serde_json::json!({
-                                    "conversationId": conversation_id,
-                                    "delta": delta,
-                                }),
-                            );
+                        Some(StreamEvent::ThinkingDelta { .. }) => {
+                            // ThinkingDelta contains internal model reasoning (e.g. DeepSeek R1
+                            // <think> tokens). We intentionally drop these because:
+                            // 1. They bypass strip_thinking_markers() and prompt_guard::check_for_leak
+                            // 2. They would pollute the user-visible streamingContent in the frontend
+                            // 3. They are implementation-internal, not meant for the user
                         }
                         Some(StreamEvent::ToolCallStart { tool_call }) => {
                             log::info!(
@@ -1507,6 +1740,7 @@ async fn agent_loop(
         }
 
         // --- Tool execution phase ---
+        phase.act(tool_calls.iter().map(|tc| tc.name.clone()).collect());
         messages.push(ChatMessage::assistant_with_tool_calls(
             iter_content,
             tool_calls.clone(),
@@ -1522,7 +1756,16 @@ async fn agent_loop(
             app_handle: Some(app.clone()),
         };
 
-        for tc in &tool_calls {
+        // --- Phase 1: Pre-filter blocked tools and emit executing events ---
+        struct ToolExecInput {
+            idx: usize,
+            name: String,
+            id: String,
+            args: serde_json::Value,
+        }
+        let mut permitted: Vec<ToolExecInput> = Vec::new();
+
+        for (idx, tc) in tool_calls.iter().enumerate() {
             log::info!(
                 "[AGENT] Executing tool '{}' (id={}) with args: {}",
                 tc.name, tc.id,
@@ -1539,45 +1782,185 @@ async fn agent_loop(
                 }),
             );
 
-            let tool_start = std::time::Instant::now();
-            let result = tool_registry.execute(&tc.name, &plugin_ctx, tc.arguments.clone()).await;
-            let tool_elapsed = tool_start.elapsed();
-
-            let (result_content, result_is_error) = match result {
-                Ok(output) => (output.content, output.is_error),
-                Err(e) => {
-                    log::error!("Tool '{}' failed: {}", tc.name, e);
-                    (format!("Error: {}", e), true)
+            // Execution-time tool filter: block tools not in the current step's allowed set.
+            if let Some(ref allowed) = allowed_tools {
+                if !allowed.contains(&tc.name) {
+                    log::warn!(
+                        "[AGENT] Blocked tool '{}' — not in allowed set for current step (conversation={})",
+                        tc.name, conversation_id
+                    );
+                    let blocked_msg = format!(
+                        "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
+                        tc.name,
+                        allowed.iter().cloned().collect::<Vec<_>>().join(", ")
+                    );
+                    let _ = app.emit(
+                        "tool:completed",
+                        serde_json::json!({
+                            "conversationId": conversation_id,
+                            "toolName": tc.name,
+                            "toolId": tc.id,
+                            "success": false,
+                            "summary": &blocked_msg,
+                        }),
+                    );
+                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, blocked_msg));
+                    continue;
                 }
-            };
+            }
+
+            permitted.push(ToolExecInput {
+                idx,
+                name: tc.name.clone(),
+                id: tc.id.clone(),
+                args: tc.arguments.clone(),
+            });
+        }
+
+        // --- Phase 2: Execute tools (parallel when multiple, sequential when single) ---
+        struct ToolExecOutput {
+            idx: usize,
+            name: String,
+            id: String,
+            content: String,
+            is_error: bool,
+            file_meta: Option<FileMeta>,
+            is_degraded: bool,
+            notice: Option<String>,
+            elapsed: std::time::Duration,
+        }
+
+        let tool_results: Vec<ToolExecOutput> = if permitted.len() <= 1 {
+            // Single tool — execute directly (no async overhead)
+            let mut results = Vec::new();
+            for input in &permitted {
+                let start = std::time::Instant::now();
+                let result = tool_registry.execute(&input.name, &plugin_ctx, input.args.clone()).await;
+                let elapsed = start.elapsed();
+                let (content, is_error, file_meta, is_degraded, notice) = match result {
+                    Ok(output) => {
+                        let meta = output.file_meta.clone();
+                        let degraded = output.is_degraded;
+                        let notice = output.degradation_notice.clone();
+                        (output.content, output.is_error, meta, degraded, notice)
+                    }
+                    Err(e) => {
+                        log::error!("Tool '{}' failed: {}", input.name, e);
+                        (format!("Error: {}", e), true, None, false, None)
+                    }
+                };
+                results.push(ToolExecOutput {
+                    idx: input.idx, name: input.name.clone(), id: input.id.clone(),
+                    content, is_error, file_meta, is_degraded, notice, elapsed,
+                });
+            }
+            results
+        } else {
+            // Multiple tools — execute concurrently
+            log::info!(
+                "[AGENT] Executing {} tools in parallel for conversation {}",
+                permitted.len(), conversation_id
+            );
+            let batch_start = std::time::Instant::now();
+
+            let futures: Vec<_> = permitted.iter().map(|input| {
+                let reg = tool_registry.clone();
+                let ctx = plugin_ctx.clone();
+                let args = input.args.clone();
+                let name = input.name.clone();
+                let id = input.id.clone();
+                let idx = input.idx;
+                async move {
+                    let start = std::time::Instant::now();
+                    let result = reg.execute(&name, &ctx, args).await;
+                    let elapsed = start.elapsed();
+                    let (content, is_error, file_meta, is_degraded, notice) = match result {
+                        Ok(output) => {
+                            let meta = output.file_meta.clone();
+                            let degraded = output.is_degraded;
+                            let notice = output.degradation_notice.clone();
+                            (output.content, output.is_error, meta, degraded, notice)
+                        }
+                        Err(e) => {
+                            log::error!("Tool '{}' failed: {}", name, e);
+                            (format!("Error: {}", e), true, None, false, None)
+                        }
+                    };
+                    ToolExecOutput {
+                        idx, name, id, content, is_error, file_meta, is_degraded, notice, elapsed,
+                    }
+                }
+            }).collect();
+
+            let mut results = futures::future::join_all(futures).await;
+            // Sort by original index to preserve tool call ordering in messages
+            results.sort_by_key(|r| r.idx);
+
+            let batch_elapsed = batch_start.elapsed();
+            let individual_total: std::time::Duration = results.iter().map(|r| r.elapsed).sum();
+            log::info!(
+                "[AGENT] Parallel batch done: {} tools in {:?} (sequential would take {:?}, saved {:?})",
+                results.len(), batch_elapsed, individual_total,
+                individual_total.saturating_sub(batch_elapsed)
+            );
+
+            results
+        };
+
+        // --- Phase 3: Process results sequentially (events, masking, messages) ---
+        for tr in tool_results {
+            // Collect file metadata for post-stream verification
+            if let Some(ref fm) = tr.file_meta {
+                all_file_metas.push(fm.clone());
+                let _ = app.emit(
+                    "file:generated",
+                    serde_json::json!({
+                        "conversationId": conversation_id,
+                        "fileId": fm.file_id,
+                        "fileName": fm.file_name,
+                        "requestedFormat": fm.requested_format,
+                        "actualFormat": fm.actual_format,
+                        "fileSize": fm.file_size,
+                        "storedPath": fm.stored_path,
+                        "category": fm.category,
+                        "isDegraded": tr.is_degraded,
+                        "degradationNotice": &tr.notice,
+                    }),
+                );
+            }
 
             log::info!(
                 "[AGENT] Tool '{}' result: is_error={}, content_len={}, elapsed={:?}, preview='{}'",
-                tc.name, result_is_error, result_content.len(), tool_elapsed,
-                truncate_for_ui(&result_content, 300),
+                tr.name, tr.is_error, tr.content.len(), tr.elapsed,
+                truncate_for_ui(&tr.content, 300),
             );
 
             let _ = app.emit(
                 "tool:completed",
                 serde_json::json!({
                     "conversationId": conversation_id,
-                    "toolName": tc.name,
-                    "toolId": tc.id,
-                    "success": !result_is_error,
-                    "summary": truncate_for_ui(&result_content, 200),
+                    "toolName": tr.name,
+                    "toolId": tr.id,
+                    "success": !tr.is_error,
+                    "summary": truncate_for_ui(&tr.content, 200),
                 }),
             );
 
-            // Collect fileId from tool results (generate_report, export_data, generate_chart, execute_python)
-            if !result_is_error {
-                // Try parsing as JSON first (generate_report, export_data, generate_chart return JSON)
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result_content) {
+            // Collect fileId from tool results
+            if !tr.is_error {
+                let parsed_json = serde_json::from_str::<serde_json::Value>(&tr.content)
+                    .ok()
+                    .or_else(|| {
+                        tr.content.find('{').and_then(|pos| {
+                            serde_json::from_str::<serde_json::Value>(&tr.content[pos..]).ok()
+                        })
+                    });
+                if let Some(parsed) = parsed_json {
                     if let Some(file_id) = parsed.get("fileId").and_then(|v| v.as_str()) {
                         generated_file_ids.push(file_id.to_string());
                     }
                 }
-                // Also check for "fileId:" pattern in text output (execute_python auto-registered files).
-                for line in result_content.lines() {
+                for line in tr.content.lines() {
                     if let Some(pos) = line.find("fileId:") {
                         let after = &line[pos + 7..].trim_start();
                         let id: String = after.chars()
@@ -1590,12 +1973,17 @@ async fn agent_loop(
                 }
             }
 
-            let masked_result = match combined_mask_ctx.as_mut() {
-                Some(ctx) => ctx.mask_text(&result_content),
-                None => result_content.clone(),
+            // Apply structured tag for file-generating tools (Layer 3)
+            let tagged_result = if let Some(ref fm) = tr.file_meta {
+                tag_file_tool_result(&tr.content, fm, tr.is_degraded, tr.notice.as_deref())
+            } else {
+                tr.content.clone()
             };
-            // Truncate tool results stored in message history to prevent context bloat.
-            // Long execute_python outputs can produce megabytes; cap at 8KB per result.
+
+            let masked_result = match combined_mask_ctx.as_mut() {
+                Some(ctx) => ctx.mask_text(&tagged_result),
+                None => tagged_result,
+            };
             const MAX_TOOL_RESULT_CHARS: usize = 8000;
             let truncated_result = if masked_result.len() > MAX_TOOL_RESULT_CHARS {
                 let end = truncate_at_char_boundary(&masked_result, MAX_TOOL_RESULT_CHARS);
@@ -1603,19 +1991,15 @@ async fn agent_loop(
             } else {
                 masked_result
             };
-            messages.push(ChatMessage::tool_result(
-                &tc.id,
-                &tc.name,
-                truncated_result,
-            ));
+            messages.push(ChatMessage::tool_result(&tr.id, &tr.name, truncated_result));
+        }
 
-            // Check cancel signal between tool executions so we don't wait
-            // for all queued tools to finish when the user requests stop.
-            if *cancel_rx.borrow() {
-                log::info!("[AGENT] Cancel signal detected between tool executions for conversation {}", conversation_id);
-                stream_cancelled = true;
-                break;
-            }
+        phase.observe();
+
+        // Check cancel signal after tool batch completes
+        if *cancel_rx.borrow() {
+            log::info!("[AGENT] Cancel signal detected after tool execution for conversation {}", conversation_id);
+            stream_cancelled = true;
         }
     }
 
@@ -1637,6 +2021,26 @@ async fn agent_loop(
         }
     }
 
+    // If the LLM returned absolutely nothing (empty response due to content
+    // filtering, provider error, or all-thinking-token output), provide a
+    // fallback message so the user is not left staring at silence.
+    if full_content.trim().is_empty() && !stream_cancelled {
+        log::warn!(
+            "[AGENT] LLM returned empty content for conversation {} (step={:?}, iterations={})",
+            conversation_id,
+            current_step_config.as_ref().map(|c| c.step),
+            iteration_count
+        );
+        full_content = "抱歉，模型未能生成回复。可能原因：内容限制、网络问题或服务暂时不可用。请尝试换一种方式提问。".to_string();
+    }
+
+    // Post-stream verification: check if LLM falsely claims a format that wasn't produced (Layer 4)
+    if !all_file_metas.is_empty() {
+        if let Some(correction) = verify_file_claims(&full_content, &all_file_metas) {
+            full_content.push_str(&correction);
+        }
+    }
+
     // Save current step's assistant message
     finish_agent(
         &db,
@@ -1647,6 +2051,7 @@ async fn agent_loop(
         combined_mask_ctx.as_ref(),
         &generated_file_ids,
         &workspace_path,
+        &all_file_metas,
     );
 
     // --- Step completion: mark as completed and wait for user confirmation ---
@@ -1661,7 +2066,8 @@ async fn agent_loop(
         // Validate that the step has analysis notes (either LLM-saved summary or auto-captured context).
         // Auto-capture always saves step{N}_auto_context, so this is a sanity check.
         // Still warn if the LLM didn't save a curated summary (auto_context is less structured).
-        if completed_step >= 1 && completed_step <= 5 {
+        // Include step 0: it carries critical file info and analysis direction.
+        {
             let note_prefix = format!("note:{}:step{}_", conversation_id, completed_step);
             let has_any_note = db.get_memories_by_prefix(&note_prefix)
                 .map(|notes| !notes.is_empty())
@@ -1725,6 +2131,7 @@ fn finish_agent(
     mask_ctx: Option<&MaskingContext>,
     generated_file_ids: &[String],
     workspace_path: &std::path::Path,
+    file_metas: &[FileMeta],
 ) {
     // Unmask PII placeholders before saving to DB
     let unmasked_content = match mask_ctx {
@@ -1742,6 +2149,7 @@ fn finish_agent(
     }
 
     let unmasked_trimmed = unmasked_content.trim();
+    let created_at = chrono::Utc::now().to_rfc3339();
 
     // Only save and emit a message when there is actual content.
     // During analysis mode the LLM may produce tool-call-only iterations
@@ -1760,7 +2168,10 @@ fn finish_agent(
                     let gen_files: Vec<serde_json::Value> = file_records.iter().map(|f| {
                         let stored_path = f["storedPath"].as_str().unwrap_or("");
                         let full_path = workspace_path.join(stored_path);
-                        serde_json::json!({
+                        let file_id_str = f["id"].as_str().unwrap_or("");
+                        // Look up FileMeta to inject degradation info
+                        let matching_meta = file_metas.iter().find(|m| m.file_id == file_id_str);
+                        let mut file_json = serde_json::json!({
                             "id": f["id"],
                             "fileName": f["fileName"],
                             "filePath": full_path.to_string_lossy(),
@@ -1773,7 +2184,21 @@ fn finish_agent(
                             "createdByStep": f["createdByStep"],
                             "description": f["description"],
                             "actions": [],
-                        })
+                        });
+                        if let Some(meta) = matching_meta {
+                            if meta.requested_format != meta.actual_format {
+                                file_json["isDegraded"] = serde_json::json!(true);
+                                file_json["requestedFormat"] = serde_json::json!(meta.requested_format);
+                                file_json["degradationNotice"] = serde_json::json!(
+                                    format!(
+                                        "{} 转换失败，已降级为 {} 格式",
+                                        meta.requested_format.to_uppercase(),
+                                        meta.actual_format.to_uppercase()
+                                    )
+                                );
+                            }
+                        }
+                        file_json
                     }).collect();
                     log::info!(
                         "[AGENT] Attaching {} generated files to message {}",
@@ -1812,6 +2237,7 @@ fn finish_agent(
                         "conversationId": conversation_id,
                         "role": "assistant",
                         "content": content_value,
+                        "createdAt": created_at,
                     }),
                 ) {
                     log::warn!("Failed to emit message:updated for {}: {}", assistant_id, e);
@@ -1863,6 +2289,155 @@ fn finish_agent(
             }
         }
     }
+}
+
+/// Verify LLM's file format claims against actual file metadata.
+///
+/// Conservative strategy: only flags when the LLM explicitly mentions a format
+/// (e.g. "PDF 已生成") that doesn't match any actual file produced.
+/// Uses proximity checking (format keyword within 60 chars of an action word)
+/// and excludes negative contexts (失败/不可用/failed etc.) to avoid false positives.
+/// Returns a correction footnote to append, or None if no mismatch found.
+fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta]) -> Option<String> {
+    // Format keywords paired with their format family key
+    let format_keywords: &[(&str, &str)] = &[
+        ("PDF", "pdf"),
+        ("DOCX", "docx"),
+        ("Word", "docx"),
+        ("Excel", "excel"),
+        ("XLS", "excel"),
+        ("XLSX", "excel"),
+    ];
+
+    let action_words_zh = ["已生成", "已导出", "已保存", "已创建", "生成了", "导出了", "保存了", "创建了"];
+    let action_words_en = ["generated", "exported", "saved", "created"];
+    let negation_words = ["失败", "不可用", "无法", "不支持", "未能", "没有", "not", "failed", "unavailable", "unable", "cannot"];
+
+    let actual_formats: Vec<&str> = file_metas.iter().map(|m| m.actual_format.as_str()).collect();
+    let llm_lower = llm_text.to_lowercase();
+
+    let mut false_claims: Vec<(&str, &str)> = Vec::new();
+    let mut seen_format_keys: Vec<&str> = Vec::new();
+
+    /// Check if any action word appears within `radius` chars of `pos` in the text.
+    /// All searches done in the same text used for position finding to avoid byte offset mismatches.
+    fn has_nearby_action(text: &str, pos: usize, radius: usize,
+                         action_zh: &[&str], action_en: &[&str]) -> bool {
+        let start = pos.saturating_sub(radius);
+        let end = (pos + radius).min(text.len());
+        // Ensure we slice on char boundaries
+        let start = if text.is_char_boundary(start) { start } else {
+            (start..text.len()).find(|&i| text.is_char_boundary(i)).unwrap_or(start)
+        };
+        let end = if text.is_char_boundary(end) { end } else {
+            (0..end).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(end)
+        };
+        let window = &text[start..end];
+        action_zh.iter().any(|aw| window.contains(aw))
+            || action_en.iter().any(|aw| window.contains(aw))
+    }
+
+    /// Check if any negation word appears within `radius` chars of `pos`.
+    fn has_nearby_negation(text: &str, pos: usize, radius: usize,
+                           neg_words: &[&str]) -> bool {
+        let start = pos.saturating_sub(radius);
+        let end = (pos + radius).min(text.len());
+        let start = if text.is_char_boundary(start) { start } else {
+            (start..text.len()).find(|&i| text.is_char_boundary(i)).unwrap_or(start)
+        };
+        let end = if text.is_char_boundary(end) { end } else {
+            (0..end).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(end)
+        };
+        let window = &text[start..end];
+        neg_words.iter().any(|nw| window.contains(nw))
+    }
+
+    for (display, format_key) in format_keywords {
+        if seen_format_keys.contains(format_key) {
+            continue;
+        }
+
+        // Search for format keywords using case-insensitive matching (all in llm_lower)
+        let display_lower = display.to_lowercase();
+        let mut found_positive_claim = false;
+        let mut search_from = 0;
+        while let Some(pos) = llm_lower[search_from..].find(&display_lower) {
+            let abs_pos = search_from + pos;
+            search_from = abs_pos + display_lower.len();
+
+            // Proximity: action word must be within 60 chars (search in original text for zh, llm_lower for en)
+            if !has_nearby_action(llm_text, abs_pos, 60, &action_words_zh, &[])
+               && !has_nearby_action(&llm_lower, abs_pos, 60, &[], &action_words_en) {
+                continue;
+            }
+            // Exclude negative context: skip if negation word is nearby
+            if has_nearby_negation(llm_text, abs_pos, 40, &negation_words)
+               || has_nearby_negation(&llm_lower, abs_pos, 40, &negation_words) {
+                continue;
+            }
+            found_positive_claim = true;
+            break;
+        }
+
+        if !found_positive_claim {
+            continue;
+        }
+
+        // Check if this format was NOT actually produced
+        let was_produced = actual_formats.iter().any(|af| af == format_key);
+        if !was_produced {
+            if let Some(meta) = file_metas.iter().find(|m| m.requested_format == *format_key) {
+                false_claims.push((display, &meta.actual_format));
+                seen_format_keys.push(format_key);
+            }
+        }
+    }
+
+    if false_claims.is_empty() {
+        return None;
+    }
+
+    let mut correction = String::from("\n\n---\n> **更正**：");
+    for (claimed, actual) in &false_claims {
+        correction.push_str(&format!(
+            "实际生成的文件格式为 **{}**（非 {}）。",
+            actual.to_uppercase(),
+            claimed
+        ));
+    }
+    correction.push_str("请以文件卡片中显示的格式为准。");
+
+    Some(correction)
+}
+
+/// Tag a tool result with structured metadata so the LLM can correctly report
+/// the actual file format (especially when degraded from the requested format).
+fn tag_file_tool_result(
+    original_content: &str,
+    file_meta: &FileMeta,
+    is_degraded: bool,
+    notice: Option<&str>,
+) -> String {
+    let mut tagged = String::new();
+
+    if is_degraded {
+        tagged.push_str("[TOOL_STATUS: degraded]\n");
+        tagged.push_str(&format!("[REQUESTED_FORMAT: {}]\n", file_meta.requested_format));
+        tagged.push_str(&format!("[ACTUAL_FORMAT: {}]\n", file_meta.actual_format));
+        tagged.push_str(&format!("[FILE: {}]\n", file_meta.file_name));
+        if let Some(n) = notice {
+            tagged.push_str(&format!("[NOTICE: {}]\n", n));
+        }
+        tagged.push('\n');
+    } else {
+        tagged.push_str("[TOOL_STATUS: success]\n");
+        tagged.push_str(&format!("[FORMAT: {}]\n", file_meta.actual_format));
+        tagged.push_str(&format!("[FILE: {}]\n", file_meta.file_name));
+        tagged.push('\n');
+    }
+
+    tagged.push_str(original_content);
+    tagged
 }
 
 /// Truncate text for UI display purposes.
@@ -1965,7 +2540,12 @@ pub async fn delete_conversation(
         );
     }
 
-    // 3. Delete conversation (CASCADE removes uploaded_files, generated_files, messages, analysis_states)
+    // 3. Clean up enterprise memory entries associated with this conversation
+    //    (loaded file mappings and analysis notes live in the shared memory.jsonl)
+    let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
+    let _ = db.delete_memories_by_prefix(&format!("note:{}:", conversation_id));
+
+    // 4. Delete conversation (CASCADE removes uploaded_files, generated_files, messages, analysis_states)
     db.delete_conversation(&conversation_id)
         .map_err(|e| e.to_string())
 }

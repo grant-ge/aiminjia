@@ -887,8 +887,8 @@ Python 运行环境：
 ```
 Agent 需要的 Tools：
 
-# 文件解析与处理
-1. analyze_file(file_path) → 解析上传文件，返回结构化内容
+# 文件加载
+1. load_file(file_id) → 加载上传文件，数据自动注入 execute_python 环境（_df/_text）
 
 # 代码执行
 2. execute_python(code) → 在沙箱中执行 Python 代码，返回结果

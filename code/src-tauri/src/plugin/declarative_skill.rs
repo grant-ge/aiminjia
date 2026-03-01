@@ -70,8 +70,8 @@ impl DeclarativeSkill {
             .map(|p| p.include_app_base)
             .unwrap_or(true);
 
-        // Load plugin-local base prompt
-        let base_prompt = Self::load_prompt(plugin_dir, "base.md");
+        // Load plugin-local base prompt (lives in prompts/ subdirectory alongside step prompts)
+        let base_prompt = Self::load_prompt(plugin_dir, "prompts/base.md");
 
         // Load extract prompts (for checkpoint extraction at step boundaries)
         let extract_base = Self::load_prompt(plugin_dir, "prompts/extract/base_extract.md");
@@ -196,26 +196,17 @@ impl Skill for DeclarativeSkill {
 
     fn priority(&self) -> u32 { self.priority_val }
 
-    fn should_activate(&self, message: &str, has_files: bool, current_skill: &str) -> bool {
+    fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
         if current_skill != "daily-assistant" {
             return false;
         }
         let lower = message.to_lowercase();
 
-        // Primary keywords always match (explicit analysis requests don't require files)
-        if self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
-            return true;
-        }
-
-        // Secondary: file_keywords require files to be present
-        // (requires_files gate only applies to this secondary path)
-        if has_files && !self.file_keywords.is_empty() {
-            if self.file_keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
-                return true;
-            }
-        }
-
-        false
+        // Only primary keywords trigger activation (explicit analysis requests).
+        // Secondary file_keywords path removed: when users upload files with
+        // casual mentions of salary/compensation, daily mode should parse first,
+        // show a summary, and let the user decide whether to start full analysis.
+        self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {

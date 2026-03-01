@@ -17,10 +17,13 @@
  *  - agent:idle       — clears busy state for a specific conversation
  *
  * Safety watchdog:
- *  A 30-second inactivity watchdog runs every 10 seconds. If any
+ *  A 200-second inactivity watchdog runs every 10 seconds. If any
  *  conversation has isStreaming=true but received no delta/tool event
- *  for 30 seconds, the streaming state is force-cleared. This prevents
+ *  for 200 seconds, the streaming state is force-cleared. This prevents
  *  the UI from being permanently stuck due to missed Tauri events.
+ *  When a conversation first starts streaming (no activity recorded yet),
+ *  the watchdog initializes the timestamp rather than clearing immediately,
+ *  giving the full timeout window for the first backend event to arrive.
  *
  * Delta throttling:
  *  Streaming deltas are accumulated in a ref buffer and flushed to the
@@ -40,25 +43,30 @@ import {
   onToolCompleted,
   onAnalysisStepChanged,
   onAgentIdle,
+  onAgentPhase,
   onStreamingStepReset,
+  onFileGenerated,
 } from '@/lib/tauri'
 import type {
   StreamingDeltaPayload,
   StreamingDonePayload,
   StreamingErrorPayload,
   AgentIdlePayload,
+  AgentPhasePayload,
   ToolExecutingPayload,
   ToolCompletedPayload,
   StreamingStepResetPayload,
+  FileGeneratedPayload,
 } from '@/lib/tauri'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
 import { useTauriEvent } from './useTauriEvent'
 
 /** How long (ms) before a streaming conversation with no activity is force-cleared.
- *  Set to 120s to accommodate analysis mode step transitions which involve
- *  checkpoint extraction (up to 30s) + LLM cold start + first tool execution. */
-const STALE_STREAM_TIMEOUT_MS = 120_000
+ *  Set to 200s to accommodate analysis mode step transitions which involve
+ *  checkpoint extraction (up to 30s) + LLM cold start + first tool execution.
+ *  Must exceed backend's analysis chunk timeout (180s in chat.rs). */
+const STALE_STREAM_TIMEOUT_MS = 200_000
 
 /** How often (ms) the watchdog checks for stale streams. */
 const WATCHDOG_INTERVAL_MS = 10_000
@@ -129,6 +137,17 @@ export function useStreaming() {
     lastActivityRef.current[conversationId] = Date.now()
   }
 
+  /** Flush buffered deltas for a specific conversation synchronously.
+   *  Must be called before clearConversationStreamState() to avoid losing
+   *  deltas that arrived after the last rAF flush. */
+  function flushConversationDeltas(conversationId: string) {
+    const buffered = deltaBufferRef.current[conversationId]
+    if (buffered) {
+      useChatStore.getState().appendConversationStreamingContent(conversationId, buffered)
+    }
+    delete deltaBufferRef.current[conversationId]
+  }
+
   // --- streaming:delta -------------------------------------------------
   useTauriEvent(() =>
     onStreamingDelta(({ conversationId, delta }: StreamingDeltaPayload) => {
@@ -144,10 +163,13 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingDone(({ conversationId }: StreamingDonePayload) => {
       console.log('[streaming:done] conversationId:', conversationId)
-      // Flush any buffered deltas before clearing the stream state
-      delete deltaBufferRef.current[conversationId]
+      // Flush buffered deltas synchronously before clearing stream state
+      flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
-      useChatStore.getState().clearConversationStreamState(conversationId)
+      const store = useChatStore.getState()
+      store.clearConversationStreamState(conversationId)
+      store.removeBusyConversation(conversationId)
+      store.setConversationAgentPhase(conversationId, undefined)
     }),
   )
 
@@ -155,10 +177,12 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingError(({ conversationId, error }: StreamingErrorPayload) => {
       console.error('[streaming:error]', conversationId, error)
-      // Discard any buffered deltas for this errored conversation
-      delete deltaBufferRef.current[conversationId]
+      // Flush buffered deltas so partial content is preserved before clearing
+      flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
-      useChatStore.getState().clearConversationStreamState(conversationId)
+      const store = useChatStore.getState()
+      store.clearConversationStreamState(conversationId)
+      store.removeBusyConversation(conversationId)
 
       useNotificationStore.getState().push({
         level: 'error',
@@ -206,7 +230,7 @@ export function useStreaming() {
         const streamState = store.streamStates[message.conversationId]
         if (streamState?.isStreaming) {
           console.log('[message:updated] Clearing streaming state for %s (assistant message persisted)', message.conversationId)
-          delete deltaBufferRef.current[message.conversationId]
+          flushConversationDeltas(message.conversationId)
           delete lastActivityRef.current[message.conversationId]
           store.clearConversationStreamState(message.conversationId)
         }
@@ -264,17 +288,59 @@ export function useStreaming() {
     }),
   )
 
+  // --- agent:phase --------------------------------------------------------
+  useTauriEvent(() =>
+    onAgentPhase(({ conversationId, phase }: AgentPhasePayload) => {
+      useChatStore.getState().setConversationAgentPhase(conversationId, phase)
+    }),
+  )
+
   // --- agent:idle --------------------------------------------------------
   useTauriEvent(() =>
     onAgentIdle(({ conversationId }: AgentIdlePayload) => {
       console.log('[agent:idle] conversationId:', conversationId, 'Agent finished, clearing busy state')
-      delete deltaBufferRef.current[conversationId]
+      flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
       const store = useChatStore.getState()
       store.removeBusyConversation(conversationId)
       // Safety net: also clear streaming state in case streaming:done was missed
       // (e.g. agent panicked before finish_agent could emit it)
       store.clearConversationStreamState(conversationId)
+      store.setConversationAgentPhase(conversationId, undefined)
+    }),
+  )
+
+  // --- file:generated ----------------------------------------------------
+  // Emitted directly by the tool execution layer (bypasses LLM).
+  // Shows a warning toast when a file was degraded (e.g. PDF→HTML fallback).
+  useTauriEvent(() =>
+    onFileGenerated(({ conversationId, fileName, isDegraded, degradationNotice, requestedFormat, actualFormat }: FileGeneratedPayload) => {
+      console.log('[file:generated]', conversationId, fileName, isDegraded ? 'DEGRADED' : 'ok')
+      touchActivity(conversationId)
+      if (isDegraded) {
+        // Only show toast for the active conversation (avoid confusing cross-conversation toasts)
+        const store = useChatStore.getState()
+        if (conversationId !== store.activeConversationId) return
+        // Deduplicate: skip if a similar degradation toast was shown within 5 seconds.
+        // Notification IDs follow the pattern "notif_{counter}_{timestamp}".
+        const notifStore = useNotificationStore.getState()
+        const now = Date.now()
+        const recentDuplicate = notifStore.notifications.some(
+          (n) => n.context === 'toast' && n.title === 'File Format Changed'
+            && now - Number(n.id.split('_').pop() ?? '0') < 5000,
+        )
+        if (!recentDuplicate) {
+          notifStore.push({
+            level: 'warning',
+            title: 'File Format Changed',
+            message: degradationNotice ?? `${requestedFormat.toUpperCase()} conversion failed, saved as ${actualFormat.toUpperCase()} instead.`,
+            actions: [],
+            dismissible: true,
+            autoHide: 10,
+            context: 'toast',
+          })
+        }
+      }
     }),
   )
 
@@ -283,6 +349,12 @@ export function useStreaming() {
   // If no streaming activity (delta, tool event, step-reset) has been
   // received for STALE_STREAM_TIMEOUT_MS, force-clear the streaming
   // state. This prevents permanent UI freeze when Tauri events are lost.
+  //
+  // IMPORTANT: When a streaming session first starts (isStreaming=true set
+  // in sendUserMessage), lastActivityRef has no entry yet because no
+  // backend event has arrived. The watchdog must NOT clear this state
+  // immediately — instead it initializes the activity timestamp on first
+  // encounter so the full timeout applies from that point.
   useEffect(() => {
     const timer = setInterval(() => {
       const store = useChatStore.getState()
@@ -292,12 +364,19 @@ export function useStreaming() {
         if (!streamState.isStreaming) continue
 
         const lastActive = lastActivityRef.current[convId]
-        // If no activity was ever recorded (shouldn't happen) or it's stale
-        if (!lastActive || now - lastActive > STALE_STREAM_TIMEOUT_MS) {
+        if (!lastActive) {
+          // No activity ever recorded — this conversation just started streaming.
+          // Initialize the timestamp so the full timeout applies from now.
+          // Do NOT clear immediately; the first delta/tool event may still be
+          // in transit (LLM cold start, checkpoint extraction, network latency).
+          lastActivityRef.current[convId] = now
+          continue
+        }
+        if (now - lastActive > STALE_STREAM_TIMEOUT_MS) {
           console.warn(
             '[watchdog] Force-clearing stale streaming state for conversation %s (last activity: %s ms ago)',
             convId,
-            lastActive ? now - lastActive : 'never',
+            now - lastActive,
           )
           delete deltaBufferRef.current[convId]
           delete lastActivityRef.current[convId]

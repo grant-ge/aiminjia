@@ -249,7 +249,7 @@ export interface GeneratedFile {
   filePath: string
   fileType: 'excel' | 'html' | 'pdf' | 'csv' | 'json' | 'png' | 'py'
   fileSize: number
-  category: 'report' | 'analysis' | 'script' | 'temp'
+  category: 'report' | 'chart' | 'data' | 'analysis' | 'script' | 'temp'
   version: number
   isLatest: boolean
   supersededBy?: string
@@ -257,6 +257,9 @@ export interface GeneratedFile {
   createdByStep?: number
   description: string
   actions: FileAction[]
+  isDegraded?: boolean
+  degradationNotice?: string | null
+  requestedFormat?: string
 }
 
 export interface FileAction {

@@ -254,7 +254,7 @@ token_budget = 8192       # LLM 输出 token 预算
 id = "step0"
 name = "需求确认"
 prompt = "prompts/step0.md"
-tools_only = ["analyze_file", "save_analysis_note"]
+tools_only = ["load_file", "save_analysis_note"]
 max_iterations = 5
 requires_confirmation = true
 
@@ -262,7 +262,7 @@ requires_confirmation = true
 id = "step1"
 name = "简历数据分析"
 prompt = "prompts/step1.md"
-tools_only = ["analyze_file", "execute_python", "save_analysis_note", "update_progress"]
+tools_only = ["load_file", "execute_python", "save_analysis_note", "update_progress"]
 max_iterations = 15
 requires_confirmation = true
 
@@ -350,7 +350,7 @@ impl Skill for MyAnalysisSkill {
     fn tool_filter(&self, state: &SkillState) -> ToolFilter {
         match state.current_step.as_deref() {
             Some("step0") => ToolFilter::Only(vec![
-                "analyze_file".into(),
+                "load_file".into(),
                 "save_analysis_note".into(),
             ]),
             _ => ToolFilter::All,
@@ -606,7 +606,7 @@ src-tauri/
 |--------|------|
 | `web_search` | 联网搜索（Tavily / SearXNG） |
 | `execute_python` | 沙箱 Python 代码执行 |
-| `analyze_file` | 文件解析（Excel/CSV/PDF/Word 等） |
+| `load_file` | 加载上传文件，数据自动注入 execute_python 环境 |
 | `generate_report` | 生成 HTML 分析报告 |
 | `generate_chart` | 生成 PNG 图表 |
 | `hypothesis_test` | 统计假设检验 |

@@ -10,7 +10,7 @@
 /// labels that a user would never naturally type or expect to see.
 ///
 /// NOTE: Tool names the LLM legitimately calls (e.g. `execute_python`,
-/// `analyze_file`) are NOT included to avoid false positives.
+/// `load_file`) are NOT included to avoid false positives.
 const FINGERPRINTS: &[&str] = &[
     // Preamble internal function names (injected by sandbox, not user-visible)
     "save_analysis_note",
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn test_normal_tool_usage_no_false_positive() {
         // Typical LLM output mentioning tools it's using — should NOT trigger
-        let content = "我先用 analyze_file 查看文件结构，然后用 execute_python 加载数据进行分析。\
+        let content = "我先用 load_file 加载文件数据，然后用 execute_python 进行分析。\
                         接下来我会用 web_search 搜索行业基准数据。\
                         数据显示 Compa-Ratio 中位数为 95%，CV 为 18%。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));

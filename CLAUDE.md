@@ -37,12 +37,12 @@ analysis/
         └── src/
             ├── main.rs / lib.rs       # 启动 + 状态注册 + 崩溃恢复（清理孤儿任务）
             ├── commands/              # IPC 命令
-            │   ├── chat.rs            # send_message（编排检测 + Agent Loop）, stop_streaming(conversation_id), is_agent_busy→Vec<String>, get_messages
+            │   ├── chat.rs            # send_message（编排检测 + Agent Loop + 工具结果可靠性 4 层保障）, stop_streaming(conversation_id), is_agent_busy→Vec<String>, get_messages
             │   ├── file.rs            # upload_file, open/reveal/preview/delete_file (均需 conversation_id)
             │   └── settings.rs        # get/update settings, per-provider key CRUD, provider switching
             ├── plugin/                # 插件系统（Tool + Skill 注册式架构）
             │   ├── mod.rs             # re-export（ToolRegistry, SkillRegistry, PluginContext, Skill）
-            │   ├── tool_trait.rs      # ToolPlugin trait + ToolOutput + ToolError
+            │   ├── tool_trait.rs      # ToolPlugin trait + ToolOutput + ToolError + FileMeta
             │   ├── skill_trait.rs     # Skill trait + SkillState + WorkflowDefinition + ToolFilter
             │   ├── registry.rs        # ToolRegistry + SkillRegistry（运行时注册 + 过滤 + 执行）
             │   ├── context.rs         # PluginContext（插件共享服务入口）
@@ -50,7 +50,7 @@ analysis/
             │   ├── declarative_skill.rs # TOML + Markdown 声明式 Skill 加载器
             │   ├── python_bridge.rs   # Python 脚本 → ToolPlugin 适配（安全 temp file 协议）
             │   └── builtin/
-            │       ├── tools/         # 10 个内置工具（web_search, execute_python, analyze_file 等）
+            │       ├── tools/         # 10 个内置工具（web_search, execute_python, load_file 等）
             │       └── skills/        # 内置 Skill（daily_assistant；comp_analysis 已迁移为声明式插件）
             ├── llm/                   # LLM 网关 + Agent 编排
             │   ├── gateway.rs         # 流式请求（HashMap 多会话并发，最多 3 个同时运行）
@@ -60,7 +60,19 @@ analysis/
             │   ├── orchestrator.rs    # 分析步骤状态管理（step state + advance）
             │   ├── checkpoint.rs      # 步骤检查点提取（结构化 LLM 提取 + JSON 解析，extract prompt 由 Skill 提供）
             │   ├── masking.rs         # PII 脱敏（mask_text/unmask，3 级别）
-            │   └── streaming.rs       # SSE 解析
+            │   ├── streaming.rs       # SSE 解析
+            │   ├── tool_executor/     # 工具 handler 实现（子模块）
+            │   │   ├── mod.rs         # FileGenResult、参数提取 helpers、re-export
+            │   │   ├── util.rs        # py_escape, indent_python, slugify 等共用工具
+            │   │   ├── search.rs      # handle_web_search
+            │   │   ├── python.rs      # handle_execute_python
+            │   │   ├── file_load.rs   # handle_load_file + build_loaded_files_preamble
+            │   │   ├── report.rs      # handle_generate_report + HTML/PDF/DOCX 构建
+            │   │   ├── chart.rs       # handle_generate_chart + matplotlib 代码生成
+            │   │   ├── stats.rs       # handle_hypothesis_test + handle_detect_anomalies
+            │   │   ├── notes.rs       # handle_save_analysis_note
+            │   │   ├── export.rs      # handle_export_data（双模式：source_file 文件转换 / data JSON 导出）
+            │   │   └── progress.rs    # handle_update_progress
             │   ├── search/                # 搜索模块
             │   │   ├── tavily.rs          # Tavily 付费搜索（增强/降级）
             │   │   ├── bocha.rs           # Bocha 付费搜索（中文优化）

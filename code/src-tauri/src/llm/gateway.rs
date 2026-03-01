@@ -7,6 +7,7 @@
 //! 3. Attaches tool definitions from [`tools`] when the provider supports them.
 //! 4. Manages streaming with cancellation support.
 //! 5. Unmasks the response content before returning to the caller.
+//! 6. Retries retryable errors (429/5xx/timeout) with exponential backoff.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
@@ -30,6 +31,73 @@ use crate::storage::file_store::AppStorage;
 
 /// Maximum number of concurrent agent loops.
 pub const MAX_CONCURRENT_AGENTS: usize = 3;
+
+/// Maximum number of retry attempts for retryable errors (429, 5xx, timeout).
+const MAX_RETRIES: u32 = 3;
+
+/// Initial backoff delay in milliseconds (doubles each retry: 1s → 2s → 4s).
+const INITIAL_BACKOFF_MS: u64 = 1000;
+
+/// Check if an error is retryable (rate limit, server error, or network timeout).
+///
+/// Parses the error message for HTTP status codes and known error patterns.
+/// Non-retryable errors (401 auth, 400 bad request, etc.) return false.
+fn is_retryable_error(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+
+    // Extract HTTP status code from error messages like "API error (429): ..."
+    // or "Streaming API error (503): ..."
+    if let Some(code) = extract_status_code(&msg) {
+        return matches!(code, 429 | 500 | 502 | 503 | 504);
+    }
+
+    // Network-level errors from reqwest
+    let lower = msg.to_lowercase();
+    lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
+}
+
+/// Extract HTTP status code from error message strings like "API error (429): ...".
+fn extract_status_code(msg: &str) -> Option<u16> {
+    // Match patterns: "error (NNN)" or "error(NNN)"
+    let patterns = ["error (", "error("];
+    for pat in &patterns {
+        if let Some(pos) = msg.find(pat) {
+            let after = &msg[pos + pat.len()..];
+            let code_str: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(code) = code_str.parse::<u16>() {
+                return Some(code);
+            }
+        }
+    }
+    None
+}
+
+/// Compute backoff delay with jitter for retry attempt N (0-indexed).
+///
+/// Base delay doubles each attempt: 1s, 2s, 4s.
+/// Jitter adds 0–25% random variation to prevent thundering herd.
+fn backoff_with_jitter(attempt: u32) -> std::time::Duration {
+    let base_ms = INITIAL_BACKOFF_MS * 2u64.pow(attempt);
+    // Simple jitter: add 0–25% of base delay
+    let jitter_ms = (base_ms / 4).max(1);
+    let jitter = rand_jitter(jitter_ms);
+    std::time::Duration::from_millis(base_ms + jitter)
+}
+
+/// Simple pseudo-random jitter (0..max_ms) without pulling in the rand crate.
+/// Uses current time nanoseconds as entropy source — sufficient for backoff jitter.
+fn rand_jitter(max_ms: u64) -> u64 {
+    if max_ms == 0 { return 0; }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as u64;
+    nanos % max_ms
+}
 
 /// Active streaming task handle; dropping the sender cancels the stream.
 struct ActiveTask {
@@ -165,12 +233,23 @@ impl LlmGateway {
             );
         }
 
-        // 4. Create cancellation channel
+        // 4. Create cancellation channel and update active task map.
+        // Check if the previous task (from set_busy()) was already cancelled
+        // during the pre-stream window (between set_busy and first stream_message).
+        // If so, bail out immediately instead of starting a new stream.
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
 
-        // Store active task in per-conversation map
         {
             let mut tasks = self.active_tasks.lock().unwrap();
+            if let Some(existing) = tasks.get(&conv_id) {
+                if *existing.cancel.borrow() {
+                    log::info!(
+                        "stream_message: conversation {} was cancelled before stream started, aborting",
+                        conv_id
+                    );
+                    return Err(anyhow::anyhow!("Conversation cancelled before stream started"));
+                }
+            }
             tasks.insert(conv_id.clone(), ActiveTask {
                 id: task_id.clone(),
                 conversation_id: conv_id,
@@ -179,10 +258,10 @@ impl LlmGateway {
             });
         }
 
-        // 5. Get stream from provider (enum dispatch — trait uses RPITIT)
+        // 5. Get stream from provider with retry on transient errors
         log::info!("dispatch_stream: provider={}, api_key_len={}, model_hint='{}'",
             route.provider, route.api_key.len(), route.model_hint);
-        let stream = dispatch_stream(&route, request).await?;
+        let stream = retry_dispatch_stream(&route, request).await?;
 
         // 6. Return raw stream + cancel_rx — caller uses tokio::select! for cancellation
         Ok((task_id, stream, mask_ctx, cancel_rx))
@@ -229,8 +308,8 @@ impl LlmGateway {
         // 3. Build request
         let request = Self::build_request(masked_messages, &route, false, system_prompt, tool_defs_override, 4096);
 
-        // 4. Dispatch to provider
-        let response = dispatch_send(&route, request).await?;
+        // 4. Dispatch to provider with retry on transient errors
+        let response = retry_dispatch_send(&route, request).await?;
 
         // 5. Unmask the response content
         let unmasked_content = mask_ctx.unmask(&response.content);
@@ -288,6 +367,93 @@ impl LlmGateway {
         log::info!("Gateway marked busy for conversation {} (active={})", conversation_id, tasks.len());
         Ok(())
     }
+}
+
+/// Dispatch a streaming request with exponential backoff retry.
+///
+/// Retries up to [`MAX_RETRIES`] times on retryable errors (429, 5xx, timeout).
+/// Non-retryable errors (401, 400, etc.) are returned immediately.
+/// The request is cloned for each retry attempt.
+async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<StreamBox> {
+    let mut last_err = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        match dispatch_stream(route, request.clone()).await {
+            Ok(stream) => {
+                if attempt > 0 {
+                    log::info!(
+                        "[retry] dispatch_stream succeeded on attempt {} for provider '{}'",
+                        attempt + 1, route.provider
+                    );
+                }
+                return Ok(stream);
+            }
+            Err(e) => {
+                if attempt < MAX_RETRIES && is_retryable_error(&e) {
+                    let delay = backoff_with_jitter(attempt);
+                    log::warn!(
+                        "[retry] dispatch_stream failed (attempt {}/{}, retrying in {:?}): {}",
+                        attempt + 1, MAX_RETRIES + 1, delay, e
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    if attempt > 0 {
+                        log::error!(
+                            "[retry] dispatch_stream failed after {} attempts: {}",
+                            attempt + 1, e
+                        );
+                    }
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    // All retries exhausted — return the last error
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All retry attempts exhausted")))
+}
+
+/// Dispatch a non-streaming request with exponential backoff retry.
+///
+/// Same retry policy as [`retry_dispatch_stream`].
+async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmResponse> {
+    let mut last_err = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        match dispatch_send(route, request.clone()).await {
+            Ok(response) => {
+                if attempt > 0 {
+                    log::info!(
+                        "[retry] dispatch_send succeeded on attempt {} for provider '{}'",
+                        attempt + 1, route.provider
+                    );
+                }
+                return Ok(response);
+            }
+            Err(e) => {
+                if attempt < MAX_RETRIES && is_retryable_error(&e) {
+                    let delay = backoff_with_jitter(attempt);
+                    log::warn!(
+                        "[retry] dispatch_send failed (attempt {}/{}, retrying in {:?}): {}",
+                        attempt + 1, MAX_RETRIES + 1, delay, e
+                    );
+                    tokio::time::sleep(delay).await;
+                    last_err = Some(e);
+                } else {
+                    if attempt > 0 {
+                        log::error!(
+                            "[retry] dispatch_send failed after {} attempts: {}",
+                            attempt + 1, e
+                        );
+                    }
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All retry attempts exhausted")))
 }
 
 /// Dispatch a streaming request to the correct provider based on route.
@@ -389,5 +555,74 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
             p.send(request).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_status_code_standard() {
+        assert_eq!(extract_status_code("API error (429): rate limited"), Some(429));
+        assert_eq!(extract_status_code("Streaming API error (503): service unavailable"), Some(503));
+        assert_eq!(extract_status_code("Anthropic API error (401): unauthorized"), Some(401));
+    }
+
+    #[test]
+    fn test_extract_status_code_no_space() {
+        assert_eq!(extract_status_code("error(500): internal"), Some(500));
+    }
+
+    #[test]
+    fn test_extract_status_code_no_match() {
+        assert_eq!(extract_status_code("some random error"), None);
+        assert_eq!(extract_status_code("connection refused"), None);
+    }
+
+    #[test]
+    fn test_retryable_429() {
+        let err = anyhow::anyhow!("API error (429): rate limit exceeded");
+        assert!(is_retryable_error(&err));
+    }
+
+    #[test]
+    fn test_retryable_5xx() {
+        assert!(is_retryable_error(&anyhow::anyhow!("API error (500): internal server error")));
+        assert!(is_retryable_error(&anyhow::anyhow!("Streaming API error (502): bad gateway")));
+        assert!(is_retryable_error(&anyhow::anyhow!("API error (503): service unavailable")));
+        assert!(is_retryable_error(&anyhow::anyhow!("API error (504): gateway timeout")));
+    }
+
+    #[test]
+    fn test_not_retryable_4xx() {
+        assert!(!is_retryable_error(&anyhow::anyhow!("API error (401): unauthorized")));
+        assert!(!is_retryable_error(&anyhow::anyhow!("API error (400): bad request")));
+        assert!(!is_retryable_error(&anyhow::anyhow!("API error (403): forbidden")));
+    }
+
+    #[test]
+    fn test_retryable_network_errors() {
+        assert!(is_retryable_error(&anyhow::anyhow!("request timed out")));
+        assert!(is_retryable_error(&anyhow::anyhow!("Connection reset by peer")));
+        assert!(is_retryable_error(&anyhow::anyhow!("connection refused")));
+        assert!(is_retryable_error(&anyhow::anyhow!("Broken pipe")));
+    }
+
+    #[test]
+    fn test_not_retryable_unknown_error() {
+        assert!(!is_retryable_error(&anyhow::anyhow!("invalid JSON in response")));
+        assert!(!is_retryable_error(&anyhow::anyhow!("unknown error")));
+    }
+
+    #[test]
+    fn test_backoff_increases() {
+        let d0 = backoff_with_jitter(0);
+        let d1 = backoff_with_jitter(1);
+        let d2 = backoff_with_jitter(2);
+        // Base delays: 1s, 2s, 4s (plus up to 25% jitter)
+        assert!(d0.as_millis() >= 1000 && d0.as_millis() <= 1250);
+        assert!(d1.as_millis() >= 2000 && d1.as_millis() <= 2500);
+        assert!(d2.as_millis() >= 4000 && d2.as_millis() <= 5000);
     }
 }

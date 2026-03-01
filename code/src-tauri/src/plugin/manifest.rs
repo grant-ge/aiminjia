@@ -160,7 +160,7 @@ token_budget = 8192
 id = "step1"
 name = "数据分析"
 prompt = "prompts/step1.md"
-tools_only = ["analyze_file", "execute_python"]
+tools_only = ["load_file", "execute_python"]
 max_iterations = 10
 requires_confirmation = true
 

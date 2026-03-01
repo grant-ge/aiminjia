@@ -16,10 +16,13 @@ export interface ToolExecution {
   summary?: string
 }
 
+export type AgentPhase = 'think' | 'act' | 'observe'
+
 export interface ConversationStreamState {
   isStreaming: boolean
   streamingContent: string
   toolExecutions: ToolExecution[]
+  agentPhase?: AgentPhase
 }
 
 interface ChatState {
@@ -61,6 +64,7 @@ interface ChatState {
   deleteConversationStreamState: (convId: string) => void
   addConversationToolExecution: (convId: string, exec: ToolExecution) => void
   updateConversationToolExecution: (convId: string, toolId: string, update: Partial<ToolExecution>) => void
+  setConversationAgentPhase: (convId: string, phase: AgentPhase | undefined) => void
 
   // Legacy actions (delegate to per-conversation with activeConversationId)
   setStreaming: (isStreaming: boolean) => void
@@ -233,6 +237,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       const legacy = deriveLegacy(state.activeConversationId, streamStates)
       return { streamStates, ...legacy }
+    }),
+
+  setConversationAgentPhase: (convId, phase) =>
+    set((state) => {
+      const prev = getStreamState(state.streamStates, convId)
+      const streamStates = {
+        ...state.streamStates,
+        [convId]: { ...prev, agentPhase: phase },
+      }
+      return { streamStates }
     }),
 
   // --- Legacy actions (delegate to per-conversation) ---

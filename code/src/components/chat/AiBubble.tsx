@@ -43,6 +43,7 @@ import { sendMessage } from '@/lib/tauri'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useCallback, useState } from 'react'
 import { markdownToHtml } from '@/lib/markdown'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 interface AiBubbleProps {
   message: Message
@@ -68,9 +69,18 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   const handleUserResponse = useCallback(
     (responseText: string) => {
       if (!conversationId) return
-      sendMessage(conversationId, responseText).catch((err) =>
-        console.error('[AiBubble] Failed to send user response:', err),
-      )
+      sendMessage(conversationId, responseText).catch((err) => {
+        console.error('[AiBubble] Failed to send user response:', err)
+        useNotificationStore.getState().push({
+          level: 'error',
+          title: '发送失败',
+          message: '未能发送回复，请重试。',
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+      })
     },
     [conversationId],
   )
@@ -78,17 +88,35 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   /** Open a generated report file via system default app. */
   const handleOpenFile = useCallback((fileId: string) => {
     if (!conversationId) return
-    openGeneratedFile(fileId, conversationId).catch((err) =>
-      console.error('[AiBubble] Failed to open file:', err),
-    )
+    openGeneratedFile(fileId, conversationId).catch((err) => {
+      console.error('[AiBubble] Failed to open file:', err)
+      useNotificationStore.getState().push({
+        level: 'error',
+        title: '打开文件失败',
+        message: '无法打开文件，文件可能已被移动或删除。',
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: 'toast',
+      })
+    })
   }, [conversationId])
 
   /** Reveal a file in the OS file manager (Finder / Explorer). */
   const handleRevealFile = useCallback((fileId: string) => {
     if (!conversationId) return
-    revealFileInFolder(fileId, conversationId).catch((err) =>
-      console.error('[AiBubble] Failed to reveal file:', err),
-    )
+    revealFileInFolder(fileId, conversationId).catch((err) => {
+      console.error('[AiBubble] Failed to reveal file:', err)
+      useNotificationStore.getState().push({
+        level: 'error',
+        title: '定位文件失败',
+        message: '无法在文件管理器中显示文件。',
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: 'toast',
+      })
+    })
   }, [conversationId])
 
   return (

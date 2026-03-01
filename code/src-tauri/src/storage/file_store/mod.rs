@@ -496,12 +496,16 @@ impl AppStorage {
     }
 
     /// Remove the active task record for a conversation.
+    ///
+    /// Atomic: calls remove_file directly and maps NotFound to success,
+    /// avoiding the TOCTOU race of exists() + remove_file().
     pub fn remove_active_task(&self, conversation_id: &str) -> Result<()> {
         let lock_path = conversations::conv_dir(&self.base_dir, conversation_id).join("run.lock");
-        if lock_path.exists() {
-            let _ = fs::remove_file(&lock_path);
+        match fs::remove_file(&lock_path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
         }
-        Ok(())
     }
 
     /// Get all orphaned tasks (run.lock files from different sessions or stale timestamps).
@@ -737,11 +741,30 @@ mod tests {
 
         storage.insert_active_task("c1").unwrap();
 
-        // Our own PID is alive, so it should NOT be in orphans
+        // Same session — should NOT be in orphans
         let orphans = storage.get_orphaned_tasks().unwrap();
         assert!(orphans.is_empty());
 
         storage.remove_active_task("c1").unwrap();
+    }
+
+    #[test]
+    fn test_active_tasks_session_mismatch() {
+        let (storage, dir) = test_storage();
+        storage.create_conversation("c1", "Conv").unwrap();
+
+        // Simulate a lock file from a previous session (different UUID)
+        let lock_path = conversations::conv_dir(dir.path(), "c1").join("run.lock");
+        let stale_content = format!("{}:{}", uuid::Uuid::new_v4(), 1700000000u64);
+        std::fs::write(&lock_path, &stale_content).unwrap();
+
+        // Different session_id → detected as orphan
+        let orphans = storage.get_orphaned_tasks().unwrap();
+        assert_eq!(orphans, vec!["c1"]);
+
+        // Cleanup removes it
+        storage.cleanup_orphaned_tasks().unwrap();
+        assert!(!lock_path.exists());
     }
 
     #[test]

@@ -7,6 +7,10 @@ use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
 
 /// Shared service context passed to every plugin execution.
+///
+/// All fields are `Arc`-wrapped or cheaply clonable, making it safe
+/// to share across concurrent tool executions via `Clone`.
+#[derive(Clone)]
 pub struct PluginContext {
     pub storage: Arc<AppStorage>,
     pub file_manager: Arc<FileManager>,

@@ -9,6 +9,19 @@ use serde::{Deserialize, Serialize};
 
 use super::context::PluginContext;
 
+/// Metadata for a file produced by a file-generating tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMeta {
+    pub file_id: String,
+    pub file_name: String,
+    pub requested_format: String,
+    pub actual_format: String,
+    pub file_size: u64,
+    pub stored_path: String,
+    pub category: String,
+}
+
 /// Tool execution output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +34,15 @@ pub struct ToolOutput {
     /// IDs of files generated during execution.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub generated_files: Vec<String>,
+    /// Whether the tool output was degraded (e.g. PDF→HTML fallback).
+    #[serde(default)]
+    pub is_degraded: bool,
+    /// Human-readable notice when degradation occurred.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degradation_notice: Option<String>,
+    /// Metadata for the generated file (if any).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_meta: Option<FileMeta>,
 }
 
 impl ToolOutput {
@@ -31,6 +53,9 @@ impl ToolOutput {
             is_error: false,
             data: None,
             generated_files: Vec::new(),
+            is_degraded: false,
+            degradation_notice: None,
+            file_meta: None,
         }
     }
 
@@ -41,7 +66,20 @@ impl ToolOutput {
             is_error: true,
             data: None,
             generated_files: Vec::new(),
+            is_degraded: false,
+            degradation_notice: None,
+            file_meta: None,
         }
+    }
+}
+
+impl From<crate::llm::tool_executor::FileGenResult> for ToolOutput {
+    fn from(r: crate::llm::tool_executor::FileGenResult) -> Self {
+        let mut output = Self::success(r.content);
+        output.is_degraded = r.is_degraded;
+        output.degradation_notice = r.degradation_notice;
+        output.file_meta = Some(r.file_meta);
+        output
     }
 }
 

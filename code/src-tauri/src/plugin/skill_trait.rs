@@ -212,17 +212,20 @@ pub fn is_confirm_keyword(text: &str) -> bool {
     PHRASES.iter().any(|p| stripped == *p)
 }
 
-/// Check if the user message is an abort keyword (exact match, max 20 chars).
+/// Check if the user message is an abort keyword (exact match, max 30 chars).
 pub fn is_abort_keyword(text: &str) -> bool {
-    if text.trim().chars().count() > 20 {
+    if text.trim().chars().count() > 30 {
         return false;
     }
     let stripped = normalize_for_keyword(text);
     const PHRASES: &[&str] = &[
         "算了", "不分析了", "取消", "取消分析", "退出", "退出分析",
         "停止", "停止分析", "不做了", "不用了", "算了吧", "放弃",
+        "不需要了", "不需要分析", "不要分析了", "不用分析",
+        "还是算了", "还是不用了", "先不分析了", "暂时不需要",
         "cancel", "abort", "stop", "exit", "quit", "nevermind",
-        "no", "no thanks", "don't analyze", "skip",
+        "no", "no thanks", "don't analyze", "skip", "not now",
+        "no need", "never mind", "skip analysis",
     ];
     PHRASES.iter().any(|p| stripped == *p)
 }

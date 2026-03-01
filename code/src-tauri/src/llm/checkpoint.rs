@@ -259,11 +259,14 @@ pub fn format_checkpoint_for_injection(
         checkpoint.next_step_input
     ));
 
-    // data_artifacts — truncate older steps to 2000 chars
+    // data_artifacts — cap at 4000 chars for recent step, 2000 for older
+    const RECENT_ARTIFACTS_MAX: usize = 4000;
+    const OLD_ARTIFACTS_MAX: usize = 2000;
     if let Some(ref artifacts) = checkpoint.data_artifacts {
         if !artifacts.trim().is_empty() {
-            let content = if !is_recent && artifacts.len() > 2000 {
-                let end = truncate_at_char_boundary(artifacts, 2000);
+            let max = if is_recent { RECENT_ARTIFACTS_MAX } else { OLD_ARTIFACTS_MAX };
+            let content = if artifacts.len() > max {
+                let end = truncate_at_char_boundary(artifacts, max);
                 format!("{}...(truncated)", &artifacts[..end])
             } else {
                 artifacts.clone()

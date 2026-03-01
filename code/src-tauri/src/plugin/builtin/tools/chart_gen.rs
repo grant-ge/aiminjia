@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::llm::tool_executor::{self, ToolContext};
+use crate::llm::tool_executor;
 use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
@@ -41,9 +41,8 @@ impl ToolPlugin for ChartGenTool {
     }
 
     async fn execute(&self, ctx: &PluginContext, input: Value) -> Result<ToolOutput, ToolError> {
-        let tool_ctx = ToolContext::from_plugin_context(ctx);
-        match tool_executor::handle_generate_chart(&tool_ctx, &input).await {
-            Ok(content) => Ok(ToolOutput::success(content)),
+        match tool_executor::handle_generate_chart(ctx, &input).await {
+            Ok(result) => Ok(result.into()),
             Err(e) => Err(ToolError::Other(e)),
         }
     }

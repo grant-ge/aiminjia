@@ -579,7 +579,7 @@ mod tests {
                 "delta": {
                     "tool_calls": [{
                         "id": "call_abc123",
-                        "function": { "name": "analyze_file", "arguments": "" }
+                        "function": { "name": "load_file", "arguments": "" }
                     }]
                 }
             }]
@@ -634,7 +634,7 @@ mod tests {
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
             assert_eq!(tool_call.id, "call_abc123");
-            assert_eq!(tool_call.name, "analyze_file");
+            assert_eq!(tool_call.name, "load_file");
             assert_eq!(tool_call.arguments, serde_json::json!({"file_id": "abc"}));
         }
     }

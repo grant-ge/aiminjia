@@ -120,6 +120,8 @@
   --color-semantic-purple-bg-light: rgba(155, 126, 216, 0.06);
   --color-semantic-purple-border: rgba(155, 126, 216, 0.2);
   --color-semantic-green-bg-light: rgba(52, 199, 89, 0.04);
+  --color-semantic-orange-bg-light: rgba(245, 166, 35, 0.04);
+  --color-semantic-orange-border: rgba(245, 166, 35, 0.2);
   --color-accent-bg-light: rgba(212, 168, 67, 0.04);
   --color-accent-border: rgba(212, 168, 67, 0.25);
 

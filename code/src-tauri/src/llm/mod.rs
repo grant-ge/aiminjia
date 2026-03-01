@@ -9,3 +9,4 @@ pub mod prompts;
 pub mod prompt_guard;
 pub mod orchestrator;
 pub mod checkpoint;
+pub mod taor;

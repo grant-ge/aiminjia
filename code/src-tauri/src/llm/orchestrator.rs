@@ -1,14 +1,23 @@
 //! Analysis orchestrator — manages the 6-step compensation analysis workflow
 //! (Step 0: direction confirmation + Steps 1–5: analysis pipeline).
 //!
-//! The orchestrator sits between `send_message` and `agent_loop`. It reads the
-//! conversation's mode (`daily`/`confirming`/`analyzing`) from the DB, and
-//! returns a deterministic `AnalysisAction` to drive the agent loop.
+//! ## Active production API
 //!
-//! **Key invariant**: The `conversation.mode` column is the single source of
-//! truth for whether a conversation is in analysis flow. Step state in
-//! `analysis_states` is subordinate — it tracks *which step* within analysis,
-//! not *whether* we are analyzing.
+//! The following types/functions are used by `chat.rs` in the current Skill-based architecture:
+//! - [`StepConfig`], [`StepStatus`], [`StepState`] — step state types
+//! - [`get_step_state`] — read current step from DB
+//! - [`advance_step`] — persist step transitions
+//!
+//! ## Legacy API (deprecated, retained for tests and fallback)
+//!
+//! The following are superseded by the Skill plugin system (`plugin/skill_trait.rs`,
+//! `plugin/declarative_skill.rs`) and are no longer called in production:
+//! - [`detect_analysis_mode`] → replaced by `SkillRegistry::detect_activation()`
+//! - [`next_action`] / [`route_analysis_step`] → replaced by `Skill::on_step_complete()`
+//! - [`is_confirmation`] / [`is_abort`] → replaced by `skill_trait::is_confirm_keyword()` / `is_abort_keyword()`
+//! - [`build_step_config`] → replaced by `build_config_from_skill()` in `chat.rs`
+//! - [`build_step_messages`] → no longer used
+//! - [`AnalysisAction`] → replaced by `skill_trait::StepAction`
 #![allow(dead_code)]
 
 use crate::llm::prompts;
@@ -623,7 +632,7 @@ mod tests {
     fn test_step0_tools() {
         let config = build_step_config(0);
         let tool_names: Vec<&str> = config.tool_defs.iter().map(|t| t.name.as_str()).collect();
-        assert!(tool_names.contains(&"analyze_file"));
+        assert!(tool_names.contains(&"load_file"));
         assert!(tool_names.contains(&"save_analysis_note"));
         assert_eq!(tool_names.len(), 2);
     }

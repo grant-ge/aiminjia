@@ -40,6 +40,8 @@ pub struct AppSettings {
     pub custom_model_endpoint: String,
     #[serde(default)]
     pub custom_model_name: String,
+    #[serde(default)]
+    pub enable_taor_tracking: bool,
 }
 
 impl Default for AppSettings {
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             bocha_api_key: String::new(),
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
+            enable_taor_tracking: true,
         }
     }
 }
@@ -102,6 +105,7 @@ impl AppSettings {
             bocha_api_key: get_str("bochaApiKey", &defaults.bocha_api_key),
             custom_model_endpoint: get_str("customModelEndpoint", &defaults.custom_model_endpoint),
             custom_model_name: get_str("customModelName", &defaults.custom_model_name),
+            enable_taor_tracking: get_bool("enableTaorTracking", defaults.enable_taor_tracking),
         }
     }
 }

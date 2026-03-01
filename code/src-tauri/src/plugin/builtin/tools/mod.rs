@@ -2,7 +2,7 @@
 
 pub mod web_search;
 pub mod python_exec;
-pub mod file_analysis;
+pub mod file_load;
 pub mod report_gen;
 pub mod chart_gen;
 pub mod hypothesis_test;
@@ -14,12 +14,12 @@ pub mod progress_update;
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
 
-/// Register all 10 built-in tools.
+/// Register all built-in tools.
 pub async fn register_builtin_tools(registry: &ToolRegistry) {
     let tools: Vec<Arc<dyn crate::plugin::ToolPlugin>> = vec![
         Arc::new(web_search::WebSearchTool),
         Arc::new(python_exec::PythonExecTool),
-        Arc::new(file_analysis::FileAnalysisTool),
+        Arc::new(file_load::FileLoadTool),
         Arc::new(report_gen::ReportGenTool),
         Arc::new(chart_gen::ChartGenTool),
         Arc::new(hypothesis_test::HypothesisTestTool),

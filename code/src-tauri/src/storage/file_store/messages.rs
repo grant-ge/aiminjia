@@ -61,12 +61,25 @@ fn shard_path(base_dir: &Path, conversation_id: &str, shard_num: u64) -> PathBuf
 
 fn read_shard_meta(base_dir: &Path, conversation_id: &str) -> ShardMeta {
     let path = current_path(base_dir, conversation_id);
-    match fs::read_to_string(&path) {
-        Ok(content) => ShardMeta::parse(&content).unwrap_or(ShardMeta {
-            shard: 1,
-            next_seq: 1,
-        }),
-        Err(_) => ShardMeta {
+    // Try main _current file, then .tmp fallback (crash during atomic rename)
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            let tmp = path.with_extension("tmp");
+            match fs::read_to_string(&tmp) {
+                Ok(c) => {
+                    warn!("Recovered _current from .tmp for {}", conversation_id);
+                    // Promote .tmp → _current
+                    let _ = fs::rename(&tmp, &path);
+                    c
+                }
+                Err(_) => String::new(),
+            }
+        }
+    };
+    match ShardMeta::parse(&content) {
+        Some(meta) => meta,
+        None => ShardMeta {
             shard: 1,
             next_seq: 1,
         },
@@ -82,7 +95,11 @@ fn write_shard_meta(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, meta.to_string())
+    // Atomic write: write to .tmp then rename to prevent data loss on crash
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, meta.to_string())?;
+    fs::rename(&tmp, &path)?;
+    Ok(())
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────

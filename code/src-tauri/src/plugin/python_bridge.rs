@@ -204,6 +204,9 @@ impl ToolPlugin for PythonToolBridge {
                     is_error,
                     data: parsed.get("data").cloned(),
                     generated_files: Vec::new(),
+                    is_degraded: false,
+                    degradation_notice: None,
+                    file_meta: None,
                 })
             }
             Err(_) => {

@@ -199,15 +199,13 @@ impl PythonRunner {
             }
             Ok(Err(e)) => Err(anyhow!("Process error: {}", e)),
             Err(_) => {
-                // Timeout — kill the process
+                // Timeout — kill the process and return Err so callers
+                // treat this as a failure (not a successful empty result).
                 let _ = child.kill().await;
-                Ok(ExecutionResult {
-                    stdout: String::new(),
-                    stderr: format!("Execution timed out after {} seconds", self.sandbox.timeout_seconds),
-                    exit_code: -1,
-                    execution_time_ms: elapsed,
-                    timed_out: true,
-                })
+                Err(anyhow!(
+                    "Execution timed out after {} seconds. The code took too long — simplify it or process less data per call.",
+                    self.sandbox.timeout_seconds
+                ))
             }
         }
     }

@@ -76,18 +76,29 @@ fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["code"]
             }),
         },
-        // ─── 3. File Analysis ────────────────────────────────
+        // ─── 3. File Loading ────────────────────────────────
         ToolDefinition {
-            name: "analyze_file".to_string(),
-            description: "Parse and analyze an uploaded file. Returns column names, \
-                data types, row count, and sample data."
+            name: "load_file".to_string(),
+            description: "Load an uploaded file so it can be used in execute_python. \
+                After calling this tool, the file data is available as variable \
+                _df (DataFrame for tabular data) or _text (string for text files) \
+                in execute_python. You do NOT need to handle file paths — the system \
+                manages path resolution automatically."
                 .to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "file_id": {
                         "type": "string",
-                        "description": "ID of the uploaded file"
+                        "description": "ID of the uploaded file to load"
+                    },
+                    "sheet": {
+                        "type": "string",
+                        "description": "Sheet name for Excel files (optional, defaults to first sheet)"
+                    },
+                    "nrows": {
+                        "type": "integer",
+                        "description": "Maximum number of rows to load (optional, loads all by default)"
                     }
                 },
                 "required": ["file_id"]
@@ -352,12 +363,12 @@ pub fn get_tools_for_step(step: u32) -> Vec<String> {
     match step {
         // Step 0: Analysis direction confirmation
         0 => vec![
-            "analyze_file".to_string(),
+            "load_file".to_string(),
             "save_analysis_note".to_string(),
         ],
         // Step 1: Data cleaning and understanding
         1 => vec![
-            "analyze_file".to_string(),
+            "load_file".to_string(),
             "execute_python".to_string(),
             "save_analysis_note".to_string(),
             "update_progress".to_string(),
@@ -480,7 +491,7 @@ mod tests {
     #[test]
     fn test_get_tools_for_step_1() {
         let tools = get_tools_for_step(1);
-        assert!(tools.contains(&"analyze_file".to_string()));
+        assert!(tools.contains(&"load_file".to_string()));
         assert!(tools.contains(&"execute_python".to_string()));
         assert!(tools.contains(&"update_progress".to_string()));
         assert!(!tools.contains(&"web_search".to_string()));
@@ -514,7 +525,7 @@ mod tests {
         let defs = get_tool_definitions_for_step(1);
         assert!(!defs.is_empty());
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"analyze_file"));
+        assert!(names.contains(&"load_file"));
         assert!(names.contains(&"execute_python"));
         assert!(!names.contains(&"web_search"));
     }

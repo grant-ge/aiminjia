@@ -118,10 +118,15 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
     };
 
     // Analysis keywords (Chinese + English)
+    // NOTE: Avoid overly broad keywords like "分析" or "诊断" alone — they
+    // appear in everyday conversation (e.g. "分析下伊朗局势"). Use compound
+    // domain-specific terms that reliably indicate a data analysis task.
     let analysis_keywords = [
-        "分析", "诊断", "公平性", "薪酬", "对比", "回归", "标准差",
-        "analyze", "diagnosis", "fairness", "regression", "statistics",
-        "correlation", "deviation", "相关性", "偏差", "显著性",
+        "薪酬分析", "薪资分析", "薪酬诊断", "薪资诊断",
+        "公平性", "薪酬", "薪资", "回归分析", "标准差",
+        "salary analysis", "pay equity", "compensation",
+        "regression", "statistics", "standard deviation",
+        "相关性分析", "显著性", "偏差分析",
     ];
     if analysis_keywords.iter().any(|kw| text.contains(kw)) {
         return TaskType::Analysis;
@@ -175,7 +180,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
 
     match task_type {
         // Analysis ALWAYS uses primary model with tools — this is critical
-        // for the 5-step workflow that relies on execute_python, analyze_file, etc.
+        // for the 5-step workflow that relies on execute_python, load_file, etc.
         TaskType::Analysis => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
@@ -244,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_infer_analysis_english() {
-        let msgs = make_messages(&[("user", "Please analyze the salary regression data")]);
+        let msgs = make_messages(&[("user", "Please analyze the salary regression data for pay equity")]);
         assert_eq!(infer_task_type(&msgs), TaskType::Analysis);
     }
 
@@ -252,6 +257,13 @@ mod tests {
     fn test_infer_analysis_chinese() {
         let msgs = make_messages(&[("user", "请对薪酬公平性进行诊断")]);
         assert_eq!(infer_task_type(&msgs), TaskType::Analysis);
+    }
+
+    #[test]
+    fn test_infer_general_with_analysis_word() {
+        // "分析" alone should NOT trigger Analysis — it's too broad for everyday use
+        let msgs = make_messages(&[("user", "分析下伊朗最新局势")]);
+        assert_eq!(infer_task_type(&msgs), TaskType::General);
     }
 
     #[test]
