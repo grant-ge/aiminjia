@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use log::{info, warn};
+use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr, Command};
 use tokio::sync::Mutex;
@@ -29,7 +30,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const INTERRUPT_GRACE_SECS: u64 = 5;
 
 // ---------------------------------------------------------------------------
-// REPL script (embedded as Rust string constant)
+// Embedded Python scripts (source files alongside this module)
 // ---------------------------------------------------------------------------
 
 /// Python REPL loop script. Written to temp dir and executed by the session process.
@@ -39,85 +40,13 @@ const INTERRUPT_GRACE_SECS: u64 = 5;
 ///   stdout:  {user print output}\n__DONE__ {uuid}\n
 ///   stderr:  exception tracebacks / warnings
 ///   meta:    {workspace}/temp/_meta_{uuid}.json (structured result)
-const REPL_SCRIPT: &str = r###"
-import sys, os, io, json, time, traceback, builtins
+const REPL_SCRIPT: &str = include_str!("_repl.py");
 
-# Will be populated by sandbox preamble injection
-_written_files = []
+/// Python code to checkpoint session state (DataFrame + user variables) to pkl files.
+const CHECKPOINT_SCRIPT: &str = include_str!("_checkpoint.py");
 
-def _repl_loop():
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            break  # stdin closed
-        line = line.strip()
-        if not line.startswith('__EXEC__'):
-            continue
-
-        parts = line.split(' ', 2)
-        uuid = parts[1] if len(parts) > 1 else 'unknown'
-        _timeout = int(parts[2]) if len(parts) > 2 else 120
-
-        # Read code block until __END__
-        code_lines = []
-        for code_line in sys.stdin:
-            if code_line.strip() == '__END__':
-                break
-            code_lines.append(code_line)
-        code = ''.join(code_lines)
-
-        # Reset per-execution state
-        _written_files.clear()
-        start = time.time()
-        exit_code = 0
-
-        # Capture user stdout to StringIO
-        _capture = io.StringIO()
-        _old_stdout = sys.stdout
-        sys.stdout = _capture
-
-        try:
-            exec(code, globals())
-        except KeyboardInterrupt:
-            exit_code = 130
-        except SystemExit as _se:
-            exit_code = _se.code if isinstance(_se.code, int) else 1
-        except Exception:
-            sys.stdout = _old_stdout
-            traceback.print_exc()  # goes to stderr
-            exit_code = 1
-        finally:
-            sys.stdout = _old_stdout
-
-        elapsed = int((time.time() - start) * 1000)
-        user_stdout = _capture.getvalue()
-
-        # Write meta to temp JSON file (exit_code + timing for Rust-side send_code)
-        # NOTE: __GENERATED_FILE__ markers are NOT stripped from stdout here.
-        # They pass through to Rust-side handle_execute_python for uniform parsing
-        # regardless of session vs one-shot runner mode.
-        meta_path = os.path.join(os.getcwd(), 'temp', f'_meta_{uuid}.json')
-        try:
-            os.makedirs(os.path.dirname(meta_path), exist_ok=True)
-            with open(meta_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'exit_code': exit_code,
-                    'execution_time_ms': elapsed,
-                    'written_paths': list(_written_files),
-                }, f, ensure_ascii=False)
-        except Exception as e:
-            print(f'[WARN] Failed to write meta: {e}', file=sys.stderr)
-
-        # Output user stdout (including __GENERATED_FILE__ markers) + completion signal
-        _old_stdout.write(user_stdout)
-        if user_stdout and not user_stdout.endswith('\n'):
-            _old_stdout.write('\n')
-        _old_stdout.write(f'__DONE__ {uuid}\n')
-        _old_stdout.flush()
-
-if __name__ == '__main__':
-    _repl_loop()
-"###;
+/// Python code to restore session state from pkl checkpoint files.
+const RESTORE_SCRIPT: &str = include_str!("_restore.py");
 
 // ---------------------------------------------------------------------------
 // PythonSession
@@ -416,51 +345,7 @@ impl PythonSession {
         }
 
         let uuid = uuid::Uuid::new_v4().to_string();
-        let checkpoint_code = r#"
-import pickle as _pkl
-import os as _os
-
-_snap_dir = _ANALYSIS_DIR if '_ANALYSIS_DIR' in dir() else _os.path.join(_os.getcwd(), 'analysis', _CONV_ID if '_CONV_ID' in dir() else 'unknown')
-_os.makedirs(_snap_dir, exist_ok=True)
-
-# Save working DataFrame
-if '_df' in dir() and hasattr(_df, 'to_pickle'):
-    _pkl.dump(_df, open(_os.path.join(_snap_dir, '_step_df.pkl.tmp'), 'wb'))
-    _os.replace(_os.path.join(_snap_dir, '_step_df.pkl.tmp'),
-                _os.path.join(_snap_dir, '_step_df.pkl'))
-
-# Save _dfs dict
-if '_dfs' in dir() and isinstance(_dfs, dict):
-    _pkl.dump(_dfs, open(_os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
-    _os.replace(_os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
-                _os.path.join(_snap_dir, '_step_dfs.pkl'))
-
-# Save user variables
-_SYS_VARS = {
-    '_df', '_dfs', '_df_raw', '_CONV_ID', '_ANALYSIS_DIR', '_CURRENT_STEP',
-    '_pkl', '_os', '_snap_dir', '_SYS_VARS', '_user_vars',
-    '_vname', '_vval', '_ALLOWED_PATHS', '_written_files',
-    '_repl_loop', '_capture', '_old_stdout',
-}
-_user_vars = {}
-for _vname, _vval in list(globals().items()):
-    if _vname.startswith('__'):
-        continue
-    if _vname in _SYS_VARS:
-        continue
-    if callable(_vval) or isinstance(_vval, type) or type(_vval).__name__ == 'module':
-        continue
-    try:
-        _pkl.dumps(_vval)
-        _user_vars[_vname] = _vval
-    except Exception:
-        pass
-if _user_vars:
-    _pkl.dump(_user_vars, open(_os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
-    _os.replace(_os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
-                _os.path.join(_snap_dir, '_user_vars.pkl'))
-"#;
-        match self.send_code(&uuid, checkpoint_code, Duration::from_secs(30)).await {
+        match self.send_code(&uuid, CHECKPOINT_SCRIPT, Duration::from_secs(30)).await {
             Ok(_) => {
                 info!("[SESSION] Checkpoint written for conversation {}", self.conversation_id);
                 Ok(())
@@ -592,6 +477,29 @@ impl PythonSessionManager {
         }
     }
 
+    /// Return diagnostic information about active Python sessions.
+    ///
+    /// Useful for debugging and monitoring. Checks process liveness
+    /// outside the sync Mutex to avoid holding it across await points.
+    pub async fn session_stats(&self) -> Vec<SessionInfo> {
+        let snapshots: Vec<(String, Arc<PythonSession>)> = {
+            let sessions = self.sessions.lock().unwrap();
+            sessions.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        };
+        let mut infos = Vec::with_capacity(snapshots.len());
+        for (conv_id, session) in snapshots {
+            let alive = session.is_alive().await;
+            infos.push(SessionInfo {
+                conversation_id: conv_id,
+                alive,
+                idle_seconds: session.idle_seconds(),
+                initialized: session.initialized.load(Ordering::Relaxed),
+                uptime_seconds: session.created_at.elapsed().as_secs(),
+            });
+        }
+        infos
+    }
+
     // --- internal helpers ---
 
     async fn get_or_create(&self, conversation_id: &str) -> Result<Arc<PythonSession>> {
@@ -673,46 +581,7 @@ impl PythonSessionManager {
     /// Restore state from pkl checkpoint files (if they exist).
     async fn restore_from_checkpoint(&self, session: &PythonSession) {
         let uuid = uuid::Uuid::new_v4().to_string();
-        let restore_code = r#"
-import pickle as _pkl
-import os as _os
-
-_snap_dir = _ANALYSIS_DIR if '_ANALYSIS_DIR' in dir() else None
-if _snap_dir is None:
-    # Try to infer from workspace
-    _analysis_base = _os.path.join(_os.getcwd(), 'analysis')
-    if _os.path.exists(_analysis_base):
-        _convs = [d for d in _os.listdir(_analysis_base) if _os.path.isdir(_os.path.join(_analysis_base, d))]
-        if _convs:
-            _snap_dir = _os.path.join(_analysis_base, sorted(_convs)[-1])
-
-if _snap_dir and _os.path.exists(_snap_dir):
-    # Restore _df
-    _snap_path = _os.path.join(_snap_dir, '_step_df.pkl')
-    if _os.path.exists(_snap_path):
-        _df = _pkl.load(open(_snap_path, 'rb'))
-
-    # Restore _dfs
-    _snap_dfs = _os.path.join(_snap_dir, '_step_dfs.pkl')
-    if _os.path.exists(_snap_dfs):
-        _dfs = _pkl.load(open(_snap_dfs, 'rb'))
-
-    # Restore user vars
-    _uv_path = _os.path.join(_snap_dir, '_user_vars.pkl')
-    if _os.path.exists(_uv_path):
-        try:
-            for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
-                globals()[_k] = _v
-            del _k, _v
-        except Exception:
-            pass
-
-    # Restore _df_raw
-    _orig_path = _os.path.join(_snap_dir, '_original.pkl')
-    if _os.path.exists(_orig_path):
-        _df_raw = _pkl.load(open(_orig_path, 'rb'))
-"#;
-        match session.send_code(&uuid, restore_code, Duration::from_secs(30)).await {
+        match session.send_code(&uuid, RESTORE_SCRIPT, Duration::from_secs(30)).await {
             Ok(_) => info!("[SESSION] Checkpoint restored for conversation {}",
                 session.conversation_id),
             Err(e) => warn!("[SESSION] Checkpoint restore failed: {}", e),
@@ -727,6 +596,17 @@ if _snap_dir and _os.path.exists(_snap_dir):
 /// Combined result of a session execution.
 pub struct SessionExecResult {
     pub result: ExecutionResult,
+}
+
+/// Diagnostic snapshot of a single Python session.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub conversation_id: String,
+    pub alive: bool,
+    pub idle_seconds: u64,
+    pub initialized: bool,
+    pub uptime_seconds: u64,
 }
 
 // ---------------------------------------------------------------------------

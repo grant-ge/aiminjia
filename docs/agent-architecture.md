@@ -288,14 +288,20 @@ mode: "analyzing"               current_step: 1~5, status: "in_progress"/"comple
 agent_loop(AgentContext, messages, StepConfig)
     │
     ├─ 构建消息列表（系统提示词 + 历史消息）
+    ├─ PhaseTracker::new(enable_taor_tracking, ...)  ← TAOR 阶段追踪器
     │
     └─ Loop (最多 max_iterations 次):
          │
+         ├─ phase.think()                            ← emit agent:phase {Think}
          ├─ gateway.stream_message() → LLM 流式响应
          │
          ├─ 解析响应：
          │    ├─ 纯文本 → 输出到前端
-         │    └─ Tool Call → 执行工具（多个时并行） → 结果追加到消息列表 → 继续循环
+         │    └─ Tool Call:
+         │         ├─ phase.act(tool_names)           ← emit agent:phase {Act}
+         │         ├─ 执行工具（多个时并行）
+         │         ├─ phase.observe()                 ← emit agent:phase {Observe}
+         │         └─ 结果追加到消息列表 → 继续循环
          │
          ├─ StopReason::EndTurn → 退出循环
          ├─ StopReason::ToolUse → 继续循环
@@ -304,6 +310,10 @@ agent_loop(AgentContext, messages, StepConfig)
               ├─ chunk 超时 (90s) → 终止流
               └─ cancel 信号 → 立即退出
 ```
+
+**TAOR 阶段追踪**（`llm/taor.rs`）：
+
+`PhaseTracker` 在 agent_loop 的 4 个自然边界点发射 `agent:phase` 事件，将隐式的 Think→Act→Observe→Repeat 模式暴露给前端。前端 `StreamingBubble` 根据阶段显示"正在思考/执行/整理"。通过 `settings.enable_taor_tracking`（默认开启）控制，关闭时所有方法为零成本 no-op（无 `Instant::now()`、无 JSON 序列化、无事件发射）。
 
 ### 4.2 上下文重置与三层保障
 
@@ -953,6 +963,7 @@ dispatch_stream() / dispatch_send()
 | `tool:completed` | 工具执行完成 | `{ conversationId, toolName, toolId, success, summary }` | `agent_loop` |
 | `file:generated` | 文件工具生成文件 | `{ conversationId, fileId, fileName, requestedFormat, actualFormat, fileSize, storedPath, category, isDegraded, degradationNotice }` | `agent_loop` |
 | `agent:idle` | Agent 空闲 | `{ conversationId }` | `AgentGuard::clear()` / `Drop` |
+| `agent:phase` | TAOR 阶段切换 | `{ conversationId, iteration, phase, prevPhaseDurationMs, toolNames, maxIterations }` | `PhaseTracker`（`taor.rs`） |
 | `message:updated` | 消息保存成功 | `{ id, conversationId, role, content }` | `finish_agent` |
 | `analysis:step-changed` | 分析步骤变更 | `{ conversationId, step, status }` | `update_progress` |
 
@@ -1072,7 +1083,7 @@ next_action()
 
 1. **静态检查**（`sandbox::validate_code()`）：LLM 代码执行前，模式匹配扫描禁止模块/函数/变量。发现危险模式即拒绝执行，代码不会进入 Python 进程
 2. **运行时 File Write Hook**（Preamble 注入）：劫持 `builtins.open`，写操作（`w`/`a`/`x` 模式）限制在 `_ALLOWED_PATHS` 目录内。读操作不限制（避免破坏 pandas/numpy 内部文件读取）。原始 open 存储为 `_original_open`，静态检查阻止 LLM 直接调用
-3. **资源限制**：日常模式 30s 超时 / 分析模式 120s 超时 + 512MB 内存限制，防止死循环和 OOM
+3. **资源限制**：日常模式 300s 超时 / 分析模式 600s 超时 + 512MB 内存限制，防止无限循环（本地桌面应用超时设计宽松，仅防无限循环而非限制合理运算）
 4. **路径转义**（`parser.rs` + `tool_executor/util.rs`）：所有文件路径参数使用 `py_escape()` 转义后嵌入普通 Python 字符串（非 raw string `r''`），防止单引号/反斜杠注入
 
 > **设计决策**：运行时 import hook 已移除。原因：本地应用无需多租户隔离级别的安全，而 hook 与 openpyxl（依赖 shutil→tempfile）、urllib.parse 等标准库的内部依赖链反复冲突，导致文件解析和导出功能不可用。静态校验已覆盖所有 LLM 可生成的危险模式。
@@ -1100,7 +1111,7 @@ import ctypes, from ctypes
 
 | 约束 | 值 | 说明 |
 |------|----|------|
-| 超时 | 30 秒（日常）/ 120 秒（分析） | 日常模式一次性进程 30s；分析模式持久 REPL 120s |
+| 超时 | 300 秒（日常）/ 600 秒（分析） | 本地桌面应用设计宽松——仅防无限循环，不限制合理运算。日常模式一次性进程 5 分钟；分析模式持久 REPL 10 分钟 |
 | 输出上限 | 1 MB | stdout/stderr `take()` 硬限制，防止 OOM |
 | 内存限制 | 512 MB | `resource.setrlimit(RLIMIT_AS)` 强制（Unix），Windows 跳过 |
 | 递归深度 | 2000 | preamble 中设置 |
@@ -1193,9 +1204,9 @@ builtins.open = _safe_open
   [sandbox preamble]       ← 仅首次 initialize 时注入（session 内存驻留）
   [analysis_utils]         ← 仅首次 initialize 时 exec 加载
   [file loading]           ← _df = _smart_read_data('上传文件路径')
-  [analysis preamble]      ← 保存原始 + 恢复快照 + _df_raw + _CURRENT_STEP
+  [analysis preamble]      ← 保存原始 + 恢复快照 + _df_raw + _CURRENT_STEP + _SYS_VARS_SNAPSHOT
   [LLM 代码]               ← 简单调用：results = _step1_clean(_df)
-  [epilogue]               ← 保存工作快照 + 步骤快照 + 用户变量快照
+  [epilogue]               ← 保存工作快照 + 步骤快照 + 用户变量快照（_SYS_VARS_SNAPSHOT 区分系统/用户变量）
 ```
 
 **LLM-proof 设计**：`_step1_clean` 等 step 函数自动执行 `globals()['_df'] = retained_df`，LLM 无需手动赋值 `_df`。快照在 epilogue 中自动保存，确保数据流准确执行。
@@ -1267,7 +1278,7 @@ if is_analysis {
 }
 ```
 
-**REPL 协议**（`session.rs:REPL_SCRIPT`）：
+**REPL 协议**（`session.rs` + `_repl.py`）：
 ```
 stdin:   __EXEC__ {uuid} {timeout}\n{code}\n__END__\n
 stdout:  {user print output}\n__DONE__ {uuid}\n
@@ -1294,7 +1305,9 @@ spawn → initialize（sandbox preamble + analysis_utils）→ [execute ↔ exec
                                                    崩溃检测 → restart → restore_from_checkpoint → 继续执行
 ```
 
-**Checkpoint 恢复**：会话崩溃/重启时，自动从 `analysis/{conv_id}/` 下的 pkl 快照恢复 `_df`、`_dfs`、`_df_raw`、用户变量。
+**Checkpoint 恢复**：会话崩溃/重启时，自动从 `analysis/{conv_id}/` 下的 pkl 快照恢复 `_df`、`_dfs`、`_df_raw`、用户变量。checkpoint/restore 逻辑为独立 Python 文件（`_checkpoint.py` / `_restore.py`），通过 `include_str!` 编译时嵌入。
+
+**Session 诊断**：`session_stats()` 返回 `Vec<SessionInfo>`（`conversation_id` / `alive` / `idle_seconds` / `initialized` / `uptime_seconds`），用于监控和调试。
 
 **PluginContext 集成**：`session_manager: Arc<PythonSessionManager>` 作为 `PluginContext` 字段注入，`send_message` → `agent_loop` → `PluginContext` → `handle_execute_python` 全链路传递。
 
@@ -1464,6 +1477,10 @@ Agent loop 中工具执行后立即发射 `file:generated` 事件（不经过 LL
 | 内置工具实现 | `plugin/builtin/tools/` (10 个: web_search, execute_python, load_file, generate_report, generate_chart, hypothesis_test, detect_anomalies, save_analysis_note, export_data, update_progress) |
 | 内置 Skill 实现 | `plugin/builtin/skills/` |
 | Python 代码执行 | `python/runner.rs:execute` |
+| REPL 脚本 | `python/_repl.py`（`include_str!` 嵌入 `session.rs:REPL_SCRIPT`） |
+| REPL checkpoint 脚本 | `python/_checkpoint.py`（`include_str!` 嵌入 `session.rs:CHECKPOINT_SCRIPT`） |
+| REPL restore 脚本 | `python/_restore.py`（`include_str!` 嵌入 `session.rs:RESTORE_SCRIPT`） |
+| Session 诊断 | `python/session.rs:session_stats` → `SessionInfo` |
 | 沙箱验证 | `python/sandbox.rs:validate_code` |
 | Preamble 生成 | `python/sandbox.rs:preamble` |
 | 分析预写函数 | `python/analysis_utils.rs:ANALYSIS_UTILS`（分析模式注入，含数据流 helper） |
@@ -1488,6 +1505,7 @@ Agent loop 中工具执行后立即发射 `file:generated` 事件（不经过 LL
 | 消息分片原子写入 | `storage/file_store/messages.rs:write_shard_meta`（write-tmp-rename） |
 | `_export_detail` 多格式导出 | `python/sandbox.rs` `_export_detail`（`format` 参数：excel/csv/json，`json.dumps` + `os.path.basename` 安全标记） |
 | `export_data` source_file 模式 | `llm/tool_executor/export.rs:build_export_python_from_file`（`_smart_read_data` 读取源文件 → 转换格式） |
+| TAOR 阶段追踪 | `llm/taor.rs:PhaseTracker`（Think/Act/Observe 阶段事件，`enable_taor_tracking` 开关） |
 | 内存限制注入 | `python/sandbox.rs:preamble`（`resource.setrlimit(RLIMIT_AS)`） |
 | 执行时工具过滤 | `commands/chat.rs:agent_loop`（`allowed_tools` HashSet 检查） |
 | load_file 缓存 | `llm/tool_executor/file_load.rs:handle_load_file`（memory key `loaded:{conv_id}:{file_id}` 命中检查） |
@@ -1512,7 +1530,8 @@ Agent loop 中工具执行后立即发射 `file:generated` 事件（不经过 LL
 | Step 5 max_iterations | 15 | `orchestrator.rs` | 报告生成步骤 |
 | 日常 Token 预算 | 4096 | 设计约束 | 轻量对话 |
 | 分析 Token 预算 | 8192 | 设计约束 | 每步独立 |
-| Python 超时 | 30s | `sandbox.rs` | 单次执行 |
+| Python 超时（日常） | 300s (5min) | `sandbox.rs` | 一次性进程，本地桌面宽松超时 |
+| Python 超时（分析） | 600s (10min) | `tool_executor/python.rs` | 持久 REPL 会话 |
 | Python 内存限制 | 512 MB | `sandbox.rs` | `RLIMIT_AS` 强制（Unix） |
 | Python 输出上限 | 1MB | `sandbox.rs` | stdout 截断 |
 | 搜索缓存 TTL | 7 天 | `cache.rs` | |
