@@ -8,7 +8,7 @@
 **核心能力**：
 
 - **日常咨询**：新人定薪、晋升调薪、竞对 offer 应对、预算分配、政策咨询
-- **深度分析**：上传工资表后自动进入 5 步分析流程（数据清洗 → 岗位归一化 → 职级推断 → 公平性诊断 → 行动方案），每步人机确认
+- **深度分析**：上传工资表后自动进入 6 步分析流程（Step 0 方向确认 → 数据清洗 → 岗位归一化 → 职级推断 → 公平性诊断 → 行动方案），每步人机确认
 - **文档解析**：支持 Excel、Word、PDF、CSV 文件上传，自动解析内容
 - **代码执行**：内置 Python 运行时，自动写代码处理大文件和复杂数据
 - **联网搜索**：遇到知识盲区自动搜索行业薪酬、法规政策等信息
@@ -80,7 +80,7 @@
 ├──────────────────┴───────────────────────────────────────────────┘
 ```
 
-### 深度分析：对话内嵌入的 5 步流程
+### 深度分析：对话内嵌入的 6 步流程
 
 ```
 用户上传工资表
@@ -853,7 +853,7 @@ LLM 层：
 
 Python 运行环境：
   - 内置 Python 运行时（子进程）
-  - 预装库：pandas, numpy, scipy, scikit-learn, openpyxl, python-docx, matplotlib
+  - 预装库：pandas, numpy, scipy, scikit-learn, openpyxl, python-docx, matplotlib, plotly
   - 执行超时保护 + 内存限制
   - 代码和执行结果对用户可见
 
@@ -862,7 +862,8 @@ Python 运行环境：
   - numpy + scipy: 统计计算、回归分析
   - scikit-learn: K-means 聚类、回归模型
   - openpyxl: Excel 读取和导出
-  - matplotlib / ECharts: 图表生成
+  - plotly: 交互式图表生成（HTML，支持 bar/line/scatter/box/heatmap/pie/histogram）
+  - matplotlib: 静态图表（备用）
 
 报告引擎：
   - HTML 报告：Jinja2 模板 + ECharts

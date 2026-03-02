@@ -1,4 +1,4 @@
-//! Built-in tool plugins — migrated from llm/tool_executor.rs.
+//! Built-in tool plugins — thin wrappers delegating to llm/tool_executor/.
 
 pub mod web_search;
 pub mod python_exec;

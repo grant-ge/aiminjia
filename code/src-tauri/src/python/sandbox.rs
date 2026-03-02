@@ -1,8 +1,7 @@
 //! Sandbox configuration — timeout, allowed paths, forbidden imports.
 //!
 //! Controls what Python code is allowed to do. Prevents dangerous operations
-//! like accessing the filesystem outside the workspace, making network calls,
-//! or running subprocesses.
+//! like running subprocesses or writing files outside the workspace.
 
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
@@ -254,14 +253,9 @@ builtins.open = _safe_open
     }
 }
 
-/// Pre-loaded trusted package imports.
+/// Pre-loaded package imports (saves ~2-3s cold start per execution).
 ///
-/// These run BEFORE the runtime import hook is installed so that pandas,
-/// numpy, scipy, and their internal dependencies (ctypes, importlib.machinery,
-/// multiprocessing checks, etc.) can load without restriction.
-///
-/// This is a static string (not processed by `format!`) so Python f-strings
-/// with braces work correctly.
+/// Static string (not processed by `format!`) so Python f-strings with braces work.
 const TRUSTED_IMPORTS: &str = r###"
 # ============================================================
 # Pre-loaded imports (saves ~2-3s cold start per execution)
@@ -282,12 +276,8 @@ except ImportError:
 
 /// Utility functions injected into the Python preamble.
 ///
-/// These run AFTER the import hook is installed. They only use
-/// already-imported modules (pandas, numpy, os, json, glob) so
-/// the hook doesn't interfere.
-///
-/// This is a static string (not processed by `format!`) so Python f-strings
-/// with braces like `f"Rows: {len(df)}"` work correctly.
+/// Uses already-imported modules (pandas, numpy, os, json, glob, openpyxl).
+/// Static string (not processed by `format!`) so Python f-strings work.
 const UTILITY_FUNCTIONS: &str = r###"
 # ============================================================
 # Utility functions — encoding detection, file I/O, formatting

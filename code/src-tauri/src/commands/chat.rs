@@ -11,7 +11,7 @@ use crate::llm::prompts;
 use crate::llm::prompt_guard;
 use crate::llm::taor::PhaseTracker;
 use crate::plugin::{PluginContext, ToolRegistry, SkillRegistry};
-use crate::plugin::skill_trait::{SkillState, StepAction};
+use crate::plugin::skill_trait::{SkillState, StepAction, ToolFilter};
 use crate::plugin::tool_trait::FileMeta;
 use crate::storage::crypto::SecureStorage;
 use crate::models::settings::AppSettings;
@@ -294,7 +294,7 @@ fn is_daily_question(text: &str) -> bool {
 /// and the active_skill marker.
 ///
 /// Also stores a completion timestamp to enable cooldown (P4).
-fn clear_analysis_notes(db: &AppStorage, conversation_id: &str) {
+fn clear_analysis_notes(db: &AppStorage, conversation_id: &str, workspace_path: &std::path::Path) {
     let prefix = format!("note:{}:", conversation_id);
     match db.delete_memories_by_prefix(&prefix) {
         Ok(count) => {
@@ -326,6 +326,21 @@ fn clear_analysis_notes(db: &AppStorage, conversation_id: &str) {
             "[cleanup] Failed to clear loaded file markers for {}: {}",
             conversation_id, e
         ),
+    }
+
+    // Clean up DataFrame snapshot files (analysis/{conversation_id}/)
+    let snap_dir = workspace_path.join("analysis").join(conversation_id);
+    if snap_dir.exists() {
+        match std::fs::remove_dir_all(&snap_dir) {
+            Ok(_) => log::info!(
+                "[cleanup] Removed snapshot directory {:?} for conversation {}",
+                snap_dir, conversation_id
+            ),
+            Err(e) => log::warn!(
+                "[cleanup] Failed to remove snapshot directory {:?}: {}",
+                snap_dir, e
+            ),
+        }
     }
 
     // Store completion timestamp for cooldown detection
@@ -467,7 +482,7 @@ pub async fn is_agent_busy(
 /// Send a user message and trigger the LLM agent loop.
 ///
 /// The function detects whether the conversation is in analysis mode
-/// (structured 5-step workflow) or daily consultation mode, and
+/// (structured 6-step workflow) or daily consultation mode, and
 /// dispatches accordingly with the appropriate system prompt, tool
 /// filter, and iteration limit.
 #[tauri::command]
@@ -809,7 +824,7 @@ pub async fn send_message(
                 if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
                     log::error!("Failed to finalize analysis: {}", e);
                 }
-                clear_analysis_notes(&db, &conversation_id);
+                clear_analysis_notes(&db, &conversation_id, &workspace_path);
                 None // process user's message as daily chat
             } else if route_daily_chat {
                 log::info!(
@@ -885,7 +900,7 @@ pub async fn send_message(
                         if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
                             log::error!("Failed to finalize analysis as aborted: {}", e);
                         }
-                        clear_analysis_notes(&db, &conversation_id);
+                        clear_analysis_notes(&db, &conversation_id, &workspace_path);
                         None
                     } else {
                         log::warn!(
@@ -916,7 +931,7 @@ pub async fn send_message(
                             if let Err(e) = db.finalize_analysis(&conversation_id, "aborted") {
                                 log::error!("Failed to finalize analysis as aborted: {}", e);
                             }
-                            clear_analysis_notes(&db, &conversation_id);
+                            clear_analysis_notes(&db, &conversation_id, &workspace_path);
                             None
                         }
 
@@ -929,7 +944,7 @@ pub async fn send_message(
                             if let Err(e) = db.finalize_analysis(&conversation_id, "completed") {
                                 log::error!("Failed to finalize analysis: {}", e);
                             }
-                            clear_analysis_notes(&db, &conversation_id);
+                            clear_analysis_notes(&db, &conversation_id, &workspace_path);
                             None
                         }
 
@@ -1233,7 +1248,7 @@ async fn compress_context_if_needed(
 
     let compress_prompt = format!(
         "请将以下对话历史压缩为一段简洁的摘要（不超过 500 字）。\n\
-        保留：关键话题、用户的核心需求、重要结论和数据。\n\
+        保留：关键话题、用户的核心需求、重要结论和数据、各文件的分析发现（列名、数据特征、关键结果）。\n\
         省略：寒暄、重复内容、工具调用细节。\n\
         用中文输出，格式为连贯的段落（不要用列表）。\n\n\
         ---\n{}\n---",
@@ -1323,22 +1338,78 @@ async fn agent_loop(
         Some(settings.bocha_api_key.clone())
     };
 
-    // Build file context: query ALL uploaded files for this conversation
+    // Build file context: uploaded files (with load status + variable mapping) + generated files
     // so the LLM always knows what's available (even after sliding window truncation)
-    let file_context = match db.get_uploaded_files_for_conversation(&conversation_id) {
-        Ok(files) if !files.is_empty() => {
-            let refs: Vec<String> = files.iter().map(|f| {
-                let name = f["originalName"].as_str().unwrap_or("unknown");
-                let fid = f["id"].as_str().unwrap_or("");
-                let ftype = f["fileType"].as_str().unwrap_or("unknown");
-                format!("- {} (file_id: \"{}\", 类型: {})", name, fid, ftype)
-            }).collect();
-            format!(
-                "\n\n[本次会话的文件]\n{}\n⚠️ 使用文件时，先调用 load_file(file_id) 加载数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本内容）。不需要手动处理文件路径。",
-                refs.join("\n")
-            )
+    let file_context = {
+        let uploaded = db.get_uploaded_files_for_conversation(&conversation_id).unwrap_or_default();
+        let generated = db.get_generated_files_for_conversation(&conversation_id).unwrap_or_default();
+
+        if uploaded.is_empty() && generated.is_empty() {
+            String::new()
+        } else {
+            let mut ctx = String::new();
+
+            if !uploaded.is_empty() {
+                // Query loaded file mappings to determine load status
+                let loaded_prefix = format!("loaded:{}:", conversation_id);
+                let loaded_entries = db.get_memories_by_prefix(&loaded_prefix).unwrap_or_default();
+                let mut loaded_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                for (_key, value) in &loaded_entries {
+                    if let Ok(info) = serde_json::from_str::<serde_json::Value>(value) {
+                        let file_id = info.get("fileId").and_then(|v| v.as_str()).unwrap_or("");
+                        let loaded_as = info.get("loadedAs").and_then(|v| v.as_str()).unwrap_or("text");
+                        if !file_id.is_empty() {
+                            loaded_map.insert(file_id.to_string(), loaded_as.to_string());
+                        }
+                    }
+                }
+
+                // Count loaded files by type (df vs text) for variable naming
+                let df_count = loaded_map.values().filter(|v| *v == "dataframe").count();
+                let text_count = loaded_map.values().filter(|v| *v == "text").count();
+
+                ctx.push_str("\n\n[本次会话的上传文件]");
+                for f in &uploaded {
+                    let name = f["originalName"].as_str().unwrap_or("unknown");
+                    let fid = f["id"].as_str().unwrap_or("");
+                    let ftype = f["fileType"].as_str().unwrap_or("unknown");
+
+                    if let Some(loaded_as) = loaded_map.get(fid) {
+                        let var_hint = match loaded_as.as_str() {
+                            "dataframe" if df_count > 1 => format!("_dfs['{}']", fid),
+                            "dataframe" => "_df".to_string(),
+                            "text" if text_count > 1 => format!("_texts['{}']", fid),
+                            _ if text_count > 1 => format!("_texts['{}']", fid),
+                            _ => "_text".to_string(),
+                        };
+                        ctx.push_str(&format!(
+                            "\n- {} (file_id: \"{}\", 类型: {}) ✅已加载 → {}",
+                            name, fid, ftype, var_hint
+                        ));
+                    } else {
+                        ctx.push_str(&format!(
+                            "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，需先 load_file",
+                            name, fid, ftype
+                        ));
+                    }
+                }
+            }
+
+            if !generated.is_empty() {
+                ctx.push_str("\n\n[本次会话生成的文件]");
+                for f in &generated {
+                    let name = f["fileName"].as_str().unwrap_or("unknown");
+                    let fid = f["id"].as_str().unwrap_or("");
+                    let category = f["category"].as_str().unwrap_or("file");
+                    ctx.push_str(&format!(
+                        "\n- {} (file_id: \"{}\", 类别: {})",
+                        name, fid, category
+                    ));
+                }
+            }
+
+            ctx
         }
-        _ => String::new(),
     };
 
     let current_step_config = step_config;
@@ -1373,8 +1444,16 @@ async fn agent_loop(
     }
 
     // Determine system prompt, tool filter, and token budget based on mode
-    // In daily mode, get all tool schemas from the registry.
-    let all_tool_defs = tool_registry.get_all_schemas().await;
+    // Daily mode: exclude analysis-specific tools to reduce context noise.
+    // These tools are only useful during the structured analysis workflow
+    // and their schemas waste ~500 tokens in daily conversations.
+    let daily_tool_filter = ToolFilter::Exclude(vec![
+        "hypothesis_test".into(),
+        "detect_anomalies".into(),
+        "save_analysis_note".into(),
+        "update_progress".into(),
+    ]);
+    let daily_tool_defs = tool_registry.get_schemas_filtered(&daily_tool_filter).await;
     let (system_prompt, tool_defs_override, max_iterations, token_budget, chunk_timeout_secs) = match &current_step_config {
         Some(config) => {
             log::info!("Agent loop in ANALYSIS mode: step={}, tools={}, max_iter={}",
@@ -1390,10 +1469,10 @@ async fn agent_loop(
             )
         }
         None => {
-            log::info!("Agent loop in DAILY CONSULTATION mode");
+            log::info!("Agent loop in DAILY CONSULTATION mode ({} tools after filtering)", daily_tool_defs.len());
             (
                 prompts::get_system_prompt(None),
-                Some(all_tool_defs), // use all registered tools from registry
+                Some(daily_tool_defs), // filtered: excludes analysis-only tools
                 MAX_TOOL_ITERATIONS,
                 4096u32, // daily consultation: standard budget
                 CHUNK_TIMEOUT_SECS, // daily mode: 90s

@@ -15,7 +15,7 @@ impl ToolPlugin for AnalysisNoteTool {
 
     fn description(&self) -> &str {
         "Save an intermediate analysis finding or decision to the conversation \
-         context. This helps maintain continuity across the 5-step analysis."
+         context. This helps maintain continuity across the 6-step analysis."
     }
 
     fn input_schema(&self) -> Value {

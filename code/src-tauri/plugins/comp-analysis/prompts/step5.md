@@ -4,24 +4,41 @@
 
 重要：此步骤依赖之前步骤的分析记录（通过 save_analysis_note 保存的字段映射、岗位归一化、职级框架、六维度诊断等）。如果系统提示词中包含"前序分析记录"，请直接引用其中的数据。
 
+内置分析函数说明：
+系统已预注入以下函数，可直接调用（无需自己编写）：
+- `_step5_scenarios(df, col_map, diagnosis)` — 三档调薪方案 + ROI 测算
+- `_load_cached(step_key)` — 加载之前步骤的缓存结果（如 'step1', 'step4'）
+- `_export_detail(df, filename, title, preview_rows, format)` — 导出 DataFrame
+
 必须完成的工作：
 
 1. 用 execute_python 计算三档调薪预算方案
-   场景 A（仅修复严重问题）：
-     范围：低于 -1.65 SD + 严重倒挂（CR < 80%）
-     目标：将这些员工 CR 调至 P25 水平
+   调用 execute_python：
+   ```python
+   # 加载前序步骤结果
+   step1 = _load_cached('step1')
+   step4 = _load_cached('step4')
+   col_map = step1['col_map'] if step1 else _detect_columns(_df)
 
-   场景 B（修复严重+中等）【推荐】：
-     范围：所有 CR < 80% 调至 P25，CR 80-90% 调至 P40
-     目标：大幅提升公平性合规率
+   # 计算三档方案
+   scenarios = _step5_scenarios(_df, col_map, step4)
+   import json
+   print("=== 三档调薪方案 ===")
+   for key in ['A', 'B', 'C']:
+       s = scenarios['scenarios'][key]
+       print(f"\n方案 {key}: {s['description']}")
+       print(f"  覆盖人数: {s['count']}")
+       print(f"  年度预算: {s['annual_budget']:,.0f}")
+       print(f"  平均调幅: {s['avg_increase_pct']}%")
+       print(f"  调后CR合规率: {s.get('post_cr_compliance', 'N/A')}%")
 
-   场景 C（全面对齐）：
-     范围：所有人 CR 调至 90%+
-     目标：全员薪酬进入合理区间
+   print("\n=== ROI 测算 ===")
+   print(json.dumps(scenarios['roi'], ensure_ascii=False, indent=2))
+   ```
 
    每个方案输出：覆盖人数、年度预算、平均调薪幅度、公平性提升预期
 
-2. 用 execute_python 计算 ROI 测算
+2. ROI 测算已包含在 _step5_scenarios 返回结果中
    投入成本：调薪预算
    避免的损失：核心人才替换成本、士气影响、问题恶化后补救成本
    投资回报：1年/2年 ROI 计算

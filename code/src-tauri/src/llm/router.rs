@@ -9,7 +9,7 @@
 //!
 //! **Important**: Analysis tasks always use the primary model with tools
 #![allow(dead_code)]
-//! enabled, because the 5-step analysis workflow requires tool calls.
+//! enabled, because the 6-step analysis workflow requires tool calls.
 
 use crate::llm::streaming::ChatMessage;
 use crate::models::settings::AppSettings;
@@ -158,7 +158,7 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// Routing logic:
 /// - If `auto_model_routing` is disabled, always use the primary model.
 /// - **Analysis tasks always use the primary model with tools enabled**,
-///   because the 5-step analysis workflow requires tool calls.
+///   because the 6-step analysis workflow requires tool calls.
 /// - Only `Reasoning` tasks use the reasoning variant (if available).
 /// - All other task types use the primary model with tools.
 ///
@@ -180,7 +180,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
 
     match task_type {
         // Analysis ALWAYS uses primary model with tools — this is critical
-        // for the 5-step workflow that relies on execute_python, load_file, etc.
+        // for the 6-step workflow that relies on execute_python, load_file, etc.
         TaskType::Analysis => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),

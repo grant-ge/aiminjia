@@ -40,7 +40,7 @@ code/
 │       │                         # prompts, orchestrator, tool_executor/ (子模块)
 │       ├── search/               # searxng (免费，默认优先), bocha/tavily (付费增强/降级)
 │       ├── storage/              # file_store (JSON/JSONL), crypto, workspace, file_manager
-│       ├── python/               # runner, parser, sandbox
+│       ├── python/               # runner, parser, sandbox, analysis_utils
 │       └── models/               # conversation, message, analysis, settings
 └── python/                       # Python 脚本（预留）
 ```

@@ -187,15 +187,15 @@ fn build_tool_definitions() -> Vec<ToolDefinition> {
         // ─── 5. Chart Generation ─────────────────────────────
         ToolDefinition {
             name: "generate_chart".to_string(),
-            description: "Generate a data visualization chart. Supports bar, line, scatter, \
-                box, and heatmap types."
+            description: "Generate an interactive data visualization chart (Plotly HTML). \
+                Supports bar, line, scatter, box, heatmap, pie, and histogram types."
                 .to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "chart_type": {
                         "type": "string",
-                        "enum": ["bar", "line", "scatter", "box", "heatmap"]
+                        "enum": ["bar", "line", "scatter", "box", "heatmap", "pie", "histogram"]
                     },
                     "title": { "type": "string" },
                     "data": {
@@ -274,7 +274,7 @@ fn build_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "save_analysis_note".to_string(),
             description: "Save an intermediate analysis finding or decision to the conversation \
-                context. This helps maintain continuity across the 5-step analysis."
+                context. This helps maintain continuity across the 6-step analysis."
                 .to_string(),
             parameters: json!({
                 "type": "object",

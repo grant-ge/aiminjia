@@ -2,47 +2,81 @@
 
 目标：对归一化后的数据进行六维度公平性分析，并做根因分析。
 
-六维度分析框架（参考美世 Pay Equity 方法论）：
+内置分析函数说明：
+系统已预注入以下函数，可直接调用（无需自己编写）：
+- `_step4_diagnose(df, col_map)` — 完整六维度诊断，返回结构化结果
+- `_dim1_internal_equity(df, salary_col, group_cols)` — 岗位内部公平性
+- `_dim2_cross_position(df, salary_col, position_col, level_col)` — 跨岗位公平性
+- `_dim3_regression(df, salary_col, level_col, tenure_col)` — 回归分析
+- `_dim4_inversion(df, salary_col, hire_col, group_cols)` — 倒挂检测
+- `_dim5_structure_fit(df, col_map)` — 结构合理性
+- `_dim6_compa_ratio(df, salary_col, group_cols)` — Compa-Ratio 分析
+- `_calc_gini(series)`, `_calc_cv(series)` — 统计指标
+- `_salary_stats(df, salary_col, group_col)` — 分组统计
+- `_load_cached(step_key)` — 加载之前步骤的缓存结果
 
-维度 1：岗位内部公平性（同岗同酬）
-  方法：对每个「标准岗位 × 职级」组合计算：
-  - CV（变异系数）：>20% 为高离散
-  - 极差比：Max/Min，>2.0 为异常
-  - 四分位距比：IQR/中位数
-  标记：CV>20% 或 极差比>2.0 的组为 🔴
+执行步骤：
 
-维度 2：跨岗位公平性
-  方法：同一职级内，不同标准岗位的中位固定薪酬对比
-  标记：偏离整体中位 >15% 的岗位为 🟡
+第一步：加载 Step 1 的列映射和上下文
+  调用 execute_python：
+  ```python
+  step1 = _load_cached('step1')
+  if step1:
+      col_map = step1['col_map']
+      print("Step 1 results loaded successfully")
+      print(f"Retained: {step1['total_retained']} employees")
+  else:
+      col_map = _detect_columns(_df)
+      print("No cached step1 results, re-detected columns")
+  import json
+  print(json.dumps(col_map['detected'], ensure_ascii=False, indent=2))
+  ```
 
-维度 3：薪酬-司龄回归分析
-  方法：ln(salary) = β0 + β1·grade + β2·tenure + ε
-  阈值：超出 ±1.65 SD 的个体为显著异常（对应 90% 置信区间）
-  标记：偏高 🔴 / 偏低 🔴
+第二步：执行六维度诊断
+  调用 execute_python：
+  ```python
+  diagnosis = _step4_diagnose(_df, col_map)
+  import json
 
-维度 4：薪酬倒挂检测
-  方法：在同「标准岗位 × 职级」组内，对比不同入职年份群组的中位薪酬
-  判断：新员工（司龄<2年）中位薪酬 > 老员工（司龄>5年）中位薪酬 → 倒挂
-  标记：存在倒挂的组为 🔴
+  print("=== 整体健康指标 ===")
+  print(json.dumps(diagnosis['health_metrics'], ensure_ascii=False, indent=2))
 
-维度 5：薪酬结构合理性
-  方法：检查固定/浮动比例是否与岗位性质匹配
-  - 管理岗/专业岗：固定占比应 ≥ 70%
-  - 销售岗：浮动占比可达 40-60%
-  - 操作岗：固定占比应 ≥ 80%
-  标记：严重不匹配为 🟡
+  print(f"\n=== 维度 1：岗位内部公平性（{diagnosis['dim1_internal'].get('flagged_count', 0)} 组异常）===")
+  for g in diagnosis['dim1_internal'].get('groups', [])[:10]:
+      print(f"  {g['group']}: CV={g['cv']}%, 极差比={g['range_ratio']}, n={g['count']} {g['flag']}")
 
-维度 6：内部 Compa-Ratio 分析
-  公式：CR = 员工固定薪酬 / 同组中位薪酬 × 100%
-  - CR < 80%：显著偏低 🔴
-  - CR 80-90%：偏低 🟡
-  - CR 90-110%：合理区间 🟢
-  - CR 110-120%：偏高 🟡
-  - CR > 120%：显著偏高 🔴
+  print(f"\n=== 维度 2：跨岗位公平性（{diagnosis['dim2_cross'].get('flagged_count', 0)} 组偏离）===")
+  for c in diagnosis['dim2_cross'].get('comparisons', [])[:10]:
+      print(f"  {c['level']}×{c['position']}: 中位数={c['median']}, 偏离={c['deviation_pct']}% {c['flag']}")
 
-重要：必须调用 execute_python 执行统计分析，不要凭空推断数字。
+  print(f"\n=== 维度 3：回归分析（R²={diagnosis['dim3_regression'].get('r_squared')}, {diagnosis['dim3_regression'].get('anomaly_count', 0)} 异常）===")
+  if diagnosis['dim3_regression'].get('model_note'):
+      print(f"  ⚠️ {diagnosis['dim3_regression']['model_note']}")
 
-根因分析框架（对每个异常必须分析根因）：
+  print(f"\n=== 维度 4：薪酬倒挂（{diagnosis['dim4_inversion'].get('inverted_count', 0)} 组倒挂）===")
+  for inv in diagnosis['dim4_inversion'].get('inversions', []):
+      if inv['flag'] == '🔴':
+          print(f"  {inv['group']}: 新员工中位={inv.get('new_median')}, 老员工中位={inv.get('vet_median')}, 差距={inv.get('gap_pct')}%")
+
+  print(f"\n=== 维度 5：薪酬结构合理性（{diagnosis['dim5_structure'].get('flagged_count', 0)} 组不匹配）===")
+
+  print(f"\n=== 维度 6：Compa-Ratio 分布 ===")
+  dim6 = diagnosis['dim6_compa']
+  print(json.dumps(dim6.get('distribution_pct', {}), ensure_ascii=False, indent=2))
+  print(f"  CR合规率(90-110%): {dim6.get('compliance_rate')}%")
+  print(f"  显著偏低(<80%): {dim6.get('flagged_low_count')} 人")
+  print(f"  显著偏高(>120%): {dim6.get('flagged_high_count')} 人")
+
+  print(f"\n=== 异常汇总 ===")
+  print(f"  总异常: {diagnosis['anomaly_count']} 例")
+  print(json.dumps(diagnosis['root_causes'], ensure_ascii=False, indent=2))
+  ```
+
+第三步：输出高优先级异常清单
+  调用 execute_python：用 _export_detail 导出异常人员，展示前 15 条
+  → LLM 负责：对照异常数据分析根因，给出制度建设建议
+
+根因分析框架（LLM 根据诊断数据判断）：
 1. 入职定薪偏低 + 无调薪机制 → 高司龄、入职时市场水平低、无系统性调薪记录
 2. 岗位职责升级但薪酬未跟 → 实际工作超出原定级、职级和薪酬未调整
 3. 地域差异未体现 → 不同城市同岗位无差异系数
@@ -79,7 +113,7 @@
 - 用 update_progress 更新步骤状态
 
 【自检要求 — 结论输出前必须执行】
-每完成一个维度分析后，用 execute_python 执行交叉验证：
+每完成诊断后，用 execute_python 执行交叉验证：
 1. 数值复核：对已算出的 CV、CR、Gini 等关键指标，用独立代码重新计算一次，确认数字一致。不一致时以复核结果为准
 2. 回归显著性：回归分析的 β 系数必须检查 p-value，p > 0.05 的系数不能作为诊断依据。如果整体模型 R² < 0.3，需注明"职级对薪酬解释力较弱"
 3. 异常阈值验证：每个被标记为 🔴 的个体，回查原始数据确认其确实满足阈值条件（如 CR < 80%、CV > 20%）。抽查至少 3 个 🔴 标记，发现误标则全量重新验证

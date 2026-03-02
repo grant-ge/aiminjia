@@ -525,7 +525,7 @@ except Exception as e:
         let err_msg = if exec_result.stderr.contains("no_docx_library") || exec_result.stdout.contains("no_docx_library") {
             "Word 文档解析需要 python-docx 库，请运行: pip install python-docx".to_string()
         } else {
-            let raw = if exec_result.stderr.is_empty() {{ &exec_result.stdout }} else {{ &exec_result.stderr }};
+            let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
             format!("Word 文档解析失败: {}", raw)
         };
         return Err(anyhow!(err_msg));
@@ -679,7 +679,7 @@ except Exception as e:
         let err_msg = if exec_result.stderr.contains("no_pptx_library") || exec_result.stdout.contains("no_pptx_library") {
             "PPT 解析需要 python-pptx 库，请运行: pip install python-pptx".to_string()
         } else {
-            let raw = if exec_result.stderr.is_empty() {{ &exec_result.stdout }} else {{ &exec_result.stderr }};
+            let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
             format!("PPT 解析失败: {}", raw)
         };
         return Err(anyhow!(err_msg));

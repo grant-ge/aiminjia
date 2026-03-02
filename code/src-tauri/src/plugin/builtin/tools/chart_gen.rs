@@ -1,4 +1,4 @@
-//! generate_chart — create data visualization charts via matplotlib.
+//! generate_chart — create interactive data visualization charts via Plotly (HTML).
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -14,8 +14,8 @@ impl ToolPlugin for ChartGenTool {
     fn name(&self) -> &str { "generate_chart" }
 
     fn description(&self) -> &str {
-        "Generate a data visualization chart. Supports bar, line, scatter, \
-         box, and heatmap types."
+        "Generate an interactive data visualization chart (Plotly HTML). \
+         Supports bar, line, scatter, box, heatmap, pie, and histogram types."
     }
 
     fn input_schema(&self) -> Value {
@@ -24,7 +24,7 @@ impl ToolPlugin for ChartGenTool {
             "properties": {
                 "chart_type": {
                     "type": "string",
-                    "enum": ["bar", "line", "scatter", "box", "heatmap"]
+                    "enum": ["bar", "line", "scatter", "box", "heatmap", "pie", "histogram"]
                 },
                 "title": { "type": "string" },
                 "data": {
@@ -33,7 +33,7 @@ impl ToolPlugin for ChartGenTool {
                 },
                 "options": {
                     "type": "object",
-                    "description": "Additional chart configuration"
+                    "description": "Additional chart configuration (width, height, bins, etc.)"
                 }
             },
             "required": ["chart_type", "title", "data"]

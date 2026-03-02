@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use log::info;
 use serde_json::{json, Value};
 
+use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
@@ -130,6 +131,26 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
         "nrows": nrows,
     });
     ctx.storage.set_memory(&loaded_key, &loaded_info.to_string(), Some("load_file"))?;
+
+    // When user explicitly loads a (new) file during analysis, clear ALL pkl snapshots
+    // (_original, _step_df, _step{N}_df, _step_dfs) so fresh data takes priority.
+    if orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id).is_some() {
+        let snap_dir = ctx.workspace_path.join("analysis").join(&ctx.conversation_id);
+        if snap_dir.exists() {
+            for entry in std::fs::read_dir(&snap_dir).into_iter().flatten() {
+                if let Ok(e) = entry {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.ends_with(".pkl") || name.ends_with(".pkl.tmp") {
+                        if let Err(err) = std::fs::remove_file(e.path()) {
+                            log::warn!("[TOOL:load_file] Failed to remove snapshot {}: {}", name, err);
+                        } else {
+                            info!("[TOOL:load_file] Cleared snapshot {} (new file loaded)", name);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     info!("[TOOL:load_file] Stored loaded file mapping: {} -> {} ({})",
         file_id, full_path.display(), actual_loaded_as);
@@ -291,6 +312,9 @@ pub(crate) fn build_loaded_files_preamble(
             preamble.push_str(&format!("_text = _texts['{}']\n", py_escape(file_id)));
         }
     }
+
+    // Snapshot restore is now handled in python.rs analysis preamble
+    // (three-layer snapshot system with _original, _step_df, _step{N}_df).
 
     preamble.push('\n');
     preamble

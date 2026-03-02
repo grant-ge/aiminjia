@@ -21,3 +21,4 @@ htmldocx>=0.0.6
 
 # Charting
 matplotlib>=3.7
+plotly>=5.18
