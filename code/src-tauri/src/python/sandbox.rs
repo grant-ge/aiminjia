@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SandboxConfig {
     /// Maximum execution time in seconds.
+    /// Desktop app: generous default (5 min) — just prevents infinite loops.
+    /// User can always cancel via stop_streaming.
     pub timeout_seconds: u32,
     /// Maximum memory usage in MB (advisory — enforced via Python resource module).
     pub memory_limit_mb: u32,
@@ -25,7 +27,7 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            timeout_seconds: 30,
+            timeout_seconds: 300,
             memory_limit_mb: 512,
             allowed_paths: Vec::new(),
             max_output_bytes: 1_000_000, // 1 MB
@@ -448,7 +450,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = SandboxConfig::default();
-        assert_eq!(config.timeout_seconds, 30);
+        assert_eq!(config.timeout_seconds, 300);
         assert_eq!(config.memory_limit_mb, 512);
         assert!(config.forbidden_modules.contains(&"subprocess".to_string()));
         assert!(config.forbidden_modules.contains(&"importlib".to_string()));

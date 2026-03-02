@@ -35,9 +35,9 @@ analysis/
     └── src-tauri/                     # Rust 后端（Tauri 2.x）
         ├── Cargo.toml
         └── src/
-            ├── main.rs / lib.rs       # 启动 + 状态注册 + PythonSessionManager + 空闲会话回收 + 崩溃恢复
+            ├── main.rs / lib.rs       # 启动 + 状态注册 + PythonSessionManager + 空闲回收 + graceful shutdown + 崩溃恢复
             ├── commands/              # IPC 命令
-            │   ├── chat.rs            # send_message（编排检测 + Agent Loop + 工具结果可靠性 4 层保障）, stop_streaming(conversation_id), is_agent_busy→Vec<String>, get_messages
+            │   ├── chat.rs            # send_message（编排检测 + AgentContext + Agent Loop + 工具结果可靠性 4 层保障）, stop_streaming, is_agent_busy, get_messages
             │   ├── file.rs            # upload_file, open/reveal/preview/delete_file (均需 conversation_id)
             │   └── settings.rs        # get/update settings, per-provider key CRUD, provider switching
             ├── plugin/                # 插件系统（Tool + Skill 注册式架构）

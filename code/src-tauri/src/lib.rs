@@ -197,8 +197,16 @@ pub fn run() {
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Graceful shutdown: checkpoint all Python sessions before exit.
+                // block_on is safe here — the event loop is already shutting down.
+                let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();
+                tauri::async_runtime::block_on(session_mgr.shutdown_all());
+            }
+        });
 }
 
 /// Scan bundled plugin directories for external plugins (resource_dir/plugins/).

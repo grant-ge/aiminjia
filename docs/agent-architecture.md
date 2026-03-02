@@ -282,10 +282,10 @@ mode: "analyzing"               current_step: 1~5, status: "in_progress"/"comple
 
 ### 4.1 Agent Loop 机制
 
-每一步分析作为独立的子 Agent 运行，由 `chat.rs` 中的 `agent_loop()` 驱动：
+每一步分析作为独立的子 Agent 运行，由 `chat.rs` 中的 `agent_loop()` 驱动。共享服务通过 `AgentContext` 结构体传递（db, gateway, tool_registry, session_mgr 等），系统提示词由 `build_file_context()` + `build_analysis_notes_context()` 组装：
 
 ```
-agent_loop(StepConfig)
+agent_loop(AgentContext, messages, StepConfig)
     │
     ├─ 构建消息列表（系统提示词 + 历史消息）
     │
@@ -1044,7 +1044,11 @@ AgentGuard::clear() 完成时:
     └─ 文件不存在 → 跳过
 ```
 
-### 12.3 步骤状态恢复
+### 12.3 Graceful Shutdown
+
+应用正常退出时（`RunEvent::Exit`），`lib.rs` 调用 `session_mgr.shutdown_all()`，对所有活跃 Python 会话执行 checkpoint 写入后 kill，确保分析状态不丢失。
+
+### 12.4 步骤状态恢复
 
 孤儿检测后，`analysis.json` 中 `status: "in_progress"` 被重置为 `status: "paused"`。
 

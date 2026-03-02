@@ -1114,16 +1114,21 @@ pub async fn send_message(
         }
     };
 
-    // Clone everything needed for the background task
+    // Build AgentContext for the background task
     let assistant_id = uuid::Uuid::new_v4().to_string();
-    let assistant_id_clone = assistant_id.clone();
-    let conversation_id_clone = conversation_id.clone();
-    let db_clone = db.inner().clone();
-    let gateway_clone = gateway.inner().clone();
-    let file_mgr_clone = file_mgr.inner().clone();
-    let tool_registry_clone = tool_registry.inner().clone();
-    let session_mgr_clone = session_mgr.inner().clone();
-    let app_clone = app.clone();
+    let agent_ctx = AgentContext {
+        db: db.inner().clone(),
+        gateway: gateway.inner().clone(),
+        file_mgr: file_mgr.inner().clone(),
+        tool_registry: tool_registry.inner().clone(),
+        session_mgr: session_mgr.inner().clone(),
+        app: app.clone(),
+        settings,
+        workspace_path,
+        conversation_id: conversation_id.clone(),
+        assistant_id: assistant_id.clone(),
+        masking_level,
+    };
 
     // 9. Spawn the agent loop in a background task with guard and timeout
     log::info!("=== Spawning agent_loop === assistant_id={}, analysis_step={:?}",
@@ -1138,30 +1143,19 @@ pub async fn send_message(
     }
 
     tokio::spawn(async move {
+        let conversation_id_clone = agent_ctx.conversation_id.clone();
+        let app_clone = agent_ctx.app.clone();
+
         let mut guard = AgentGuard::new(
-            gateway_clone.clone(),
-            db_clone.clone(),
-            app_clone.clone(),
-            conversation_id_clone.clone(),
+            agent_ctx.gateway.clone(),
+            agent_ctx.db.clone(),
+            agent_ctx.app.clone(),
+            agent_ctx.conversation_id.clone(),
         );
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(AGENT_TIMEOUT_SECS),
-            agent_loop(
-                db_clone,
-                gateway_clone,
-                file_mgr_clone,
-                tool_registry_clone,
-                session_mgr_clone,
-                app_clone.clone(),
-                settings,
-                chat_messages,
-                masking_level,
-                workspace_path,
-                assistant_id_clone,
-                conversation_id_clone.clone(),
-                step_config,
-            ),
+            agent_loop(agent_ctx, chat_messages, step_config),
         ).await;
 
         match result {
@@ -1171,7 +1165,6 @@ pub async fn send_message(
             Err(_elapsed) => {
                 log::error!("[AgentGuard] agent_loop TIMED OUT after {}s for conversation {}",
                     AGENT_TIMEOUT_SECS, conversation_id_clone);
-                // Cancel any active streaming for this conversation
                 guard.gateway.cancel_conversation(&conversation_id_clone).ok();
                 let _ = app_clone.emit(
                     "streaming:error",
@@ -1180,12 +1173,9 @@ pub async fn send_message(
                         "error": format!("Agent timed out after {} minutes. Please try again.", AGENT_TIMEOUT_SECS / 60),
                     }),
                 );
-                // NOTE: streaming:done is NOT emitted here — guard.clear() below
-                // always emits it. Emitting here would cause a double emission.
             }
         }
 
-        // Always clear the guard
         guard.clear().await;
     });
 
@@ -1304,6 +1294,222 @@ async fn compress_context_if_needed(
     }
 }
 
+// ---------------------------------------------------------------------------
+// AgentContext — groups shared services passed through the agent loop
+// ---------------------------------------------------------------------------
+
+/// Shared services and configuration for a single agent loop invocation.
+///
+/// Replaces the 14-parameter `agent_loop` signature with a single struct,
+/// making it easier to add new fields without touching every call site.
+struct AgentContext {
+    db: Arc<AppStorage>,
+    gateway: Arc<LlmGateway>,
+    file_mgr: Arc<FileManager>,
+    tool_registry: Arc<ToolRegistry>,
+    session_mgr: Arc<crate::python::session::PythonSessionManager>,
+    app: AppHandle,
+    settings: AppSettings,
+    workspace_path: std::path::PathBuf,
+    conversation_id: String,
+    assistant_id: String,
+    masking_level: MaskingLevel,
+}
+
+// ---------------------------------------------------------------------------
+// Extracted helper functions for agent_loop setup
+// ---------------------------------------------------------------------------
+
+/// Build file context string for injection into the system prompt.
+///
+/// Lists uploaded files (with load status and variable mapping) and
+/// generated files so the LLM always knows what's available.
+fn build_file_context(db: &AppStorage, conversation_id: &str) -> String {
+    let uploaded = db.get_uploaded_files_for_conversation(conversation_id).unwrap_or_default();
+    let generated = db.get_generated_files_for_conversation(conversation_id).unwrap_or_default();
+
+    if uploaded.is_empty() && generated.is_empty() {
+        return String::new();
+    }
+
+    let mut ctx = String::new();
+
+    if !uploaded.is_empty() {
+        let loaded_prefix = format!("loaded:{}:", conversation_id);
+        let loaded_entries = db.get_memories_by_prefix(&loaded_prefix).unwrap_or_default();
+        let mut loaded_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for (_key, value) in &loaded_entries {
+            if let Ok(info) = serde_json::from_str::<serde_json::Value>(value) {
+                let file_id = info.get("fileId").and_then(|v| v.as_str()).unwrap_or("");
+                let loaded_as = info.get("loadedAs").and_then(|v| v.as_str()).unwrap_or("text");
+                if !file_id.is_empty() {
+                    loaded_map.insert(file_id.to_string(), loaded_as.to_string());
+                }
+            }
+        }
+
+        let df_count = loaded_map.values().filter(|v| *v == "dataframe").count();
+        let text_count = loaded_map.values().filter(|v| *v == "text").count();
+
+        ctx.push_str("\n\n[本次会话的上传文件]");
+        for f in &uploaded {
+            let name = f["originalName"].as_str().unwrap_or("unknown");
+            let fid = f["id"].as_str().unwrap_or("");
+            let ftype = f["fileType"].as_str().unwrap_or("unknown");
+
+            if let Some(loaded_as) = loaded_map.get(fid) {
+                let var_hint = match loaded_as.as_str() {
+                    "dataframe" if df_count > 1 => format!("_dfs['{}']", fid),
+                    "dataframe" => "_df".to_string(),
+                    "text" if text_count > 1 => format!("_texts['{}']", fid),
+                    _ if text_count > 1 => format!("_texts['{}']", fid),
+                    _ => "_text".to_string(),
+                };
+                ctx.push_str(&format!(
+                    "\n- {} (file_id: \"{}\", 类型: {}) ✅已加载 → {}",
+                    name, fid, ftype, var_hint
+                ));
+            } else {
+                ctx.push_str(&format!(
+                    "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，需先 load_file",
+                    name, fid, ftype
+                ));
+            }
+        }
+    }
+
+    if !generated.is_empty() {
+        ctx.push_str("\n\n[本次会话生成的文件]");
+        for f in &generated {
+            let name = f["fileName"].as_str().unwrap_or("unknown");
+            let fid = f["id"].as_str().unwrap_or("");
+            let category = f["category"].as_str().unwrap_or("file");
+            ctx.push_str(&format!(
+                "\n- {} (file_id: \"{}\", 类别: {})",
+                name, fid, category
+            ));
+        }
+    }
+
+    ctx
+}
+
+/// Build analysis notes context for injection into the system prompt.
+///
+/// Three-layer priority: checkpoint (structured) > summary (LLM-curated) > auto_context (fallback).
+/// Checkpoints use field-level decay: summary/key_findings/next_step_input never truncated,
+/// data_artifacts truncated for older steps.
+fn build_analysis_notes_context(
+    db: &AppStorage,
+    conversation_id: &str,
+    step_config: Option<&StepConfig>,
+) -> String {
+    let notes_prefix = format!("note:{}:", conversation_id);
+    let notes = match db.get_memories_by_prefix(&notes_prefix) {
+        Ok(notes) if !notes.is_empty() => notes,
+        _ => return String::new(),
+    };
+
+    let current_step = step_config.map(|c| c.step).unwrap_or(0);
+
+    // Separate notes by type: checkpoint, step-grouped, non-step
+    let mut checkpoints: std::collections::BTreeMap<u32, crate::llm::checkpoint::StepCheckpoint> = std::collections::BTreeMap::new();
+    let mut step_notes: std::collections::BTreeMap<u32, Vec<(String, String)>> = std::collections::BTreeMap::new();
+    let mut non_step_notes: Vec<(String, String)> = Vec::new();
+
+    for (key, value) in &notes {
+        let note_name = key.strip_prefix(&notes_prefix).unwrap_or(key);
+
+        if note_name.starts_with("step") && note_name.ends_with("_checkpoint") {
+            if let Some(step_str) = note_name.strip_prefix("step") {
+                if let Some(num_str) = step_str.strip_suffix("_checkpoint") {
+                    if let Ok(sn) = num_str.parse::<u32>() {
+                        if let Ok(cp) = serde_json::from_str::<crate::llm::checkpoint::StepCheckpoint>(value) {
+                            checkpoints.insert(sn, cp);
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        if note_name.starts_with("step") {
+            if let Some(step_str) = note_name.strip_prefix("step") {
+                if let Some(sn) = step_str.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
+                    step_notes.entry(sn).or_default().push((note_name.to_string(), value.clone()));
+                    continue;
+                }
+            }
+        }
+        non_step_notes.push((note_name.to_string(), value.clone()));
+    }
+
+    let mut ctx = String::from("\n\n[前序分析记录]\n");
+    ctx.push_str("⚠️ 重要：以下是之前步骤保存的分析结论和关键数据，是当前步骤的唯一数据来源。\n");
+    ctx.push_str("· 当前步骤必须基于这些记录继续分析\n");
+    ctx.push_str("· 所有数据必须来自 execute_python 实际执行，禁止凭空推断\n");
+    ctx.push_str("· 当前步骤结束前必须调用 save_analysis_note 保存关键结论，否则下一步将丢失数据\n\n");
+
+    for (name, value) in &non_step_notes {
+        ctx.push_str(&format!("### {}\n{}\n\n", name, value));
+    }
+
+    let all_steps: std::collections::BTreeSet<u32> = checkpoints.keys()
+        .chain(step_notes.keys())
+        .copied()
+        .collect();
+
+    const OLDER_STEP_MAX_CHARS: usize = 3000;
+    const RECENT_STEP_MAX_CHARS: usize = 6000;
+
+    for &sn in &all_steps {
+        let is_recent = current_step == 0 || sn >= current_step.saturating_sub(1);
+
+        if let Some(cp) = checkpoints.get(&sn) {
+            let display_name = step_config
+                .and_then(|c| c.step_display_names.iter().find(|(n, _)| *n == sn))
+                .map(|(_, name)| name.as_str())
+                .unwrap_or("未知步骤");
+            ctx.push_str(&crate::llm::checkpoint::format_checkpoint_for_injection(
+                cp, sn, display_name, is_recent,
+            ));
+        } else if let Some(notes_for_step) = step_notes.get(&sn) {
+            ctx.push_str(&format!("## 第 {} 步记录\n", sn));
+
+            for (name, value) in notes_for_step {
+                let is_summary = name.contains("_summary");
+
+                if is_summary {
+                    ctx.push_str(&format!("### {}\n{}\n\n", name, value));
+                } else if is_recent {
+                    let truncated = if value.len() > RECENT_STEP_MAX_CHARS {
+                        let end = truncate_at_char_boundary(value, RECENT_STEP_MAX_CHARS);
+                        format!("{}...(truncated)", &value[..end])
+                    } else {
+                        value.clone()
+                    };
+                    ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                } else {
+                    let truncated = if value.len() > OLDER_STEP_MAX_CHARS {
+                        let end = truncate_at_char_boundary(value, OLDER_STEP_MAX_CHARS);
+                        format!("{}...(truncated)", &value[..end])
+                    } else {
+                        value.clone()
+                    };
+                    ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "[notes_injection] Injected {} notes ({} checkpoints + {} step groups + {} non-step) for conversation {}, current_step={}",
+        notes.len(), checkpoints.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step
+    );
+
+    ctx
+}
+
 /// The core agent loop — stream, execute tools, re-stream until done.
 ///
 /// When `step_config` is `Some`, the loop operates in analysis mode:
@@ -1317,20 +1523,17 @@ async fn compress_context_if_needed(
 /// - All tools available
 /// - Standard MAX_TOOL_ITERATIONS limit
 async fn agent_loop(
-    db: Arc<AppStorage>,
-    gateway: Arc<LlmGateway>,
-    file_mgr: Arc<FileManager>,
-    tool_registry: Arc<ToolRegistry>,
-    session_mgr: Arc<crate::python::session::PythonSessionManager>,
-    app: AppHandle,
-    settings: AppSettings,
+    ctx: AgentContext,
     initial_messages: Vec<ChatMessage>,
-    masking_level: MaskingLevel,
-    workspace_path: std::path::PathBuf,
-    assistant_id: String,
-    conversation_id: String,
     step_config: Option<StepConfig>,
 ) {
+    // Destructure for convenience (avoids `ctx.` prefix on hot-path variables)
+    let AgentContext {
+        db, gateway, file_mgr, tool_registry, session_mgr,
+        app, settings, workspace_path, conversation_id, assistant_id,
+        masking_level,
+    } = ctx;
+
     let tavily_api_key = if settings.tavily_api_key.is_empty() {
         None
     } else {
@@ -1342,79 +1545,8 @@ async fn agent_loop(
         Some(settings.bocha_api_key.clone())
     };
 
-    // Build file context: uploaded files (with load status + variable mapping) + generated files
-    // so the LLM always knows what's available (even after sliding window truncation)
-    let file_context = {
-        let uploaded = db.get_uploaded_files_for_conversation(&conversation_id).unwrap_or_default();
-        let generated = db.get_generated_files_for_conversation(&conversation_id).unwrap_or_default();
-
-        if uploaded.is_empty() && generated.is_empty() {
-            String::new()
-        } else {
-            let mut ctx = String::new();
-
-            if !uploaded.is_empty() {
-                // Query loaded file mappings to determine load status
-                let loaded_prefix = format!("loaded:{}:", conversation_id);
-                let loaded_entries = db.get_memories_by_prefix(&loaded_prefix).unwrap_or_default();
-                let mut loaded_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-                for (_key, value) in &loaded_entries {
-                    if let Ok(info) = serde_json::from_str::<serde_json::Value>(value) {
-                        let file_id = info.get("fileId").and_then(|v| v.as_str()).unwrap_or("");
-                        let loaded_as = info.get("loadedAs").and_then(|v| v.as_str()).unwrap_or("text");
-                        if !file_id.is_empty() {
-                            loaded_map.insert(file_id.to_string(), loaded_as.to_string());
-                        }
-                    }
-                }
-
-                // Count loaded files by type (df vs text) for variable naming
-                let df_count = loaded_map.values().filter(|v| *v == "dataframe").count();
-                let text_count = loaded_map.values().filter(|v| *v == "text").count();
-
-                ctx.push_str("\n\n[本次会话的上传文件]");
-                for f in &uploaded {
-                    let name = f["originalName"].as_str().unwrap_or("unknown");
-                    let fid = f["id"].as_str().unwrap_or("");
-                    let ftype = f["fileType"].as_str().unwrap_or("unknown");
-
-                    if let Some(loaded_as) = loaded_map.get(fid) {
-                        let var_hint = match loaded_as.as_str() {
-                            "dataframe" if df_count > 1 => format!("_dfs['{}']", fid),
-                            "dataframe" => "_df".to_string(),
-                            "text" if text_count > 1 => format!("_texts['{}']", fid),
-                            _ if text_count > 1 => format!("_texts['{}']", fid),
-                            _ => "_text".to_string(),
-                        };
-                        ctx.push_str(&format!(
-                            "\n- {} (file_id: \"{}\", 类型: {}) ✅已加载 → {}",
-                            name, fid, ftype, var_hint
-                        ));
-                    } else {
-                        ctx.push_str(&format!(
-                            "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，需先 load_file",
-                            name, fid, ftype
-                        ));
-                    }
-                }
-            }
-
-            if !generated.is_empty() {
-                ctx.push_str("\n\n[本次会话生成的文件]");
-                for f in &generated {
-                    let name = f["fileName"].as_str().unwrap_or("unknown");
-                    let fid = f["id"].as_str().unwrap_or("");
-                    let category = f["category"].as_str().unwrap_or("file");
-                    ctx.push_str(&format!(
-                        "\n- {} (file_id: \"{}\", 类别: {})",
-                        name, fid, category
-                    ));
-                }
-            }
-
-            ctx
-        }
-    };
+    // Build file context and analysis notes for the system prompt
+    let file_context = build_file_context(&db, &conversation_id);
 
     let current_step_config = step_config;
     let mut messages = initial_messages;
@@ -1487,128 +1619,8 @@ async fn agent_loop(
     // Append file context to system prompt so LLM always has file info
     let system_prompt = format!("{}{}", system_prompt, file_context);
 
-    // Inject accumulated analysis notes from previous steps into the system prompt.
-    // Three-layer priority: checkpoint (structured) > summary (LLM-curated) > auto_context (fallback).
-    // Checkpoints use field-level decay: summary/key_findings/next_step_input never truncated,
-    // data_artifacts truncated for older steps.
-    let analysis_notes_context = {
-        let notes_prefix = format!("note:{}:", conversation_id);
-        match db.get_memories_by_prefix(&notes_prefix) {
-            Ok(notes) if !notes.is_empty() => {
-                let current_step = current_step_config.as_ref().map(|c| c.step).unwrap_or(0);
-
-                // Separate notes by type: checkpoint, step-grouped, non-step
-                let mut checkpoints: std::collections::BTreeMap<u32, crate::llm::checkpoint::StepCheckpoint> = std::collections::BTreeMap::new();
-                let mut step_notes: std::collections::BTreeMap<u32, Vec<(String, String)>> = std::collections::BTreeMap::new();
-                let mut non_step_notes: Vec<(String, String)> = Vec::new();
-
-                for (key, value) in &notes {
-                    let note_name = key.strip_prefix(&notes_prefix).unwrap_or(key);
-
-                    // Try to parse checkpoint notes (highest priority)
-                    if note_name.starts_with("step") && note_name.ends_with("_checkpoint") {
-                        if let Some(step_str) = note_name.strip_prefix("step") {
-                            if let Some(num_str) = step_str.strip_suffix("_checkpoint") {
-                                if let Ok(sn) = num_str.parse::<u32>() {
-                                    if let Ok(cp) = serde_json::from_str::<crate::llm::checkpoint::StepCheckpoint>(value) {
-                                        checkpoints.insert(sn, cp);
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Group remaining notes by step number
-                    if note_name.starts_with("step") {
-                        if let Some(step_str) = note_name.strip_prefix("step") {
-                            if let Some(sn) = step_str.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
-                                step_notes.entry(sn).or_default().push((note_name.to_string(), value.clone()));
-                                continue;
-                            }
-                        }
-                    }
-                    non_step_notes.push((note_name.to_string(), value.clone()));
-                }
-
-                let mut ctx = String::from("\n\n[前序分析记录]\n");
-                ctx.push_str("⚠️ 重要：以下是之前步骤保存的分析结论和关键数据，是当前步骤的唯一数据来源。\n");
-                ctx.push_str("· 当前步骤必须基于这些记录继续分析\n");
-                ctx.push_str("· 所有数据必须来自 execute_python 实际执行，禁止凭空推断\n");
-                ctx.push_str("· 当前步骤结束前必须调用 save_analysis_note 保存关键结论，否则下一步将丢失数据\n\n");
-
-                // Non-step notes (e.g., analysis_direction) — always full
-                for (name, value) in &non_step_notes {
-                    ctx.push_str(&format!("### {}\n{}\n\n", name, value));
-                }
-
-                // Collect all step numbers that have any notes
-                let all_steps: std::collections::BTreeSet<u32> = checkpoints.keys()
-                    .chain(step_notes.keys())
-                    .copied()
-                    .collect();
-
-                let max_completed_step = if current_step > 0 { current_step - 1 } else { 0 };
-                const OLDER_STEP_MAX_CHARS: usize = 3000;
-                const RECENT_STEP_MAX_CHARS: usize = 6000;
-
-                for &sn in &all_steps {
-                    // The immediately preceding step is "recent" (full detail);
-                    // all earlier steps are "older" (truncated data_artifacts).
-                    let is_recent = current_step == 0 || sn >= current_step.saturating_sub(1);
-
-                    // Priority: checkpoint > summary > auto_context
-                    if let Some(cp) = checkpoints.get(&sn) {
-                        let display_name = current_step_config.as_ref()
-                            .and_then(|c| c.step_display_names.iter().find(|(n, _)| *n == sn))
-                            .map(|(_, name)| name.as_str())
-                            .unwrap_or("未知步骤");
-                        ctx.push_str(&crate::llm::checkpoint::format_checkpoint_for_injection(
-                            cp,
-                            sn,
-                            display_name,
-                            is_recent,
-                        ));
-                    } else if let Some(notes_for_step) = step_notes.get(&sn) {
-                        // Fallback: use existing note-based injection
-                        ctx.push_str(&format!("## 第 {} 步记录\n", sn));
-
-                        for (name, value) in notes_for_step {
-                            let is_summary = name.contains("_summary");
-
-                            if is_summary {
-                                ctx.push_str(&format!("### {}\n{}\n\n", name, value));
-                            } else if is_recent {
-                                let truncated = if value.len() > RECENT_STEP_MAX_CHARS {
-                                    let end = truncate_at_char_boundary(value, RECENT_STEP_MAX_CHARS);
-                                    format!("{}...(truncated)", &value[..end])
-                                } else {
-                                    value.clone()
-                                };
-                                ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
-                            } else {
-                                let truncated = if value.len() > OLDER_STEP_MAX_CHARS {
-                                    let end = truncate_at_char_boundary(value, OLDER_STEP_MAX_CHARS);
-                                    format!("{}...(truncated)", &value[..end])
-                                } else {
-                                    value.clone()
-                                };
-                                ctx.push_str(&format!("### {}\n{}\n\n", name, truncated));
-                            }
-                        }
-                    }
-                }
-
-                log::info!(
-                    "[notes_injection] Injected {} notes ({} checkpoints + {} step groups + {} non-step) for conversation {}, current_step={}",
-                    notes.len(), checkpoints.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step
-                );
-
-                ctx
-            }
-            _ => String::new(),
-        }
-    };
+    // Inject accumulated analysis notes from previous steps into the system prompt
+    let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref());
     let system_prompt = format!("{}{}", system_prompt, analysis_notes_context);
 
     // Build allowed-tool set for execution-time enforcement.

@@ -196,7 +196,7 @@ except Exception as _e:
         // Analysis mode: use persistent session (warm process, no cold-start overhead).
         // The session reuses a long-running Python REPL, eliminating process spawn,
         // pandas/numpy import, and _analysis_utils.py compilation on every call.
-        let timeout = std::time::Duration::from_secs(120);
+        let timeout = std::time::Duration::from_secs(600);
         let session_result = ctx.session_manager
             .execute(&ctx.conversation_id, &final_code, timeout, &sandbox)
             .await?;

@@ -128,18 +128,8 @@ impl PythonRunner {
             .arg(file_path)
             .current_dir(&self.workspace_path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("PYTHONIOENCODING", "utf-8")    // Force UTF-8 output on all platforms
-            .env("PYTHONLEGACYWINDOWSSTDIO", "0") // Disable legacy Windows stdio
-            .env("PYTHONUTF8", "1")              // PEP 540: force UTF-8 mode (Windows)
-            .kill_on_drop(true);
-
-        // When using bundled Python, set PYTHONHOME and clear PYTHONPATH
-        // to isolate from any system Python installation.
-        if let Some(ref home) = self.python_home {
-            cmd.env("PYTHONHOME", home);
-            cmd.env_remove("PYTHONPATH");
-        }
+            .stderr(Stdio::piped());
+        super::configure_python_env(&mut cmd, self.python_home.as_deref());
 
         let mut child = cmd
             .spawn()

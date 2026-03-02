@@ -25,7 +25,7 @@ code/
 │   └── styles/                   # globals.css (TailwindCSS 4 Design Tokens)
 ├── src-tauri/                    # Rust 后端
 │   └── src/
-│       ├── lib.rs                # Tauri 应用构建 + 命令注册 + PythonSessionManager + 崩溃恢复
+│       ├── lib.rs                # Tauri 应用构建 + 命令注册 + PythonSessionManager + graceful shutdown + 崩溃恢复
 │       ├── commands/             # chat, file, settings, plugin_info (IPC 命令)
 │       ├── plugin/               # 插件系统（Tool + Skill 注册式架构）
 │       │   ├── tool_trait.rs     # ToolPlugin trait + ToolOutput + ToolError

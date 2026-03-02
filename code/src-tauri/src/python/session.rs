@@ -160,16 +160,8 @@ impl PythonSession {
             .current_dir(workspace_path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .env("PYTHONIOENCODING", "utf-8")
-            .env("PYTHONLEGACYWINDOWSSTDIO", "0")
-            .env("PYTHONUTF8", "1")
-            .kill_on_drop(true);
-
-        if let Some(home) = python_home {
-            cmd.env("PYTHONHOME", home);
-            cmd.env_remove("PYTHONPATH");
-        }
+            .stderr(std::process::Stdio::piped());
+        super::configure_python_env(&mut cmd, python_home.map(|p| p.as_path()));
 
         let mut child = cmd.spawn()
             .context(format!("Failed to spawn Python REPL: {}", python_binary.display()))?;
@@ -487,6 +479,10 @@ if _user_vars:
 
 /// Manages persistent Python sessions, one per active analysis conversation.
 pub struct PythonSessionManager {
+    /// Uses `std::sync::Mutex` (not `tokio::sync::Mutex`) because the lock is
+    /// only held for brief HashMap lookups — never across `.await` points.
+    /// This avoids the `Send` bound overhead of tokio's Mutex and is safe because
+    /// all async operations (is_alive, kill, checkpoint) happen *after* releasing the lock.
     sessions: std::sync::Mutex<HashMap<String, Arc<PythonSession>>>,
     workspace_path: PathBuf,
     python_binary: PathBuf,
