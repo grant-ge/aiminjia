@@ -60,6 +60,7 @@ pub fn run() {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
+                    .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                     .target(tauri_plugin_log::Target::new(
                         tauri_plugin_log::TargetKind::Folder {
                             path: logs_dir.clone(),
@@ -132,6 +133,23 @@ pub fn run() {
                 }
             }
 
+            // Initialize Python session manager for persistent REPL sessions
+            let session_mgr = Arc::new(
+                python::session::PythonSessionManager::new(fm_path.clone(), Some(app.handle()))
+            );
+
+            // Start idle session reaper (every 5 minutes)
+            {
+                let session_mgr_clone = session_mgr.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+                    loop {
+                        interval.tick().await;
+                        session_mgr_clone.reap_idle().await;
+                    }
+                });
+            }
+
             // Register managed state
             app.manage(db);
             app.manage(file_mgr);
@@ -139,6 +157,7 @@ pub fn run() {
             app.manage(secure_storage);
             app.manage(tool_registry);
             app.manage(skill_registry);
+            app.manage(session_mgr);
 
             Ok(())
         })

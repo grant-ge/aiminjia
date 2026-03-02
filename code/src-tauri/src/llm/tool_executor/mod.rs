@@ -103,11 +103,12 @@ pub(crate) mod tests {
         PluginContext {
             storage: db,
             file_manager: Arc::new(FileManager::new(&workspace)),
-            workspace_path: workspace,
+            workspace_path: workspace.clone(),
             conversation_id: "test_conv_1".to_string(),
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
+            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
         }
     }
 

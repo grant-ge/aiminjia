@@ -77,24 +77,37 @@ impl PythonRunner {
         // 1. Validate code
         self.sandbox.validate_code(code).map_err(|e| anyhow!("Sandbox violation: {}", e))?;
 
-        // 2. Prepare temp file
+        // 2. Execute without re-validation
+        self.execute_raw(code).await
+    }
+
+    /// Execute pre-validated code. Caller must ensure user code was validated separately.
+    /// System-injected code (preamble, epilogue) bypasses sandbox validation.
+    pub(crate) async fn execute_raw(&self, code: &str) -> Result<ExecutionResult> {
+        // Prepare temp file
         let temp_dir = self.workspace_path.join("temp");
         std::fs::create_dir_all(&temp_dir).context("Failed to create temp directory")?;
 
         let file_id = uuid::Uuid::new_v4().to_string();
         let temp_file = temp_dir.join(format!("code_{}.py", file_id));
 
-        // Prepend UTF-8 encoding declaration and sandbox preamble to user code
+        // Prepend UTF-8 encoding declaration and sandbox preamble to code
         let full_code = format!("# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}", self.sandbox.preamble(), code);
         std::fs::write(&temp_file, &full_code).context("Failed to write temp Python file")?;
 
-        // 3. Execute
+        // Execute
         let result = self.run_python_file(&temp_file).await;
 
-        // 4. Cleanup temp file
+        // Cleanup temp file
         let _ = std::fs::remove_file(&temp_file);
 
         result
+    }
+
+    /// Return a new runner with a custom timeout (in seconds).
+    pub fn with_timeout(mut self, seconds: u32) -> Self {
+        self.sandbox.timeout_seconds = seconds;
+        self
     }
 
     /// Execute a Python file directly (must already exist).
@@ -236,7 +249,7 @@ impl PythonRunner {
 ///
 /// Returns `(python_binary, python_home)`. `python_home` is `Some` only when
 /// using the bundled runtime.
-fn resolve_python_path(app_handle: Option<&tauri::AppHandle>) -> (PathBuf, Option<PathBuf>) {
+pub(crate) fn resolve_python_path(app_handle: Option<&tauri::AppHandle>) -> (PathBuf, Option<PathBuf>) {
     use tauri::Manager;
 
     if let Some(handle) = app_handle {

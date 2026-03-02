@@ -493,6 +493,7 @@ pub async fn send_message(
     crypto: State<'_, Option<Arc<SecureStorage>>>,
     tool_registry: State<'_, Arc<ToolRegistry>>,
     skill_registry: State<'_, Arc<SkillRegistry>>,
+    session_mgr: State<'_, Arc<crate::python::session::PythonSessionManager>>,
     app: AppHandle,
     conversation_id: String,
     content: String,
@@ -1121,6 +1122,7 @@ pub async fn send_message(
     let gateway_clone = gateway.inner().clone();
     let file_mgr_clone = file_mgr.inner().clone();
     let tool_registry_clone = tool_registry.inner().clone();
+    let session_mgr_clone = session_mgr.inner().clone();
     let app_clone = app.clone();
 
     // 9. Spawn the agent loop in a background task with guard and timeout
@@ -1150,6 +1152,7 @@ pub async fn send_message(
                 gateway_clone,
                 file_mgr_clone,
                 tool_registry_clone,
+                session_mgr_clone,
                 app_clone.clone(),
                 settings,
                 chat_messages,
@@ -1318,6 +1321,7 @@ async fn agent_loop(
     gateway: Arc<LlmGateway>,
     file_mgr: Arc<FileManager>,
     tool_registry: Arc<ToolRegistry>,
+    session_mgr: Arc<crate::python::session::PythonSessionManager>,
     app: AppHandle,
     settings: AppSettings,
     initial_messages: Vec<ChatMessage>,
@@ -1833,6 +1837,7 @@ async fn agent_loop(
             tavily_api_key: tavily_api_key.clone(),
             bocha_api_key: bocha_api_key.clone(),
             app_handle: Some(app.clone()),
+            session_manager: session_mgr.clone(),
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---
@@ -2534,8 +2539,11 @@ fn truncate_for_ui(text: &str, max_len: usize) -> String {
 #[tauri::command]
 pub async fn stop_streaming(
     gateway: State<'_, Arc<LlmGateway>>,
+    session_mgr: State<'_, Arc<crate::python::session::PythonSessionManager>>,
     conversation_id: String,
 ) -> Result<(), String> {
+    // Interrupt any running Python execution in the persistent session
+    let _ = session_mgr.interrupt(&conversation_id).await;
     gateway.cancel_conversation(&conversation_id).map_err(|e| e.to_string())
 }
 
@@ -2571,9 +2579,12 @@ pub async fn delete_conversation(
     db: State<'_, Arc<AppStorage>>,
     gateway: State<'_, Arc<LlmGateway>>,
     file_mgr: State<'_, Arc<FileManager>>,
+    session_mgr: State<'_, Arc<crate::python::session::PythonSessionManager>>,
     app: AppHandle,
     conversation_id: String,
 ) -> Result<(), String> {
+    // Destroy any persistent Python session for this conversation
+    session_mgr.destroy(&conversation_id).await;
     // Guard: if an agent is running on this conversation, cancel it first
     if gateway.is_conversation_busy(&conversation_id) {
         log::info!("delete_conversation: cancelling active agent for conversation {}", conversation_id);

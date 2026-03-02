@@ -35,7 +35,7 @@ analysis/
     └── src-tauri/                     # Rust 后端（Tauri 2.x）
         ├── Cargo.toml
         └── src/
-            ├── main.rs / lib.rs       # 启动 + 状态注册 + 崩溃恢复（清理孤儿任务）
+            ├── main.rs / lib.rs       # 启动 + 状态注册 + PythonSessionManager + 空闲会话回收 + 崩溃恢复
             ├── commands/              # IPC 命令
             │   ├── chat.rs            # send_message（编排检测 + Agent Loop + 工具结果可靠性 4 层保障）, stop_streaming(conversation_id), is_agent_busy→Vec<String>, get_messages
             │   ├── file.rs            # upload_file, open/reveal/preview/delete_file (均需 conversation_id)
@@ -45,7 +45,7 @@ analysis/
             │   ├── tool_trait.rs      # ToolPlugin trait + ToolOutput + ToolError + FileMeta
             │   ├── skill_trait.rs     # Skill trait + SkillState + WorkflowDefinition + ToolFilter
             │   ├── registry.rs        # ToolRegistry + SkillRegistry（运行时注册 + 过滤 + 执行）
-            │   ├── context.rs         # PluginContext（插件共享服务入口）
+            │   ├── context.rs         # PluginContext（插件共享服务入口，含 session_manager）
             │   ├── manifest.rs        # plugin.toml / workflow.toml 解析
             │   ├── declarative_skill.rs # TOML + Markdown 声明式 Skill 加载器
             │   ├── python_bridge.rs   # Python 脚本 → ToolPlugin 适配（安全 temp file 协议）
@@ -96,9 +96,10 @@ analysis/
             │   ├── workspace.rs       # 工作目录管理
             │   └── file_manager.rs    # 文件生命周期（上传/存储/清理）
             ├── python/                # Python 子进程
-            │   ├── runner.rs          # 代码执行（沙箱 + 超时 + UTF-8 强制）
+            │   ├── runner.rs          # 一次性代码执行（沙箱 + 超时 + UTF-8 强制，日常模式使用）
+            │   ├── session.rs         # 持久 REPL 会话（分析模式使用，消除冷启动开销，最多 3 会话 + 15 分钟空闲回收）
             │   ├── parser.rs          # 文件解析分发
-            │   ├── sandbox.rs         # 沙箱配置（禁止模块、preamble 注入）
+            │   ├── sandbox.rs         # 沙箱配置（禁止模块、preamble 注入、_written_files 写入追踪）
             │   └── analysis_utils.rs  # 预写 HR 分析函数 + 数据流 helper（分析模式注入，~700 行 Python）
             └── models/                # 数据模型
 ```
@@ -296,7 +297,7 @@ Build output location: `code/src-tauri/target/release/bundle/`
 | 生成的图表 | workspace/charts/ | PNG 图表 |
 | 导出数据 | workspace/exports/ | CSV/Excel/JSON 导出 |
 | 分析快照 | workspace/analysis/{conv_id}/ | 三层 DataFrame pkl 快照（_original / _step{N}_df / _step_df）+ 步骤结果 JSON 缓存 |
-| 临时文件 | workspace/temp/ | Python 脚本执行临时文件 |
+| 临时文件 | workspace/temp/ | Python 脚本执行临时文件 + REPL 脚本（_repl.py）+ 分析工具模块（_analysis_utils.py）+ 执行元数据（_meta_{uuid}.json）|
 | 运行日志 | workspace/logs/ | tauri-plugin-log 写入，7 天自动清理 |
 | API Key 加密 | OS Keychain | macOS Keychain / Windows Credential Manager |
 | 各 Provider API Key | config.json | `apiKey:{provider}` 键，AES-256-GCM 加密存储 |

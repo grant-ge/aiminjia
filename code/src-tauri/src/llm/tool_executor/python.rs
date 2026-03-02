@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::runner::PythonRunner;
+use crate::python::sandbox::SandboxConfig;
 
 use super::util::py_escape;
 use super::{optional_str, require_str};
@@ -20,6 +21,11 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
     info!("[TOOL:execute_python] purpose='{}' code_len={} workspace={:?}",
         purpose, code.len(), ctx.workspace_path);
     info!("[TOOL:execute_python] code:\n{}", code);
+
+    // Validate user code early (before assembling system preamble/epilogue).
+    // System-injected code bypasses validation via execute_raw().
+    let sandbox = SandboxConfig::for_workspace(&ctx.workspace_path);
+    sandbox.validate_code(code).map_err(|e| anyhow::anyhow!("Sandbox violation: {}", e))?;
 
     // Auto-load uploaded files that haven't been loaded via load_file yet.
     // This ensures _df/_text variables are available even if the LLM skips load_file.
@@ -55,14 +61,26 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
     // 1. Inject three-layer snapshot system + _df_raw + _CURRENT_STEP
     // 2. Inject pre-written analysis utility functions
     // 3. Append DataFrame auto-save epilogue (working + step snapshots)
-    let is_analysis = orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id).is_some();
+    let step_state = orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id);
+    let is_analysis = step_state.is_some();
     if is_analysis {
         let snap_dir = format!("analysis/{}", ctx.conversation_id);
-        let current_step = orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id)
-            .map(|s| s.step)
-            .unwrap_or(0);
+        let current_step = step_state.map(|s| s.step).unwrap_or(0);
 
-        // Analysis preamble: three-layer snapshot + _df_raw + _CURRENT_STEP + utils
+        // Write ANALYSIS_UTILS to a module file so Python doesn't
+        // re-compile ~50KB of utility code on every execute_python call.
+        // Only written once per session — the binary doesn't change mid-run.
+        let utils_path = ctx.workspace_path.join("temp/_analysis_utils.py");
+        if !utils_path.exists() {
+            if let Some(parent) = utils_path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            if let Err(e) = std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS) {
+                warn!("[TOOL:execute_python] Failed to write _analysis_utils.py: {}", e);
+            }
+        }
+
+        // Analysis preamble: three-layer snapshot + _df_raw + _CURRENT_STEP + utils (loaded via exec)
         let analysis_preamble = format!(
             r#"
 _CONV_ID = '{conv_id}'
@@ -87,17 +105,34 @@ _snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
 if os.path.exists(_snap_dfs_path):
     _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
 
+# Restore user-created variables from previous execute_python calls
+# (e.g. col_map, results, _df_final — anything except _df/_dfs which have dedicated snapshots)
+_uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
+if os.path.exists(_uv_path):
+    try:
+        for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
+            globals()[_k] = _v
+        del _k, _v
+    except Exception:
+        pass
+
 # _df_raw: read-only reference to original data (always available)
 if os.path.exists(_orig_path):
     _df_raw = _pkl.load(open(_orig_path, 'rb'))
 else:
     _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
 
-{utils}
+# Load analysis utility functions from module file
+_au_path = os.path.join(os.getcwd(), 'temp', '_analysis_utils.py')
+if os.path.exists(_au_path):
+    with open(_au_path, encoding='utf-8') as _au_f:
+        exec(_au_f.read())
+
+# Snapshot system variable names BEFORE user code runs (used by epilogue to detect user vars)
+_SYS_VARS_SNAPSHOT = set(globals().keys())
 "#,
             conv_id = py_escape(&ctx.conversation_id),
             step = current_step,
-            utils = crate::python::analysis_utils::ANALYSIS_UTILS,
         );
         info!("[TOOL:execute_python] Injecting analysis preamble ({} bytes, step={}) for conversation {}",
             analysis_preamble.len(), current_step, ctx.conversation_id);
@@ -125,8 +160,31 @@ try:
         _pkl.dump(_dfs, open(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
         os.replace(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
                    os.path.join(_snap_dir, '_step_dfs.pkl'))
-except Exception:
-    pass
+    # Auto-save user-created variables (DataFrame, dict, list, etc.)
+    # so they persist across execute_python calls in the same conversation.
+    # Uses runtime snapshot taken before user code ran — no manual list to maintain.
+    _user_vars = {{}}
+    _CHEAP_TYPES = (int, float, str, bool, bytes, type(None))
+    for _vname, _vval in list(globals().items()):
+        if _vname.startswith('__'):
+            continue  # skip dunder vars (__name__, __builtins__, etc.)
+        if _vname in _SYS_VARS_SNAPSHOT:
+            continue  # skip system/snapshot vars (captured before user code)
+        if callable(_vval) or isinstance(_vval, type) or type(_vval).__name__ == 'module':
+            continue  # skip functions, classes, modules
+        try:
+            if not isinstance(_vval, _CHEAP_TYPES):
+                _pkl.dumps(_vval)  # probe only non-trivial types
+            _user_vars[_vname] = _vval
+        except Exception:
+            pass
+    if _user_vars:
+        _pkl.dump(_user_vars, open(os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
+        os.replace(os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
+                   os.path.join(_snap_dir, '_user_vars.pkl'))
+except Exception as _e:
+    import sys as _sys
+    print(f"[WARN] DataFrame snapshot save failed: {{_e}}", file=_sys.stderr)
 "#,
             snap_dir = py_escape(&snap_dir)
         );
@@ -134,8 +192,20 @@ except Exception:
         final_code.push_str(&epilogue);
     }
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
-    let result = runner.execute(&final_code).await?;  // Timeout now returns Err, propagated by ?
+    let result = if is_analysis {
+        // Analysis mode: use persistent session (warm process, no cold-start overhead).
+        // The session reuses a long-running Python REPL, eliminating process spawn,
+        // pandas/numpy import, and _analysis_utils.py compilation on every call.
+        let timeout = std::time::Duration::from_secs(120);
+        let session_result = ctx.session_manager
+            .execute(&ctx.conversation_id, &final_code, timeout, &sandbox)
+            .await?;
+        session_result.result
+    } else {
+        // Daily mode: use one-shot PythonRunner (no persistent state needed)
+        let runner = PythonRunner::with_config(ctx.workspace_path.clone(), sandbox, ctx.app_handle.as_ref());
+        runner.execute_raw(&final_code).await?
+    };
 
     info!("[TOOL:execute_python] exit_code={} time={}ms stdout_len={} stderr_len={}",
         result.exit_code, result.execution_time_ms,
@@ -191,6 +261,9 @@ except Exception:
                         "fileSize": file_size,
                     }));
                 }
+            } else {
+                warn!("[TOOL:execute_python] Failed to parse __GENERATED_FILE__ JSON (possibly truncated): {:?}",
+                    &json_str[..json_str.len().min(200)]);
             }
             // Don't include the marker line in output
         } else {

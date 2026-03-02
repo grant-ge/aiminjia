@@ -169,7 +169,6 @@ export function useStreaming() {
       const store = useChatStore.getState()
       store.clearConversationStreamState(conversationId)
       store.removeBusyConversation(conversationId)
-      store.setConversationAgentPhase(conversationId, undefined)
     }),
   )
 
@@ -306,7 +305,6 @@ export function useStreaming() {
       // Safety net: also clear streaming state in case streaming:done was missed
       // (e.g. agent panicked before finish_agent could emit it)
       store.clearConversationStreamState(conversationId)
-      store.setConversationAgentPhase(conversationId, undefined)
     }),
   )
 

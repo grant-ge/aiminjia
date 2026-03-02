@@ -222,6 +222,9 @@ if _ALLOWED_PATHS:
 # ── File write restriction (path enforcement layer) ──
 # Wraps builtins.open to block writes outside _ALLOWED_PATHS.
 # Read operations are unrestricted (pandas/numpy read from site-packages, /tmp, etc.).
+# Also tracks all write paths in _written_files for file lifecycle management.
+if '_written_files' not in dir():
+    _written_files = []
 _original_open = builtins.open
 def _safe_open(file, mode='r', *args, **kwargs):
     if isinstance(file, (str, bytes)):
@@ -240,6 +243,10 @@ def _safe_open(file, mode='r', *args, **kwargs):
                         f"Writing to '{file_str}' is blocked (outside workspace). "
                         f"Allowed directories: {', '.join(_ALLOWED_PATHS)}"
                     )
+                # Track write path for file lifecycle management
+                _wf = globals().get('_written_files') or (getattr(builtins, '_written_files', None))
+                if _wf is not None and isinstance(_wf, list):
+                    _wf.append(abs_path)
             except (TypeError, ValueError):
                 pass  # Non-path argument (e.g. file descriptor) — let through
     return _original_open(file, mode, *args, **kwargs)

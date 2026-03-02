@@ -25,13 +25,13 @@ code/
 │   └── styles/                   # globals.css (TailwindCSS 4 Design Tokens)
 ├── src-tauri/                    # Rust 后端
 │   └── src/
-│       ├── lib.rs                # Tauri 应用构建 + 命令注册 + 崩溃恢复
+│       ├── lib.rs                # Tauri 应用构建 + 命令注册 + PythonSessionManager + 崩溃恢复
 │       ├── commands/             # chat, file, settings, plugin_info (IPC 命令)
 │       ├── plugin/               # 插件系统（Tool + Skill 注册式架构）
 │       │   ├── tool_trait.rs     # ToolPlugin trait + ToolOutput + ToolError
 │       │   ├── skill_trait.rs    # Skill trait + SkillState + WorkflowDefinition
 │       │   ├── registry.rs       # ToolRegistry + SkillRegistry
-│       │   ├── context.rs        # PluginContext（插件共享服务）
+│       │   ├── context.rs        # PluginContext（插件共享服务，含 session_manager）
 │       │   ├── manifest.rs       # plugin.toml / workflow.toml 解析
 │       │   ├── declarative_skill.rs # TOML 声明式 Skill 加载器
 │       │   ├── python_bridge.rs  # Python → ToolPlugin 适配
@@ -40,7 +40,7 @@ code/
 │       │                         # prompts, orchestrator, tool_executor/ (子模块)
 │       ├── search/               # searxng (免费，默认优先), bocha/tavily (付费增强/降级)
 │       ├── storage/              # file_store (JSON/JSONL), crypto, workspace, file_manager
-│       ├── python/               # runner, parser, sandbox, analysis_utils
+│       ├── python/               # runner, session, parser, sandbox, analysis_utils
 │       └── models/               # conversation, message, analysis, settings
 └── python/                       # Python 脚本（预留）
 ```
