@@ -56,15 +56,6 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
   // historical empty messages or tool-call-only iterations)
-  const hasContent = MESSAGE_CONTENT_RENDER_ORDER.some((field) => {
-    const value = content[field]
-    if (value === undefined || value === null) return false
-    if (field === 'text' && typeof value === 'string' && !value.trim()) return false
-    if (Array.isArray(value) && value.length === 0) return false
-    return true
-  })
-  if (!hasContent && !isStreaming) return null
-
   /** Send a user choice back to the agent loop as a message. */
   const handleUserResponse = useCallback(
     (responseText: string) => {
@@ -118,6 +109,17 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
       })
     })
   }, [conversationId])
+
+  // Skip rendering if no meaningful content (prevents blank bubbles from
+  // historical empty messages or tool-call-only iterations)
+  const hasContent = MESSAGE_CONTENT_RENDER_ORDER.some((field) => {
+    const value = content[field]
+    if (value === undefined || value === null) return false
+    if (field === 'text' && typeof value === 'string' && !value.trim()) return false
+    if (Array.isArray(value) && value.length === 0) return false
+    return true
+  })
+  if (!hasContent && !isStreaming) return null
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">

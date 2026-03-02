@@ -207,7 +207,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   /** Fully remove a conversation's stream state (for conversation deletion). */
   deleteConversationStreamState: (convId: string) =>
     set((state) => {
-      const { [convId]: _, ...rest } = state.streamStates
+      const rest = { ...state.streamStates }
+      delete rest[convId]
       const legacy = deriveLegacy(state.activeConversationId, rest)
       return { streamStates: rest, ...legacy }
     }),
