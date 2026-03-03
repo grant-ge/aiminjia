@@ -441,6 +441,195 @@ def _export_detail(df, filename, title='明细数据', preview_rows=15, format='
     else:
         print(f'\n> 完整明细已导出到 {fmt_label}')
     return full_path
+
+# ============================================================
+# Workspace file management utilities
+# ============================================================
+
+def _ws_list(path='.', pattern='*', recursive=False):
+    """List files in workspace directory with size and modification time.
+
+    Args:
+        path: Relative path from workspace root (default '.', can be 'uploads', 'exports', etc.)
+        pattern: Glob pattern (default '*', e.g. '*.xlsx', '*.csv')
+        recursive: If True, search subdirectories recursively
+
+    Returns:
+        DataFrame with columns: name, path, size_kb, modified, type
+    """
+    import os, glob as _glob, time as _time
+    base = os.path.abspath(path)
+    if recursive:
+        search = os.path.join(base, '**', pattern)
+        files = _glob.glob(search, recursive=True)
+    else:
+        search = os.path.join(base, pattern)
+        files = _glob.glob(search)
+
+    results = []
+    for f in sorted(files):
+        if os.path.isfile(f):
+            stat = os.stat(f)
+            results.append({
+                'name': os.path.basename(f),
+                'path': os.path.relpath(f),
+                'size_kb': round(stat.st_size / 1024, 1),
+                'modified': _time.strftime('%Y-%m-%d %H:%M', _time.localtime(stat.st_mtime)),
+                'type': os.path.splitext(f)[1].lstrip('.')
+            })
+    df = pd.DataFrame(results)
+    if len(df) > 0:
+        _print_table(list(df.columns), [list(r) for _, r in df.iterrows()], f'文件列表 ({path})')
+    else:
+        print(f'目录 {path} 中没有匹配 {pattern} 的文件')
+    return df
+
+def _ws_search(keyword, path='.', extensions=None):
+    """Search file contents for a keyword.
+
+    Args:
+        keyword: Text to search for (case-insensitive)
+        path: Directory to search in
+        extensions: List of extensions to search (default: common text/data files)
+
+    Returns:
+        List of dicts with file, line_number, line_content
+    """
+    import os, glob as _glob
+    if extensions is None:
+        extensions = ['.csv', '.txt', '.json', '.md', '.py', '.log', '.tsv']
+
+    results = []
+    for ext in extensions:
+        for f in _glob.glob(os.path.join(path, '**', f'*{ext}'), recursive=True):
+            try:
+                with open(f, 'r', encoding='utf-8', errors='ignore') as fh:
+                    for i, line in enumerate(fh, 1):
+                        if keyword.lower() in line.lower():
+                            results.append({
+                                'file': os.path.relpath(f),
+                                'line': i,
+                                'content': line.strip()[:200]
+                            })
+                            if len(results) >= 50:
+                                break
+            except Exception:
+                continue
+            if len(results) >= 50:
+                break
+        if len(results) >= 50:
+            break
+
+    if results:
+        print(f'找到 {len(results)} 处匹配 "{keyword}"：')
+        for r in results[:20]:
+            print(f'  {r["file"]}:{r["line"]} — {r["content"][:100]}')
+        if len(results) > 20:
+            print(f'  ... 还有 {len(results)-20} 处匹配')
+    else:
+        print(f'未找到包含 "{keyword}" 的文件')
+    return results
+
+def _ws_info(path):
+    """Get detailed info about a file or directory.
+
+    Returns:
+        Dict with size, type, modified, preview (first 5 lines for text files).
+    """
+    import os, time as _time
+    abs_path = os.path.abspath(path)
+    if not os.path.exists(abs_path):
+        print(f'文件不存在: {path}')
+        return None
+
+    stat = os.stat(abs_path)
+    info = {
+        'path': os.path.relpath(abs_path),
+        'size': f'{stat.st_size / 1024:.1f} KB' if stat.st_size < 1024*1024 else f'{stat.st_size / (1024*1024):.1f} MB',
+        'modified': _time.strftime('%Y-%m-%d %H:%M:%S', _time.localtime(stat.st_mtime)),
+        'type': 'directory' if os.path.isdir(abs_path) else os.path.splitext(abs_path)[1].lstrip('.'),
+    }
+
+    if os.path.isdir(abs_path):
+        items = os.listdir(abs_path)
+        info['items'] = len(items)
+        info['contents'] = items[:20]
+    elif os.path.isfile(abs_path) and stat.st_size < 1024 * 1024:
+        ext = os.path.splitext(abs_path)[1].lower()
+        if ext in ('.csv', '.txt', '.json', '.md', '.py', '.log', '.tsv', '.html'):
+            try:
+                with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    info['preview'] = [f.readline().rstrip() for _ in range(5)]
+            except Exception:
+                pass
+
+    for k, v in info.items():
+        print(f'  {k}: {v}')
+    return info
+
+def _ws_convert(input_path, output_format='csv'):
+    """Convert a data file between formats (csv/excel/json/parquet).
+
+    Args:
+        input_path: Path to source file
+        output_format: Target format ('csv', 'excel', 'json', 'parquet')
+
+    Returns:
+        Path to output file
+    """
+    import os
+    df = _smart_read_data(input_path)
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    out_dir = 'exports'
+    os.makedirs(out_dir, exist_ok=True)
+
+    fmt = output_format.lower().strip()
+    if fmt == 'csv':
+        out = os.path.join(out_dir, f'{base}.csv')
+        _smart_write_csv(df, out)
+    elif fmt in ('excel', 'xlsx'):
+        out = os.path.join(out_dir, f'{base}.xlsx')
+        df.to_excel(out, index=False, engine='openpyxl')
+    elif fmt == 'json':
+        out = os.path.join(out_dir, f'{base}.json')
+        df.to_json(out, orient='records', force_ascii=False, indent=2)
+    elif fmt == 'parquet':
+        out = os.path.join(out_dir, f'{base}.parquet')
+        df.to_parquet(out, index=False)
+    else:
+        raise ValueError(f'Unsupported format: {output_format}')
+
+    print(f'已转换: {input_path} → {out} ({len(df)} 行)')
+    return out
+
+def _ws_merge(file_paths, output_name='merged', output_format='excel'):
+    """Merge multiple data files into one.
+
+    Args:
+        file_paths: List of file paths to merge
+        output_name: Base filename for output (default 'merged')
+        output_format: Output format ('excel', 'csv', 'json')
+
+    Returns:
+        Merged DataFrame
+    """
+    dfs = []
+    for fp in file_paths:
+        try:
+            df = _smart_read_data(fp)
+            df['_source_file'] = os.path.basename(fp)
+            dfs.append(df)
+            print(f'  读取 {os.path.basename(fp)}: {len(df)} 行, {len(df.columns)} 列')
+        except Exception as e:
+            print(f'  跳过 {fp}: {e}')
+
+    if not dfs:
+        print('没有成功读取任何文件')
+        return pd.DataFrame()
+
+    merged = pd.concat(dfs, ignore_index=True)
+    print(f'\n合并结果: {len(merged)} 行, {len(merged.columns)} 列')
+    return _export_detail(merged, output_name, f'合并数据（{len(file_paths)} 个文件）', format=output_format)
 "###;
 
 #[cfg(test)]

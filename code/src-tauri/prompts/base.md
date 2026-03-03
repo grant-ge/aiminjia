@@ -24,3 +24,10 @@
 【Python 环境】
 
 pandas(pd)、numpy(np)、scipy.stats 已导入。_print_table(headers, rows, title) 输出 Markdown 表格。_export_detail(df, filename, title) 导出 Excel + 预览前 15 行。_smart_read_csv(path) 编码自动检测。工作目录为工作区根目录。
+
+【工作目录结构】
+- uploads/ — 用户上传的文件
+- exports/ — 导出的数据文件（CSV/Excel/JSON）
+- reports/ — 生成的报告（HTML/PDF/DOCX）
+- charts/ — 生成的图表（PNG）
+文件管理函数：_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜文件内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件

@@ -675,8 +675,8 @@ Skill::system_prompt(state) → String
         └─ 模式专属提示词 + 日期注入
              │
              ├─ step=None  → SYSTEM_PROMPT_DAILY + 【当前时间】
-             │   · 4 能力分类（📊数据/💼HR/📝文档/🌐翻译搜索）
-             │   · 决策优先级表（python/search/file/report/直答）
+             │   · 5 能力分类（📊数据/💼HR/📝文档/📁文件管理/🌐翻译搜索）
+             │   · 决策优先级表（python/search/file/文件管理/report/直答）
              │   · 日常工具集：6 个（排除 4 个分析专用工具）
              │
              └─ step=Some(N) → 由 Skill 提供
@@ -1175,6 +1175,11 @@ builtins.open = _safe_open
 | `_print_table(headers, rows, title)` | Markdown 表格格式化输出 |
 | `_export_detail(df, filename, title, preview_rows, format)` | DataFrame 导出（Excel/CSV/JSON）+ 预览 + `__GENERATED_FILE__` 标记。`format` 参数：`'excel'`(默认)/`'csv'`/`'json'` |
 | `_find_data_file(pattern)` | Glob 查找数据文件 |
+| `_ws_list(path, pattern, recursive)` | 列出工作目录文件（名称/大小/修改时间/类型），返回 DataFrame |
+| `_ws_search(keyword, path, extensions)` | 按关键词搜索文件内容（大小写不敏感，最多 50 条匹配） |
+| `_ws_info(path)` | 文件/目录详情（大小/类型/修改时间/预览前 5 行） |
+| `_ws_convert(input_path, output_format)` | 数据文件格式转换（csv/excel/json/parquet），输出固定到 `exports/` |
+| `_ws_merge(file_paths, output_name, output_format)` | 合并多个数据文件为一个，自动添加 `_source_file` 来源列 |
 
 ### 13.4 分析模式预写函数注入
 
