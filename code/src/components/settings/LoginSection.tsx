@@ -24,7 +24,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
 
   const handleLogin = async () => {
     if (!username.trim() || !password) {
-      setError('Please enter username and password')
+      setError('请输入用户名和密码')
       return
     }
 
@@ -51,8 +51,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       setPassword('')
       notifications.push({
         level: 'success',
-        title: 'Login successful',
-        message: `Welcome, ${result.user?.name ?? result.user?.username}`,
+        title: '登录成功',
+        message: `欢迎，${result.user?.name ?? result.user?.username}`,
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -77,8 +77,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     auth.clearAuth()
     notifications.push({
       level: 'info',
-      title: 'Logged out',
-      message: 'Switched to local mode',
+      title: '已退出登录',
+      message: '已切换到本地模式',
       actions: [],
       dismissible: true,
       autoHide: 3,
@@ -143,7 +143,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               </div>
             </div>
             <Button variant="secondary" onClick={handleLogout}>
-              Logout
+              退出登录
             </Button>
           </div>
 
@@ -152,7 +152,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               className="flex items-center gap-1.5 text-xs"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              Balance: <span style={{ color: 'var(--color-text-primary)' }}>{auth.tenant.balance}</span>
+              余额：<span style={{ color: 'var(--color-text-primary)' }}>{auth.tenant.balance}</span>
             </div>
           )}
         </div>
@@ -163,7 +163,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             className="mb-1.5 block text-sm font-semibold"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            Cloud Model
+            云端模型
           </label>
           <div className="flex items-center gap-2">
             <select
@@ -193,7 +193,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               ))}
             </select>
             <Button variant="secondary" onClick={handleRefreshModels}>
-              Refresh
+              刷新
             </Button>
           </div>
         </div>
@@ -205,7 +205,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             color: 'var(--color-primary)',
           }}
         >
-          Cloud mode active. LLM and search requests are routed through the server.
+          云端模式已启用，大模型和搜索请求通过服务端处理。
         </div>
       </div>
     )
@@ -222,16 +222,25 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
         }}
       >
         <div
-          className="mb-3 text-sm font-semibold"
+          className="mb-2 text-sm font-semibold"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          Login to Cloud
+          登录企业账号
         </div>
         <div
           className="mb-3 text-xs"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Login to use cloud LLM and search without configuring API keys.
+          登录后可直接使用云端大模型和联网搜索，无需配置 API Key。
+          企业账号由管理员分配，
+          <a
+            href="https://ai-tenant.renlijia.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            注册企业 →
+          </a>
         </div>
 
         <div className="mb-3">
@@ -243,7 +252,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               borderColor: 'var(--color-border)',
               color: 'var(--color-text-primary)',
             }}
-            placeholder="Username"
+            placeholder="用户名"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -256,7 +265,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               borderColor: 'var(--color-border)',
               color: 'var(--color-text-primary)',
             }}
-            placeholder="Password"
+            placeholder="密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -277,7 +286,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           onClick={handleLogin}
           disabled={loading || !username.trim() || !password}
         >
-          {loading ? 'Logging in...' : 'Login'}
+          {loading ? '登录中...' : '登录'}
         </Button>
       </div>
     </div>
