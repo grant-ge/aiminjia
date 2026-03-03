@@ -23,7 +23,10 @@ jobs:
             artifact-name: macos-arm-installers
             artifact-path: |
               code/src-tauri/target/release/bundle/dmg/*.dmg
-              code/src-tauri/target/release/bundle/macos/*.app
+          - platform: macos-13
+            artifact-name: macos-intel-installers
+            artifact-path: |
+              code/src-tauri/target/release/bundle/dmg/*.dmg
 
     runs-on: ${{ matrix.platform }}
 
@@ -58,7 +61,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: code/src-tauri/python-runtime
-          key: python-runtime-${{ runner.os }}-${{ hashFiles('code/src-tauri/requirements.txt') }}
+          key: python-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('code/src-tauri/requirements.txt') }}
 
       - name: Setup bundled Python runtime (macOS/Linux)
         if: steps.python-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
