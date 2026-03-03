@@ -74,7 +74,7 @@ impl AuthClient {
 
         resp.json::<AuthResponse>()
             .await
-            .map_err(|e| anyhow!("Failed to parse login response: {}", e))
+            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
     }
 
     /// Refresh access token using refresh token.
@@ -95,7 +95,7 @@ impl AuthClient {
 
         resp.json::<AuthResponse>()
             .await
-            .map_err(|e| anyhow!("Failed to parse refresh response: {}", e))
+            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
     }
 
     /// Create a session key for API access.
@@ -116,7 +116,7 @@ impl AuthClient {
 
         resp.json::<SessionKeyResponse>()
             .await
-            .map_err(|e| anyhow!("Failed to parse session key response: {}", e))
+            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
     }
 
     /// List available models from the server.

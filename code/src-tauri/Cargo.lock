@@ -88,6 +88,7 @@ dependencies = [
  "futures",
  "libc",
  "log",
+ "once_cell",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

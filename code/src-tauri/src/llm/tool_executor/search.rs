@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Result};
 use chrono::Datelike;
 use log::info;
+use once_cell::sync::Lazy;
 use serde_json::Value;
 
 use crate::plugin::context::PluginContext;
@@ -122,6 +123,15 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
 }
 
 /// Cloud search via Lotus /v1/search endpoint.
+/// Shared HTTP client for cloud search (connection pool reuse).
+static CLOUD_SEARCH_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+});
+
 async fn cloud_search(
     auth_mgr: &std::sync::Arc<crate::auth::AuthManager>,
     query: &str,
@@ -129,14 +139,8 @@ async fn cloud_search(
 ) -> Result<String> {
     let session_key = auth_mgr.get_session_key().await?;
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-
     let url = "https://ai-tenant.renlijia.com/v1/search";
-    let resp = client
+    let resp = CLOUD_SEARCH_CLIENT
         .post(url)
         .header("Authorization", format!("Bearer {}", session_key))
         .json(&serde_json::json!({

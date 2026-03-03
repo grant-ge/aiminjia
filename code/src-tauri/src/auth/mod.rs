@@ -80,11 +80,17 @@ impl AuthManager {
         let auth_resp = self.client.login(username, password).await?;
 
         let now = Utc::now();
+        if auth_resp.expires_in <= 0 || auth_resp.refresh_expires_in <= 0 {
+            return Err(anyhow!("服务器返回了无效的令牌有效期"));
+        }
         let access_expires = now + chrono::Duration::seconds(auth_resp.expires_in);
         let refresh_expires = now + chrono::Duration::seconds(auth_resp.refresh_expires_in);
 
         // Create session key
         let sk_resp = self.client.create_session_key(&auth_resp.access_token).await?;
+        if sk_resp.expires_in <= 0 {
+            return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
+        }
         let sk_expires = now + chrono::Duration::seconds(sk_resp.expires_in);
 
         // Fetch available models
@@ -134,7 +140,16 @@ impl AuthManager {
                 // Check if refresh token has expired
                 if auth.refresh_expires_at <= Utc::now() {
                     drop(state);
-                    self.logout().await;
+                    // Re-check under write lock to avoid clobbering a concurrent fresh login
+                    let mut wstate = self.state.write().await;
+                    if let Some(current) = wstate.as_ref() {
+                        if current.refresh_expires_at <= Utc::now() {
+                            *wstate = None;
+                            drop(wstate);
+                            self.clear_persisted_auth();
+                            log::info!("Cloud auth refresh token expired, auto-logged out");
+                        }
+                    }
                     return CloudAuthInfo {
                         logged_in: false,
                         user: None,
@@ -194,7 +209,7 @@ impl AuthManager {
         // Try to create new session key with current access_token
         if auth.access_expires_at > now + buffer {
             match self.client.create_session_key(&auth.access_token).await {
-                Ok(sk_resp) => {
+                Ok(sk_resp) if sk_resp.expires_in > 0 => {
                     auth.session_key = sk_resp.session_key.clone();
                     auth.session_key_expires_at = now + chrono::Duration::seconds(sk_resp.expires_in);
                     self.persist_auth(auth);
@@ -204,6 +219,9 @@ impl AuthManager {
                 Err(e) => {
                     log::warn!("Failed to create session key: {}", e);
                 }
+                Ok(_) => {
+                    log::warn!("Session key response has invalid expires_in, skipping");
+                }
             }
         }
 
@@ -211,7 +229,7 @@ impl AuthManager {
         if auth.refresh_expires_at > now + buffer {
             log::info!("Access token expired, refreshing...");
             match self.client.refresh_token(&auth.refresh_token).await {
-                Ok(auth_resp) => {
+                Ok(auth_resp) if auth_resp.expires_in > 0 && auth_resp.refresh_expires_in > 0 => {
                     auth.access_token = auth_resp.access_token.clone();
                     auth.access_expires_at = now + chrono::Duration::seconds(auth_resp.expires_in);
                     auth.refresh_token = auth_resp.refresh_token;
@@ -225,11 +243,17 @@ impl AuthManager {
 
                     // Create new session key
                     let sk_resp = self.client.create_session_key(&auth_resp.access_token).await?;
+                    if sk_resp.expires_in <= 0 {
+                        return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
+                    }
                     auth.session_key = sk_resp.session_key.clone();
                     auth.session_key_expires_at = now + chrono::Duration::seconds(sk_resp.expires_in);
                     self.persist_auth(auth);
                     log::info!("Token refreshed and session key renewed");
                     return Ok(sk_resp.session_key);
+                }
+                Ok(_) => {
+                    log::warn!("Token refresh returned invalid TTL, treating as expired");
                 }
                 Err(e) => {
                     log::warn!("Token refresh failed: {}", e);
@@ -287,7 +311,10 @@ impl AuthManager {
             // Try decryption — if it fails, the data may be plaintext (migration)
             match ss.decrypt(&raw) {
                 Ok(decrypted) => decrypted,
-                Err(_) => raw,
+                Err(e) => {
+                    log::warn!("Decryption failed (trying plaintext fallback): {}", e);
+                    raw
+                }
             }
         } else {
             raw

@@ -34,11 +34,17 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       const result = await cloudLogin(username.trim(), password)
       auth.setAuth(result)
 
-      // Persist the selected cloud model to settings
+      // Persist the selected cloud model to settings (only if not already set)
       if (result.models.length > 0) {
         const settings = await getSettings()
-        await updateSettings({ ...settings, cloudModel: result.models[0].id })
-        useSettingsStore.getState().setSettings({ cloudModel: result.models[0].id })
+        if (!settings.cloudModel) {
+          await updateSettings({ ...settings, cloudModel: result.models[0].id })
+          useSettingsStore.getState().setSettings({ cloudModel: result.models[0].id })
+        } else {
+          // Restore previously selected model
+          const prev = result.models.find((m) => m.id === settings.cloudModel)
+          auth.setSelectedCloudModel(prev ? settings.cloudModel : result.models[0].id)
+        }
       }
 
       setUsername('')
@@ -86,6 +92,15 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       auth.setCloudModels(models)
     } catch (err) {
       console.error('Failed to refresh models:', err)
+      notifications.push({
+        level: 'error',
+        title: '刷新模型列表失败',
+        message: err instanceof Error ? err.message : String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: 'toast',
+      })
     }
   }
 

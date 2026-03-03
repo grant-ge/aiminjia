@@ -612,27 +612,31 @@ pub async fn send_message(
     log::info!("After decryption: primary_api_key len={}", settings.primary_api_key.len());
 
     // Cloud mode override: if logged in, use Lotus gateway with session key
-    if auth_manager.is_logged_in().await {
-        match auth_manager.get_session_key().await {
-            Ok(session_key) => {
-                log::info!("Cloud mode active: routing through Lotus gateway");
-                settings.primary_model = "lotus".to_string();
-                settings.primary_api_key = session_key;
-                // cloud_model is already loaded from settings
-                if settings.cloud_model.is_empty() {
-                    settings.cloud_model = "deepseek-v3".to_string();
-                }
+    // Call get_session_key() directly to avoid TOCTOU race with is_logged_in()
+    match auth_manager.get_session_key().await {
+        Ok(session_key) => {
+            log::info!("Cloud mode active: routing through Lotus gateway");
+            settings.primary_model = "lotus".to_string();
+            settings.primary_api_key = session_key;
+            // cloud_model is already loaded from settings
+            if settings.cloud_model.is_empty() {
+                settings.cloud_model = "deepseek-v3".to_string();
             }
-            Err(e) => {
-                log::warn!("Cloud auth expired: {}", e);
-                // Notify frontend that auth has expired
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("未登录") {
+                // Not logged in — fall through to local mode
+                log::debug!("Not logged in, using local mode");
+            } else {
+                // Was logged in but auth expired
+                log::warn!("Cloud auth expired: {}", msg);
                 let _ = app.emit("auth:expired", serde_json::json!({
-                    "message": e.to_string()
+                    "message": msg
                 }));
-                // Return error instead of silently falling back to local mode
                 let _ = app.emit("streaming:error", serde_json::json!({
                     "conversationId": conversation_id,
-                    "error": format!("云端登录已过期，请重新登录。{}", e)
+                    "error": format!("云端登录已过期，请重新登录。{}", msg)
                 }));
                 return Ok(());
             }

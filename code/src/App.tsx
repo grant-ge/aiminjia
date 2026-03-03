@@ -7,7 +7,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -31,6 +31,13 @@ function App() {
           try {
             const models = await getCloudModels()
             useAuthStore.getState().setCloudModels(models)
+            // Restore selectedCloudModel from persisted settings
+            const saved = await getSettings()
+            if (saved.cloudModel && models.find((m) => m.id === saved.cloudModel)) {
+              useAuthStore.getState().setSelectedCloudModel(saved.cloudModel)
+            } else if (models.length > 0) {
+              useAuthStore.getState().setSelectedCloudModel(models[0].id)
+            }
           } catch (err) {
             console.error('Failed to fetch cloud models on restore:', err)
           }
