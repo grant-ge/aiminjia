@@ -190,6 +190,7 @@ pub fn run() {
             workspace::select_workspace,
             workspace::get_workspace_info,
             workspace::open_logs_directory,
+            workspace::open_workspace_directory,
             // Export commands
             export::export_conversation,
             // Plugin commands

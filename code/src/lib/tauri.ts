@@ -391,6 +391,13 @@ export function openLogsDirectory(): Promise<void> {
   return invoke<void>('open_logs_directory')
 }
 
+/**
+ * Open the workspace root directory in the system file manager.
+ */
+export function openWorkspaceDirectory(): Promise<void> {
+  return invoke<void>('open_workspace_directory')
+}
+
 // ---------------------------------------------------------------------------
 // Plugin Commands
 // ---------------------------------------------------------------------------

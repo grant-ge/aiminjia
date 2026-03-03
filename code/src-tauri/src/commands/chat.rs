@@ -2131,10 +2131,8 @@ async fn agent_loop(
     }
 
     // Post-stream verification: check if LLM falsely claims a format that wasn't produced (Layer 4)
-    if !all_file_metas.is_empty() {
-        if let Some(correction) = verify_file_claims(&full_content, &all_file_metas) {
-            full_content.push_str(&correction);
-        }
+    if let Some(correction) = verify_file_claims(&full_content, &all_file_metas, &workspace_path) {
+        full_content.push_str(&correction);
     }
 
     // Save current step's assistant message
@@ -2394,7 +2392,7 @@ fn finish_agent(
 /// Uses proximity checking (format keyword within 60 chars of an action word)
 /// and excludes negative contexts (失败/不可用/failed etc.) to avoid false positives.
 /// Returns a correction footnote to append, or None if no mismatch found.
-fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta]) -> Option<String> {
+fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta], workspace_path: &std::path::Path) -> Option<String> {
     // Format keywords paired with their format family key
     let format_keywords: &[(&str, &str)] = &[
         ("PDF", "pdf"),
@@ -2448,6 +2446,28 @@ fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta]) -> Option<String>
         neg_words.iter().any(|nw| window.contains(nw))
     }
 
+    // Check 1: files registered but physically missing or empty
+    let mut missing_files: Vec<&str> = Vec::new();
+    for meta in file_metas {
+        let full = workspace_path.join(&meta.stored_path);
+        if !full.exists() || meta.file_size == 0 {
+            missing_files.push(&meta.file_name);
+        }
+    }
+
+    // Check 2: LLM claims export/save but NO files were registered at all
+    let claims_export_no_files = if file_metas.is_empty() {
+        // Look for export claim patterns in the LLM text
+        let export_path_patterns = ["exports/", "reports/", "charts/"];
+        let has_path_mention = export_path_patterns.iter().any(|p| llm_lower.contains(p));
+        let has_action = action_words_zh.iter().any(|w| llm_text.contains(w))
+            || action_words_en.iter().any(|w| llm_lower.contains(w));
+        has_path_mention && has_action
+    } else {
+        false
+    };
+
+    // Check 3: original format mismatch check
     for (display, format_key) in format_keywords {
         if seen_format_keys.contains(format_key) {
             continue;
@@ -2489,19 +2509,37 @@ fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta]) -> Option<String>
         }
     }
 
-    if false_claims.is_empty() {
-        return None;
+    // Build correction message
+    let mut corrections: Vec<String> = Vec::new();
+
+    if !missing_files.is_empty() {
+        corrections.push(format!(
+            "以下文件未能成功生成：{}。请重试导出操作。",
+            missing_files.join("、")
+        ));
     }
 
-    let mut correction = String::from("\n\n---\n> **更正**：");
+    if claims_export_no_files {
+        corrections.push("文件导出未成功完成，请重试。".to_string());
+    }
+
     for (claimed, actual) in &false_claims {
-        correction.push_str(&format!(
+        corrections.push(format!(
             "实际生成的文件格式为 **{}**（非 {}）。",
             actual.to_uppercase(),
             claimed
         ));
     }
-    correction.push_str("请以文件卡片中显示的格式为准。");
+
+    if corrections.is_empty() {
+        return None;
+    }
+
+    let mut correction = String::from("\n\n---\n> **更正**：");
+    correction.push_str(&corrections.join(" "));
+    if !false_claims.is_empty() {
+        correction.push_str("请以文件卡片中显示的格式为准。");
+    }
 
     Some(correction)
 }

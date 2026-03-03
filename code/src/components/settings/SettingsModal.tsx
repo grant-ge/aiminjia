@@ -16,6 +16,7 @@ import {
   getConfiguredProviders,
   switchProvider,
   openLogsDirectory,
+  openWorkspaceDirectory,
 } from '@/lib/tauri'
 import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
@@ -25,7 +26,7 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type MainTab = 'models' | 'general'
+type MainTab = 'models' | 'search' | 'general'
 
 const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
   { value: 'deepseek-v3', label: 'DeepSeek' },
@@ -225,6 +226,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('models')}
         >
           模型配置
+        </TabButton>
+        <TabButton
+          active={mainTab === 'search'}
+          onClick={() => setMainTab('search')}
+        >
+          搜索配置
         </TabButton>
         <TabButton
           active={mainTab === 'general'}
@@ -433,37 +440,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
       )}
 
-      {mainTab === 'general' && (
+      {mainTab === 'search' && (
         <div>
-          {/* Workspace */}
-          <FormGroup label="工作目录" desc="Agent 会在此目录下存放分析文件、报告和临时文件">
-            <div className="flex items-center gap-2">
-              <FormInput
-                value={settings.workspacePath}
-                placeholder="/Users/hr/AI小家工作区"
-                onChange={(v) => settings.setWorkspacePath(v)}
-              />
-              <Button
-                variant="secondary"
-                className="shrink-0"
-                onClick={async () => {
-                  try {
-                    const { open } = await import('@tauri-apps/plugin-dialog')
-                    const selected = await open({ directory: true, multiple: false })
-                    if (selected && typeof selected === 'string') {
-                      settings.setWorkspacePath(selected)
-                      await selectWorkspace(selected)
-                    }
-                  } catch (err) {
-                    console.error('Failed to select workspace directory:', err)
-                  }
-                }}
-              >
-                选择目录
-              </Button>
-            </div>
-          </FormGroup>
-
           {/* Tavily Search API Key */}
           <FormGroup label="Tavily Search API Key" desc="用于联网搜索（可选，备用）">
             <div className="relative">
@@ -513,6 +491,53 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               >
                 {showBochaKey ? '隐藏' : '显示'}
               </button>
+            </div>
+          </FormGroup>
+        </div>
+      )}
+
+      {mainTab === 'general' && (
+        <div>
+          {/* Workspace */}
+          <FormGroup label="工作目录" desc="Agent 会在此目录下存放分析文件、报告和临时文件">
+            <div className="flex items-center gap-2">
+              <FormInput
+                value={settings.workspacePath}
+                placeholder="/Users/hr/AI小家工作区"
+                onChange={(v) => settings.setWorkspacePath(v)}
+              />
+              <Button
+                variant="secondary"
+                className="shrink-0"
+                onClick={async () => {
+                  try {
+                    const { open } = await import('@tauri-apps/plugin-dialog')
+                    const selected = await open({ directory: true, multiple: false })
+                    if (selected && typeof selected === 'string') {
+                      settings.setWorkspacePath(selected)
+                      await selectWorkspace(selected)
+                    }
+                  } catch (err) {
+                    console.error('Failed to select workspace directory:', err)
+                  }
+                }}
+              >
+                选择目录
+              </Button>
+              <Button
+                variant="secondary"
+                className="shrink-0"
+                onClick={async () => {
+                  try {
+                    await openWorkspaceDirectory()
+                  } catch (err) {
+                    console.error('Failed to open workspace directory:', err)
+                  }
+                }}
+                disabled={!settings.workspacePath}
+              >
+                打开目录
+              </Button>
             </div>
           </FormGroup>
 

@@ -33,9 +33,11 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
       }}
     >
       <div
-        className="max-h-[80vh] overflow-y-auto rounded-lg border animate-[modalIn_0.2s_ease-out]"
+        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out]"
         style={{
           width: WIDTH_MAP[size],
+          height: '70vh',
+          maxHeight: '80vh',
           background: 'var(--color-bg-card)',
           borderColor: 'var(--color-border)',
           boxShadow: 'var(--shadow-modal)',
@@ -43,7 +45,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between border-b px-5 py-3.5"
+          className="flex shrink-0 items-center justify-between border-b px-5 py-3.5"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <h3 className="text-lg font-semibold">{title}</h3>
@@ -62,13 +64,13 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-5">{children}</div>
+        {/* Body — scrollable */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
 
         {/* Footer */}
         {footer && (
           <div
-            className="flex items-center justify-end gap-2 border-t px-5 py-3"
+            className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3"
             style={{ borderColor: 'var(--color-border)' }}
           >
             {footer}

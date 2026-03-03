@@ -407,24 +407,35 @@ def _export_detail(df, filename, title='明细数据', preview_rows=15, format='
     fmt = format.lower().strip()
     if fmt == 'csv':
         out_name = f'{base}.csv'
-        full_path = os.path.join(export_dir, out_name)
-        df.to_csv(full_path, index=False, encoding='utf-8-sig')
         fmt_label = 'CSV'
     elif fmt == 'json':
         out_name = f'{base}.json'
-        full_path = os.path.join(export_dir, out_name)
-        df.to_json(full_path, orient='records', force_ascii=False, indent=2)
         fmt_label = 'JSON'
     else:
-        # Default: excel
         fmt = 'excel'
         out_name = f'{base}.xlsx'
-        full_path = os.path.join(export_dir, out_name)
-        df.to_excel(full_path, index=False, engine='openpyxl')
         fmt_label = 'Excel'
+    full_path = os.path.join(export_dir, out_name)
+
+    # Write file with error handling
+    try:
+        if fmt == 'csv':
+            df.to_csv(full_path, index=False, encoding='utf-8-sig')
+        elif fmt == 'json':
+            df.to_json(full_path, orient='records', force_ascii=False, indent=2)
+        else:
+            df.to_excel(full_path, index=False, engine='openpyxl')
+    except Exception as _e:
+        print(f'文件写入失败: {_e}', file=__import__("sys").stderr)
+        return None
+
+    # Verify file was actually created with content
+    if not os.path.exists(full_path) or os.path.getsize(full_path) == 0:
+        print(f'文件写入验证失败: {full_path}', file=__import__("sys").stderr)
+        return None
 
     n = len(df)
-    # Emit structured marker for auto-registration in DB
+    # Emit structured marker for auto-registration in DB (only after verified write)
     # Use json.dumps to prevent title/filename injection into the JSON structure
     _marker = _json_mod.dumps({"path": full_path, "filename": out_name, "title": title, "format": fmt, "rows": n}, ensure_ascii=False)
     print(f'__GENERATED_FILE__:{_marker}')

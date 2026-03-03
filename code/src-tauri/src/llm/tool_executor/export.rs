@@ -76,6 +76,9 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
     // Record the file in the database.
     let stored_path = format!("exports/{}", filename);
     let full_path = ctx.workspace_path.join(&stored_path);
+    if !full_path.exists() {
+        return Err(anyhow!("Export failed: file '{}' was not created", stored_path));
+    }
     let file_size = std::fs::metadata(&full_path)
         .map(|m| m.len())
         .unwrap_or(0);

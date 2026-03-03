@@ -78,3 +78,38 @@ pub async fn open_logs_directory(
 
     Ok(())
 }
+
+/// Open the workspace root directory in the system file manager.
+#[tauri::command]
+pub async fn open_workspace_directory(
+    file_mgr: State<'_, Arc<FileManager>>,
+) -> Result<(), String> {
+    let ws_dir = file_mgr.workspace_path();
+    if !ws_dir.exists() {
+        std::fs::create_dir_all(&ws_dir).map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&ws_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&ws_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&ws_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}

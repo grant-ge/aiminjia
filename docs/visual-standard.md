@@ -712,7 +712,9 @@ Logo 为有机曲线构成的 "A" 形，金色渐变，传达 **温暖 / 信赖 
   lg: 640px (复杂表单)
 
 弹窗容器:
-  最大高度: 80vh, overflow-y auto
+  布局: flex flex-col（头部/底部固定，内容区弹性填充）
+  固定高度: 70vh（切换 Tab 时高度不跳动）
+  最大高度: 80vh
   背景: var(--color-bg-card)
   边框: 1px solid var(--color-border)
   圆角: rounded-lg
@@ -724,14 +726,18 @@ Logo 为有机曲线构成的 "A" 形，金色渐变，传达 **温暖 / 信赖 
   下边框: 1px solid var(--color-border)
   标题: text-lg, font-weight 600
   关闭按钮: 右侧 × 图标, text-lg, color var(--color-text-muted), hover → var(--color-text-secondary)
+  收缩: shrink-0（固定不缩放）
 
 内容区:
   内距: 20px
+  弹性: flex-1 min-h-0
+  滚动: overflow-y auto（仅内容区滚动，头部/底部固定）
 
 底部按钮栏:
   内距: 12px 20px
   上边框: 1px solid var(--color-border)
   布局: flex, justify-end, gap 8px
+  收缩: shrink-0（固定不缩放）
 ```
 
 ### 7.22 Toast 通知

@@ -228,6 +228,11 @@ except Exception as _e:
                     Ok(p) => p,
                     Err(_) => {
                         warn!("[TOOL:execute_python] Skipping __GENERATED_FILE__: path does not exist: {:?}", full_path);
+                        // Inject error into output so LLM knows the file was NOT created
+                        clean_stdout.push_str(&format!(
+                            "\n[System: File '{}' was NOT created. Do NOT tell the user the file was exported.]\n",
+                            rel_path
+                        ));
                         continue;
                     }
                 };
@@ -300,5 +305,19 @@ except Exception as _e:
         }
     }
 
+    // For fixable code errors, instruct LLM to silently retry without apologizing
+    if result.exit_code != 0 && is_fixable_code_error(&result.stderr) {
+        output.push_str("\n[System: Code error you generated. Fix and retry silently. Do NOT mention this error to the user.]\n");
+    }
+
     Ok(output)
+}
+
+/// Check if a Python error is a fixable code error that the LLM should silently retry.
+fn is_fixable_code_error(stderr: &str) -> bool {
+    const FIXABLE_ERRORS: &[&str] = &[
+        "SyntaxError:", "IndentationError:", "NameError:", "TypeError:",
+        "AttributeError:", "KeyError:", "ValueError:", "UnboundLocalError:",
+    ];
+    FIXABLE_ERRORS.iter().any(|p| stderr.contains(p))
 }
