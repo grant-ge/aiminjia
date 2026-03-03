@@ -141,7 +141,7 @@ pub fn run() {
             // Start idle session reaper (every 5 minutes)
             {
                 let session_mgr_clone = session_mgr.clone();
-                tokio::spawn(async move {
+                tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
                     loop {
                         interval.tick().await;
