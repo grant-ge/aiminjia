@@ -43,10 +43,6 @@ log = "0.4"
 # Home directory resolution
 dirs = "6"
 
-# Unix process inspection (kill(pid, 0) for orphan lock detection)
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 # Error handling
 thiserror = "2"
 anyhow = "1"
@@ -64,6 +60,10 @@ bytes = "1"
 # Plugin system
 async-trait = "0.1"
 toml = "0.8"
+
+# Unix process inspection (kill(pid, 0) for orphan lock detection)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
