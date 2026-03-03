@@ -221,7 +221,13 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 | IPC 命令 | `commands/auth.rs` | `cloud_login`/`cloud_logout`/`get_cloud_auth`/`get_cloud_models` |
 | Lotus Provider | `providers/lotus.rs` | OpenAI 兼容格式，Bearer session_key 认证 |
 
-**云端路由**：`chat.rs` 在每次 `send_message` 时检测登录状态 → 覆盖 `primary_model="lotus"` + `primary_api_key=session_key` → `router.rs` 路由到 Lotus provider。
+**云端路由**：`chat.rs` 在每次 `send_message` 时直接调用 `get_session_key()`，通过返回值区分未登录（local mode）和已过期（报错）两种情况，避免 TOCTOU 竞态。成功时覆盖 `primary_model="lotus"` + `primary_api_key=session_key` → `router.rs` 路由到 Lotus provider。
+
+**安全边界**：
+- Token TTL 校验：`expires_in <= 0` 时拒绝，防止服务端异常导致即时过期循环
+- `get_auth_info()` 在 write lock 下双重检查再清除，防止并发 logout 覆盖新 login
+- 解密失败时 fallback 到明文并记录 warn 日志（兼容迁移场景）
+- 云端搜索复用静态 `reqwest::Client`（`once_cell::Lazy`），避免每次请求创建新连接池
 
 ---
 
