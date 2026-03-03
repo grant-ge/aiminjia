@@ -35,6 +35,7 @@ export const TAURI_EVENTS = {
   AGENT_IDLE: 'agent:idle',
   AGENT_PHASE: 'agent:phase',
   STREAMING_STEP_RESET: 'streaming:step-reset',
+  AUTH_EXPIRED: 'auth:expired',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -440,6 +441,48 @@ export function getPluginInfo(): Promise<PluginInfo> {
 }
 
 // ---------------------------------------------------------------------------
+// Auth Commands
+// ---------------------------------------------------------------------------
+
+/** Cloud auth info returned from login/get_cloud_auth. */
+export interface CloudAuthInfo {
+  loggedIn: boolean
+  user: { id: number; name: string; username: string } | null
+  tenant: { id: number; name: string; balance: string } | null
+  models: CloudModel[]
+}
+
+/** Cloud model info from /v1/models. */
+export interface CloudModel {
+  id: string
+  name: string
+}
+
+/**
+ * Login with username and password to Lotus cloud.
+ *
+ * @returns Auth info including user, tenant, and available models
+ */
+export function cloudLogin(username: string, password: string): Promise<CloudAuthInfo> {
+  return invoke<CloudAuthInfo>('cloud_login', { username, password })
+}
+
+/** Logout from cloud mode. */
+export function cloudLogout(): Promise<void> {
+  return invoke<void>('cloud_logout')
+}
+
+/** Get current cloud auth state (for app init / restore). */
+export function getCloudAuth(): Promise<CloudAuthInfo> {
+  return invoke<CloudAuthInfo>('get_cloud_auth')
+}
+
+/** Fetch available cloud models. */
+export function getCloudModels(): Promise<CloudModel[]> {
+  return invoke<CloudModel[]>('get_cloud_models')
+}
+
+// ---------------------------------------------------------------------------
 // Typed Event Listeners
 // ---------------------------------------------------------------------------
 
@@ -624,6 +667,23 @@ export function onFileGenerated(
   handler: (payload: FileGeneratedPayload) => void,
 ): Promise<() => void> {
   return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, (event) => {
+    handler(event.payload)
+  })
+}
+
+export interface AuthExpiredPayload {
+  message: string
+}
+
+/**
+ * Listen for auth:expired events (emitted when cloud session expires and
+ * the backend clears auth state). The frontend should clear its auth store
+ * and prompt the user to re-login.
+ */
+export function onAuthExpired(
+  handler: (payload: AuthExpiredPayload) => void,
+): Promise<() => void> {
+  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
     handler(event.payload)
   })
 }

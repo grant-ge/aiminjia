@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 mod models;
 mod llm;
@@ -94,6 +95,13 @@ pub fn run() {
             // Initialize LLM gateway
             let gateway = Arc::new(llm::gateway::LlmGateway::new(db.clone()));
 
+            // Initialize cloud auth manager
+            let auth_manager = Arc::new(
+                auth::AuthManager::new(db.clone(), secure_storage.clone())
+            );
+            // Restore persisted auth state
+            tauri::async_runtime::block_on(auth_manager.restore());
+
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
@@ -155,6 +163,7 @@ pub fn run() {
             app.manage(file_mgr);
             app.manage(gateway);
             app.manage(secure_storage);
+            app.manage(auth_manager);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
@@ -197,6 +206,11 @@ pub fn run() {
             commands::plugin::list_tools,
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
+            // Auth commands
+            commands::auth::cloud_login,
+            commands::auth::cloud_logout,
+            commands::auth::get_cloud_auth,
+            commands::auth::get_cloud_models,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

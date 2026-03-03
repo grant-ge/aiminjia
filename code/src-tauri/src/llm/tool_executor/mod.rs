@@ -109,6 +109,7 @@ pub(crate) mod tests {
             bocha_api_key: None,
             app_handle: None,
             session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
+            auth_manager: None,
         }
     }
 

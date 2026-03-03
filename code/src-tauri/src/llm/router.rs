@@ -65,6 +65,11 @@ pub fn get_provider_capabilities(provider: &str) -> ProviderCapabilities {
             reasoning_provider: None,
             models_desc: "自定义 OpenAI 兼容模型",
         },
+        "lotus" => ProviderCapabilities {
+            primary_provider: "lotus",
+            reasoning_provider: None,
+            models_desc: "云端模型（登录后可用）",
+        },
         _ => ProviderCapabilities {
             primary_provider: "deepseek-v3",
             reasoning_provider: None,
@@ -165,6 +170,18 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// The reasoning model is auto-determined from provider capabilities.
 /// No separate configuration is needed — the same API key is used.
 pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult {
+    // Cloud mode: if cloud_model is set and primary_model is "lotus",
+    // route everything through the lotus gateway.
+    if settings.primary_model == "lotus" && !settings.cloud_model.is_empty() {
+        return RouteResult {
+            provider: "lotus".to_string(),
+            api_key: settings.primary_api_key.clone(), // session_key
+            model_hint: settings.cloud_model.clone(),
+            use_tools: true,
+            endpoint_url: String::new(),
+        };
+    }
+
     let caps = get_provider_capabilities(&settings.primary_model);
 
     // If auto routing is disabled, always use primary model

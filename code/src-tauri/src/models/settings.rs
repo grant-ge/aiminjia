@@ -42,6 +42,9 @@ pub struct AppSettings {
     pub custom_model_name: String,
     #[serde(default)]
     pub enable_taor_tracking: bool,
+    /// Cloud mode: selected model name from /v1/models (used when logged in).
+    #[serde(default)]
+    pub cloud_model: String,
 }
 
 impl Default for AppSettings {
@@ -65,6 +68,7 @@ impl Default for AppSettings {
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
             enable_taor_tracking: true,
+            cloud_model: String::new(),
         }
     }
 }
@@ -106,6 +110,7 @@ impl AppSettings {
             custom_model_endpoint: get_str("customModelEndpoint", &defaults.custom_model_endpoint),
             custom_model_name: get_str("customModelName", &defaults.custom_model_name),
             enable_taor_tracking: get_bool("enableTaorTracking", defaults.enable_taor_tracking),
+            cloud_model: get_str("cloudModel", &defaults.cloud_model),
         }
     }
 }

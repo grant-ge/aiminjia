@@ -494,6 +494,7 @@ pub async fn send_message(
     tool_registry: State<'_, Arc<ToolRegistry>>,
     skill_registry: State<'_, Arc<SkillRegistry>>,
     session_mgr: State<'_, Arc<crate::python::session::PythonSessionManager>>,
+    auth_manager: State<'_, Arc<crate::auth::AuthManager>>,
     app: AppHandle,
     conversation_id: String,
     content: String,
@@ -609,6 +610,34 @@ pub async fn send_message(
     }
 
     log::info!("After decryption: primary_api_key len={}", settings.primary_api_key.len());
+
+    // Cloud mode override: if logged in, use Lotus gateway with session key
+    if auth_manager.is_logged_in().await {
+        match auth_manager.get_session_key().await {
+            Ok(session_key) => {
+                log::info!("Cloud mode active: routing through Lotus gateway");
+                settings.primary_model = "lotus".to_string();
+                settings.primary_api_key = session_key;
+                // cloud_model is already loaded from settings
+                if settings.cloud_model.is_empty() {
+                    settings.cloud_model = "deepseek-v3".to_string();
+                }
+            }
+            Err(e) => {
+                log::warn!("Cloud auth expired: {}", e);
+                // Notify frontend that auth has expired
+                let _ = app.emit("auth:expired", serde_json::json!({
+                    "message": e.to_string()
+                }));
+                // Return error instead of silently falling back to local mode
+                let _ = app.emit("streaming:error", serde_json::json!({
+                    "conversationId": conversation_id,
+                    "error": format!("云端登录已过期，请重新登录。{}", e)
+                }));
+                return Ok(());
+            }
+        }
+    }
 
     // Fall back to built-in default key ONLY for DeepSeek provider
     // (the built-in key is a DeepSeek key, using it for other providers would cause 401)
@@ -1122,6 +1151,7 @@ pub async fn send_message(
         file_mgr: file_mgr.inner().clone(),
         tool_registry: tool_registry.inner().clone(),
         session_mgr: session_mgr.inner().clone(),
+        auth_manager: auth_manager.inner().clone(),
         app: app.clone(),
         settings,
         workspace_path,
@@ -1308,6 +1338,7 @@ struct AgentContext {
     file_mgr: Arc<FileManager>,
     tool_registry: Arc<ToolRegistry>,
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
+    auth_manager: Arc<crate::auth::AuthManager>,
     app: AppHandle,
     settings: AppSettings,
     workspace_path: std::path::PathBuf,
@@ -1529,7 +1560,7 @@ async fn agent_loop(
 ) {
     // Destructure for convenience (avoids `ctx.` prefix on hot-path variables)
     let AgentContext {
-        db, gateway, file_mgr, tool_registry, session_mgr,
+        db, gateway, file_mgr, tool_registry, session_mgr, auth_manager,
         app, settings, workspace_path, conversation_id, assistant_id,
         masking_level,
     } = ctx;
@@ -1850,6 +1881,7 @@ async fn agent_loop(
             bocha_api_key: bocha_api_key.clone(),
             app_handle: Some(app.clone()),
             session_manager: session_mgr.clone(),
+            auth_manager: Some(auth_manager.clone()),
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---

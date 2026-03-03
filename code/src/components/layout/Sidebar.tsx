@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
+import { useAuthStore } from '@/stores/authStore'
 import type { Conversation } from '@/types/message'
 
 interface SidebarProps {
@@ -54,6 +55,9 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
 
   const busyConversations = useChatStore((s) => s.busyConversations)
   const isNewDisabled = busyConversations.size >= 3
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const authUser = useAuthStore((s) => s.user)
+  const authTenant = useAuthStore((s) => s.tenant)
 
   const grouped = useMemo(() => groupConversations(conversations), [conversations])
 
@@ -246,13 +250,40 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
 
       {/* Footer */}
       <div
-        className="flex items-center justify-between border-t px-4 py-3"
+        className="border-t px-4 py-3"
         style={{
           borderColor: 'var(--color-border)',
           fontSize: 'var(--text-xs)',
           color: 'var(--color-text-muted)',
         }}
       >
+        {isLoggedIn && (
+          <div className="mb-2 flex items-center gap-2">
+            <div
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+              style={{
+                background: 'var(--color-primary-subtle)',
+                color: 'var(--color-primary)',
+              }}
+            >
+              {(authUser?.name ?? authUser?.username ?? '?')[0].toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div
+                className="truncate text-xs font-medium"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                {authUser?.name ?? authUser?.username}
+              </div>
+              {authTenant?.balance && (
+                <div className="truncate text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                  {authTenant.name} · {authTenant.balance}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
         <span>AI小家 v{appVersion}</span>
         <button
           className="flex cursor-pointer items-center gap-1.5 rounded-sm border px-[18px] py-2 text-base font-medium transition-all duration-150"
@@ -280,6 +311,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           </svg>
           设置
         </button>
+        </div>
       </div>
     </aside>
   )

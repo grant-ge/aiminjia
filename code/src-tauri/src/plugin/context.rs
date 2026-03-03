@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::auth::AuthManager;
 use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
 use crate::python::session::PythonSessionManager;
@@ -21,4 +22,5 @@ pub struct PluginContext {
     pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
     pub session_manager: Arc<PythonSessionManager>,
+    pub auth_manager: Option<Arc<AuthManager>>,
 }

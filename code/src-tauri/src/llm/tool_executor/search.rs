@@ -12,7 +12,7 @@ use crate::search::tavily::TavilyClient;
 
 use super::require_str;
 
-/// 1. web_search — search the web via Bocha (primary, if key configured), Bing (free fallback), or Tavily (paid fallback).
+/// 1. web_search — search the web via cloud (if logged in), Bocha, Bing, or Tavily.
 pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Result<String> {
     let raw_query = require_str(args, "query")?;
     let max_results = super::optional_i64(args, "max_results", 5) as u32;
@@ -35,6 +35,17 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     } else {
         format!("{} {}-{}", raw_query, last_year, this_year)
     };
+
+    // 0. Cloud search (if logged in via Lotus)
+    if let Some(ref auth_mgr) = ctx.auth_manager {
+        if auth_mgr.is_logged_in().await {
+            match cloud_search(auth_mgr, &query, max_results).await {
+                Ok(output) if !output.is_empty() => return Ok(output),
+                Ok(_) => info!("Cloud search returned empty results, trying local fallback"),
+                Err(e) => info!("Cloud search failed, trying local fallback: {}", e),
+            }
+        }
+    }
 
     // 1. Try Bocha first (if API key is configured)
     if let Some(api_key) = ctx.bocha_api_key.as_deref() {
@@ -108,4 +119,54 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
 
     // All engines failed (or none configured)
     Err(anyhow!("[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。"))
+}
+
+/// Cloud search via Lotus /v1/search endpoint.
+async fn cloud_search(
+    auth_mgr: &std::sync::Arc<crate::auth::AuthManager>,
+    query: &str,
+    max_results: u32,
+) -> Result<String> {
+    let session_key = auth_mgr.get_session_key().await?;
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let url = "https://ai-tenant.renlijia.com/v1/search";
+    let resp = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .json(&serde_json::json!({
+            "query": query,
+            "max_results": max_results,
+        }))
+        .send()
+        .await?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(anyhow!("Cloud search error ({}): {}", status.as_u16(), body));
+    }
+
+    let body: Value = resp.json().await?;
+
+    // Parse response — expect { results: [{ title, url, content }] }
+    let mut output = String::new();
+    if let Some(results) = body["results"].as_array() {
+        for (i, result) in results.iter().enumerate() {
+            let title = result["title"].as_str().unwrap_or("");
+            let url = result["url"].as_str().unwrap_or("");
+            let content = result["content"].as_str().unwrap_or("");
+            output.push_str(&format!(
+                "{}. **{}**\n   URL: {}\n   {}\n\n",
+                i + 1, title, url, content
+            ));
+        }
+    }
+
+    Ok(output)
 }

@@ -11,6 +11,7 @@ Frontend (React + TS + TailwindCSS 4)
     │ Tauri IPC
     ▼
 commands/chat.rs ── SkillRegistry::detect_activation → Skill routing
+    │                → cloud mode override (auth_manager)
     │                → agent_loop(StepConfig) → finish_agent
     ▼
 plugin/ (插件系统)
@@ -20,12 +21,13 @@ plugin/ (插件系统)
     ▼
 gateway.rs ── masking.rs ── router.rs ── prompts.rs
     ▼
-storage/ · python/ · search/
+auth/ · storage/ · python/ · search/
 ```
 
 | 能力 | 实现 | 关键文件 |
 |------|------|----------|
 | LLM 对话 + Tool Use | 流式请求 + Agent Loop | `gateway.rs`, `chat.rs` |
+| 云端模式 | 登录 → session_key → Lotus provider | `auth/`, `providers/lotus.rs`, `router.rs` |
 | 6 步分析编排 | 显式状态机 + Skill trait | `chat.rs`, `skill_trait.rs` |
 | Python 数据分析 | 分析模式持久 REPL / 日常模式一次性子进程 | `session.rs`, `runner.rs` |
 | PII 脱敏 | 全链路 mask/unmask | `masking.rs` |
@@ -195,11 +197,35 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 
 ## 11. 搜索引擎
 
-三源降级：SearXNG（免费）→ Bocha（付费，中文增强）→ Tavily（付费，全球）。用户在设置中配置优先级和 API Key。
+**本地模式**：三源降级 SearXNG（免费）→ Bocha（付费，中文增强）→ Tavily（付费，全球）。
+
+**云端模式**：优先通过 Lotus `/v1/search` 接口，失败时降级到本地搜索链路。
 
 ---
 
-## 12. 并发与恢复
+## 12. 云端认证
+
+**双模式架构**：未登录使用本地 API Key，登录后 LLM 和搜索均通过 Lotus 云端网关。
+
+```
+登录流程：username/password → JWT(access+refresh) → session_key(sk-sess***)
+续期链：session_key过期 → 用access_token创建新key → access_token过期 → refresh → 创建新key
+全部过期 → 发射 auth:expired 事件 → 前端提示重新登录
+```
+
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| AuthClient | `auth/client.rs` | Lotus HTTP API（login/refresh/session_key/models） |
+| AuthManager | `auth/mod.rs` | 状态管理 + Token 自动续期 + 加密持久化 |
+| CloudAuth | `auth/state.rs` | 认证状态类型定义 |
+| IPC 命令 | `commands/auth.rs` | `cloud_login`/`cloud_logout`/`get_cloud_auth`/`get_cloud_models` |
+| Lotus Provider | `providers/lotus.rs` | OpenAI 兼容格式，Bearer session_key 认证 |
+
+**云端路由**：`chat.rs` 在每次 `send_message` 时检测登录状态 → 覆盖 `primary_model="lotus"` + `primary_api_key=session_key` → `router.rs` 路由到 Lotus provider。
+
+---
+
+## 13. 并发与恢复
 
 - **多会话**：HashMap 3 槽位 + RAII 守卫
 - **崩溃恢复**：`run.lock`（Session UUID）+ 孤儿检测
@@ -207,9 +233,10 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 
 ---
 
-## 13. 安全加固
+## 14. 安全加固
 
-- AES-256-GCM 加密 API Key（密钥存 OS Keychain）
+- AES-256-GCM 加密 API Key 和云端认证令牌（密钥存 OS Keychain）
+- 云端 session_key 自动续期，过期通知前端
 - 工具参数通过临时 JSON 文件传递（防注入）
 - RAII 守卫管理并发槽位（防泄漏）
 - 所有文件路径 canonicalize + workspace 边界校验

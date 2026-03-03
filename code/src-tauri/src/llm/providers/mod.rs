@@ -4,6 +4,7 @@ pub mod claude;
 pub mod custom;
 pub mod deepseek_r1;
 pub mod deepseek_v3;
+pub mod lotus;
 pub mod openai;
 pub mod qwen;
 pub mod volcano;

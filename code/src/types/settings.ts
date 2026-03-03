@@ -29,6 +29,9 @@ export interface Settings {
   // Custom model config
   customModelEndpoint: string
   customModelName: string
+
+  // Cloud mode
+  cloudModel: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -45,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
+  cloudModel: '',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

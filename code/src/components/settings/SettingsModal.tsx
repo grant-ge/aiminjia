@@ -20,13 +20,15 @@ import {
 } from '@/lib/tauri'
 import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
+import { useAuthStore } from '@/stores/authStore'
+import { LoginSection } from '@/components/settings/LoginSection'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
 }
 
-type MainTab = 'models' | 'search' | 'general'
+type MainTab = 'account' | 'models' | 'search' | 'general'
 
 const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
   { value: 'deepseek-v3', label: 'DeepSeek' },
@@ -50,9 +52,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const settings = useSettingsStore()
   const notifications = useNotificationStore()
 
-  const [mainTab, setMainTab] = useState<MainTab>('models')
+  const [mainTab, setMainTab] = useState<MainTab>('account')
   const [activeProvider, setActiveProvider] = useState<LlmProvider>('deepseek-v3')
   const [saving, setSaving] = useState(false)
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
 
   // Per-provider key cache: provider → plaintext key
   const [keyCache, setKeyCache] = useState<Partial<Record<LlmProvider, string>>>({})
@@ -122,9 +125,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         bochaApiKey: settings.bochaApiKey,
         customModelEndpoint: settings.customModelEndpoint,
         customModelName: settings.customModelName,
+        cloudModel: settings.cloudModel,
       })
-
-      // Refresh configured providers list
       const providers = await getConfiguredProviders()
       useSettingsStore.getState().setConfiguredProviders(providers as LlmProvider[])
 
@@ -174,6 +176,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           bochaApiKey: settings.bochaApiKey,
           customModelEndpoint: settings.customModelEndpoint,
           customModelName: settings.customModelName,
+          cloudModel: settings.cloudModel,
         })
       }
 
@@ -222,17 +225,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         style={{ borderColor: 'var(--color-border)' }}
       >
         <TabButton
-          active={mainTab === 'models'}
-          onClick={() => setMainTab('models')}
+          active={mainTab === 'account'}
+          onClick={() => setMainTab('account')}
         >
-          模型配置
+          账户
         </TabButton>
-        <TabButton
-          active={mainTab === 'search'}
-          onClick={() => setMainTab('search')}
-        >
-          搜索配置
-        </TabButton>
+        {!isLoggedIn && (
+          <TabButton
+            active={mainTab === 'models'}
+            onClick={() => setMainTab('models')}
+          >
+            模型配置
+          </TabButton>
+        )}
+        {!isLoggedIn && (
+          <TabButton
+            active={mainTab === 'search'}
+            onClick={() => setMainTab('search')}
+          >
+            搜索配置
+          </TabButton>
+        )}
         <TabButton
           active={mainTab === 'general'}
           onClick={() => setMainTab('general')}
@@ -242,7 +255,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       </div>
 
       {/* Tab Content */}
-      {mainTab === 'models' && (
+      {mainTab === 'account' && (
+        <LoginSection onLoginSuccess={() => setMainTab('account')} />
+      )}
+
+      {mainTab === 'models' && !isLoggedIn && (
         <div>
           {/* Provider Sub-tabs */}
           <div className="mb-4 flex flex-wrap items-center gap-1">
@@ -440,7 +457,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
       )}
 
-      {mainTab === 'search' && (
+      {mainTab === 'search' && !isLoggedIn && (
         <div>
           {/* Tavily Search API Key */}
           <FormGroup label="Tavily Search API Key" desc="用于联网搜索（可选，备用）">

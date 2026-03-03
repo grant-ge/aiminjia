@@ -16,6 +16,7 @@ use anyhow::Result;
 
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::LlmProviderTrait;
+use crate::llm::providers::lotus;
 use crate::llm::providers::claude;
 use crate::llm::providers::custom;
 use crate::llm::providers::deepseek_r1;
@@ -498,6 +499,13 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             );
             p.stream(request).await
         }
+        "lotus" => {
+            let p = lotus::LotusProvider::new(
+                route.api_key.clone(),
+                route.model_hint.clone(),
+            );
+            p.stream(request).await
+        }
         other => {
             log::warn!(
                 "Unknown provider '{}', falling back to deepseek-v3",
@@ -543,6 +551,13 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             let p = custom::CustomProvider::new(
                 route.api_key.clone(),
                 route.endpoint_url.clone(),
+                route.model_hint.clone(),
+            );
+            p.send(request).await
+        }
+        "lotus" => {
+            let p = lotus::LotusProvider::new(
+                route.api_key.clone(),
                 route.model_hint.clone(),
             );
             p.send(request).await
