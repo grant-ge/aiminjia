@@ -63,14 +63,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [showTavilyKey, setShowTavilyKey] = useState(false)
   const [showBochaKey, setShowBochaKey] = useState(false)
 
-  // App version (from tauri.conf.json)
-  const [appVersion, setAppVersion] = useState('...')
-  useEffect(() => {
-    import('@tauri-apps/api/app').then(({ getVersion }) =>
-      getVersion().then(setAppVersion)
-    ).catch(() => setAppVersion('0.0.0'))
-  }, [])
-
   // Load settings + all provider keys when modal opens
   useEffect(() => {
     if (!open) return
@@ -536,9 +528,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               系统信息
             </div>
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                <span>版本：AI小家 v{appVersion}</span>
-              </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>运行日志：</span>
                 <Button
