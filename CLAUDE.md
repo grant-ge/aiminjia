@@ -139,8 +139,8 @@ git add Casks/aijia.rb && git commit -m "Update aijia to vX.Y.Z" && git push
 
 | 渠道 | 地址 |
 |------|------|
-| OSS latest（Landing Page 使用） | `https://lotus-releases.oss-cn-beijing.aliyuncs.com/aijia/latest/{macos-arm64,macos-x64,windows-x64}` |
-| OSS 版本化 | `https://lotus-releases.oss-cn-beijing.aliyuncs.com/aijia/vX.Y.Z/` |
+| OSS latest（Landing Page 使用） | `https://lotus.renlijia.com/aijia/latest/{macos-arm64,macos-x64,windows-x64}` |
+| OSS 版本化 | `https://lotus.renlijia.com/aijia/vX.Y.Z/` |
 | GitHub Release | `https://github.com/grant-ge/aiminjia/releases` |
 | Homebrew | `brew install grant-ge/tap/aijia` |
 

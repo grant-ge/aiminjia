@@ -135,11 +135,11 @@ def main():
 
     print(f"\n==> Upload complete!")
     print(f"\nDownload URLs:")
-    print(f"  macOS ARM:   https://lotus-releases.oss-cn-beijing.aliyuncs.com/{OSS_PREFIX}/latest/macos-arm64")
-    print(f"  macOS Intel: https://lotus-releases.oss-cn-beijing.aliyuncs.com/{OSS_PREFIX}/latest/macos-x64")
-    print(f"  Windows:     https://lotus-releases.oss-cn-beijing.aliyuncs.com/{OSS_PREFIX}/latest/windows-x64")
+    print(f"  macOS ARM:   https://lotus.renlijia.com/{OSS_PREFIX}/latest/macos-arm64")
+    print(f"  macOS Intel: https://lotus.renlijia.com/{OSS_PREFIX}/latest/macos-x64")
+    print(f"  Windows:     https://lotus.renlijia.com/{OSS_PREFIX}/latest/windows-x64")
     print(f"\nVersioned URLs:")
-    print(f"  https://lotus-releases.oss-cn-beijing.aliyuncs.com/{OSS_PREFIX}/v{version}/")
+    print(f"  https://lotus.renlijia.com/{OSS_PREFIX}/v{version}/")
 
 if __name__ == "__main__":
     main()
