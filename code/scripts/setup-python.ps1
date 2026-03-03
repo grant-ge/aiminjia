@@ -20,6 +20,10 @@ if (Test-Path $PYTHON_BIN) {
         Write-Host "To force re-download, delete $TARGET_DIR\ and re-run."
         Write-Host "Installing pip dependencies..."
         & $PYTHON_BIN -m pip install -r $REQUIREMENTS --no-cache-dir -q
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "pip install failed (exit code $LASTEXITCODE)"
+            exit 1
+        }
         Write-Host "Done."
         exit 0
     }
@@ -94,6 +98,10 @@ Write-Host "Python binary: $PYTHON_BIN"
 Write-Host "Installing pip dependencies from $REQUIREMENTS..."
 # Allow source builds on Windows — some packages lack pre-built wheels
 & $PYTHON_BIN -m pip install -r $REQUIREMENTS --no-cache-dir -q
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "pip install failed (exit code $LASTEXITCODE)"
+    exit 1
+}
 
 # ─── Slim down ─────────────────────────────────────────────────────
 Write-Host "Removing unnecessary files to reduce bundle size..."
