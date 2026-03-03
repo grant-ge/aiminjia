@@ -23,10 +23,6 @@ jobs:
             artifact-name: macos-arm-installers
             artifact-path: |
               code/src-tauri/target/release/bundle/dmg/*.dmg
-          - platform: macos-13
-            artifact-name: macos-intel-installers
-            artifact-path: |
-              code/src-tauri/target/release/bundle/dmg/*.dmg
 
     runs-on: ${{ matrix.platform }}
 
