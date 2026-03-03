@@ -60,6 +60,7 @@ analysis/
             │   ├── orchestrator.rs    # 分析步骤状态管理（step state + advance）
             │   ├── checkpoint.rs      # 步骤检查点提取（结构化 LLM 提取 + JSON 解析，extract prompt 由 Skill 提供）
             │   ├── masking.rs         # PII 脱敏（mask_text/unmask，3 级别）
+            │   ├── taor.rs            # TAOR 阶段追踪（Think→Act→Observe→Repeat，agent:phase 事件）
             │   ├── streaming.rs       # SSE 解析
             │   ├── tool_executor/     # 工具 handler 实现（子模块）
             │   │   ├── mod.rs         # FileGenResult、参数提取 helpers、re-export
