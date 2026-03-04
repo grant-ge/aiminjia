@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { updateSettings, getSettings } from '@/lib/tauri'
 import type { Conversation } from '@/types/message'
 
 interface SidebarProps {
@@ -58,6 +60,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const authUser = useAuthStore((s) => s.user)
   const authTenant = useAuthStore((s) => s.tenant)
+  const useCloud = useSettingsStore((s) => s.useCloud)
 
   const grouped = useMemo(() => groupConversations(conversations), [conversations])
 
@@ -281,6 +284,28 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                 </div>
               )}
             </div>
+            <button
+              className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
+              style={{
+                background: useCloud ? 'var(--color-primary-subtle)' : 'var(--color-bg-main)',
+                color: useCloud ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                border: '1px solid',
+                borderColor: useCloud ? 'var(--color-primary)' : 'var(--color-border)',
+                cursor: 'pointer',
+              }}
+              title={useCloud ? '点击切换到本地模式' : '点击切换到云端模式'}
+              onClick={async () => {
+                try {
+                  const s = await getSettings()
+                  await updateSettings({ ...s, useCloud: !useCloud })
+                  useSettingsStore.getState().setSettings({ useCloud: !useCloud })
+                } catch (err) {
+                  console.error('Failed to toggle useCloud:', err)
+                }
+              }}
+            >
+              {useCloud ? '☁ 云端' : '⚡ 本地'}
+            </button>
           </div>
         )}
         <div className="flex items-center justify-between">

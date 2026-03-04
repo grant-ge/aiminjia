@@ -27,6 +27,8 @@ pub struct TenantInfo {
 pub struct CloudModelInfo {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub model_type: String,
 }
 
 /// Full authentication state for cloud mode.

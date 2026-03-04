@@ -31,6 +31,7 @@ export interface Settings {
   customModelName: string
 
   // Cloud mode
+  useCloud: boolean
   cloudModel: string
 }
 
@@ -48,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
+  useCloud: false,
   cloudModel: '',
 }
 

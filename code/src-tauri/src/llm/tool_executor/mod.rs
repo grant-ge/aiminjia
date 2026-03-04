@@ -110,6 +110,7 @@ pub(crate) mod tests {
             app_handle: None,
             session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
             auth_manager: None,
+            use_cloud: false,
         }
     }
 

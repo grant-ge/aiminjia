@@ -3,6 +3,7 @@
  * Displayed inside SettingsModal when in cloud mode or to trigger login.
  */
 import { useState } from 'react'
+import { open } from '@tauri-apps/plugin-shell'
 import { Button } from '@/components/common/Button'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -16,6 +17,7 @@ interface LoginSectionProps {
 export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
   const auth = useAuthStore()
   const notifications = useNotificationStore()
+  const useCloud = useSettingsStore((s) => s.useCloud)
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -38,13 +40,20 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       if (result.models.length > 0) {
         const settings = await getSettings()
         if (!settings.cloudModel) {
-          await updateSettings({ ...settings, cloudModel: result.models[0].id })
-          useSettingsStore.getState().setSettings({ cloudModel: result.models[0].id })
+          await updateSettings({ ...settings, useCloud: true, cloudModel: result.models[0].id })
+          useSettingsStore.getState().setSettings({ useCloud: true, cloudModel: result.models[0].id })
         } else {
-          // Restore previously selected model
+          // Restore previously selected model + enable cloud
+          await updateSettings({ ...settings, useCloud: true })
+          useSettingsStore.getState().setSettings({ useCloud: true })
           const prev = result.models.find((m) => m.id === settings.cloudModel)
           auth.setSelectedCloudModel(prev ? settings.cloudModel : result.models[0].id)
         }
+      } else {
+        // No models but still enable cloud
+        const settings = await getSettings()
+        await updateSettings({ ...settings, useCloud: true })
+        useSettingsStore.getState().setSettings({ useCloud: true })
       }
 
       setUsername('')
@@ -75,6 +84,15 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     }
     // Always clear frontend state regardless of IPC result
     auth.clearAuth()
+    // Disable cloud mode
+    try {
+      const settings = await getSettings()
+      await updateSettings({ ...settings, useCloud: false })
+      useSettingsStore.getState().setSettings({ useCloud: false })
+    } catch (err) {
+      console.error('Failed to update useCloud:', err)
+    }
+    useSettingsStore.getState().setSettings({ useCloud: false })
     notifications.push({
       level: 'info',
       title: '已退出登录',
@@ -106,6 +124,16 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
 
   // --- Logged in state ---
   if (auth.isLoggedIn) {
+    const handleToggleCloud = async (value: boolean) => {
+      try {
+        const settings = await getSettings()
+        await updateSettings({ ...settings, useCloud: value })
+        useSettingsStore.getState().setSettings({ useCloud: value })
+      } catch (err) {
+        console.error('Failed to toggle useCloud:', err)
+      }
+    }
+
     return (
       <div>
         {/* Account info card */}
@@ -157,46 +185,94 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           )}
         </div>
 
-        {/* Cloud model selector */}
+        {/* Model mode toggle */}
         <div className="mb-4">
           <label
             className="mb-1.5 block text-sm font-semibold"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            云端模型
+            模型模式
           </label>
-          <div className="flex items-center gap-2">
-            <select
-              className="h-9 flex-1 rounded-md border px-3 py-2 text-base outline-none"
+          <div
+            className="inline-flex rounded-md border"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <button
+              className="rounded-l-md px-4 py-1.5 text-sm font-medium transition-colors"
               style={{
-                background: 'var(--color-bg-main)',
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text-primary)',
+                background: useCloud ? 'var(--color-primary-subtle)' : 'transparent',
+                color: useCloud ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                border: 'none',
+                cursor: 'pointer',
               }}
-              value={auth.selectedCloudModel}
-              onChange={async (e) => {
-                auth.setSelectedCloudModel(e.target.value)
-                // Persist to settings
-                try {
-                  const settings = await getSettings()
-                  await updateSettings({ ...settings, cloudModel: e.target.value })
-                  useSettingsStore.getState().setSettings({ cloudModel: e.target.value })
-                } catch (err) {
-                  console.error('Failed to save cloud model:', err)
-                }
-              }}
+              onClick={() => handleToggleCloud(true)}
             >
-              {auth.cloudModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            <Button variant="secondary" onClick={handleRefreshModels}>
-              刷新
-            </Button>
+              云端模型
+            </button>
+            <button
+              className="rounded-r-md px-4 py-1.5 text-sm font-medium transition-colors"
+              style={{
+                background: !useCloud ? 'var(--color-primary-subtle)' : 'transparent',
+                color: !useCloud ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                border: 'none',
+                borderLeft: '1px solid var(--color-border)',
+                cursor: 'pointer',
+              }}
+              onClick={() => handleToggleCloud(false)}
+            >
+              本地模型
+            </button>
+          </div>
+          <div
+            className="mt-1 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {useCloud ? '使用企业云端模型，无需 API Key' : '使用本地配置的 API Key 调用模型'}
           </div>
         </div>
+
+        {/* Cloud model selector */}
+        {useCloud && (
+          <div className="mb-4">
+            <label
+              className="mb-1.5 block text-sm font-semibold"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              云端模型
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                className="h-9 flex-1 rounded-md border px-3 py-2 text-base outline-none"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                value={auth.selectedCloudModel}
+                onChange={async (e) => {
+                  auth.setSelectedCloudModel(e.target.value)
+                  // Persist to settings
+                  try {
+                    const settings = await getSettings()
+                    await updateSettings({ ...settings, cloudModel: e.target.value })
+                    useSettingsStore.getState().setSettings({ cloudModel: e.target.value })
+                  } catch (err) {
+                    console.error('Failed to save cloud model:', err)
+                  }
+                }}
+              >
+                {auth.cloudModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}{m.modelType === 'reasoner' ? ' (深度思考)' : ''}
+                  </option>
+                ))}
+              </select>
+              <Button variant="secondary" onClick={handleRefreshModels}>
+                刷新
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div
           className="rounded-md px-3 py-2 text-xs"
@@ -205,7 +281,9 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             color: 'var(--color-primary)',
           }}
         >
-          云端模式已启用，大模型和搜索请求通过服务端处理。
+          {useCloud
+            ? '云端模式已启用，大模型和搜索请求通过服务端处理。'
+            : '本地模式，使用你配置的 API Key 直接调用模型。'}
         </div>
       </div>
     )
@@ -234,9 +312,11 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           登录后可直接使用云端大模型和联网搜索，无需配置 API Key。
           企业账号由管理员分配，
           <a
-            href="https://ai-tenant.renlijia.com/"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault()
+              open('https://ai-tenant.renlijia.com/')
+            }}
             style={{ color: 'var(--color-primary)' }}
           >
             注册企业 →
@@ -252,7 +332,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               borderColor: 'var(--color-border)',
               color: 'var(--color-text-primary)',
             }}
-            placeholder="用户名"
+            placeholder="用户名@企业编码 如 zhangsan@001"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -284,7 +364,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
         <Button
           variant="primary"
           onClick={handleLogin}
-          disabled={loading || !username.trim() || !password}
+          disabled={loading}
         >
           {loading ? '登录中...' : '登录'}
         </Button>

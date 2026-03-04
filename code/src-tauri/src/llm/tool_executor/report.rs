@@ -9,6 +9,7 @@ use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
 use super::FileGenResult;
+use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::{optional_str, require_str};
 use super::util::{py_escape, slugify};
 
@@ -21,12 +22,18 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
         .ok_or_else(|| anyhow::anyhow!("Missing required array argument: sections"))?;
     let format = optional_str(args, "format").unwrap_or("html");
 
+    // Collect PII unmask mapping for this conversation
+    let unmask_map = get_pii_unmask_map(&ctx.storage, &ctx.conversation_id);
+
     // Always generate HTML first (it's the universal intermediate format)
     let html_content = build_html_report(title, sections);
+    // Unmask PII placeholders in report content so users see real values
+    let html_content = unmask_text(&html_content, &unmask_map);
 
     let (final_content, extension, actual_format) = match format {
         "markdown" => {
             let md = build_markdown_report(title, sections);
+            let md = unmask_text(&md, &unmask_map);
             (md.into_bytes(), "md", "markdown")
         }
         "pdf" => {

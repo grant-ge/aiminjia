@@ -23,4 +23,5 @@ pub struct PluginContext {
     pub app_handle: Option<tauri::AppHandle>,
     pub session_manager: Arc<PythonSessionManager>,
     pub auth_manager: Option<Arc<AuthManager>>,
+    pub use_cloud: bool,
 }

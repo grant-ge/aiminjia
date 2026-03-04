@@ -80,32 +80,32 @@ impl AuthManager {
         let auth_resp = self.client.login(username, password).await?;
 
         let now = Utc::now();
-        if auth_resp.expires_in <= 0 || auth_resp.refresh_expires_in <= 0 {
+        if auth_resp.access_expires_at <= now || auth_resp.refresh_expires_at <= now {
             return Err(anyhow!("服务器返回了无效的令牌有效期"));
         }
-        let access_expires = now + chrono::Duration::seconds(auth_resp.expires_in);
-        let refresh_expires = now + chrono::Duration::seconds(auth_resp.refresh_expires_in);
 
         // Create session key
         let sk_resp = self.client.create_session_key(&auth_resp.access_token).await?;
-        if sk_resp.expires_in <= 0 {
+        if sk_resp.expires_at <= now {
             return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
         }
-        let sk_expires = now + chrono::Duration::seconds(sk_resp.expires_in);
 
         // Fetch available models
-        let models = self.client.list_models(&sk_resp.session_key).await
+        let models = self.client.list_models(&sk_resp.key).await
             .unwrap_or_default();
+
+        let user: state::UserInfo = auth_resp.user.into();
+        let tenant: state::TenantInfo = auth_resp.tenant.into();
 
         let cloud_auth = CloudAuth {
             access_token: auth_resp.access_token,
-            access_expires_at: access_expires,
+            access_expires_at: auth_resp.access_expires_at,
             refresh_token: auth_resp.refresh_token,
-            refresh_expires_at: refresh_expires,
-            session_key: sk_resp.session_key,
-            session_key_expires_at: sk_expires,
-            user: auth_resp.user.clone(),
-            tenant: auth_resp.tenant.clone(),
+            refresh_expires_at: auth_resp.refresh_expires_at,
+            session_key: sk_resp.key,
+            session_key_expires_at: sk_resp.expires_at,
+            user: user.clone(),
+            tenant: tenant.clone(),
         };
 
         // Persist and store
@@ -114,8 +114,8 @@ impl AuthManager {
 
         Ok(CloudAuthInfo {
             logged_in: true,
-            user: Some(auth_resp.user),
-            tenant: Some(auth_resp.tenant),
+            user: Some(user),
+            tenant: Some(tenant),
             models,
         })
     }
@@ -209,18 +209,18 @@ impl AuthManager {
         // Try to create new session key with current access_token
         if auth.access_expires_at > now + buffer {
             match self.client.create_session_key(&auth.access_token).await {
-                Ok(sk_resp) if sk_resp.expires_in > 0 => {
-                    auth.session_key = sk_resp.session_key.clone();
-                    auth.session_key_expires_at = now + chrono::Duration::seconds(sk_resp.expires_in);
+                Ok(sk_resp) if sk_resp.expires_at > now => {
+                    auth.session_key = sk_resp.key.clone();
+                    auth.session_key_expires_at = sk_resp.expires_at;
                     self.persist_auth(auth);
                     log::info!("Session key renewed successfully");
-                    return Ok(sk_resp.session_key);
+                    return Ok(sk_resp.key);
                 }
                 Err(e) => {
                     log::warn!("Failed to create session key: {}", e);
                 }
                 Ok(_) => {
-                    log::warn!("Session key response has invalid expires_in, skipping");
+                    log::warn!("Session key response has invalid expires_at, skipping");
                 }
             }
         }
@@ -229,28 +229,29 @@ impl AuthManager {
         if auth.refresh_expires_at > now + buffer {
             log::info!("Access token expired, refreshing...");
             match self.client.refresh_token(&auth.refresh_token).await {
-                Ok(auth_resp) if auth_resp.expires_in > 0 && auth_resp.refresh_expires_in > 0 => {
-                    auth.access_token = auth_resp.access_token.clone();
-                    auth.access_expires_at = now + chrono::Duration::seconds(auth_resp.expires_in);
+                Ok(auth_resp) if auth_resp.access_expires_at > now && auth_resp.refresh_expires_at > now => {
+                    let new_access_token = auth_resp.access_token.clone();
+                    auth.access_token = auth_resp.access_token;
+                    auth.access_expires_at = auth_resp.access_expires_at;
                     auth.refresh_token = auth_resp.refresh_token;
-                    auth.refresh_expires_at = now + chrono::Duration::seconds(auth_resp.refresh_expires_in);
-                    auth.user = auth_resp.user;
-                    auth.tenant = auth_resp.tenant;
+                    auth.refresh_expires_at = auth_resp.refresh_expires_at;
+                    auth.user = auth_resp.user.into();
+                    auth.tenant = auth_resp.tenant.into();
 
                     // Persist refreshed tokens immediately (even before session_key creation)
                     // so they aren't lost if create_session_key fails
                     self.persist_auth(auth);
 
                     // Create new session key
-                    let sk_resp = self.client.create_session_key(&auth_resp.access_token).await?;
-                    if sk_resp.expires_in <= 0 {
+                    let sk_resp = self.client.create_session_key(&new_access_token).await?;
+                    if sk_resp.expires_at <= now {
                         return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
                     }
-                    auth.session_key = sk_resp.session_key.clone();
-                    auth.session_key_expires_at = now + chrono::Duration::seconds(sk_resp.expires_in);
+                    auth.session_key = sk_resp.key.clone();
+                    auth.session_key_expires_at = sk_resp.expires_at;
                     self.persist_auth(auth);
                     log::info!("Token refreshed and session key renewed");
-                    return Ok(sk_resp.session_key);
+                    return Ok(sk_resp.key);
                 }
                 Ok(_) => {
                     log::warn!("Token refresh returned invalid TTL, treating as expired");

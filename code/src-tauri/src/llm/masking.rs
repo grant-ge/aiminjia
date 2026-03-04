@@ -52,6 +52,8 @@ struct MaskCounters {
     company: u32,
     email: u32,
     phone: u32,
+    id_card: u32,
+    bank_card: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,8 @@ impl MaskingContext {
                 company: 0,
                 email: 0,
                 phone: 0,
+                id_card: 0,
+                bank_card: 0,
             },
         }
     }
@@ -169,6 +173,8 @@ impl MaskingContext {
         self.counters.company = self.counters.company.max(other.counters.company);
         self.counters.email = self.counters.email.max(other.counters.email);
         self.counters.phone = self.counters.phone.max(other.counters.phone);
+        self.counters.id_card = self.counters.id_card.max(other.counters.id_card);
+        self.counters.bank_card = self.counters.bank_card.max(other.counters.bank_card);
     }
 
     // -----------------------------------------------------------------------
@@ -187,6 +193,8 @@ impl MaskingContext {
             MaskingLevel::Strict => {
                 let result = self.mask_company_names(text);
                 let result = self.mask_person_names(&result);
+                let result = self.mask_id_cards(&result);
+                let result = self.mask_bank_cards(&result);
                 let result = self.mask_emails(&result);
                 let result = self.mask_phones(&result);
                 result
@@ -205,6 +213,8 @@ impl MaskingContext {
             "COMPANY" => &mut self.counters.company,
             "EMAIL" => &mut self.counters.email,
             "PHONE" => &mut self.counters.phone,
+            "ID_CARD" => &mut self.counters.id_card,
+            "BANK_CARD" => &mut self.counters.bank_card,
             _ => &mut self.counters.person,
         };
         *counter += 1;
@@ -407,6 +417,186 @@ impl MaskingContext {
 
         output
     }
+
+    // -----------------------------------------------------------------------
+    // Pattern: Chinese ID card numbers (Strict only)
+    // -----------------------------------------------------------------------
+
+    /// Detect 18-digit Chinese ID card numbers.
+    /// Format: 6 digits (region) + 4 digits (year) + 2 digits (month) + 2 digits (day) + 3 digits (seq) + 1 check digit (0-9/X/x).
+    /// Also detects 15-digit legacy format: 6 digits (region) + 6 digits (yymmdd) + 3 digits (seq).
+    fn mask_id_cards(&mut self, text: &str) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        let mut output = String::with_capacity(text.len());
+        let mut i = 0;
+
+        while i < chars.len() {
+            // Try 18-digit format first
+            if chars[i].is_ascii_digit() && i + 17 < chars.len() {
+                let preceded_by_digit = i > 0 && chars[i - 1].is_ascii_digit();
+                if !preceded_by_digit {
+                    if let Some(id_len) = self.try_match_id_card_18(&chars[i..]) {
+                        let id_str: String = chars[i..i + id_len].iter().collect();
+                        let placeholder = self.get_or_create_placeholder(&id_str, "ID_CARD");
+                        output.push_str(&placeholder);
+                        i += id_len;
+                        continue;
+                    }
+                }
+            }
+
+            // Try 15-digit legacy format
+            if chars[i].is_ascii_digit() && i + 14 < chars.len() {
+                let preceded_by_digit = i > 0 && chars[i - 1].is_ascii_digit();
+                if !preceded_by_digit {
+                    if let Some(id_len) = self.try_match_id_card_15(&chars[i..]) {
+                        let id_str: String = chars[i..i + id_len].iter().collect();
+                        let placeholder = self.get_or_create_placeholder(&id_str, "ID_CARD");
+                        output.push_str(&placeholder);
+                        i += id_len;
+                        continue;
+                    }
+                }
+            }
+
+            output.push(chars[i]);
+            i += 1;
+        }
+
+        output
+    }
+
+    /// Try to match an 18-digit ID card starting at `chars`.
+    /// Returns Some(18) on success, None on failure.
+    fn try_match_id_card_18(&self, chars: &[char]) -> Option<usize> {
+        if chars.len() < 18 {
+            return None;
+        }
+
+        // First 17 chars must be digits
+        for j in 0..17 {
+            if !chars[j].is_ascii_digit() {
+                return None;
+            }
+        }
+        // 18th char: digit or X/x
+        let last = chars[17];
+        if !last.is_ascii_digit() && last != 'X' && last != 'x' {
+            return None;
+        }
+
+        // Boundary check: char after must not be a digit or X/x
+        if chars.len() > 18 && (chars[18].is_ascii_digit() || chars[18] == 'X' || chars[18] == 'x') {
+            return None;
+        }
+
+        // Validate century: positions 6-7 must be 19 or 20
+        let century = (chars[6].to_digit(10)? * 10) + chars[7].to_digit(10)?;
+        if century != 19 && century != 20 {
+            return None;
+        }
+
+        // Validate month: positions 10-11, must be 01-12
+        let month = (chars[10].to_digit(10)? * 10) + chars[11].to_digit(10)?;
+        if month < 1 || month > 12 {
+            return None;
+        }
+
+        // Validate day: positions 12-13, must be 01-31
+        let day = (chars[12].to_digit(10)? * 10) + chars[13].to_digit(10)?;
+        if day < 1 || day > 31 {
+            return None;
+        }
+
+        Some(18)
+    }
+
+    /// Try to match a 15-digit legacy ID card starting at `chars`.
+    /// Format: 6 digits (region) + 2 digits (yy) + 2 digits (mm) + 2 digits (dd) + 3 digits (seq).
+    /// Returns Some(15) on success, None on failure.
+    fn try_match_id_card_15(&self, chars: &[char]) -> Option<usize> {
+        if chars.len() < 15 {
+            return None;
+        }
+
+        // All 15 chars must be digits
+        for j in 0..15 {
+            if !chars[j].is_ascii_digit() {
+                return None;
+            }
+        }
+
+        // Boundary check: char after must not be a digit
+        if chars.len() > 15 && chars[15].is_ascii_digit() {
+            return None;
+        }
+
+        // Validate month: positions 8-9, must be 01-12
+        let month = (chars[8].to_digit(10)? * 10) + chars[9].to_digit(10)?;
+        if month < 1 || month > 12 {
+            return None;
+        }
+
+        // Validate day: positions 10-11, must be 01-31
+        let day = (chars[10].to_digit(10)? * 10) + chars[11].to_digit(10)?;
+        if day < 1 || day > 31 {
+            return None;
+        }
+
+        Some(15)
+    }
+
+    // -----------------------------------------------------------------------
+    // Pattern: Bank card numbers (Strict only)
+    // -----------------------------------------------------------------------
+
+    /// Detect 16-19 digit bank card numbers with common BIN prefixes.
+    /// Common prefixes: 62 (UnionPay), 4 (Visa), 5 (MC), 3 (AMEX).
+    fn mask_bank_cards(&mut self, text: &str) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        let mut output = String::with_capacity(text.len());
+        let mut i = 0;
+
+        while i < chars.len() {
+            if chars[i].is_ascii_digit() {
+                let preceded_by_digit = i > 0 && chars[i - 1].is_ascii_digit();
+                if !preceded_by_digit {
+                    // Count consecutive digits
+                    let mut end = i;
+                    while end < chars.len() && chars[end].is_ascii_digit() {
+                        end += 1;
+                    }
+                    let digit_len = end - i;
+
+                    // Bank card: 16-19 digits with valid BIN prefix
+                    if digit_len >= 16 && digit_len <= 19 {
+                        let first = chars[i];
+                        let is_valid_bin = first == '6' || first == '4' || first == '5' || first == '3';
+
+                        if is_valid_bin {
+                            let card: String = chars[i..end].iter().collect();
+                            let placeholder = self.get_or_create_placeholder(&card, "BANK_CARD");
+                            output.push_str(&placeholder);
+                            i = end;
+                            continue;
+                        }
+                    }
+
+                    // Not a bank card — push all these digits normally
+                    for j in i..end {
+                        output.push(chars[j]);
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+
+            output.push(chars[i]);
+            i += 1;
+        }
+
+        output
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +691,7 @@ fn find_unmasked_at(text: &str) -> Option<usize> {
 /// Handles both bracketed `[PERSON_1]` and bare `PERSON_1` forms.
 /// Replaces with `[已脱敏]` to avoid leaking placeholder text to users.
 fn replace_residual_placeholders(text: &str) -> String {
-    const CATEGORIES: &[&str] = &["PERSON", "COMPANY", "EMAIL", "PHONE"];
+    const CATEGORIES: &[&str] = &["PERSON", "COMPANY", "EMAIL", "PHONE", "ID_CARD", "BANK_CARD"];
 
     let mut result = text.to_string();
     let mut changed = true;
@@ -998,5 +1188,181 @@ mod tests {
         let llm_output = "分析结果：[PERSON_99]的薪酬偏低";
         let unmasked = ctx.unmask(llm_output);
         assert_eq!(unmasked, "分析结果：[已脱敏]的薪酬偏低");
+    }
+
+    // -- ID card numbers (Strict only) -----------------------------------------
+
+    #[test]
+    fn test_mask_id_card_18_digit() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "身份证号110108199001011234很重要";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[ID_CARD_1]"));
+        assert!(!result.contains("110108199001011234"));
+    }
+
+    #[test]
+    fn test_mask_id_card_18_digit_with_x() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "证件号32012419880315123X请核实";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[ID_CARD_1]"));
+        assert!(!result.contains("32012419880315123X"));
+    }
+
+    #[test]
+    fn test_mask_id_card_15_digit_legacy() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "旧身份证110108900101123号";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[ID_CARD_1]"));
+        assert!(!result.contains("110108900101123"));
+    }
+
+    #[test]
+    fn test_id_card_invalid_month_not_masked() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // Month 13 is invalid
+        let input = "号码110108199013011234不是身份证";
+        let result = ctx.mask_text(input);
+        assert!(!result.contains("[ID_CARD_"));
+    }
+
+    #[test]
+    fn test_id_card_invalid_day_not_masked() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // Day 32 is invalid
+        let input = "号码110108199001321234不是身份证";
+        let result = ctx.mask_text(input);
+        assert!(!result.contains("[ID_CARD_"));
+    }
+
+    #[test]
+    fn test_id_card_not_masked_in_standard() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Standard);
+        let input = "身份证110108199001011234";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("110108199001011234"));
+    }
+
+    #[test]
+    fn test_id_card_vs_phone_no_conflict() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // ID card (18 digits) should be masked as ID_CARD, phone (11 digits) should be masked as PHONE
+        let input = "身份证110108199001011234手机13800138000";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[ID_CARD_1]"), "ID card should be masked");
+        assert!(result.contains("[PHONE_1]"), "Phone should be masked");
+    }
+
+    #[test]
+    fn test_id_card_unmask_roundtrip() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "身份证号110108199001011234请保密";
+        let masked = ctx.mask_text(input);
+        let unmasked = ctx.unmask(&masked);
+        assert_eq!(unmasked, input);
+    }
+
+    // -- Bank card numbers (Strict only) ---------------------------------------
+
+    #[test]
+    fn test_mask_bank_card_unionpay_19() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "银行卡6222021234567890123请核实";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[BANK_CARD_1]"));
+        assert!(!result.contains("6222021234567890123"));
+    }
+
+    #[test]
+    fn test_mask_bank_card_unionpay_16() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "卡号6222021234567890到账";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[BANK_CARD_1]"));
+        assert!(!result.contains("6222021234567890"));
+    }
+
+    #[test]
+    fn test_mask_bank_card_visa() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "Visa卡4123456789012345用于支付";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[BANK_CARD_1]"));
+    }
+
+    #[test]
+    fn test_bank_card_not_masked_in_standard() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Standard);
+        let input = "银行卡6222021234567890123";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("6222021234567890123"));
+    }
+
+    #[test]
+    fn test_bank_card_vs_id_card_no_conflict() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // ID card is 18 digits with valid date; bank card is 19 digits with 62 prefix
+        let input = "身份证110108199001011234银行卡6222021234567890123";
+        let result = ctx.mask_text(input);
+        assert!(result.contains("[ID_CARD_1]"), "ID card should be masked");
+        assert!(result.contains("[BANK_CARD_1]"), "Bank card should be masked");
+    }
+
+    #[test]
+    fn test_bank_card_unmask_roundtrip() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "工资卡6222021234567890123请保密";
+        let masked = ctx.mask_text(input);
+        let unmasked = ctx.unmask(&masked);
+        assert_eq!(unmasked, input);
+    }
+
+    #[test]
+    fn test_bank_card_15_digits_not_masked() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // 15 digits — too short for bank card
+        let input = "号码622202123456789不是银行卡";
+        let result = ctx.mask_text(input);
+        assert!(!result.contains("[BANK_CARD_"));
+    }
+
+    #[test]
+    fn test_bank_card_20_digits_not_masked() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        // 20 digits — too long for bank card
+        let input = "号码62220212345678901234不是银行卡";
+        let result = ctx.mask_text(input);
+        assert!(!result.contains("[BANK_CARD_"));
+    }
+
+    // -- Residual fallback for new categories ----------------------------------
+
+    #[test]
+    fn test_residual_id_card_bank_card_placeholder() {
+        let text = "证件[ID_CARD_1]卡号[BANK_CARD_2]";
+        let result = replace_residual_placeholders(text);
+        assert_eq!(result, "证件[已脱敏]卡号[已脱敏]");
+    }
+
+    // -- All types together including new ones ---------------------------------
+
+    #[test]
+    fn test_strict_masks_all_six_types() {
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let input = "华为公司的员工张三,身份证110108199001011234,银行卡6222021234567890123,电话13800138000,邮箱test@example.com";
+        let result = ctx.mask_text(input);
+
+        assert!(result.contains("[COMPANY_1]"), "Company should be masked");
+        assert!(result.contains("[PERSON_1]"), "Person should be masked");
+        assert!(result.contains("[ID_CARD_1]"), "ID card should be masked");
+        assert!(result.contains("[BANK_CARD_1]"), "Bank card should be masked");
+        assert!(result.contains("[PHONE_1]"), "Phone should be masked");
+        assert!(result.contains("[EMAIL_1]"), "Email should be masked");
+
+        // Unmask roundtrip
+        let unmasked = ctx.unmask(&result);
+        assert_eq!(unmasked, input);
     }
 }

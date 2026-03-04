@@ -9,6 +9,7 @@ use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
 use super::FileGenResult;
+use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::require_str;
 use super::util::{py_escape, indent_python};
 
@@ -79,6 +80,22 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
     if !full_path.exists() {
         return Err(anyhow!("Export failed: file '{}' was not created", stored_path));
     }
+
+    // Unmask PII placeholders in text-based export formats (CSV, JSON)
+    let unmask_map = get_pii_unmask_map(&ctx.storage, &ctx.conversation_id);
+    if !unmask_map.is_empty() {
+        let is_text_format = matches!(format, "csv" | "json" | "tsv");
+        if is_text_format {
+            if let Ok(content) = std::fs::read_to_string(&full_path) {
+                let unmasked = unmask_text(&content, &unmask_map);
+                if unmasked != content {
+                    let _ = std::fs::write(&full_path, &unmasked);
+                    log::info!("[export_data] Unmasked PII placeholders in {}", filename);
+                }
+            }
+        }
+    }
+
     let file_size = std::fs::metadata(&full_path)
         .map(|m| m.len())
         .unwrap_or(0);

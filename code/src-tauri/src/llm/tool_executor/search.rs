@@ -37,13 +37,15 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
         format!("{} {}-{}", raw_query, last_year, this_year)
     };
 
-    // 0. Cloud search (if logged in via Lotus)
-    if let Some(ref auth_mgr) = ctx.auth_manager {
-        if auth_mgr.is_logged_in().await {
-            match cloud_search(auth_mgr, &query, max_results).await {
-                Ok(output) if !output.is_empty() => return Ok(output),
-                Ok(_) => info!("Cloud search returned empty results, trying local fallback"),
-                Err(e) => info!("Cloud search failed, trying local fallback: {}", e),
+    // 0. Cloud search (if use_cloud enabled and logged in via Lotus)
+    if ctx.use_cloud {
+        if let Some(ref auth_mgr) = ctx.auth_manager {
+            if auth_mgr.is_logged_in().await {
+                match cloud_search(auth_mgr, &query, max_results).await {
+                    Ok(output) if !output.is_empty() => return Ok(output),
+                    Ok(_) => info!("Cloud search returned empty results, trying local fallback"),
+                    Err(e) => info!("Cloud search failed, trying local fallback: {}", e),
+                }
             }
         }
     }
@@ -153,7 +155,13 @@ async fn cloud_search(
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("Cloud search error ({}): {}", status.as_u16(), body));
+        // Try to extract error message from JSON response
+        if let Ok(json) = serde_json::from_str::<Value>(&body) {
+            if let Some(msg) = json["error"]["message"].as_str() {
+                return Err(anyhow!("云端搜索失败: {}", msg));
+            }
+        }
+        return Err(anyhow!("云端搜索失败 ({})", status.as_u16()));
     }
 
     let body: Value = resp.json().await?;

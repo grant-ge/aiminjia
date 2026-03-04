@@ -8,6 +8,8 @@ use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent};
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompts;
+use crate::llm::context_decay;
+use crate::llm::analysis_context::AnalysisContext;
 use crate::llm::prompt_guard;
 use crate::llm::taor::PhaseTracker;
 use crate::plugin::{PluginContext, ToolRegistry, SkillRegistry};
@@ -611,36 +613,46 @@ pub async fn send_message(
 
     log::info!("After decryption: primary_api_key len={}", settings.primary_api_key.len());
 
-    // Cloud mode override: if logged in, use Lotus gateway with session key
-    // Call get_session_key() directly to avoid TOCTOU race with is_logged_in()
-    match auth_manager.get_session_key().await {
-        Ok(session_key) => {
-            log::info!("Cloud mode active: routing through Lotus gateway");
-            settings.primary_model = "lotus".to_string();
-            settings.primary_api_key = session_key;
-            // cloud_model is already loaded from settings
-            if settings.cloud_model.is_empty() {
-                settings.cloud_model = "deepseek-v3".to_string();
+    // Cloud mode: only route through Lotus when use_cloud is explicitly enabled
+    if settings.use_cloud {
+        match auth_manager.get_session_key().await {
+            Ok(session_key) => {
+                log::info!("Cloud mode active: routing through Lotus gateway");
+                settings.primary_model = "lotus".to_string();
+                settings.primary_api_key = session_key;
+                // cloud_model is already loaded from settings
+                if settings.cloud_model.is_empty() {
+                    settings.cloud_model = "deepseek-v3".to_string();
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("未登录") {
+                    // use_cloud=true but not logged in — emit error
+                    log::warn!("Cloud mode enabled but not logged in");
+                    let _ = app.emit("streaming:error", serde_json::json!({
+                        "conversationId": conversation_id,
+                        "error": "云端模式已启用，但尚未登录。请在设置中登录企业账号，或切换到本地模式。"
+                    }));
+                    gateway.clear_task(&conversation_id);
+                    return Ok(());
+                } else {
+                    // Was logged in but auth expired
+                    log::warn!("Cloud auth expired: {}", msg);
+                    let _ = app.emit("auth:expired", serde_json::json!({
+                        "message": msg
+                    }));
+                    let _ = app.emit("streaming:error", serde_json::json!({
+                        "conversationId": conversation_id,
+                        "error": "云端服务暂时不可用，请切换到本地模式或重新登录后重试。"
+                    }));
+                    gateway.clear_task(&conversation_id);
+                    return Ok(());
+                }
             }
         }
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("未登录") {
-                // Not logged in — fall through to local mode
-                log::debug!("Not logged in, using local mode");
-            } else {
-                // Was logged in but auth expired
-                log::warn!("Cloud auth expired: {}", msg);
-                let _ = app.emit("auth:expired", serde_json::json!({
-                    "message": msg
-                }));
-                let _ = app.emit("streaming:error", serde_json::json!({
-                    "conversationId": conversation_id,
-                    "error": format!("云端登录已过期，请重新登录。{}", msg)
-                }));
-                return Ok(());
-            }
-        }
+    } else {
+        log::debug!("Local mode: use_cloud=false, skipping cloud auth");
     }
 
     // Fall back to built-in default key ONLY for DeepSeek provider
@@ -1658,6 +1670,27 @@ async fn agent_loop(
     let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref());
     let system_prompt = format!("{}{}", system_prompt, analysis_notes_context);
 
+    // P2: Load structured analysis context (file profiles + findings) and inject into prompt.
+    // Only active in analysis mode — provides persistent file metadata so the LLM
+    // doesn't need to re-discover file structure through tool output on every iteration.
+    let is_analysis = current_step_config.is_some();
+    let mut analysis_ctx = if is_analysis {
+        let ctx = AnalysisContext::load_or_default(&workspace_path, &conversation_id);
+        ctx
+    } else {
+        AnalysisContext::default()
+    };
+    let system_prompt = if is_analysis {
+        let ctx_prompt = analysis_ctx.format_for_prompt();
+        if ctx_prompt.is_empty() {
+            system_prompt
+        } else {
+            format!("{}{}", system_prompt, ctx_prompt)
+        }
+    } else {
+        system_prompt
+    };
+
     // Build allowed-tool set for execution-time enforcement.
     // Even though tool_defs_override controls which tools the LLM *sees*,
     // the LLM may hallucinate tool names not in its schema. This guard
@@ -1697,13 +1730,16 @@ async fn agent_loop(
         }
 
         // Stream from LLM with system prompt and tool filter
+        // P1: Apply context decay to reduce older tool outputs before sending to LLM.
+        // Non-destructive — original `messages` vec is preserved for checkpoint/auto_capture.
+        let decayed_messages = context_decay::apply_decay(&messages, is_analysis);
         let stream_start = std::time::Instant::now();
-        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={}",
-            settings.primary_model, system_prompt.len());
+        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} messages={} (decayed={})",
+            settings.primary_model, system_prompt.len(), messages.len(), decayed_messages.len());
         let stream_result = gateway
             .stream_message(
                 &settings,
-                messages.clone(),
+                decayed_messages,
                 masking_level.clone(),
                 Some(&system_prompt),
                 tool_defs_override.clone(),
@@ -1886,6 +1922,7 @@ async fn agent_loop(
             app_handle: Some(app.clone()),
             session_manager: session_mgr.clone(),
             auth_manager: Some(auth_manager.clone()),
+            use_cloud: settings.use_cloud,
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---
@@ -2124,6 +2161,52 @@ async fn agent_loop(
                 masked_result
             };
             messages.push(ChatMessage::tool_result(&tr.id, &tr.name, truncated_result));
+
+            // P2: Update analysis context from tool results (analysis mode only)
+            if is_analysis {
+                match tr.name.as_str() {
+                    "load_file" => {
+                        // Extract file info from tool result for AnalysisContext
+                        // Try to parse file_id and name from the result content
+                        let file_id = tr.content.lines()
+                            .find(|l| l.contains("file_id:") || l.contains("fileId:"))
+                            .and_then(|l| {
+                                l.split(':').nth(1).map(|s| s.trim().trim_matches('"').to_string())
+                            })
+                            .unwrap_or_default();
+                        let original_name = tr.content.lines()
+                            .find(|l| l.contains("文件名:") || l.contains("fileName:") || l.contains("File:"))
+                            .and_then(|l| {
+                                l.split(':').nth(1).map(|s| s.trim().trim_matches('"').to_string())
+                            })
+                            .unwrap_or_default();
+                        let var_hint = if tr.content.contains("_dfs[") {
+                            format!("_dfs['{}']", file_id)
+                        } else {
+                            "_df".to_string()
+                        };
+                        if !file_id.is_empty() {
+                            analysis_ctx.update_from_load_file(&file_id, &original_name, &var_hint, &tr.content);
+                        } else {
+                            log::warn!(
+                                "[P2] Could not parse file_id from load_file result for conversation {} — \
+                                 AnalysisContext file profile will not be created. Preview: '{}'",
+                                conversation_id,
+                                truncate_for_ui(&tr.content, 200),
+                            );
+                        }
+                    }
+                    "execute_python" => {
+                        analysis_ctx.update_from_python_output(&tr.content);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // P2: Save analysis context to disk after each iteration (crash-safe)
+        if is_analysis {
+            analysis_ctx.save(&workspace_path, &conversation_id);
         }
 
         phase.observe();

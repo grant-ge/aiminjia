@@ -9,6 +9,7 @@
 //! - GET  /v1/models            — list available models
 
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -17,27 +18,54 @@ use super::state::{CloudModelInfo, TenantInfo, UserInfo};
 
 const BASE_URL: &str = "https://ai-tenant.renlijia.com";
 
-/// Raw login/refresh response from the API.
+/// Raw login/refresh response from the API (snake_case fields).
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
-    /// Token TTL in seconds (e.g. 3600 for 1 hour).
-    pub expires_in: i64,
-    /// Refresh token TTL in seconds.
-    pub refresh_expires_in: i64,
-    pub user: UserInfo,
-    pub tenant: TenantInfo,
+    /// Absolute expiration timestamp for access token.
+    pub access_expires_at: DateTime<Utc>,
+    /// Absolute expiration timestamp for refresh token.
+    pub refresh_expires_at: DateTime<Utc>,
+    pub user: AuthUserInfo,
+    pub tenant: AuthTenantInfo,
+}
+
+/// User info as returned by the login/refresh API (snake_case, superset of fields).
+#[derive(Debug, Deserialize)]
+pub struct AuthUserInfo {
+    pub id: i64,
+    pub name: String,
+    pub username: String,
+}
+
+/// Tenant info as returned by the login/refresh API (snake_case, superset of fields).
+#[derive(Debug, Deserialize)]
+pub struct AuthTenantInfo {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub balance: String,
+}
+
+impl From<AuthUserInfo> for UserInfo {
+    fn from(u: AuthUserInfo) -> Self {
+        Self { id: u.id, name: u.name, username: u.username }
+    }
+}
+
+impl From<AuthTenantInfo> for TenantInfo {
+    fn from(t: AuthTenantInfo) -> Self {
+        Self { id: t.id, name: t.name, balance: t.balance }
+    }
 }
 
 /// Raw session key response from the API.
+/// Server returns: { "key": "sk-sess...", "expires_at": "2026-03-05T..." }
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SessionKeyResponse {
-    pub session_key: String,
-    /// TTL in seconds (e.g. 86400 for 24 hours).
-    pub expires_in: i64,
+    pub key: String,
+    pub expires_at: DateTime<Utc>,
 }
 
 /// HTTP client for Lotus tenant portal.
@@ -62,7 +90,7 @@ impl AuthClient {
         let resp = self
             .client
             .post(&url)
-            .json(&json!({ "username": username, "password": password }))
+            .json(&json!({ "method": "username", "username": username, "password": password }))
             .send()
             .await?;
 
@@ -74,7 +102,7 @@ impl AuthClient {
 
         resp.json::<AuthResponse>()
             .await
-            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
+            .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
     /// Refresh access token using refresh token.
@@ -83,7 +111,7 @@ impl AuthClient {
         let resp = self
             .client
             .post(&url)
-            .json(&json!({ "refreshToken": refresh_token }))
+            .json(&json!({ "refresh_token": refresh_token }))
             .send()
             .await?;
 
@@ -95,7 +123,7 @@ impl AuthClient {
 
         resp.json::<AuthResponse>()
             .await
-            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
+            .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
     /// Create a session key for API access.
@@ -116,7 +144,7 @@ impl AuthClient {
 
         resp.json::<SessionKeyResponse>()
             .await
-            .map_err(|_| anyhow!("服务器响应格式异常，请稍后重试"))
+            .map_err(|e| anyhow!("服务器响应格式异常: {}", e))
     }
 
     /// List available models from the server.
@@ -135,7 +163,7 @@ impl AuthClient {
             return Err(parse_api_error(status.as_u16(), &body));
         }
 
-        // OpenAI-compatible /v1/models response: { data: [{ id, ... }] }
+        // OpenAI-compatible /v1/models response: { data: [{ id, type, ... }] }
         let body: serde_json::Value = resp.json().await?;
         let models = body["data"]
             .as_array()
@@ -144,6 +172,7 @@ impl AuthClient {
                     .map(|m| CloudModelInfo {
                         id: m["id"].as_str().unwrap_or("").to_string(),
                         name: m["id"].as_str().unwrap_or("").to_string(),
+                        model_type: m["type"].as_str().unwrap_or("chat").to_string(),
                     })
                     .collect()
             })
@@ -153,15 +182,12 @@ impl AuthClient {
     }
 }
 
-/// Parse API error body into a user-friendly error message.
+/// Parse API error body into a user-friendly Chinese error message.
 fn parse_api_error(status: u16, body: &str) -> anyhow::Error {
-    // Try to parse as JSON { "error": { "message": "..." } } or { "message": "..." }
+    // Try to parse as JSON { "code": int, "message": "..." }
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(msg) = json["error"]["message"].as_str() {
-            return anyhow!("{}", msg);
-        }
-        if let Some(msg) = json["message"].as_str() {
-            return anyhow!("{}", msg);
+        if let Some(msg) = json["error"]["message"].as_str().or(json["message"].as_str()) {
+            return anyhow!("{}", localize_error(msg));
         }
     }
 
@@ -169,6 +195,23 @@ fn parse_api_error(status: u16, body: &str) -> anyhow::Error {
         401 => anyhow!("用户名或密码错误"),
         403 => anyhow!("账户已被禁用"),
         429 => anyhow!("请求过于频繁，请稍后再试"),
-        _ => anyhow!("服务器错误 ({}): {}", status, body),
+        502 | 503 | 504 => anyhow!("服务器暂时不可用，请稍后重试"),
+        500..=599 => anyhow!("服务器内部错误 ({})", status),
+        _ => anyhow!("请求失败 ({})", status),
+    }
+}
+
+/// Translate known English server messages to Chinese.
+fn localize_error(msg: &str) -> &str {
+    match msg {
+        "Invalid credentials" | "user not found" => "用户名或密码错误",
+        "Account is frozen" | "Account is disabled" => "账户已被冻结，请联系管理员",
+        "Tenant is suspended" => "企业账户已被停用，请联系管理员",
+        "Tenant not found" => "企业不存在，请检查用户名中的企业编码",
+        "Too many failed attempts, please try again later" => "登录尝试过多，请稍后再试",
+        "Token expired" | "Invalid token" => "登录已过期，请重新登录",
+        "Insufficient balance" => "账户余额不足，请联系管理员充值",
+        "Rate limit exceeded" => "请求过于频繁，请稍后再试",
+        _ => msg,
     }
 }

@@ -503,6 +503,7 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             let p = lotus::LotusProvider::new(
                 route.api_key.clone(),
                 route.model_hint.clone(),
+                &route.model_type,
             );
             p.stream(request).await
         }
@@ -559,6 +560,7 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             let p = lotus::LotusProvider::new(
                 route.api_key.clone(),
                 route.model_hint.clone(),
+                &route.model_type,
             );
             p.send(request).await
         }

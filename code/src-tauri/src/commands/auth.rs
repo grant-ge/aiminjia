@@ -15,7 +15,11 @@ pub async fn cloud_login(
     username: String,
     password: String,
 ) -> Result<CloudAuthInfo, String> {
-    auth.login(&username, &password).await.map_err(|e| e.to_string())
+    let username = username.trim();
+    if username.is_empty() || password.is_empty() {
+        return Err("请输入用户名和密码".to_string());
+    }
+    auth.login(username, &password).await.map_err(|e| e.to_string())
 }
 
 /// Logout from cloud mode.

@@ -277,6 +277,9 @@ except Exception as _e:
         }
     }
 
+    // P0: Auto-compact large Python output (tables, describe, value_counts)
+    let clean_stdout = compact_python_output(&clean_stdout);
+
     let mut output = String::new();
     output.push_str(&format!("[Purpose: {}]\n", purpose));
     output.push_str(&format!("Exit code: {}\n", result.exit_code));
@@ -313,6 +316,323 @@ except Exception as _e:
     Ok(output)
 }
 
+// ---------------------------------------------------------------------------
+// P0: Single-output compaction — compress large pandas output to save context
+// ---------------------------------------------------------------------------
+
+/// Threshold (chars) above which stdout is auto-compacted.
+const SUMMARY_THRESHOLD_CHARS: usize = 4000;
+
+/// Compact large Python stdout to reduce LLM context usage.
+///
+/// When the total output exceeds [`SUMMARY_THRESHOLD_CHARS`], the function
+/// detects and compresses common pandas output patterns:
+///
+/// - **DataFrame tables** (aligned columns): keep header + first 3 rows + last row
+/// - **`describe()` output**: keep count/mean/std/min/max, fold percentiles
+/// - **`value_counts()`**: keep top 5 + bottom 1 + total count
+/// - **Plain text** (print statements): preserved verbatim
+///
+/// Non-table text (print statements, JSON, etc.) is always kept.
+pub(crate) fn compact_python_output(stdout: &str) -> String {
+    if stdout.len() <= SUMMARY_THRESHOLD_CHARS {
+        return stdout.to_string();
+    }
+
+    let mut result = String::new();
+    let lines: Vec<&str> = stdout.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        // Try to detect a block starting at line i
+        if let Some((compacted, consumed)) = try_compact_block(&lines, i) {
+            result.push_str(&compacted);
+            result.push('\n');
+            i += consumed;
+        } else {
+            result.push_str(lines[i]);
+            result.push('\n');
+            i += 1;
+        }
+    }
+
+    if result.len() < stdout.len() {
+        info!(
+            "[compact_python_output] Compacted {} → {} chars (saved {})",
+            stdout.len(),
+            result.len(),
+            stdout.len() - result.len()
+        );
+    }
+    result
+}
+
+/// Try to detect and compact a pandas output block starting at `start`.
+/// Returns `Some((compacted_text, lines_consumed))` or `None` if not a table.
+fn try_compact_block(lines: &[&str], start: usize) -> Option<(String, usize)> {
+    if start >= lines.len() {
+        return None;
+    }
+
+    // Detect describe() output: first non-empty line is all column headers,
+    // second line starts with a stat name like "count", "mean", etc.
+    if let Some(r) = try_compact_describe(lines, start) {
+        return Some(r);
+    }
+
+    // Detect value_counts() output: lines like "value    count" with optional dtype footer
+    if let Some(r) = try_compact_value_counts(lines, start) {
+        return Some(r);
+    }
+
+    // Detect DataFrame table: aligned columns with separator or index
+    if let Some(r) = try_compact_dataframe(lines, start) {
+        return Some(r);
+    }
+
+    None
+}
+
+/// Compact a `describe()` output block.
+/// Pattern: header row + stat rows (count, mean, std, min, 25%, 50%, 75%, max).
+fn try_compact_describe(lines: &[&str], start: usize) -> Option<(String, usize)> {
+    const DESCRIBE_STATS: &[&str] = &[
+        "count", "mean", "std", "min", "25%", "50%", "75%", "max",
+        "unique", "top", "freq",
+    ];
+    const KEEP_STATS: &[&str] = &["count", "mean", "std", "min", "max", "unique", "top", "freq"];
+    const FOLD_STATS: &[&str] = &["25%", "50%", "75%"];
+
+    // Need at least header + a few stat lines
+    if start + 3 >= lines.len() {
+        return None;
+    }
+
+    // Check: line after header should start with a known stat name
+    let header_line = lines[start];
+    let first_stat_line_idx = start + 1;
+    let first_stat_line = lines[first_stat_line_idx].trim_start();
+
+    let is_describe = DESCRIBE_STATS.iter().any(|s| first_stat_line.starts_with(s));
+    if !is_describe {
+        return None;
+    }
+
+    // Collect all stat lines
+    let mut end = first_stat_line_idx;
+    while end < lines.len() {
+        let trimmed = lines[end].trim_start();
+        let is_stat = DESCRIBE_STATS.iter().any(|s| trimmed.starts_with(s));
+        if !is_stat && !trimmed.is_empty() && end > first_stat_line_idx {
+            break;
+        }
+        if trimmed.is_empty() && end > first_stat_line_idx {
+            break;
+        }
+        end += 1;
+    }
+
+    let consumed = end - start;
+    if consumed < 4 {
+        return None; // Too few lines to be a describe block
+    }
+
+    let mut out = String::new();
+    out.push_str(header_line);
+    out.push('\n');
+
+    let mut folded_parts: Vec<&str> = Vec::new();
+    for &line in &lines[first_stat_line_idx..end] {
+        let trimmed = line.trim_start();
+        if FOLD_STATS.iter().any(|s| trimmed.starts_with(s)) {
+            folded_parts.push(trimmed.split_whitespace().next().unwrap_or(""));
+        } else if KEEP_STATS.iter().any(|s| trimmed.starts_with(s)) {
+            out.push_str(line);
+            out.push('\n');
+        } else if !trimmed.is_empty() {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    if !folded_parts.is_empty() {
+        out.push_str(&format!("[percentiles ({}) omitted]\n", folded_parts.join(",")));
+    }
+
+    Some((out, consumed))
+}
+
+/// Compact a `value_counts()` output block.
+/// Pattern: value + count pairs, possibly a "Name:" / "dtype:" footer.
+fn try_compact_value_counts(lines: &[&str], start: usize) -> Option<(String, usize)> {
+    // value_counts typically looks like:
+    //   Category A    45
+    //   Category B    32
+    //   ...
+    //   Name: col, dtype: int64
+    // OR just:
+    //   Category A    45
+    //   Category B    32
+    //   ...
+    //   Name: col, Length: N, dtype: int64
+
+    // Heuristic: at least 8 lines of "label  number" pattern to be worth compacting
+    let mut data_lines: Vec<usize> = Vec::new();
+    let mut footer_end = start;
+    let mut has_name_footer = false;
+
+    for idx in start..lines.len() {
+        let line = lines[idx].trim();
+        if line.is_empty() {
+            footer_end = idx + 1;
+            break;
+        }
+        if line.starts_with("Name:") || line.starts_with("dtype:") || line.starts_with("Length:") {
+            has_name_footer = true;
+            footer_end = idx + 1;
+            // Consume any trailing blank line
+            if footer_end < lines.len() && lines[footer_end].trim().is_empty() {
+                footer_end += 1;
+            }
+            break;
+        }
+        // Check if this looks like a value_count row: text followed by whitespace and a number
+        let parts: Vec<&str> = line.rsplitn(2, char::is_whitespace).collect();
+        if parts.len() == 2 && parts[0].trim().parse::<f64>().is_ok() {
+            data_lines.push(idx);
+        } else {
+            // Not a value_counts pattern
+            if data_lines.is_empty() {
+                return None;
+            }
+            footer_end = idx;
+            break;
+        }
+        footer_end = idx + 1;
+    }
+
+    // Need at least 8 data lines to be worth compacting
+    if data_lines.len() < 8 {
+        return None;
+    }
+
+    let consumed = footer_end - start;
+
+    // Keep top 5 + bottom 1
+    let mut out = String::new();
+    for &idx in data_lines.iter().take(5) {
+        out.push_str(lines[idx]);
+        out.push('\n');
+    }
+    out.push_str(&format!("[...{} more values]\n", data_lines.len() - 6));
+    if let Some(&last_idx) = data_lines.last() {
+        out.push_str(lines[last_idx]);
+        out.push('\n');
+    }
+    if has_name_footer {
+        // Include the footer line
+        let footer_idx = footer_end - if lines.get(footer_end - 1).map_or(false, |l| l.trim().is_empty()) { 2 } else { 1 };
+        if footer_idx < lines.len() {
+            out.push_str(lines[footer_idx]);
+            out.push('\n');
+        }
+    }
+    out.push_str(&format!("[total: {} unique values]\n", data_lines.len()));
+
+    Some((out, consumed))
+}
+
+/// Compact a DataFrame table output.
+/// Pattern: column header row + data rows (aligned with spaces).
+///
+/// Heuristics:
+/// - A "header" line has 2+ space-separated tokens
+/// - Subsequent lines are "data rows" if they have a similar column structure
+/// - If total data rows > 6, keep first 3 + last 1 + summary
+fn try_compact_dataframe(lines: &[&str], start: usize) -> Option<(String, usize)> {
+    if start >= lines.len() {
+        return None;
+    }
+
+    let header_line = lines[start];
+    let header_tokens: Vec<&str> = header_line.split_whitespace().collect();
+    if header_tokens.len() < 3 {
+        return None;
+    }
+
+    // Count consecutive data rows after the header
+    let mut data_start = start + 1;
+    let mut data_end = data_start;
+
+    // Skip optional separator line (e.g., "---" or "===")
+    if data_start < lines.len() {
+        let sep = lines[data_start].trim();
+        if sep.chars().all(|c| c == '-' || c == '=' || c == ' ' || c == '+') && sep.len() > 3 {
+            data_start += 1;
+            data_end = data_start;
+        }
+    }
+
+    // Data rows: non-empty lines with content
+    while data_end < lines.len() {
+        let line = lines[data_end].trim();
+        if line.is_empty() {
+            break;
+        }
+        // Footer detection: "[N rows x M columns]"
+        if line.starts_with('[') && line.contains("rows") {
+            data_end += 1;
+            break;
+        }
+        data_end += 1;
+    }
+
+    let total_data_rows = data_end - data_start;
+    let consumed = data_end - start;
+
+    // Only compact if there are enough rows to make it worthwhile
+    if total_data_rows <= 6 {
+        return None;
+    }
+
+    let mut out = String::new();
+    // Header
+    out.push_str(header_line);
+    out.push('\n');
+    // Separator if present
+    if data_start > start + 1 {
+        out.push_str(lines[start + 1]);
+        out.push('\n');
+    }
+    // First 3 data rows
+    for i in data_start..(data_start + 3).min(data_end) {
+        out.push_str(lines[i]);
+        out.push('\n');
+    }
+    // Omission marker
+    out.push_str(&format!("[...{} more rows]\n", total_data_rows.saturating_sub(4)));
+    // Last data row
+    if data_end > data_start {
+        let last_data = data_end - 1;
+        // Check if last line is a footer
+        let last_trimmed = lines[last_data].trim();
+        if last_trimmed.starts_with('[') && last_trimmed.contains("rows") {
+            // The footer line — include it; use second-to-last as data
+            if last_data > data_start {
+                out.push_str(lines[last_data - 1]);
+                out.push('\n');
+            }
+            out.push_str(lines[last_data]);
+            out.push('\n');
+        } else {
+            out.push_str(lines[last_data]);
+            out.push('\n');
+        }
+    }
+
+    Some((out, consumed))
+}
+
 /// Check if a Python error is a fixable code error that the LLM should silently retry.
 fn is_fixable_code_error(stderr: &str) -> bool {
     const FIXABLE_ERRORS: &[&str] = &[
@@ -320,4 +640,118 @@ fn is_fixable_code_error(stderr: &str) -> bool {
         "AttributeError:", "KeyError:", "ValueError:", "UnboundLocalError:",
     ];
     FIXABLE_ERRORS.iter().any(|p| stderr.contains(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_below_threshold_is_noop() {
+        let short = "hello\nworld\n";
+        assert_eq!(compact_python_output(short), short);
+    }
+
+    #[test]
+    fn compact_describe_folds_percentiles() {
+        // Build a describe() block that exceeds the threshold
+        let mut input = String::new();
+        // Header
+        input.push_str("         salary    bonus    tenure\n");
+        input.push_str("count   1000.00  1000.00   1000.00\n");
+        input.push_str("mean   50000.00  5000.00     5.50\n");
+        input.push_str("std    15000.00  2000.00     3.20\n");
+        input.push_str("min    20000.00   500.00     0.10\n");
+        input.push_str("25%    38000.00  3500.00     2.80\n");
+        input.push_str("50%    48000.00  4800.00     5.00\n");
+        input.push_str("75%    60000.00  6200.00     8.00\n");
+        input.push_str("max    95000.00 12000.00    15.00\n");
+        // Pad to exceed threshold
+        input.push_str(&"x".repeat(SUMMARY_THRESHOLD_CHARS));
+
+        let result = compact_python_output(&input);
+        assert!(result.contains("count"));
+        assert!(result.contains("mean"));
+        assert!(result.contains("max"));
+        assert!(result.contains("percentiles"));
+        // Percentile rows should be folded
+        assert!(!result.contains("\n50%"));
+    }
+
+    #[test]
+    fn compact_value_counts_keeps_top5_bottom1() {
+        let mut input = String::new();
+        for i in 0..20 {
+            input.push_str(&format!("Category_{}    {}\n", i, 100 - i * 5));
+        }
+        input.push_str("Name: department, dtype: int64\n");
+        // Pad to exceed threshold
+        input.push_str(&"z".repeat(SUMMARY_THRESHOLD_CHARS));
+
+        let result = compact_python_output(&input);
+        // Should keep first 5 categories
+        assert!(result.contains("Category_0"));
+        assert!(result.contains("Category_4"));
+        // Should have omission marker
+        assert!(result.contains("more values"));
+        // Should keep last value
+        assert!(result.contains("Category_19"));
+    }
+
+    #[test]
+    fn compact_dataframe_table() {
+        let mut input = String::new();
+        input.push_str("   name    salary  department  level\n");
+        for i in 0..20 {
+            input.push_str(&format!("{}  Alice{}  50000      Engineering  L{}\n", i, i, i));
+        }
+        // Pad to exceed threshold
+        input.push_str(&"p".repeat(SUMMARY_THRESHOLD_CHARS));
+
+        let result = compact_python_output(&input);
+        assert!(result.contains("name"));
+        // First 3 data rows kept
+        assert!(result.contains("Alice0"));
+        assert!(result.contains("Alice2"));
+        // Should have omission marker
+        assert!(result.contains("more rows"));
+    }
+
+    #[test]
+    fn compact_preserves_plain_text() {
+        let mut input = String::new();
+        input.push_str("Data loaded successfully.\n");
+        input.push_str("Found 1000 rows and 15 columns.\n");
+        input.push_str("Processing complete.\n");
+        // Pad to exceed threshold
+        input.push_str(&"t".repeat(SUMMARY_THRESHOLD_CHARS));
+
+        let result = compact_python_output(&input);
+        assert!(result.contains("Data loaded successfully."));
+        assert!(result.contains("Found 1000 rows"));
+        assert!(result.contains("Processing complete."));
+    }
+
+    #[test]
+    fn compact_mixed_output() {
+        let mut input = String::new();
+        input.push_str("Loading data...\n");
+        input.push_str("         salary    bonus\n");
+        input.push_str("count   1000.00  1000.00\n");
+        input.push_str("mean   50000.00  5000.00\n");
+        input.push_str("std    15000.00  2000.00\n");
+        input.push_str("min    20000.00   500.00\n");
+        input.push_str("25%    38000.00  3500.00\n");
+        input.push_str("50%    48000.00  4800.00\n");
+        input.push_str("75%    60000.00  6200.00\n");
+        input.push_str("max    95000.00 12000.00\n");
+        input.push_str("\nDone.\n");
+        // Pad to exceed threshold
+        input.push_str(&"q".repeat(SUMMARY_THRESHOLD_CHARS));
+
+        let result = compact_python_output(&input);
+        assert!(result.contains("Loading data..."));
+        assert!(result.contains("Done."));
+        assert!(result.contains("percentiles"));
+    }
 }

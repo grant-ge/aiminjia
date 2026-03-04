@@ -7,9 +7,10 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings, updateSettings } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 
 function App() {
@@ -31,8 +32,9 @@ function App() {
           try {
             const models = await getCloudModels()
             useAuthStore.getState().setCloudModels(models)
-            // Restore selectedCloudModel from persisted settings
+            // Restore selectedCloudModel and useCloud from persisted settings
             const saved = await getSettings()
+            useSettingsStore.getState().setSettings({ useCloud: saved.useCloud ?? false })
             if (saved.cloudModel && models.find((m) => m.id === saved.cloudModel)) {
               useAuthStore.getState().setSelectedCloudModel(saved.cloudModel)
             } else if (models.length > 0) {
@@ -41,6 +43,13 @@ function App() {
           } catch (err) {
             console.error('Failed to fetch cloud models on restore:', err)
           }
+        } else {
+          // Not logged in — ensure useCloud is false
+          const saved = await getSettings()
+          if (saved.useCloud) {
+            await updateSettings({ ...saved, useCloud: false }).catch(() => {})
+          }
+          useSettingsStore.getState().setSettings({ useCloud: false })
         }
       })
       .catch((err) => console.error('Failed to restore cloud auth:', err))
@@ -51,10 +60,11 @@ function App() {
     const unlisten = onAuthExpired(({ message }) => {
       console.warn('[auth:expired]', message)
       useAuthStore.getState().clearAuth()
+      // Keep useCloud unchanged — user must explicitly switch
       useNotificationStore.getState().push({
         level: 'warning',
         title: '登录已过期',
-        message: '请重新登录以使用云端服务',
+        message: '云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。',
         actions: [],
         dismissible: true,
         autoHide: 8,

@@ -456,6 +456,7 @@ export interface CloudAuthInfo {
 export interface CloudModel {
   id: string
   name: string
+  modelType: string
 }
 
 /**

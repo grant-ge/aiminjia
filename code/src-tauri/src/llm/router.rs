@@ -107,6 +107,8 @@ pub struct RouteResult {
     pub use_tools: bool,
     /// Custom endpoint URL (only used by "custom" provider)
     pub endpoint_url: String,
+    /// Model type for Lotus cloud routing: "chat" or "reasoner"
+    pub model_type: String,
 }
 
 /// Infer the task type from the conversation messages.
@@ -170,15 +172,18 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// The reasoning model is auto-determined from provider capabilities.
 /// No separate configuration is needed — the same API key is used.
 pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult {
-    // Cloud mode: if cloud_model is set and primary_model is "lotus",
-    // route everything through the lotus gateway.
-    if settings.primary_model == "lotus" && !settings.cloud_model.is_empty() {
+    // Cloud mode: if primary_model is "lotus", route through Lotus gateway.
+    // TaskType::Reasoning → reasoner endpoint, all others → chat endpoint.
+    // Model name is empty — server auto-selects by priority.
+    if settings.primary_model == "lotus" {
+        let model_type = if *task_type == TaskType::Reasoning { "reasoner" } else { "chat" };
         return RouteResult {
             provider: "lotus".to_string(),
             api_key: settings.primary_api_key.clone(), // session_key
             model_hint: settings.cloud_model.clone(),
-            use_tools: true,
+            use_tools: model_type != "reasoner",
             endpoint_url: String::new(),
+            model_type: model_type.to_string(),
         };
     }
 
@@ -192,6 +197,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
             model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
             endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            model_type: String::new(),
         };
     }
 
@@ -204,6 +210,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
             model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
             endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            model_type: String::new(),
         },
         // Reasoning tasks use the reasoning variant if available (same API key)
         TaskType::Reasoning => {
@@ -214,6 +221,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
                     model_hint: String::new(),
                     use_tools: false,
                     endpoint_url: String::new(),
+                    model_type: String::new(),
                 }
             } else {
                 // No reasoning variant — use primary model
@@ -223,6 +231,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
                     model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
                     use_tools: true,
                     endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+                    model_type: String::new(),
                 }
             }
         }
@@ -233,6 +242,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
             model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
             use_tools: true,
             endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            model_type: String::new(),
         },
     }
 }
