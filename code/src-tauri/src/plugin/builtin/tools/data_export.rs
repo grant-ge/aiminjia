@@ -14,7 +14,9 @@ impl ToolPlugin for DataExportTool {
     fn name(&self) -> &str { "export_data" }
 
     fn description(&self) -> &str {
-        "Export data to CSV/Excel/JSON. Two input modes: (1) source_file — convert a previously generated file to another format; (2) data — export pre-computed JSON records. For exporting DataFrame results from execute_python, prefer _export_detail(df, filename, format='csv'|'excel'|'json') inside execute_python instead — it handles file registration automatically."
+        "Export data to CSV/Excel/JSON. RECOMMENDED: use _export_detail(df, filename, format) inside execute_python for DataFrame export. \
+         Alternative modes: (1) source_file — path to an existing file to convert format; \
+         (2) data — actual JSON record array (NOT variable names like '_df')."
     }
 
     fn input_schema(&self) -> Value {

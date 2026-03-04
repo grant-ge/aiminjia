@@ -10,17 +10,25 @@ use crate::python::runner::PythonRunner;
 
 use super::FileGenResult;
 use super::file_load::{get_pii_unmask_map, unmask_text};
-use super::{optional_str, require_str};
+use super::optional_str;
 use super::util::{py_escape, slugify};
 
 /// 4. generate_report — build a structured HTML/PDF/DOCX/Markdown report.
 pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
-    let title = require_str(args, "title")?;
     let sections = args
         .get("sections")
         .and_then(|v| v.as_array())
         .ok_or_else(|| anyhow::anyhow!("Missing required array argument: sections"))?;
     let format = optional_str(args, "format").unwrap_or("html");
+
+    // Title: use explicit value, or infer from first section heading, or default
+    let title = optional_str(args, "title").unwrap_or_else(|| {
+        sections
+            .first()
+            .and_then(|s| s.get("heading"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("分析报告")
+    });
 
     // Collect PII unmask mapping for this conversation
     let unmask_map = get_pii_unmask_map(&ctx.storage, &ctx.conversation_id);

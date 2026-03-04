@@ -26,7 +26,7 @@ impl ToolPlugin for ReportGenTool {
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Report title (e.g. '薪酬公平性分析报告')"
+                    "description": "Report title — REQUIRED. Example: '薪酬公平性分析报告'. Must be a non-empty string."
                 },
                 "sections": {
                     "type": "array",

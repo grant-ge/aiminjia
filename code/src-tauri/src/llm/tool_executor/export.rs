@@ -36,9 +36,50 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
         build_export_python_from_file(src_path, format, &filename)?
     } else {
         // Mode 2: Export JSON data records (original behavior).
-        let data = args
+        let data_val = args
             .get("data")
-            .ok_or_else(|| anyhow!("Either 'source_file' or 'data' must be provided"))?;
+            .ok_or_else(|| anyhow!(
+                "参数 'source_file' 和 'data' 都未提供。请选择以下方式之一：\n\
+                 1. 推荐：在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
+                 2. 提供 source_file: 已有文件的路径（如 'exports/xxx.xlsx'）\n\
+                 3. 提供 data: 实际的 JSON 记录数组",
+                filename, format
+            ))?;
+
+        // Validate: reject null data
+        if data_val.is_null() {
+            return Err(anyhow!(
+                "参数 'data' 为 null。请改用以下方式之一：\n\
+                 1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
+                 2. 使用 source_file 参数指定已有文件路径进行格式转换\n\
+                 3. 传入实际的 JSON 记录数组，如 [{{\"name\":\"A\",\"value\":1}}]",
+                filename, format
+            ));
+        }
+
+        // Validate: reject string data (LLM passes variable names like "_df")
+        if let Some(data_str) = data_val.as_str() {
+            return Err(anyhow!(
+                "参数 'data' 不能是字符串 '{}'。请改用以下方式之一：\n\
+                 1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
+                 2. 使用 source_file 参数指定已有文件路径（如 'exports/xxx.csv'）进行格式转换",
+                data_str, filename, format
+            ));
+        }
+
+        // Validate: reject empty object {}
+        if data_val.is_object() {
+            let obj = data_val.as_object().unwrap();
+            if obj.is_empty() {
+                return Err(anyhow!(
+                    "参数 'data' 为空对象 {{}}。请改用以下方式之一：\n\
+                     1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
+                     2. 使用 source_file 参数指定已有文件路径进行格式转换\n\
+                     3. 传入实际的 JSON 记录数组，如 [{{\"name\":\"A\",\"value\":1}}]",
+                    filename, format
+                ));
+            }
+        }
 
         // Write data JSON to temp file (avoids triple-quote injection in Python source)
         let temp_dir = ctx.workspace_path.join("temp");
@@ -47,7 +88,7 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
             "export_data_{}.json",
             Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
         ));
-        let data_json = serde_json::to_string(data)?;
+        let data_json = serde_json::to_string(data_val)?;
         std::fs::write(&data_temp, &data_json)?;
 
         let code = build_export_python_from_json(&data_temp.to_string_lossy(), format, &filename)?;
@@ -212,7 +253,8 @@ try:
 
     # Validate data type — reject strings and other non-structured types
     if isinstance(data, str):
-        print(f"Error: 'data' must be a list of record objects or a dict, not a string. Received: {{data[:100]}}...", file=sys.stderr)
+        print(f"Error: 'data' must be a list of record objects or a dict, not a string. Received: {{data[:100]}}... "
+              f"请改用 execute_python 中的 _export_detail(_df, '{filename}', format='{format}') 直接导出。", file=sys.stderr)
         sys.exit(1)
 
     # Handle various data shapes
@@ -221,7 +263,8 @@ try:
             print("Error: 'data' is an empty list — nothing to export.", file=sys.stderr)
             sys.exit(1)
         if isinstance(data[0], str):
-            print(f"Error: 'data' must be a list of record objects (dicts), not a list of strings. Use execute_python to compute the data first, then call export_data with the actual records.", file=sys.stderr)
+            print(f"Error: 'data' must be a list of record objects (dicts), not a list of strings. "
+              f"请改用 execute_python 中的 _export_detail(_df, '{filename}', format='{format}') 直接导出。", file=sys.stderr)
             sys.exit(1)
         df = pd.DataFrame(data)
     elif isinstance(data, dict):
@@ -235,7 +278,7 @@ try:
             # Valid formats: {{"columns": [...], "rows": [...]}} or {{"records": [...]}}
             print(f"Error: 'data' dict must have either {{'columns', 'rows'}} or {{'records'}} keys. "
                   f"Got keys: {{list(data.keys())}}. "
-                  f"Use execute_python to compute data first, then pass actual records to export_data.",
+                  f"请改用 execute_python 中的 _export_detail(_df, '{filename}', format='{format}') 直接导出。",
                   file=sys.stderr)
             sys.exit(1)
     else:
@@ -253,6 +296,7 @@ except Exception as e:
 "#,
         data_path = escaped_data_path,
         filename = escaped_filename,
+        format = format,
         write_code = write_code,
     ))
 }
