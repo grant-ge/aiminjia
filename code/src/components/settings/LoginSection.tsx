@@ -224,20 +224,12 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             </Button>
           </div>
 
-          {auth.tenant?.balance && (
-            <div
-              className="flex items-center gap-1.5 text-xs"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              余额：<span style={{ color: 'var(--color-text-primary)' }}>{auth.tenant.balance}</span>
-            </div>
-          )}
         </div>
 
         {/* Change password section */}
-        <div className="mb-4">
+        <div className="mb-4 rounded-md border p-3" style={{ borderColor: 'var(--color-border)' }}>
           <button
-            className="text-sm font-medium transition-colors"
+            className="mb-2 text-sm font-medium transition-colors hover:opacity-80"
             style={{ color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
             onClick={() => {
               setShowChangePassword(!showChangePassword)
@@ -247,11 +239,11 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               setConfirmPassword('')
             }}
           >
-            {showChangePassword ? '取消修改密码' : '修改密码'}
+            {showChangePassword ? '▼ 取消修改密码' : '▶ 修改密码'}
           </button>
 
           {showChangePassword && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-3">
               <input
                 type="password"
                 className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
