@@ -7,6 +7,7 @@ Example: python3 upload-to-oss.py 0.3.6
 
 import os
 import sys
+import subprocess
 import oss2
 import requests
 from pathlib import Path
@@ -14,9 +15,44 @@ from pathlib import Path
 # OSS Configuration
 BUCKET_NAME = "lotus-releases"
 ENDPOINT = "https://oss-cn-beijing.aliyuncs.com"
-ACCESS_KEY_ID = os.environ.get("OSS_ACCESS_KEY_ID", "")
-ACCESS_KEY_SECRET = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
 OSS_PREFIX = "aijia"
+KEYCHAIN_SERVICE = "aijia-oss"
+
+
+def get_oss_credentials():
+    """Read OSS credentials from macOS Keychain, falling back to env vars.
+
+    First-time setup (run once):
+        security add-generic-password -s aijia-oss -a access_key_id     -w 'YOUR_KEY_ID'
+        security add-generic-password -s aijia-oss -a access_key_secret  -w 'YOUR_SECRET'
+
+    After that, `python3 upload-to-oss.py 0.3.9` works with no env vars.
+    """
+    key_id = os.environ.get("OSS_ACCESS_KEY_ID", "")
+    key_secret = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
+
+    if key_id and key_secret:
+        return key_id, key_secret
+
+    # Try macOS Keychain
+    try:
+        key_id = subprocess.check_output(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
+             "-a", "access_key_id", "-w"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        key_secret = subprocess.check_output(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
+             "-a", "access_key_secret", "-w"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        if key_id and key_secret:
+            print("Using OSS credentials from macOS Keychain")
+            return key_id, key_secret
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    return "", ""
 
 # GitHub Release Configuration
 GITHUB_REPO = "grant-ge/aiminjia"
@@ -72,11 +108,20 @@ def create_latest_copy(bucket, versioned_key, latest_key):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: OSS_ACCESS_KEY_ID=xxx OSS_ACCESS_KEY_SECRET=xxx python3 upload-to-oss.py <version>")
+        print("Usage: python3 upload-to-oss.py <version>")
+        print("  Credentials: macOS Keychain (aijia-oss) or OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET env vars")
+        print("\n  First-time Keychain setup:")
+        print("    security add-generic-password -s aijia-oss -a access_key_id     -w 'YOUR_KEY_ID'")
+        print("    security add-generic-password -s aijia-oss -a access_key_secret  -w 'YOUR_SECRET'")
         sys.exit(1)
 
+    ACCESS_KEY_ID, ACCESS_KEY_SECRET = get_oss_credentials()
     if not ACCESS_KEY_ID or not ACCESS_KEY_SECRET:
-        print("Error: OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET env vars are required")
+        print("Error: OSS credentials not found.")
+        print("  Option 1: Set env vars OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET")
+        print("  Option 2: Store in macOS Keychain:")
+        print("    security add-generic-password -s aijia-oss -a access_key_id     -w 'YOUR_KEY_ID'")
+        print("    security add-generic-password -s aijia-oss -a access_key_secret  -w 'YOUR_SECRET'")
         sys.exit(1)
 
     version = sys.argv[1]
@@ -90,44 +135,52 @@ def main():
     temp_dir = Path("/tmp/aijia-release")
     temp_dir.mkdir(exist_ok=True)
 
-    # Files to upload
+    # --- Resolve local build paths ---
+    # Standard Tauri build output locations (macOS)
+    tauri_target = Path(__file__).resolve().parent.parent / "src-tauri" / "target"
+    arm_dmg = tauri_target / "release" / "bundle" / "dmg" / f"AIjia_{version}_aarch64.dmg"
+    x64_dmg = tauri_target / "x86_64-apple-darwin" / "release" / "bundle" / "dmg" / f"AIjia_{version}_x64.dmg"
+
+    # Files to upload: local-first, fallback to GitHub for CI-built artifacts
     files = [
         {
+            "local_path": str(arm_dmg),
             "github_name": f"AIjia_{version}_aarch64.dmg",
             "local_name": f"AIjia_{version}_aarch64.dmg",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_aarch64.dmg",
             "latest_key": f"{OSS_PREFIX}/latest/macos-arm64",
-            "source": "github"
         },
         {
+            "local_path": str(x64_dmg),
+            "github_name": f"AIjia_{version}_x64.dmg",
+            "local_name": f"AIjia_{version}_x64.dmg",
+            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64.dmg",
+            "latest_key": f"{OSS_PREFIX}/latest/macos-x64",
+        },
+        {
+            "local_path": None,  # Windows: GitHub-only
             "github_name": f"AIjia_{version}_x64-setup.exe",
             "local_name": f"AIjia_{version}_x64-setup.exe",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe",
             "latest_key": f"{OSS_PREFIX}/latest/windows-x64",
-            "source": "github"
         },
-        {
-            "local_path": f"/Users/gezhigang/minjia/code/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/AIjia_{version}_x64.dmg",
-            "local_name": f"AIjia_{version}_x64.dmg",
-            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64.dmg",
-            "latest_key": f"{OSS_PREFIX}/latest/macos-x64",
-            "source": "local"
-        }
     ]
 
-    # Process each file
+    # Process each file: prefer local, fallback to GitHub download
     for file_info in files:
         print(f"\n--- Processing {file_info['local_name']} ---")
 
-        if file_info["source"] == "github":
-            # Download from GitHub
-            local_file = temp_dir / file_info["local_name"]
-            download_from_github(version, file_info["github_name"], local_file)
+        local_path = file_info.get("local_path")
+        if local_path and Path(local_path).exists():
+            local_file = Path(local_path)
+            print(f"  Using local file: {local_file}")
         else:
-            # Use local file
-            local_file = Path(file_info["local_path"])
-            if not local_file.exists():
-                print(f"  ERROR: Local file not found: {local_file}")
+            # Try downloading from GitHub Release
+            local_file = temp_dir / file_info["local_name"]
+            try:
+                download_from_github(version, file_info["github_name"], local_file)
+            except Exception as e:
+                print(f"  SKIP: not found locally and GitHub download failed: {e}")
                 continue
 
         # Upload to OSS versioned directory
