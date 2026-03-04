@@ -7,7 +7,7 @@ import { open } from '@tauri-apps/plugin-shell'
 import { Button } from '@/components/common/Button'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { cloudLogin, cloudLogout, getCloudModels, updateSettings, getSettings } from '@/lib/tauri'
+import { cloudLogin, cloudLogout, updateSettings, getSettings, cloudChangePassword } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 interface LoginSectionProps {
@@ -24,6 +24,14 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Change password state
+  const [showChangePassword, setShowChangePassword] = useState(false)
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [changePasswordError, setChangePasswordError] = useState('')
+
   const handleLogin = async () => {
     if (!username.trim() || !password) {
       setError('请输入用户名和密码')
@@ -39,15 +47,25 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       // Persist the selected cloud model to settings (only if not already set)
       if (result.models.length > 0) {
         const settings = await getSettings()
+        const firstModel = result.models[0]
         if (!settings.cloudModel) {
-          await updateSettings({ ...settings, useCloud: true, cloudModel: result.models[0].id })
-          useSettingsStore.getState().setSettings({ useCloud: true, cloudModel: result.models[0].id })
+          await updateSettings({
+            ...settings,
+            useCloud: true,
+            cloudModel: firstModel.id,
+            cloudModelType: firstModel.modelType || 'chat'
+          })
+          useSettingsStore.getState().setSettings({
+            useCloud: true,
+            cloudModel: firstModel.id,
+            cloudModelType: firstModel.modelType || 'chat'
+          })
         } else {
           // Restore previously selected model + enable cloud
           await updateSettings({ ...settings, useCloud: true })
           useSettingsStore.getState().setSettings({ useCloud: true })
           const prev = result.models.find((m) => m.id === settings.cloudModel)
-          auth.setSelectedCloudModel(prev ? settings.cloudModel : result.models[0].id)
+          auth.setSelectedCloudModel(prev ? settings.cloudModel : firstModel.id)
         }
       } else {
         // No models but still enable cloud
@@ -104,21 +122,52 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     })
   }
 
-  const handleRefreshModels = async () => {
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setChangePasswordError('请填写所有字段')
+      return
+    }
+    if (newPassword.length < 8) {
+      setChangePasswordError('新密码长度至少 8 个字符')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('两次输入的新密码不一致')
+      return
+    }
+
+    setChangingPassword(true)
+    setChangePasswordError('')
     try {
-      const models = await getCloudModels()
-      auth.setCloudModels(models)
-    } catch (err) {
-      console.error('Failed to refresh models:', err)
+      await cloudChangePassword(oldPassword, newPassword)
+      // Server-side logout already happened, clear frontend state
+      auth.clearAuth()
+      try {
+        const settings = await getSettings()
+        await updateSettings({ ...settings, useCloud: false })
+        useSettingsStore.getState().setSettings({ useCloud: false })
+      } catch (err) {
+        console.error('Failed to update useCloud:', err)
+      }
       notifications.push({
-        level: 'error',
-        title: '刷新模型列表失败',
-        message: err instanceof Error ? err.message : String(err),
+        level: 'success',
+        title: '密码修改成功',
+        message: '请重新登录',
         actions: [],
         dismissible: true,
-        autoHide: 5,
+        autoHide: 3,
         context: 'toast',
       })
+      // Reset form
+      setShowChangePassword(false)
+      setOldPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setChangePasswordError(msg)
+    } finally {
+      setChangingPassword(false)
     }
   }
 
@@ -185,6 +234,79 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           )}
         </div>
 
+        {/* Change password section */}
+        <div className="mb-4">
+          <button
+            className="text-sm font-medium transition-colors"
+            style={{ color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            onClick={() => {
+              setShowChangePassword(!showChangePassword)
+              setChangePasswordError('')
+              setOldPassword('')
+              setNewPassword('')
+              setConfirmPassword('')
+            }}
+          >
+            {showChangePassword ? '取消修改密码' : '修改密码'}
+          </button>
+
+          {showChangePassword && (
+            <div className="mt-3 space-y-2">
+              <input
+                type="password"
+                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                placeholder="旧密码"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+              />
+              <input
+                type="password"
+                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                placeholder="新密码（至少 8 个字符）"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <input
+                type="password"
+                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                style={{
+                  background: 'var(--color-bg-main)',
+                  borderColor: 'var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                placeholder="确认新密码"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+              {changePasswordError && (
+                <div
+                  className="text-xs"
+                  style={{ color: 'var(--color-semantic-red)' }}
+                >
+                  {changePasswordError}
+                </div>
+              )}
+              <Button
+                variant="primary"
+                onClick={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? '修改中...' : '确认修改'}
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* Model mode toggle */}
         <div className="mb-4">
           <label
@@ -231,48 +353,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           </div>
         </div>
 
-        {/* Cloud model selector */}
-        {useCloud && (
-          <div className="mb-4">
-            <label
-              className="mb-1.5 block text-sm font-semibold"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              云端模型
-            </label>
-            <div className="flex items-center gap-2">
-              <select
-                className="h-9 flex-1 rounded-md border px-3 py-2 text-base outline-none"
-                style={{
-                  background: 'var(--color-bg-main)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text-primary)',
-                }}
-                value={auth.selectedCloudModel}
-                onChange={async (e) => {
-                  auth.setSelectedCloudModel(e.target.value)
-                  // Persist to settings
-                  try {
-                    const settings = await getSettings()
-                    await updateSettings({ ...settings, cloudModel: e.target.value })
-                    useSettingsStore.getState().setSettings({ cloudModel: e.target.value })
-                  } catch (err) {
-                    console.error('Failed to save cloud model:', err)
-                  }
-                }}
-              >
-                {auth.cloudModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}{m.modelType === 'reasoner' ? ' (深度思考)' : ''}
-                  </option>
-                ))}
-              </select>
-              <Button variant="secondary" onClick={handleRefreshModels}>
-                刷新
-              </Button>
-            </div>
-          </div>
-        )}
+        {/* Cloud model is auto-selected on login, hidden from user */}
 
         <div
           className="rounded-md px-3 py-2 text-xs"
