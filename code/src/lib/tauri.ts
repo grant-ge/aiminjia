@@ -511,6 +511,14 @@ export function getCloudModels(): Promise<CloudModel[]> {
   return invoke<CloudModel[]>('get_cloud_models')
 }
 
+/**
+ * Change password on the cloud server.
+ * After success, the user is automatically logged out.
+ */
+export function cloudChangePassword(oldPassword: string, newPassword: string): Promise<void> {
+  return invoke<void>('cloud_change_password', { oldPassword, newPassword })
+}
+
 // ---------------------------------------------------------------------------
 // Typed Event Listeners
 // ---------------------------------------------------------------------------

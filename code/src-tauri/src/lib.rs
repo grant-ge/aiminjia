@@ -215,6 +215,7 @@ pub fn run() {
             commands::auth::cloud_logout,
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
+            commands::auth::cloud_change_password,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

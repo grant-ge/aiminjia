@@ -172,11 +172,20 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 /// The reasoning model is auto-determined from provider capabilities.
 /// No separate configuration is needed — the same API key is used.
 pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult {
-    // Cloud mode: if primary_model is "lotus", route through Lotus gateway.
-    // TaskType::Reasoning → reasoner endpoint, all others → chat endpoint.
-    // Model name is empty — server auto-selects by priority.
-    if settings.primary_model == "lotus" {
-        let model_type = if *task_type == TaskType::Reasoning { "reasoner" } else { "chat" };
+    // Cloud mode: if use_cloud is enabled, route through Lotus gateway.
+    // Use cloud_model_type from settings to determine endpoint.
+    // If TaskType::Reasoning, force reasoner endpoint regardless of cloud_model_type.
+    if settings.use_cloud {
+        let model_type = if *task_type == TaskType::Reasoning {
+            "reasoner"
+        } else {
+            // Use the model_type from settings (set when user selects a model)
+            if settings.cloud_model_type.is_empty() {
+                "chat"
+            } else {
+                &settings.cloud_model_type
+            }
+        };
         return RouteResult {
             provider: "lotus".to_string(),
             api_key: settings.primary_api_key.clone(), // session_key

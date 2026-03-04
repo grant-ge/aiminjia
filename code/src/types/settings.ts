@@ -33,6 +33,7 @@ export interface Settings {
   // Cloud mode
   useCloud: boolean
   cloudModel: string
+  cloudModelType: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customModelName: '',
   useCloud: false,
   cloudModel: '',
+  cloudModelType: '',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

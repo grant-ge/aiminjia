@@ -26,11 +26,14 @@ pub struct LotusProvider {
 }
 
 impl LotusProvider {
-    pub fn new(session_key: String, model: String, model_type: &str) -> Self {
+    pub fn new(session_key: String, _model: String, model_type: &str) -> Self {
         let api_url = match model_type {
             "reasoner" => REASONER_URL.to_string(),
             _ => CHAT_URL.to_string(),
         };
+        // Use model_type as model name — Gateway auto-resolves to highest priority route.
+        // This way the Gateway decides which provider/model to use, not the client.
+        let model = model_type.to_string();
         Self {
             session_key,
             model,

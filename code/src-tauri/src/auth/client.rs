@@ -1,11 +1,13 @@
-//! HTTP client for the Lotus tenant portal API.
+//! HTTP client for the Lotus API Gateway.
 //!
 //! Base URL: `https://ai-tenant.renlijia.com`
 //!
 //! Endpoints:
-//! - POST /api/auth/login       — username/password → JWT tokens
-//! - POST /api/auth/refresh     — refresh_token → new JWT tokens
-//! - POST /api/session-keys     — access_token → session key (sk-sess***)
+//! - POST /auth/login           — username/password → JWT tokens
+//! - POST /auth/refresh         — refresh_token → new JWT tokens
+//! - PUT  /auth/password        — change password (JWT required)
+//! - POST /auth/logout          — logout (JWT required)
+//! - POST /auth/session-keys    — access_token → session key (sk-sess***)
 //! - GET  /v1/models            — list available models
 
 use anyhow::{anyhow, Result};
@@ -36,7 +38,8 @@ pub struct AuthResponse {
 pub struct AuthUserInfo {
     pub id: i64,
     pub name: String,
-    pub username: String,
+    #[serde(default)]
+    pub username: Option<String>,
 }
 
 /// Tenant info as returned by the login/refresh API (snake_case, superset of fields).
@@ -50,7 +53,7 @@ pub struct AuthTenantInfo {
 
 impl From<AuthUserInfo> for UserInfo {
     fn from(u: AuthUserInfo) -> Self {
-        Self { id: u.id, name: u.name, username: u.username }
+        Self { id: u.id, name: u.name, username: u.username.unwrap_or_default() }
     }
 }
 
@@ -86,11 +89,11 @@ impl AuthClient {
 
     /// Login with username and password.
     pub async fn login(&self, username: &str, password: &str) -> Result<AuthResponse> {
-        let url = format!("{}/api/auth/login", BASE_URL);
+        let url = format!("{}/auth/login", BASE_URL);
         let resp = self
             .client
             .post(&url)
-            .json(&json!({ "method": "username", "username": username, "password": password }))
+            .json(&json!({ "username": username, "password": password }))
             .send()
             .await?;
 
@@ -107,7 +110,7 @@ impl AuthClient {
 
     /// Refresh access token using refresh token.
     pub async fn refresh_token(&self, refresh_token: &str) -> Result<AuthResponse> {
-        let url = format!("{}/api/auth/refresh", BASE_URL);
+        let url = format!("{}/auth/refresh", BASE_URL);
         let resp = self
             .client
             .post(&url)
@@ -128,7 +131,7 @@ impl AuthClient {
 
     /// Create a session key for API access.
     pub async fn create_session_key(&self, access_token: &str) -> Result<SessionKeyResponse> {
-        let url = format!("{}/api/session-keys", BASE_URL);
+        let url = format!("{}/auth/session-keys", BASE_URL);
         let resp = self
             .client
             .post(&url)
@@ -180,6 +183,45 @@ impl AuthClient {
 
         Ok(models)
     }
+
+    /// Change password on the server.
+    pub async fn change_password(&self, access_token: &str, old_password: &str, new_password: &str) -> Result<()> {
+        let url = format!("{}/auth/password", BASE_URL);
+        let resp = self
+            .client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .json(&json!({ "old_password": old_password, "new_password": new_password }))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+
+        Ok(())
+    }
+
+    /// Logout from the server (revoke all refresh tokens).
+    pub async fn logout(&self, access_token: &str) -> Result<()> {
+        let url = format!("{}/auth/logout", BASE_URL);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+
+        Ok(())
+    }
 }
 
 /// Parse API error body into a user-friendly Chinese error message.
@@ -212,6 +254,7 @@ fn localize_error(msg: &str) -> &str {
         "Token expired" | "Invalid token" => "登录已过期，请重新登录",
         "Insufficient balance" => "账户余额不足，请联系管理员充值",
         "Rate limit exceeded" => "请求过于频繁，请稍后再试",
+        "Password must be at least 8 characters" => "密码长度至少 8 个字符",
         _ => msg,
     }
 }

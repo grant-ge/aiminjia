@@ -47,6 +47,9 @@ pub struct AppSettings {
     /// Cloud mode: selected model name from /v1/models (used when logged in).
     #[serde(default)]
     pub cloud_model: String,
+    /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.
+    #[serde(default)]
+    pub cloud_model_type: String,
 }
 
 impl Default for AppSettings {
@@ -72,6 +75,7 @@ impl Default for AppSettings {
             enable_taor_tracking: true,
             use_cloud: false,
             cloud_model: String::new(),
+            cloud_model_type: String::new(),
         }
     }
 }
@@ -115,6 +119,7 @@ impl AppSettings {
             enable_taor_tracking: get_bool("enableTaorTracking", defaults.enable_taor_tracking),
             use_cloud: get_bool("useCloud", defaults.use_cloud),
             cloud_model: get_str("cloudModel", &defaults.cloud_model),
+            cloud_model_type: get_str("cloudModelType", &defaults.cloud_model_type),
         }
     }
 }

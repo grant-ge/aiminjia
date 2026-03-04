@@ -120,11 +120,30 @@ impl AuthManager {
         })
     }
 
-    /// Logout — clear state and persisted data.
+    /// Logout — call server API then clear local state and persisted data.
     pub async fn logout(&self) {
+        // Best-effort server-side logout
+        if let Some(auth) = self.state.read().await.as_ref() {
+            let _ = self.client.logout(&auth.access_token).await;
+        }
         *self.state.write().await = None;
         self.clear_persisted_auth();
         log::info!("Cloud auth logged out");
+    }
+
+    /// Change password on the server.
+    /// After success, clears local auth state (forces re-login).
+    pub async fn change_password(&self, old_password: &str, new_password: &str) -> Result<()> {
+        let access_token = {
+            let state = self.state.read().await;
+            let auth = state.as_ref().ok_or_else(|| anyhow!("未登录"))?;
+            auth.access_token.clone()
+        };
+        self.client.change_password(&access_token, old_password, new_password).await?;
+        // Server revoked all refresh tokens; clear local state
+        *self.state.write().await = None;
+        self.clear_persisted_auth();
+        Ok(())
     }
 
     /// Check if user is logged in.
