@@ -1814,10 +1814,12 @@ async fn agent_loop(
                                 iter_content.push_str(&clean);
                                 full_content.push_str(&clean);
 
-                                // Leak detection: check periodically to avoid per-delta overhead
-                                if delta_count % 5 == 0 || full_content.len() > 200 {
+                                // Leak detection: check current iteration content only
+                                // (full_content spans all iterations — causes false positives
+                                // when LLM legitimately mentions internal names across steps)
+                                if delta_count % 5 == 0 || iter_content.len() > 200 {
                                     if let prompt_guard::LeakCheckResult::Leaked { matched_count, .. } =
-                                        prompt_guard::check_for_leak(&full_content)
+                                        prompt_guard::check_for_leak(&iter_content)
                                     {
                                         log::warn!(
                                             "[AGENT] Prompt leak detected mid-stream for {} ({} fingerprints)",
