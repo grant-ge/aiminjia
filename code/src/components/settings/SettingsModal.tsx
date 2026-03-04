@@ -125,6 +125,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         bochaApiKey: settings.bochaApiKey,
         customModelEndpoint: settings.customModelEndpoint,
         customModelName: settings.customModelName,
+        useCloud: settings.useCloud,
         cloudModel: settings.cloudModel,
       })
       const providers = await getConfiguredProviders()
@@ -176,6 +177,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           bochaApiKey: settings.bochaApiKey,
           customModelEndpoint: settings.customModelEndpoint,
           customModelName: settings.customModelName,
+          useCloud: settings.useCloud,
           cloudModel: settings.cloudModel,
         })
       }
