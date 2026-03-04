@@ -145,6 +145,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         customModelName: settings.customModelName,
         useCloud: settings.useCloud,
         cloudModel: settings.cloudModel,
+        cloudModelType: settings.cloudModelType,
       })
       const providers = await getConfiguredProviders()
       useSettingsStore.getState().setConfiguredProviders(providers as LlmProvider[])
@@ -197,6 +198,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           customModelName: settings.customModelName,
           useCloud: settings.useCloud,
           cloudModel: settings.cloudModel,
+          cloudModelType: settings.cloudModelType,
         })
       }
 
@@ -625,11 +627,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       })
                       if (dest) {
                         const result = await exportMetrics(dest)
-                        notifications.addNotification('success', '导出成功', `已导出 ${result.entryCount} 条度量数据`)
+                        notifications.push({ level: 'success', title: '导出成功', message: `已导出 ${result.entryCount} 条度量数据`, actions: [], dismissible: true, autoHide: 3, context: 'toast' })
                       }
                     } catch (err) {
                       console.error('Failed to export metrics:', err)
-                      notifications.addNotification('error', '导出失败', String(err))
+                      notifications.push({ level: 'error', title: '导出失败', message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
                     } finally {
                       setMetricsLoading(false)
                     }
@@ -646,10 +648,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       await clearMetrics()
                       setMetricsCount(0)
                       setMetricsBytes(0)
-                      notifications.addNotification('success', '清理完成', '度量数据已清理')
+                      notifications.push({ level: 'success', title: '清理完成', message: '度量数据已清理', actions: [], dismissible: true, autoHide: 3, context: 'toast' })
                     } catch (err) {
                       console.error('Failed to clear metrics:', err)
-                      notifications.addNotification('error', '清理失败', String(err))
+                      notifications.push({ level: 'error', title: '清理失败', message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
                     } finally {
                       setMetricsLoading(false)
                     }
