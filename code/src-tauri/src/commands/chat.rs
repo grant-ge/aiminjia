@@ -1711,6 +1711,31 @@ async fn agent_loop(
         max_iterations,
     );
 
+    // --- Context metrics: baseline snapshot before iteration loop ---
+    {
+        let msg_total_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+        let tool_result_chars: usize = messages.iter()
+            .filter(|m| m.tool_call_id.is_some())
+            .map(|m| m.content.len()).sum();
+        let tool_result_count = messages.iter().filter(|m| m.tool_call_id.is_some()).count();
+        log::info!(
+            "[CTX_METRICS] conversation={} mode={} step={:?} | \
+             system_prompt={}chars | messages={} (tool_results={}) | \
+             msg_total={}chars (tool_results={}chars) | \
+             file_context={}chars | notes_context={}chars | \
+             analysis_ctx={}chars",
+            conversation_id,
+            if is_analysis { "analysis" } else { "daily" },
+            current_step_config.as_ref().map(|c| c.step),
+            system_prompt.len(),
+            messages.len(), tool_result_count,
+            msg_total_chars, tool_result_chars,
+            file_context.len(),
+            analysis_notes_context.len(),
+            if is_analysis { analysis_ctx.format_for_prompt().len() } else { 0 },
+        );
+    }
+
     for iteration in 0..max_iterations {
         iteration_count = iteration + 1;
         phase.next_iteration(iteration);
@@ -1733,6 +1758,30 @@ async fn agent_loop(
         // P1: Apply context decay to reduce older tool outputs before sending to LLM.
         // Non-destructive — original `messages` vec is preserved for checkpoint/auto_capture.
         let decayed_messages = context_decay::apply_decay(&messages, is_analysis);
+
+        // --- Context metrics: per-iteration snapshot ---
+        {
+            let orig_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+            let decayed_chars: usize = decayed_messages.iter().map(|m| m.content.len()).sum();
+            let tool_chars: usize = messages.iter()
+                .filter(|m| m.tool_call_id.is_some())
+                .map(|m| m.content.len()).sum();
+            let decayed_tool_chars: usize = decayed_messages.iter()
+                .filter(|m| m.tool_call_id.is_some())
+                .map(|m| m.content.len()).sum();
+            let saved = orig_chars.saturating_sub(decayed_chars);
+            log::info!(
+                "[CTX_METRICS] iter={}/{} conv={} | \
+                 messages={} orig={}chars decayed={}chars saved={}chars | \
+                 tool_results: orig={}chars decayed={}chars | \
+                 system_prompt={}chars",
+                iteration, max_iterations, conversation_id,
+                messages.len(), orig_chars, decayed_chars, saved,
+                tool_chars, decayed_tool_chars,
+                system_prompt.len(),
+            );
+        }
+
         let stream_start = std::time::Instant::now();
         log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} messages={} (decayed={})",
             settings.primary_model, system_prompt.len(), messages.len(), decayed_messages.len());
@@ -2158,6 +2207,10 @@ async fn agent_loop(
             const MAX_TOOL_RESULT_CHARS: usize = 8000;
             let truncated_result = if masked_result.len() > MAX_TOOL_RESULT_CHARS {
                 let end = truncate_at_char_boundary(&masked_result, MAX_TOOL_RESULT_CHARS);
+                log::info!(
+                    "[CTX_METRICS] tool='{}' truncated: {}→{}chars",
+                    tr.name, masked_result.len(), end
+                );
                 format!("{}...\n[output truncated — {} chars total]", &masked_result[..end], masked_result.len())
             } else {
                 masked_result
@@ -2218,6 +2271,27 @@ async fn agent_loop(
             log::info!("[AGENT] Cancel signal detected after tool execution for conversation {}", conversation_id);
             stream_cancelled = true;
         }
+    }
+
+    // --- Context metrics: end-of-step summary ---
+    {
+        let final_msg_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+        let final_tool_chars: usize = messages.iter()
+            .filter(|m| m.tool_call_id.is_some())
+            .map(|m| m.content.len()).sum();
+        let final_tool_count = messages.iter().filter(|m| m.tool_call_id.is_some()).count();
+        log::info!(
+            "[CTX_METRICS] STEP_DONE conv={} step={:?} iterations={} | \
+             final_messages={} (tool_results={}) | \
+             final_total={}chars (tool_results={}chars) | \
+             output={}chars",
+            conversation_id,
+            current_step_config.as_ref().map(|c| c.step),
+            iteration_count,
+            messages.len(), final_tool_count,
+            final_msg_chars, final_tool_chars,
+            full_content.len(),
+        );
     }
 
     // --- Step completion: save assistant message and check auto-advance ---
