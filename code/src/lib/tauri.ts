@@ -399,6 +399,34 @@ export function openWorkspaceDirectory(): Promise<void> {
   return invoke<void>('open_workspace_directory')
 }
 
+/**
+ * Export all metrics entries to a JSON file.
+ *
+ * @param destPath - Absolute path for the exported file (from save dialog)
+ * @returns Export result with path, entry count, and file size
+ */
+export function exportMetrics(destPath: string): Promise<{ path: string; entryCount: number; fileSize: number }> {
+  return invoke<{ path: string; entryCount: number; fileSize: number }>('export_metrics', { destPath })
+}
+
+/**
+ * Clear all metrics JSONL files.
+ *
+ * @returns Number of deleted files
+ */
+export function clearMetrics(): Promise<{ deletedFiles: number }> {
+  return invoke<{ deletedFiles: number }>('clear_metrics')
+}
+
+/**
+ * Get metrics file info (entry count + total bytes).
+ *
+ * @returns Metrics info with entry count and total bytes
+ */
+export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: number }> {
+  return invoke<{ entryCount: number; totalBytes: number }>('get_metrics_info')
+}
+
 // ---------------------------------------------------------------------------
 // Plugin Commands
 // ---------------------------------------------------------------------------

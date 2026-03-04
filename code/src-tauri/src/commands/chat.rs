@@ -1082,7 +1082,7 @@ pub async fn send_message(
                                     format!("{}\n\n{}", base_ep, step_ep)
                                 };
                                 let cp_result = crate::llm::checkpoint::checkpoint_extract(
-                                    &gateway, &settings, &conversation_id, step_num, &chat_messages, &db, &extract_prompt,
+                                    &gateway, &settings, &conversation_id, step_num, &chat_messages, &db, &extract_prompt, &workspace_path,
                                 ).await;
                                 if cp_result.is_some() {
                                     log::info!("[step_advance] Checkpoint extraction succeeded for step {}", step_num);
@@ -1450,6 +1450,8 @@ fn build_analysis_notes_context(
     db: &AppStorage,
     conversation_id: &str,
     step_config: Option<&StepConfig>,
+    workspace: &std::path::Path,
+    model: &str,
 ) -> String {
     let notes_prefix = format!("note:{}:", conversation_id);
     let notes = match db.get_memories_by_prefix(&notes_prefix) {
@@ -1553,6 +1555,36 @@ fn build_analysis_notes_context(
         "[notes_injection] Injected {} notes ({} checkpoints + {} step groups + {} non-step) for conversation {}, current_step={}",
         notes.len(), checkpoints.len(), step_notes.len(), non_step_notes.len(), conversation_id, current_step
     );
+
+    // M4-A: Memory quality — injection stats
+    {
+        let auto_context_count = step_notes.values()
+            .flat_map(|v| v.iter())
+            .filter(|(name, _)| name.contains("auto_context"))
+            .count();
+        let oldest_step = all_steps.iter().next().copied().unwrap_or(0);
+        let newest_step = all_steps.iter().next_back().copied().unwrap_or(0);
+        log::info!(
+            "[METRICS:memory] conv={} step={} | checkpoints={} summaries={} auto_contexts={} | injected_chars={} | oldest_step={} newest_step={}",
+            conversation_id, current_step,
+            checkpoints.len(),
+            step_notes.values().flat_map(|v| v.iter()).filter(|(n, _)| n.contains("summary")).count(),
+            auto_context_count,
+            ctx.len(),
+            oldest_step, newest_step,
+        );
+        crate::telemetry::record("memory", workspace, &[
+            ("conv", conversation_id),
+            ("step", &current_step.to_string()),
+            ("checkpoints", &checkpoints.len().to_string()),
+            ("summaries", &step_notes.values().flat_map(|v| v.iter()).filter(|(n, _)| n.contains("summary")).count().to_string()),
+            ("auto_contexts", &auto_context_count.to_string()),
+            ("injected_chars", &ctx.len().to_string()),
+            ("oldest_step", &oldest_step.to_string()),
+            ("newest_step", &newest_step.to_string()),
+            ("model", model),
+        ]);
+    }
 
     ctx
 }
@@ -1667,7 +1699,7 @@ async fn agent_loop(
     let system_prompt = format!("{}{}", system_prompt, file_context);
 
     // Inject accumulated analysis notes from previous steps into the system prompt
-    let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref());
+    let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref(), &workspace_path, &settings.primary_model);
     let system_prompt = format!("{}{}", system_prompt, analysis_notes_context);
 
     // P2: Load structured analysis context (file profiles + findings) and inject into prompt.
@@ -1704,6 +1736,9 @@ async fn agent_loop(
     let mut all_file_metas: Vec<FileMeta> = Vec::new();
     let mut iteration_count = 0usize;
     let mut stream_cancelled = false;
+    let mut step_tokens_in: u32 = 0;
+    let mut step_tokens_out: u32 = 0;
+    let step_start = std::time::Instant::now();
     let mut phase = PhaseTracker::new(
         settings.enable_taor_tracking,
         conversation_id.clone(),
@@ -1919,6 +1954,36 @@ async fn agent_loop(
                                 stop_reason, usage.input_tokens, usage.output_tokens,
                                 delta_count, iter_content.len(), tool_calls.len(), stream_elapsed
                             );
+
+                            // M5: Token utilization
+                            {
+                                let total = usage.input_tokens + usage.output_tokens;
+                                let util = if token_budget > 0 {
+                                    (total as f64 / token_budget as f64) * 100.0
+                                } else {
+                                    0.0
+                                };
+                                log::info!(
+                                    "[METRICS:tokens] conv={} iter={} model={} | budget={} in={} out={} total={} util={:.0}%",
+                                    conversation_id, iteration_count, settings.primary_model,
+                                    token_budget, usage.input_tokens, usage.output_tokens, total, util,
+                                );
+                                crate::telemetry::record("tokens", &workspace_path, &[
+                                    ("conv", &conversation_id),
+                                    ("iter", &iteration_count.to_string()),
+                                    ("model", &settings.primary_model),
+                                    ("budget", &token_budget.to_string()),
+                                    ("in", &usage.input_tokens.to_string()),
+                                    ("out", &usage.output_tokens.to_string()),
+                                    ("total", &total.to_string()),
+                                    ("util", &format!("{:.0}%", util)),
+                                ]);
+                            }
+
+                            // Accumulate tokens for M3 step lifecycle
+                            step_tokens_in += usage.input_tokens;
+                            step_tokens_out += usage.output_tokens;
+
                             break;
                         }
                         Some(StreamEvent::Error { error }) => {
@@ -1974,6 +2039,7 @@ async fn agent_loop(
             session_manager: session_mgr.clone(),
             auth_manager: Some(auth_manager.clone()),
             use_cloud: settings.use_cloud,
+            model: settings.primary_model.clone(),
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---
@@ -2128,6 +2194,11 @@ async fn agent_loop(
         };
 
         // --- Phase 3: Process results sequentially (events, masking, messages) ---
+        let tool_result_count = tool_results.len();
+        let mut tool_success_count = 0usize;
+        let mut tool_error_count = 0usize;
+        let mut tool_names: Vec<String> = Vec::new();
+        let mut tool_total_elapsed = std::time::Duration::ZERO;
         for tr in tool_results {
             // Collect file metadata for post-stream verification
             if let Some(ref fm) = tr.file_meta {
@@ -2154,6 +2225,11 @@ async fn agent_loop(
                 tr.name, tr.is_error, tr.content.len(), tr.elapsed,
                 truncate_for_ui(&tr.content, 300),
             );
+
+            // M1: accumulate per-tool stats
+            if tr.is_error { tool_error_count += 1; } else { tool_success_count += 1; }
+            tool_names.push(tr.name.clone());
+            tool_total_elapsed += tr.elapsed;
 
             let _ = app.emit(
                 "tool:completed",
@@ -2264,6 +2340,31 @@ async fn agent_loop(
             analysis_ctx.save(&workspace_path, &conversation_id);
         }
 
+        // M1: Tool execution quality — per-iteration summary
+        {
+            let blocked = tool_calls.len() - tool_result_count;
+            log::info!(
+                "[METRICS:tool] conv={} step={:?} iter={} | total={} success={} error={} blocked={} | names={:?} | total_elapsed_ms={}",
+                conversation_id,
+                current_step_config.as_ref().map(|c| c.step),
+                iteration_count,
+                tool_calls.len(), tool_success_count, tool_error_count, blocked,
+                tool_names, tool_total_elapsed.as_millis(),
+            );
+            crate::telemetry::record("tool", &workspace_path, &[
+                ("conv", &conversation_id),
+                ("step", &format!("{:?}", current_step_config.as_ref().map(|c| c.step))),
+                ("iter", &iteration_count.to_string()),
+                ("total", &tool_calls.len().to_string()),
+                ("success", &tool_success_count.to_string()),
+                ("error", &tool_error_count.to_string()),
+                ("blocked", &blocked.to_string()),
+                ("names", &format!("{:?}", tool_names)),
+                ("total_elapsed_ms", &tool_total_elapsed.as_millis().to_string()),
+                ("model", &settings.primary_model),
+            ]);
+        }
+
         phase.observe();
 
         // Check cancel signal after tool batch completes
@@ -2292,6 +2393,55 @@ async fn agent_loop(
             final_msg_chars, final_tool_chars,
             full_content.len(),
         );
+    }
+
+    // M3: Step lifecycle — end-of-step summary
+    {
+        let status = if stream_cancelled {
+            "cancelled"
+        } else if iteration_count >= max_iterations {
+            "max_iter"
+        } else {
+            "completed"
+        };
+        let duration_ms = step_start.elapsed().as_millis();
+
+        // Determine what notes were saved for this step
+        let note_saved = if let Some(ref config) = current_step_config {
+            let cp_key = format!("note:{}:step{}_checkpoint", conversation_id, config.step);
+            let ac_key = format!("note:{}:step{}_auto_context", conversation_id, config.step);
+            let has_cp = db.get_memory(&cp_key).ok().flatten().map_or(false, |v| !v.is_empty());
+            let has_ac = db.get_memory(&ac_key).ok().flatten().map_or(false, |v| !v.is_empty());
+            match (has_cp, has_ac) {
+                (true, true) => "both",
+                (true, false) => "checkpoint",
+                (false, true) => "auto_capture",
+                (false, false) => "none",
+            }
+        } else {
+            "n/a"
+        };
+
+        log::info!(
+            "[METRICS:step] conv={} step={:?} status={} | iterations={} duration_ms={} | tokens_in={} tokens_out={} | note_saved={}",
+            conversation_id,
+            current_step_config.as_ref().map(|c| c.step),
+            status,
+            iteration_count, duration_ms,
+            step_tokens_in, step_tokens_out,
+            note_saved,
+        );
+        crate::telemetry::record("step", &workspace_path, &[
+            ("conv", &conversation_id),
+            ("step", &format!("{:?}", current_step_config.as_ref().map(|c| c.step))),
+            ("status", status),
+            ("iterations", &iteration_count.to_string()),
+            ("duration_ms", &duration_ms.to_string()),
+            ("tokens_in", &step_tokens_in.to_string()),
+            ("tokens_out", &step_tokens_out.to_string()),
+            ("note_saved", note_saved),
+            ("model", &settings.primary_model),
+        ]);
     }
 
     // --- Step completion: save assistant message and check auto-advance ---

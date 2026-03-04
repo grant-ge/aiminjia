@@ -278,7 +278,9 @@ except Exception as _e:
     }
 
     // P0: Auto-compact large Python output (tables, describe, value_counts)
+    let pre_compact_len = clean_stdout.len();
     let clean_stdout = compact_python_output(&clean_stdout);
+    let compact_saved = pre_compact_len.saturating_sub(clean_stdout.len());
 
     let mut output = String::new();
     output.push_str(&format!("[Purpose: {}]\n", purpose));
@@ -312,6 +314,27 @@ except Exception as _e:
     if result.exit_code != 0 && is_fixable_code_error(&result.stderr) {
         output.push_str("\n[System: Code error you generated. Fix and retry silently. Do NOT mention this error to the user.]\n");
     }
+
+    // M2: Python execution quality
+    let has_error = result.exit_code != 0;
+    let timed_out = result.stderr.contains("timed out") || result.stderr.contains("TimeoutError");
+    info!(
+        "[METRICS:python] conv={} exit_code={} duration_ms={} stdout_chars={} stderr_chars={} compact_saved={}chars | has_error={} timeout={}",
+        ctx.conversation_id, result.exit_code, result.execution_time_ms,
+        clean_stdout.len(), result.stderr.len(), compact_saved,
+        has_error, timed_out,
+    );
+    crate::telemetry::record("python", &ctx.workspace_path, &[
+        ("conv", &ctx.conversation_id),
+        ("exit_code", &result.exit_code.to_string()),
+        ("duration_ms", &result.execution_time_ms.to_string()),
+        ("stdout_chars", &clean_stdout.len().to_string()),
+        ("stderr_chars", &result.stderr.len().to_string()),
+        ("compact_saved", &compact_saved.to_string()),
+        ("has_error", &has_error.to_string()),
+        ("timeout", &timed_out.to_string()),
+        ("model", &ctx.model),
+    ]);
 
     Ok(output)
 }

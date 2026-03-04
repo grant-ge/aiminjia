@@ -44,6 +44,7 @@ pub async fn checkpoint_extract(
     messages: &[ChatMessage],
     db: &AppStorage,
     extract_prompt: &str,
+    workspace: &std::path::Path,
 ) -> Option<StepCheckpoint> {
     // If no extract prompt is provided, skip extraction entirely.
     if extract_prompt.trim().is_empty() {
@@ -52,8 +53,22 @@ pub async fn checkpoint_extract(
             step_num,
             conversation_id
         );
+        log::info!(
+            "[METRICS:checkpoint] conv={} step={} | status=empty_response | chars=0 extraction_ms=0",
+            conversation_id, step_num,
+        );
+        crate::telemetry::record("checkpoint", workspace, &[
+            ("conv", conversation_id),
+            ("step", &step_num.to_string()),
+            ("status", "empty_response"),
+            ("chars", "0"),
+            ("extraction_ms", "0"),
+            ("model", &settings.primary_model),
+        ]);
         return None;
     }
+
+    let extract_start = std::time::Instant::now();
 
     match tokio::time::timeout(
         EXTRACT_TIMEOUT,
@@ -61,13 +76,40 @@ pub async fn checkpoint_extract(
     )
     .await
     {
-        Ok(Some(cp)) => Some(cp),
+        Ok(Some(cp)) => {
+            let chars = serde_json::to_string(&cp).map(|s| s.len()).unwrap_or(0);
+            log::info!(
+                "[METRICS:checkpoint] conv={} step={} | status=success | chars={} extraction_ms={}",
+                conversation_id, step_num, chars, extract_start.elapsed().as_millis(),
+            );
+            crate::telemetry::record("checkpoint", workspace, &[
+                ("conv", conversation_id),
+                ("step", &step_num.to_string()),
+                ("status", "success"),
+                ("chars", &chars.to_string()),
+                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
+                ("model", &settings.primary_model),
+            ]);
+            Some(cp)
+        }
         Ok(None) => {
             log::warn!(
                 "[checkpoint] Extraction returned None for step {} in conversation {}",
                 step_num,
                 conversation_id
             );
+            log::info!(
+                "[METRICS:checkpoint] conv={} step={} | status=parse_fail | chars=0 extraction_ms={}",
+                conversation_id, step_num, extract_start.elapsed().as_millis(),
+            );
+            crate::telemetry::record("checkpoint", workspace, &[
+                ("conv", conversation_id),
+                ("step", &step_num.to_string()),
+                ("status", "parse_fail"),
+                ("chars", "0"),
+                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
+                ("model", &settings.primary_model),
+            ]);
             None
         }
         Err(_) => {
@@ -77,6 +119,18 @@ pub async fn checkpoint_extract(
                 step_num,
                 conversation_id
             );
+            log::info!(
+                "[METRICS:checkpoint] conv={} step={} | status=timeout | chars=0 extraction_ms={}",
+                conversation_id, step_num, extract_start.elapsed().as_millis(),
+            );
+            crate::telemetry::record("checkpoint", workspace, &[
+                ("conv", conversation_id),
+                ("step", &step_num.to_string()),
+                ("status", "timeout"),
+                ("chars", "0"),
+                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
+                ("model", &settings.primary_model),
+            ]);
             None
         }
     }

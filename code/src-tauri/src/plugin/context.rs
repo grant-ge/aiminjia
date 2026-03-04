@@ -24,4 +24,5 @@ pub struct PluginContext {
     pub session_manager: Arc<PythonSessionManager>,
     pub auth_manager: Option<Arc<AuthManager>>,
     pub use_cloud: bool,
+    pub model: String,
 }

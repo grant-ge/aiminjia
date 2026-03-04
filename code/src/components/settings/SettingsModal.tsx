@@ -17,6 +17,9 @@ import {
   switchProvider,
   openLogsDirectory,
   openWorkspaceDirectory,
+  exportMetrics,
+  clearMetrics,
+  getMetricsInfo,
 } from '@/lib/tauri'
 import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
@@ -67,12 +70,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [showTavilyKey, setShowTavilyKey] = useState(false)
   const [showBochaKey, setShowBochaKey] = useState(false)
 
+  // Metrics info state
+  const [metricsCount, setMetricsCount] = useState(0)
+  const [metricsBytes, setMetricsBytes] = useState(0)
+  const [metricsLoading, setMetricsLoading] = useState(false)
+
   // Load settings + all provider keys when modal opens
   useEffect(() => {
     if (!open) return
     setShowApiKey(false)
     setShowTavilyKey(false)
     setKeyValid({})
+    // Load metrics info
+    getMetricsInfo()
+      .then(({ entryCount, totalBytes }) => {
+        setMetricsCount(entryCount)
+        setMetricsBytes(totalBytes)
+      })
+      .catch(() => {
+        setMetricsCount(0)
+        setMetricsBytes(0)
+      })
     ;(async () => {
       try {
         const [saved, allKeys] = await Promise.all([getSettings(), getAllProviderKeys()])
@@ -585,6 +603,59 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   }}
                 >
                   打开日志目录
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>度量数据：</span>
+                <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  {metricsCount} 条 ({metricsBytes < 1024 ? `${metricsBytes} B` : `${(metricsBytes / 1024).toFixed(0)} KB`})
+                </span>
+                <Button
+                  variant="secondary"
+                  disabled={metricsCount === 0 || metricsLoading}
+                  onClick={async () => {
+                    try {
+                      setMetricsLoading(true)
+                      const { save } = await import('@tauri-apps/plugin-dialog')
+                      const now = new Date()
+                      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+                      const dest = await save({
+                        defaultPath: `aijia-metrics-${dateStr}.json`,
+                        filters: [{ name: 'JSON', extensions: ['json'] }],
+                      })
+                      if (dest) {
+                        const result = await exportMetrics(dest)
+                        notifications.addNotification('success', '导出成功', `已导出 ${result.entryCount} 条度量数据`)
+                      }
+                    } catch (err) {
+                      console.error('Failed to export metrics:', err)
+                      notifications.addNotification('error', '导出失败', String(err))
+                    } finally {
+                      setMetricsLoading(false)
+                    }
+                  }}
+                >
+                  导出
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={metricsCount === 0 || metricsLoading}
+                  onClick={async () => {
+                    try {
+                      setMetricsLoading(true)
+                      await clearMetrics()
+                      setMetricsCount(0)
+                      setMetricsBytes(0)
+                      notifications.addNotification('success', '清理完成', '度量数据已清理')
+                    } catch (err) {
+                      console.error('Failed to clear metrics:', err)
+                      notifications.addNotification('error', '清理失败', String(err))
+                    } finally {
+                      setMetricsLoading(false)
+                    }
+                  }}
+                >
+                  清理
                 </Button>
               </div>
             </div>

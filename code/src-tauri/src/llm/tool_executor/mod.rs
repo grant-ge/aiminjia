@@ -111,6 +111,7 @@ pub(crate) mod tests {
             session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
             auth_manager: None,
             use_cloud: false,
+            model: "test-model".to_string(),
         }
     }
 

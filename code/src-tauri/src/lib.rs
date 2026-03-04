@@ -6,6 +6,7 @@ mod search;
 mod storage;
 mod python;
 mod plugin;
+mod telemetry;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -200,6 +201,9 @@ pub fn run() {
             workspace::get_workspace_info,
             workspace::open_logs_directory,
             workspace::open_workspace_directory,
+            workspace::export_metrics,
+            workspace::clear_metrics,
+            workspace::get_metrics_info,
             // Export commands
             export::export_conversation,
             // Plugin commands
