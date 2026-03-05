@@ -1,0 +1,24 @@
+# Python dependencies for AIjia data analysis
+# Installed into bundled python-runtime by scripts/setup-python.sh
+# Install manually: pip install -r requirements.txt --no-cache-dir
+
+# Data analysis
+pandas>=2.0
+numpy>=1.24
+scipy>=1.11
+openpyxl>=3.1
+
+# File parsing
+pdfplumber>=0.10
+pypdf>=3.0
+python-docx>=1.0
+python-pptx>=0.6
+
+# Export / report generation
+htmldocx>=0.0.6
+# Note: xhtml2pdf removed - it pulls pycairo (C extension, needs system cairo lib).
+# PDF export uses weasyprint (optional, falls back to HTML if not installed).
+
+# Charting
+matplotlib>=3.7
+plotly>=5.18

@@ -1,0 +1,93 @@
+/**
+ * StreamingBubble — shows the AI response as it streams in,
+ * with a typing indicator when waiting for the first token.
+ */
+import { Avatar } from '@/components/common/Avatar'
+import { useChatStore } from '@/stores/chatStore'
+import type { AgentPhase } from '@/stores/chatStore'
+import { TypingIndicator } from './TypingIndicator'
+import { markdownToHtml } from '@/lib/markdown'
+import { stripHallucinatedXml } from '@/lib/sanitize'
+
+const TOOL_LABELS: Record<string, string> = {
+  execute_python: '正在分析数据...',
+  load_file: '正在加载文件...',
+  save_analysis_note: '正在保存分析记录...',
+  update_progress: '正在更新分析进度...',
+  web_search: '正在搜索相关信息...',
+  generate_report: '正在生成报告...',
+  export_data: '正在导出数据...',
+  hypothesis_test: '正在进行统计检验...',
+  detect_anomalies: '正在检测异常数据...',
+  generate_chart: '正在生成图表...',
+}
+
+const PHASE_LABELS: Record<AgentPhase, string> = {
+  think: '正在思考...',
+  act: '正在执行...',
+  observe: '正在整理...',
+}
+
+interface StreamingBubbleProps {
+  content: string
+}
+
+export function StreamingBubble({ content }: StreamingBubbleProps) {
+  const toolExecutions = useChatStore((s) => s.toolExecutions)
+  const agentPhase = useChatStore((s) => {
+    const activeId = s.activeConversationId
+    return activeId ? s.streamStates[activeId]?.agentPhase : undefined
+  })
+  const activeTool = toolExecutions.find((t) => t.status === 'executing')
+
+  // Strip hallucinated XML blocks that some models emit in text content
+  const cleanContent = stripHallucinatedXml(content)
+
+  // Phase-aware status text: use TAOR phase if available, otherwise fall back
+  const statusText = activeTool
+    ? (TOOL_LABELS[activeTool.toolName] || activeTool.toolName)
+    : agentPhase
+      ? PHASE_LABELS[agentPhase]
+      : (cleanContent ? '' : '正在思考...')
+
+  return (
+    <div className="mb-7 animate-[fadeUp_0.3s_ease]">
+      {/* Header: avatar + name */}
+      <div className="mb-2 flex items-center gap-2">
+        <Avatar variant="ai" />
+        <span
+          className="text-sm font-semibold"
+          style={{ color: 'var(--color-text-primary)' }}
+        >
+          AI小家
+        </span>
+      </div>
+
+      {/* Body — offset by avatar width */}
+      <div className="pl-9">
+        {cleanContent ? (
+          <div
+            className="text-md leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: markdownToHtml(cleanContent) }}
+          />
+        ) : null}
+        {activeTool ? (
+          <div
+            className="mt-2 flex items-center gap-2 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10" strokeDasharray="50" strokeDashoffset="20" strokeLinecap="round" />
+            </svg>
+            <span>{statusText}</span>
+          </div>
+        ) : (
+          <div className={`flex items-center gap-2 text-sm${cleanContent ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
+            <TypingIndicator />
+            <span>{statusText}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

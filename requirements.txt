@@ -1,0 +1,9 @@
+# Python dependencies for AI小家 (conversation export feature)
+# Install with: pip install -r requirements.txt
+
+# PDF export (lighter than Playwright, no browser binary needed)
+weasyprint>=62.0
+
+# Word (DOCX) export
+python-docx>=1.0.0
+htmldocx>=0.0.6
