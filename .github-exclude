@@ -1,0 +1,10 @@
+# GitHub 仓库排除规则
+# 这些文件/目录仅保留在 Codeup，不推送到 GitHub
+
+docs/
+CLAUDE.md
+
+# 说明：
+# - GitHub 仓库仅用于 CI/CD 构建，只保留 code/ 和 .github/
+# - Codeup 仓库是完整仓库，包含所有文档和配置
+# - 推送到 GitHub 前需确保这些文件已删除
