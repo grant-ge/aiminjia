@@ -94,13 +94,18 @@ pub async fn parse_file(runner: &PythonRunner, file_path: &Path) -> Result<Parse
 from openpyxl import load_workbook
 _wb = load_workbook('{}', read_only=True, data_only=True)
 _ws = _wb.active
+# Get actual total row count (including header)
+_actual_row_count = _ws.max_row
 _rows = list(_ws.iter_rows(max_row=10001, values_only=True))
 _wb.close()
 if _rows:
     _header = [str(c).strip() if c is not None else f'col_{{i}}' for i, c in enumerate(_rows[0])]
     df = pd.DataFrame(_rows[1:10001], columns=_header)
+    # Override row_count with actual total (excluding header)
+    _actual_data_rows = max(0, _actual_row_count - 1)
 else:
     df = pd.DataFrame()
+    _actual_data_rows = 0
 "#,
             escaped_path
         ),
@@ -168,7 +173,8 @@ try:
     # Gather metadata
     columns = df.columns.tolist()
     dtypes = {{col: str(dtype) for col, dtype in df.dtypes.items()}}
-    row_count = len(df)
+    # Use actual row count if available (Excel), otherwise use sampled df length
+    row_count = _actual_data_rows if '_actual_data_rows' in locals() else len(df)
 
     # Sample first 5 rows
     sample = df.head(5).to_dict(orient='records')
