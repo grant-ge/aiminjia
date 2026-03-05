@@ -319,6 +319,14 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 
 ## 16. 更新历史
 
+### v0.3.13 (2026-03-05)
+
+**视觉一致性修复**：
+- **4 级圆角体系** — 建立 Controls(8px) / Containers(12px) / Surfaces(16px) / Pills(9999px) 四档标准，修复 10 个组件的圆角不一致（TabButton、SubTabButton、Badge、Button、StepDivider、ProgressSteps、RootCauseBlock、GeneratedFileCard 等）
+- **Button/Input 高度统一** — Button 增加 `size` prop（md=h-9 / sm=h-7），默认 md 与 Input h-9 等高，解决设置窗口中按钮与输入框高度不对齐问题
+- **字号统一** — 按钮和输入框统一为 `text-sm` (13px)，消除同行元素大小不一致
+- **视觉标准文档重建** — 重写 `docs/visual-standard.md`，补充 4 级圆角体系、Button 尺寸规范、图标原则、Flex 规则、开发约束
+
 ### v0.3.12 (2026-03-05)
 
 **修复**：
