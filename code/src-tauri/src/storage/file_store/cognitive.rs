@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 const CORE_MAX_LINES: usize = 200;
 
 /// Maximum daily save_memory calls per conversation turn (enforced by executor).
-pub const SAVE_RATE_LIMIT: usize = 5;
+pub const SAVE_RATE_LIMIT: usize = 3;
 
 /// Content length bounds.
 pub const CONTENT_MIN_LEN: usize = 10;

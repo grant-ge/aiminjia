@@ -14,9 +14,13 @@ impl ToolPlugin for MemorySaveTool {
     fn name(&self) -> &str { "save_memory" }
 
     fn description(&self) -> &str {
-        "Save a piece of knowledge to persistent cognitive memory. Use for user preferences, \
-         enterprise facts, data patterns, and analytical observations that may be useful across \
-         conversations. Do NOT save temporary or one-time facts."
+        "Save high-value knowledge to persistent memory. WHITELIST ONLY — only these 5 types: \
+         (1) enterprise identity: industry, size, org structure, comp structure, fiscal cycle; \
+         (2) user preferences: explicitly stated display/analysis preferences; \
+         (3) confirmed methodology: user-approved normalization, grading, statistical methods; \
+         (4) data source traits: recurring data quality issues, structural characteristics; \
+         (5) verified findings: analysis conclusions the user reviewed and confirmed. \
+         Two hard criteria: still valid in 2 weeks AND user-confirmed. If unsure, don't save."
     }
 
     fn input_schema(&self) -> Value {
