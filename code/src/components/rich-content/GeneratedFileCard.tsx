@@ -94,14 +94,14 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
             variant="ghost"
-            className="!px-2 !py-1 !text-xs"
+            size="sm"
             onClick={() => onAction?.(file.id, 'open')}
           >
             Open
           </Button>
           <Button
             variant="ghost"
-            className="!px-2 !py-1 !text-xs"
+            size="sm"
             onClick={() => onAction?.(file.id, 'reveal')}
           >
             Open Folder
@@ -112,7 +112,7 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
               <Button
                 key={a.type}
                 variant="ghost"
-                className="!px-2 !py-1 !text-xs"
+                size="sm"
                 onClick={() => onAction?.(file.id, a.type)}
               >
                 {a.label}

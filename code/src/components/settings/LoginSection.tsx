@@ -246,7 +246,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             <div className="mt-3 space-y-3">
               <input
                 type="password"
-                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                className="h-9 w-full rounded-md border px-3 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -258,7 +258,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               />
               <input
                 type="password"
-                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                className="h-9 w-full rounded-md border px-3 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -270,7 +270,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               />
               <input
                 type="password"
-                className="h-9 w-full rounded-md border px-3 py-2 text-sm outline-none"
+                className="h-9 w-full rounded-md border px-3 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -399,7 +399,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
         <div className="mb-3">
           <input
             type="text"
-            className="mb-2 h-9 w-full rounded-md border px-3 py-2 text-base outline-none"
+            className="mb-2 h-9 w-full rounded-md border px-3 text-sm outline-none"
             style={{
               background: 'var(--color-bg-main)',
               borderColor: 'var(--color-border)',
@@ -412,7 +412,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           />
           <input
             type="password"
-            className="h-9 w-full rounded-md border px-3 py-2 text-base outline-none"
+            className="h-9 w-full rounded-md border px-3 text-sm outline-none"
             style={{
               background: 'var(--color-bg-main)',
               borderColor: 'var(--color-border)',

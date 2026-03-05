@@ -105,7 +105,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
         </p>
 
         <button
-          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-md border px-[18px] py-2 text-base font-medium transition-all duration-150 ${isNewDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+          className={`mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border px-3.5 text-sm font-medium transition-all duration-150 ${isNewDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           style={{
             borderColor: 'var(--color-primary)',
             color: 'var(--color-primary)',
@@ -311,7 +311,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
         <div className="flex items-center justify-between">
         <span>AI小家 v{appVersion}</span>
         <button
-          className="flex cursor-pointer items-center gap-1.5 rounded-md border px-[18px] py-2 text-base font-medium transition-all duration-150"
+          className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-3.5 text-sm font-medium transition-all duration-150"
           style={{
             borderColor: 'var(--color-border)',
             color: 'var(--color-text-muted)',

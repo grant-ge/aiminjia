@@ -325,7 +325,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="relative">
               <input
                 type={showApiKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 py-2 pr-16 text-base outline-none"
+                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -486,7 +486,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="relative">
               <input
                 type={showTavilyKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 py-2 pr-16 text-base outline-none"
+                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -512,7 +512,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="relative">
               <input
                 type={showBochaKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 py-2 pr-16 text-base outline-none"
+                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
                 style={{
                   background: 'var(--color-bg-main)',
                   borderColor: 'var(--color-border)',
@@ -765,7 +765,7 @@ function FormInput({
   return (
     <input
       type={type}
-      className="h-9 w-full rounded-md border px-3 py-2 text-base outline-none"
+      className="h-9 w-full rounded-md border px-3 text-sm outline-none"
       style={{
         background: 'var(--color-bg-main)',
         borderColor: 'var(--color-border)',

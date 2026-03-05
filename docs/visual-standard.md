@@ -192,16 +192,20 @@
 ### 7.1 Button
 
 - 三种变体：`primary`（深色填充）、`secondary`（白底边框）、`ghost`（透明无边框）
-- 尺寸：`h-auto` 自适应，`px-[18px] py-2`，`text-base` (14px)
+- 两种尺寸：
+  - `md`（默认）：`h-9` (36px)，`px-3.5`，`text-sm` (13px) — 与 Input 等高
+  - `sm`：`h-7` (28px)，`px-2.5`，`text-xs` (12px) — 紧凑场景（文件卡片等）
 - 圆角：`rounded-md` (8px)
 - 禁用态：`opacity: 0.5`，`cursor: not-allowed`
 
 ### 7.2 Input
 
-- 高度：`h-9` (36px)
+- 高度：`h-9` (36px) — 与 Button md 等高
 - 圆角：`rounded-md` (8px)
+- 字号：`text-sm` (13px) — 与 Button 一致
 - 背景：`--color-bg-main`
 - 边框：`--color-border`
+- 不使用 `py-*`，高度由 `h-9` 控制垂直居中
 
 ### 7.3 Modal
 
