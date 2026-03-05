@@ -24,7 +24,7 @@ export function Badge({ variant = 'gray', children }: BadgeProps) {
   const styles = variantStyles[variant]
   return (
     <span
-      className="inline-block rounded-xl px-2.5 py-0.5 text-xs font-medium"
+      className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium"
       style={{ background: styles.bg, color: styles.color }}
     >
       {children}

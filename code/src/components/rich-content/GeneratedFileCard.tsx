@@ -71,7 +71,7 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
             </span>
             {!file.isLatest && (
               <span
-                className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium"
+                className="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
                 style={{
                   background: 'var(--color-bg-neutral)',
                   color: 'var(--color-text-muted)',

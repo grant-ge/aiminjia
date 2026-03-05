@@ -17,7 +17,7 @@ export function StepDivider({ stepNumber, totalSteps = 5, title }: StepDividerPr
         style={{ background: 'var(--color-border)' }}
       />
       <span
-        className="whitespace-nowrap rounded-2xl border px-2.5 py-0.5 text-xs font-bold tracking-wide"
+        className="whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold tracking-wide"
         style={{
           color: 'var(--color-text-muted)',
           background: 'var(--color-bg-card)',

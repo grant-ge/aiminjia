@@ -39,7 +39,7 @@ export function RootCauseBlock({ rootCause }: RootCauseBlockProps) {
         >
           <div className="mb-1 flex items-center gap-2">
             <span
-              className="rounded-xl px-2 py-0.5 text-xs font-bold"
+              className="rounded-full px-2 py-0.5 text-xs font-bold"
               style={{
                 background: 'var(--color-semantic-red-bg)',
                 color: 'var(--color-semantic-red)',

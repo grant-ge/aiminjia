@@ -19,7 +19,7 @@ export function Button({
   const [hovered, setHovered] = useState(false)
 
   const baseClasses =
-    'inline-flex items-center gap-1.5 rounded-sm px-[18px] py-2 text-base font-medium cursor-pointer transition-all duration-150'
+    'inline-flex items-center gap-1.5 rounded-md px-[18px] py-2 text-base font-medium cursor-pointer transition-all duration-150'
 
   const variantStyles: Record<string, React.CSSProperties> = {
     primary: {

@@ -36,7 +36,7 @@ export function ProgressSteps({ progress }: ProgressStepsProps) {
           return (
             <span
               key={i}
-              className="flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-medium"
+              className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
               style={{
                 background: isDone
                   ? 'var(--color-primary-subtle)'

@@ -682,7 +682,7 @@ function TabButton({
 }) {
   return (
     <button
-      className="cursor-pointer rounded-xl border-none px-3 py-1.5 text-sm font-medium transition-colors duration-150"
+      className="cursor-pointer rounded-md border-none px-3 py-1.5 text-sm font-medium transition-colors duration-150"
       style={{
         background: active ? 'var(--color-primary-subtle)' : 'transparent',
         color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
@@ -705,7 +705,7 @@ function SubTabButton({
 }) {
   return (
     <button
-      className="cursor-pointer rounded-lg border-none px-2.5 py-1 text-xs font-medium transition-colors duration-150"
+      className="cursor-pointer rounded-md border-none px-2.5 py-1 text-xs font-medium transition-colors duration-150"
       style={{
         background: active ? 'var(--color-primary-subtle)' : 'transparent',
         color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
