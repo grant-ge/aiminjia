@@ -1,0 +1,297 @@
+use std::sync::Arc;
+use std::path::Path;
+use tauri::State;
+use crate::storage::file_store::AppStorage;
+use crate::storage::file_manager::FileManager;
+
+/// Look up a file's stored_path from both uploaded_files and generated_files tables.
+/// Returns the stored_path string if found.
+fn resolve_stored_path(
+    db: &AppStorage,
+    file_id: &str,
+    conversation_id: &str,
+) -> Result<String, String> {
+    // Try uploaded_files first
+    if let Some(record) = db.get_uploaded_file_for_conversation(file_id, conversation_id)
+        .map_err(|e| e.to_string())?
+    {
+        if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
+            return Ok(path.to_string());
+        }
+    }
+
+    // Fall back to generated_files
+    if let Some(record) = db.get_generated_file_for_conversation(file_id, conversation_id)
+        .map_err(|e| e.to_string())?
+    {
+        if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
+            return Ok(path.to_string());
+        }
+    }
+
+    Err("File not found or does not belong to this conversation".to_string())
+}
+
+/// Maximum upload file size: 200 MB
+const MAX_UPLOAD_SIZE: u64 = 200 * 1024 * 1024;
+
+/// Upload a file to the workspace.
+/// Copies the file to workspace/uploads/ and records it in the database.
+/// Returns a JSON object with fileId and fileSize.
+#[tauri::command]
+pub async fn upload_file(
+    db: State<'_, Arc<AppStorage>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_path: String,
+    conversation_id: String,
+) -> Result<serde_json::Value, String> {
+    let source = Path::new(&file_path);
+
+    // Check file size before copying
+    let source_size = std::fs::metadata(source)
+        .map(|m| m.len())
+        .map_err(|e| format!("Cannot read file: {}", e))?;
+    if source_size > MAX_UPLOAD_SIZE {
+        return Err(format!(
+            "File too large ({:.1} MB). Maximum allowed: {} MB.",
+            source_size as f64 / (1024.0 * 1024.0),
+            MAX_UPLOAD_SIZE / (1024 * 1024),
+        ));
+    }
+
+    // Store in workspace
+    let info = file_mgr.store_upload(source).map_err(|e| e.to_string())?;
+
+    // Record in database with conversation ownership
+    let file_id = uuid::Uuid::new_v4().to_string();
+    let file_size = info.file_size;
+    if let Err(e) = db.insert_uploaded_file(
+        &file_id,
+        &conversation_id,
+        &info.file_name,
+        &info.stored_path,
+        &info.file_type,
+        file_size as i64,
+        None,
+    ) {
+        // Rollback: delete the physical file if DB insert fails
+        log::error!("DB insert failed for uploaded file, rolling back physical file: {}", e);
+        let _ = file_mgr.delete_file(&info.stored_path);
+        return Err(e.to_string());
+    }
+
+    Ok(serde_json::json!({
+        "fileId": file_id,
+        "fileSize": file_size,
+    }))
+}
+
+/// Open a generated file with system default application.
+/// Searches both uploaded_files and generated_files tables.
+#[tauri::command]
+pub async fn open_generated_file(
+    db: State<'_, Arc<AppStorage>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+) -> Result<(), String> {
+    let stored_path = resolve_stored_path(&db, &file_id, &conversation_id)?;
+    let full_path = file_mgr.full_path(&stored_path);
+
+    // Open with system default application
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Reveal a file in the OS file manager (Finder / Explorer / file manager).
+/// Searches both uploaded_files and generated_files tables.
+#[tauri::command]
+pub async fn reveal_file_in_folder(
+    db: State<'_, Arc<AppStorage>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+) -> Result<(), String> {
+    let stored_path = resolve_stored_path(&db, &file_id, &conversation_id)?;
+    let full_path = file_mgr.full_path(&stored_path);
+
+    // Reveal in OS file manager
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", full_path.display()))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = full_path.parent().unwrap_or(&full_path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Preview a file (returns preview content as string).
+#[tauri::command]
+pub async fn preview_file(
+    db: State<'_, Arc<AppStorage>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+) -> Result<String, String> {
+    let file_record = db.get_uploaded_file_for_conversation(&file_id, &conversation_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "File not found or does not belong to this conversation".to_string())?;
+
+    let stored_path = file_record.get("storedPath")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Invalid file record".to_string())?;
+
+    let full_path = file_mgr.full_path(stored_path);
+
+    // For HTML files, return the file path for WebView preview
+    // For other files, return basic info
+    let file_type = file_record.get("fileType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    let preview = serde_json::json!({
+        "type": file_type,
+        "path": full_path.to_string_lossy(),
+        "name": file_record.get("originalName").and_then(|v| v.as_str()).unwrap_or("unknown"),
+    });
+
+    Ok(preview.to_string())
+}
+
+/// Search workspace subdirectories for a file by name and open it with the default app.
+#[tauri::command]
+pub async fn open_file_by_name(
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_name: String,
+) -> Result<(), String> {
+    let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Search workspace subdirectories for a file by name and reveal it in the OS file manager.
+#[tauri::command]
+pub async fn reveal_file_by_name(
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_name: String,
+) -> Result<(), String> {
+    let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
+
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", full_path.display()))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let parent = full_path.parent().unwrap_or(&full_path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Search workspace subdirectories for a file matching the given name.
+/// Checks: reports/, analysis/, uploads/, scripts/, temp/ and workspace root.
+fn find_file_in_workspace(
+    file_mgr: &FileManager,
+    file_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let ws = file_mgr.workspace_path();
+    let subdirs = ["reports", "analysis", "uploads", "scripts", "temp", "charts", "exports"];
+
+    // First: exact match in subdirectories
+    for subdir in &subdirs {
+        let candidate = ws.join(subdir).join(file_name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    // Second: exact match in workspace root
+    let root_candidate = ws.join(file_name);
+    if root_candidate.exists() {
+        return Ok(root_candidate);
+    }
+
+    // Third: substring match — file name on disk contains the search term
+    for subdir in &subdirs {
+        let dir = ws.join(subdir);
+        if !dir.exists() { continue; }
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains(file_name) && entry.path().is_file() {
+                    return Ok(entry.path());
+                }
+            }
+        }
+    }
+
+    Err(format!("File '{}' not found in workspace", file_name))
+}
+
+/// Delete a file.
+#[tauri::command]
+pub async fn delete_file(
+    db: State<'_, Arc<AppStorage>>,
+    file_mgr: State<'_, Arc<FileManager>>,
+    file_id: String,
+    conversation_id: String,
+) -> Result<(), String> {
+    // Get file info, verified against conversation
+    let file_record = db.get_uploaded_file_for_conversation(&file_id, &conversation_id)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(record) = file_record {
+        if let Some(stored_path) = record.get("storedPath").and_then(|v| v.as_str()) {
+            // Delete from filesystem
+            file_mgr.delete_file(stored_path).map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Delete from database
+    db.delete_uploaded_file(&file_id, &conversation_id)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

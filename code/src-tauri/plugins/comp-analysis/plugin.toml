@@ -1,0 +1,31 @@
+[plugin]
+id = "comp-analysis"
+name = "薪酬公平性分析"
+type = "skill"
+description = "6-step compensation equity analysis workflow"
+priority = 10
+
+[trigger]
+keywords = [
+    "薪酬分析", "薪酬诊断", "公平性分析", "薪酬公平",
+    "薪资分析", "薪资诊断", "薪酬对标", "薪酬体系分析",
+    "compensation analysis", "pay equity", "salary analysis",
+    "salary equity", "pay fairness",
+]
+requires_files = true
+
+# File-upload + salary keywords (secondary activation)
+file_keywords = [
+    "工资", "薪酬", "薪资", "工资表", "薪酬表",
+    "salary", "compensation", "payroll", "wage",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 10
+token_budget = 8192

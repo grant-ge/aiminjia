@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+/*
+ * AI小家 — Global Styles & Design Tokens
+ * Based on visual-standard.md
+ */
+
+/* ===== TailwindCSS 4 Theme Configuration ===== */
+@theme {
+  /* === Primary / Carbon Black (interactive elements) === */
+  --color-primary: #1D1D1F;
+  --color-primary-hover: #2C2C2E;
+  --color-primary-active: #000000;
+  --color-text-on-primary: #FFFFFF;
+  --color-primary-subtle: rgba(29, 29, 31, 0.08);
+  --color-primary-muted: rgba(29, 29, 31, 0.15);
+
+  /* === Accent / Brand Colors (brand-only: AI avatar, Logo) === */
+  --color-accent-50: #FEF9EC;
+  --color-accent-100: #FBF0D1;
+  --color-accent-200: #F5DDA3;
+  --color-accent-300: #E8C86A;
+  --color-accent-400: #D4A843;
+  --color-accent-500: #C49535;
+  --color-accent-600: #A67C2E;
+  --color-accent-700: #875F1E;
+  --color-accent: #D4A843;
+  --color-accent-hover: #C49535;
+  --color-accent-active: #A67C2E;
+  --color-accent-light: #E8C86A;
+  --color-accent-subtle: rgba(212, 168, 67, 0.12);
+  --color-accent-muted: rgba(212, 168, 67, 0.25);
+
+  /* === Background Colors === */
+  --color-bg-base: #F2F1EE;
+  --color-bg-sidebar: #F5F4F1;
+  --color-bg-sidebar-hover: #EBEAE6;
+  --color-bg-main: #FAFAF8;
+  --color-bg-elevated: #FFFFFF;
+  --color-bg-card: #FFFFFF;
+  --color-bg-card-hover: #F7F6F3;
+  --color-bg-input: #FFFFFF;
+  --color-bg-msg-user: #F2F1EE;
+
+  /* === Border Colors === */
+  --color-border: #E2E0DC;
+  --color-border-light: #D0CEC9;
+  --color-border-subtle: #EDEBE7;
+
+  /* === Text Colors === */
+  --color-text-primary: #1D1D1F;
+  --color-text-secondary: #555555;
+  --color-text-muted: #8C8C8C;
+  --color-text-disabled: #C0C0C0;
+  --color-text-on-accent: #1A1A1A;
+
+  /* === Semantic Colors === */
+  --color-semantic-green: #34C759;
+  --color-semantic-green-bg: rgba(52, 199, 89, 0.12);
+  --color-semantic-orange: #F5A623;
+  --color-semantic-orange-bg: rgba(245, 166, 35, 0.12);
+  --color-semantic-red: #EF4444;
+  --color-semantic-red-bg: rgba(239, 68, 68, 0.12);
+  --color-semantic-blue: #5B9BD5;
+  --color-semantic-blue-bg: rgba(91, 155, 213, 0.12);
+  --color-semantic-purple: #9B7ED8;
+  --color-semantic-purple-bg: rgba(155, 126, 216, 0.12);
+  --color-semantic-yellow: #E8C86A;
+
+  /* === Font Families === */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC",
+               "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono",
+               Consolas, "Courier New", monospace;
+
+  /* === Font Sizes (Apple HIG standard, 14px base) === */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.6;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.6;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.3;
+
+  /* === Border Radius === */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* === Spacing (4px grid) === */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+
+  /* === Code Block Colors === */
+  --color-bg-code: #F5F4F0;
+  --color-bg-code-header: rgba(0, 0, 0, 0.02);
+  --color-text-code: #383838;
+
+  /* === Semantic Color Variants (light bg + border) === */
+  --color-semantic-red-bg-light: rgba(239, 68, 68, 0.04);
+  --color-semantic-red-border: rgba(239, 68, 68, 0.18);
+  --color-semantic-blue-bg-light: rgba(91, 155, 213, 0.06);
+  --color-semantic-blue-border: rgba(91, 155, 213, 0.2);
+  --color-semantic-purple-bg-light: rgba(155, 126, 216, 0.06);
+  --color-semantic-purple-border: rgba(155, 126, 216, 0.2);
+  --color-semantic-green-bg-light: rgba(52, 199, 89, 0.04);
+  --color-semantic-orange-bg-light: rgba(245, 166, 35, 0.04);
+  --color-semantic-orange-border: rgba(245, 166, 35, 0.2);
+  --color-accent-bg-light: rgba(212, 168, 67, 0.04);
+  --color-accent-border: rgba(212, 168, 67, 0.25);
+
+  /* === File Type Badge Backgrounds (0.15 opacity) === */
+  --color-filetype-green-bg: rgba(52, 199, 89, 0.15);
+  --color-filetype-blue-bg: rgba(91, 155, 213, 0.15);
+  --color-filetype-red-bg: rgba(239, 68, 68, 0.15);
+  --color-filetype-accent-bg: rgba(212, 168, 67, 0.15);
+  --color-filetype-purple-bg: rgba(155, 126, 216, 0.15);
+  --color-filetype-orange-bg: rgba(245, 166, 35, 0.15);
+  --color-filetype-gray-bg: rgba(168, 168, 168, 0.15);
+
+  /* === Neutral Muted (gray bg for badges, pills, inactive states) === */
+  --color-bg-neutral: rgba(168, 168, 168, 0.12);
+  --color-bg-neutral-subtle: rgba(168, 168, 168, 0.1);
+
+  /* === Overlay & Avatar === */
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-user-avatar: #6366f1;
+
+  /* === Shadows === */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
+  --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
+  --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
+
+  /* === Transitions === */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease-out;
+  --transition-slow: 300ms ease;
+}
+
+/* ===== Base Styles ===== */
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg-main);
+  color: var(--color-text-primary);
+  height: 100vh;
+  overflow: hidden;
+  min-width: 1080px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+}
+
+/* ===== Scrollbar Styles ===== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-light);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* ===== Animations ===== */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ===== Focus Styles ===== */
+:focus-visible {
+  outline: none;
+}
+
+/* ===== Selection Styles ===== */
+::selection {
+  background: var(--color-accent-subtle);
+  color: var(--color-text-primary);
+}
