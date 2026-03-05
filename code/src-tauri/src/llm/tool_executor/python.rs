@@ -633,7 +633,7 @@ fn try_compact_dataframe(lines: &[&str], start: usize) -> Option<(String, usize)
         out.push('\n');
     }
     // Omission marker
-    out.push_str(&format!("[...{} more rows]\n", total_data_rows.saturating_sub(4)));
+    out.push_str(&format!("[...{} more rows hidden from display, full data still available in _df]\n", total_data_rows.saturating_sub(4)));
     // Last data row
     if data_end > data_start {
         let last_data = data_end - 1;

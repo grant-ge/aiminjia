@@ -153,13 +153,11 @@ pub type StreamBox = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
 
 /// Parse a Server-Sent Events (SSE) line.
 /// Returns the data content if the line starts with "data: ".
-/// Returns `None` for non-data lines, empty lines, comments, or the "[DONE]" sentinel.
+/// Returns `Some("[DONE]")` for the `[DONE]` sentinel so callers can handle it.
+/// Returns `None` for non-data lines, empty lines, and comments.
 pub fn parse_sse_line(line: &str) -> Option<String> {
     let trimmed = line.trim();
     if let Some(data) = trimmed.strip_prefix("data: ") {
-        if data == "[DONE]" {
-            return None;
-        }
         Some(data.to_string())
     } else {
         None
@@ -179,7 +177,7 @@ mod tests {
     #[test]
     fn test_parse_sse_done_line() {
         let result = parse_sse_line("data: [DONE]");
-        assert_eq!(result, None);
+        assert_eq!(result, Some("[DONE]".to_string()));
     }
 
     #[test]

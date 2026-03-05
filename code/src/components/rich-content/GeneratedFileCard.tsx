@@ -20,6 +20,11 @@ const FILE_TYPE_ICON: Record<string, { label: string; bg: string; color: string 
   json: { label: 'JSON', bg: 'var(--color-filetype-gray-bg)', color: 'var(--color-text-muted)' },
   png: { label: 'PNG', bg: 'var(--color-filetype-purple-bg)', color: 'var(--color-semantic-purple)' },
   py: { label: 'PY', bg: 'var(--color-filetype-orange-bg)', color: 'var(--color-semantic-orange)' },
+  pptx: { label: 'PPT', bg: 'var(--color-filetype-orange-bg)', color: 'var(--color-semantic-orange)' },
+  ppt: { label: 'PPT', bg: 'var(--color-filetype-orange-bg)', color: 'var(--color-semantic-orange)' },
+  docx: { label: 'DOC', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
+  doc: { label: 'DOC', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
+  md: { label: 'MD', bg: 'var(--color-filetype-gray-bg)', color: 'var(--color-text-muted)' },
 }
 
 function formatFileSize(bytes: number): string {

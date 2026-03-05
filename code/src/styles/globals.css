@@ -140,7 +140,7 @@
 
   /* === Overlay & Avatar === */
   --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-user-avatar: #6366f1;
+  --color-user-avatar: #2c2c2c;
 
   /* === Shadows === */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);

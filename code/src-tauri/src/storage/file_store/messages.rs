@@ -22,6 +22,8 @@ use super::error::{StorageError, StorageResult};
 use super::io::{append_jsonl, count_jsonl_lines, read_jsonl};
 use super::types::StoredMessage;
 
+use crate::llm::content_filter::strip_hallucinated_xml;
+
 /// Maximum messages per shard file.
 const SHARD_CAPACITY: u64 = 100;
 
@@ -121,15 +123,17 @@ pub fn insert_message(
     let current_count = count_jsonl_lines(&current_shard_path).unwrap_or(0) as u64;
     if current_count >= SHARD_CAPACITY {
         meta.shard += 1;
+        write_shard_meta(base_dir, conversation_id, &meta);
     }
 
-    // Parse content JSON
-    let content: serde_json::Value =
-        serde_json::from_str(content_json).unwrap_or(serde_json::json!({}));
+    let shard_path = shard_path(base_dir, conversation_id, meta.shard);
+    meta.next_seq += 1;
 
-    let msg = StoredMessage {
+    let content: serde_json::Value = serde_json::from_str(content_json)?;
+
+    let record = StoredMessage {
         seq: meta.next_seq,
-        rev: 0,
+        rev: 1,
         id: id.to_string(),
         conversation_id: conversation_id.to_string(),
         role: role.to_string(),
@@ -137,12 +141,8 @@ pub fn insert_message(
         created_at: Utc::now().to_rfc3339(),
     };
 
-    let path = shard_path(base_dir, conversation_id, meta.shard);
-    append_jsonl(&path, &msg)?;
-
-    // Update _current
-    meta.next_seq += 1;
-    write_shard_meta(base_dir, conversation_id, &meta)?;
+    append_jsonl(&shard_path, &record)?;
+    write_shard_meta(base_dir, conversation_id, &meta);
 
     // Update conversation's updatedAt
     let conv_meta_path = conv_dir(base_dir, conversation_id).join("conv.json");
@@ -308,13 +308,35 @@ fn dedup_messages(messages: Vec<StoredMessage>) -> Vec<StoredMessage> {
 
 /// Convert a StoredMessage to the JSON format expected by the frontend.
 fn message_to_json(msg: StoredMessage) -> serde_json::Value {
+    // Extract sender from content if present (for user messages)
+    let sender = msg.content.get("sender").cloned();
+
+    // Sanitize assistant message text: strip hallucinated XML tags from historical data
+    let content = if msg.role == "assistant" {
+        sanitize_assistant_content(msg.content)
+    } else {
+        msg.content
+    };
+
     serde_json::json!({
         "id": msg.id,
         "conversationId": msg.conversation_id,
         "role": msg.role,
-        "content": msg.content,
+        "content": content,
         "createdAt": msg.created_at,
+        "sender": sender,
     })
+}
+
+/// Strip hallucinated XML from assistant message content.text field.
+fn sanitize_assistant_content(mut content: serde_json::Value) -> serde_json::Value {
+    if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
+        let cleaned = strip_hallucinated_xml(text);
+        if cleaned.len() != text.len() {
+            content["text"] = serde_json::Value::String(cleaned);
+        }
+    }
+    content
 }
 
 #[cfg(test)]

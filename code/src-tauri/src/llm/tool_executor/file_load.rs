@@ -654,6 +654,12 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
         if pii_masked { ", PII masked" } else { "" });
 
     // 6. Return metadata to LLM (no file path exposed)
+    let row_count_note = if actual_loaded_as == "dataframe" {
+        format!("共 {} 行数据，全部已加载到 _df 中（sampleData 仅展示前几行样本，分析请使用 _df 全量数据）", parse_result.row_count)
+    } else {
+        "文本已完整加载到 _text 中".to_string()
+    };
+
     let mut output = json!({
         "status": "loaded",
         "originalName": original_name,
@@ -663,8 +669,9 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
         "rowCount": parse_result.row_count,
         "schemaSummary": parse_result.schema_summary,
         "sampleData": parse_result.sample_data,
+        "dataNote": row_count_note,
         "usage": if actual_loaded_as == "dataframe" {
-            "数据已加载到变量 _df，可在 execute_python 中直接使用 _df 进行分析"
+            "数据已加载到变量 _df，可在 execute_python 中直接使用 _df 进行分析。_df 包含完整数据，请基于全量数据分析，聊天中展示摘要，完整明细用 _export_detail 导出"
         } else {
             "文本已加载到变量 _text，可在 execute_python 中直接使用 _text 获取内容"
         },

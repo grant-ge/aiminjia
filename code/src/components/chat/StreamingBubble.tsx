@@ -7,6 +7,7 @@ import { useChatStore } from '@/stores/chatStore'
 import type { AgentPhase } from '@/stores/chatStore'
 import { TypingIndicator } from './TypingIndicator'
 import { markdownToHtml } from '@/lib/markdown'
+import { stripHallucinatedXml } from '@/lib/sanitize'
 
 const TOOL_LABELS: Record<string, string> = {
   execute_python: '正在分析数据...',
@@ -39,12 +40,15 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
   })
   const activeTool = toolExecutions.find((t) => t.status === 'executing')
 
+  // Strip hallucinated XML blocks that some models emit in text content
+  const cleanContent = stripHallucinatedXml(content)
+
   // Phase-aware status text: use TAOR phase if available, otherwise fall back
   const statusText = activeTool
     ? (TOOL_LABELS[activeTool.toolName] || activeTool.toolName)
     : agentPhase
       ? PHASE_LABELS[agentPhase]
-      : (content ? '' : '正在思考...')
+      : (cleanContent ? '' : '正在思考...')
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">
@@ -61,10 +65,10 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
 
       {/* Body — offset by avatar width */}
       <div className="pl-9">
-        {content ? (
+        {cleanContent ? (
           <div
             className="text-md leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: markdownToHtml(content) }}
+            dangerouslySetInnerHTML={{ __html: markdownToHtml(cleanContent) }}
           />
         ) : null}
         {activeTool ? (
@@ -78,7 +82,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             <span>{statusText}</span>
           </div>
         ) : (
-          <div className={`flex items-center gap-2 text-sm${content ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
+          <div className={`flex items-center gap-2 text-sm${cleanContent ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
             <TypingIndicator />
             <span>{statusText}</span>
           </div>

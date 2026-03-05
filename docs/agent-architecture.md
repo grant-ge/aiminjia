@@ -390,7 +390,7 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 
 ## 16. 更新历史
 
-### v0.3.15 (2026-03-05)
+### v0.3.16 (2026-03-05)
 
 **认知记忆系统（Cognitive Memory System）**——多层持久记忆架构：
 
@@ -412,6 +412,28 @@ Legacy:       SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_DAILY + [日期注入]
 - `commands/chat.rs` — 核心记忆注入 dynamic_ctx + 自动萃取触发
 - `workflow.toml` — step 0-5 加入 `save_memory`/`search_memory`
 - `prompts/daily.md` — 添加记忆工具使用指引
+
+### v0.3.15 (2026-03-05)
+
+**Gateway Tool Args JSON 解析三层防御**——修复通过 Lotus 网关（Go）调用 Claude 时 `generate_report` 工具参数 JSON 解析失败的问题：
+
+- **根因 1：引号转义丢失** — Lotus 网关 Anthropic→OpenAI 协议转换时，JSON 字符串值中的 ASCII 双引号（如中文强调 `"先发制人"`）丢失了转义层级，裸引号破坏 JSON 结构
+- **根因 2：max_tokens 不够** — `generate_report` 的结构化 JSON 参数（9 个 section + metrics/table/items）超过 4096 tokens，触发 `finish_reason=length` 截断
+
+**三层防御策略**（每层独立生效，兼容所有模型）：
+
+| 层 | 问题 | 修复 |
+|---|------|------|
+| L1 | token 预算不足 | daily mode `token_budget` 4096→8192 |
+| L2 | 网关引号转义丢失 | `sanitize_json_control_chars` 增加内容引号检测（look-ahead 启发式：引号后跟非结构字符则转义） |
+| L3 | JSON 截断（兜底） | `repair_truncated_json` 关闭未闭合的引号/括号/方括号 |
+
+**恢复管线**：`serde_json::from_str` → 失败 → L2 sanitize → 失败 → L3 repair → 失败 → `Value::Null`
+
+**关键文件变更**：
+- `providers/openai.rs` — 重写 `sanitize_json_control_chars`（byte→char 迭代 + 引号启发式），新增 `repair_truncated_json`，`flush_pending_tool` 错误恢复管线增加 L3
+- `commands/chat.rs` — daily mode `token_budget` 4096→8192
+- 14 个新增单元测试覆盖：控制字符、未转义引号、截断修复、正常 JSON 无修改
 
 ### v0.3.14 (2026-03-05)
 

@@ -281,6 +281,14 @@ pub(super) async fn stream_openai_compat(
 ) -> Result<StreamBox> {
     let body = build_request_body(request, model, true, include_tools);
 
+    // Debug: log whether tools are included in the request
+    if let Some(tools) = body.get("tools").and_then(|v| v.as_array()) {
+        log::info!("[STREAM-REQ] url={} model={} tools_count={} tool_names={:?}",
+            url, model, tools.len(),
+            tools.iter().filter_map(|t| t["function"]["name"].as_str()).collect::<Vec<_>>());
+    } else {
+        log::info!("[STREAM-REQ] url={} model={} tools_count=0 (no tools in body)", url, model);
+    }
     let resp = client
         .post(url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -414,8 +422,18 @@ fn sse_bytes_to_events(
                         continue;
                     }
 
-                    if let Ok(chunk) = serde_json::from_str::<Value>(&json_str) {
-                        process_sse_chunk(&chunk, &mut st);
+                    match serde_json::from_str::<Value>(&json_str) {
+                        Ok(chunk) => {
+                            process_sse_chunk(&chunk, &mut st);
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[SSE] Failed to parse chunk JSON: err={} line_len={} line='{}'",
+                                e,
+                                json_str.len(),
+                                json_str.chars().take(300).collect::<String>(),
+                            );
+                        }
                     }
                 }
 
@@ -503,8 +521,11 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
                 }
             }
 
-            // Accumulate argument fragments.
+            // Accumulate argument fragments using .as_str() (standard approach).
             if let Some(frag) = tc["function"]["arguments"].as_str() {
+                if !frag.is_empty() {
+                    log::debug!("[SSE] Tool args fragment: len={} total_so_far={}", frag.len(), st.tool_args.len() + frag.len());
+                }
                 st.tool_args.push_str(frag);
             }
         }
@@ -536,14 +557,199 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
             "[SSE] Flushing tool call: id={} name={} args_len={} args='{}'…",
             id, name, st.tool_args.len(), args_preview
         );
+        let arguments = match serde_json::from_str(&st.tool_args) {
+            Ok(v) => v,
+            Err(e) => {
+                let tail: String = st.tool_args.chars().rev().take(200).collect::<Vec<_>>().into_iter().rev().collect();
+                log::error!(
+                    "[SSE] Failed to parse tool args as JSON: err={} args_len={} first_500='{}' last_200='{}'",
+                    e, st.tool_args.len(), st.tool_args.chars().take(500).collect::<String>(), tail
+                );
+                // Log hex dump of first 100 bytes to detect invisible control chars
+                let hex: String = st.tool_args.bytes().take(100).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                log::error!("[SSE] Tool args hex dump (first 100 bytes): {}", hex);
+                // Dump full tool_args to temp file for debugging
+                {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs()).unwrap_or(0);
+                    let dump_path = format!("/tmp/tool_args_dump_{}.txt", ts);
+                    let _ = std::fs::write(&dump_path, &st.tool_args);
+                    log::error!("[SSE] Full tool_args dumped to {}", dump_path);
+                }
+                // Recovery pipeline:
+                // 1. Sanitize control chars + unescaped content quotes (gateway bugs)
+                // 2. If still invalid, attempt truncated JSON completion (max_tokens hit)
+                let sanitized = sanitize_json_control_chars(&st.tool_args);
+                match serde_json::from_str(&sanitized) {
+                    Ok(v) => {
+                        log::info!("[SSE] Tool args recovered after sanitizing control chars");
+                        v
+                    }
+                    Err(e2) => {
+                        log::warn!("[SSE] Sanitize didn't fix it ({}), trying truncated JSON repair", e2);
+                        let repaired = repair_truncated_json(&sanitized);
+                        match serde_json::from_str(&repaired) {
+                            Ok(v) => {
+                                log::info!("[SSE] Tool args recovered after truncated JSON repair");
+                                v
+                            }
+                            Err(e3) => {
+                                log::error!("[SSE] All recovery failed: sanitize={}, repair={}", e2, e3);
+                                Value::Null
+                            }
+                        }
+                    }
+                }
+            }
+        };
         let tc = ToolCall {
             id,
             name,
-            arguments: serde_json::from_str(&st.tool_args).unwrap_or(Value::Null),
+            arguments,
         };
         st.tool_args.clear();
         st.pending_events.push(StreamEvent::ToolCallStart { tool_call: tc });
     }
+}
+
+/// Sanitize malformed JSON from API gateway roundtrips.
+///
+/// Handles two classes of problems that occur when Go-based API gateways
+/// convert between Anthropic and OpenAI streaming formats:
+///
+/// 1. **Raw control characters** (U+0000–U+001F) inside JSON string values.
+///    JSON spec requires these be escaped as `\uXXXX`, but gateway roundtrips
+///    can produce raw bytes (e.g., real 0x0a newlines inside strings).
+///
+/// 2. **Unescaped ASCII double-quotes** inside JSON string values. This happens
+///    when the gateway loses an escaping layer during format conversion. For
+///    example, Chinese emphasis like `"先发制人"` uses ASCII `"` (0x22) which
+///    breaks the JSON structure when not escaped as `\"`.
+///
+/// The function tracks quote/escape state to distinguish structural quotes from
+/// content quotes using a look-ahead heuristic: a `"` inside a string that is
+/// followed (after optional whitespace) by a JSON structural character
+/// (`,` `}` `]` `:`) or EOF is treated as a structural close-quote; otherwise
+/// it is escaped as `\"`.
+fn sanitize_json_control_chars(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut result = String::with_capacity(input.len() + 64);
+    let mut in_string = false;
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+
+        if in_string {
+            if c == '\\' && i + 1 < len {
+                // Escape sequence — keep as-is
+                result.push(c);
+                result.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            if c == '"' {
+                // Heuristic: is this a structural close-quote or a content quote?
+                // Look ahead past whitespace to find the next meaningful character.
+                let mut j = i + 1;
+                while j < len && matches!(chars[j], ' ' | '\t' | '\n' | '\r') {
+                    j += 1;
+                }
+                let next = if j < len { Some(chars[j]) } else { None };
+
+                if matches!(next, Some(',' | '}' | ']' | ':') | None) {
+                    // Structural close-quote
+                    in_string = false;
+                    result.push('"');
+                } else {
+                    // Content quote (e.g., "先发制人" emphasis in Chinese text)
+                    // — escape it so JSON remains valid
+                    result.push('\\');
+                    result.push('"');
+                }
+                i += 1;
+                continue;
+            }
+            // Inside a string: escape raw control chars (0x00-0x1F)
+            if (c as u32) < 0x20 {
+                result.push_str(&format!("\\u{:04x}", c as u32));
+                i += 1;
+                continue;
+            }
+        } else if c == '"' {
+            in_string = true;
+        }
+
+        result.push(c);
+        i += 1;
+    }
+
+    result
+}
+
+/// Repair truncated JSON caused by `finish_reason=length` (max_tokens hit).
+///
+/// When the LLM runs out of tokens mid-way through a tool call's JSON arguments,
+/// the accumulated string is syntactically incomplete (unclosed strings, arrays,
+/// objects). This function closes all open structures so `serde_json` can parse
+/// the partial data. The result is a valid JSON object with whatever fields were
+/// completed before truncation.
+///
+/// Strategy: scan the input tracking nesting depth, then append closing tokens
+/// in reverse order (close string → close array → close object).
+fn repair_truncated_json(input: &str) -> String {
+    let mut result = input.to_string();
+    let mut stack: Vec<char> = Vec::new(); // tracks open delimiters: '{', '['
+    let mut in_string = false;
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            if c == '\\' && i + 1 < chars.len() {
+                i += 2; // skip escape
+                continue;
+            }
+            if c == '"' {
+                in_string = false;
+            }
+        } else {
+            match c {
+                '"' => in_string = true,
+                '{' => stack.push('{'),
+                '[' => stack.push('['),
+                '}' => { stack.pop(); }
+                ']' => { stack.pop(); }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+
+    // If we ended inside a string, close it
+    if in_string {
+        result.push('"');
+    }
+
+    // Trim trailing comma (e.g., `"items": ["a",` → need to remove the comma before closing)
+    let trimmed = result.trim_end();
+    if trimmed.ends_with(',') {
+        result = trimmed[..trimmed.len() - 1].to_string();
+    }
+
+    // Close open brackets/braces in reverse order
+    for &opener in stack.iter().rev() {
+        match opener {
+            '{' => result.push('}'),
+            '[' => result.push(']'),
+            _ => {}
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -681,5 +887,287 @@ mod tests {
 
         // Second tool call still pending
         assert_eq!(st.tool_id.as_deref(), Some("call_2"));
+    }
+
+    #[test]
+    fn test_sanitize_json_control_chars() {
+        // Newline between tokens (valid JSON whitespace) — should be preserved
+        let input = "{\n  \"key\": \"value\"\n}";
+        assert_eq!(sanitize_json_control_chars(input), input);
+
+        // Newline inside string value — should be escaped
+        let input = "{\"content\": \"line1\nline2\"}";
+        let sanitized = sanitize_json_control_chars(input);
+        assert_eq!(sanitized, "{\"content\": \"line1\\u000aline2\"}");
+        // And it should now parse
+        let v: Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(v["content"].as_str().unwrap(), "line1\nline2");
+
+        // Tab inside string value
+        let input = "{\"content\": \"col1\tcol2\"}";
+        let sanitized = sanitize_json_control_chars(input);
+        assert!(sanitized.contains("\\u0009"));
+        let v: Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(v["content"].as_str().unwrap(), "col1\tcol2");
+
+        // Chinese characters preserved
+        let input = "{\"title\": \"测试报告\"}";
+        assert_eq!(sanitize_json_control_chars(input), input);
+
+        // Mixed: structural newlines + newline in string
+        let input = "{\n  \"content\": \"第一段\n第二段\"\n}";
+        let sanitized = sanitize_json_control_chars(input);
+        let v: Value = serde_json::from_str(&sanitized).unwrap();
+        assert_eq!(v["content"].as_str().unwrap(), "第一段\n第二段");
+    }
+
+    /// Unescaped ASCII quotes inside JSON string values (gateway escaping bug).
+    /// Chinese text uses ASCII `"` for emphasis like `"先发制人"`, which breaks
+    /// JSON structure when the gateway loses an escaping layer.
+    #[test]
+    fn test_sanitize_unescaped_content_quotes() {
+        // Simplest case: one pair of content quotes
+        let input = r#"{"content": "美国宣布"先发制人"打击"}"#;
+        assert!(serde_json::from_str::<Value>(input).is_err(), "should be invalid JSON");
+        let sanitized = sanitize_json_control_chars(input);
+        let v: Value = serde_json::from_str(&sanitized).expect("should parse after sanitize");
+        assert_eq!(v["content"].as_str().unwrap(), r#"美国宣布"先发制人"打击"#);
+    }
+
+    /// Multiple unescaped content quotes in different fields.
+    #[test]
+    fn test_sanitize_multiple_content_quotes() {
+        let input = r#"{"a": "局势超过"十二日战争"水平", "b": "发动"大规模"军事行动"}"#;
+        assert!(serde_json::from_str::<Value>(input).is_err());
+        let sanitized = sanitize_json_control_chars(input);
+        let v: Value = serde_json::from_str(&sanitized).expect("should parse after sanitize");
+        assert_eq!(v["a"].as_str().unwrap(), r#"局势超过"十二日战争"水平"#);
+        assert_eq!(v["b"].as_str().unwrap(), r#"发动"大规模"军事行动"#);
+    }
+
+    /// Real-world dump file pattern: content quotes + structural newlines.
+    #[test]
+    fn test_sanitize_real_world_gateway_dump() {
+        let input = concat!(
+            r#"{"highlight": "局势严峻程度已超过2025年6月"十二日战争"水平。","#,
+            r#" "metrics": [{"label": "油价", "value": "$80/桶"}]}"#
+        );
+        assert!(serde_json::from_str::<Value>(input).is_err());
+        let sanitized = sanitize_json_control_chars(input);
+        let v: Value = serde_json::from_str(&sanitized).expect("should parse after sanitize");
+        let highlight = v["highlight"].as_str().unwrap();
+        assert!(highlight.contains(r#""十二日战争""#));
+        assert_eq!(v["metrics"][0]["label"].as_str().unwrap(), "油价");
+    }
+
+    /// Structural quotes must not be corrupted.
+    #[test]
+    fn test_sanitize_preserves_valid_json() {
+        let input = r#"{"key": "normal value", "num": 42, "arr": ["a", "b"]}"#;
+        let sanitized = sanitize_json_control_chars(input);
+        assert_eq!(sanitized, input, "valid JSON should not be modified");
+    }
+
+    /// Escaped quotes inside strings must be preserved.
+    #[test]
+    fn test_sanitize_preserves_escaped_quotes() {
+        let input = r#"{"content": "he said \"hello\" to her"}"#;
+        let sanitized = sanitize_json_control_chars(input);
+        assert_eq!(sanitized, input, "already-escaped quotes should stay");
+    }
+
+    // ── repair_truncated_json tests ──
+
+    /// Truncated mid-string (e.g., max_tokens hit while writing a string value).
+    #[test]
+    fn test_repair_truncated_mid_string() {
+        let input = r#"{"title": "伊朗局势报告", "sections": [{"heading": "摘要", "content": "未完成的内容"#;
+        assert!(serde_json::from_str::<Value>(input).is_err());
+        let repaired = repair_truncated_json(input);
+        let v: Value = serde_json::from_str(&repaired).expect("should parse after repair");
+        assert_eq!(v["title"].as_str().unwrap(), "伊朗局势报告");
+        assert_eq!(v["sections"][0]["heading"].as_str().unwrap(), "摘要");
+    }
+
+    /// Truncated after a comma (trailing comma before close).
+    #[test]
+    fn test_repair_truncated_after_comma() {
+        let input = r#"{"items": ["a", "b","#;
+        let repaired = repair_truncated_json(input);
+        let v: Value = serde_json::from_str(&repaired).expect("should parse after repair");
+        assert_eq!(v["items"].as_array().unwrap().len(), 2);
+    }
+
+    /// Already-valid JSON should pass through unchanged.
+    #[test]
+    fn test_repair_valid_json_unchanged() {
+        let input = r#"{"key": "value"}"#;
+        let repaired = repair_truncated_json(input);
+        assert_eq!(repaired, input);
+    }
+
+    /// Deeply nested truncation.
+    #[test]
+    fn test_repair_deep_nesting() {
+        let input = r#"{"a": {"b": [{"c": "d"#;
+        let repaired = repair_truncated_json(input);
+        let v: Value = serde_json::from_str(&repaired).expect("should parse");
+        assert_eq!(v["a"]["b"][0]["c"].as_str().unwrap(), "d");
+    }
+
+    /// Simulate the Anthropic-to-OpenAI gateway streaming pattern.
+    /// The gateway converts Anthropic's input_json_delta events to
+    /// OpenAI tool_calls delta format. Arguments are accumulated and
+    /// parsed when finish_reason="tool_calls" arrives.
+    #[test]
+    fn test_anthropic_gateway_tool_args_with_newlines() {
+        let mut st = test_state();
+
+        // Gateway sends initial chunk with id and name (from content_block_start)
+        let start: Value = serde_json::from_str(r#"{
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "toolu_01abc",
+                        "type": "function",
+                        "function": { "name": "generate_report", "arguments": "" }
+                    }]
+                }
+            }]
+        }"#).unwrap();
+        process_sse_chunk(&start, &mut st);
+        assert_eq!(st.tool_id.as_deref(), Some("toolu_01abc"));
+
+        // Simulate what the gateway does: Go json.Marshal converts each
+        // partial_json fragment into an arguments string field.
+        // Fragments represent pretty-printed JSON with structural newlines.
+        // After Go's json roundtrip, the client receives these fragments.
+        //
+        // Build chunks properly using serde_json to avoid escaping issues.
+        let fragments = vec![
+            "{\"title\": \"测试报告\"",
+            ", \"sections\": [",
+            "\n  {",                          // structural newline
+            "\n    \"heading\": \"概述\"",
+            ",",
+            "\n    \"content\": \"第一段\\n第二段\"",  // \\n = escaped newline in JSON string value
+            "\n  }",
+            "\n]",
+            "}",
+        ];
+
+        for frag in &fragments {
+            let chunk = serde_json::json!({
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [{
+                            "index": 0,
+                            "function": { "arguments": frag }
+                        }]
+                    }
+                }]
+            });
+            process_sse_chunk(&chunk, &mut st);
+        }
+
+        // Finish → should flush
+        let finish: Value = serde_json::from_str(r#"{
+            "choices": [{"delta": {}, "finish_reason": "tool_calls"}]
+        }"#).unwrap();
+        process_sse_chunk(&finish, &mut st);
+
+        // Check accumulated args
+        let expected_accumulated = fragments.join("");
+        eprintln!("Accumulated tool_args: {:?}", expected_accumulated);
+
+        // Verify tool call was parsed correctly
+        let tool_events: Vec<_> = st.pending_events.iter()
+            .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
+            .collect();
+        assert_eq!(tool_events.len(), 1);
+
+        if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
+            assert_eq!(tool_call.name, "generate_report");
+            // The accumulated JSON should parse correctly
+            assert!(tool_call.arguments != Value::Null,
+                "arguments should not be null! accumulated: {:?}",
+                expected_accumulated);
+            assert_eq!(
+                tool_call.arguments.get("title").and_then(|v| v.as_str()),
+                Some("测试报告"),
+            );
+            assert!(tool_call.arguments.get("sections").is_some());
+        }
+    }
+
+    /// Test that the accumulated tool_args with real newlines (0x0a) from Go
+    /// gateway roundtrip can be parsed by serde_json.
+    #[test]
+    fn test_tool_args_with_real_newlines_from_gateway() {
+        let mut st = test_state();
+
+        // Simulate content_block_start
+        let start = serde_json::json!({
+            "choices": [{"delta": {"tool_calls": [{
+                "index": 0, "id": "toolu_01xyz", "type": "function",
+                "function": { "name": "generate_report", "arguments": "" }
+            }]}}]
+        });
+        process_sse_chunk(&start, &mut st);
+
+        // These fragments simulate what the Rust client receives after Go
+        // json.Marshal/Unmarshal roundtrip. Structural newlines in the original
+        // partial_json become real 0x0a bytes in the arguments string.
+        // The JSON escape \n inside string values remains as two chars (\ + n).
+        let fragments = vec![
+            "{\"title\": \"\u{6D4B}\u{8BD5}\u{62A5}\u{544A}\"",  // 测试报告
+            ", \"sections\": [",
+            "\n  {",                                               // real 0x0a
+            "\n    \"heading\": \"\u{6982}\u{8FF0}\"",             // real 0x0a + 概述
+            ",",
+            "\n    \"content\": \"\u{7B2C}\u{4E00}\u{6BB5}\\n\u{7B2C}\u{4E8C}\u{6BB5}\"",
+            // real 0x0a (structural) + content with \n (JSON escape, two chars)
+            "\n  }",
+            "\n]",
+            "}",
+        ];
+
+        for frag in &fragments {
+            let chunk = serde_json::json!({
+                "choices": [{"delta": {"tool_calls": [{
+                    "index": 0,
+                    "function": { "arguments": frag }
+                }]}}]
+            });
+            process_sse_chunk(&chunk, &mut st);
+        }
+
+        // Finish
+        let finish = serde_json::json!({
+            "choices": [{"delta": {}, "finish_reason": "tool_calls"}]
+        });
+        process_sse_chunk(&finish, &mut st);
+
+        // Verify
+        let tool_events: Vec<_> = st.pending_events.iter()
+            .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
+            .collect();
+        assert_eq!(tool_events.len(), 1);
+
+        if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
+            assert_eq!(tool_call.name, "generate_report");
+            assert!(
+                tool_call.arguments != Value::Null,
+                "arguments must not be null! accumulated args contain real 0x0a newlines"
+            );
+            assert_eq!(
+                tool_call.arguments.get("title").and_then(|v| v.as_str()),
+                Some("测试报告"),
+            );
+            // Content should have a decoded newline from the JSON \n escape
+            let content = tool_call.arguments["sections"][0]["content"].as_str().unwrap();
+            assert!(content.contains('\n'), "content should contain decoded newline");
+        }
     }
 }

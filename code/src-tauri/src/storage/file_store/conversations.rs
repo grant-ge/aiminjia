@@ -10,6 +10,8 @@ use super::error::StorageResult;
 use super::io::{atomic_write_json, read_json_optional, read_json_safe};
 use super::types::{ConversationIndexEntry, ConversationMeta, GlobalIndex};
 
+use crate::llm::content_filter::strip_hallucinated_xml;
+
 /// Get the directory for a conversation.
 pub fn conv_dir(base_dir: &Path, conversation_id: &str) -> PathBuf {
     base_dir.join("conversations").join(conversation_id)
@@ -128,9 +130,10 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
         .iter()
         .filter(|e| !e.is_archived)
         .map(|e| {
+            let clean_title = strip_hallucinated_xml(&e.title);
             serde_json::json!({
                 "id": e.id,
-                "title": e.title,
+                "title": clean_title,
                 "createdAt": e.created_at,
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
