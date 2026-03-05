@@ -12,8 +12,12 @@ interface UserBubbleProps {
 }
 
 export function UserBubble({ message }: UserBubbleProps) {
-  const { content } = message
+  const { content, sender } = message
   const hasFiles = content.files && content.files.length > 0
+
+  // Display sender name: use sender.name if available, fallback to "我"
+  const displayName = sender?.name || '我'
+  const isLoggedIn = sender?.isLoggedIn ?? false
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">
@@ -23,9 +27,9 @@ export function UserBubble({ message }: UserBubbleProps) {
           className="text-sm font-semibold"
           style={{ color: 'var(--color-text-primary)' }}
         >
-          我
+          {displayName}
         </span>
-        <Avatar variant="user" />
+        <Avatar variant="user" isLoggedIn={isLoggedIn} />
       </div>
 
       {/* Body — offset by avatar width, right-aligned */}

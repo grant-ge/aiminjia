@@ -11,6 +11,16 @@ export interface Message {
   role: MessageRole
   createdAt: string
   content: MessageContent
+  /** Sender information (only present for user messages) */
+  sender?: MessageSender
+}
+
+/** Information about the message sender (for user messages) */
+export interface MessageSender {
+  /** Display name of the sender */
+  name: string
+  /** Whether the sender was logged in when sending the message */
+  isLoggedIn: boolean
 }
 
 export interface Conversation {

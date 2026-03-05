@@ -5,9 +5,11 @@
 interface AvatarProps {
   variant: 'ai' | 'user'
   label?: string
+  /** Whether the user is logged in (only for user variant) */
+  isLoggedIn?: boolean
 }
 
-export function Avatar({ variant }: AvatarProps) {
+export function Avatar({ variant, isLoggedIn = false }: AvatarProps) {
   const isAI = variant === 'ai'
 
   if (isAI) {
@@ -20,10 +22,13 @@ export function Avatar({ variant }: AvatarProps) {
     )
   }
 
+  // User avatar: carbon black when not logged in, default color when logged in
+  const bgColor = isLoggedIn ? 'var(--color-user-avatar)' : '#2c2c2c'
+
   return (
     <div
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-      style={{ background: 'var(--color-user-avatar)' }}
+      style={{ background: bgColor }}
     >
       <svg
         viewBox="0 0 24 24"

@@ -537,10 +537,38 @@ pub async fn send_message(
         }
     };
 
-    // 2. Save user message to DB (including file references)
+    // 2. Save user message to DB (including file references and sender info)
     let msg_id = uuid::Uuid::new_v4().to_string();
+
+    // Get sender information from auth state
+    let auth_info = auth_manager.get_auth_info().await;
+    let sender_info = if auth_info.logged_in {
+        // Logged in: use user's name
+        if let Some(user) = auth_info.user {
+            serde_json::json!({
+                "name": user.name,
+                "isLoggedIn": true
+            })
+        } else {
+            // Fallback if user is None
+            serde_json::json!({
+                "name": "我",
+                "isLoggedIn": false
+            })
+        }
+    } else {
+        // Not logged in: use default "我"
+        serde_json::json!({
+            "name": "我",
+            "isLoggedIn": false
+        })
+    };
+
     let content_json = if file_attachments.is_empty() {
-        serde_json::json!({ "text": content }).to_string()
+        serde_json::json!({
+            "text": content,
+            "sender": sender_info
+        }).to_string()
     } else {
         let files_meta: Vec<serde_json::Value> = file_attachments.iter().map(|f| {
             serde_json::json!({
@@ -551,7 +579,11 @@ pub async fn send_message(
                 "status": "uploaded",
             })
         }).collect();
-        serde_json::json!({ "text": content, "files": files_meta }).to_string()
+        serde_json::json!({
+            "text": content,
+            "files": files_meta,
+            "sender": sender_info
+        }).to_string()
     };
 
     if let Err(e) = db.insert_message(&msg_id, &conversation_id, "user", &content_json) {

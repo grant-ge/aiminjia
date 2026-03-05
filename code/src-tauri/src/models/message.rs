@@ -18,6 +18,19 @@ pub struct Message {
     pub role: MessageRole,
     pub created_at: String,
     pub content: MessageContent,
+    /// Sender information (only present for user messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender: Option<MessageSender>,
+}
+
+/// Information about the message sender (for user messages)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSender {
+    /// Display name of the sender
+    pub name: String,
+    /// Whether the sender was logged in when sending the message
+    pub is_logged_in: bool,
 }
 
 /// Supports multiple rich content types mixed together.
