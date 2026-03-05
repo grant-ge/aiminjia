@@ -15,6 +15,12 @@
 //! ├── shared/                  # Cross-conversation data
 //! │   ├── memory/              # Enterprise memory (auto-split at 1MB)
 //! │   │   └── memory.jsonl
+//! │   ├── cognitive/           # Cognitive memory system
+//! │   │   ├── mem.md           # Core memory (always loaded, ~200 lines)
+//! │   │   ├── meta.json        # Core memory section metadata
+//! │   │   ├── index.json       # Global memory index (hits, promotion)
+//! │   │   ├── daily/           # Daily JSONL memory files
+//! │   │   └── archive/         # Archived daily files (>90 days)
 //! │   └── cache/               # Search cache (per-query JSON)
 //! └── conversations/           # Per-conversation isolation
 //!     └── {id}/
@@ -32,6 +38,7 @@
 pub mod analysis;
 pub mod audit;
 pub mod cache;
+pub mod cognitive;
 pub mod config;
 pub mod conversations;
 pub mod error;
@@ -93,6 +100,7 @@ impl AppStorage {
         fs::create_dir_all(self.base_dir.join("shared").join("memory"))?;
         fs::create_dir_all(self.base_dir.join("shared").join("cache"))?;
         fs::create_dir_all(self.base_dir.join("audit"))?;
+        cognitive::ensure_dirs(&self.base_dir)?;
 
         // Reconcile global index with actual directories
         conversations::reconcile_index(&self.base_dir)
@@ -469,6 +477,60 @@ impl AppStorage {
         query_hash: &str,
     ) -> Result<Option<types::CacheEntry>> {
         Ok(cache::get_search_cache(&self.base_dir, query_hash)?)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Cognitive Memory
+    // ═══════════════════════════════════════════════════════════════════════
+
+    pub fn save_cognitive_memory(
+        &self,
+        content: &str,
+        category: &str,
+        tags: &[String],
+        conversation_id: &str,
+        to_core: bool,
+    ) -> Result<(String, bool)> {
+        let _lock = self.write_lock.lock().unwrap();
+        cognitive::save_memory(&self.base_dir, content, category, tags, conversation_id, to_core)
+    }
+
+    pub fn search_cognitive_memory(
+        &self,
+        query: &str,
+        category: Option<&str>,
+        days: i64,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        // Phase 1: Search (read-only, no lock needed)
+        let results = cognitive::search_memory_readonly(
+            &self.base_dir, query, category, days,
+        )?;
+
+        // Phase 2: Record hit counts (write, needs lock)
+        if !results.is_empty() {
+            let _lock = self.write_lock.lock().unwrap();
+            if let Err(e) = cognitive::record_search_hits(
+                &self.base_dir, &results, query, conversation_id,
+            ) {
+                log::warn!("Failed to record search hits: {}", e);
+            }
+        }
+
+        Ok(results)
+    }
+
+    pub fn load_core_memory(&self) -> String {
+        cognitive::load_core_memory(&self.base_dir)
+    }
+
+    pub fn distill_cognitive_memories(&self, days: i64, dry_run: bool) -> Result<cognitive::DistillReport> {
+        let _lock = self.write_lock.lock().unwrap();
+        cognitive::distill_memories(&self.base_dir, days, dry_run)
+    }
+
+    pub fn needs_cognitive_distill(&self) -> bool {
+        cognitive::needs_auto_distill(&self.base_dir)
     }
 
     // ═══════════════════════════════════════════════════════════════════════

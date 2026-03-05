@@ -13,6 +13,8 @@ mod stats;
 mod notes;
 mod export;
 mod progress;
+mod slides;
+mod memory;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -45,6 +47,11 @@ pub(crate) use stats::handle_detect_anomalies;
 pub(crate) use notes::handle_save_analysis_note;
 pub(crate) use export::handle_export_data;
 pub(crate) use progress::handle_update_progress;
+pub(crate) use slides::handle_generate_slides;
+pub(crate) use memory::handle_save_memory;
+pub(crate) use memory::handle_search_memory;
+pub(crate) use memory::handle_load_core_memory;
+pub(crate) use memory::handle_distill_memories;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────

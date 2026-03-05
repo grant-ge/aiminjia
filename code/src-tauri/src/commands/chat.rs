@@ -1246,6 +1246,19 @@ pub async fn send_message(
         return Err(e.to_string());
     }
 
+    // Cognitive memory: trigger auto-distill if > 24h since last distill.
+    // Runs synchronously but is fast (~ms for typical index sizes).
+    if db.needs_cognitive_distill() {
+        log::info!("[cognitive] Auto-distilling memories (>24h since last distill)");
+        match db.distill_cognitive_memories(7, false) {
+            Ok(report) => log::info!(
+                "[cognitive] Auto-distill complete: promoted={} demoted={} archived={} core_lines={}",
+                report.promoted, report.demoted, report.archived, report.core_lines,
+            ),
+            Err(e) => log::warn!("[cognitive] Auto-distill failed (non-fatal): {}", e),
+        }
+    }
+
     tokio::spawn(async move {
         let conversation_id_clone = agent_ctx.conversation_id.clone();
         let app_clone = agent_ctx.app.clone();
@@ -1741,7 +1754,7 @@ async fn agent_loop(
                 prompts::get_system_prompt(None),
                 Some(all_tool_defs), // all schemas for KV cache stability
                 MAX_TOOL_ITERATIONS,
-                4096u32, // daily consultation: standard budget
+                8192u32, // daily consultation: needs headroom for generate_report JSON
                 CHUNK_TIMEOUT_SECS, // daily mode: 90s
             )
         }
@@ -1852,6 +1865,15 @@ async fn agent_loop(
         // This is separate from system_prompt to preserve KV cache prefix stability.
         let dynamic_ctx = {
             let mut ctx = String::from("[动态上下文 — 请勿回复此消息]\n");
+
+            // Cognitive core memory — always loaded (cross-session knowledge base)
+            let core_mem = db.load_core_memory();
+            if !core_mem.is_empty() {
+                ctx.push_str("\n[核心记忆]\n");
+                ctx.push_str(&core_mem);
+                ctx.push_str("\n");
+            }
+
             if !file_context.is_empty() {
                 ctx.push_str(&file_context);
             }
@@ -2854,6 +2876,10 @@ fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta], workspace_path: &
         ("Excel", "excel"),
         ("XLS", "excel"),
         ("XLSX", "excel"),
+        ("PPT", "pptx"),
+        ("PPTX", "pptx"),
+        ("PowerPoint", "pptx"),
+        ("演示文稿", "pptx"),
     ];
 
     let action_words_zh = ["已生成", "已导出", "已保存", "已创建", "生成了", "导出了", "保存了", "创建了"];
@@ -2911,7 +2937,7 @@ fn verify_file_claims(llm_text: &str, file_metas: &[FileMeta], workspace_path: &
     // Check 2: LLM claims export/save but NO files were registered at all
     let claims_export_no_files = if file_metas.is_empty() {
         // Look for export claim patterns in the LLM text
-        let export_path_patterns = ["exports/", "reports/", "charts/"];
+        let export_path_patterns = ["exports/", "reports/", "charts/", "presentations/"];
         let has_path_mention = export_path_patterns.iter().any(|p| llm_lower.contains(p));
         let has_action = action_words_zh.iter().any(|w| llm_text.contains(w))
             || action_words_en.iter().any(|w| llm_lower.contains(w));

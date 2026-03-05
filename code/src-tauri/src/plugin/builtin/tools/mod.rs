@@ -11,6 +11,11 @@ pub mod analysis_note;
 pub mod data_export;
 pub mod progress_update;
 pub mod plan_update;
+pub mod slides_gen;
+pub mod memory_save;
+pub mod memory_search;
+pub mod memory_core;
+pub mod memory_distill;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -29,6 +34,11 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(data_export::DataExportTool),
         Arc::new(progress_update::ProgressUpdateTool),
         Arc::new(plan_update::PlanUpdateTool),
+        Arc::new(slides_gen::SlidesGenTool),
+        Arc::new(memory_save::MemorySaveTool),
+        Arc::new(memory_search::MemorySearchTool),
+        Arc::new(memory_core::CoreMemoryTool),
+        Arc::new(memory_distill::MemoryDistillTool),
     ];
 
     for tool in tools {
