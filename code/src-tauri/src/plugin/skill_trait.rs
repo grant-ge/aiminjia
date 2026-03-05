@@ -179,6 +179,16 @@ pub trait Skill: Send + Sync + 'static {
         (String::new(), String::new())
     }
 
+    /// Returns tool names allowed for runtime guard (None = all allowed).
+    ///
+    /// Unlike `tool_filter()` which controls schema visibility, this method
+    /// controls which tools can actually execute at runtime. The LLM sees all
+    /// tool schemas (for KV cache stability), but calling a tool not in this
+    /// list will be blocked with an error message.
+    fn allowed_tool_names(&self, _state: &SkillState) -> Option<Vec<String>> {
+        None // default: no restriction
+    }
+
     /// Called when the Skill is deactivated.
     fn on_deactivate(&self, _state: &SkillState) {}
 }

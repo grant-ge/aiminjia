@@ -210,7 +210,7 @@ impl Skill for DeclarativeSkill {
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {
-        // Build prompt: [app_base] + [plugin_base] + [step_prompt]
+        // Build prompt: [app_base] + [plugin_base] + [step_prompt] + [tool restriction] + [date]
         let mut parts = Vec::new();
 
         if self.include_app_base {
@@ -230,6 +230,16 @@ impl Skill for DeclarativeSkill {
                     parts.push(sp.clone());
                 }
             }
+
+            // Inject tool restriction instruction from workflow.toml tools_only
+            if let Some(config) = self.step_configs.get(step) {
+                if let Some(tools) = &config.tools_only {
+                    parts.push(format!(
+                        "## 本步骤可用工具\n仅使用以下工具：{}。不要调用其他工具。",
+                        tools.join(", ")
+                    ));
+                }
+            }
         }
 
         // Inject current date prominently
@@ -244,18 +254,17 @@ impl Skill for DeclarativeSkill {
         parts.join("\n\n")
     }
 
-    fn tool_filter(&self, state: &SkillState) -> ToolFilter {
-        if let Some(step) = state.current_step.as_deref() {
-            if let Some(config) = self.step_configs.get(step) {
-                if let Some(only) = &config.tools_only {
-                    return ToolFilter::Only(only.clone());
-                }
-                if let Some(exclude) = &config.tools_exclude {
-                    return ToolFilter::Exclude(exclude.clone());
-                }
-            }
-        }
+    fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
+        // Always expose all tool schemas to the LLM for KV cache prefix stability.
+        // Runtime enforcement is handled by allowed_tool_names() + runtime guard.
         ToolFilter::All
+    }
+
+    fn allowed_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
+        // Read tools_only from workflow.toml step config for runtime guard
+        state.current_step.as_deref()
+            .and_then(|step| self.step_configs.get(step))
+            .and_then(|config| config.tools_only.clone())
     }
 
     fn model_preference(&self, _state: &SkillState) -> Option<ModelPreference> {

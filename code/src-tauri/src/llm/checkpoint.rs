@@ -175,7 +175,8 @@ async fn do_extract(
             extract_messages,
             MaskingLevel::Standard,
             Some(&system_prompt),
-            None,
+            None, // no dynamic context
+            None, // no tools
         )
         .await
     {

@@ -10,6 +10,7 @@ pub mod anomaly_detect;
 pub mod analysis_note;
 pub mod data_export;
 pub mod progress_update;
+pub mod plan_update;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -27,6 +28,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(analysis_note::AnalysisNoteTool),
         Arc::new(data_export::DataExportTool),
         Arc::new(progress_update::ProgressUpdateTool),
+        Arc::new(plan_update::PlanUpdateTool),
     ];
 
     for tool in tools {

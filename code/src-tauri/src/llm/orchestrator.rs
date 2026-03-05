@@ -49,6 +49,10 @@ pub struct StepConfig {
     /// Display names for all workflow steps, used by analysis_notes_context.
     /// Each entry is (step_number, display_name).
     pub step_display_names: Vec<(u32, String)>,
+    /// Tool names allowed for runtime execution guard.
+    /// None = all tools in tool_defs are allowed.
+    /// Some(set) = only tools in the set can execute; others are blocked.
+    pub allowed_tool_names: Option<std::collections::HashSet<String>>,
 }
 
 /// Status of the current analysis step.
@@ -223,6 +227,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
             (4, "公平性诊断".to_string()),
             (5, "行动方案".to_string()),
         ],
+        allowed_tool_names: None, // Legacy builder: no runtime guard (schema-level filtering)
     }
 }
 

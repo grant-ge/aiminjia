@@ -10,6 +10,7 @@ use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompts;
 use crate::llm::context_decay;
 use crate::llm::analysis_context::AnalysisContext;
+use crate::llm::content_filter::strip_hallucinated_xml;
 use crate::llm::prompt_guard;
 use crate::llm::taor::PhaseTracker;
 use crate::plugin::{PluginContext, ToolRegistry, SkillRegistry};
@@ -367,8 +368,13 @@ async fn build_config_from_skill(
         .and_then(|n| n.parse::<u32>().ok())
         .unwrap_or(0);
 
-    let tool_filter = skill.tool_filter(state);
-    let tool_defs = tool_registry.get_schemas_filtered(&tool_filter).await;
+    // Always get all tool schemas for KV cache prefix stability.
+    // Runtime enforcement is handled by allowed_tool_names.
+    let tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
+
+    // Build runtime guard set from skill's allowed_tool_names()
+    let allowed_tool_names = skill.allowed_tool_names(state)
+        .map(|names| names.into_iter().collect::<std::collections::HashSet<_>>());
 
     // Build step display names from the workflow definition
     let step_display_names = skill.workflow()
@@ -387,6 +393,7 @@ async fn build_config_from_skill(
         requires_confirmation: true,
         token_budget: skill.token_budget(state),
         step_display_names,
+        allowed_tool_names,
     }
 }
 
@@ -1126,6 +1133,25 @@ pub async fn send_message(
                                 auto_capture_step_context(&db, &conversation_id, step_num, &chat_messages);
                             }
 
+                            // Archive plan file on step advance (P1)
+                            {
+                                let plan_path = workspace_path.join("analysis")
+                                    .join(&conversation_id).join("_plan.md");
+                                if plan_path.exists() {
+                                    let archive = plan_path.with_file_name(format!("_plan_step{}.md", step_num));
+                                    match std::fs::rename(&plan_path, &archive) {
+                                        Ok(_) => log::info!(
+                                            "[plan_archive] Archived step {} plan to {:?}",
+                                            step_num, archive
+                                        ),
+                                        Err(e) => log::warn!(
+                                            "[plan_archive] Failed to archive step {} plan: {}",
+                                            step_num, e
+                                        ),
+                                    }
+                                }
+                            }
+
                             // Sub-agent context reset
                             let original_user_msg = chat_messages.iter()
                                 .find(|m| m.role == "user")
@@ -1336,6 +1362,7 @@ async fn compress_context_if_needed(
             compress_messages,
             MaskingLevel::Relaxed, // No masking needed for internal summarization
             Some("你是一个对话摘要助手。将对话历史压缩为简洁摘要。"),
+            None,  // no dynamic context
             None,  // no tools
         ),
     ).await;
@@ -1450,8 +1477,8 @@ fn build_file_context(db: &AppStorage, conversation_id: &str) -> String {
                 ));
             } else {
                 ctx.push_str(&format!(
-                    "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，需先 load_file",
-                    name, fid, ftype
+                    "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，必须先调用 load_file(file_id=\"{}\") 才能分析",
+                    name, fid, ftype, fid
                 ));
             }
         }
@@ -1691,16 +1718,9 @@ async fn agent_loop(
     }
 
     // Determine system prompt, tool filter, and token budget based on mode
-    // Daily mode: exclude analysis-specific tools to reduce context noise.
-    // These tools are only useful during the structured analysis workflow
-    // and their schemas waste ~500 tokens in daily conversations.
-    let daily_tool_filter = ToolFilter::Exclude(vec![
-        "hypothesis_test".into(),
-        "detect_anomalies".into(),
-        "save_analysis_note".into(),
-        "update_progress".into(),
-    ]);
-    let daily_tool_defs = tool_registry.get_schemas_filtered(&daily_tool_filter).await;
+    // Both modes now use all tool schemas for KV cache prefix stability.
+    // Runtime guard blocks analysis-only tools in daily mode.
+    let all_tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
     let (system_prompt, tool_defs_override, max_iterations, token_budget, chunk_timeout_secs) = match &current_step_config {
         Some(config) => {
             log::info!("Agent loop in ANALYSIS mode: step={}, tools={}, max_iter={}",
@@ -1716,10 +1736,10 @@ async fn agent_loop(
             )
         }
         None => {
-            log::info!("Agent loop in DAILY CONSULTATION mode ({} tools after filtering)", daily_tool_defs.len());
+            log::info!("Agent loop in DAILY CONSULTATION mode ({} tools)", all_tool_defs.len());
             (
                 prompts::get_system_prompt(None),
-                Some(daily_tool_defs), // filtered: excludes analysis-only tools
+                Some(all_tool_defs), // all schemas for KV cache stability
                 MAX_TOOL_ITERATIONS,
                 4096u32, // daily consultation: standard budget
                 CHUNK_TIMEOUT_SECS, // daily mode: 90s
@@ -1727,40 +1747,46 @@ async fn agent_loop(
         }
     };
 
-    // Append file context to system prompt so LLM always has file info
-    let system_prompt = format!("{}{}", system_prompt, file_context);
+    // --- System prompt is now STATIC (stable KV cache prefix) ---
+    // Dynamic content (file context, analysis notes, analysis profile) is
+    // injected as a separate context_message parameter to stream_message().
+    // This ensures the system prompt prefix never changes between iterations,
+    // allowing LLM providers to reuse their KV cache.
 
-    // Inject accumulated analysis notes from previous steps into the system prompt
+    // Build analysis notes context ONCE per step (doesn't change within a step)
     let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref(), &workspace_path, &settings.primary_model);
-    let system_prompt = format!("{}{}", system_prompt, analysis_notes_context);
 
-    // P2: Load structured analysis context (file profiles + findings) and inject into prompt.
+    // P2: Load structured analysis context (file profiles + findings).
     // Only active in analysis mode — provides persistent file metadata so the LLM
     // doesn't need to re-discover file structure through tool output on every iteration.
     let is_analysis = current_step_config.is_some();
     let mut analysis_ctx = if is_analysis {
-        let ctx = AnalysisContext::load_or_default(&workspace_path, &conversation_id);
-        ctx
+        AnalysisContext::load_or_default(&workspace_path, &conversation_id)
     } else {
         AnalysisContext::default()
     };
-    let system_prompt = if is_analysis {
-        let ctx_prompt = analysis_ctx.format_for_prompt();
-        if ctx_prompt.is_empty() {
-            system_prompt
-        } else {
-            format!("{}{}", system_prompt, ctx_prompt)
-        }
-    } else {
-        system_prompt
-    };
 
     // Build allowed-tool set for execution-time enforcement.
-    // Even though tool_defs_override controls which tools the LLM *sees*,
-    // the LLM may hallucinate tool names not in its schema. This guard
-    // ensures only tools listed in the step's tool_defs can actually execute.
-    let allowed_tools: Option<std::collections::HashSet<String>> = current_step_config.as_ref()
-        .map(|config| config.tool_defs.iter().map(|td| td.name.clone()).collect());
+    // Analysis mode: uses StepConfig.allowed_tool_names from the skill's workflow.toml.
+    // Daily mode: blocks analysis-only tools that shouldn't be used in casual chat.
+    // The LLM sees all tool schemas (for KV cache stability), but calling a
+    // tool not in the allowed set will be blocked with an error message.
+    let allowed_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
+        // Analysis mode: use skill-provided allowed list
+        config.allowed_tool_names.clone()
+    } else {
+        // Daily mode: block analysis-only tools at runtime
+        let daily_blocked: std::collections::HashSet<String> = [
+            "hypothesis_test", "detect_anomalies", "save_analysis_note", "update_progress", "update_plan",
+        ].iter().map(|s| s.to_string()).collect();
+        let daily_allowed: std::collections::HashSet<String> = tool_defs_override.as_ref()
+            .map(|defs| defs.iter()
+                .map(|td| td.name.clone())
+                .filter(|name| !daily_blocked.contains(name))
+                .collect())
+            .unwrap_or_default();
+        Some(daily_allowed)
+    };
 
     let mut full_content = String::new();
     let mut combined_mask_ctx: Option<MaskingContext> = None;
@@ -1785,9 +1811,10 @@ async fn agent_loop(
             .filter(|m| m.tool_call_id.is_some())
             .map(|m| m.content.len()).sum();
         let tool_result_count = messages.iter().filter(|m| m.tool_call_id.is_some()).count();
+        let initial_ctx_prompt = if is_analysis { analysis_ctx.format_for_prompt() } else { String::new() };
         log::info!(
             "[CTX_METRICS] conversation={} mode={} step={:?} | \
-             system_prompt={}chars | messages={} (tool_results={}) | \
+             system_prompt={}chars (STATIC) | messages={} (tool_results={}) | \
              msg_total={}chars (tool_results={}chars) | \
              file_context={}chars | notes_context={}chars | \
              analysis_ctx={}chars",
@@ -1799,7 +1826,7 @@ async fn agent_loop(
             msg_total_chars, tool_result_chars,
             file_context.len(),
             analysis_notes_context.len(),
-            if is_analysis { analysis_ctx.format_for_prompt().len() } else { 0 },
+            initial_ctx_prompt.len(),
         );
     }
 
@@ -1821,6 +1848,49 @@ async fn agent_loop(
             );
         }
 
+        // Build dynamic context message (changes each iteration as AnalysisContext updates)
+        // This is separate from system_prompt to preserve KV cache prefix stability.
+        let dynamic_ctx = {
+            let mut ctx = String::from("[动态上下文 — 请勿回复此消息]\n");
+            if !file_context.is_empty() {
+                ctx.push_str(&file_context);
+            }
+            if !analysis_notes_context.is_empty() {
+                ctx.push_str(&analysis_notes_context);
+            }
+            if is_analysis {
+                let ctx_prompt = analysis_ctx.format_for_prompt();
+                if !ctx_prompt.is_empty() {
+                    ctx.push_str(&ctx_prompt);
+                }
+
+                // Inject step plan content (P1)
+                let plan_path = workspace_path.join("analysis")
+                    .join(&conversation_id).join("_plan.md");
+                if plan_path.exists() {
+                    if let Ok(plan) = std::fs::read_to_string(&plan_path) {
+                        let plan = plan.trim();
+                        if !plan.is_empty() {
+                            let plan_display = if plan.len() > 4000 {
+                                let boundary = plan.floor_char_boundary(4000);
+                                format!("{}...(truncated)", &plan[..boundary])
+                            } else {
+                                plan.to_string()
+                            };
+                            ctx.push_str("\n\n[当前步骤计划]\n");
+                            ctx.push_str(&plan_display);
+                        }
+                    }
+                }
+            }
+            ctx
+        };
+        let dynamic_ctx_ref = if dynamic_ctx.len() > "[动态上下文 — 请勿回复此消息]\n".len() {
+            Some(dynamic_ctx.as_str())
+        } else {
+            None // No dynamic content to inject
+        };
+
         // Stream from LLM with system prompt and tool filter
         // P1: Apply context decay to reduce older tool outputs before sending to LLM.
         // Non-destructive — original `messages` vec is preserved for checkpoint/auto_capture.
@@ -1841,23 +1911,25 @@ async fn agent_loop(
                 "[CTX_METRICS] iter={}/{} conv={} | \
                  messages={} orig={}chars decayed={}chars saved={}chars | \
                  tool_results: orig={}chars decayed={}chars | \
-                 system_prompt={}chars",
+                 system_prompt={}chars (STATIC) dynamic_ctx={}chars",
                 iteration, max_iterations, conversation_id,
                 messages.len(), orig_chars, decayed_chars, saved,
                 tool_chars, decayed_tool_chars,
                 system_prompt.len(),
+                dynamic_ctx_ref.map_or(0, |s| s.len()),
             );
         }
 
         let stream_start = std::time::Instant::now();
-        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} messages={} (decayed={})",
-            settings.primary_model, system_prompt.len(), messages.len(), decayed_messages.len());
+        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} dynamic_ctx_len={} messages={} (decayed={})",
+            settings.primary_model, system_prompt.len(), dynamic_ctx_ref.map_or(0, |s| s.len()), messages.len(), decayed_messages.len());
         let stream_result = gateway
             .stream_message(
                 &settings,
                 decayed_messages,
                 masking_level.clone(),
                 Some(&system_prompt),
+                dynamic_ctx_ref,
                 tool_defs_override.clone(),
                 token_budget,
                 Some(&conversation_id),
@@ -2507,6 +2579,9 @@ async fn agent_loop(
         full_content = "抱歉，模型未能生成回复。可能原因：内容限制、网络问题或服务暂时不可用。请尝试换一种方式提问。".to_string();
     }
 
+    // Strip hallucinated XML function-call blocks before saving
+    full_content = strip_hallucinated_xml(&full_content);
+
     // Post-stream verification: check if LLM falsely claims a format that wasn't produced (Layer 4)
     if let Some(correction) = verify_file_claims(&full_content, &all_file_metas, &workspace_path) {
         full_content.push_str(&correction);
@@ -2739,9 +2814,10 @@ fn finish_agent(
                 .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("assistant"))
                 .count();
             if assistant_count <= 1 {
-                let title: String = unmasked_trimmed.chars().take(30).collect();
+                let clean = strip_hallucinated_xml(unmasked_trimmed);
+                let title: String = clean.chars().take(30).collect();
                 let title = title.split('\n').next().unwrap_or(&title).trim().to_string();
-                let title = if title.len() < unmasked_content.len() {
+                let title = if title.len() < clean.len() {
                     format!("{}...", title)
                 } else {
                     title
@@ -3106,4 +3182,44 @@ fn strip_thinking_markers(text: &str) -> String {
         .replace("<｜begin▁of▁thinking｜>", "")
         .replace("<|end▁of▁thinking|>", "")
         .replace("<|begin▁of▁thinking|>", "")
+}
+
+#[cfg(test)]
+mod xml_strip_tests {
+    use crate::llm::content_filter::strip_hallucinated_xml;
+
+    #[test]
+    fn test_strip_closed_function_calls() {
+        let input = "你好\n<function_calls>\n<invoke name=\"load_file\">\n<parameter name=\"file_id\">abc</parameter>\n</invoke>\n</function_calls>\n世界";
+        let result = strip_hallucinated_xml(input);
+        assert_eq!(result, "你好\n\n世界");
+    }
+
+    #[test]
+    fn test_strip_unclosed_function_calls() {
+        let input = "你好\n<function_calls>\n<invoke name=\"execute_python\">\n<parameter name=\"code\">print(1)</parameter>";
+        let result = strip_hallucinated_xml(input);
+        assert_eq!(result, "你好");
+    }
+
+    #[test]
+    fn test_no_xml_unchanged() {
+        let input = "正常的消息内容，没有任何 XML 标签。";
+        let result = strip_hallucinated_xml(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_strip_multiple_blocks() {
+        let input = "前文\n<function_calls>\n<invoke name=\"a\">\n</invoke>\n</function_calls>\n中间\n<function_calls>\n<invoke name=\"b\">\n</invoke>\n</function_calls>\n后文";
+        let result = strip_hallucinated_xml(input);
+        assert_eq!(result, "前文\n\n中间\n\n后文");
+    }
+
+    #[test]
+    fn test_strip_tool_call_tags() {
+        let input = "结果：<tool_call>{\"name\": \"test\"}</tool_call>完成";
+        let result = strip_hallucinated_xml(input);
+        assert_eq!(result, "结果：完成");
+    }
 }

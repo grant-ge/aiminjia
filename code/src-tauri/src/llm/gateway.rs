@@ -130,6 +130,8 @@ impl LlmGateway {
     /// Build an [`LlmRequest`] from messages, route, and settings.
     ///
     /// If `system_prompt` is provided, it is prepended as a system message.
+    /// If `context_message` is provided, it is inserted after the system prompt
+    /// as a user message (for dynamic context that changes each iteration).
     /// If `tool_defs_override` is provided, those tools are used instead of
     /// the full tool registry (for step-filtered analysis).
     /// `max_tokens` controls the output budget — use lower values for
@@ -139,14 +141,26 @@ impl LlmGateway {
         route: &RouteResult,
         stream: bool,
         system_prompt: Option<&str>,
+        context_message: Option<&str>,
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
     ) -> LlmRequest {
-        // Prepend system prompt if provided
+        // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
             masked_messages.insert(
                 0,
                 ChatMessage::text("system", prompt),
+            );
+        }
+
+        // Insert dynamic context message after system prompt, before conversation messages.
+        // Uses role "user" for maximum provider compatibility (some providers
+        // don't support multiple system messages).
+        if let Some(ctx) = context_message {
+            let insert_pos = if system_prompt.is_some() { 1 } else { 0 };
+            masked_messages.insert(
+                insert_pos,
+                ChatMessage::text("user", ctx),
             );
         }
 
@@ -171,7 +185,10 @@ impl LlmGateway {
     /// [`cancel_conversation`] to abort the stream early.
     ///
     /// # Parameters
-    /// - `system_prompt`: Optional system prompt to prepend to messages.
+    /// - `system_prompt`: Optional system prompt to prepend to messages (stable prefix).
+    /// - `context_message`: Optional dynamic context message inserted after system prompt.
+    ///   Used for file context, analysis notes, etc. that change each iteration.
+    ///   Kept separate from system_prompt to preserve KV cache prefix stability.
     /// - `tool_defs_override`: Optional tool definitions to use instead of
     ///   the full registry (for step-filtered analysis).
     /// - `max_tokens`: Output token budget. Use lower values (4096) for
@@ -190,6 +207,7 @@ impl LlmGateway {
         messages: Vec<ChatMessage>,
         masking_level: MaskingLevel,
         system_prompt: Option<&str>,
+        context_message: Option<&str>,
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
@@ -213,7 +231,7 @@ impl LlmGateway {
         let masked_messages = mask_ctx.mask_messages(&messages);
 
         // 3. Build request
-        let request = Self::build_request(masked_messages, &route, true, system_prompt, tool_defs_override, max_tokens);
+        let request = Self::build_request(masked_messages, &route, true, system_prompt, context_message, tool_defs_override, max_tokens);
 
         // Log request summary for debugging LLM quality
         log::info!(
@@ -290,6 +308,7 @@ impl LlmGateway {
         messages: Vec<ChatMessage>,
         masking_level: MaskingLevel,
         system_prompt: Option<&str>,
+        context_message: Option<&str>,
         tool_defs_override: Option<Vec<ToolDefinition>>,
     ) -> Result<LlmResponse> {
         // 1. Route to best provider
@@ -307,7 +326,7 @@ impl LlmGateway {
         let masked_messages = mask_ctx.mask_messages(&messages);
 
         // 3. Build request
-        let request = Self::build_request(masked_messages, &route, false, system_prompt, tool_defs_override, 4096);
+        let request = Self::build_request(masked_messages, &route, false, system_prompt, context_message, tool_defs_override, 4096);
 
         // 4. Dispatch to provider with retry on transient errors
         let response = retry_dispatch_send(&route, request).await?;
