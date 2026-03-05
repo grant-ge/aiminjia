@@ -1,8 +1,8 @@
 [package]
 name = "aijia"
-version = "0.3.13"
-description = "AI小家 — 组织专家，工作助手"
-authors = ["AI小家 Team"]
+version = "0.3.14"
+description = "AIjia — 组织专家，工作助手"
+authors = ["AIjia Team"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"
