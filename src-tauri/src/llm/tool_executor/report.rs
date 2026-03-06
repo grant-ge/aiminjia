@@ -323,7 +323,7 @@ for section in data.get('sections', []):
                 ps = ParagraphStyle('H3', parent=style_body, fontName=bold_font, fontSize=12, spaceBefore=10)
                 elements.append(Paragraph(line[prefix_len:], ps))
             elif line.startswith('- ') or line.startswith('* '):
-                elements.append(Paragraph(line[2:], style_bullet, bulletText='\\u2022'))
+                elements.append(Paragraph(line[2:], style_bullet, bulletText='•'))
             else:
                 # Convert **bold** to <b>bold</b> for reportlab
                 import re
@@ -389,7 +389,7 @@ for section in data.get('sections', []):
             if isinstance(item, str):
                 import re
                 item = re.sub('\\*\\*(.+?)\\*\\*', '<b>\\1</b>', item)
-                elements.append(Paragraph(item, style_bullet, bulletText='\\u2022'))
+                elements.append(Paragraph(item, style_bullet, bulletText='•'))
 
     # Highlight callout
     highlight = section.get('highlight')
