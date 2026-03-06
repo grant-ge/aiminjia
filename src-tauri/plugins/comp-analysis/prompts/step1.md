@@ -15,44 +15,17 @@
 - `_print_table(headers, rows, title)` — 输出 Markdown 格式表格
 - `_export_detail(df, filename, title, preview_rows, format)` — 导出 DataFrame 到 Excel/CSV 并打印预览
 
-执行步骤（必须逐步执行，每步完成后输出阶段性结果）：
+执行步骤（尽量合并执行，减少工具调用次数）：
 
-第一步：数据概览
-  调用 execute_python：使用 _df 查看数据形状、列名、前5行样本
-  → 输出数据概览（列数、行数、列名清单）
+第一步：数据概览 + 列名检测（合并为一次 execute_python）
+  调用 execute_python：使用 _df 查看数据形状、列名、前5行样本，同时调用 _detect_columns(_df) 完成字段映射
+  → 输出数据概览 + 字段映射结果
 
-第二步：列名检测与字段映射
+第二步：一键清洗 + 导出排除明细（一次 execute_python）
   调用 execute_python：
   ```python
-  col_map = _detect_columns(_df)
-  import json
-  print("=== 字段映射结果 ===")
-  print(json.dumps(col_map['detected'], ensure_ascii=False, indent=2))
-  print("\n=== 薪酬组成字段 ===")
-  print(json.dumps(col_map['salary_components'], ensure_ascii=False, indent=2))
-  if col_map['undetected']:
-      print(f"\n=== 未识别列 ({len(col_map['undetected'])}) ===")
-      print(col_map['undetected'])
-  ```
-  → 检查映射是否合理，如有明显错误需手动修正 col_map
-  → 特别关注：未识别列中是否有重要的薪酬字段被遗漏
-
-第三步到第六步：一键清洗 + 导出排除明细
-  调用 execute_python（一次执行完成清洗和导出）：
-  ```python
   results = _step1_clean(_df, col_map)
-  # _df is automatically updated to cleaned data (no manual assignment needed)
-  import json
-  print("=== 数据概览 ===")
-  print(json.dumps(results['overview'], ensure_ascii=False, indent=2))
-  print(f"\n=== 排除统计（共排除 {results['total_excluded']} 人，保留 {results['total_retained']} 人）===")
-  print(json.dumps(results['exclusion_summary'], ensure_ascii=False, indent=2))
-  print("\n=== 薪酬结构 ===")
-  print(json.dumps(results['structure'], ensure_ascii=False, indent=2))
-  print("\n=== 数据质量 ===")
-  print(json.dumps(results['quality'], ensure_ascii=False, indent=2))
-
-  # 导出排除明细（excluded_df 已由 _step1_clean 构建好，含"排除原因"列）
+  # 结果已自动打印和缓存。_df 已自动更新为清洗后的数据。
   if len(results['excluded_df']) > 0:
       _export_detail(results['excluded_df'], 'step1_exclusion_detail', '排除人员明细')
   ```
@@ -64,7 +37,7 @@
 - 脱敏后你看到的是占位符（如 [PERSON_1]），不要试图还原或猜测真实姓名
 - 严禁在消息中手动编写人员名单，所有名单必须是代码执行结果的直接引用
 
-第七步：保存并汇总
+第三步：保存并汇总
   ⚠️ 必须调用 save_analysis_note：
   key: "step1_summary"
   content: 必须包括：分析人数、排除人数及原因分布、字段映射表（关键字段→语义）、薪酬结构（固定/浮动比例）、数据质量问题
@@ -74,11 +47,10 @@
 重要：每一步都必须用 execute_python 实际执行代码分析数据，不要凭空推断。
 
 ## 计划维护
-每次完成一个子任务后，调用 `update_plan` 更新计划表。格式：
+步骤开始时调用一次 `update_plan` 列出待办项，步骤完成时再调用一次更新为已完成状态。不要每个子任务都单独调用。格式：
 - [x] 已完成的任务及结论
 - [ ] 待完成的任务
 - 关键发现（简要记录）
-每完成一步，立即输出该步的结果，让你随时看到进展。
 
 确认卡点（所有步骤完成后输出）：
 "帮你确认一下数据清洗的结果：

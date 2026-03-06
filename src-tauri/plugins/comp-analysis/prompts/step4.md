@@ -32,45 +32,15 @@
   print(json.dumps(col_map['detected'], ensure_ascii=False, indent=2))
   ```
 
-第二步：执行六维度诊断
+第二步：执行六维度诊断（一次 execute_python）
   调用 execute_python：
   ```python
+  step1 = _load_cached('step1')
+  col_map = step1['col_map'] if step1 else _detect_columns(_df)
   diagnosis = _step4_diagnose(_df, col_map)
-  import json
-
-  print("=== 整体健康指标 ===")
-  print(json.dumps(diagnosis['health_metrics'], ensure_ascii=False, indent=2))
-
-  print(f"\n=== 维度 1：岗位内部公平性（{diagnosis['dim1_internal'].get('flagged_count', 0)} 组异常）===")
-  for g in diagnosis['dim1_internal'].get('groups', [])[:10]:
-      print(f"  {g['group']}: CV={g['cv']}%, 极差比={g['range_ratio']}, n={g['count']} {g['flag']}")
-
-  print(f"\n=== 维度 2：跨岗位公平性（{diagnosis['dim2_cross'].get('flagged_count', 0)} 组偏离）===")
-  for c in diagnosis['dim2_cross'].get('comparisons', [])[:10]:
-      print(f"  {c['level']}×{c['position']}: 中位数={c['median']}, 偏离={c['deviation_pct']}% {c['flag']}")
-
-  print(f"\n=== 维度 3：回归分析（R²={diagnosis['dim3_regression'].get('r_squared')}, {diagnosis['dim3_regression'].get('anomaly_count', 0)} 异常）===")
-  if diagnosis['dim3_regression'].get('model_note'):
-      print(f"  ⚠️ {diagnosis['dim3_regression']['model_note']}")
-
-  print(f"\n=== 维度 4：薪酬倒挂（{diagnosis['dim4_inversion'].get('inverted_count', 0)} 组倒挂）===")
-  for inv in diagnosis['dim4_inversion'].get('inversions', []):
-      if inv['flag'] == '🔴':
-          print(f"  {inv['group']}: 新员工中位={inv.get('new_median')}, 老员工中位={inv.get('vet_median')}, 差距={inv.get('gap_pct')}%")
-
-  print(f"\n=== 维度 5：薪酬结构合理性（{diagnosis['dim5_structure'].get('flagged_count', 0)} 组不匹配）===")
-
-  print(f"\n=== 维度 6：Compa-Ratio 分布 ===")
-  dim6 = diagnosis['dim6_compa']
-  print(json.dumps(dim6.get('distribution_pct', {}), ensure_ascii=False, indent=2))
-  print(f"  CR合规率(90-110%): {dim6.get('compliance_rate')}%")
-  print(f"  显著偏低(<80%): {dim6.get('flagged_low_count')} 人")
-  print(f"  显著偏高(>120%): {dim6.get('flagged_high_count')} 人")
-
-  print(f"\n=== 异常汇总 ===")
-  print(f"  总异常: {diagnosis['anomaly_count']} 例")
-  print(json.dumps(diagnosis['root_causes'], ensure_ascii=False, indent=2))
+  # 结果已自动打印和缓存。
   ```
+  向用户展示结果。高优先级异常用 _export_detail 导出。
 
 第三步：输出高优先级异常清单
   调用 execute_python：用 _export_detail 导出异常人员，展示前 15 条
@@ -112,14 +82,7 @@
   · 制度建设方向建议（解决根因的制度层面改进方向）
 - 用 update_progress 更新步骤状态
 
-【自检要求 — 结论输出前必须执行】
-每完成诊断后，用 execute_python 执行交叉验证：
-1. 数值复核：对已算出的 CV、CR、Gini 等关键指标，用独立代码重新计算一次，确认数字一致。不一致时以复核结果为准
-2. 回归显著性：回归分析的 β 系数必须检查 p-value，p > 0.05 的系数不能作为诊断依据。如果整体模型 R² < 0.3，需注明"职级对薪酬解释力较弱"
-3. 异常阈值验证：每个被标记为 🔴 的个体，回查原始数据确认其确实满足阈值条件（如 CR < 80%、CV > 20%）。抽查至少 3 个 🔴 标记，发现误标则全量重新验证
-4. 维度间一致性：CR < 80% 的人是否也出现在回归异常清单中？如果某人 CR 极低但回归残差正常，需解释原因（可能是整组薪酬偏低）
-5. 倒挂检测前置条件：同组内新老员工各不足 3 人时，不下倒挂结论，标注"样本不足"
-发现任何不一致时立即修正，不要带着错误结论进入确认卡点。
+注意：`_step4_diagnose` 会自动运行验证。如果验证失败，review issues 并重新运行相关维度。
 
 确认卡点：
 "帮你过一下薪酬公平性诊断的结果：
@@ -130,7 +93,7 @@
 没问题的话我就进入第五步：生成行动方案和管理层报告。"
 
 ## 计划维护
-每次完成一个子任务后，调用 `update_plan` 更新计划表。格式：
+步骤开始时调用一次 `update_plan` 列出待办项，步骤完成时再调用一次更新为已完成状态。不要每个子任务都单独调用。格式：
 - [x] 已完成的任务及结论
 - [ ] 待完成的任务
 - 关键发现（简要记录）

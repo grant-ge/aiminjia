@@ -7,6 +7,7 @@
 内置分析函数说明：
 系统已预注入以下函数，可直接调用（无需自己编写）：
 - `_step5_scenarios(df, col_map, diagnosis)` — 三档调薪方案 + ROI 测算
+- `_step5_build_report_sections(df, col_map, diagnosis, scenarios)` — 从缓存数据构建完整报告 sections JSON（9 个 section），自动写入 `_report_sections.json`
 - `_load_cached(step_key)` — 加载之前步骤的缓存结果（如 'step1', 'step4'）
 - `_export_detail(df, filename, title, preview_rows, format)` — 导出 DataFrame
 
@@ -15,25 +16,10 @@
 1. 用 execute_python 计算三档调薪预算方案
    调用 execute_python：
    ```python
-   # 加载前序步骤结果
    step1 = _load_cached('step1')
-   step4 = _load_cached('step4')
    col_map = step1['col_map'] if step1 else _detect_columns(_df)
-
-   # 计算三档方案
-   scenarios = _step5_scenarios(_df, col_map, step4)
-   import json
-   print("=== 三档调薪方案 ===")
-   for key in ['A', 'B', 'C']:
-       s = scenarios['scenarios'][key]
-       print(f"\n方案 {key}: {s['description']}")
-       print(f"  覆盖人数: {s['count']}")
-       print(f"  年度预算: {s['annual_budget']:,.0f}")
-       print(f"  平均调幅: {s['avg_increase_pct']}%")
-       print(f"  调后CR合规率: {s.get('post_cr_compliance', 'N/A')}%")
-
-   print("\n=== ROI 测算 ===")
-   print(json.dumps(scenarios['roi'], ensure_ascii=False, indent=2))
+   scenarios = _step5_scenarios(_df, col_map)
+   # 结果已自动打印和缓存。
    ```
 
    每个方案输出：覆盖人数、年度预算、平均调薪幅度、公平性提升预期
@@ -45,58 +31,26 @@
 
 3. 调用 generate_report 生成完整 HTML 报告
 
-   重要：generate_report 的 sections 支持丰富内容类型，必须充分利用：
-   - content: 文本内容（支持 Markdown：**粗体**、列表、表格）
-   - metrics: 指标卡片 [{ label, value, subtitle, state }]（state: good/warn/bad/neutral）
-   - table: 结构化表格 { title, columns: [列名], rows: [[值]] }
-   - items: 要点列表 [字符串]
-   - highlight: 高亮提示框
+   重要：报告数据必须通过文件传递，不可直接写入工具参数（避免 token 截断和 JSON 损坏）。
 
-   报告结构（按此顺序组织 sections）：
+   步骤 3a：用 execute_python 调用内置函数生成报告 sections 数据
+   ```python
+   # 使用内置函数一行生成所有 sections（自动加载 step1/step4/step5 缓存）
+   report = _step5_build_report_sections(_df, col_map, step4, scenarios)
+   print(f"Report sections: {len(report['sections'])} sections -> {report['file_path']}")
+   ```
 
-   Section 1: 管理层摘要
-   - highlight: 2-3 句话核心结论
-   - metrics: 4-5 个关键指标（Gini 系数、CR 合规率、倒挂率、高风险人数、职级-薪酬 R²）
-   - content: 核心发现 + 不行动的代价
+   步骤 3b：调用 generate_report 生成报告
+   generate_report(title="薪酬公平性分析报告", source=report['file_path'], format="html")
 
-   Section 2: 数据概览
-   - content: 数据源描述、分析范围、排除说明
-   - metrics: 分析人数、岗位族数、职级数
-   - table: 岗位族人数分布
-
-   Section 3: 岗位体系与职级框架
-   - content: 岗位归一化方法说明
-   - table: 岗位族 × 职级人数矩阵
-   - content: 职级通道方案说明
-
-   Section 4: 六维度公平性诊断
-   - content: 每个维度的分析方法和结论
-   - metrics: 六维度评分/状态
-   - table: 各维度汇总（维度名、指标、评价）
-
-   Section 5: 高优先级异常清单
-   - content: 异常筛选标准说明
-   - table: 高优先级人员清单（姓名、职级、当前薪酬、CR、异常类型、根因、建议）
-
-   Section 6: 三档调薪方案
-   - table: 三方案对比表（方案、范围、人数、年度预算、平均调幅、CR 合规率提升）
-   - highlight: 推荐方案 B 的理由
-   - content: 各方案详细说明
-
-   Section 7: ROI 测算
-   - metrics: 投入成本、避免损失、ROI
-   - content: 计算过程和假设
-
-   Section 8: 实施路线图
-   - content: 分阶段时间表
-   - items: 每阶段具体任务
-
-   Section 9: 制度建设建议
-   - items: 长期制度优化建议
+   注意：`_step5_build_report_sections` 自动构建以下 9 个 sections：
+   管理层摘要、数据概览、岗位体系与职级框架、六维度公平性诊断、
+   高优先级异常清单、三档调薪方案、ROI 测算、实施路线图、制度建设建议。
+   如需自定义某个 section，可在调用后修改 `report['sections']` 再写入文件。
 
 4. 导出调薪明细
-   用 _export_detail 导出三个方案的调薪人员名单
-   用 export_data 导出完整的调薪测算表
+   用 _export_detail 导出三个方案的调薪人员名单（在 execute_python 中直接调用）
+   禁止使用 export_data 的 data 参数传入原始数据数组
 
 5. 保存并结束
    ⚠️ 必须在步骤结束前调用 save_analysis_note：
@@ -130,7 +84,7 @@
 3. 让我帮你准备管理层汇报的 PPT 大纲
 
 ## 计划维护
-每次完成一个子任务后，调用 `update_plan` 更新计划表。格式：
+步骤开始时调用一次 `update_plan` 列出待办项，步骤完成时再调用一次更新为已完成状态。不要每个子任务都单独调用。格式：
 - [x] 已完成的任务及结论
 - [ ] 待完成的任务
 - 关键发现（简要记录）
