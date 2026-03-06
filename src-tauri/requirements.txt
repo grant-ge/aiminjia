@@ -16,8 +16,7 @@ python-pptx>=0.6
 
 # Export / report generation
 htmldocx>=0.0.6
-# Note: xhtml2pdf removed - it pulls pycairo (C extension, needs system cairo lib).
-# PDF export uses weasyprint (optional, falls back to HTML if not installed).
+reportlab>=4.0
 
 # Charting
 matplotlib>=3.7

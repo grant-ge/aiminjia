@@ -45,8 +45,8 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
             (md.into_bytes(), "md", "markdown")
         }
         "pdf" => {
-            // HTML → PDF via Python (weasyprint)
-            match convert_html_to_pdf(ctx, &html_content).await {
+            // Structured JSON → PDF via Python (reportlab)
+            match convert_sections_to_pdf(ctx, title, sections, &unmask_map).await {
                 Ok(pdf_bytes) => (pdf_bytes, "pdf", "pdf"),
                 Err(e) => {
                     log::warn!("[generate_report] PDF conversion failed: {}. Falling back to HTML.", e);
@@ -146,76 +146,290 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
     })
 }
 
-/// Convert HTML content to PDF using Python weasyprint.
+/// Convert structured report sections to PDF using Python reportlab.
 ///
-/// Uses temp-file protocol: writes HTML to a temp file, Python reads it.
-/// This avoids string interpolation injection via triple-quote boundary breaking.
-async fn convert_html_to_pdf(ctx: &PluginContext, html: &str) -> Result<Vec<u8>> {
+/// Instead of converting HTML→PDF (which requires C-dependent libraries like
+/// weasyprint/pycairo), this builds the PDF directly from the structured JSON
+/// data using reportlab (pure Python wheels, no C dependencies).
+async fn convert_sections_to_pdf(
+    ctx: &PluginContext,
+    title: &str,
+    sections: &[Value],
+    unmask_map: &std::collections::HashMap<String, String>,
+) -> Result<Vec<u8>> {
     let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
 
     let temp_dir = ctx.workspace_path.join("temp");
     std::fs::create_dir_all(&temp_dir)?;
 
-    // Write HTML to temp file (safe: no string interpolation)
-    let html_temp = temp_dir.join(format!(
-        "html_{}.tmp",
+    // Write sections JSON to temp file (avoids string interpolation issues)
+    let json_temp = temp_dir.join(format!(
+        "sections_{}.json",
         Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
     ));
-    std::fs::write(&html_temp, html)?;
+    let mut report_data = serde_json::json!({
+        "title": title,
+        "sections": sections,
+    });
+    // Unmask PII in the JSON payload
+    let json_str = serde_json::to_string(&report_data)?;
+    let json_str = unmask_text(&json_str, unmask_map);
+    report_data = serde_json::from_str(&json_str)?;
+    std::fs::write(&json_temp, serde_json::to_string(&report_data)?)?;
 
     let output_path = temp_dir.join(format!(
         "report_{}.pdf",
         Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
     ));
 
-    let html_temp_str = py_escape(&html_temp.to_string_lossy());
+    let json_temp_str = py_escape(&json_temp.to_string_lossy());
     let output_path_str = py_escape(&output_path.to_string_lossy());
 
     let python_code = format!(r#"
-import sys
-import os
+import sys, os, json
 
-html_path = '{html_temp_str}'
+json_path = '{json_temp_str}'
 output_path = '{output_path_str}'
 
-with open(html_path, 'r', encoding='utf-8') as f:
-    html_content = f.read()
-os.remove(html_path)
+with open(json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+os.remove(json_path)
 
 try:
-    from weasyprint import HTML
-    HTML(string=html_content).write_pdf(output_path)
-    print("OK:" + output_path)
-except ImportError:
-    try:
-        import pdfkit
-        pdfkit.from_string(html_content, output_path)
-        print("OK:" + output_path)
-    except ImportError:
-        print("ERROR:no_pdf_library")
-        sys.exit(1)
-except Exception as exc:
-    print("ERROR:" + str(exc))
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm, cm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether,
+    )
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except ImportError as exc:
+    print("ERROR:reportlab not installed: " + str(exc))
     sys.exit(1)
+
+# ── Register CJK font ──
+# Try platform fonts for Chinese support
+font_registered = False
+font_name = 'Helvetica'
+bold_font = 'Helvetica-Bold'
+
+cjk_candidates = [
+    # macOS
+    '/System/Library/Fonts/PingFang.ttc',
+    '/System/Library/Fonts/STHeiti Light.ttc',
+    '/Library/Fonts/Arial Unicode.ttf',
+    # Linux
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+    # Windows
+    'C:/Windows/Fonts/msyh.ttc',
+    'C:/Windows/Fonts/simsun.ttc',
+]
+
+for fp in cjk_candidates:
+    if os.path.exists(fp):
+        try:
+            pdfmetrics.registerFont(TTFont('CJK', fp, subfontIndex=0))
+            font_name = 'CJK'
+            bold_font = 'CJK'
+            font_registered = True
+            break
+        except Exception:
+            continue
+
+# ── Styles ──
+styles = getSampleStyleSheet()
+
+style_title = ParagraphStyle(
+    'ReportTitle', parent=styles['Title'],
+    fontName=bold_font, fontSize=22, leading=28,
+    textColor=HexColor('#1a1a2e'), spaceAfter=6,
+)
+style_meta = ParagraphStyle(
+    'ReportMeta', parent=styles['Normal'],
+    fontName=font_name, fontSize=9, leading=12,
+    textColor=HexColor('#8e8ea0'), spaceAfter=16,
+)
+style_h2 = ParagraphStyle(
+    'ReportH2', parent=styles['Heading2'],
+    fontName=bold_font, fontSize=15, leading=20,
+    textColor=HexColor('#1a1a2e'), spaceBefore=16, spaceAfter=8,
+    borderWidth=0, borderPadding=0,
+)
+style_body = ParagraphStyle(
+    'ReportBody', parent=styles['Normal'],
+    fontName=font_name, fontSize=10, leading=16,
+    textColor=HexColor('#333333'), spaceAfter=8,
+)
+style_bullet = ParagraphStyle(
+    'ReportBullet', parent=style_body,
+    bulletFontName=font_name, bulletFontSize=10,
+    leftIndent=18, bulletIndent=6,
+)
+style_callout = ParagraphStyle(
+    'ReportCallout', parent=style_body,
+    fontName=font_name, fontSize=10, leading=16,
+    textColor=HexColor('#4a4a6a'), backColor=HexColor('#f8f7ff'),
+    borderWidth=0, leftIndent=12, spaceAfter=12, spaceBefore=8,
+    borderPadding=(8, 12, 8, 12),
+)
+style_footer = ParagraphStyle(
+    'ReportFooter', parent=styles['Normal'],
+    fontName=font_name, fontSize=8, leading=10,
+    textColor=HexColor('#8e8ea0'), alignment=TA_CENTER,
+)
+
+# ── Build document ──
+doc = SimpleDocTemplate(
+    output_path, pagesize=A4,
+    leftMargin=2*cm, rightMargin=2*cm,
+    topMargin=2*cm, bottomMargin=2*cm,
+)
+
+story = []
+title_text = data.get('title', 'Report')
+story.append(Paragraph(title_text, style_title))
+
+from datetime import datetime
+ts = datetime.now().strftime('%Y-%m-%d %H:%M')
+story.append(Paragraph(f'Generated: {{ts}} &nbsp;|&nbsp; AIjia', style_meta))
+story.append(HRFlowable(width='100%', thickness=2, color=HexColor('#6c5ce7'), spaceAfter=16))
+
+page_width = A4[0] - 4*cm  # usable width
+
+for section in data.get('sections', []):
+    elements = []
+    heading = section.get('heading', '')
+    if heading:
+        elements.append(Paragraph(heading, style_h2))
+        elements.append(HRFlowable(width='100%', thickness=0.5, color=HexColor('#e8e8f0'), spaceAfter=8))
+
+    # Content paragraphs
+    content = section.get('content', '')
+    if content and content.strip():
+        for line in content.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('### '):
+                ps = ParagraphStyle('H4', parent=style_body, fontName=bold_font, fontSize=11, spaceBefore=8)
+                elements.append(Paragraph(line[4:], ps))
+            elif line.startswith('## ') or line.startswith('# '):
+                prefix_len = 3 if line.startswith('## ') else 2
+                ps = ParagraphStyle('H3', parent=style_body, fontName=bold_font, fontSize=12, spaceBefore=10)
+                elements.append(Paragraph(line[prefix_len:], ps))
+            elif line.startswith('- ') or line.startswith('* '):
+                elements.append(Paragraph(line[2:], style_bullet, bulletText='\\u2022'))
+            else:
+                # Convert **bold** to <b>bold</b> for reportlab
+                import re
+                line = re.sub('\\*\\*(.+?)\\*\\*', '<b>\\1</b>', line)
+                elements.append(Paragraph(line, style_body))
+
+    # Metrics
+    metrics = section.get('metrics')
+    if metrics and isinstance(metrics, list):
+        for m in metrics:
+            label = m.get('label', '')
+            value = m.get('value', '')
+            subtitle = m.get('subtitle', '')
+            line_text = f'<b>{{label}}</b>: <font size=14>{{value}}</font>'
+            if subtitle:
+                line_text += f' <font size=8 color=grey>({{subtitle}})</font>'
+            elements.append(Paragraph(line_text, style_body))
+
+    # Table
+    table_data = section.get('table')
+    if table_data:
+        columns = table_data.get('columns', [])
+        rows = table_data.get('rows', [])
+        if columns and rows:
+            # Column labels
+            col_info = []
+            for col in columns:
+                if isinstance(col, str):
+                    col_info.append((col, col))
+                else:
+                    col_info.append((col.get('label', ''), col.get('key', '')))
+
+            header_row = [Paragraph(f'<b>{{label}}</b>', style_body) for label, _ in col_info]
+            tdata = [header_row]
+
+            for row in rows:
+                if isinstance(row, list):
+                    cells = [Paragraph(str(row[i]) if i < len(row) else '', style_body) for i in range(len(col_info))]
+                else:
+                    cells = [Paragraph(str(row.get(key, '')), style_body) for _, key in col_info]
+                tdata.append(cells)
+
+            n_cols = len(col_info)
+            col_width = page_width / n_cols
+            t = Table(tdata, colWidths=[col_width]*n_cols, repeatRows=1)
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#f5f5fa')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#444444')),
+                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#e0e0e8')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [HexColor('#ffffff'), HexColor('#fafafa')]),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            elements.append(Spacer(1, 6))
+            elements.append(t)
+            elements.append(Spacer(1, 6))
+
+    # Items (bullet list)
+    items = section.get('items')
+    if items and isinstance(items, list):
+        for item in items:
+            if isinstance(item, str):
+                import re
+                item = re.sub('\\*\\*(.+?)\\*\\*', '<b>\\1</b>', item)
+                elements.append(Paragraph(item, style_bullet, bulletText='\\u2022'))
+
+    # Highlight callout
+    highlight = section.get('highlight')
+    if highlight and isinstance(highlight, str):
+        import re
+        highlight = re.sub('\\*\\*(.+?)\\*\\*', '<b>\\1</b>', highlight)
+        elements.append(Paragraph(highlight, style_callout))
+
+    # Try to keep each section together
+    try:
+        story.append(KeepTogether(elements))
+    except Exception:
+        story.extend(elements)
+
+    story.append(Spacer(1, 8))
+
+# Footer
+story.append(Spacer(1, 24))
+story.append(HRFlowable(width='100%', thickness=0.5, color=HexColor('#e8e8f0'), spaceBefore=8))
+story.append(Paragraph(f'Report generated by AIjia — {{ts}}', style_footer))
+
+doc.build(story)
+print("OK:" + output_path)
 "#);
 
     let result = runner.execute(&python_code).await?;
 
-    // Clean up HTML temp file if Python didn't (e.g., on error before os.remove)
-    let _ = std::fs::remove_file(&html_temp);
+    // Clean up JSON temp file if Python didn't
+    let _ = std::fs::remove_file(&json_temp);
 
     if result.exit_code != 0 || result.stdout.trim().starts_with("ERROR:") {
-        let err_msg = if result.stdout.contains("no_pdf_library") {
-            "weasyprint/pdfkit not installed".to_string()
+        let err_msg = if result.stdout.contains("reportlab not installed") {
+            "reportlab not installed".to_string()
         } else {
             format!("exit_code={}, stdout={}, stderr={}", result.exit_code, result.stdout.trim(), result.stderr.trim())
         };
         anyhow::bail!("PDF conversion failed: {}", err_msg);
     }
 
-    // Read the generated PDF file
     let pdf_bytes = std::fs::read(&output_path)?;
-    // Clean up temp file
     let _ = std::fs::remove_file(&output_path);
 
     Ok(pdf_bytes)
