@@ -63,7 +63,15 @@ impl ToolPlugin for ReportGenTool {
                         },
                         "required": ["heading"]
                     },
-                    "description": "Report sections"
+                    "description": "Report sections — PREFERRED. Pass sections directly in this parameter. \
+                        Each section has a heading and optional content, metrics, table, items, highlight. \
+                        This is the fastest approach: one tool call generates the report."
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Alternative: path to a JSON file containing the sections array. \
+                        Only use this when sections data is already in a file (e.g. from precompute). \
+                        When provided, 'sections' parameter is ignored."
                 },
                 "format": {
                     "type": "string",
@@ -72,7 +80,7 @@ impl ToolPlugin for ReportGenTool {
                     "description": "Output format. PDF and DOCX are converted from HTML. If PDF conversion fails, HTML is returned as fallback."
                 }
             },
-            "required": ["title", "sections"]
+            "required": ["title"]
         })
     }
 
