@@ -193,50 +193,6 @@ fn auto_capture_step_context(
     }
 }
 
-/// Check if a user message is engaging with the analysis context.
-///
-/// Used in `confirming` mode (Step 0) to distinguish between messages that
-/// are providing analysis direction (e.g. "我关注销售团队的薪酬倒挂") and
-/// messages that are clearly unrelated (e.g. "帮我做个PPT").
-///
-/// Since analysis was auto-activated (no user confirmation), we need to
-/// allow smooth exit: if the user's message doesn't touch any analysis-
-/// related topic, we treat it as an implicit exit from analysis.
-fn is_analysis_engaging(text: &str) -> bool {
-    let lower = text.to_lowercase();
-
-    let keywords = [
-        // Compensation terms
-        "薪酬", "薪资", "工资", "薪金", "底薪", "月薪", "年薪",
-        "salary", "pay", "compensation", "wage",
-        // Analysis/diagnostic terms
-        "分析", "诊断", "对比", "比较",
-        "analyze", "analysis", "diagnose", "compare",
-        // Fairness/equity
-        "公平", "平等", "合理", "equity", "fairness",
-        // Data/file references
-        "数据", "表格", "表", "excel", "csv", "文件", "file", "data",
-        // Org structure
-        "岗位", "职位", "职级", "部门", "职能",
-        "position", "level", "department", "role",
-        // Compensation components
-        "绩效", "奖金", "津贴", "补贴", "提成", "加班费",
-        "bonus", "performance", "allowance",
-        // Analysis focus areas
-        "倒挂", "差异", "偏差", "异常", "差距",
-        "gap", "disparity", "anomaly",
-        // Direction/focus
-        "关注", "侧重", "重点", "方向", "看看",
-        "focus", "check",
-        // Salary adjustment
-        "调薪", "加薪", "涨薪", "raise", "adjustment",
-        // Reporting
-        "报告", "report",
-    ];
-
-    keywords.iter().any(|kw| lower.contains(kw))
-}
-
 /// Detect if a user message is a general daily question unrelated to the
 /// current analysis workflow.
 ///
@@ -314,22 +270,11 @@ fn clear_analysis_notes(db: &AppStorage, conversation_id: &str, workspace_path: 
         ),
     }
 
-    // Also clean up loaded file mappings (loaded:{conv_id}:*)
-    let loaded_prefix = format!("loaded:{}:", conversation_id);
-    match db.delete_memories_by_prefix(&loaded_prefix) {
-        Ok(count) => {
-            if count > 0 {
-                log::info!(
-                    "[cleanup] Cleared {} loaded file markers for conversation {}",
-                    count, conversation_id
-                );
-            }
-        }
-        Err(e) => log::warn!(
-            "[cleanup] Failed to clear loaded file markers for {}: {}",
-            conversation_id, e
-        ),
-    }
+    // NOTE: Do NOT delete loaded file markers (loaded:{conv_id}:*) here.
+    // These markers are needed by build_loaded_files_preamble() to inject
+    // _df/_text variables into execute_python, regardless of conversation mode.
+    // Deleting them causes NameError: '_df' is not defined when the user
+    // continues using execute_python after exiting analysis mode.
 
     // Clean up DataFrame snapshot files (analysis/{conversation_id}/)
     let snap_dir = workspace_path.join("analysis").join(conversation_id);
@@ -368,6 +313,13 @@ async fn build_config_from_skill(
         .and_then(|n| n.parse::<u32>().ok())
         .unwrap_or(0);
 
+    let max_iter = skill.max_iterations(state);
+    let token_budget = skill.token_budget(state);
+    log::info!(
+        "[build_config] skill={} step={:?} step_num={} max_iterations={} token_budget={}",
+        skill.id(), state.current_step, step_num, max_iter, token_budget
+    );
+
     // Always get all tool schemas for KV cache prefix stability.
     // Runtime enforcement is handled by allowed_tool_names.
     let tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
@@ -385,15 +337,21 @@ async fn build_config_from_skill(
         })
         .unwrap_or_default();
 
+    // Get precompute and feedback config from skill
+    let precompute = skill.on_step_enter(state);
+    let feedback_config = skill.feedback_config(state);
+
     StepConfig {
         step: step_num,
         system_prompt: skill.system_prompt(state),
         tool_defs,
-        max_iterations: skill.max_iterations(state),
+        max_iterations: max_iter,
         requires_confirmation: true,
-        token_budget: skill.token_budget(state),
+        token_budget,
         step_display_names,
         allowed_tool_names,
+        precompute,
+        feedback_config,
     }
 }
 
@@ -877,17 +835,19 @@ pub async fn send_message(
                         conversation_id
                     );
                     true
-                } else if crate::plugin::skill_trait::is_confirm_keyword(&content)
-                    || is_analysis_engaging(&content)
-                {
-                    false // user is engaging with analysis
-                } else {
+                } else if is_daily_question(&content) {
+                    // Only exit if the message is clearly a daily question
+                    // (e.g., "社保怎么算", "请问年假多少天") — not analysis-related
                     log::info!(
-                        "User message not analysis-related during confirming mode, \
-                         silently exiting analysis for conversation {}",
+                        "User sent daily question during confirming mode, \
+                         exiting analysis for conversation {}",
                         conversation_id
                     );
                     true
+                } else {
+                    // Default: stay in analysis. Any short reply (确认/继续/开始分析)
+                    // or analysis-related message keeps the workflow active.
+                    false
                 }
             } else {
                 // analyzing mode: only explicit abort exits
@@ -1003,8 +963,13 @@ pub async fn send_message(
 
                 Some(&StepStatus::Completed) | None => {
                     let action = skill.on_step_complete(&mut skill_state, &content);
-                    log::info!("Skill action for conversation {} step {}: {:?}",
-                        conversation_id, step_num, std::mem::discriminant(&action));
+                    log::info!(
+                        "[step_routing] conv={} step={} current_step={:?} user_content='{}' => action={:?}",
+                        conversation_id, step_num,
+                        skill_state.current_step,
+                        truncate_for_ui(&content, 50),
+                        std::mem::discriminant(&action)
+                    );
 
                     match action {
                         StepAction::Abort => {
@@ -1065,14 +1030,16 @@ pub async fn send_message(
                                 }
                             }
 
-                            log::info!("Advancing to step {} for conversation {}",
-                                next_step_num, conversation_id);
+                            log::info!(
+                                "[step_advance] conv={} from_step={} to_step={} next_step_id='{}'",
+                                conversation_id, step_num, next_step_num, next_step_id
+                            );
 
                             // Save direction note for step 0 → step 1 transition
                             if step_num == 0 {
                                 let direction = content.trim();
                                 if !direction.is_empty() {
-                                    let note_key = format!("note:{}:analysis_direction", conversation_id);
+                                    let note_key = format!("note:{}:step0_analysis_direction", conversation_id);
                                     match db.set_memory(&note_key, direction, Some("step_0_direction")) {
                                         Ok(_) => log::info!("Saved analysis direction: '{}'", direction),
                                         Err(e) => log::warn!("Failed to save analysis direction: {}", e),
@@ -1162,7 +1129,7 @@ pub async fn send_message(
                                     请查看系统提示词中 [前序分析记录] 部分获取之前的完整数据。\n\
                                     所有数据分析必须使用 execute_python 基于实际数据执行，禁止凭空推断。\n\
                                     如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。\n\n\
-                                    请开始执行第 {} 步。",
+                                    ⚠️ 直接开始执行第 {} 步的分析任务，立即调用工具，不要先做自我介绍或复述步骤说明。",
                                     next_step_num
                                 )
                             } else {
@@ -1171,7 +1138,7 @@ pub async fn send_message(
                                     请查看系统提示词中 [前序分析记录] 部分获取之前步骤的完整数据（包括字段映射、岗位归一化结果、职级框架等）。\n\
                                     所有数据分析必须使用 execute_python 基于实际数据执行，禁止凭空推断。\n\
                                     如需读取数据文件，请使用系统提示词中[本次会话的文件]部分提供的文件信息。\n\n\
-                                    请开始执行第 {} 步。",
+                                    ⚠️ 直接开始执行第 {} 步的分析任务，立即调用工具（如 execute_python），不要先做自我介绍、复述步骤说明或寒暄。",
                                     step_num, next_step_num
                                 )
                             };
@@ -1179,7 +1146,9 @@ pub async fn send_message(
                             if let Some(user_msg) = original_user_msg {
                                 chat_messages.push(user_msg);
                             }
-                            chat_messages.push(ChatMessage::text("assistant", &step_summary));
+                            // Use "user" role so the conversation ends with a user message.
+                            // Some providers (e.g. Aliyun) reject requests ending with assistant messages.
+                            chat_messages.push(ChatMessage::text("user", &step_summary));
 
                             // Build config for the new step
                             let mut new_state = SkillState::new(skill.id());
@@ -1734,12 +1703,17 @@ async fn agent_loop(
     // Both modes now use all tool schemas for KV cache prefix stability.
     // Runtime guard blocks analysis-only tools in daily mode.
     let all_tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
-    let (system_prompt, tool_defs_override, max_iterations, token_budget, chunk_timeout_secs) = match &current_step_config {
+    let (system_prompt, tool_defs_override, mut max_iterations, token_budget, chunk_timeout_secs) = match &current_step_config {
         Some(config) => {
-            log::info!("Agent loop in ANALYSIS mode: step={}, tools={}, max_iter={}",
+            log::info!("Agent loop in ANALYSIS mode: step={}, tools={}, max_iter={}, token_budget={}, has_precompute={}",
                 config.step,
                 config.tool_defs.len(),
-                config.max_iterations);
+                config.max_iterations,
+                config.token_budget,
+                config.precompute.is_some());
+            if let Some(ref allowed) = config.allowed_tool_names {
+                log::info!("  allowed_tools: {:?}", allowed);
+            }
             (
                 config.system_prompt.clone(),
                 Some(config.tool_defs.clone()),
@@ -1769,6 +1743,132 @@ async fn agent_loop(
     // Build analysis notes context ONCE per step (doesn't change within a step)
     let analysis_notes_context = build_analysis_notes_context(&db, &conversation_id, current_step_config.as_ref(), &workspace_path, &settings.primary_model);
 
+    // --- Precompute: execute deterministic Python before LLM starts ---
+    // If the step has a precompute script, run it now and cache the result.
+    // The cached JSON will be injected into the LLM dynamic context.
+    let mut precompute_file_ids: Vec<String> = Vec::new();
+    let precompute_context: Option<String> = if let Some(ref config) = current_step_config {
+        if let Some(ref precompute) = config.precompute {
+            log::info!(
+                "[PRECOMPUTE] Executing precompute for step {} (cache_key='{}', code_len={}) conv={}",
+                config.step, precompute.cache_key, precompute.python_code.len(), conversation_id
+            );
+            let timeout = std::time::Duration::from_secs(120);
+            let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path);
+
+            // Build full code: file preamble (injects _df) + analysis preamble
+            // (injects _ANALYSIS_DIR, snapshots, utils) + precompute script
+            let file_preamble = crate::llm::tool_executor::file_load::build_loaded_files_preamble(
+                &db, &conversation_id, &workspace_path,
+            );
+            let analysis_preamble = crate::llm::tool_executor::file_load::build_analysis_preamble(
+                &conversation_id, config.step, &workspace_path,
+            );
+            let full_code = format!("{}\n{}\n{}", file_preamble, analysis_preamble, precompute.python_code);
+
+            // NOTE: No sandbox.validate_code() for precompute scripts.
+            // The preamble uses exec() to load _analysis_utils.py, which would
+            // fail the standalone-call check. Precompute scripts + preamble are
+            // developer-authored trusted code, not user input. Runtime sandbox
+            // (timeout, memory limit, path restriction) still applies via session_mgr.execute().
+
+            match session_mgr.execute(&conversation_id, &full_code, timeout, &sandbox).await {
+                Ok(result) if result.result.exit_code == 0 => {
+                    log::info!(
+                        "[PRECOMPUTE] Success for step {} conv={} (exit_code=0, stdout_len={})",
+                        config.step, conversation_id, result.result.stdout.len()
+                    );
+
+                    // Parse __GENERATED_FILE__ markers from precompute stdout
+                    // (same logic as python.rs:214-278)
+                    let workspace_canonical = workspace_path.canonicalize().unwrap_or_else(|_| workspace_path.clone());
+                    for line in result.result.stdout.lines() {
+                        if let Some(json_str) = line.strip_prefix("__GENERATED_FILE__:") {
+                            if let Ok(file_meta) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                let rel_path = file_meta.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                let filename = file_meta.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                                let title = file_meta.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                                let fmt = file_meta.get("format").and_then(|v| v.as_str()).unwrap_or("excel");
+
+                                let full_path = workspace_path.join(rel_path);
+                                let canonical = match full_path.canonicalize() {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        log::warn!("[PRECOMPUTE] Skipping __GENERATED_FILE__: path does not exist: {:?}", full_path);
+                                        continue;
+                                    }
+                                };
+                                if !canonical.starts_with(&workspace_canonical) {
+                                    log::error!("[PRECOMPUTE] Path traversal blocked: {:?}", canonical);
+                                    continue;
+                                }
+                                let file_size = std::fs::metadata(&canonical).map(|m| m.len() as i64).unwrap_or(0);
+                                let file_id = uuid::Uuid::new_v4().to_string();
+
+                                if let Err(e) = db.insert_generated_file(
+                                    &file_id, &conversation_id, None,
+                                    filename, rel_path, fmt, file_size,
+                                    "data", Some(title), 1, true, None, None, None,
+                                ) {
+                                    log::error!("[PRECOMPUTE] Failed to register file '{}': {}", filename, e);
+                                } else {
+                                    log::info!("[PRECOMPUTE] Registered file: {} ({})", filename, file_id);
+                                    precompute_file_ids.push(file_id);
+                                }
+                            }
+                        }
+                    }
+
+                    // Read cached result JSON
+                    let cache_path = workspace_path
+                        .join("analysis")
+                        .join(&conversation_id)
+                        .join(format!("{}.json", precompute.cache_key));
+                    match std::fs::read_to_string(&cache_path) {
+                        Ok(content) => {
+                            log::info!(
+                                "[PRECOMPUTE] Loaded cached result from {:?} ({} chars)",
+                                cache_path, content.len()
+                            );
+                            Some(content)
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[PRECOMPUTE] Cache file not found at {:?}: {}. Using stdout as fallback.",
+                                cache_path, e
+                            );
+                            // Fallback: use stdout output directly
+                            if !result.result.stdout.trim().is_empty() {
+                                Some(result.result.stdout.clone())
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                }
+                Ok(result) => {
+                    log::warn!(
+                        "[PRECOMPUTE] Failed for step {} conv={} (exit_code={}, stderr='{}'). Falling back to agent mode.",
+                        config.step, conversation_id, result.result.exit_code,
+                        truncate_for_ui(&result.result.stderr, 500)
+                    );
+                    None
+                }
+                Err(e) => {
+                    log::error!(
+                        "[PRECOMPUTE] Execution error for step {} conv={}: {}. Falling back to agent mode.",
+                        config.step, conversation_id, e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // P2: Load structured analysis context (file profiles + findings).
     // Only active in analysis mode — provides persistent file metadata so the LLM
     // doesn't need to re-discover file structure through tool output on every iteration.
@@ -1784,9 +1884,23 @@ async fn agent_loop(
     // Daily mode: blocks analysis-only tools that shouldn't be used in casual chat.
     // The LLM sees all tool schemas (for KV cache stability), but calling a
     // tool not in the allowed set will be blocked with an error message.
+    //
+    // Precompute degradation: if precompute was expected but failed, expand allowed
+    // tools to include the feedback set so the LLM can do the work itself.
     let allowed_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
-        // Analysis mode: use skill-provided allowed list
-        config.allowed_tool_names.clone()
+        if config.precompute.is_some() && precompute_context.is_none() {
+            // Precompute failed — degrade to feedback mode tools
+            log::warn!(
+                "[PRECOMPUTE] Degrading step {} to feedback mode (precompute failed, giving LLM full tool access) conv={}",
+                config.step, conversation_id
+            );
+            config.feedback_config.as_ref().map(|fc| {
+                fc.tools.iter().cloned().collect::<std::collections::HashSet<_>>()
+            }).or_else(|| config.allowed_tool_names.clone())
+        } else {
+            // Normal: use skill-provided allowed list
+            config.allowed_tool_names.clone()
+        }
     } else {
         // Daily mode: block analysis-only tools at runtime
         let daily_blocked: std::collections::HashSet<String> = [
@@ -1801,14 +1915,30 @@ async fn agent_loop(
         Some(daily_allowed)
     };
 
+    // Precompute degradation: also increase max_iterations when precompute failed
+    if let Some(ref config) = current_step_config {
+        if config.precompute.is_some() && precompute_context.is_none() {
+            // Use 15 iterations (v1 baseline) as fallback, NOT feedback_config.max_iterations (3)
+            // which is only meant for short modify-mode loops after successful precompute.
+            let fallback_iters = 15;
+            log::warn!(
+                "[PRECOMPUTE] Increasing max_iterations from {} to {} for degraded step {} conv={}",
+                max_iterations, fallback_iters, config.step, conversation_id
+            );
+            max_iterations = fallback_iters;
+        }
+    }
+
     let mut full_content = String::new();
     let mut combined_mask_ctx: Option<MaskingContext> = None;
-    let mut generated_file_ids: Vec<String> = Vec::new();
+    let mut generated_file_ids: Vec<String> = precompute_file_ids;
     let mut all_file_metas: Vec<FileMeta> = Vec::new();
     let mut iteration_count = 0usize;
     let mut stream_cancelled = false;
     let mut step_tokens_in: u32 = 0;
     let mut step_tokens_out: u32 = 0;
+    let mut safeguard_phase1_injected = false;
+    let mut force_no_tools = false;
     let step_start = std::time::Instant::now();
     let mut phase = PhaseTracker::new(
         settings.enable_taor_tracking,
@@ -1848,8 +1978,10 @@ async fn agent_loop(
         phase.next_iteration(iteration);
         phase.think();
         log::info!(
-            "=== [AGENT] iteration={}/{} conversation={} messages={} ===",
-            iteration, max_iterations, conversation_id, messages.len()
+            "=== [AGENT] iteration={}/{} conversation={} step={:?} messages={} full_content_len={} ===",
+            iteration, max_iterations, conversation_id,
+            current_step_config.as_ref().map(|c| c.step),
+            messages.len(), full_content.len()
         );
         // Log each message role + content length for debugging
         for (i, m) in messages.iter().enumerate() {
@@ -1879,6 +2011,13 @@ async fn agent_loop(
             }
             if !analysis_notes_context.is_empty() {
                 ctx.push_str(&analysis_notes_context);
+            }
+            // Inject precompute result into LLM context
+            if let Some(ref pc_result) = precompute_context {
+                ctx.push_str("\n\n[precompute_result]\n");
+                ctx.push_str("以下是系统自动计算的结果，请基于这些数据向用户展示分析结论。\n");
+                ctx.push_str(pc_result);
+                ctx.push_str("\n[/precompute_result]");
             }
             if is_analysis {
                 let ctx_prompt = analysis_ctx.format_for_prompt();
@@ -1943,8 +2082,18 @@ async fn agent_loop(
         }
 
         let stream_start = std::time::Instant::now();
-        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} dynamic_ctx_len={} messages={} (decayed={})",
-            settings.primary_model, system_prompt.len(), dynamic_ctx_ref.map_or(0, |s| s.len()), messages.len(), decayed_messages.len());
+        // Phase 3 hard cutoff: send empty tool_defs so LLM physically cannot call tools
+        let effective_tools = if force_no_tools {
+            log::info!("[AGENT] force_no_tools=true, sending empty tool_defs to LLM (conversation={})", conversation_id);
+            Some(vec![])
+        } else {
+            tool_defs_override.clone()
+        };
+        log::info!("[AGENT] Calling gateway.stream_message() model={} system_prompt_len={} dynamic_ctx_len={} messages={} (decayed={}) tools={} force_no_tools={}",
+            settings.primary_model, system_prompt.len(), dynamic_ctx_ref.map_or(0, |s| s.len()),
+            messages.len(), decayed_messages.len(),
+            effective_tools.as_ref().map_or(0, |t| t.len()),
+            force_no_tools);
         let stream_result = gateway
             .stream_message(
                 &settings,
@@ -1952,7 +2101,7 @@ async fn agent_loop(
                 masking_level.clone(),
                 Some(&system_prompt),
                 dynamic_ctx_ref,
-                tool_defs_override.clone(),
+                effective_tools,
                 token_budget,
                 Some(&conversation_id),
             )
@@ -2138,14 +2287,68 @@ async fn agent_loop(
             break;
         }
 
-        // If no tool calls or stop reason is EndTurn, finish this step
-        if tool_calls.is_empty() || stop_reason != StopReason::ToolUse {
+        // If no tool calls, finish this step — unless ghost calls were dropped
+        if tool_calls.is_empty() {
+            // Ghost call recovery: if stop_reason=ToolUse but all tool calls were
+            // dropped (empty args from SSE chunk loss), inject a retry prompt instead
+            // of exiting. This prevents "模型未能生成回复" when the LLM tried to call
+            // a tool but SSE transmission lost all argument data.
+            if stop_reason == StopReason::ToolUse && iter_content.is_empty() && is_analysis {
+                log::warn!(
+                    "[AGENT] Ghost call recovery: stop_reason=ToolUse but 0 tool calls survived \
+                     (SSE chunk loss dropped all args). Injecting retry prompt. conv={} step={:?} iter={}/{}",
+                    conversation_id,
+                    current_step_config.as_ref().map(|c| c.step),
+                    iteration + 1, max_iterations
+                );
+                messages.push(ChatMessage::text(
+                    "user",
+                    "⚠️ 系统提示：你刚才的工具调用因网络传输问题丢失了，请重新调用工具继续执行。",
+                ));
+                continue;
+            }
+
             log::info!(
-                "[AGENT] Finishing step: stop_reason={:?}, tool_calls={}, total_content_len={}",
-                stop_reason, tool_calls.len(), full_content.len()
+                "[AGENT] Finishing step (no tool calls): stop_reason={:?}, total_content_len={}, iter_content_preview='{}'",
+                stop_reason, full_content.len(),
+                truncate_for_ui(&iter_content, 100)
             );
-            break; // exit inner loop, check step transition below
+            // Warn if analysis mode exits on iteration 0 with text-only response.
+            // This likely means the LLM is "acknowledging" the step instruction
+            // instead of directly calling tools — a prompt effectiveness issue.
+            if is_analysis && iteration_count <= 1 && !iter_content.is_empty() {
+                log::warn!(
+                    "[AGENT] ⚠️ Analysis step exited on first iteration with text-only response \
+                     (no tool calls). This suggests the step prompt is not compelling enough \
+                     to trigger immediate tool use. conv={} step={:?} text='{}'",
+                    conversation_id,
+                    current_step_config.as_ref().map(|c| c.step),
+                    truncate_for_ui(&iter_content, 200)
+                );
+            }
+            break;
         }
+        // Tool calls present but stop_reason doesn't match ToolUse.
+        // This can happen when an SSE JSON chunk is malformed and the
+        // finish_reason field is lost. Proceed with tool execution anyway
+        // to avoid silently dropping tool calls.
+        if stop_reason != StopReason::ToolUse {
+            log::warn!(
+                "[AGENT] stop_reason={:?} but {} tool calls received — proceeding with tool execution \
+                 (possible SSE chunk loss, conversation={}). Tool names: {:?}",
+                stop_reason, tool_calls.len(), conversation_id,
+                tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>()
+            );
+        }
+
+        log::info!(
+            "[AGENT] Continuing to tool execution: iter={}/{} tool_calls={} names={:?} iter_content_len={} (conversation={})",
+            iteration + 1, max_iterations,
+            tool_calls.len(),
+            tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>(),
+            iter_content.len(),
+            conversation_id
+        );
 
         // --- Tool execution phase ---
         phase.act(tool_calls.iter().map(|tc| tc.name.clone()).collect());
@@ -2423,30 +2626,37 @@ async fn agent_loop(
             if is_analysis {
                 match tr.name.as_str() {
                     "load_file" => {
-                        // Extract file info from tool result for AnalysisContext
-                        // Try to parse file_id and name from the result content
-                        let file_id = tr.content.lines()
-                            .find(|l| l.contains("file_id:") || l.contains("fileId:"))
-                            .and_then(|l| {
-                                l.split(':').nth(1).map(|s| s.trim().trim_matches('"').to_string())
-                            })
-                            .unwrap_or_default();
-                        let original_name = tr.content.lines()
-                            .find(|l| l.contains("文件名:") || l.contains("fileName:") || l.contains("File:"))
-                            .and_then(|l| {
-                                l.split(':').nth(1).map(|s| s.trim().trim_matches('"').to_string())
-                            })
-                            .unwrap_or_default();
-                        let var_hint = if tr.content.contains("_dfs[") {
-                            format!("_dfs['{}']", file_id)
-                        } else {
-                            "_df".to_string()
-                        };
-                        if !file_id.is_empty() {
-                            analysis_ctx.update_from_load_file(&file_id, &original_name, &var_hint, &tr.content);
+                        // Extract file info from tool result for AnalysisContext.
+                        // load_file returns JSON: {"status":"loaded","fileId":"...","originalName":"...","columns":[...],...}
+                        let parsed = serde_json::from_str::<serde_json::Value>(&tr.content)
+                            .ok()
+                            .or_else(|| {
+                                // Fallback: try to find JSON object in the content
+                                tr.content.find('{').and_then(|pos| {
+                                    serde_json::from_str::<serde_json::Value>(&tr.content[pos..]).ok()
+                                })
+                            });
+                        if let Some(ref json) = parsed {
+                            let file_id = json.get("fileId").and_then(|v| v.as_str()).unwrap_or_default();
+                            let original_name = json.get("originalName").and_then(|v| v.as_str()).unwrap_or_default();
+                            let var_hint = if tr.content.contains("_dfs[") {
+                                format!("_dfs['{}']", file_id)
+                            } else {
+                                "_df".to_string()
+                            };
+                            if !file_id.is_empty() {
+                                analysis_ctx.update_from_load_file(file_id, original_name, &var_hint, &tr.content);
+                            } else {
+                                log::warn!(
+                                    "[P2] load_file result JSON missing 'fileId' for conversation {} — \
+                                     AnalysisContext file profile will not be created. Keys: {:?}",
+                                    conversation_id,
+                                    json.as_object().map(|o| o.keys().collect::<Vec<_>>()),
+                                );
+                            }
                         } else {
                             log::warn!(
-                                "[P2] Could not parse file_id from load_file result for conversation {} — \
+                                "[P2] Could not parse load_file result as JSON for conversation {} — \
                                  AnalysisContext file profile will not be created. Preview: '{}'",
                                 conversation_id,
                                 truncate_for_ui(&tr.content, 200),
@@ -2493,6 +2703,70 @@ async fn agent_loop(
 
         phase.observe();
 
+        // Daily mode safeguard: if we've consumed most iterations without any
+        // text output (LLM keeps calling tools), inject a user message to force
+        // the LLM to summarize and respond in the next iteration.
+        if !is_analysis && full_content.is_empty() && iteration >= max_iterations.saturating_sub(3) {
+            log::warn!(
+                "[AGENT] Daily mode safeguard: {}/{} iterations with no text output, injecting reply prompt (conversation={})",
+                iteration + 1, max_iterations, conversation_id
+            );
+            messages.push(ChatMessage::text(
+                "user",
+                "请停止调用工具，直接用文字向用户总结目前的分析结果。",
+            ));
+        }
+
+        // Analysis mode safeguard: when approaching iteration limit, escalate
+        // through three phases to ensure the LLM saves notes and produces text.
+        //   Phase 1 (once): inject save prompt
+        //   Phase 2 (once): inject text-only prompt + arm force_no_tools
+        //   Phase 3 (auto): empty tool_defs in next stream_message call
+        // Only applies to steps with max_iterations >= 8 (to avoid triggering on short steps like Step 0)
+        if is_analysis && max_iterations >= 8 && iteration >= max_iterations.saturating_sub(6) {
+            let has_saved_note = messages.iter().any(|m| {
+                m.role == "tool" && m.name.as_deref() == Some("save_analysis_note")
+            });
+            let remaining = max_iterations.saturating_sub(iteration + 1);
+            log::info!(
+                "[AGENT] Safeguard check: iter={}/{} remaining={} has_saved_note={} has_text={} phase1={} force_no_tools={} (conv={})",
+                iteration + 1, max_iterations, remaining, has_saved_note, !full_content.is_empty(),
+                safeguard_phase1_injected, force_no_tools, conversation_id
+            );
+
+            if !has_saved_note && !safeguard_phase1_injected {
+                // Phase 1 (inject once): save notes + summarize
+                safeguard_phase1_injected = true;
+                log::warn!(
+                    "[AGENT] Safeguard Phase 1: {}/{} iters, no save_analysis_note → injecting save prompt (conv={})",
+                    iteration + 1, max_iterations, conversation_id
+                );
+                messages.push(ChatMessage::text(
+                    "user",
+                    "⚠️ 你即将达到本步骤的迭代上限。请立即：\n\
+                     1. 调用 save_analysis_note 保存当前分析结论\n\
+                     2. 用文字向用户总结本步骤的分析结果\n\
+                     不要再调用 execute_python，直接保存和总结。",
+                ));
+            } else if full_content.is_empty() && remaining <= 3 && !force_no_tools {
+                // Phase 2 (inject once + arm hard cutoff): no text output approaching limit
+                // Use remaining <= 3 (not 4) to give LLM at least 1 extra iteration
+                // after Phase 1 to call save_analysis_note before we force text output.
+                force_no_tools = true;
+                log::warn!(
+                    "[AGENT] Safeguard Phase 2: no text output at iter {}/{}, arming force_no_tools for next iteration (conv={})",
+                    iteration + 1, max_iterations, conversation_id
+                );
+                messages.push(ChatMessage::text(
+                    "user",
+                    "⚠️ 迭代即将用完且尚无文字输出。下一次迭代将禁用所有工具。\n\
+                     请立即停止调用工具，直接用文字向用户总结本步骤的分析结果。",
+                ));
+                // Phase 3 is automatic: force_no_tools=true causes empty tool_defs
+                // in the next stream_message call, physically preventing tool use.
+            }
+        }
+
         // Check cancel signal after tool batch completes
         if *cancel_rx.borrow() {
             log::info!("[AGENT] Cancel signal detected after tool execution for conversation {}", conversation_id);
@@ -2536,26 +2810,30 @@ async fn agent_loop(
         let note_saved = if let Some(ref config) = current_step_config {
             let cp_key = format!("note:{}:step{}_checkpoint", conversation_id, config.step);
             let ac_key = format!("note:{}:step{}_auto_context", conversation_id, config.step);
+            let sm_key = format!("note:{}:step{}_summary", conversation_id, config.step);
             let has_cp = db.get_memory(&cp_key).ok().flatten().map_or(false, |v| !v.is_empty());
             let has_ac = db.get_memory(&ac_key).ok().flatten().map_or(false, |v| !v.is_empty());
-            match (has_cp, has_ac) {
-                (true, true) => "both",
-                (true, false) => "checkpoint",
-                (false, true) => "auto_capture",
-                (false, false) => "none",
+            let has_sm = db.get_memory(&sm_key).ok().flatten().map_or(false, |v| !v.is_empty());
+            match (has_cp, has_ac, has_sm) {
+                (true, _, _) => "checkpoint",
+                (false, true, true) => "summary+auto",
+                (false, false, true) => "summary",
+                (false, true, false) => "auto_capture",
+                (false, false, false) => "none",
             }
         } else {
             "n/a"
         };
 
         log::info!(
-            "[METRICS:step] conv={} step={:?} status={} | iterations={} duration_ms={} | tokens_in={} tokens_out={} | note_saved={}",
+            "[METRICS:step] conv={} step={:?} status={} | iterations={}/{} duration_ms={} | tokens_in={} tokens_out={} | note_saved={} | text_output={}chars",
             conversation_id,
             current_step_config.as_ref().map(|c| c.step),
             status,
-            iteration_count, duration_ms,
+            iteration_count, max_iterations, duration_ms,
             step_tokens_in, step_tokens_out,
             note_saved,
+            full_content.len(),
         );
         crate::telemetry::record("step", &workspace_path, &[
             ("conv", &conversation_id),
@@ -2630,6 +2908,17 @@ async fn agent_loop(
     // or gives feedback.
     if let Some(ref config) = current_step_config {
         let completed_step = config.step;
+
+        // Auto-capture step context as fallback before checking notes.
+        // This ensures every completed step has at least auto_context saved,
+        // even if the LLM didn't call save_analysis_note.
+        // Include full_content as a synthetic assistant message since it hasn't
+        // been added to `messages` yet (finish_agent saves to DB, not messages vec).
+        let mut capture_messages = messages.clone();
+        if !full_content.trim().is_empty() {
+            capture_messages.push(ChatMessage::text("assistant", &full_content));
+        }
+        auto_capture_step_context(&db, &conversation_id, completed_step, &capture_messages);
 
         // Validate that the step has analysis notes (either LLM-saved summary or auto-captured context).
         // Auto-capture always saves step{N}_auto_context, so this is a sanity check.
