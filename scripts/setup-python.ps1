@@ -135,6 +135,29 @@ if (Test-Path $pipDir) {
 # Remove .dist-info directories
 Get-ChildItem -Path $TARGET_DIR -Recurse -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+# ─── Patch plotly __init__.py ─────────────────────────────────────
+# plotly uses importlib.metadata.version() which fails without .dist-info.
+# Wrap in try/except with a fallback version.
+$plotlyInit = Join-Path $TARGET_DIR "Lib\site-packages\plotly\__init__.py"
+if (Test-Path $plotlyInit) {
+    Write-Host "Patching plotly __init__.py for dist-info-less runtime..."
+    $src = Get-Content -Path $plotlyInit -Raw
+    $old = '__version__ = importlib.metadata.version("plotly")'
+    $new = @"
+try:
+    __version__ = importlib.metadata.version("plotly")
+except Exception:
+    __version__ = "0.0.0"
+"@
+    if ($src.Contains($old)) {
+        $src = $src.Replace($old, $new)
+        Set-Content -Path $plotlyInit -Value $src -NoNewline
+        Write-Host "  Patched successfully."
+    } else {
+        Write-Host "  Already patched or pattern not found, skipping."
+    }
+}
+
 # ─── Cleanup temp files ───────────────────────────────────────────
 Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 

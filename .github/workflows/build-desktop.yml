@@ -58,7 +58,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: src-tauri/python-runtime
-          key: python-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src-tauri/requirements.txt') }}
+          key: python-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src-tauri/requirements.txt', 'scripts/setup-python.sh', 'scripts/setup-python.ps1') }}
 
       - name: Setup bundled Python runtime (macOS/Linux)
         if: steps.python-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
