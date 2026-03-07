@@ -124,9 +124,13 @@ def _detect_columns(df):
         for p in patterns:
             if cn == p:
                 return True
-        # Contains match
+        # Contains match (only if column name is long enough to be meaningful)
+        # Short names (<=1 char) must match exactly to avoid false positives
+        # e.g. "时" should NOT match "入职时间" via substring
         for p in patterns:
-            if p in cn or cn in p:
+            if p in cn:
+                return True
+            if len(cn) >= 2 and cn in p:
                 return True
         return False
 
@@ -501,11 +505,14 @@ def _infer_industry(df, col_map):
             industry_scores['manufacturing'] += 1
             signals.append('pos:trade')
         blue_kw = ['操作', '生产', '装配', '仓库', '物流', '司机', '搬运', '焊', '钳', '车工']
-        blue_count = df[pos_col].astype(str).apply(lambda x: any(kw in x for kw in blue_kw)).sum()
-        blue_ratio = blue_count / max(n, 1)
-        if blue_ratio > 0.3:
-            industry_scores['manufacturing'] += 3
-            signals.append(f'blue_collar_ratio:{blue_ratio:.0%}')
+        try:
+            blue_count = df[pos_col].fillna('').astype(str).apply(lambda x: any(kw in x for kw in blue_kw)).sum()
+            blue_ratio = blue_count / max(n, 1)
+            if blue_ratio > 0.3:
+                industry_scores['manufacturing'] += 3
+                signals.append(f'blue_collar_ratio:{blue_ratio:.0%}')
+        except Exception:
+            pass  # Skip blue-collar ratio if column has problematic data
 
     best = max(industry_scores, key=industry_scores.get)
     if industry_scores[best] == 0:
@@ -1180,7 +1187,10 @@ def _dim1_internal_equity(df, salary_col, group_cols):
         return {'error': 'No valid group columns found', 'groups': []}
 
     df = df.copy()
-    df['_group'] = df[valid_cols].astype(str).agg(' × '.join, axis=1)
+    if len(valid_cols) == 1:
+        df['_group'] = df[valid_cols[0]].astype(str)
+    else:
+        df['_group'] = df[valid_cols].astype(str).apply(lambda r: ' × '.join(r), axis=1)
 
     results = []
     for group_name, gdf in df.groupby('_group'):
@@ -1362,7 +1372,10 @@ def _dim4_inversion(df, salary_col, hire_col, group_cols):
 
     rdf = df.copy()
     rdf['_tenure_yr'] = _tenure_years(rdf, hire_col)
-    rdf['_group'] = rdf[valid_cols].astype(str).agg(' × '.join, axis=1)
+    if len(valid_cols) == 1:
+        rdf['_group'] = rdf[valid_cols[0]].astype(str)
+    else:
+        rdf['_group'] = rdf[valid_cols].astype(str).apply(lambda r: ' × '.join(r), axis=1)
 
     inversions = []
     for group_name, gdf in rdf.groupby('_group'):
@@ -1508,7 +1521,10 @@ def _dim6_compa_ratio(df, salary_col, group_cols):
     rdf = df.copy()
 
     if valid_cols:
-        rdf['_group'] = rdf[valid_cols].astype(str).agg(' × '.join, axis=1)
+        if len(valid_cols) == 1:
+            rdf['_group'] = rdf[valid_cols[0]].astype(str)
+        else:
+            rdf['_group'] = rdf[valid_cols].astype(str).apply(lambda r: ' × '.join(r), axis=1)
         group_medians = rdf.groupby('_group')[salary_col].transform('median')
     else:
         group_medians = rdf[salary_col].median()
@@ -1718,7 +1734,10 @@ def _validate_step4(df, col_map, diagnosis):
     if salary_col and salary_col in df.columns:
         rdf = df.copy()
         if group_cols:
-            rdf['_group'] = rdf[group_cols].astype(str).agg(' x '.join, axis=1)
+            if len(group_cols) == 1:
+                rdf['_group'] = rdf[group_cols[0]].astype(str)
+            else:
+                rdf['_group'] = rdf[group_cols].astype(str).apply(lambda r: ' x '.join(r), axis=1)
             group_medians = rdf.groupby('_group')[salary_col].transform('median')
         else:
             group_medians = rdf[salary_col].median()
@@ -1804,7 +1823,10 @@ def _step5_scenarios(df, col_map, diagnosis=None):
 
     rdf = df.copy()
     if group_cols:
-        rdf['_group'] = rdf[group_cols].astype(str).agg(' × '.join, axis=1)
+        if len(group_cols) == 1:
+            rdf['_group'] = rdf[group_cols[0]].astype(str)
+        else:
+            rdf['_group'] = rdf[group_cols].astype(str).apply(lambda r: ' × '.join(r), axis=1)
         group_medians = rdf.groupby('_group')[salary_col].transform('median')
     else:
         group_medians = rdf[salary_col].median()
