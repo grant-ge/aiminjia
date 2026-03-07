@@ -15,10 +15,17 @@ use super::util::{py_escape, slugify};
 
 /// Generate a PPTX presentation using python-pptx.
 pub(crate) async fn handle_generate_slides(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
-    let slides = args
-        .get("slides")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("Missing required array argument: slides"))?;
+    // LLM sometimes sends slides as a JSON string instead of an array — auto-parse it.
+    let slides_owned: Vec<Value>;
+    let slides = match args.get("slides") {
+        Some(Value::Array(arr)) => arr,
+        Some(Value::String(s)) => {
+            slides_owned = serde_json::from_str(s)
+                .map_err(|e| anyhow::anyhow!("slides is a string but not valid JSON array: {e}"))?;
+            &slides_owned
+        }
+        _ => anyhow::bail!("Missing required array argument: slides"),
+    };
 
     let title = optional_str(args, "title").unwrap_or_else(|| {
         slides
