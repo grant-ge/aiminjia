@@ -251,6 +251,13 @@ async fn scan_external_plugins(
             continue;
         }
 
+        // Skip directories starting with '_' (disabled plugins)
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('_') {
+                continue;
+            }
+        }
+
         let manifest_path = path.join("plugin.toml");
         if !manifest_path.exists() {
             continue;
