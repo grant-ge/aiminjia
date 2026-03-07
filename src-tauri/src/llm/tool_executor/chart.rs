@@ -15,9 +15,43 @@ use super::require_str;
 pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
     let chart_type = require_str(args, "chart_type")?;
     let title = require_str(args, "title")?;
-    let data = args
-        .get("data")
-        .ok_or_else(|| anyhow!("Missing required argument: data"))?;
+
+    // Resolve data: prefer `data_file` (file path) over inline `data`.
+    let data: Value;
+    if let Some(data_file_path) = args.get("data_file").and_then(|v| v.as_str()) {
+        let full_path = if std::path::Path::new(data_file_path).is_absolute() {
+            std::path::PathBuf::from(data_file_path)
+        } else {
+            ctx.workspace_path.join(data_file_path)
+        };
+        // Security: ensure resolved path is within the workspace directory.
+        let canonical = full_path.canonicalize().map_err(|e| {
+            anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
+        })?;
+        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        if !canonical.starts_with(&workspace_canonical) {
+            return Err(anyhow!(
+                "data_file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
+                data_file_path
+            ));
+        }
+        let content = std::fs::read_to_string(&canonical).map_err(|e| {
+            anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
+        })?;
+        data = serde_json::from_str(&content).map_err(|e| {
+            anyhow!("Failed to parse chart data from '{}': {}", data_file_path, e)
+        })?;
+        log::info!("[generate_chart] Loaded data from file: {}", data_file_path);
+    } else if let Some(inline_data) = args.get("data") {
+        data = inline_data.clone();
+    } else {
+        return Err(anyhow!(
+            "Missing chart data. Provide either:\n\
+             1. 'data_file': path to a JSON file with chart data (recommended for large datasets)\n\
+             2. 'data': inline chart data object"
+        ));
+    }
+
     let options = args.get("options").cloned().unwrap_or(json!({}));
 
     let chart_filename = format!(
@@ -39,7 +73,7 @@ pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> 
         "chart_opts_{}.json",
         Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
     ));
-    std::fs::write(&data_temp, serde_json::to_string(data).unwrap_or_else(|_| "{}".into()))?;
+    std::fs::write(&data_temp, serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()))?;
     std::fs::write(&options_temp, serde_json::to_string(&options).unwrap_or_else(|_| "{}".into()))?;
 
     let python_code = build_chart_python(
@@ -152,8 +186,34 @@ chart_type = '{chart_type}'
 title = '{title}'
 output_path = r'{output_path}'
 
-labels = data.get('labels', [])
-values = data.get('values', [])
+# Support custom key mapping via options (for flexible data formats)
+x_key = options.get('x_key', 'labels')
+y_keys = options.get('y_keys', None)  # List of keys for multi-series, or None for auto-detect
+
+labels = data.get(x_key, [])
+
+# Resolve values: try y_keys first, then 'values', then 'datasets'
+if y_keys:
+    # Multi-series: y_keys=['new_med', 'old_med'] → values=[[...], [...]]
+    if len(y_keys) == 1:
+        values = data.get(y_keys[0], [])
+    else:
+        values = [data.get(k, []) for k in y_keys]
+        # Use y_labels from options if provided, otherwise use y_keys as labels
+        if not data.get('series_names'):
+            data['series_names'] = options.get('y_labels', y_keys)
+else:
+    values = data.get('values', [])
+    # Support 'datasets' format: [{{"label": "...", "values": [...]}}]
+    datasets = data.get('datasets', [])
+    if not values and datasets:
+        if len(datasets) == 1:
+            values = datasets[0].get('values', [])
+        else:
+            values = [ds.get('values', []) for ds in datasets]
+            if not data.get('series_names'):
+                data['series_names'] = [ds.get('label', f'Series {{{{i+1}}}}') for i, ds in enumerate(datasets)]
+
 fig = go.Figure()
 
 if chart_type == 'bar':
@@ -162,7 +222,7 @@ if chart_type == 'bar':
         for i, v in enumerate(values):
             name = series_names[i] if i < len(series_names) else f'Series {{i+1}}'
             fig.add_trace(go.Bar(x=labels, y=v, name=name))
-        fig.update_layout(barmode='group')
+        fig.update_layout(barmode=options.get('barmode', 'group'))
     else:
         fig.add_trace(go.Bar(x=labels, y=values))
 

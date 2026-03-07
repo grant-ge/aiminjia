@@ -114,6 +114,7 @@ pub fn run() {
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
+                log::info!("Scanning plugins from: {:?} (exists={})", plugins_dir, plugins_dir.exists());
                 if plugins_dir.exists() {
                     scan_external_plugins(
                         &plugins_dir,

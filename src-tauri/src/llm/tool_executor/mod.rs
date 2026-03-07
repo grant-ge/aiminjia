@@ -6,7 +6,7 @@
 mod util;
 mod search;
 mod python;
-mod file_load;
+pub(crate) mod file_load;
 mod report;
 mod chart;
 mod stats;

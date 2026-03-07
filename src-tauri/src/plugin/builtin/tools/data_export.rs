@@ -15,8 +15,8 @@ impl ToolPlugin for DataExportTool {
 
     fn description(&self) -> &str {
         "Export data to CSV/Excel/JSON. RECOMMENDED: use _export_detail(df, filename, format) inside execute_python for DataFrame export. \
-         Alternative modes: (1) source_file — path to an existing file to convert format; \
-         (2) data — actual JSON record array (NOT variable names like '_df')."
+         Alternative: source_file — path to an existing file to convert format. \
+         The 'data' parameter (inline JSON records) is DEPRECATED — use execute_python to write data to a file, then pass source_file."
     }
 
     fn input_schema(&self) -> Value {
@@ -28,7 +28,10 @@ impl ToolPlugin for DataExportTool {
                     "description": "Path to an existing file (CSV/Excel/JSON) to convert to a different format. Relative to workspace root (e.g. 'exports/step1_data.xlsx'). When provided, 'data' parameter is ignored."
                 },
                 "data": {
-                    "description": "Data to export. MUST be an array of record objects, e.g. [{\"name\":\"A\",\"salary\":5000},{\"name\":\"B\",\"salary\":6000}]. Do NOT pass Python expressions or method names — use execute_python first to compute data, then pass actual JSON records here. Ignored when source_file is provided."
+                    "description": "DEPRECATED — avoid using this parameter. Large inline JSON arrays risk token truncation and JSON escaping issues. \
+                        Instead, use execute_python to write data to a file, then pass the file path via source_file. \
+                        If you must use this: MUST be an array of record objects, e.g. [{\"name\":\"A\",\"salary\":5000}]. \
+                        Do NOT pass Python expressions or method names."
                 },
                 "format": {
                     "type": "string",

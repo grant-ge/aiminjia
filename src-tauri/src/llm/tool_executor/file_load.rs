@@ -447,6 +447,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
             info!("[TOOL:load_file] Cache hit for file_id='{}', skipping re-parse", file_id);
             let mut output = json!({
                 "status": "loaded",
+                "fileId": file_id,
                 "originalName": cached_info.get("originalName").and_then(|v| v.as_str()).unwrap_or("unknown"),
                 "format": cached_info.get("format").and_then(|v| v.as_str()).unwrap_or("unknown"),
                 "loadedAs": cached_info.get("loadedAs").and_then(|v| v.as_str()).unwrap_or("dataframe"),
@@ -662,6 +663,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
 
     let mut output = json!({
         "status": "loaded",
+        "fileId": file_id,
         "originalName": original_name,
         "format": format_str,
         "loadedAs": actual_loaded_as,
@@ -831,4 +833,81 @@ pub(crate) fn build_loaded_files_preamble(
 
     preamble.push('\n');
     preamble
+}
+
+/// Build the analysis preamble that injects `_ANALYSIS_DIR`, `_CONV_ID`,
+/// snapshot restoration, and analysis utility functions into a Python session.
+///
+/// This is the same setup that `handle_execute_python` performs before user code,
+/// extracted as a shared helper so the precompute path in `chat.rs` can reuse it.
+///
+/// Also ensures `_analysis_utils.py` is written to disk before returning.
+pub(crate) fn build_analysis_preamble(
+    conversation_id: &str,
+    step: u32,
+    workspace_path: &std::path::Path,
+) -> String {
+    use super::util::py_escape;
+
+    // Write ANALYSIS_UTILS to module file. Always overwrite to ensure
+    // the on-disk version matches the compiled binary (handles upgrades).
+    let utils_path = workspace_path.join("temp/_analysis_utils.py");
+    {
+        if let Some(parent) = utils_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        if let Err(e) = std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS) {
+            log::warn!("[build_analysis_preamble] Failed to write _analysis_utils.py: {}", e);
+        }
+    }
+
+    format!(
+        r#"
+_CONV_ID = '{conv_id}'
+_ANALYSIS_DIR = os.path.join(os.getcwd(), 'analysis', _CONV_ID)
+os.makedirs(_ANALYSIS_DIR, exist_ok=True)
+_CURRENT_STEP = {step}
+
+# Layer 1: Save original data (first time only, never modified)
+import pickle as _pkl
+_orig_path = os.path.join(_ANALYSIS_DIR, '_original.pkl')
+if '_df' in dir() and isinstance(_df, pd.DataFrame) and not os.path.exists(_orig_path):
+    _pkl.dump(_df.copy(), open(_orig_path + '.tmp', 'wb'))
+    os.replace(_orig_path + '.tmp', _orig_path)
+
+# Layer 3: Restore working snapshot (overrides file-loaded _df)
+_snap_path = os.path.join(_ANALYSIS_DIR, '_step_df.pkl')
+if os.path.exists(_snap_path):
+    _df = _pkl.load(open(_snap_path, 'rb'))
+
+# Restore _dfs snapshot if exists
+_snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
+if os.path.exists(_snap_dfs_path):
+    _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+
+# Restore user-created variables from previous execute_python calls
+_uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
+if os.path.exists(_uv_path):
+    try:
+        for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
+            globals()[_k] = _v
+        del _k, _v
+    except Exception:
+        pass
+
+# _df_raw: read-only reference to original data (always available)
+if os.path.exists(_orig_path):
+    _df_raw = _pkl.load(open(_orig_path, 'rb'))
+else:
+    _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
+
+# Load analysis utility functions from module file
+_au_path = os.path.join(os.getcwd(), 'temp', '_analysis_utils.py')
+if os.path.exists(_au_path):
+    with open(_au_path, encoding='utf-8') as _au_f:
+        exec(_au_f.read())
+"#,
+        conv_id = py_escape(conversation_id),
+        step = step,
+    )
 }

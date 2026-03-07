@@ -154,7 +154,7 @@ async fn do_extract(
     );
 
     // 2. Filter messages: keep only assistant + tool messages (remove user confirmations)
-    let extract_messages: Vec<ChatMessage> = messages
+    let mut extract_messages: Vec<ChatMessage> = messages
         .iter()
         .filter(|m| m.role == "assistant" || m.role == "tool")
         .cloned()
@@ -167,6 +167,13 @@ async fn do_extract(
         );
         return None;
     }
+
+    // 3. Append a user message so the conversation ends with role=user.
+    //    Some providers (e.g. Aliyun) reject assistant-prefill requests.
+    extract_messages.push(ChatMessage::text(
+        "user",
+        "请根据以上对话内容，按照要求输出 JSON 格式的 checkpoint 摘要。",
+    ));
 
     // 3. Call LLM (non-streaming, no tools)
     let response = match gateway
@@ -275,16 +282,84 @@ fn parse_checkpoint_json(text: &str, step_num: u32) -> Option<StepCheckpoint> {
                 if let Ok(cp) = serde_json::from_str::<StepCheckpoint>(json_str) {
                     return Some(cp);
                 }
+                // Strategy 3b: try to fix common JSON issues from LLM output
+                if let Some(cp) = try_repair_and_parse(json_str) {
+                    log::info!("[checkpoint] JSON repair succeeded for step {}", step_num);
+                    return Some(cp);
+                }
             }
         }
     }
 
+    // Log the failed content for debugging (first 500 chars)
+    let preview: String = trimmed.chars().take(500).collect();
     log::warn!(
-        "[checkpoint] Failed to parse JSON from LLM response for step {} (len={})",
+        "[checkpoint] Failed to parse JSON from LLM response for step {} (len={}) preview='{}'",
         step_num,
-        text.len()
+        text.len(),
+        preview
     );
     None
+}
+
+/// Try to repair common JSON formatting issues from LLM output and parse.
+///
+/// Handles:
+/// - Trailing commas before ] or }
+/// - Unescaped newlines within string values
+fn try_repair_and_parse(json_str: &str) -> Option<StepCheckpoint> {
+    let mut repaired = json_str.to_string();
+
+    // Fix trailing commas: ",]" → "]" and ",}" → "}"
+    // Also handle ",  ]" and ",\n]" patterns
+    loop {
+        let before = repaired.len();
+        repaired = repaired.replace(",]", "]").replace(",}", "}");
+        // Handle comma + whitespace + closing bracket
+        let bytes = repaired.as_bytes();
+        let mut cleaned = String::with_capacity(repaired.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b',' {
+                // Look ahead past whitespace for ] or }
+                let mut j = i + 1;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\n' || bytes[j] == b'\r' || bytes[j] == b'\t') {
+                    j += 1;
+                }
+                if j < bytes.len() && (bytes[j] == b']' || bytes[j] == b'}') {
+                    // Skip the comma, keep whitespace and closing bracket
+                    i += 1;
+                    continue;
+                }
+            }
+            cleaned.push(bytes[i] as char);
+            i += 1;
+        }
+        repaired = cleaned;
+        if repaired.len() == before {
+            break;
+        }
+    }
+
+    // Fix unescaped newlines inside string values
+    let mut fixed = String::with_capacity(repaired.len());
+    let mut in_string = false;
+    let mut prev_char = '\0';
+    for ch in repaired.chars() {
+        if ch == '"' && prev_char != '\\' {
+            in_string = !in_string;
+            fixed.push(ch);
+        } else if in_string && ch == '\n' {
+            fixed.push_str("\\n");
+        } else if in_string && ch == '\r' {
+            // skip \r
+        } else {
+            fixed.push(ch);
+        }
+        prev_char = ch;
+    }
+
+    serde_json::from_str::<StepCheckpoint>(&fixed).ok()
 }
 
 /// Format a checkpoint for injection into the system prompt.

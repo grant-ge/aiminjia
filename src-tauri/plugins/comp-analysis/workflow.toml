@@ -21,29 +21,33 @@ id = "step2"
 name = "岗位归一化"
 prompt = "prompts/step2.md"
 tools_only = ["load_file", "execute_python", "web_search", "save_analysis_note", "update_progress", "update_plan", "save_memory", "search_memory"]
-max_iterations = 15
+max_iterations = 25
 token_budget = 8192
+advance_on = "confirm"
 
 [[steps]]
 id = "step3"
 name = "职级推断"
 prompt = "prompts/step3.md"
 tools_only = ["load_file", "execute_python", "web_search", "save_analysis_note", "update_progress", "update_plan", "save_memory", "search_memory"]
-max_iterations = 15
+max_iterations = 25
 token_budget = 8192
+advance_on = "confirm"
 
 [[steps]]
 id = "step4"
 name = "公平性诊断"
 prompt = "prompts/step4.md"
 tools_only = ["load_file", "execute_python", "hypothesis_test", "detect_anomalies", "generate_chart", "save_analysis_note", "update_progress", "update_plan", "save_memory", "search_memory"]
-max_iterations = 20
+max_iterations = 25
 token_budget = 8192
+advance_on = "confirm"
 
 [[steps]]
 id = "step5"
 name = "行动方案"
 prompt = "prompts/step5.md"
 tools_only = ["load_file", "execute_python", "generate_report", "generate_slides", "generate_chart", "export_data", "save_analysis_note", "update_progress", "update_plan", "save_memory", "search_memory"]
-max_iterations = 15
+max_iterations = 25
 token_budget = 8192
+advance_on = "confirm"

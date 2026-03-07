@@ -35,7 +35,7 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
         // Mode 1: Read from existing file and convert to target format.
         build_export_python_from_file(src_path, format, &filename)?
     } else {
-        // Mode 2: Export JSON data records (original behavior).
+        // Mode 2: Export JSON data records (deprecated — prefer execute_python + source_file).
         let data_val = args
             .get("data")
             .ok_or_else(|| anyhow!(
@@ -45,6 +45,8 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
                  3. 提供 data: 实际的 JSON 记录数组",
                 filename, format
             ))?;
+
+        log::warn!("[export_data] Using deprecated 'data' parameter. Recommend using execute_python with _export_detail() or source_file instead.");
 
         // Validate: reject null data
         if data_val.is_null() {

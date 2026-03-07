@@ -428,11 +428,66 @@ fn sse_bytes_to_events(
                         }
                         Err(e) => {
                             log::warn!(
-                                "[SSE] Failed to parse chunk JSON: err={} line_len={} line='{}'",
+                                "[SSE] Failed to parse chunk JSON: err={} line_len={} line_start='{}' line_end='{}'",
                                 e,
                                 json_str.len(),
-                                json_str.chars().take(300).collect::<String>(),
+                                json_str.chars().take(200).collect::<String>(),
+                                json_str.chars().rev().take(200).collect::<Vec<_>>().into_iter().rev().collect::<String>(),
                             );
+                            // Best-effort: try to extract finish_reason from malformed JSON
+                            // so we don't lose the stop signal when the chunk is partially valid.
+                            if let Some(pos) = json_str.find("\"finish_reason\"") {
+                                let tail = &json_str[pos..];
+                                // Pattern: "finish_reason":"tool_calls" or "finish_reason": "stop"
+                                for (needle, reason) in &[
+                                    ("tool_calls", StopReason::ToolUse),
+                                    ("stop", StopReason::EndTurn),
+                                    ("length", StopReason::MaxTokens),
+                                ] {
+                                    if tail.contains(needle) {
+                                        log::info!(
+                                            "[SSE] Recovered finish_reason='{}' from malformed JSON chunk",
+                                            needle
+                                        );
+                                        flush_pending_tool(&mut st);
+                                        st.final_stop_reason = Some(reason.clone());
+                                        break;
+                                    }
+                                }
+                            }
+                            // Also try to salvage tool_call argument fragments.
+                            // If we have an active tool call, the malformed chunk likely
+                            // contains continuation of tool_args. Extract the "arguments"
+                            // field value even from broken JSON.
+                            if st.tool_id.is_some() {
+                                if let Some(args_pos) = json_str.find("\"arguments\":\"") {
+                                    let start = args_pos + "\"arguments\":\"".len();
+                                    // Find the closing quote (accounting for escapes)
+                                    let remaining = &json_str[start..];
+                                    let mut frag = String::new();
+                                    let mut escaped = false;
+                                    for ch in remaining.chars() {
+                                        if escaped {
+                                            frag.push('\\');
+                                            frag.push(ch);
+                                            escaped = false;
+                                        } else if ch == '\\' {
+                                            escaped = true;
+                                        } else if ch == '"' {
+                                            break;
+                                        } else {
+                                            frag.push(ch);
+                                        }
+                                    }
+                                    if !frag.is_empty() {
+                                        log::info!(
+                                            "[SSE] Salvaged {} chars of tool_args from malformed chunk",
+                                            frag.len()
+                                        );
+                                        st.tool_args.push_str(&frag);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -557,6 +612,19 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
             "[SSE] Flushing tool call: id={} name={} args_len={} args='{}'…",
             id, name, st.tool_args.len(), args_preview
         );
+
+        // Skip tool calls with empty args — these are ghost calls caused by
+        // SSE chunk loss. Emitting them would produce tool calls with
+        // Value::Null args that execute incorrectly and pollute messages.
+        if st.tool_args.trim().is_empty() {
+            log::warn!(
+                "[SSE] Dropping tool call id={} name='{}' — empty args (likely SSE chunk loss)",
+                id, name
+            );
+            st.tool_args.clear();
+            return;
+        }
+
         let arguments = match serde_json::from_str(&st.tool_args) {
             Ok(v) => v,
             Err(e) => {

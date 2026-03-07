@@ -13,8 +13,16 @@ pub(crate) async fn handle_save_analysis_note(ctx: &PluginContext, args: &Value)
     let content = require_str(args, "content")?;
     let step = super::optional_i64(args, "step", 0);
 
-    // Prefix key with conversation id for scoping.
-    let full_key = format!("note:{}:{}", ctx.conversation_id, key);
+    // Auto-prefix key with step number so notes are discoverable by the
+    // step-completion check (which looks for prefix "note:{conv}:step{N}_").
+    // If the LLM already provided a step-prefixed key, don't double-prefix.
+    let step_prefix = format!("step{}_", step);
+    let prefixed_key = if key.starts_with(&step_prefix) {
+        key.to_string()
+    } else {
+        format!("{}{}", step_prefix, key)
+    };
+    let full_key = format!("note:{}:{}", ctx.conversation_id, prefixed_key);
     let source = format!("analysis_step_{}", step);
 
     ctx.storage.set_memory(&full_key, content, Some(&source))?;
@@ -50,8 +58,8 @@ mod tests {
         assert_eq!(parsed["key"], "salary_distribution");
         assert_eq!(parsed["step"], 2);
 
-        // Verify the memory was actually stored.
-        let full_key = format!("note:{}:salary_distribution", ctx.conversation_id);
+        // Verify the memory was actually stored with step-prefixed key.
+        let full_key = format!("note:{}:step2_salary_distribution", ctx.conversation_id);
         let stored = ctx.storage.get_memory(&full_key).unwrap();
         assert_eq!(stored, Some("Salary follows a log-normal distribution".to_string()));
     }

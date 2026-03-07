@@ -36,3 +36,12 @@ pandas(pd)、numpy(np)、scipy.stats 已导入。_print_table(headers, rows, tit
 - reports/ — 生成的报告（HTML/PDF/DOCX）
 - charts/ — 生成的图表（PNG）
 文件管理函数：_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜文件内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件
+
+【数据传递规则 — 报告/图表/导出】
+
+生成报告、图表或导出数据时，大段内容数据必须通过文件系统传递，不可直接写入工具参数：
+
+1. generate_report：先用 execute_python 从 _df 生成报告 sections 数据并写入 JSON 文件，再调用 generate_report(source="文件路径")。禁止在 sections 参数中直接写入大段文本。
+2. generate_chart：先用 execute_python 准备图表数据并写入 JSON 文件，再调用 generate_chart(data_file="文件路径")。数据点超过 50 个时必须使用 data_file。
+3. export_data：使用 execute_python 中的 _export_detail(_df, filename, format) 直接导出。禁止在 data 参数中传入原始数据数组。
+4. execute_python：所有数据操作必须基于已加载的变量（_df、_dfs、_text、_texts），禁止在 Python 代码中硬编码大段数据（如手写 JSON 字符串、列表常量）。

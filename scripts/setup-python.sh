@@ -102,6 +102,30 @@ rm -rf "${TARGET_DIR}/lib/python3.12/site-packages/pip" 2>/dev/null || true
 # Remove .dist-info (saves ~5MB, not needed at runtime)
 find "${TARGET_DIR}" -type d -name "*.dist-info" | xargs rm -rf 2>/dev/null || true
 
+# Patch plotly __init__.py — it uses importlib.metadata.version() which
+# fails without .dist-info. Wrap in try/except with a fallback version.
+PLOTLY_INIT="${TARGET_DIR}/lib/python3.12/site-packages/plotly/__init__.py"
+if [ -f "${PLOTLY_INIT}" ]; then
+    echo "Patching plotly __init__.py for dist-info-less runtime..."
+    python3 -c "
+import re, sys
+path = sys.argv[1]
+with open(path) as f:
+    src = f.read()
+old = '__version__ = importlib.metadata.version(\"plotly\")'
+new = '''try:
+    __version__ = importlib.metadata.version(\"plotly\")
+except Exception:
+    __version__ = \"0.0.0\"'''
+if old in src:
+    with open(path, 'w') as f:
+        f.write(src.replace(old, new))
+    print('  Patched successfully.')
+else:
+    print('  Already patched or pattern not found, skipping.')
+" "${PLOTLY_INIT}"
+fi
+
 # macOS: clear quarantine flag on all files
 if [ "${OS}" = "Darwin" ]; then
     echo "Clearing macOS quarantine attributes..."

@@ -29,6 +29,8 @@ pub struct DeclarativeSkill {
     step_configs: HashMap<String, StepToolConfig>,
     extract_base: String,
     extract_steps: HashMap<String, String>,
+    /// Plugin directory path — needed to load precompute scripts at runtime.
+    plugin_dir: std::path::PathBuf,
 }
 
 struct StepToolConfig {
@@ -37,6 +39,12 @@ struct StepToolConfig {
     max_iterations: Option<usize>,
     token_budget: Option<u32>,
     advance_on: AdvanceMode,
+    /// Path to precompute Python script (relative to plugin dir).
+    precompute: Option<String>,
+    /// Tools for feedback/modify mode.
+    tools_on_feedback: Option<Vec<String>>,
+    /// Max iterations in feedback mode.
+    max_iterations_feedback: Option<usize>,
 }
 
 impl DeclarativeSkill {
@@ -123,6 +131,9 @@ impl DeclarativeSkill {
                     max_iterations: step.max_iterations,
                     token_budget: step.token_budget,
                     advance_on: advance_on.clone(),
+                    precompute: step.precompute.clone(),
+                    tools_on_feedback: step.tools_on_feedback.clone(),
+                    max_iterations_feedback: step.max_iterations_feedback,
                 });
                 steps.push(WorkflowStep {
                     id: step.id.clone(),
@@ -157,6 +168,7 @@ impl DeclarativeSkill {
             step_configs,
             extract_base,
             extract_steps,
+            plugin_dir: plugin_dir.to_path_buf(),
         })
     }
 
@@ -275,9 +287,22 @@ impl Skill for DeclarativeSkill {
         if let Some(step) = state.current_step.as_deref() {
             if let Some(config) = self.step_configs.get(step) {
                 if let Some(mi) = config.max_iterations {
+                    log::info!(
+                        "[Skill:{}] max_iterations for step '{}': {} (step-specific)",
+                        self.id, step, mi
+                    );
                     return mi;
                 }
             }
+            log::info!(
+                "[Skill:{}] max_iterations for step '{}': {} (default — step not found or no step override)",
+                self.id, step, self.max_iter
+            );
+        } else {
+            log::info!(
+                "[Skill:{}] max_iterations: {} (no current_step)",
+                self.id, self.max_iter
+            );
         }
         self.max_iter
     }
@@ -301,6 +326,46 @@ impl Skill for DeclarativeSkill {
     fn extract_prompt(&self, step_id: &str) -> (String, String) {
         let step_specific = self.extract_steps.get(step_id).cloned().unwrap_or_default();
         (self.extract_base.clone(), step_specific)
+    }
+
+    fn on_step_enter(&self, state: &SkillState) -> Option<StepPrecompute> {
+        let step = state.current_step.as_deref()?;
+        let config = self.step_configs.get(step)?;
+        let script_path = config.precompute.as_deref()?;
+
+        // Read the precompute script from the plugin directory
+        let full_path = self.plugin_dir.join(script_path);
+        match std::fs::read_to_string(&full_path) {
+            Ok(code) => {
+                // Use step ID directly as cache key to avoid collisions
+                let cache_key = format!("{}_precompute", step);
+                log::info!(
+                    "[Skill:{}] on_step_enter: loading precompute script '{}' ({} bytes) for step '{}'",
+                    self.id, script_path, code.len(), step
+                );
+                Some(StepPrecompute {
+                    python_code: code,
+                    cache_key,
+                })
+            }
+            Err(e) => {
+                log::warn!(
+                    "[Skill:{}] on_step_enter: failed to read precompute script '{}': {}",
+                    self.id, full_path.display(), e
+                );
+                None
+            }
+        }
+    }
+
+    fn feedback_config(&self, state: &SkillState) -> Option<FeedbackConfig> {
+        let step = state.current_step.as_deref()?;
+        let config = self.step_configs.get(step)?;
+        let tools = config.tools_on_feedback.as_ref()?;
+        Some(FeedbackConfig {
+            tools: tools.clone(),
+            max_iterations: config.max_iterations_feedback.unwrap_or(3),
+        })
     }
 
     fn on_step_complete(&self, state: &mut SkillState, user_message: &str) -> StepAction {
@@ -354,5 +419,86 @@ impl Skill for DeclarativeSkill {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::manifest::parse_plugin_manifest;
+
+    /// Load the comp-analysis-v2 plugin and verify all precompute fields are parsed.
+    #[test]
+    fn test_load_comp_analysis_v2() {
+        let plugin_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("plugins/comp-analysis-v2");
+        if !plugin_dir.exists() {
+            return;
+        }
+
+        let plugin_toml = std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
+        let manifest = parse_plugin_manifest(&plugin_toml).unwrap();
+        assert_eq!(manifest.plugin.id, "comp-analysis-v2");
+
+        let skill = DeclarativeSkill::load(&manifest, &plugin_dir).unwrap();
+        assert_eq!(skill.id(), "comp-analysis-v2");
+        assert_eq!(skill.priority(), 20);
+
+        // Verify workflow has 6 steps
+        let wf = skill.workflow().expect("should have workflow");
+        assert_eq!(wf.steps.len(), 6);
+        assert_eq!(wf.initial_step, "step0");
+
+        // Step 0: no precompute
+        let state0 = SkillState { current_step: Some("step0".into()), ..SkillState::new("comp-analysis-v2") };
+        assert!(skill.on_step_enter(&state0).is_none(), "step0 should have no precompute");
+        assert!(skill.feedback_config(&state0).is_none(), "step0 should have no feedback config");
+
+        // Step 1: has precompute + feedback config
+        let state1 = SkillState { current_step: Some("step1".into()), ..SkillState::new("comp-analysis-v2") };
+        let pc = skill.on_step_enter(&state1).expect("step1 should have precompute");
+        assert_eq!(pc.cache_key, "step1_precompute");
+        assert!(pc.python_code.contains("_step1_clean"), "step1 precompute should call _step1_clean");
+
+        let fb = skill.feedback_config(&state1).expect("step1 should have feedback config");
+        assert!(fb.tools.contains(&"execute_python".to_string()));
+        assert!(fb.tools.contains(&"export_data".to_string()));
+        assert_eq!(fb.max_iterations, 3);
+
+        // Step 5: has precompute + generate_report in allowed tools
+        let state5 = SkillState { current_step: Some("step5".into()), ..SkillState::new("comp-analysis-v2") };
+        let pc5 = skill.on_step_enter(&state5).expect("step5 should have precompute");
+        assert!(pc5.python_code.contains("_step5_scenarios"), "step5 precompute should call _step5_scenarios");
+
+        let allowed5 = skill.allowed_tool_names(&state5).expect("step5 should have tool whitelist");
+        assert!(allowed5.contains(&"generate_report".to_string()));
+        assert!(allowed5.contains(&"export_data".to_string()));
+
+        // Keyword activation
+        assert!(skill.should_activate("请进行薪酬分析v2", true, "daily-assistant"));
+        assert!(!skill.should_activate("请进行薪酬分析", true, "daily-assistant"));
+    }
+
+    /// Verify max_iterations per step.
+    #[test]
+    fn test_precompute_step_iterations() {
+        let plugin_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("plugins/comp-analysis-v2");
+        if !plugin_dir.exists() {
+            return;
+        }
+
+        let plugin_toml = std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
+        let manifest = parse_plugin_manifest(&plugin_toml).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, &plugin_dir).unwrap();
+
+        let state1 = SkillState { current_step: Some("step1".into()), ..SkillState::new("comp-analysis-v2") };
+        assert_eq!(skill.max_iterations(&state1), 5);
+
+        let state5 = SkillState { current_step: Some("step5".into()), ..SkillState::new("comp-analysis-v2") };
+        assert_eq!(skill.max_iterations(&state5), 8);
+
+        let state0 = SkillState { current_step: Some("step0".into()), ..SkillState::new("comp-analysis-v2") };
+        assert_eq!(skill.max_iterations(&state0), 5);
     }
 }

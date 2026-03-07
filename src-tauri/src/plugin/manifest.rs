@@ -81,6 +81,14 @@ pub struct WorkflowStepManifest {
     pub advance_on: String,
     #[serde(default = "default_true")]
     pub requires_confirmation: bool,
+    /// Path to a Python script for deterministic pre-computation.
+    /// Executed by Rust before the LLM agent loop starts.
+    pub precompute: Option<String>,
+    /// Tools available when user provides feedback (non-confirmation).
+    /// Switches from display mode to modify mode.
+    pub tools_on_feedback: Option<Vec<String>>,
+    /// Maximum iterations in feedback/modify mode (default 3).
+    pub max_iterations_feedback: Option<usize>,
 }
 
 fn default_confirm() -> String {
@@ -176,5 +184,46 @@ max_iterations = 15
         assert_eq!(manifest.steps[0].id, "step1");
         assert_eq!(manifest.steps[0].tools_only.as_ref().unwrap().len(), 2);
         assert!(manifest.steps[1].requires_confirmation); // default true
+    }
+
+    #[test]
+    fn test_parse_workflow_manifest_with_precompute() {
+        let toml = r#"
+[[steps]]
+id = "step1"
+name = "数据清洗"
+prompt = "prompts/step1.md"
+precompute = "scripts/step1.py"
+tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
+max_iterations = 5
+max_iterations_feedback = 3
+advance_on = "confirm"
+"#;
+        let manifest = parse_workflow_manifest(toml).unwrap();
+        assert_eq!(manifest.steps.len(), 1);
+        let step = &manifest.steps[0];
+        assert_eq!(step.precompute.as_deref(), Some("scripts/step1.py"));
+        assert_eq!(step.tools_on_feedback.as_ref().unwrap(), &["execute_python", "export_data"]);
+        assert_eq!(step.max_iterations_feedback, Some(3));
+        assert_eq!(step.tools_only.as_ref().unwrap(), &["export_data"]);
+        assert_eq!(step.max_iterations, Some(5));
+    }
+
+    #[test]
+    fn test_parse_workflow_manifest_precompute_optional() {
+        // Existing TOML without precompute fields should parse fine
+        let toml = r#"
+[[steps]]
+id = "step0"
+name = "确认方向"
+tools_only = ["load_file"]
+max_iterations = 5
+"#;
+        let manifest = parse_workflow_manifest(toml).unwrap();
+        let step = &manifest.steps[0];
+        assert!(step.precompute.is_none());
+        assert!(step.tools_on_feedback.is_none());
+        assert!(step.max_iterations_feedback.is_none());
     }
 }

@@ -27,16 +27,23 @@ impl ToolPlugin for ChartGenTool {
                     "enum": ["bar", "line", "scatter", "box", "heatmap", "pie", "histogram"]
                 },
                 "title": { "type": "string" },
+                "data_file": {
+                    "type": "string",
+                    "description": "RECOMMENDED: Path to a JSON file containing chart data. \
+                        Use execute_python to prepare data and write to a JSON file, \
+                        then pass the file path here. This avoids large tool arguments. \
+                        When provided, 'data' parameter is ignored."
+                },
                 "data": {
                     "type": "object",
-                    "description": "Chart data with labels and values"
+                    "description": "Chart data with labels and values (inline). Prefer using 'data_file' for large datasets."
                 },
                 "options": {
                     "type": "object",
                     "description": "Additional chart configuration (width, height, bins, etc.)"
                 }
             },
-            "required": ["chart_type", "title", "data"]
+            "required": ["chart_type", "title"]
         })
     }
 

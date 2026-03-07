@@ -53,6 +53,13 @@ pub struct StepConfig {
     /// None = all tools in tool_defs are allowed.
     /// Some(set) = only tools in the set can execute; others are blocked.
     pub allowed_tool_names: Option<std::collections::HashSet<String>>,
+    /// Pre-computation Python code to execute before the LLM agent loop.
+    /// When set, Rust executes this deterministically and injects the result
+    /// into the LLM prompt as context (display mode).
+    pub precompute: Option<crate::plugin::skill_trait::StepPrecompute>,
+    /// Feedback mode: tools and iteration limit for when user provides
+    /// non-confirmation feedback during a precompute step.
+    pub feedback_config: Option<crate::plugin::skill_trait::FeedbackConfig>,
 }
 
 /// Status of the current analysis step.
@@ -228,6 +235,8 @@ pub fn build_step_config(step: u32) -> StepConfig {
             (5, "行动方案".to_string()),
         ],
         allowed_tool_names: None, // Legacy builder: no runtime guard (schema-level filtering)
+        precompute: None,
+        feedback_config: None,
     }
 }
 
