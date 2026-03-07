@@ -15,10 +15,63 @@ use super::util::{py_escape, slugify};
 
 /// 4. generate_report — build a structured HTML/PDF/DOCX/Markdown report.
 pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
-    let sections = args
-        .get("sections")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("Missing required array argument: sections"))?;
+    // Resolve sections: prefer `source` (file path) over inline `sections`.
+    let sections_value: Vec<Value>;
+    let sections: &[Value] = if let Some(source_path) = args.get("source").and_then(|v| v.as_str()) {
+        // Read sections from a JSON file written by execute_python.
+        let full_path = if std::path::Path::new(source_path).is_absolute() {
+            std::path::PathBuf::from(source_path)
+        } else {
+            ctx.workspace_path.join(source_path)
+        };
+        // Security: ensure resolved path is within the workspace directory.
+        let canonical = full_path.canonicalize().map_err(|e| {
+            anyhow::anyhow!("Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.", source_path, e)
+        })?;
+        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        if !canonical.starts_with(&workspace_canonical) {
+            return Err(anyhow::anyhow!(
+                "Source file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
+                source_path
+            ));
+        }
+        let content = std::fs::read_to_string(&canonical).map_err(|e| {
+            anyhow::anyhow!("Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.", source_path, e)
+        })?;
+        sections_value = serde_json::from_str::<Vec<Value>>(&content).map_err(|e| {
+            anyhow::anyhow!("Failed to parse sections from '{}': {}. The file must contain a JSON array of section objects.", source_path, e)
+        })?;
+        if sections_value.is_empty() {
+            return Err(anyhow::anyhow!("Source file '{}' contains an empty sections array.", source_path));
+        }
+        log::info!("[generate_report] Loaded {} sections from source file: {}", sections_value.len(), source_path);
+        &sections_value
+    } else {
+        // Fallback: inline sections parameter (original behavior).
+        // Support both array and string (LLM sometimes passes JSON as a string).
+        let inline_sections = if let Some(arr) = args.get("sections").and_then(|v| v.as_array()) {
+            arr.clone()
+        } else if let Some(s) = args.get("sections").and_then(|v| v.as_str()) {
+            serde_json::from_str::<Vec<Value>>(s).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse 'sections' string as JSON array: {}. \
+                     The 'sections' parameter must be a valid JSON array of section objects.",
+                    e
+                )
+            })?
+        } else {
+            return Err(anyhow::anyhow!(
+                "Missing report data. Provide either:\n\
+                 1. 'sections': array of section objects (preferred)\n\
+                 2. 'source': path to a JSON file with sections array"
+            ));
+        };
+        if inline_sections.is_empty() {
+            return Err(anyhow::anyhow!("'sections' array is empty. At least one section is required."));
+        }
+        sections_value = inline_sections;
+        &sections_value
+    };
     let format = optional_str(args, "format").unwrap_or("html");
 
     // Title: use explicit value, or infer from first section heading, or default
