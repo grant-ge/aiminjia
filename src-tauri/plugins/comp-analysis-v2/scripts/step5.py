@@ -1,15 +1,23 @@
 # Step 5: Action plan + scenarios
 # Executed automatically by Rust before LLM starts.
 # Depends on: _df, _ANALYSIS_DIR, _load_cached, _detect_columns,
-#             _step5_scenarios, _step5_build_report_sections, _export_detail
+#             _step4_diagnose, _step5_scenarios, _step5_build_report_sections, _export_detail
 
 import json as _json_mod
 import pandas as _pd_mod
 
 step1 = _load_cached('step1')
 step4 = _load_cached('step4')
-col_map = step1['col_map'] if step1 else _detect_columns(_df).get('detected', {})
-diagnosis = step4 if step4 else {}
+col_map = step1.get('col_map') if step1 else _detect_columns(_df)
+if 'detected' not in col_map and isinstance(col_map, dict):
+    col_map = {'detected': col_map}
+
+# If step4 cache missing, recompute diagnosis inline
+if not step4:
+    print('[PRECOMPUTE] step4 cache missing, recomputing diagnosis...')
+    step4 = _step4_diagnose(_df, col_map)
+
+diagnosis = step4
 scenarios = _step5_scenarios(_df, col_map, diagnosis)
 sections = _step5_build_report_sections(_df, col_map, diagnosis, scenarios)
 

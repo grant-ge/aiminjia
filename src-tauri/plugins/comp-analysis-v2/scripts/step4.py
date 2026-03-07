@@ -6,7 +6,10 @@ import json as _json_mod
 import pandas as _pd_mod
 
 step1 = _load_cached('step1')
-col_map = step1['col_map'] if step1 else _detect_columns(_df).get('detected', {})
+col_map = step1.get('col_map') if step1 else _detect_columns(_df)
+# col_map may be full result dict or just detected sub-dict
+if 'detected' not in col_map and isinstance(col_map, dict):
+    col_map = {'detected': col_map}
 result = _step4_diagnose(_df, col_map)
 
 # Cache precompute result
