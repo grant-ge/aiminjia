@@ -81,21 +81,17 @@ def download_from_github(version, filename, output_path):
     return output_path
 
 def upload_to_oss(auth, bucket, local_file, oss_key):
-    """Upload file to OSS"""
-    print(f"Uploading {local_file} to OSS: {oss_key}")
-
+    """Upload file to OSS using resumable multipart upload"""
     file_size = os.path.getsize(local_file)
-    uploaded = 0
+    print(f"Uploading {os.path.basename(local_file)} ({file_size / 1024 / 1024:.1f}MB) to OSS: {oss_key}")
 
-    def progress_callback(consumed_bytes, total_bytes):
-        nonlocal uploaded
-        uploaded = consumed_bytes
-        if total_bytes:
-            percent = (consumed_bytes / total_bytes) * 100
-            print(f"  Progress: {percent:.1f}%", end='\r')
-
-    bucket.put_object_from_file(oss_key, local_file, progress_callback=progress_callback)
-    print(f"\n  Uploaded: {oss_key}")
+    oss2.resumable_upload(
+        bucket, oss_key, local_file,
+        multipart_threshold=10 * 1024 * 1024,  # 10MB threshold
+        part_size=5 * 1024 * 1024,              # 5MB per part
+        num_threads=4,
+    )
+    print(f"  Uploaded: {oss_key}")
 
 def create_latest_copy(bucket, versioned_key, latest_key):
     """Copy versioned file to latest/ directory"""
