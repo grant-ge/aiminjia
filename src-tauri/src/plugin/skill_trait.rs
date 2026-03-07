@@ -83,6 +83,32 @@ pub enum AdvanceMode {
     Confirm,
 }
 
+/// Pre-computation result for a workflow step.
+///
+/// When a step has a `precompute` script, the Skill returns this struct
+/// from `on_step_enter()`. The core engine executes the Python code
+/// deterministically before the LLM agent loop starts, caches the result
+/// to the filesystem, and injects it into the LLM prompt as context.
+#[derive(Debug, Clone)]
+pub struct StepPrecompute {
+    /// Python code to execute in the persistent session before LLM starts.
+    pub python_code: String,
+    /// Key under which the result JSON is cached (e.g., "step1_precompute").
+    pub cache_key: String,
+}
+
+/// Feedback mode configuration for a workflow step.
+///
+/// When the user provides feedback (non-confirmation) during a precompute step,
+/// the engine switches to this tool set and iteration limit.
+#[derive(Debug, Clone)]
+pub struct FeedbackConfig {
+    /// Tools available during feedback/modify mode.
+    pub tools: Vec<String>,
+    /// Maximum iterations in feedback mode.
+    pub max_iterations: usize,
+}
+
 /// Model preference for a Skill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ModelPreference {
@@ -191,6 +217,20 @@ pub trait Skill: Send + Sync + 'static {
 
     /// Called when the Skill is deactivated.
     fn on_deactivate(&self, _state: &SkillState) {}
+
+    /// Called when entering a step, BEFORE the LLM agent loop.
+    /// Returns Python code for Rust to execute deterministically.
+    /// The cached result is injected into the LLM prompt as context.
+    fn on_step_enter(&self, _state: &SkillState) -> Option<StepPrecompute> {
+        None
+    }
+
+    /// Returns feedback mode configuration for the current step.
+    /// When the user provides non-confirmation feedback during a precompute step,
+    /// the engine switches to this tool set and iteration limit.
+    fn feedback_config(&self, _state: &SkillState) -> Option<FeedbackConfig> {
+        None
+    }
 }
 
 // ── Shared keyword detection ──
@@ -215,11 +255,39 @@ pub fn is_confirm_keyword(text: &str) -> bool {
         "是的", "确定", "通过", "下一步", "继续吧", "没有问题", "同意",
         "好的好的", "可以可以", "好的继续",
         "好的，继续", "可以，下一步", "可以，继续",
+        "没问题 继续", "没问题，继续", "没问题继续",
         "ok", "okay", "yes", "proceed", "continue", "confirm", "next",
         "lgtm", "looks good",
         "开始", "开始分析", "开始吧", "start",
+        // Step advancement phrases — user wants to move to the next step
+        "下一步吧", "进入下一步", "继续下一步",
+        "岗位归一化", "职级推断", "公平性诊断", "行动方案",
+        "数据清洗", "职级定级",
     ];
-    PHRASES.iter().any(|p| stripped == *p)
+    if PHRASES.iter().any(|p| stripped == *p) {
+        return true;
+    }
+    // Pattern match: "第N步", "step N", "进入第N步" etc.
+    // These indicate intent to advance to a specific step.
+    let has_step_pattern = stripped.contains("第") && stripped.contains("步")
+        || stripped.starts_with("step");
+    if has_step_pattern {
+        return true;
+    }
+    // Fuzzy match: for short messages (≤10 chars), check if the message
+    // contains any core confirmation keyword. This catches natural phrases
+    // like "没问题 继续", "好的，没问题", "可以继续" etc.
+    if stripped.chars().count() <= 10 {
+        const CORE_CONFIRMS: &[&str] = &[
+            "确认", "继续", "没问题", "可以", "好的", "好", "行",
+            "没有问题", "确定", "同意", "通过", "下一步",
+            "ok", "yes", "next", "continue",
+        ];
+        if CORE_CONFIRMS.iter().any(|kw| stripped.contains(kw)) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Check if the user message is an abort keyword (exact match, max 30 chars).
