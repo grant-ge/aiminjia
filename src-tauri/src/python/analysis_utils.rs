@@ -1202,13 +1202,13 @@ def _dim1_internal_equity(df, salary_col, group_cols):
         iqr = float(s.quantile(0.75) - s.quantile(0.25))
         iqr_ratio = round(iqr / float(s.median()) * 100, 2) if s.median() > 0 else None
 
-        flag = '🟢'
+        flag = 'OK'
         if cv and cv > 20:
-            flag = '🔴'
+            flag = 'HIGH'
         elif range_ratio and range_ratio > 2.0:
-            flag = '🔴'
+            flag = 'HIGH'
         elif cv and cv > 15:
-            flag = '🟡'
+            flag = 'WARN'
 
         results.append({
             'group': group_name,
@@ -1221,7 +1221,7 @@ def _dim1_internal_equity(df, salary_col, group_cols):
             'flag': flag,
         })
 
-    flagged = [r for r in results if r['flag'] in ('🔴', '🟡')]
+    flagged = [r for r in results if r['flag'] in ('HIGH', 'WARN')]
     return {
         'total_groups': len(results),
         'flagged_count': len(flagged),
@@ -1247,11 +1247,11 @@ def _dim2_cross_position(df, salary_col, position_col, level_col):
                 continue
             pos_median = float(pdf[salary_col].median())
             deviation = round((pos_median - level_median) / level_median * 100, 1)
-            flag = '🟢'
+            flag = 'OK'
             if abs(deviation) > 15:
-                flag = '🟡'
+                flag = 'WARN'
             if abs(deviation) > 25:
-                flag = '🔴'
+                flag = 'HIGH'
             results.append({
                 'level': str(level),
                 'position': str(pos),
@@ -1262,7 +1262,7 @@ def _dim2_cross_position(df, salary_col, position_col, level_col):
                 'flag': flag,
             })
 
-    flagged = [r for r in results if r['flag'] in ('🔴', '🟡')]
+    flagged = [r for r in results if r['flag'] in ('HIGH', 'WARN')]
     return {
         'total_comparisons': len(results),
         'flagged_count': len(flagged),
@@ -1334,7 +1334,7 @@ def _dim3_regression(df, salary_col, level_col, tenure_col=None):
                     'predicted_ln': round(float(y_pred[i]), 4),
                     'residual_z': round(float(z), 2),
                     'direction': direction,
-                    'flag': '🔴',
+                    'flag': 'HIGH',
                 })
     except Exception as e:
         return {'error': f'Regression failed: {e}', 'anomalies': []}
@@ -1404,7 +1404,7 @@ def _dim4_inversion(df, salary_col, hire_col, group_cols):
                 'vet_count': len(vet_emp),
                 'vet_median': round(vet_median, 0),
                 'gap_pct': gap_pct,
-                'flag': '🔴',
+                'flag': 'HIGH',
             })
         else:
             inversions.append({
@@ -1414,10 +1414,10 @@ def _dim4_inversion(df, salary_col, hire_col, group_cols):
                 'vet_count': len(vet_emp),
                 'vet_median': round(vet_median, 0),
                 'gap_pct': round((new_median - vet_median) / vet_median * 100, 1) if vet_median > 0 else 0,
-                'flag': '🟢',
+                'flag': 'OK',
             })
 
-    inverted = [i for i in inversions if i['flag'] == '🔴']
+    inverted = [i for i in inversions if i['flag'] == 'HIGH']
     return {
         'total_groups': len(inversions),
         'inverted_count': len(inverted),
@@ -1472,20 +1472,20 @@ def _dim5_structure_fit(df, col_map):
         job_type = _classify_job(pos)
         avg_fixed_ratio = round(float(pdf['_fixed_ratio'].mean()), 1)
 
-        flag = '🟢'
+        flag = 'OK'
         note = ''
         if job_type == 'sales':
             var_ratio = 100 - avg_fixed_ratio
             if var_ratio < 30:
-                flag = '🟡'
+                flag = 'WARN'
                 note = f'Sales role but variable only {var_ratio:.0f}% (expected 40-60%)'
         elif job_type == 'operations':
             if avg_fixed_ratio < 80:
-                flag = '🟡'
+                flag = 'WARN'
                 note = f'Operations role but fixed only {avg_fixed_ratio:.0f}% (expected >=80%)'
         else:
             if avg_fixed_ratio < 70:
-                flag = '🟡'
+                flag = 'WARN'
                 note = f'Professional role but fixed only {avg_fixed_ratio:.0f}% (expected >=70%)'
 
         assessments.append({
@@ -1497,7 +1497,7 @@ def _dim5_structure_fit(df, col_map):
             'note': note,
         })
 
-    flagged = [a for a in assessments if a['flag'] != '🟢']
+    flagged = [a for a in assessments if a['flag'] != 'OK']
     return {
         'total_positions': len(assessments),
         'flagged_count': len(flagged),
@@ -1508,7 +1508,7 @@ def _dim6_compa_ratio(df, salary_col, group_cols):
     """Dimension 6: Internal Compa-Ratio analysis.
 
     CR = employee salary / group median * 100%
-    Bands: <80% 🔴, 80-90% 🟡, 90-110% 🟢, 110-120% 🟡, >120% 🔴
+    Bands: <80% HIGH, 80-90% WARN, 90-110% OK, 110-120% WARN, >120% HIGH
     """
     if not salary_col or salary_col not in df.columns:
         return {'error': 'Missing salary column', 'distribution': {}}
