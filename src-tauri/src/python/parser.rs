@@ -466,15 +466,43 @@ try:
     doc = Document(file_path)
 
     # Try to extract tables first
+    # Strategy: extract the largest table (by row count) to avoid mixing incompatible structures
+    best_table = None
+    best_row_count = 0
+
+    for table in doc.tables:
+        if len(table.rows) > best_row_count:
+            best_row_count = len(table.rows)
+            best_table = table
+
     all_rows = []
     header = None
-    for table in doc.tables:
-        for i, row in enumerate(table.rows):
-            cells = [cell.text.strip() for cell in row.cells]
-            if header is None and any(cells):
-                header = cells
+
+    if best_table is not None:
+        for i, row in enumerate(best_table.rows):
+            # Deduplicate merged cells: python-docx repeats cells in merged regions
+            seen = set()
+            unique_cells = []
+            for cell in row.cells:
+                cell_id = id(cell)
+                if cell_id not in seen:
+                    seen.add(cell_id)
+                    unique_cells.append(cell.text.strip())
+
+            # Skip rows with only 1 unique cell (fully merged rows, likely titles)
+            if len(unique_cells) == 1:
+                continue
+
+            if header is None and any(unique_cells):
+                header = unique_cells
             elif header is not None:
-                all_rows.append(cells)
+                # Align column count: pad short rows, truncate long rows
+                n = len(header)
+                if len(unique_cells) < n:
+                    unique_cells.extend([''] * (n - len(unique_cells)))
+                elif len(unique_cells) > n:
+                    unique_cells = unique_cells[:n]
+                all_rows.append(unique_cells)
 
     if header and all_rows:
         import pandas as pd

@@ -36,12 +36,17 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
             let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if file_id.is_empty() { continue; }
             let loaded_key = format!("loaded:{}:{}", ctx.conversation_id, file_id);
-            if ctx.storage.get_memory(&loaded_key).ok().flatten().is_none() {
+            let failed_key = format!("load_failed:{}:{}", ctx.conversation_id, file_id);
+            if ctx.storage.get_memory(&loaded_key).ok().flatten().is_none()
+                && ctx.storage.get_memory(&failed_key).ok().flatten().is_none()
+            {
                 info!("[TOOL:execute_python] Auto-loading file '{}' for conversation {}",
                     file_id, ctx.conversation_id);
                 let load_args = json!({"file_id": file_id});
                 if let Err(e) = super::file_load::handle_load_file(ctx, &load_args).await {
                     warn!("[TOOL:execute_python] Auto-load failed for '{}': {}", file_id, e);
+                    // Mark as failed so we don't retry on every iteration
+                    let _ = ctx.storage.set_memory(&failed_key, &e.to_string(), Some("auto_load_failed"));
                 }
             }
         }
