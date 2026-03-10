@@ -1365,4 +1365,30 @@ mod tests {
         let unmasked = ctx.unmask(&result);
         assert_eq!(unmasked, input);
     }
+
+    #[test]
+    fn test_mask_large_word_document_text() {
+        // Reproduce crash when masking extracted text from a large Word document.
+        // Uses the actual file if available, otherwise generates synthetic test data.
+        let text = if let Ok(t) = std::fs::read_to_string("/tmp/test_word_text.txt") {
+            t
+        } else {
+            // Synthetic test: many company names + Chinese text
+            let mut t = String::new();
+            for i in 0..200 {
+                t.push_str(&format!(
+                    "第{}章 中国船舶集团有限公司人力资源系统建设方案。\n\
+                     宝信软件股份有限公司负责人张三在华为技术有限公司工作。\n\
+                     联系电话13800138000，邮箱test@example.com。\n\n",
+                    i + 1
+                ));
+            }
+            t
+        };
+
+        let mut ctx = MaskingContext::new(MaskingLevel::Strict);
+        let masked = ctx.mask_text(&text);
+        assert_ne!(masked, text, "Should detect and mask PII");
+        assert!(!masked.is_empty());
+    }
 }

@@ -602,6 +602,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                                 pii_masked = true;
                                 // Update sample_data preview with masked text
                                 let preview = if masked_text.len() > 2000 {
+                                    // Find a valid UTF-8 char boundary near 2000
                                     let mut end = 2000;
                                     while end > 0 && !masked_text.is_char_boundary(end) {
                                         end -= 1;
