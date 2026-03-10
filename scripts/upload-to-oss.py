@@ -115,16 +115,17 @@ def generate_and_upload_update_json(bucket, version, uploaded_sigs):
 
     # Match uploaded files to platforms
     for oss_key, sig_content in uploaded_sigs:
-        if "aarch64" in oss_key and "app.tar.gz" in oss_key:
-            platform_map["darwin-aarch64"] = {
-                "url": f"https://lotus.renlijia.com/{oss_key}",
-                "signature": sig_content,
-            }
-        elif "x64.app.tar.gz" in oss_key:
-            platform_map["darwin-x86_64"] = {
-                "url": f"https://lotus.renlijia.com/{oss_key}",
-                "signature": sig_content,
-            }
+        if "app.tar.gz" in oss_key:
+            if "x64" in oss_key:
+                platform_map["darwin-x86_64"] = {
+                    "url": f"https://lotus.renlijia.com/{oss_key}",
+                    "signature": sig_content,
+                }
+            else:
+                platform_map["darwin-aarch64"] = {
+                    "url": f"https://lotus.renlijia.com/{oss_key}",
+                    "signature": sig_content,
+                }
         elif "nsis.zip" in oss_key and ".sig" not in oss_key:
             platform_map["windows-x86_64"] = {
                 "url": f"https://lotus.renlijia.com/{oss_key}",
@@ -182,13 +183,14 @@ def main():
     # --- Resolve local build paths ---
     # Standard Tauri build output locations (macOS)
     tauri_target = Path(__file__).resolve().parent.parent / "src-tauri" / "target"
-    arm_dmg = tauri_target / "release" / "bundle" / "dmg" / f"AIjia_{version}_aarch64.dmg"
-    x64_dmg = tauri_target / "x86_64-apple-darwin" / "release" / "bundle" / "dmg" / f"AIjia_{version}_x64.dmg"
+    arm_bundle = tauri_target / "release" / "bundle"
+    x64_bundle = tauri_target / "x86_64-apple-darwin" / "release" / "bundle"
 
     # Files to upload: local-first, fallback to GitHub for CI-built artifacts
     files = [
+        # macOS ARM DMG (for new installs)
         {
-            "local_path": str(arm_dmg),
+            "local_path": str(arm_bundle / "dmg" / f"AIjia_{version}_aarch64.dmg"),
             "github_name": f"AIjia_{version}_aarch64.dmg",
             "local_name": f"AIjia_{version}_aarch64.dmg",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_aarch64.dmg",
@@ -196,8 +198,9 @@ def main():
             "sig_local_path": None,
             "sig_github_name": None,
         },
+        # macOS Intel DMG (for new installs)
         {
-            "local_path": str(x64_dmg),
+            "local_path": str(x64_bundle / "dmg" / f"AIjia_{version}_x64.dmg"),
             "github_name": f"AIjia_{version}_x64.dmg",
             "local_name": f"AIjia_{version}_x64.dmg",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64.dmg",
@@ -205,8 +208,9 @@ def main():
             "sig_local_path": None,
             "sig_github_name": None,
         },
+        # Windows exe (from GitHub CI artifacts)
         {
-            "local_path": None,  # Windows: GitHub-only
+            "local_path": None,
             "github_name": f"AIjia_{version}_x64-setup.exe",
             "local_name": f"AIjia_{version}_x64-setup.exe",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe",
@@ -216,25 +220,25 @@ def main():
         },
         # macOS ARM signed bundle (for updater)
         {
-            "local_path": str(arm_dmg).replace("/dmg/", "/macos/").replace("_aarch64.dmg", ".app.tar.gz"),
+            "local_path": str(arm_bundle / "macos" / "AIjia.app.tar.gz"),
             "github_name": None,
             "local_name": f"AIjia_{version}_aarch64.app.tar.gz",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia.app.tar.gz",
             "latest_key": None,
-            "sig_local_path": str(arm_dmg).replace("/dmg/", "/macos/").replace("_aarch64.dmg", ".app.tar.gz.sig"),
+            "sig_local_path": str(arm_bundle / "macos" / "AIjia.app.tar.gz.sig"),
             "sig_github_name": None,
         },
         # macOS Intel signed bundle (for updater)
         {
-            "local_path": str(x64_dmg).replace("/dmg/", "/macos/").replace("_x64.dmg", ".app.tar.gz"),
+            "local_path": str(x64_bundle / "macos" / "AIjia.app.tar.gz"),
             "github_name": None,
             "local_name": f"AIjia_{version}_x64.app.tar.gz",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_x64.app.tar.gz",
             "latest_key": None,
-            "sig_local_path": str(x64_dmg).replace("/dmg/", "/macos/").replace("_x64.dmg", ".app.tar.gz.sig"),
+            "sig_local_path": str(x64_bundle / "macos" / "AIjia.app.tar.gz.sig"),
             "sig_github_name": None,
         },
-        # Windows NSIS signed bundle (for updater) — from GitHub
+        # Windows NSIS signed bundle (for updater) — from GitHub CI artifacts
         {
             "local_path": None,
             "github_name": f"AIjia_{version}_x64-setup.nsis.zip",
