@@ -102,6 +102,54 @@ def create_latest_copy(bucket, versioned_key, latest_key):
     bucket.copy_object(bucket.bucket_name, versioned_key, latest_key)
     print(f"  Done")
 
+def generate_and_upload_update_json(bucket, version, uploaded_sigs):
+    """Generate update.json from uploaded signed bundles and upload to OSS."""
+    import json as json_mod
+    from datetime import datetime, timezone
+
+    platform_map = {
+        "darwin-aarch64": None,
+        "darwin-x86_64": None,
+        "windows-x86_64": None,
+    }
+
+    # Match uploaded files to platforms
+    for oss_key, sig_content in uploaded_sigs:
+        if "aarch64" in oss_key and "app.tar.gz" in oss_key:
+            platform_map["darwin-aarch64"] = {
+                "url": f"https://lotus.renlijia.com/{oss_key}",
+                "signature": sig_content,
+            }
+        elif "x64.app.tar.gz" in oss_key:
+            platform_map["darwin-x86_64"] = {
+                "url": f"https://lotus.renlijia.com/{oss_key}",
+                "signature": sig_content,
+            }
+        elif "nsis.zip" in oss_key and ".sig" not in oss_key:
+            platform_map["windows-x86_64"] = {
+                "url": f"https://lotus.renlijia.com/{oss_key}",
+                "signature": sig_content,
+            }
+
+    platforms = {k: v for k, v in platform_map.items() if v is not None}
+
+    if not platforms:
+        print("\n⚠️  No signed bundles found — skipping update.json generation")
+        return
+
+    update_json = {
+        "version": version,
+        "notes": f"AIjia v{version}",
+        "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "platforms": platforms,
+    }
+
+    oss_key = f"{OSS_PREFIX}/update.json"
+    bucket.put_object(oss_key, json_mod.dumps(update_json, indent=2))
+    print(f"\n✅ Uploaded update.json to {oss_key}")
+    print(f"   Platforms: {list(platforms.keys())}")
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 upload-to-oss.py <version>")
@@ -145,6 +193,8 @@ def main():
             "local_name": f"AIjia_{version}_aarch64.dmg",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_aarch64.dmg",
             "latest_key": f"{OSS_PREFIX}/latest/macos-arm64",
+            "sig_local_path": None,
+            "sig_github_name": None,
         },
         {
             "local_path": str(x64_dmg),
@@ -152,6 +202,8 @@ def main():
             "local_name": f"AIjia_{version}_x64.dmg",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64.dmg",
             "latest_key": f"{OSS_PREFIX}/latest/macos-x64",
+            "sig_local_path": None,
+            "sig_github_name": None,
         },
         {
             "local_path": None,  # Windows: GitHub-only
@@ -159,10 +211,44 @@ def main():
             "local_name": f"AIjia_{version}_x64-setup.exe",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe",
             "latest_key": f"{OSS_PREFIX}/latest/windows-x64",
+            "sig_local_path": None,
+            "sig_github_name": None,
+        },
+        # macOS ARM signed bundle (for updater)
+        {
+            "local_path": str(arm_dmg).replace("/dmg/", "/macos/").replace("_aarch64.dmg", ".app.tar.gz"),
+            "github_name": None,
+            "local_name": f"AIjia_{version}_aarch64.app.tar.gz",
+            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia.app.tar.gz",
+            "latest_key": None,
+            "sig_local_path": str(arm_dmg).replace("/dmg/", "/macos/").replace("_aarch64.dmg", ".app.tar.gz.sig"),
+            "sig_github_name": None,
+        },
+        # macOS Intel signed bundle (for updater)
+        {
+            "local_path": str(x64_dmg).replace("/dmg/", "/macos/").replace("_x64.dmg", ".app.tar.gz"),
+            "github_name": None,
+            "local_name": f"AIjia_{version}_x64.app.tar.gz",
+            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_x64.app.tar.gz",
+            "latest_key": None,
+            "sig_local_path": str(x64_dmg).replace("/dmg/", "/macos/").replace("_x64.dmg", ".app.tar.gz.sig"),
+            "sig_github_name": None,
+        },
+        # Windows NSIS signed bundle (for updater) — from GitHub
+        {
+            "local_path": None,
+            "github_name": f"AIjia_{version}_x64-setup.nsis.zip",
+            "local_name": f"AIjia_{version}_x64-setup.nsis.zip",
+            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.nsis.zip",
+            "latest_key": None,
+            "sig_local_path": None,
+            "sig_github_name": f"AIjia_{version}_x64-setup.nsis.zip.sig",
         },
     ]
 
     # Process each file: prefer local, fallback to GitHub download
+    uploaded_sigs = []  # list of (oss_key, sig_content)
+
     for file_info in files:
         print(f"\n--- Processing {file_info['local_name']} ---")
 
@@ -171,6 +257,9 @@ def main():
             local_file = Path(local_path)
             print(f"  Using local file: {local_file}")
         else:
+            if not file_info.get("github_name"):
+                print(f"  SKIP: not found locally and no GitHub name configured")
+                continue
             # Try downloading from GitHub Release
             local_file = temp_dir / file_info["local_name"]
             try:
@@ -183,7 +272,31 @@ def main():
         upload_to_oss(auth, bucket, str(local_file), file_info["oss_key"])
 
         # Create/update latest redirect
-        create_latest_copy(bucket, file_info["oss_key"], file_info["latest_key"])
+        if file_info.get("latest_key"):
+            create_latest_copy(bucket, file_info["oss_key"], file_info["latest_key"])
+
+        # Upload corresponding .sig file if present (local)
+        sig_local = file_info.get("sig_local_path")
+        if sig_local and Path(sig_local).exists():
+            sig_oss_key = file_info["oss_key"] + ".sig"
+            upload_to_oss(auth, bucket, sig_local, sig_oss_key)
+            sig_content = Path(sig_local).read_text().strip()
+            uploaded_sigs.append((file_info["oss_key"], sig_content))
+
+        # Download and upload .sig file from GitHub if configured
+        sig_github = file_info.get("sig_github_name")
+        if sig_github:
+            sig_local_file = temp_dir / sig_github
+            try:
+                download_from_github(version, sig_github, sig_local_file)
+                sig_oss_key = file_info["oss_key"] + ".sig"
+                upload_to_oss(auth, bucket, str(sig_local_file), sig_oss_key)
+                sig_content = sig_local_file.read_text().strip()
+                uploaded_sigs.append((file_info["oss_key"], sig_content))
+            except Exception as e:
+                print(f"  Warning: sig download failed: {e}")
+
+    generate_and_upload_update_json(bucket, version, uploaded_sigs)
 
     print(f"\n==> Upload complete!")
     print(f"\nDownload URLs:")
