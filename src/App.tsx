@@ -6,6 +6,7 @@ import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { useStreaming } from '@/hooks/useStreaming'
+import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
 import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings, updateSettings } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
@@ -15,6 +16,7 @@ import { useNotificationStore } from '@/stores/notificationStore'
 
 function App() {
   useStreaming()
+  useUpdater()
 
   const { loadConversations } = useChat()
 
