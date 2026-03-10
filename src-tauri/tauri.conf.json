@@ -26,6 +26,12 @@
       "csp": "default-src 'self'; connect-src 'self' https://*; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: asset: https:"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://lotus.renlijia.com/aijia/update.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4MDE3N0E5NkIwMjM5RjcKUldUM09RSnJxWGNCV1BwcVQxVWovL1R4T3dVYmlZL004ZFYrRkNubi8rd0Y1cHBLd3BEc2trUXAK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "app"],
