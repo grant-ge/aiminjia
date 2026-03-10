@@ -30,7 +30,7 @@ interface NotificationState {
   notifications: Notification[]
 
   // Actions
-  push: (notification: Omit<Notification, 'id' | 'createdAt'>) => void
+  push: (notification: Omit<Notification, 'id' | 'createdAt'> & { id?: string }) => void
   dismiss: (id: string) => void
   dismissAll: () => void
 }
@@ -41,7 +41,7 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   notifications: [],
 
   push: (notification) => {
-    const id = `notif_${++notificationCounter}_${Date.now()}`
+    const id = notification.id ?? `notif_${++notificationCounter}_${Date.now()}`
     const full: Notification = {
       ...notification,
       id,
