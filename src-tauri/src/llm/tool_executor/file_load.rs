@@ -528,14 +528,21 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     let runner = PythonRunner::with_config(
         ctx.workspace_path.clone(), parse_sandbox, ctx.app_handle.as_ref(),
     );
+    info!("[TOOL:load_file] Starting parse_file for format={:?} path={}", format, full_path.display());
     let mut parse_result = parser::parse_file(&runner, &full_path).await?;
+    info!("[TOOL:load_file] parse_file completed: type={:?} columns={} rows={}",
+        parse_result.format, parse_result.column_names.len(), parse_result.row_count);
 
     // Determine actual loaded_as based on parse result
-    // Word/PPT must always be "text" — _smart_read_data (used in preamble) only
-    // supports Excel/CSV/JSON/Parquet, not .docx/.pptx binary formats.
-    let actual_loaded_as = if matches!(format, parser::FileFormat::Word | parser::FileFormat::Ppt) {
+    // Word/PPT/PDF must always be "text" — _smart_read_data (used in preamble)
+    // only supports Excel/CSV/JSON/Parquet, not .docx/.pptx/.pdf binary formats.
+    let actual_loaded_as = if matches!(
+        format,
+        parser::FileFormat::Word | parser::FileFormat::Ppt | parser::FileFormat::Pdf
+    ) {
         "text"
     } else if loaded_as == "auto" {
+        // HTML: auto-detect based on table presence
         if !parse_result.column_names.is_empty() {
             "dataframe"
         } else {
@@ -576,9 +583,13 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
         // Text data (PDF/Word): extract full text, mask with Rust, save masked file
         let is_extractable = matches!(format, parser::FileFormat::Pdf | parser::FileFormat::Word);
         if is_extractable {
+            info!("[PII] Extracting full text for masking: format={:?}", format);
             match extract_full_text(&runner, &full_path, &format).await {
                 Ok(full_text) => {
+                    info!("[PII] Text extracted: {} chars, {} bytes", full_text.chars().count(), full_text.len());
                     if let Some((masked_text, mapping)) = mask_text_content(&full_text) {
+                        info!("[PII] Text masking complete: {} -> {} chars, {} mapping entries",
+                            full_text.len(), masked_text.len(), mapping.len());
                         // Save masked text to file
                         let stem = full_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
                         let masked_dir = ctx.workspace_path.join("uploads").join("masked");
@@ -591,7 +602,11 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                                 pii_masked = true;
                                 // Update sample_data preview with masked text
                                 let preview = if masked_text.len() > 2000 {
-                                    format!("{}...", &masked_text[..2000])
+                                    let mut end = 2000;
+                                    while end > 0 && !masked_text.is_char_boundary(end) {
+                                        end -= 1;
+                                    }
+                                    format!("{}...", &masked_text[..end])
                                 } else {
                                     masked_text
                                 };
