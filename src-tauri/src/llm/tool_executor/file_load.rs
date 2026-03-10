@@ -531,7 +531,11 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     let mut parse_result = parser::parse_file(&runner, &full_path).await?;
 
     // Determine actual loaded_as based on parse result
-    let actual_loaded_as = if loaded_as == "auto" {
+    // Word/PPT must always be "text" — _smart_read_data (used in preamble) only
+    // supports Excel/CSV/JSON/Parquet, not .docx/.pptx binary formats.
+    let actual_loaded_as = if matches!(format, parser::FileFormat::Word | parser::FileFormat::Ppt) {
+        "text"
+    } else if loaded_as == "auto" {
         if !parse_result.column_names.is_empty() {
             "dataframe"
         } else {
