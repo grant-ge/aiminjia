@@ -56,11 +56,13 @@ def get_oss_credentials():
 
 # GitHub Release Configuration
 GITHUB_REPO = "grant-ge/aiminjia"
+GITHUB_PROXY = "https://mirror.ghproxy.com/"
 
 def download_from_github(version, filename, output_path):
-    """Download file from GitHub Release"""
-    url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{filename}"
-    print(f"Downloading {filename} from GitHub...")
+    """Download file from GitHub Release, using proxy for speed in China."""
+    raw_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{filename}"
+    url = f"{GITHUB_PROXY}{raw_url}"
+    print(f"Downloading {filename} via proxy...")
 
     response = requests.get(url, stream=True)
     response.raise_for_status()
@@ -208,9 +210,9 @@ def main():
             "sig_local_path": None,
             "sig_github_name": None,
         },
-        # Windows exe (from GitHub CI artifacts)
+        # Windows exe (from GitHub CI artifacts, or local download)
         {
-            "local_path": None,
+            "local_path": f"/tmp/win-artifacts/AIjia_{version}_x64-setup.exe",
             "github_name": f"AIjia_{version}_x64-setup.exe",
             "local_name": f"AIjia_{version}_x64-setup.exe",
             "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe",
