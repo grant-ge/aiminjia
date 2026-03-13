@@ -22,6 +22,7 @@ export function InputBar() {
   const [input, setInput] = useState('')
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
   const [isSending, setIsSending] = useState(false)
+  const isComposingRef = useRef(false)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFile } = useFileUpload()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -80,7 +81,10 @@ export function InputBar() {
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Some WebView engines fire compositionEnd BEFORE keyDown when the user
+    // presses Enter to confirm an IME candidate.  In that case the native
+    // `isComposing` property on the event is the only reliable guard.
+    if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current && !e.nativeEvent.isComposing) {
       e.preventDefault()
       handleSend()
     }
@@ -221,6 +225,12 @@ export function InputBar() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => { isComposingRef.current = true }}
+            onCompositionEnd={() => {
+              // Delay clearing the flag: some engines fire compositionEnd before
+              // the final keyDown, so we let the event loop settle first.
+              setTimeout(() => { isComposingRef.current = false }, 50)
+            }}
             disabled={isStreaming}
           />
 

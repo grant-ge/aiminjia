@@ -1,0 +1,30 @@
+[plugin]
+id = "perf-system-design"
+name = "绩效体系设计向导"
+type = "skill"
+description = "Interactive performance management system design wizard: KPI/OKR selection, framework design, implementation roadmap"
+priority = 15
+
+[trigger]
+keywords = [
+    "绩效体系", "绩效管理", "KPI设计", "OKR设计",
+    "绩效考核方案", "绩效改革", "绩效指标",
+    "performance management", "performance system",
+    "绩效方案", "考核方案", "绩效制度",
+]
+requires_files = false
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 8
+token_budget = 8192
+
+[display]
+icon = "📋"
+short_description = "KPI/OKR 方案推荐，考核流程设计"
+trigger_text = "帮我做绩效体系设计"

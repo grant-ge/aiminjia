@@ -1,0 +1,29 @@
+[plugin]
+id = "org-diagnosis"
+name = "组织诊断报告"
+type = "skill"
+description = "Interactive organizational diagnosis: Six-Box Model and McKinsey 7S framework analysis"
+priority = 15
+
+[trigger]
+keywords = [
+    "组织诊断", "组织优化", "组织设计", "org diagnosis",
+    "六盒子", "组织架构诊断", "跨部门协作", "决策效率",
+    "组织变革", "组织健康度", "organizational design",
+]
+requires_files = false
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 8
+token_budget = 8192
+
+[display]
+icon = "🏢"
+short_description = "六盒子模型 + 麦肯锡 7S 框架诊断"
+trigger_text = "帮我做组织诊断"

@@ -1,0 +1,30 @@
+[plugin]
+id = "labor-compliance"
+name = "劳动合规风险检查"
+type = "skill"
+description = "Interactive labor compliance risk assessment: legal analysis, risk evaluation, compliance recommendations"
+priority = 15
+
+[trigger]
+keywords = [
+    "劳动合规", "竞业限制", "解除合同", "社保基数",
+    "劳动风险", "用工风险", "labor compliance", "劳动法",
+    "劳动仲裁", "经济补偿", "违法解除", "工伤",
+    "劳动合同", "试用期解除",
+]
+requires_files = false
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 8
+token_budget = 8192
+
+[display]
+icon = "⚖️"
+short_description = "用工风险评估，劳动合规建议输出"
+trigger_text = "帮我做劳动合规检查"

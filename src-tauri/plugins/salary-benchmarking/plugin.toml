@@ -1,0 +1,35 @@
+[plugin]
+id = "salary-benchmarking"
+name = "薪酬市场对标分析"
+type = "skill"
+description = "Data-driven salary benchmarking: internal structure analysis, market comparison, competitiveness diagnosis"
+priority = 15
+
+[trigger]
+keywords = [
+    "市场对标", "薪酬竞争力", "salary benchmarking",
+    "市场薪酬", "薪酬带设计", "宽带薪酬", "薪酬分位",
+    "薪酬水平", "market comparison", "薪酬定位",
+    "外部对标", "市场竞争力",
+]
+requires_files = true
+
+file_keywords = [
+    "市场", "对标", "分位", "竞争力",
+    "benchmark", "market", "percentile",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+icon = "💼"
+short_description = "内部结构分析 + 市场竞争力对比"
+trigger_text = "帮我做薪酬市场对标分析"

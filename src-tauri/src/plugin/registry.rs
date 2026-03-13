@@ -29,6 +29,9 @@ pub struct SkillInfo {
     pub description: String,
     pub source: String,
     pub has_workflow: bool,
+    pub icon: String,
+    pub short_description: String,
+    pub trigger_text: String,
 }
 
 // ─────────────────────────────────────────────────
@@ -226,6 +229,9 @@ impl SkillRegistry {
             description: rs.skill.description().to_string(),
             source: rs.source.clone(),
             has_workflow: rs.skill.workflow().is_some(),
+            icon: rs.skill.icon().to_string(),
+            short_description: rs.skill.short_description().to_string(),
+            trigger_text: rs.skill.trigger_text().to_string(),
         }).collect()
     }
 }

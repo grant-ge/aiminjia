@@ -1,0 +1,35 @@
+[plugin]
+id = "engagement-survey"
+name = "员工敬业度分析"
+type = "skill"
+description = "Data-driven employee engagement survey analysis: eNPS, dimension scoring, gap analysis"
+priority = 15
+
+[trigger]
+keywords = [
+    "敬业度分析", "满意度调研", "eNPS", "员工调研",
+    "engagement survey", "employee satisfaction",
+    "调研结果分析", "员工满意度", "敬业度调查",
+    "员工体验", "employee engagement",
+]
+requires_files = true
+
+file_keywords = [
+    "敬业度", "满意度", "调研", "问卷", "survey",
+    "engagement", "satisfaction", "eNPS",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+icon = "📈"
+short_description = "eNPS 计算、维度评分、差距分析"
+trigger_text = "帮我做员工敬业度分析"

@@ -1,0 +1,55 @@
+[[steps]]
+id = "step0"
+name = "数据识别与目标确认"
+prompt = "prompts/step0.md"
+tools_only = ["load_file", "save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "any"
+
+[[steps]]
+id = "step1"
+name = "整体指标计算"
+prompt = "prompts/step1.md"
+precompute = "scripts/step1.py"
+tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
+max_iterations = 5
+max_iterations_feedback = 3
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step2"
+name = "差异分析"
+prompt = "prompts/step2.md"
+precompute = "scripts/step2.py"
+tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
+max_iterations = 5
+max_iterations_feedback = 3
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step3"
+name = "根因诊断"
+prompt = "prompts/step3.md"
+precompute = "scripts/step3.py"
+tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
+max_iterations = 5
+max_iterations_feedback = 3
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step4"
+name = "改善行动计划报告"
+prompt = "prompts/step4.md"
+tools_only = ["generate_report", "export_data"]
+tools_on_feedback = ["execute_python", "generate_report", "export_data"]
+max_iterations = 8
+max_iterations_feedback = 3
+token_budget = 8192
+advance_on = "confirm"

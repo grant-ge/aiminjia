@@ -31,6 +31,10 @@ pub struct DeclarativeSkill {
     extract_steps: HashMap<String, String>,
     /// Plugin directory path — needed to load precompute scripts at runtime.
     plugin_dir: std::path::PathBuf,
+    /// Display metadata for UI skill cards.
+    icon: String,
+    short_desc: String,
+    trigger: String,
 }
 
 struct StepToolConfig {
@@ -99,6 +103,12 @@ impl DeclarativeSkill {
                 }
             }
         }
+
+        // Load display metadata for UI skill cards
+        let display = manifest.display.as_ref();
+        let icon = display.and_then(|d| d.icon.clone()).unwrap_or_default();
+        let short_desc = display.and_then(|d| d.short_description.clone()).unwrap_or_default();
+        let trigger = display.and_then(|d| d.trigger_text.clone()).unwrap_or_default();
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
@@ -169,6 +179,9 @@ impl DeclarativeSkill {
             extract_base,
             extract_steps,
             plugin_dir: plugin_dir.to_path_buf(),
+            icon,
+            short_desc,
+            trigger,
         })
     }
 
@@ -205,6 +218,9 @@ impl Skill for DeclarativeSkill {
     fn id(&self) -> &str { &self.id }
     fn display_name(&self) -> &str { &self.name }
     fn description(&self) -> &str { &self.description }
+    fn icon(&self) -> &str { &self.icon }
+    fn short_description(&self) -> &str { &self.short_desc }
+    fn trigger_text(&self) -> &str { &self.trigger }
 
     fn priority(&self) -> u32 { self.priority_val }
 

@@ -2,6 +2,14 @@
 
 use serde::Deserialize;
 
+/// Display metadata for UI skill cards.
+#[derive(Debug, Deserialize)]
+pub struct DisplayConfig {
+    pub icon: Option<String>,
+    pub short_description: Option<String>,
+    pub trigger_text: Option<String>,
+}
+
 /// Top-level plugin.toml structure.
 #[derive(Debug, Deserialize)]
 pub struct PluginManifest {
@@ -11,6 +19,7 @@ pub struct PluginManifest {
     pub defaults: Option<DefaultsConfig>,
     pub capabilities: Option<CapabilitiesConfig>,
     pub prompts: Option<PromptsConfig>,
+    pub display: Option<DisplayConfig>,
 }
 
 #[derive(Debug, Deserialize)]

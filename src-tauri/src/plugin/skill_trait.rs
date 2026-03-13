@@ -144,6 +144,17 @@ pub trait Skill: Send + Sync + 'static {
     /// Short description.
     fn description(&self) -> &str;
 
+    // ── Display metadata ──
+
+    /// Icon (emoji) for UI skill cards.
+    fn icon(&self) -> &str { "" }
+
+    /// Short description for UI skill cards.
+    fn short_description(&self) -> &str { "" }
+
+    /// Trigger text sent when user clicks the skill card.
+    fn trigger_text(&self) -> &str { "" }
+
     // ── Activation ──
 
     /// Should this Skill activate for the given message?

@@ -29,3 +29,8 @@ include_app_base = true
 [defaults]
 max_iterations = 5
 token_budget = 8192
+
+[display]
+icon = "💰"
+short_description = "薪酬公平性诊断、离群值识别、调薪建议"
+trigger_text = "帮我做薪酬公平性分析"

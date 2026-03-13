@@ -1,0 +1,35 @@
+[plugin]
+id = "recruitment-funnel"
+name = "招聘漏斗分析"
+type = "skill"
+description = "Data-driven recruitment funnel analysis: conversion rates, channel ROI, bottleneck diagnosis"
+priority = 15
+
+[trigger]
+keywords = [
+    "招聘分析", "招聘漏斗", "招聘效率", "渠道分析",
+    "转化率分析", "招聘数据", "招聘报表",
+    "hiring funnel", "recruitment analysis", "hiring metrics",
+    "招聘渠道", "面试转化", "offer转化",
+]
+requires_files = true
+
+file_keywords = [
+    "招聘", "应聘", "候选人", "面试", "offer",
+    "recruitment", "candidate", "hiring", "applicant",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+icon = "📊"
+short_description = "分析招聘各阶段转化率、渠道 ROI，定位招聘瓶颈"
+trigger_text = "帮我做招聘漏斗分析"

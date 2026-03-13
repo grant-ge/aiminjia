@@ -8,9 +8,10 @@ import { ToastContainer } from '@/components/common/ToastContainer'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings, updateSettings } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
+import { usePluginStore } from '@/stores/pluginStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 
@@ -23,6 +24,15 @@ function App() {
   useEffect(() => {
     loadConversations()
   }, [loadConversations])
+
+  // Load plugin info (tools + skills) on startup
+  useEffect(() => {
+    getPluginInfo()
+      .then(({ tools, skills }) => {
+        usePluginStore.getState().setAll(tools, skills)
+      })
+      .catch((err) => console.error('Failed to load plugin info:', err))
+  }, [])
 
   // Restore cloud auth state on startup
   useEffect(() => {

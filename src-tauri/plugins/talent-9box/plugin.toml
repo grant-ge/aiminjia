@@ -1,0 +1,34 @@
+[plugin]
+id = "talent-9box"
+name = "人才盘点九宫格"
+type = "skill"
+description = "Data-driven talent review with 9-box grid: performance/potential mapping, talent structure analysis"
+priority = 15
+
+[trigger]
+keywords = [
+    "人才盘点", "九宫格", "talent mapping", "9box",
+    "高潜力", "人才地图", "talent review", "继任计划",
+    "人才评估", "潜力评估", "talent assessment",
+]
+requires_files = true
+
+file_keywords = [
+    "人才", "盘点", "绩效", "潜力", "评估",
+    "talent", "performance", "potential", "assessment", "review",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+icon = "🎯"
+short_description = "绩效 × 潜力交叉定位，人才结构全景分布"
+trigger_text = "帮我做人才盘点"

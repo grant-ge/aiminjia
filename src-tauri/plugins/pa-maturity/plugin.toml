@@ -1,0 +1,29 @@
+[plugin]
+id = "pa-maturity"
+name = "HR数据分析成熟度评估"
+type = "skill"
+description = "Interactive People Analytics maturity assessment: self-evaluation, level determination, upgrade roadmap"
+priority = 15
+
+[trigger]
+keywords = [
+    "数据成熟度", "HR数字化", "people analytics",
+    "数据分析能力", "HR数据", "数据驱动HR",
+    "人力分析", "HR analytics", "数字化转型",
+]
+requires_files = false
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 8
+token_budget = 8192
+
+[display]
+icon = "📐"
+short_description = "4 级成熟度定位 + 升级路径规划"
+trigger_text = "帮我做 HR 数据成熟度评估"

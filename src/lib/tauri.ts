@@ -445,6 +445,9 @@ export interface SkillInfo {
   description: string
   source: string
   hasWorkflow: boolean
+  icon: string
+  shortDescription: string
+  triggerText: string
 }
 
 /** Combined plugin info (tools + skills) */
