@@ -25,6 +25,7 @@ max_iterations = 8
 token_budget = 8192
 
 [display]
+category = "legal"
 icon = "⚖️"
 short_description = "用工风险评估，劳动合规建议输出"
 trigger_text = "帮我做劳动合规检查"

@@ -1,0 +1,36 @@
+[plugin]
+id = "contract-review"
+name = "合同风险审查"
+type = "skill"
+description = "Contract risk review: clause analysis, risk identification, compliance check"
+priority = 20
+
+[trigger]
+keywords = [
+    "合同审查", "合同分析", "合同风险", "条款分析",
+    "合规审查", "法律风险", "合同对比", "合同条款",
+    "contract review", "contract analysis", "clause analysis",
+    "legal risk", "compliance review",
+]
+requires_files = true
+
+file_keywords = [
+    "合同", "协议", "条款", "甲方", "乙方",
+    "contract", "agreement", "clause", "party",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+category = "legal"
+icon = "⚖️"
+short_description = "条款分析、风险识别、合规检查"
+trigger_text = "帮我审查合同"

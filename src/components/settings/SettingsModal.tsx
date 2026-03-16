@@ -25,13 +25,14 @@ import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
 import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
+import { PersonaTab } from '@/components/settings/PersonaTab'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona'
 
 const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
   { value: 'deepseek-v3', label: 'DeepSeek' },
@@ -273,6 +274,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('general')}
         >
           通用设置
+        </TabButton>
+        <TabButton
+          active={mainTab === 'persona'}
+          onClick={() => setMainTab('persona')}
+        >
+          角色
         </TabButton>
       </div>
 
@@ -663,6 +670,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
           </div>
         </div>
+      )}
+
+    
+      {mainTab === 'persona' && (
+        <PersonaTab />
       )}
 
     </Modal>

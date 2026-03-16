@@ -55,6 +55,12 @@ export interface StreamingDonePayload {
 export interface StreamingErrorPayload {
   conversationId: string
   error: string
+  errorType?: 'chunk_timeout' | 'stream_error' | 'gateway_error' | 'agent_timeout'
+  rawError?: string
+  partialContent?: boolean
+  timeoutSeconds?: number
+  iteration?: number
+  maxIterations?: number
 }
 
 export interface AgentIdlePayload {
@@ -448,6 +454,7 @@ export interface SkillInfo {
   icon: string
   shortDescription: string
   triggerText: string
+  category: string
 }
 
 /** Combined plugin info (tools + skills) */
@@ -490,6 +497,31 @@ export interface CloudModel {
   modelType: string
 }
 
+/** Persona summary for list API */
+export interface PersonaSummary {
+  id: string
+  name: string
+  icon: string
+  description: string
+  builtin: boolean
+}
+
+/** Full persona definition */
+export interface Persona {
+  id: string
+  version: number
+  builtin: boolean
+  name: string
+  icon: string
+  description: string
+  identity: string
+  expertise: string[]
+  memoryHints: string[]
+  linkedCategories: string[]
+  createdAt: string
+  updatedAt: string
+}
+
 /**
  * Login with username and password to Lotus cloud.
  *
@@ -520,6 +552,50 @@ export function getCloudModels(): Promise<CloudModel[]> {
  */
 export function cloudChangePassword(oldPassword: string, newPassword: string): Promise<void> {
   return invoke<void>('cloud_change_password', { oldPassword, newPassword })
+}
+
+// ---------------------------------------------------------------------------
+// Persona Commands
+// ---------------------------------------------------------------------------
+
+/** List all personas (summaries only). */
+export function listPersonas(): Promise<PersonaSummary[]> {
+  return invoke<PersonaSummary[]>('list_personas')
+}
+
+/** Get a persona by ID. */
+export function getPersona(id: string): Promise<Persona> {
+  return invoke<Persona>('get_persona', { id })
+}
+
+/** Save a persona (create or update). */
+export function savePersona(persona: Persona): Promise<void> {
+  return invoke<void>('save_persona', { persona })
+}
+
+/** Delete a persona by ID. */
+export function deletePersona(id: string): Promise<void> {
+  return invoke<void>('delete_persona', { id })
+}
+
+/** Set active persona. */
+export function setActivePersona(id: string): Promise<void> {
+  return invoke<void>('set_active_persona', { id })
+}
+
+/** Get active persona. */
+export function getActivePersona(): Promise<Persona> {
+  return invoke<Persona>('get_active_persona')
+}
+
+/** Export a persona to JSON. */
+export function exportPersonas(id: string): Promise<string> {
+  return invoke<string>('export_personas', { id })
+}
+
+/** Import a persona from JSON. Returns the new persona ID. */
+export function importPersonas(json: string): Promise<string> {
+  return invoke<string>('import_personas', { json })
 }
 
 // ---------------------------------------------------------------------------

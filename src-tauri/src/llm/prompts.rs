@@ -13,7 +13,7 @@ use std::sync::{LazyLock, RwLock};
 
 /// Minimal hardcoded fallback for `base` — used only when both
 /// override and bundled files are missing.
-const BASE_FALLBACK: &str = "你是 AI小家 — 组织咨询专家和智能工作助手。";
+const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 
 /// All recognized prompt names.
 const PROMPT_NAMES: &[&str] = &["base", "daily"];
@@ -166,9 +166,9 @@ pub fn get_base_prompt() -> String {
 
 /// Compose the full system prompt by combining BASE + mode-specific prompt.
 ///
-/// - `step = None` → daily consultation mode (BASE + DAILY)
+/// - `step = None` → daily consultation mode (BASE + date + persona + DAILY)
 /// - `step = Some(_)` → analysis mode (BASE + date only; step prompts are in the plugin)
-pub fn get_system_prompt(step: Option<u32>) -> String {
+pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::file_store::persona::Persona>) -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
 
     let base = guard.get("base");
@@ -187,11 +187,81 @@ pub fn get_system_prompt(step: Option<u32>) -> String {
         today, today_iso
     );
 
-    if mode_prompt.is_empty() {
-        format!("{}{}", base, date_line)
+    // Inject persona identity and memory hints (daily mode only)
+    let has_persona_memory = persona.as_ref().map_or(false, |p| !p.memory_hints.is_empty());
+    let persona_section = if step.is_none() {
+        if let Some(p) = persona {
+            let mut parts = Vec::new();
+
+            // Identity
+            if !p.identity.is_empty() {
+                parts.push(format!("\n\n【角色设定】{}", p.identity));
+            }
+
+            // Expertise
+            if !p.expertise.is_empty() {
+                let expertise_list = p.expertise.join("、");
+                parts.push(format!("\n\n【专业领域】{}", expertise_list));
+            }
+
+            // Memory hints (override daily.md memory section)
+            if !p.memory_hints.is_empty() {
+                let hints = p.memory_hints.iter()
+                    .map(|h| format!("- {}", h))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                parts.push(format!("\n\n【记忆管理（白名单制）】\n{}", hints));
+            }
+
+            parts.join("")
+        } else {
+            String::new()
+        }
     } else {
-        format!("{}{}\n\n{}", base, date_line, mode_prompt)
+        String::new()
+    };
+
+    // When persona provides memory_hints, strip the memory section from daily.md
+    // to avoid conflicting instructions.
+    let final_mode_prompt = if has_persona_memory && !mode_prompt.is_empty() {
+        strip_memory_section(mode_prompt)
+    } else {
+        mode_prompt.to_string()
+    };
+
+    if final_mode_prompt.is_empty() {
+        format!("{}{}{}", base, date_line, persona_section)
+    } else {
+        format!("{}{}{}\n\n{}", base, date_line, persona_section, final_mode_prompt)
     }
+}
+
+/// Strip the "记忆管理" section from a mode prompt (daily.md).
+/// Removes everything from "记忆管理" header to the end of the memory list.
+fn strip_memory_section(prompt: &str) -> String {
+    let mut result = Vec::new();
+    let mut skip = false;
+
+    for line in prompt.lines() {
+        // Start skipping when we hit the memory management header
+        if line.contains("记忆管理") && line.contains("白名单") {
+            skip = true;
+            continue;
+        }
+        
+        if skip {
+            // Stop skipping when we hit a non-list, non-blank line
+            if !line.trim().is_empty() && !line.trim().starts_with("- ") {
+                skip = false;
+            } else {
+                continue;
+            }
+        }
+        
+        result.push(line);
+    }
+
+    result.join("\n")
 }
 
 #[cfg(test)]
@@ -223,7 +293,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None);
+        let prompt = get_system_prompt(None, None);
         assert!(prompt.contains("Test base prompt"));
         assert!(prompt.contains("Test daily prompt"));
     }
@@ -244,7 +314,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None);
+        let prompt = get_system_prompt(None, None);
         assert!(prompt.contains("Custom base"), "User override should take priority");
         assert!(prompt.contains("Bundled daily"), "Non-overridden should use bundled");
     }
@@ -265,7 +335,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None);
+        let prompt = get_system_prompt(None, None);
         assert!(prompt.contains("Bundled base"), "Empty override should fall through to bundled");
     }
 
@@ -279,7 +349,7 @@ mod tests {
 
         init_prompts(&empty_bundled, &empty_user);
 
-        let prompt = get_system_prompt(None);
+        let prompt = get_system_prompt(None, None);
         assert!(prompt.contains("AI小家"), "Should fall back to hardcoded base");
     }
 
@@ -298,22 +368,22 @@ mod tests {
         init_prompts(&bundled, &user);
 
         // Daily mode works
-        assert!(get_system_prompt(None).contains("日常工作助手"));
+        assert!(get_system_prompt(None, None).contains("日常工作助手"));
 
         // Step variants return base + date only (step prompts are in plugins now)
-        let step0 = get_system_prompt(Some(0));
+        let step0 = get_system_prompt(Some(0), None);
         assert!(step0.contains("AI小家 base"));
         assert!(!step0.contains("日常工作助手"));
 
         // Invalid step also returns base only
-        let step99 = get_system_prompt(Some(99));
+        let step99 = get_system_prompt(Some(99), None);
         assert!(step99.contains("AI小家 base"));
         assert!(!step99.contains("日常工作助手"));
 
         // Base always included
         for step in [None, Some(0), Some(1), Some(5)] {
             assert!(
-                get_system_prompt(step).contains("AI小家 base"),
+                get_system_prompt(step, None).contains("AI小家 base"),
                 "Step {:?} should include base prompt",
                 step,
             );

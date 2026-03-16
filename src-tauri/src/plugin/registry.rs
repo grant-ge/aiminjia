@@ -32,6 +32,7 @@ pub struct SkillInfo {
     pub icon: String,
     pub short_description: String,
     pub trigger_text: String,
+    pub category: String,
 }
 
 // ─────────────────────────────────────────────────
@@ -232,6 +233,7 @@ impl SkillRegistry {
             icon: rs.skill.icon().to_string(),
             short_description: rs.skill.short_description().to_string(),
             trigger_text: rs.skill.trigger_text().to_string(),
+            category: rs.skill.category().to_string(),
         }).collect()
     }
 }

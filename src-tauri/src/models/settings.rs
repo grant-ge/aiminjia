@@ -50,6 +50,9 @@ pub struct AppSettings {
     /// Cloud mode: model type ("chat" or "reasoner") for the selected cloud model.
     #[serde(default)]
     pub cloud_model_type: String,
+    /// Whether persona onboarding has been completed.
+    #[serde(default)]
+    pub persona_onboarding_done: bool,
 }
 
 impl Default for AppSettings {
@@ -76,6 +79,7 @@ impl Default for AppSettings {
             use_cloud: false,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
+            persona_onboarding_done: false,
         }
     }
 }
@@ -120,6 +124,7 @@ impl AppSettings {
             use_cloud: get_bool("useCloud", defaults.use_cloud),
             cloud_model: get_str("cloudModel", &defaults.cloud_model),
             cloud_model_type: get_str("cloudModelType", &defaults.cloud_model_type),
+            persona_onboarding_done: get_bool("personaOnboardingDone", defaults.persona_onboarding_done),
         }
     }
 }

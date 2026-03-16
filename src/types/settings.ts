@@ -34,6 +34,9 @@ export interface Settings {
   useCloud: boolean
   cloudModel: string
   cloudModelType: string
+
+  // Onboarding
+  personaOnboardingDone?: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -53,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   useCloud: false,
   cloudModel: '',
   cloudModelType: '',
+  personaOnboardingDone: false,
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

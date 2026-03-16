@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.3.22",
+  "version": "0.3.25",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI小家 — 组织专家，工作助手",
+        "title": "AI小家 — 智能工作助手",
         "width": 1280,
         "height": 800,
         "minWidth": 1080,
@@ -28,13 +28,19 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://lotus.renlijia.com/aijia/update.json"],
+      "endpoints": [
+        "https://lotus.renlijia.com/aijia/update.json"
+      ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4MDE3N0E5NkIwMjM5RjcKUldUM09RSnJxWGNCV1BwcVQxVWovL1R4T3dVYmlZL004ZFYrRkNubi8rd0Y1cHBLd3BEc2trUXAK"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "app"],
+    "targets": [
+      "nsis",
+      "dmg",
+      "app"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",

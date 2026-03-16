@@ -5,6 +5,7 @@ import { ChatArea } from '@/components/layout/ChatArea'
 import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
+import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
@@ -12,6 +13,7 @@ import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePluginStore } from '@/stores/pluginStore'
+import { usePersonaStore } from '@/stores/personaStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 
@@ -21,6 +23,30 @@ function App() {
 
   const { loadConversations } = useChat()
 
+  const [showPersonaSelector, setShowPersonaSelector] = useState(false)
+
+  // Check persona onboarding status
+  useEffect(() => {
+    getSettings()
+      .then((saved) => {
+        if (!saved.personaOnboardingDone) {
+          setShowPersonaSelector(true)
+        }
+      })
+      .catch((err) => console.error('Failed to check onboarding:', err))
+  }, [])
+
+  const handlePersonaOnboardingComplete = async () => {
+    try {
+      const saved = await getSettings()
+      await updateSettings({ ...saved, personaOnboardingDone: true })
+      setShowPersonaSelector(false)
+    } catch (err) {
+      console.error('Failed to complete onboarding:', err)
+    }
+  }
+
+  
   useEffect(() => {
     loadConversations()
   }, [loadConversations])
@@ -32,6 +58,12 @@ function App() {
         usePluginStore.getState().setAll(tools, skills)
       })
       .catch((err) => console.error('Failed to load plugin info:', err))
+  }, [])
+
+  // Load active persona on startup
+  useEffect(() => {
+    usePersonaStore.getState().reload()
+      .catch((err) => console.error('Failed to load persona:', err))
   }, [])
 
   // Restore cloud auth state on startup
@@ -117,6 +149,11 @@ function App() {
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
+    
+      {showPersonaSelector && (
+        <PersonaSelector onComplete={handlePersonaOnboardingComplete} />
+      )}
+
     </>
   )
 }

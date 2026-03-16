@@ -19,6 +19,8 @@ pub struct SkillState {
     pub step_status: HashMap<String, String>,
     #[serde(default)]
     pub custom_data: serde_json::Value,
+    #[serde(default)]
+    pub has_files: bool,
 }
 
 impl SkillState {
@@ -28,6 +30,7 @@ impl SkillState {
             current_step: None,
             step_status: HashMap::new(),
             custom_data: serde_json::Value::Null,
+            has_files: false,
         }
     }
 }
@@ -154,6 +157,9 @@ pub trait Skill: Send + Sync + 'static {
 
     /// Trigger text sent when user clicks the skill card.
     fn trigger_text(&self) -> &str { "" }
+
+    /// Category for skill grouping in UI (e.g., "hr", "finance", "general").
+    fn category(&self) -> &str { "general" }
 
     // ── Activation ──
 

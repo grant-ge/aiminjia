@@ -5,3 +5,4 @@ pub mod file;
 pub mod plugin;
 pub mod settings;
 pub mod workspace;
+pub mod persona;

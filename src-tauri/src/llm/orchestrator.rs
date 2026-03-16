@@ -213,7 +213,7 @@ pub fn advance_step(
 pub fn build_step_config(step: u32) -> StepConfig {
     StepConfig {
         step,
-        system_prompt: prompts::get_system_prompt(Some(step)),
+        system_prompt: prompts::get_system_prompt(Some(step), None),
         tool_defs: tools::get_tool_definitions_for_step(step),
         max_iterations: match step {
             0 => 5,  // direction confirmation: peek file + save note + ask user

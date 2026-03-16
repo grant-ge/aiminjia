@@ -112,7 +112,7 @@ pub fn run() {
             // Register builtin tools and skills
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(&skill_registry).await;
+                plugin::builtin::skills::register_builtin_skills(&skill_registry, db.clone()).await;
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
@@ -213,6 +213,15 @@ pub fn run() {
             commands::plugin::list_tools,
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
+            // Persona commands
+            commands::persona::list_personas,
+            commands::persona::get_persona,
+            commands::persona::save_persona,
+            commands::persona::delete_persona,
+            commands::persona::set_active_persona,
+            commands::persona::get_active_persona,
+            commands::persona::export_personas,
+            commands::persona::import_personas,
             // Auth commands
             commands::auth::cloud_login,
             commands::auth::cloud_logout,

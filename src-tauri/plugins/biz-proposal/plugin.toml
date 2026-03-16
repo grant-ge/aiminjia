@@ -1,0 +1,30 @@
+[plugin]
+id = "biz-proposal"
+name = "商业方案撰写"
+type = "skill"
+description = "Business proposal writing: structure, content, persuasion"
+priority = 20
+
+[trigger]
+keywords = [
+    "商业方案", "项目方案", "提案", "方案撰写",
+    "商业计划", "项目建议书", "解决方案", "方案书",
+    "business proposal", "project proposal", "solution proposal",
+]
+requires_files = false
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+category = "finance"
+icon = "📝"
+short_description = "结构化方案撰写、论证逻辑"
+trigger_text = "帮我写商业方案"

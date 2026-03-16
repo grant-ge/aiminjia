@@ -1,0 +1,37 @@
+[plugin]
+id = "finance-analysis"
+name = "财务数据分析"
+type = "skill"
+description = "Financial statement analysis: P&L, cash flow, ratio analysis, DuPont decomposition"
+priority = 20
+
+[trigger]
+keywords = [
+    "财务分析", "财务报表", "利润分析", "损益分析",
+    "现金流", "资产负债", "财务指标", "财务诊断",
+    "毛利率", "净利率", "ROE", "杜邦分析",
+    "financial analysis", "P&L", "profit and loss",
+    "cash flow", "balance sheet", "financial ratio",
+]
+requires_files = true
+
+file_keywords = [
+    "财务", "利润", "收入", "成本", "费用", "资产", "负债",
+    "finance", "profit", "revenue", "cost", "expense", "asset",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+category = "finance"
+icon = "💹"
+short_description = "三大报表分析、杜邦分解、经营诊断"
+trigger_text = "帮我分析财务数据"

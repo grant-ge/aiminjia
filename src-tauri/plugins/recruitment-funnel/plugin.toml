@@ -30,6 +30,7 @@ max_iterations = 5
 token_budget = 8192
 
 [display]
+category = "hr"
 icon = "📊"
 short_description = "分析招聘各阶段转化率、渠道 ROI，定位招聘瓶颈"
 trigger_text = "帮我做招聘漏斗分析"

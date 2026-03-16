@@ -35,6 +35,7 @@ pub struct DeclarativeSkill {
     icon: String,
     short_desc: String,
     trigger: String,
+    category: String,
 }
 
 struct StepToolConfig {
@@ -109,6 +110,7 @@ impl DeclarativeSkill {
         let icon = display.and_then(|d| d.icon.clone()).unwrap_or_default();
         let short_desc = display.and_then(|d| d.short_description.clone()).unwrap_or_default();
         let trigger = display.and_then(|d| d.trigger_text.clone()).unwrap_or_default();
+        let category = display.and_then(|d| d.category.clone()).unwrap_or_else(|| "general".to_string());
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
@@ -182,6 +184,7 @@ impl DeclarativeSkill {
             icon,
             short_desc,
             trigger,
+            category,
         })
     }
 
@@ -221,6 +224,7 @@ impl Skill for DeclarativeSkill {
     fn icon(&self) -> &str { &self.icon }
     fn short_description(&self) -> &str { &self.short_desc }
     fn trigger_text(&self) -> &str { &self.trigger }
+    fn category(&self) -> &str { &self.category }
 
     fn priority(&self) -> u32 { self.priority_val }
 
@@ -257,6 +261,13 @@ impl Skill for DeclarativeSkill {
                 if !sp.is_empty() {
                     parts.push(sp.clone());
                 }
+            }
+
+            // Guide user to upload files when requires_files skill enters step0 without files
+            if self.requires_files && step == "step0" && !state.has_files {
+                parts.push(
+                    "⚠️ 用户尚未上传文件。请先友好地引导用户上传相关数据文件，说明需要什么类型的文件（如 Excel/CSV 工资表、预算表等）。不要尝试调用 load_file，等用户上传文件后再进行数据加载。".to_string()
+                );
             }
 
             // Inject tool restriction instruction from workflow.toml tools_only

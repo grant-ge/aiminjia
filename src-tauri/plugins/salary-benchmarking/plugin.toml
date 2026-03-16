@@ -30,6 +30,7 @@ max_iterations = 5
 token_budget = 8192
 
 [display]
+category = "hr"
 icon = "💼"
 short_description = "内部结构分析 + 市场竞争力对比"
 trigger_text = "帮我做薪酬市场对标分析"

@@ -1,12 +1,13 @@
 /**
  * Sidebar — Chat history list, new chat button, settings button.
- * Based on visual-prototype-zh.html sidebar section.
+ * Includes persona switcher at the top.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { usePersonaStore } from '@/stores/personaStore'
 import { updateSettings, getSettings } from '@/lib/tauri'
 import type { Conversation } from '@/types/message'
 
@@ -62,6 +63,9 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const authTenant = useAuthStore((s) => s.tenant)
   const useCloud = useSettingsStore((s) => s.useCloud)
 
+  const { personas, activePersona, setActive: setActivePersona } = usePersonaStore()
+  const [personaListOpen, setPersonaListOpen] = useState(false)
+
   const grouped = useMemo(() => groupConversations(conversations), [conversations])
 
   const [appVersion, setAppVersion] = useState('...')
@@ -97,12 +101,84 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
             AI小家
           </span>
         </div>
-        <p
-          className="mt-1 text-xs"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          组织专家
-        </p>
+
+        {/* Persona switcher */}
+        <div className="mt-2">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer"
+            style={{
+              background: personaListOpen ? 'var(--color-accent-muted)' : 'var(--color-accent-subtle)',
+              color: 'var(--color-accent-700)',
+              border: '1px solid var(--color-accent-border)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--color-accent-muted)'
+            }}
+            onMouseLeave={(e) => {
+              if (!personaListOpen) {
+                e.currentTarget.style.background = 'var(--color-accent-subtle)'
+              }
+            }}
+            onClick={() => setPersonaListOpen(!personaListOpen)}
+          >
+            <span className="text-base leading-none">{activePersona?.icon || '👤'}</span>
+            <span className="flex-1 truncate text-sm font-semibold">
+              {activePersona?.name || '选择角色'}
+            </span>
+            <span
+              className="text-xs transition-transform"
+              style={{
+                color: 'var(--color-accent-600)',
+                transform: personaListOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              }}
+            >
+              ▾
+            </span>
+          </button>
+
+          {personaListOpen && (
+            <div className="mt-1 space-y-0.5 rounded-md py-1"
+              style={{ background: 'var(--color-bg-sidebar-hover)' }}
+            >
+              {personas.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors cursor-pointer"
+                  style={{
+                    background: p.id === activePersona?.id ? 'var(--color-primary-subtle)' : 'transparent',
+                    color: p.id === activePersona?.id ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (p.id !== activePersona?.id) {
+                      e.currentTarget.style.background = 'var(--color-bg-sidebar-hover)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (p.id !== activePersona?.id) {
+                      e.currentTarget.style.background = 'transparent'
+                    }
+                  }}
+                  onClick={async () => {
+                    try {
+                      await setActivePersona(p.id)
+                      setPersonaListOpen(false)
+                    } catch (err) {
+                      console.error('Failed to switch persona:', err)
+                    }
+                  }}
+                >
+                  <span className="text-base leading-none">{p.icon}</span>
+                  <span className="flex-1 truncate">{p.name}</span>
+                  {p.id === activePersona?.id && (
+                    <span style={{ color: 'var(--color-primary)' }}>✓</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button
           className={`mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border px-3.5 text-sm font-medium transition-all duration-150 ${isNewDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}

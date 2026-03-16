@@ -4,16 +4,21 @@
 
 use async_trait::async_trait;
 
+use std::sync::Arc;
+
 use crate::llm::prompts;
 use crate::plugin::skill_trait::*;
+use crate::storage::file_store::AppStorage;
 
-pub struct DailyAssistantSkill;
+pub struct DailyAssistantSkill {
+    pub db: Arc<AppStorage>,
+}
 
 #[async_trait]
 impl Skill for DailyAssistantSkill {
     fn id(&self) -> &str { "daily-assistant" }
     fn display_name(&self) -> &str { "日常助手" }
-    fn description(&self) -> &str { "Daily HR consultation and general assistance" }
+    fn description(&self) -> &str { "Daily work assistance" }
 
     fn should_activate(
         &self,
@@ -27,7 +32,8 @@ impl Skill for DailyAssistantSkill {
     }
 
     fn system_prompt(&self, _state: &SkillState) -> String {
-        prompts::get_system_prompt(None)
+        let persona = self.db.get_active_persona().ok();
+        prompts::get_system_prompt(None, persona.as_ref())
     }
 
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {

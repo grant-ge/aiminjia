@@ -1,0 +1,36 @@
+[plugin]
+id = "user-behavior"
+name = "用户行为分析"
+type = "skill"
+description = "User behavior analysis: path analysis, feature usage, engagement scoring"
+priority = 20
+
+[trigger]
+keywords = [
+    "用户行为", "行为分析", "路径分析", "功能使用",
+    "用户画像", "活跃度", "参与度", "使用习惯",
+    "user behavior", "path analysis", "feature usage",
+    "engagement analysis", "user journey",
+]
+requires_files = true
+
+file_keywords = [
+    "行为", "事件", "埋点", "日志", "点击", "访问",
+    "behavior", "event", "log", "click", "visit",
+]
+
+[model]
+preference = "deep_reasoning"
+
+[prompts]
+include_app_base = true
+
+[defaults]
+max_iterations = 5
+token_budget = 8192
+
+[display]
+category = "ops"
+icon = "📱"
+short_description = "路径分析、功能使用、参与度评分"
+trigger_text = "帮我分析用户行为"

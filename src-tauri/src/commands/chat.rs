@@ -777,10 +777,12 @@ pub async fn send_message(
             if let Some(skill_id) = detected {
                 let skill = skill_registry.get(&skill_id).await;
                 match skill {
-                    Some(skill) if skill.workflow().is_some() && has_files => {
-                        // Files exist → activate skill directly (no confirmation needed)
+                    Some(skill) if skill.workflow().is_some() => {
+                        // Skill with workflow detected → activate directly
+                        // Files may or may not be present; the workflow prompt will guide
+                        // the user to upload if needed.
                         log::info!(
-                            "Skill '{}' detected with files present for conversation {}, activating directly",
+                            "Skill '{}' with workflow detected for conversation {}, activating directly",
                             skill_id, conversation_id
                         );
 
@@ -805,12 +807,12 @@ pub async fn send_message(
 
                         let mut state = SkillState::new(&skill_id);
                         state.current_step = Some(initial_step.clone());
+                        state.has_files = has_files;
                         Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
                     }
                     _ => {
-                        // No files or no workflow → stay in daily mode
-                        // The LLM will naturally respond and can explain what it needs
-                        log::debug!("Skill detected but no files or no workflow, staying in daily mode");
+                        // No workflow → stay in daily mode
+                        log::debug!("Skill detected but no workflow, staying in daily mode");
                         None
                     }
                 }
@@ -915,6 +917,7 @@ pub async fn send_message(
 
             let mut skill_state = SkillState::new(skill.id());
             skill_state.current_step = Some(format!("step{}", step_num));
+            skill_state.has_files = has_files;
 
             // Route based on step status
             match db_step_state.as_ref().map(|s| &s.status) {
@@ -1153,6 +1156,7 @@ pub async fn send_message(
                             // Build config for the new step
                             let mut new_state = SkillState::new(skill.id());
                             new_state.current_step = Some(next_step_id);
+                            new_state.has_files = has_files;
 
                             Some(build_config_from_skill(&*skill, &new_state, &tool_registry).await)
                         }
@@ -1256,7 +1260,15 @@ pub async fn send_message(
                     "streaming:error",
                     serde_json::json!({
                         "conversationId": conversation_id_clone,
-                        "error": format!("Agent timed out after {} minutes. Please try again.", AGENT_TIMEOUT_SECS / 60),
+                        "error": format!(
+                            "处理超时（已运行 {} 分钟）。可能原因：\n\
+                            1. 任务过于复杂\n\
+                            2. 网络连接不稳定\n\n\
+                            请尝试简化问题后重试。",
+                            AGENT_TIMEOUT_SECS / 60
+                        ),
+                        "errorType": "agent_timeout",
+                        "timeoutSeconds": AGENT_TIMEOUT_SECS,
                     }),
                 );
             }
@@ -1724,8 +1736,9 @@ async fn agent_loop(
         }
         None => {
             log::info!("Agent loop in DAILY CONSULTATION mode ({} tools)", all_tool_defs.len());
+            let persona = db.get_active_persona().ok();
             (
-                prompts::get_system_prompt(None),
+                prompts::get_system_prompt(None, persona.as_ref()),
                 Some(all_tool_defs), // all schemas for KV cache stability
                 MAX_TOOL_ITERATIONS,
                 8192u32, // daily consultation: needs headroom for generate_report JSON
@@ -1755,6 +1768,46 @@ async fn agent_loop(
             );
             let timeout = std::time::Duration::from_secs(120);
             let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path);
+
+            // Auto-load uploaded files that haven't been loaded yet.
+            // This handles the case where step0 was entered without files (user uploaded later),
+            // so load_file was never called and _df would be undefined in precompute scripts.
+            {
+                let uploaded_files = db.get_uploaded_files_for_conversation(&conversation_id)
+                    .unwrap_or_default();
+                let auto_load_ctx = PluginContext {
+                    storage: db.clone(),
+                    file_manager: file_mgr.clone(),
+                    workspace_path: workspace_path.clone(),
+                    conversation_id: conversation_id.clone(),
+                    tavily_api_key: tavily_api_key.clone(),
+                    bocha_api_key: bocha_api_key.clone(),
+                    app_handle: Some(app.clone()),
+                    session_manager: session_mgr.clone(),
+                    auth_manager: Some(auth_manager.clone()),
+                    use_cloud: settings.use_cloud,
+                    model: settings.primary_model.clone(),
+                };
+                for file in &uploaded_files {
+                    let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if file_id.is_empty() { continue; }
+                    let loaded_key = format!("loaded:{}:{}", conversation_id, file_id);
+                    let failed_key = format!("load_failed:{}:{}", conversation_id, file_id);
+                    if db.get_memory(&loaded_key).ok().flatten().is_none()
+                        && db.get_memory(&failed_key).ok().flatten().is_none()
+                    {
+                        log::info!("[PRECOMPUTE] Auto-loading file '{}' before precompute for conv={}",
+                            file_id, conversation_id);
+                        let load_args = serde_json::json!({"file_id": file_id});
+                        if let Err(e) = crate::llm::tool_executor::file_load::handle_load_file(
+                            &auto_load_ctx, &load_args,
+                        ).await {
+                            log::warn!("[PRECOMPUTE] Auto-load failed for '{}': {}", file_id, e);
+                            let _ = db.set_memory(&failed_key, &e.to_string(), Some("auto_load_failed"));
+                        }
+                    }
+                }
+            }
 
             // Build full code: file preamble (injects _df) + analysis preamble
             // (injects _ANALYSIS_DIR, snapshots, utils) + precompute script
@@ -2113,14 +2166,49 @@ async fn agent_loop(
                 r
             }
             Err(e) => {
-                log::error!("gateway.stream_message() FAILED: {}", e);
+                log::error!("gateway.stream_message() FAILED at iteration {}/{}: {}", iteration_count, max_iterations, e);
+
+                // Classify error for user-friendly messaging
+                let err_str = e.to_string();
+                let lower_err = err_str.to_lowercase();
+                let user_error = if lower_err.contains("429") || lower_err.contains("rate limit") {
+                    "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
+                } else if lower_err.contains("401") || lower_err.contains("unauthorized") || lower_err.contains("authentication") {
+                    "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
+                } else if lower_err.contains("402") || lower_err.contains("insufficient") || lower_err.contains("quota") {
+                    "API 额度不足，请检查账户余额。".to_string()
+                } else if lower_err.contains("timeout") || lower_err.contains("timed out") {
+                    "AI 服务连接超时，请检查网络连接后重试。".to_string()
+                } else if lower_err.contains("connection") || lower_err.contains("network") {
+                    "网络连接异常，请检查网络后重试。".to_string()
+                } else if lower_err.contains("500") || lower_err.contains("502") || lower_err.contains("503") || lower_err.contains("504") {
+                    "AI 服务暂时不可用，请稍后重试。".to_string()
+                } else {
+                    format!("服务异常：{}。请重试。", truncate_for_ui(&err_str, 100))
+                };
+
                 let _ = app.emit(
                     "streaming:error",
                     serde_json::json!({
                         "conversationId": conversation_id,
-                        "error": e.to_string(),
+                        "error": user_error,
+                        "errorType": "gateway_error",
+                        "rawError": truncate_for_ui(&err_str, 200),
+                        "iteration": iteration_count,
+                        "partialContent": !full_content.is_empty(),
                     }),
                 );
+
+                // Save partial content if any was generated in previous iterations
+                if !full_content.trim().is_empty() {
+                    log::info!("[AGENT] Saving partial content ({} chars) before gateway error exit", full_content.len());
+                    finish_agent(
+                        &db, &app, &current_assistant_id, &conversation_id,
+                        &full_content, combined_mask_ctx.as_ref(),
+                        &generated_file_ids, &workspace_path, &all_file_metas,
+                    );
+                }
+
                 // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                 return;
             }
@@ -2155,11 +2243,46 @@ async fn agent_loop(
                 }
                 // No data for chunk_timeout_secs — treat as stalled
                 _ = chunk_timeout => {
-                    log::error!("[AGENT] Chunk timeout ({}s) for conversation {}", chunk_timeout_secs, conversation_id);
+                    log::error!("[AGENT] Chunk timeout ({}s) for conversation {} at iteration {}/{}",
+                        chunk_timeout_secs, conversation_id, iteration_count, max_iterations);
+
+                    // Emit detailed timeout error with diagnostic info
+                    let error_msg = if is_analysis {
+                        format!(
+                            "响应超时（{}秒无数据）。可能原因：\n\
+                            1. 网络连接不稳定\n\
+                            2. AI 服务响应缓慢\n\
+                            3. 当前步骤计算量较大\n\n\
+                            已保存当前进度，请稍后重试。",
+                            chunk_timeout_secs
+                        )
+                    } else {
+                        format!(
+                            "响应超时（{}秒无数据）。请检查网络连接后重试。",
+                            chunk_timeout_secs
+                        )
+                    };
+
                     let _ = app.emit("streaming:error", serde_json::json!({
                         "conversationId": conversation_id,
-                        "error": "响应超时，请重试。",
+                        "error": error_msg,
+                        "errorType": "chunk_timeout",
+                        "timeoutSeconds": chunk_timeout_secs,
+                        "iteration": iteration_count,
+                        "maxIterations": max_iterations,
+                        "partialContent": !full_content.is_empty(),
                     }));
+
+                    // Save partial content if any was generated before timeout
+                    if !full_content.trim().is_empty() {
+                        log::info!("[AGENT] Saving partial content ({} chars) before timeout exit", full_content.len());
+                        finish_agent(
+                            &db, &app, &current_assistant_id, &conversation_id,
+                            &full_content, combined_mask_ctx.as_ref(),
+                            &generated_file_ids, &workspace_path, &all_file_metas,
+                        );
+                    }
+
                     // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                     return;
                 }
@@ -2262,14 +2385,47 @@ async fn agent_loop(
                             break;
                         }
                         Some(StreamEvent::Error { error }) => {
-                            log::error!("[AGENT] Stream error: {}", error);
+                            log::error!("[AGENT] Stream error at iteration {}/{}: {}", iteration_count, max_iterations, error);
+
+                            // Classify error for user-friendly messaging
+                            let lower_err = error.to_lowercase();
+                            let user_error = if lower_err.contains("429") || lower_err.contains("rate limit") {
+                                "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
+                            } else if lower_err.contains("401") || lower_err.contains("unauthorized") || lower_err.contains("authentication") {
+                                "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
+                            } else if lower_err.contains("402") || lower_err.contains("insufficient") || lower_err.contains("quota") {
+                                "API 额度不足，请检查账户余额。".to_string()
+                            } else if lower_err.contains("timeout") || lower_err.contains("timed out") {
+                                "AI 服务连接超时，请检查网络连接后重试。".to_string()
+                            } else if lower_err.contains("connection") || lower_err.contains("network") {
+                                "网络连接异常，请检查网络后重试。".to_string()
+                            } else if lower_err.contains("500") || lower_err.contains("502") || lower_err.contains("503") || lower_err.contains("504") {
+                                "AI 服务暂时不可用，请稍后重试。".to_string()
+                            } else {
+                                format!("服务异常：{}。请重试。", truncate_for_ui(&error, 100))
+                            };
+
                             let _ = app.emit(
                                 "streaming:error",
                                 serde_json::json!({
                                     "conversationId": conversation_id,
-                                    "error": error,
+                                    "error": user_error,
+                                    "errorType": "stream_error",
+                                    "rawError": truncate_for_ui(&error, 200),
+                                    "partialContent": !full_content.is_empty(),
                                 }),
                             );
+
+                            // Save partial content if any was generated before error
+                            if !full_content.trim().is_empty() {
+                                log::info!("[AGENT] Saving partial content ({} chars) before stream error exit", full_content.len());
+                                finish_agent(
+                                    &db, &app, &current_assistant_id, &conversation_id,
+                                    &full_content, combined_mask_ctx.as_ref(),
+                                    &generated_file_ids, &workspace_path, &all_file_metas,
+                                );
+                            }
+
                             // streaming:done is emitted by AgentGuard::clear() after agent_loop returns
                             return;
                         }
@@ -3536,5 +3692,50 @@ mod xml_strip_tests {
         let input = "结果：<tool_call>{\"name\": \"test\"}</tool_call>完成";
         let result = strip_hallucinated_xml(input);
         assert_eq!(result, "结果：完成");
+    }
+
+    #[test]
+    fn test_error_classification_401() {
+        let error = "API error (401): Unauthorized";
+        let lower = error.to_lowercase();
+        assert!(lower.contains("401") || lower.contains("unauthorized"));
+    }
+
+    #[test]
+    fn test_error_classification_429() {
+        let error = "API error (429): Rate limit exceeded";
+        let lower = error.to_lowercase();
+        assert!(lower.contains("429") || lower.contains("rate limit"));
+    }
+
+    #[test]
+    fn test_error_classification_timeout() {
+        let error = "Request timed out after 90 seconds";
+        let lower = error.to_lowercase();
+        assert!(lower.contains("timeout") || lower.contains("timed out"));
+    }
+
+    #[test]
+    fn test_error_classification_network() {
+        let error = "Connection reset by peer";
+        let lower = error.to_lowercase();
+        assert!(lower.contains("connection"));
+    }
+
+    #[test]
+    fn test_error_classification_5xx() {
+        let errors = vec![
+            "API error (500): Internal Server Error",
+            "API error (502): Bad Gateway",
+            "API error (503): Service Unavailable",
+            "API error (504): Gateway Timeout",
+        ];
+        for error in errors {
+            let lower = error.to_lowercase();
+            assert!(
+                lower.contains("500") || lower.contains("502")
+                || lower.contains("503") || lower.contains("504")
+            );
+        }
     }
 }

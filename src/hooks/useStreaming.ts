@@ -174,8 +174,8 @@ export function useStreaming() {
 
   // --- streaming:error -------------------------------------------------
   useTauriEvent(() =>
-    onStreamingError(({ conversationId, error }: StreamingErrorPayload) => {
-      console.error('[streaming:error]', conversationId, error)
+    onStreamingError(({ conversationId, error, errorType, partialContent }: StreamingErrorPayload) => {
+      console.error('[streaming:error]', conversationId, errorType ?? 'unknown', error)
       // Flush buffered deltas so partial content is preserved before clearing
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
@@ -183,13 +183,18 @@ export function useStreaming() {
       store.clearConversationStreamState(conversationId)
       store.removeBusyConversation(conversationId)
 
+      // Show longer auto-hide for timeout errors (user needs time to read)
+      const autoHideSecs = errorType === 'chunk_timeout' || errorType === 'agent_timeout' ? 15 : 8
+
+      const suffix = partialContent ? '\n\n已保存部分回复内容。' : ''
+
       useNotificationStore.getState().push({
         level: 'error',
-        title: 'Streaming Error',
-        message: error ?? 'An unknown error occurred while streaming the response.',
+        title: '响应异常',
+        message: (error ?? '未知错误，请重试。') + suffix,
         actions: [],
         dismissible: true,
-        autoHide: 8,
+        autoHide: autoHideSecs,
         context: 'toast',
       })
     }),
@@ -380,6 +385,17 @@ export function useStreaming() {
           delete lastActivityRef.current[convId]
           store.clearConversationStreamState(convId)
           store.removeBusyConversation(convId)
+
+          // Show user-friendly notification
+          useNotificationStore.getState().push({
+            level: 'warning',
+            title: '响应超时',
+            message: `已超过 ${STALE_STREAM_TIMEOUT_MS / 1000} 秒无响应，已自动停止。请检查网络连接后重试。`,
+            actions: [],
+            dismissible: true,
+            autoHide: 10,
+            context: 'toast',
+          })
         }
       }
     }, WATCHDOG_INTERVAL_MS)

@@ -47,6 +47,7 @@ pub mod id;
 pub mod io;
 pub mod messages;
 pub mod notes;
+pub mod persona;
 pub mod types;
 
 use std::collections::HashMap;
@@ -101,6 +102,9 @@ impl AppStorage {
         fs::create_dir_all(self.base_dir.join("shared").join("cache"))?;
         fs::create_dir_all(self.base_dir.join("audit"))?;
         cognitive::ensure_dirs(&self.base_dir)?;
+
+        // Initialize personas directory with builtin personas
+        persona::ensure_personas_dir(&self.base_dir)?;
 
         // Reconcile global index with actual directories
         conversations::reconcile_index(&self.base_dir)
@@ -643,6 +647,51 @@ impl AppStorage {
             }
         }
         Ok(orphans)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Personas
+    // ═══════════════════════════════════════════════════════════════════════
+
+    pub fn list_personas(&self) -> Result<Vec<persona::PersonaSummary>> {
+        persona::list_personas(&self.base_dir)
+    }
+
+    pub fn get_persona(&self, id: &str) -> Result<persona::Persona> {
+        persona::get_persona(&self.base_dir, id)
+    }
+
+    pub fn save_persona(&self, p: &persona::Persona) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        persona::save_persona(&self.base_dir, p)
+    }
+
+    pub fn delete_persona(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        persona::delete_persona(&self.base_dir, id)
+    }
+
+    pub fn get_active_persona_id(&self) -> Result<String> {
+        persona::get_active_persona_id(&self.base_dir)
+    }
+
+    pub fn set_active_persona(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        persona::set_active_persona(&self.base_dir, id)
+    }
+
+    pub fn export_persona(&self, id: &str) -> Result<String> {
+        persona::export_persona(&self.base_dir, id)
+    }
+
+    pub fn import_persona(&self, json: &str) -> Result<String> {
+        let _lock = self.write_lock.lock().unwrap();
+        persona::import_persona(&self.base_dir, json)
+    }
+
+    pub fn get_active_persona(&self) -> Result<persona::Persona> {
+        let id = self.get_active_persona_id()?;
+        self.get_persona(&id)
     }
 }
 

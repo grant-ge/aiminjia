@@ -24,6 +24,7 @@ max_iterations = 8
 token_budget = 8192
 
 [display]
+category = "hr"
 icon = "📐"
 short_description = "4 级成熟度定位 + 升级路径规划"
 trigger_text = "帮我做 HR 数据成熟度评估"
