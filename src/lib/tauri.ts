@@ -803,3 +803,65 @@ export function onAuthExpired(
     handler(event.payload)
   })
 }
+
+// ---------------------------------------------------------------------------
+// SaaS Connector Commands
+// ---------------------------------------------------------------------------
+
+export interface SaasCapabilityInfo {
+  id: number
+  name: string
+  description: string
+  httpMethod: string
+  pathTemplate: string
+}
+
+export interface SaasAppInfo {
+  id: number
+  name: string
+  baseUrl: string
+  connectMode: string
+  authRequired: boolean | null
+  summary: string | null
+  iconUrl: string | null
+  status: string
+  connected: boolean
+  enabled: boolean | null
+  hasCredential: boolean | null
+  capabilities: SaasCapabilityInfo[]
+}
+
+/** Get list of SaaS apps from cached config. */
+export function getSaasApps(): Promise<SaasAppInfo[]> {
+  return invoke<SaasAppInfo[]>('get_saas_apps')
+}
+
+/** Start OAuth connection flow for a SaaS app. Returns OAuth URL. */
+export function startOauthConnect(appId: number): Promise<string> {
+  return invoke<string>('start_oauth_connect', { appId })
+}
+
+/** Check OAuth connection status for a SaaS app. */
+export function checkOauthStatus(appId: number): Promise<string> {
+  return invoke<string>('check_oauth_status', { appId })
+}
+
+/** Disconnect a SaaS app (clear local credential). */
+export function disconnectSaas(appId: number): Promise<void> {
+  return invoke<void>('disconnect_saas', { appId })
+}
+
+/** Sync SaaS config from lotus API. */
+export function syncSaasConfig(): Promise<void> {
+  return invoke<void>('sync_saas_config')
+}
+
+/** Toggle a SaaS app enabled/disabled for this employee. */
+export function toggleSaasApp(appId: number, enabled: boolean): Promise<void> {
+  return invoke<void>('toggle_saas_app', { appId, enabled })
+}
+
+/** Set API credential for a SaaS app. */
+export function setSaasCredential(appName: string, apiCredential: string): Promise<string> {
+  return invoke<string>('set_saas_credential', { appName, apiCredential })
+}

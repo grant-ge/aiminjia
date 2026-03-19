@@ -1785,6 +1785,7 @@ async fn agent_loop(
                     app_handle: Some(app.clone()),
                     session_manager: session_mgr.clone(),
                     auth_manager: Some(auth_manager.clone()),
+                    connector_engine: None,
                     use_cloud: settings.use_cloud,
                     model: settings.primary_model.clone(),
                 };
@@ -2048,6 +2049,15 @@ async fn agent_loop(
 
         // Build dynamic context message (changes each iteration as AnalysisContext updates)
         // This is separate from system_prompt to preserve KV cache prefix stability.
+
+        // Pre-compute SaaS connector context (async, must be done before sync block)
+        let saas_ctx = if let Some(ce) = app.try_state::<Arc<crate::connector::ConnectorEngine>>() {
+            let ctx_str = ce.build_saas_context().await;
+            if ctx_str.is_empty() { None } else { Some(ctx_str) }
+        } else {
+            None
+        };
+
         let dynamic_ctx = {
             let mut ctx = String::from("[动态上下文 — 请勿回复此消息]\n");
 
@@ -2071,6 +2081,14 @@ async fn agent_loop(
                 ctx.push_str("以下是系统自动计算的结果，请基于这些数据向用户展示分析结论。\n");
                 ctx.push_str(pc_result);
                 ctx.push_str("\n[/precompute_result]");
+            }
+            // Inject SaaS connector context (connected enterprise systems)
+            if let Some(ref saas) = saas_ctx {
+                ctx.push_str("\n\n[已连接的企业系统]\n");
+                ctx.push_str("你可以通过 fetch_saas_data 工具访问以下企业系统。\n");
+                ctx.push_str("用户需要查询业务数据时，先用 get_sample 获取接口模板，再用 execute 执行实际请求。\n\n");
+                ctx.push_str(saas);
+                ctx.push_str("[/已连接的企业系统]");
             }
             if is_analysis {
                 let ctx_prompt = analysis_ctx.format_for_prompt();
@@ -2523,6 +2541,7 @@ async fn agent_loop(
             app_handle: Some(app.clone()),
             session_manager: session_mgr.clone(),
             auth_manager: Some(auth_manager.clone()),
+            connector_engine: app.try_state::<Arc<crate::connector::ConnectorEngine>>().map(|s| s.inner().clone()),
             use_cloud: settings.use_cloud,
             model: settings.primary_model.clone(),
         };

@@ -3,6 +3,7 @@ pub mod chat;
 pub mod export;
 pub mod file;
 pub mod plugin;
+pub mod saas;
 pub mod settings;
 pub mod workspace;
 pub mod persona;

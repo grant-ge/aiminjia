@@ -1,5 +1,6 @@
 mod auth;
 mod commands;
+mod connector;
 mod models;
 mod llm;
 mod search;
@@ -105,6 +106,16 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
+            // Initialize SaaS connector engine
+            let connector_api_url = db.get_setting("lotusApiUrl")
+                .ok().flatten().unwrap_or_default();
+            let connector_session_key = db.get_setting("sessionKey")
+                .ok().flatten().unwrap_or_default();
+            let connector_engine = Arc::new(
+                connector::ConnectorEngine::new(db.clone(), connector_api_url, connector_session_key)
+            );
+            tauri::async_runtime::block_on(async { connector_engine.init().await });
+
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
@@ -168,6 +179,7 @@ pub fn run() {
             app.manage(gateway);
             app.manage(secure_storage);
             app.manage(auth_manager);
+            app.manage(connector_engine);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
@@ -228,6 +240,14 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
+            // SaaS connector commands
+            commands::saas::get_saas_apps,
+            commands::saas::start_oauth_connect,
+            commands::saas::check_oauth_status,
+            commands::saas::disconnect_saas,
+            commands::saas::sync_saas_config,
+            commands::saas::toggle_saas_app,
+            commands::saas::set_saas_credential,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

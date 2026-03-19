@@ -16,6 +16,7 @@ pub mod memory_save;
 pub mod memory_search;
 pub mod memory_core;
 pub mod memory_distill;
+pub mod fetch_saas_data;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -39,6 +40,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(memory_search::MemorySearchTool),
         Arc::new(memory_core::CoreMemoryTool),
         Arc::new(memory_distill::MemoryDistillTool),
+        Arc::new(fetch_saas_data::FetchSaasDataTool),
     ];
 
     for tool in tools {

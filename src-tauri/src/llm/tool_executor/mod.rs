@@ -15,6 +15,7 @@ mod export;
 mod progress;
 mod slides;
 mod memory;
+mod saas_fetch;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -52,6 +53,7 @@ pub(crate) use memory::handle_save_memory;
 pub(crate) use memory::handle_search_memory;
 pub(crate) use memory::handle_load_core_memory;
 pub(crate) use memory::handle_distill_memories;
+pub(crate) use saas_fetch::handle_fetch_saas_data;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────
@@ -117,6 +119,7 @@ pub(crate) mod tests {
             app_handle: None,
             session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
             auth_manager: None,
+            connector_engine: None,
             use_cloud: false,
             model: "test-model".to_string(),
         }
