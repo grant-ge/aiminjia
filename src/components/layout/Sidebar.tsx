@@ -2,7 +2,7 @@
  * Sidebar — Chat history list, new chat button, settings button.
  * Includes persona switcher at the top.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -54,6 +54,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
     createNewConversation,
     switchConversation,
     deleteConversation,
+    renameConversation,
   } = useChat()
 
   const busyConversations = useChatStore((s) => s.busyConversations)
@@ -65,6 +66,10 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
 
   const { personas, activePersona, setActive: setActivePersona } = usePersonaStore()
   const [personaListOpen, setPersonaListOpen] = useState(false)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   const grouped = useMemo(() => groupConversations(conversations), [conversations])
 
@@ -259,6 +264,12 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                   <button
                     className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-2 text-left"
                     onClick={() => switchConversation(conv.id)}
+                    onDoubleClick={(e) => {
+                      e.preventDefault()
+                      setEditingId(conv.id)
+                      setEditTitle(conv.title)
+                      setTimeout(() => editInputRef.current?.select(), 0)
+                    }}
                   >
                     {busyConversations.has(conv.id) ? (
                       <span className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center">
@@ -281,6 +292,34 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
                       </svg>
                     )}
+                    {editingId === conv.id ? (
+                      <input
+                        ref={editInputRef}
+                        className="flex-1 truncate rounded border bg-transparent px-1 text-sm outline-none"
+                        style={{
+                          color: 'var(--color-text-primary)',
+                          borderColor: 'var(--color-primary)',
+                        }}
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onBlur={() => {
+                          const trimmed = editTitle.trim()
+                          if (trimmed && trimmed !== conv.title) {
+                            renameConversation(conv.id, trimmed)
+                          }
+                          setEditingId(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.currentTarget.blur()
+                          } else if (e.key === 'Escape') {
+                            setEditingId(null)
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
                     <span
                       className="flex-1 truncate text-sm"
                       style={{
@@ -293,6 +332,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                     >
                       {conv.title}
                     </span>
+                    )}
                   </button>
                   <button
                     className="mr-2 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border-none opacity-0 transition-opacity duration-150 group-hover:opacity-100"

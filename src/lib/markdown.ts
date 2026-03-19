@@ -282,9 +282,23 @@ function _markdownToHtmlImpl(md: string): string {
     // --- Unordered list ---
     if (/^[-*+]\s/.test(trimmed)) {
       const items: string[] = []
-      while (i < lines.length && /^[-*+]\s/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^[-*+]\s/, ''))
-        i++
+      while (i < lines.length) {
+        const cur = lines[i]
+        const curTrimmed = cur.trim()
+        if (curTrimmed === '') { i++; break }
+        if (/^[-*+]\s/.test(curTrimmed)) {
+          items.push(curTrimmed.replace(/^[-*+]\s/, ''))
+          i++
+        } else if (/^\s{2,}/.test(cur) || /^\t/.test(cur)) {
+          // Indented continuation — append to last item
+          if (items.length > 0) {
+            const subContent = curTrimmed.replace(/^[-*+]\s/, '')
+            items[items.length - 1] += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
+          }
+          i++
+        } else {
+          break
+        }
       }
       output.push(
         `<ul style="margin:8px 0;padding-left:20px;list-style:disc">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item)}</li>`).join('')}</ul>`,
@@ -295,9 +309,23 @@ function _markdownToHtmlImpl(md: string): string {
     // --- Ordered list ---
     if (/^\d+[.)]\s/.test(trimmed)) {
       const items: string[] = []
-      while (i < lines.length && /^\d+[.)]\s/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^\d+[.)]\s/, ''))
-        i++
+      while (i < lines.length) {
+        const cur = lines[i]
+        const curTrimmed = cur.trim()
+        if (curTrimmed === '') { i++; break }
+        if (/^\d+[.)]\s/.test(curTrimmed)) {
+          items.push(curTrimmed.replace(/^\d+[.)]\s/, ''))
+          i++
+        } else if (/^\s{2,}/.test(cur) || /^\t/.test(cur)) {
+          // Indented continuation — append to last item
+          if (items.length > 0) {
+            const subContent = curTrimmed.replace(/^[-*+]\s/, '')
+            items[items.length - 1] += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
+          }
+          i++
+        } else {
+          break
+        }
       }
       output.push(
         `<ol style="margin:8px 0;padding-left:20px;list-style:decimal">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item)}</li>`).join('')}</ol>`,

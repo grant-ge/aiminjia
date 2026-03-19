@@ -352,6 +352,7 @@ async fn build_config_from_skill(
         allowed_tool_names,
         precompute,
         feedback_config,
+        is_feedback: false,
     }
 }
 
@@ -1171,7 +1172,9 @@ pub async fn send_message(
                                 log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
                             }
 
-                            Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
+                            let mut config = build_config_from_skill(&*skill, &skill_state, &tool_registry).await;
+                            config.is_feedback = true;
+                            Some(config)
                         }
                     }
                 }
@@ -1942,11 +1945,11 @@ async fn agent_loop(
     // Precompute degradation: if precompute was expected but failed, expand allowed
     // tools to include the feedback set so the LLM can do the work itself.
     let allowed_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
-        if config.precompute.is_some() && precompute_context.is_none() {
-            // Precompute failed — degrade to feedback mode tools
+        if (config.precompute.is_some() && precompute_context.is_none()) || config.is_feedback {
+            // Precompute failed OR user is providing feedback on a completed step — use feedback mode tools
             log::warn!(
-                "[PRECOMPUTE] Degrading step {} to feedback mode (precompute failed, giving LLM full tool access) conv={}",
-                config.step, conversation_id
+                "[PRECOMPUTE] Degrading step {} to feedback mode (precompute_failed={}, is_feedback={}) conv={}",
+                config.step, precompute_context.is_none(), config.is_feedback, conversation_id
             );
             config.feedback_config.as_ref().map(|fc| {
                 fc.tools.iter().cloned().collect::<std::collections::HashSet<_>>()
@@ -1969,17 +1972,25 @@ async fn agent_loop(
         Some(daily_allowed)
     };
 
-    // Precompute degradation: also increase max_iterations when precompute failed
+    // Precompute degradation / feedback mode: adjust max_iterations
     if let Some(ref config) = current_step_config {
         if config.precompute.is_some() && precompute_context.is_none() {
-            // Use 15 iterations (v1 baseline) as fallback, NOT feedback_config.max_iterations (3)
-            // which is only meant for short modify-mode loops after successful precompute.
+            // Precompute failed: use 15 iterations (v1 baseline) as fallback
             let fallback_iters = 15;
             log::warn!(
                 "[PRECOMPUTE] Increasing max_iterations from {} to {} for degraded step {} conv={}",
                 max_iterations, fallback_iters, config.step, conversation_id
             );
             max_iterations = fallback_iters;
+        } else if config.is_feedback {
+            // User feedback mode: use feedback_config.max_iterations if available
+            if let Some(ref fc) = config.feedback_config {
+                log::info!(
+                    "[FEEDBACK] Using feedback max_iterations {} for step {} conv={}",
+                    fc.max_iterations, config.step, conversation_id
+                );
+                max_iterations = fc.max_iterations;
+            }
         }
     }
 
@@ -3631,6 +3642,23 @@ pub async fn delete_conversation(
     // 4. Delete conversation (CASCADE removes uploaded_files, generated_files, messages, analysis_states)
     db.delete_conversation(&conversation_id)
         .map_err(|e| e.to_string())
+}
+
+/// Rename a conversation.
+#[tauri::command]
+pub async fn rename_conversation(
+    db: State<'_, Arc<AppStorage>>,
+    app: AppHandle,
+    conversation_id: String,
+    new_title: String,
+) -> Result<(), String> {
+    db.update_conversation_title(&conversation_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("conversation:title-updated", serde_json::json!({
+        "conversationId": conversation_id,
+        "title": new_title,
+    }));
+    Ok(())
 }
 
 /// Get all conversations.

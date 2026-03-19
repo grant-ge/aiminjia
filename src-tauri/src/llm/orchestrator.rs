@@ -60,6 +60,9 @@ pub struct StepConfig {
     /// Feedback mode: tools and iteration limit for when user provides
     /// non-confirmation feedback during a precompute step.
     pub feedback_config: Option<crate::plugin::skill_trait::FeedbackConfig>,
+    /// Whether this config was built for a feedback re-entry (WaitForUser).
+    /// When true, feedback tools should be used even if precompute succeeded.
+    pub is_feedback: bool,
 }
 
 /// Status of the current analysis step.
@@ -237,6 +240,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
         allowed_tool_names: None, // Legacy builder: no runtime guard (schema-level filtering)
         precompute: None,
         feedback_config: None,
+        is_feedback: false,
     }
 }
 

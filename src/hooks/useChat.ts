@@ -21,6 +21,7 @@ import {
   deleteConversation,
   getConversations,
   isAgentBusy as isAgentBusyIpc,
+  renameConversation as tauriRenameConversation,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -325,6 +326,17 @@ export function useChat() {
     }
   }, [])
 
+  /**
+   * Rename a conversation title.
+   */
+  const renameConversation = useCallback(async (id: string, newTitle: string) => {
+    const store = useChatStore.getState()
+    store.setConversations(
+      store.conversations.map((c) => c.id === id ? { ...c, title: newTitle } : c)
+    )
+    await tauriRenameConversation(id, newTitle)
+  }, [])
+
   return {
     // State (subscribed for re-rendering)
     conversations,
@@ -335,6 +347,7 @@ export function useChat() {
     // Actions (stable references)
     createNewConversation,
     deleteConversation: removeConversation,
+    renameConversation,
     switchConversation,
     sendUserMessage,
     stopCurrentStream,

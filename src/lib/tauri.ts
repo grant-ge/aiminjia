@@ -179,6 +179,19 @@ export function deleteConversation(conversationId: string): Promise<void> {
 }
 
 /**
+ * Rename a conversation.
+ *
+ * @param conversationId - The conversation to rename
+ * @param newTitle - The new title
+ */
+export function renameConversation(conversationId: string, newTitle: string): Promise<void> {
+  return invoke<void>('rename_conversation', {
+    conversationId,
+    newTitle,
+  })
+}
+
+/**
  * Check which conversations currently have active agent tasks.
  *
  * @returns Array of conversation IDs that are being processed

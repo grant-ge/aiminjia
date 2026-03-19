@@ -193,6 +193,7 @@ pub fn run() {
             chat::get_messages,
             chat::create_conversation,
             chat::delete_conversation,
+            chat::rename_conversation,
             chat::get_conversations,
             chat::is_agent_busy,
             // File commands
