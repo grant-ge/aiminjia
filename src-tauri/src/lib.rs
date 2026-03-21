@@ -106,15 +106,27 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
-            // Initialize SaaS connector engine
-            let connector_api_url = db.get_setting("lotusApiUrl")
-                .ok().flatten().unwrap_or_default();
-            let connector_session_key = db.get_setting("sessionKey")
-                .ok().flatten().unwrap_or_default();
-            let connector_engine = Arc::new(
-                connector::ConnectorEngine::new(db.clone(), connector_api_url, connector_session_key)
+            // Initialize WebView auth manager for internal system connections (legacy flow)
+            let webview_auth_manager = Arc::new(
+                connector::WebViewAuthManager::new(app.handle().clone())
             );
-            tauri::async_runtime::block_on(async { connector_engine.init().await });
+
+            // Initialize CDP browser for open browsing mode (V4)
+            let chrome_path: Option<std::path::PathBuf> = None; // Will auto-detect
+            let cdp_browser = Arc::new(
+                connector::cdp_browser::CdpBrowser::new(app.handle().clone(), chrome_path)
+            );
+
+            // Initialize connector engine (uses AuthManager for dynamic session key)
+            let connector_engine = Arc::new(
+                connector::ConnectorEngine::new(db.clone())
+            );
+            tauri::async_runtime::block_on(async {
+                connector_engine.init().await;
+                connector_engine.set_auth_manager(auth_manager.clone()).await;
+                connector_engine.set_webview_auth(webview_auth_manager.clone()).await;
+                connector_engine.set_cdp_browser(cdp_browser.clone()).await;
+            });
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
@@ -180,6 +192,7 @@ pub fn run() {
             app.manage(secure_storage);
             app.manage(auth_manager);
             app.manage(connector_engine);
+            app.manage(webview_auth_manager);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
@@ -241,14 +254,16 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
-            // SaaS connector commands
-            commands::saas::get_saas_apps,
-            commands::saas::start_oauth_connect,
-            commands::saas::check_oauth_status,
-            commands::saas::disconnect_saas,
-            commands::saas::sync_saas_config,
-            commands::saas::toggle_saas_app,
-            commands::saas::set_saas_credential,
+            // Internal system connector commands (WebView-based auth)
+            commands::connector::get_internal_apps,
+            commands::connector::sync_internal_apps,
+            commands::connector::connect_internal_app,
+            commands::connector::disconnect_internal_app,
+            commands::connector::open_internal_login,
+            commands::connector::proxy_internal_request,
+            commands::connector::has_internal_session,
+            commands::connector::close_internal_session,
+            commands::connector::show_browse_view,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -258,6 +273,10 @@ pub fn run() {
                 // block_on is safe here — the event loop is already shutting down.
                 let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();
                 tauri::async_runtime::block_on(session_mgr.shutdown_all());
+
+                // Shutdown CDP browser (kill Chromium process) via connector engine
+                let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();
+                tauri::async_runtime::block_on(engine.shutdown_cdp());
             }
         });
 }

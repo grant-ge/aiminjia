@@ -15,7 +15,7 @@ mod export;
 mod progress;
 mod slides;
 mod memory;
-mod saas_fetch;
+mod internal_system;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -53,7 +53,11 @@ pub(crate) use memory::handle_save_memory;
 pub(crate) use memory::handle_search_memory;
 pub(crate) use memory::handle_load_core_memory;
 pub(crate) use memory::handle_distill_memories;
-pub(crate) use saas_fetch::handle_fetch_saas_data;
+pub(crate) use internal_system::handle_http_request;
+pub(crate) use internal_system::handle_save_api_knowledge;
+pub(crate) use internal_system::handle_browse_navigate;
+pub(crate) use internal_system::handle_read_page_content;
+pub(crate) use internal_system::handle_page_execute_js;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────

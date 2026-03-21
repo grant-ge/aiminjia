@@ -26,13 +26,14 @@ import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
 import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
+import { ConnectorPanel } from '@/components/connector/ConnectorPanel'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'connector'
 
 const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
   { value: 'deepseek-v3', label: 'DeepSeek' },
@@ -281,6 +282,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         >
           角色
         </TabButton>
+        {isLoggedIn && (
+          <TabButton
+            active={mainTab === 'connector'}
+            onClick={() => setMainTab('connector')}
+          >
+            连接器
+          </TabButton>
+        )}
       </div>
 
       {/* Tab Content */}
@@ -675,6 +684,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     
       {mainTab === 'persona' && (
         <PersonaTab />
+      )}
+
+      {mainTab === 'connector' && (
+        <ConnectorPanel />
       )}
 
     </Modal>

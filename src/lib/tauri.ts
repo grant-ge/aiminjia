@@ -818,63 +818,140 @@ export function onAuthExpired(
 }
 
 // ---------------------------------------------------------------------------
-// SaaS Connector Commands
+// Internal System Connector (WebView-based auth)
 // ---------------------------------------------------------------------------
 
-export interface SaasCapabilityInfo {
+export interface AppHint {
+  name: string
+  description: string
+  clues: string | null
+}
+
+export interface InternalAppInfo {
   id: number
   name: string
   description: string
-  httpMethod: string
-  pathTemplate: string
-}
-
-export interface SaasAppInfo {
-  id: number
-  name: string
-  baseUrl: string
-  connectMode: string
-  authRequired: boolean | null
-  summary: string | null
-  iconUrl: string | null
+  icon_url: string | null
+  base_url: string
+  login_url: string
+  success_url_prefix: string
+  allowed_methods: string[]
+  blocked_paths: string[]
+  max_requests_per_turn: number
+  hints: AppHint[]
   status: string
   connected: boolean
-  enabled: boolean | null
-  hasCredential: boolean | null
-  capabilities: SaasCapabilityInfo[]
 }
 
-/** Get list of SaaS apps from cached config. */
-export function getSaasApps(): Promise<SaasAppInfo[]> {
-  return invoke<SaasAppInfo[]>('get_saas_apps')
+/** Get all internal apps from cached config. */
+export function getInternalApps(): Promise<InternalAppInfo[]> {
+  return invoke<InternalAppInfo[]>('get_internal_apps')
 }
 
-/** Start OAuth connection flow for a SaaS app. Returns OAuth URL. */
-export function startOauthConnect(appId: number): Promise<string> {
-  return invoke<string>('start_oauth_connect', { appId })
+/** Sync internal apps config from Lotus API. */
+export function syncInternalApps(): Promise<void> {
+  return invoke<void>('sync_internal_apps')
 }
 
-/** Check OAuth connection status for a SaaS app. */
-export function checkOauthStatus(appId: number): Promise<string> {
-  return invoke<string>('check_oauth_status', { appId })
+/** Connect to an internal app (opens WebView login). */
+export function connectInternalApp(appId: number): Promise<void> {
+  return invoke<void>('connect_internal_app', { appId })
 }
 
-/** Disconnect a SaaS app (clear local credential). */
-export function disconnectSaas(appId: number): Promise<void> {
-  return invoke<void>('disconnect_saas', { appId })
+/** Disconnect from an internal app. */
+export function disconnectInternalApp(appId: number): Promise<void> {
+  return invoke<void>('disconnect_internal_app', { appId })
 }
 
-/** Sync SaaS config from lotus API. */
-export function syncSaasConfig(): Promise<void> {
-  return invoke<void>('sync_saas_config')
+/** Open a WebView login window for an internal system (low-level). */
+export function openInternalLogin(params: {
+  appId: number
+  appName: string
+  loginUrl: string
+  baseUrl: string
+  successUrlPrefix: string
+}): Promise<unknown> {
+  return invoke('open_internal_login', params)
 }
 
-/** Toggle a SaaS app enabled/disabled for this employee. */
-export function toggleSaasApp(appId: number, enabled: boolean): Promise<void> {
-  return invoke<void>('toggle_saas_app', { appId, enabled })
+/** Proxy an HTTP request through an active WebView session. */
+export function proxyInternalRequest(params: {
+  appId: number
+  method: string
+  url: string
+  headers?: Record<string, string> | null
+  body?: unknown | null
+  cachedToken?: string | null
+}): Promise<{ status: number; body: string; truncated: boolean; error: string | null }> {
+  return invoke('proxy_internal_request', params)
 }
 
-/** Set API credential for a SaaS app. */
-export function setSaasCredential(appName: string, apiCredential: string): Promise<string> {
-  return invoke<string>('set_saas_credential', { appName, apiCredential })
+/** Check if there's an active WebView session for an app. */
+export function hasInternalSession(appId: number): Promise<boolean> {
+  return invoke<boolean>('has_internal_session', { appId })
+}
+
+/** Close a WebView session. */
+export function closeInternalSession(appId: number): Promise<void> {
+  return invoke<void>('close_internal_session', { appId })
+}
+
+/** Show the CDP browser window (bring active tab to front). */
+export function showBrowseView(): Promise<void> {
+  return invoke<void>('show_browse_view')
+}
+
+// ---------------------------------------------------------------------------
+// Browser Events (WebView → Frontend)
+// ---------------------------------------------------------------------------
+
+export interface BrowserNavigatingPayload {
+  appId?: number
+  url: string
+}
+
+export interface BrowserPageReadyPayload {
+  appId?: number
+  url: string
+  title: string
+}
+
+export interface BrowserClosedPayload {
+  appId?: number
+}
+
+/** Listen for browser navigating events. */
+export function onBrowserNavigating(
+  handler: (payload: BrowserNavigatingPayload) => void,
+): Promise<() => void> {
+  return listen<BrowserNavigatingPayload>('browser:navigating', (event) => handler(event.payload))
+}
+
+/** Listen for browser page-ready events. */
+export function onBrowserPageReady(
+  handler: (payload: BrowserPageReadyPayload) => void,
+): Promise<() => void> {
+  return listen<BrowserPageReadyPayload>('browser:page-ready', (event) => handler(event.payload))
+}
+
+/** Listen for browser closed events. */
+export function onBrowserClosed(
+  handler: (payload: BrowserClosedPayload) => void,
+): Promise<() => void> {
+  return listen<BrowserClosedPayload>('browser:closed', (event) => handler(event.payload))
+}
+
+// Expose to window for console testing
+if (typeof window !== 'undefined') {
+  (window as any).__CONNECTOR_TEST__ = {
+    getInternalApps,
+    syncInternalApps,
+    connectInternalApp,
+    disconnectInternalApp,
+    openInternalLogin,
+    proxyInternalRequest,
+    hasInternalSession,
+    closeInternalSession,
+    showBrowseView,
+  }
 }

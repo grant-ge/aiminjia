@@ -613,16 +613,19 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
             id, name, st.tool_args.len(), args_preview
         );
 
-        // Skip tool calls with empty args — these are ghost calls caused by
-        // SSE chunk loss. Emitting them would produce tool calls with
-        // Value::Null args that execute incorrectly and pollute messages.
+        // Handle empty args: treat as empty object `{}` (valid for tools with all optional params).
+        // Only drop if name is also empty (true ghost call from SSE chunk loss).
         if st.tool_args.trim().is_empty() {
-            log::warn!(
-                "[SSE] Dropping tool call id={} name='{}' — empty args (likely SSE chunk loss)",
-                id, name
-            );
-            st.tool_args.clear();
-            return;
+            if name.is_empty() {
+                log::warn!(
+                    "[SSE] Dropping tool call id={} — empty name and args (SSE chunk loss)",
+                    id
+                );
+                st.tool_args.clear();
+                return;
+            }
+            // Legitimate call with no args — normalize to empty JSON object
+            st.tool_args = "{}".to_string();
         }
 
         let arguments = match serde_json::from_str(&st.tool_args) {

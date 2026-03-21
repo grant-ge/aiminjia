@@ -16,7 +16,11 @@ pub mod memory_save;
 pub mod memory_search;
 pub mod memory_core;
 pub mod memory_distill;
-pub mod fetch_saas_data;
+pub mod http_request;
+pub mod save_api_knowledge;
+pub mod browse_navigate;
+pub mod read_page_content;
+pub mod page_execute_js;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -40,7 +44,11 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(memory_search::MemorySearchTool),
         Arc::new(memory_core::CoreMemoryTool),
         Arc::new(memory_distill::MemoryDistillTool),
-        Arc::new(fetch_saas_data::FetchSaasDataTool),
+        Arc::new(http_request::HttpRequestTool),
+        Arc::new(save_api_knowledge::SaveApiKnowledgeTool),
+        Arc::new(browse_navigate::BrowseNavigateTool),
+        Arc::new(read_page_content::ReadPageContentTool),
+        Arc::new(page_execute_js::PageExecuteJsTool),
     ];
 
     for tool in tools {

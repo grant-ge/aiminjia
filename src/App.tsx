@@ -6,16 +6,18 @@ import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
+import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePersonaStore } from '@/stores/personaStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useBrowserStore } from '@/stores/browserStore'
 
 function App() {
   useStreaming()
@@ -135,6 +137,24 @@ function App() {
     }
   }, [])
 
+  // Listen for browser events from backend (WebView state sync)
+  useEffect(() => {
+    const unlistenNavigating = onBrowserNavigating(({ appId, url }) => {
+      useBrowserStore.getState().setNavigating(appId, url)
+    })
+    const unlistenReady = onBrowserPageReady(({ appId, url, title }) => {
+      useBrowserStore.getState().setPageReady(appId, url, title)
+    })
+    const unlistenClosed = onBrowserClosed(({ appId }) => {
+      useBrowserStore.getState().setClosed(appId)
+    })
+    return () => {
+      unlistenNavigating.then((fn) => fn())
+      unlistenReady.then((fn) => fn())
+      unlistenClosed.then((fn) => fn())
+    }
+  }, [])
+
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
@@ -142,9 +162,12 @@ function App() {
       <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       <main className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
-        <div className="relative flex flex-1 flex-col overflow-hidden">
-          <ChatArea />
-          <InputBar />
+        <div className="relative flex flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <ChatArea />
+            <InputBar />
+          </div>
+          <BrowserPanel />
         </div>
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

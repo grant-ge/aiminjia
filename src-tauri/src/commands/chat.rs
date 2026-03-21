@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use futures::StreamExt;
 use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
@@ -20,7 +20,9 @@ use crate::storage::crypto::SecureStorage;
 use crate::models::settings::AppSettings;
 
 /// Maximum agent loop iterations for daily consultation mode.
-const MAX_TOOL_ITERATIONS: usize = 10;
+/// 30 iterations allows multi-step browser workflows: navigate → login check →
+/// filter → paginate → read data across multiple pages.
+const MAX_TOOL_ITERATIONS: usize = 30;
 
 /// Maximum wall-clock time for the entire agent loop (15 minutes for multi-step analysis).
 const AGENT_TIMEOUT_SECS: u64 = 900;
@@ -2061,9 +2063,10 @@ async fn agent_loop(
         // Build dynamic context message (changes each iteration as AnalysisContext updates)
         // This is separate from system_prompt to preserve KV cache prefix stability.
 
-        // Pre-compute SaaS connector context (async, must be done before sync block)
-        let saas_ctx = if let Some(ce) = app.try_state::<Arc<crate::connector::ConnectorEngine>>() {
-            let ctx_str = ce.build_saas_context().await;
+        // Pre-compute connector context (async, must be done before sync block)
+        let connector_ctx = if let Some(ce) = app.try_state::<Arc<crate::connector::ConnectorEngine>>() {
+            ce.reset_request_counters().await;
+            let ctx_str = ce.build_context().await;
             if ctx_str.is_empty() { None } else { Some(ctx_str) }
         } else {
             None
@@ -2093,13 +2096,12 @@ async fn agent_loop(
                 ctx.push_str(pc_result);
                 ctx.push_str("\n[/precompute_result]");
             }
-            // Inject SaaS connector context (connected enterprise systems)
-            if let Some(ref saas) = saas_ctx {
-                ctx.push_str("\n\n[已连接的企业系统]\n");
-                ctx.push_str("你可以通过 fetch_saas_data 工具访问以下企业系统。\n");
-                ctx.push_str("用户需要查询业务数据时，先用 get_sample 获取接口模板，再用 execute 执行实际请求。\n\n");
-                ctx.push_str(saas);
-                ctx.push_str("[/已连接的企业系统]");
+            // Inject internal system connector context (V4: open browsing + legacy apps)
+            if let Some(ref connector) = connector_ctx {
+                ctx.push_str("\n\n[内部系统浏览]\n");
+                ctx.push_str("你可以通过 browse_navigate 工具直接打开浏览器访问任意内部系统 URL，用户在 Chrome 中登录后即可读取数据。\n\n");
+                ctx.push_str(connector);
+                ctx.push_str("\n[/内部系统浏览]");
             }
             if is_analysis {
                 let ctx_prompt = analysis_ctx.format_for_prompt();
