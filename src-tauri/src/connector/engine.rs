@@ -16,7 +16,7 @@ use crate::auth::AuthManager;
 use super::cdp_browser::CdpBrowser;
 use super::credential_store;
 use super::types::*;
-use super::webview_auth::{BrowseNavigateResult, BrowseResult, ExecuteJsResult, ProxyResponse, WebLoginConfig, WebViewAuthManager};
+use super::webview_auth::{ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FullPageResult, ProxyResponse, WebLoginConfig, WebViewAuthManager};
 
 /// The Lotus API base URL (same as auth client).
 const API_BASE_URL: &str = "https://ai-tenant.renlijia.com";
@@ -324,6 +324,45 @@ impl ConnectorEngine {
         cdp.show_active_page().await
     }
 
+    /// Navigate + extract everything in one shot (page mode).
+    pub async fn browser_navigate_and_extract(
+        &self,
+        url: &str,
+        extract_script: Option<&str>,
+    ) -> Result<FullPageResult, String> {
+        let cdp = self.cdp_browser.read().await;
+        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
+
+        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
+
+        info!("[CONNECTOR] browser_navigate_and_extract: url='{}'", url);
+        cdp.navigate_and_extract(url, extract_script).await
+    }
+
+    /// Execute fetch() in browser context for REST API calls.
+    pub async fn browser_api_fetch(
+        &self,
+        url: &str,
+        method: &str,
+        body: Option<&str>,
+        headers: Option<&str>,
+    ) -> Result<ApiFetchResult, String> {
+        let cdp = self.cdp_browser.read().await;
+        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
+
+        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
+
+        info!("[CONNECTOR] browser_api_fetch: {} '{}'", method, url);
+        cdp.api_fetch(url, method, body, headers).await
+    }
+
+    /// Capture a screenshot of the active page. Returns file path.
+    pub async fn browser_screenshot(&self) -> Option<std::path::PathBuf> {
+        let cdp = self.cdp_browser.read().await;
+        let cdp = cdp.as_ref()?;
+        cdp.capture_screenshot().await
+    }
+
     /// Shutdown the CDP browser (call on app exit).
     pub async fn shutdown_cdp(&self) {
         let cdp = self.cdp_browser.read().await;
@@ -403,18 +442,14 @@ impl ConnectorEngine {
         // Open browsing mode instructions (always available)
         ctx.push_str("## 开放浏览模式\n\n");
         ctx.push_str("你可以使用浏览器直接访问任何内部系统 URL，无需预配置：\n");
-        ctx.push_str("1. `browse_navigate(url)` — 打开 Chrome 浏览器导航到指定 URL\n");
-        ctx.push_str("2. 如果被重定向到登录页，提示用户在 Chrome 中登录，然后重新导航\n");
-        ctx.push_str("3. `read_page_content()` — 提取当前页面的表格和文本数据\n");
-        ctx.push_str("4. `page_execute_js(script)` — 在页面上执行 JS（点击、翻页、筛选等）\n");
-        ctx.push_str("5. 用户也可以在 Chrome 窗口中手动操作，之后再用 `read_page_content` 读取\n\n");
-        ctx.push_str("**大数据量策略（超过 1 页的数据）：**\n");
-        ctx.push_str("- 不要逐页翻页读取，效率太低\n");
-        ctx.push_str("- 优先用 `page_execute_js` 在页面上执行 fetch() 调用底层 API 批量获取 JSON 数据\n");
-        ctx.push_str("- 方法：在 Network 面板观察页面加载数据时调用的 API URL，然后用 fetch() 重放\n");
-        ctx.push_str("- 示例：`return await fetch('/api/orders?page=1&size=1000').then(r => r.json())`\n");
-        ctx.push_str("- 如果 API 未知，先用 `page_execute_js` 执行 `performance.getEntriesByType('resource').filter(e=>e.initiatorType==='fetch'||e.initiatorType==='xmlhttprequest').map(e=>e.name)` 发现 API 端点\n");
-        ctx.push_str("- fetch() 在页面上下文执行，自动携带 cookie，无需额外认证\n\n");
+        ctx.push_str("1. `browse_and_extract(url)` — **首选工具**：导航+自动探索页面（菜单、表格、表单、API 端点），一步到位\n");
+        ctx.push_str("2. `browse_and_extract(url, method, body)` — REST API 模式：在浏览器上下文执行 fetch，自动携带 cookie\n");
+        ctx.push_str("3. `browse_navigate(url)` — 仅导航（自动探索页面结构，结果在返回中）\n");
+        ctx.push_str("4. `read_page_content()` — 读取当前页面数据（表格+文本+链接）\n");
+        ctx.push_str("5. `page_execute_js(script)` — 在页面上执行 JS（点击、翻页、筛选等）\n");
+        ctx.push_str("6. 如果被重定向到登录页，提示用户在 Chrome 中登录，然后重新导航\n\n");
+        ctx.push_str("**重要：每个页面的菜单、表格结构、表单、API 端点会自动探索并缓存，不需要你手动扫描。**\n");
+        ctx.push_str("**如果站点地图中已有目标页面信息，直接使用，不要重复探索。**\n\n");
 
         // Legacy connector apps section
         let config = self.config.read().await;
@@ -493,6 +528,16 @@ impl ConnectorEngine {
             ctx.push_str("4. 如果返回 HTML，改用 browse_navigate 打开页面，然后 read_page_content 提取数据\n");
             ctx.push_str("5. 最多尝试 5 次，未果则请用户提供 API URL\n");
             ctx.push_str("6. **重要：每次成功获取到数据后，必须立刻调用 save_api_knowledge 保存该 API 的调用方法**\n");
+        }
+
+        // Inject site map from auto-exploration cache
+        {
+            let cdp = self.cdp_browser.read().await;
+            if let Some(cdp) = cdp.as_ref() {
+                if let Some(context) = cdp.get_site_map_context(None).await {
+                    ctx.push_str(&context);
+                }
+            }
         }
 
         ctx

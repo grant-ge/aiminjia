@@ -425,6 +425,12 @@ pub struct BrowseNavigateResult {
     /// True if the final URL's origin differs from the target (e.g. redirected to login page).
     #[serde(default)]
     pub redirected_to_login: bool,
+    /// Auto-explored page profile (menus, tables, forms, APIs).
+    #[serde(skip)]
+    pub page_profile: Option<super::site_map::PageProfile>,
+    /// Path to screenshot PNG file.
+    #[serde(skip)]
+    pub screenshot_path: Option<std::path::PathBuf>,
 }
 
 /// Result from browsing a page and extracting DOM data.
@@ -434,6 +440,8 @@ pub struct BrowseResult {
     pub title: String,
     pub tables: Vec<TableData>,
     pub text: String,
+    #[serde(default)]
+    pub links: Vec<LinkData>,
 }
 
 /// Extracted table data from a page.
@@ -443,6 +451,18 @@ pub struct TableData {
     pub rows: Vec<HashMap<String, String>>,
 }
 
+/// Extracted link/menu/button from a page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkData {
+    pub label: String,
+    #[serde(default)]
+    pub href: String,
+    #[serde(default, rename = "type")]
+    pub link_type: String,
+    #[serde(default)]
+    pub selector: String,
+}
+
 /// Result from execute_js().
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteJsResult {
@@ -450,6 +470,70 @@ pub struct ExecuteJsResult {
     pub error: Option<String>,
     pub new_url: Option<String>,
     pub new_title: Option<String>,
+}
+
+// ── browse_and_extract types ────────────────────────────────────
+
+/// Full page result from navigate_and_extract(): navigation + content + API discovery + forms.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullPageResult {
+    pub navigate: BrowseNavigateResult,
+    pub content: BrowseResult,
+    #[serde(default)]
+    pub api_calls: Vec<DiscoveredApi>,
+    #[serde(default)]
+    pub forms: Vec<FormData>,
+}
+
+/// An XHR/fetch request intercepted during page load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredApi {
+    pub method: String,
+    pub url: String,
+    #[serde(default)]
+    pub status: u16,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default)]
+    pub size_bytes: u64,
+}
+
+/// A <form> element discovered on the page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormData {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub fields: Vec<FormField>,
+}
+
+/// A field within a discovered form.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormField {
+    pub name: String,
+    #[serde(default)]
+    pub field_type: String,
+    #[serde(default)]
+    pub value: String,
+}
+
+/// Result from api_fetch(): in-page fetch() for REST API calls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiFetchResult {
+    pub status: u16,
+    #[serde(default)]
+    pub content_type: String,
+    pub data: serde_json::Value,
+    pub total_rows: Option<u64>,
+    #[serde(default)]
+    pub truncated: bool,
+    /// If data was large, it was saved to this file instead of being returned inline.
+    #[serde(skip)]
+    pub saved_file_path: Option<std::path::PathBuf>,
 }
 
 /// JS that runs on every page load via initialization_script.

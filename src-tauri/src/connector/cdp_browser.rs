@@ -19,7 +19,11 @@ use log::{info, warn};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
-use super::webview_auth::{BrowseNavigateResult, BrowseResult, ExecuteJsResult, TableData};
+use super::site_map::{PageProfile, SiteMap, TableSchema};
+use super::webview_auth::{
+    ApiFetchResult, BrowseNavigateResult, BrowseResult, DiscoveredApi, ExecuteJsResult,
+    FormData, FormField, FullPageResult, LinkData, TableData,
+};
 
 /// Default JS extraction function for read_content().
 pub(crate) const DEFAULT_EXTRACT_SCRIPT: &str = r#"
@@ -59,11 +63,67 @@ function __aijia_extract() {
         || document.querySelector('.main-content') || document.querySelector('#app') || document.body;
     var text = (textEl ? textEl.innerText : '').substring(0, 4000);
 
+    // Extract navigation links, menu items, and clickable elements
+    var links = [];
+    var seen = {};
+
+    // 1. <a> tags with href
+    var anchors = document.querySelectorAll('a[href]');
+    for (var i = 0; i < anchors.length && links.length < 50; i++) {
+        var a = anchors[i];
+        var href = a.href || '';
+        var label = (a.innerText || a.title || a.getAttribute('aria-label') || '').trim();
+        if (!label || !href || href === '#' || href.startsWith('javascript:')) continue;
+        label = label.substring(0, 80).replace(/\n/g, ' ');
+        var key = label + '|' + href;
+        if (seen[key]) continue;
+        seen[key] = true;
+        links.push({label: label, href: href, type: 'link'});
+    }
+
+    // 2. Menu items in nav, sidebar, [role="menu"], [role="navigation"]
+    var menuSels = 'nav a, nav [role="menuitem"], [role="navigation"] a, [role="menu"] a, ' +
+        '.sidebar a, .side-menu a, .ant-menu a, .el-menu a, .nav-menu a, ' +
+        '.ant-menu-item, .el-menu-item, .el-sub-menu__title';
+    var menuEls = document.querySelectorAll(menuSels);
+    for (var i = 0; i < menuEls.length && links.length < 80; i++) {
+        var el = menuEls[i];
+        var label = (el.innerText || el.title || el.getAttribute('aria-label') || '').trim();
+        if (!label) continue;
+        label = label.substring(0, 80).replace(/\n/g, ' ');
+        var href = el.href || el.getAttribute('data-href') || '';
+        var key = 'menu|' + label;
+        if (seen[key]) continue;
+        seen[key] = true;
+        // Build a CSS selector for AI to click
+        var selector = '';
+        if (el.id) selector = '#' + el.id;
+        else if (el.className && typeof el.className === 'string') {
+            var cls = el.className.trim().split(/\s+/).slice(0, 3).join('.');
+            if (cls) selector = el.tagName.toLowerCase() + '.' + cls;
+        }
+        links.push({label: label, href: href, type: 'menu', selector: selector});
+    }
+
+    // 3. Buttons (submit, action buttons)
+    var buttons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
+    for (var i = 0; i < buttons.length && links.length < 100; i++) {
+        var btn = buttons[i];
+        var label = (btn.innerText || btn.value || btn.title || btn.getAttribute('aria-label') || '').trim();
+        if (!label || label.length > 80) continue;
+        label = label.replace(/\n/g, ' ');
+        var key = 'btn|' + label;
+        if (seen[key]) continue;
+        seen[key] = true;
+        links.push({label: label, href: '', type: 'button'});
+    }
+
     return {
         url: window.location.href,
         title: document.title,
         tables: tables,
-        text: text
+        text: text,
+        links: links
     };
 }
 "#;
@@ -112,6 +172,7 @@ pub struct CdpBrowser {
     app_handle: AppHandle,
     state: Mutex<BrowserState>,
     chrome_path: Option<PathBuf>,
+    site_maps: Mutex<HashMap<String, SiteMap>>,
 }
 
 impl CdpBrowser {
@@ -120,6 +181,7 @@ impl CdpBrowser {
             app_handle,
             state: Mutex::new(BrowserState::new()),
             chrome_path,
+            site_maps: Mutex::new(HashMap::new()),
         }
     }
 
@@ -135,16 +197,28 @@ impl CdpBrowser {
         info!("[CDP] navigate: url={}", url);
         let _ = self.app_handle.emit("browser:navigating", serde_json::json!({ "url": url }));
 
-        // Navigate — if it fails, try full recovery once
+        // Navigate — handle redirect-induced cancellations gracefully.
+        // chromiumoxide's goto() waits for `loadEventFired`, which can fail on
+        // sites with iframes or complex redirects (e.g. SSO → login page).
+        // Strategy: if goto() fails with "oneshot canceled", fall back to
+        // JS-based navigation which doesn't wait for the load event.
         if let Err(e) = page.goto(url).await {
             let err_str = format!("{}", e);
-            if Self::is_connection_error(&err_str) {
+            if Self::is_redirect_cancel(&err_str) {
+                // Fallback: use JS navigation (doesn't wait for load event)
+                info!("[CDP] goto got redirect cancel, falling back to JS navigation");
+                let js_nav = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
+                let _ = page.evaluate(js_nav.as_str()).await;
+                // Give the browser a moment to start the navigation
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            } else if Self::is_connection_error(&err_str) {
                 warn!("[CDP] goto failed ({}), recovering...", err_str);
                 self.force_reset().await;
-                let page = self.ensure_page(&target_origin).await?;
-                page.goto(url)
-                    .await
-                    .map_err(|e| format!("Navigate failed after recovery: {}", e))?;
+                let new_page = self.ensure_page(&target_origin).await?;
+                // Use JS navigation for the retry too, since goto may fail again
+                let js_nav = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
+                let _ = new_page.evaluate(js_nav.as_str()).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             } else {
                 return Err(format!("Failed to navigate to '{}': {}", url, err_str));
             }
@@ -164,10 +238,67 @@ impl CdpBrowser {
         // Detect login redirect
         let redirected_to_login = Self::detect_login_redirect(url, &final_url, &target_origin);
 
+        // Auto-explore: build PageProfile for this page (or use cache)
+        let page_profile = if !redirected_to_login {
+            let url_path = Self::extract_path(&final_url);
+            let cached = {
+                let maps = self.site_maps.lock().await;
+                maps.get(&target_origin).and_then(|m| m.get_page(&url_path)).cloned()
+            };
+            if let Some(profile) = cached {
+                info!("[CDP] Using cached profile for {}", url_path);
+                Some(profile)
+            } else {
+                let profile = self.auto_explore(&page, &title, &target_origin, &url_path).await;
+                let app_data_dir = self.get_app_data_dir();
+                {
+                    let mut maps = self.site_maps.lock().await;
+                    let site_map = maps.entry(target_origin.clone())
+                        .or_insert_with(|| {
+                            SiteMap::load(&app_data_dir, &target_origin)
+                                .unwrap_or_else(|| SiteMap::new(&target_origin))
+                        });
+                    site_map.set_page(profile.clone());
+                    let _ = site_map.save(&app_data_dir);
+                }
+                Some(profile)
+            }
+        } else {
+            // Mark as access denied in site map
+            let url_path = Self::extract_path(&final_url);
+            let profile = PageProfile {
+                url_path: url_path.clone(),
+                title: title.clone(),
+                nav_links: vec![],
+                table_schemas: vec![],
+                forms: vec![],
+                api_endpoints: vec![],
+                explored_at: chrono::Utc::now(),
+                access_denied: true,
+            };
+            let app_data_dir = self.get_app_data_dir();
+            {
+                let mut maps = self.site_maps.lock().await;
+                let site_map = maps.entry(target_origin.clone())
+                    .or_insert_with(|| {
+                        SiteMap::load(&app_data_dir, &target_origin)
+                            .unwrap_or_else(|| SiteMap::new(&target_origin))
+                    });
+                site_map.set_page(profile.clone());
+                let _ = site_map.save(&app_data_dir);
+            }
+            Some(profile)
+        };
+
+        // Capture screenshot
+        let screenshot_path = self.capture_screenshot().await;
+
         let result = BrowseNavigateResult {
             url: final_url,
             title,
             redirected_to_login,
+            page_profile,
+            screenshot_path,
         };
 
         let _ = self.app_handle.emit("browser:page-ready", serde_json::json!({
@@ -219,11 +350,12 @@ impl CdpBrowser {
         let page_url = result["url"].as_str().unwrap_or("").to_string();
         let text = result["text"].as_str().unwrap_or("").to_string();
         let tables = Self::parse_tables(&result);
+        let links = Self::parse_links(&result);
 
-        info!("[CDP] read_content: url={}, tables={}, text_len={}",
-            page_url, tables.len(), text.len());
+        info!("[CDP] read_content: url={}, tables={}, links={}, text_len={}",
+            page_url, tables.len(), links.len(), text.len());
 
-        Ok(BrowseResult { url: page_url, title: page_title, tables, text })
+        Ok(BrowseResult { url: page_url, title: page_title, tables, text, links })
     }
 
     /// Execute JavaScript on the active page.
@@ -272,20 +404,30 @@ impl CdpBrowser {
             return Ok(ExecuteJsResult { value: serde_json::Value::Null, error: Some(error_msg), new_url, new_title });
         }
 
-        // Check if JS triggered navigation
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        let url_after = Self::eval_string(&page, "window.location.href").await;
+        // Check if JS triggered navigation by comparing URL returned from JS wrapper.
+        // The wrapper captures URL at return time, which catches synchronous navigations.
+        // For async navigations (click → navigate, form.submit), we do a brief re-check.
+        let url_after_sync = result["url"].as_str().unwrap_or("");
+        let navigated = if url_after_sync != url_before && !url_before.is_empty() && !url_after_sync.is_empty() {
+            true
+        } else {
+            // Brief pause to catch async navigations (click, form.submit, location.href=...)
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let url_after_async = Self::eval_string(&page, "window.location.href").await;
+            url_after_async != url_before && !url_before.is_empty()
+        };
 
-        if url_after != url_before && !url_before.is_empty() {
+        if navigated {
             self.wait_for_content_stable(&page, 5_000).await;
+            let final_url = Self::eval_string(&page, "window.location.href").await;
             let new_title_after = Self::eval_string(&page, "document.title").await;
             let _ = self.app_handle.emit("browser:page-ready", serde_json::json!({
-                "url": &url_after, "title": &new_title_after,
+                "url": &final_url, "title": &new_title_after,
             }));
-            info!("[CDP] execute_js triggered navigation: {} -> {}", url_before, url_after);
+            info!("[CDP] execute_js triggered navigation: {} -> {}", url_before, final_url);
             return Ok(ExecuteJsResult {
                 value: result["value"].clone(), error: None,
-                new_url: Some(url_after), new_title: Some(new_title_after),
+                new_url: Some(final_url), new_title: Some(new_title_after),
             });
         }
 
@@ -298,6 +440,259 @@ impl CdpBrowser {
         let page = self.get_active_page().await?;
         page.bring_to_front().await.map_err(|e| format!("Failed to bring page to front: {}", e))?;
         Ok(())
+    }
+
+    /// Navigate + inject XHR interceptor + extract everything in one shot.
+    /// Combines navigate + read_content + API discovery + form discovery.
+    pub async fn navigate_and_extract(
+        &self,
+        url: &str,
+        extract_script: Option<&str>,
+    ) -> Result<FullPageResult, String> {
+        let target_origin = Self::extract_origin(url)?;
+        let page = self.ensure_page(&target_origin).await?;
+
+        info!("[CDP] navigate_and_extract: url={}", url);
+        let _ = self.app_handle.emit("browser:navigating", serde_json::json!({ "url": url }));
+
+        // 1. Inject XHR/fetch interceptor BEFORE navigation
+        let inject_js = r#"
+window.__aijia_api_calls = [];
+(function() {
+    // Intercept fetch
+    var origFetch = window.fetch;
+    window.fetch = function(input, init) {
+        var url = (typeof input === 'string') ? input : (input.url || '');
+        var method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+        var entry = {method: method, url: url, status: 0, contentType: '', sizeBytes: 0, ts: Date.now()};
+        var idx = window.__aijia_api_calls.length;
+        window.__aijia_api_calls.push(entry);
+        return origFetch.apply(this, arguments).then(function(resp) {
+            entry.status = resp.status;
+            entry.contentType = resp.headers.get('content-type') || '';
+            var cl = resp.headers.get('content-length');
+            if (cl) entry.sizeBytes = parseInt(cl, 10);
+            return resp;
+        });
+    };
+    // Intercept XMLHttpRequest
+    var origOpen = XMLHttpRequest.prototype.open;
+    var origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        this.__aijia = {method: (method||'GET').toUpperCase(), url: url||'', status: 0, contentType: '', sizeBytes: 0, ts: Date.now()};
+        return origOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function() {
+        var self = this;
+        var entry = self.__aijia;
+        if (entry) {
+            var idx = window.__aijia_api_calls.length;
+            window.__aijia_api_calls.push(entry);
+            self.addEventListener('load', function() {
+                entry.status = self.status;
+                entry.contentType = self.getResponseHeader('content-type') || '';
+                entry.sizeBytes = (self.responseText || '').length;
+            });
+        }
+        return origSend.apply(this, arguments);
+    };
+})();
+"#;
+        let _ = page.evaluate(inject_js).await;
+
+        // 2. Navigate (same logic as navigate())
+        if let Err(e) = page.goto(url).await {
+            let err_str = format!("{}", e);
+            if Self::is_redirect_cancel(&err_str) {
+                info!("[CDP] navigate_and_extract: goto redirect cancel, JS fallback");
+                let js_nav = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
+                let _ = page.evaluate(js_nav.as_str()).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            } else if Self::is_connection_error(&err_str) {
+                warn!("[CDP] navigate_and_extract: goto failed ({}), recovering", err_str);
+                self.force_reset().await;
+                let new_page = self.ensure_page(&target_origin).await?;
+                // Re-inject interceptor on new page
+                let _ = new_page.evaluate(inject_js).await;
+                let js_nav = format!("window.location.href = '{}'", url.replace('\'', "\\'"));
+                let _ = new_page.evaluate(js_nav.as_str()).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            } else {
+                return Err(format!("Failed to navigate to '{}': {}", url, err_str));
+            }
+        }
+
+        // 3. Wait for content to stabilize
+        self.wait_for_content_stable(&page, 10_000).await;
+
+        let title = Self::eval_string(&page, "document.title").await;
+        let final_url = Self::eval_string(&page, "window.location.href").await;
+        let final_url = if final_url.is_empty() { url.to_string() } else { final_url };
+
+        self.state.lock().await.active_origin = Some(target_origin.clone());
+
+        let redirected_to_login = Self::detect_login_redirect(url, &final_url, &target_origin);
+
+        let navigate_result = BrowseNavigateResult {
+            url: final_url.clone(),
+            title: title.clone(),
+            redirected_to_login,
+            page_profile: None, // navigate_and_extract returns full content separately
+            screenshot_path: None, // screenshot handled below
+        };
+
+        let _ = self.app_handle.emit("browser:page-ready", serde_json::json!({
+            "url": &navigate_result.url, "title": &navigate_result.title,
+        }));
+
+        // 4. Extract content (tables + text + links)
+        let content = self.read_content(extract_script).await.unwrap_or_else(|e| {
+            warn!("[CDP] navigate_and_extract: read_content failed: {}", e);
+            BrowseResult { url: final_url.clone(), title: title.clone(), tables: vec![], text: String::new(), links: vec![] }
+        });
+
+        // 5. Read intercepted API calls
+        let api_calls = Self::read_intercepted_apis(&page).await;
+
+        // 6. Discover forms
+        let forms = Self::discover_forms(&page).await;
+
+        // 7. Auto-explore and cache PageProfile
+        let url_path = Self::extract_path(&final_url);
+        if !redirected_to_login {
+            let profile = self.auto_explore(&page, &title, &target_origin, &url_path).await;
+            let app_data_dir = self.get_app_data_dir();
+            let mut maps = self.site_maps.lock().await;
+            let site_map = maps.entry(target_origin.clone())
+                .or_insert_with(|| {
+                    SiteMap::load(&app_data_dir, &target_origin)
+                        .unwrap_or_else(|| SiteMap::new(&target_origin))
+                });
+            site_map.set_page(profile);
+            let _ = site_map.save(&app_data_dir);
+        }
+
+        info!("[CDP] navigate_and_extract complete: url={}, tables={}, links={}, apis={}, forms={}",
+            content.url, content.tables.len(), content.links.len(), api_calls.len(), forms.len());
+
+        Ok(FullPageResult { navigate: navigate_result, content, api_calls, forms })
+    }
+
+    /// Execute fetch() in the active page context for REST API calls.
+    /// Automatically includes cookies and session headers.
+    pub async fn api_fetch(
+        &self,
+        url: &str,
+        method: &str,
+        body: Option<&str>,
+        headers: Option<&str>,
+    ) -> Result<ApiFetchResult, String> {
+        let page = self.get_active_page().await?;
+
+        info!("[CDP] api_fetch: {} {}", method, url);
+
+        let headers_obj = headers.unwrap_or("{}");
+        let body_str = match body {
+            Some(b) => format!("JSON.stringify({})", b),
+            None => "undefined".to_string(),
+        };
+
+        let fetch_js = format!(
+            r#"(async () => {{
+    try {{
+        var opts = {{
+            method: '{method}',
+            headers: Object.assign({{'Accept': 'application/json', 'Content-Type': 'application/json'}}, {headers}),
+        }};
+        var body = {body};
+        if (body !== undefined) opts.body = body;
+
+        var resp = await fetch('{url}', opts);
+        var ct = resp.headers.get('content-type') || '';
+        var status = resp.status;
+        var text = await resp.text();
+        var data = null;
+        var totalRows = null;
+
+        if (ct.includes('json')) {{
+            try {{
+                data = JSON.parse(text);
+                if (Array.isArray(data)) {{
+                    totalRows = data.length;
+                }} else if (data && typeof data === 'object') {{
+                    var arr = data.list || data.rows || data.data || data.items || data.records || data.content;
+                    if (Array.isArray(arr)) {{
+                        totalRows = data.total || data.totalCount || data.count || arr.length;
+                    }}
+                }}
+            }} catch(e) {{ data = text; }}
+        }} else if (ct.includes('html')) {{
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(text, 'text/html');
+            var tables = [];
+            doc.querySelectorAll('table').forEach(function(t, i) {{
+                if (i >= 5) return;
+                var headers = Array.from(t.querySelectorAll('thead th')).map(function(h) {{ return h.textContent.trim(); }});
+                var rows = [];
+                t.querySelectorAll('tbody tr').forEach(function(tr) {{
+                    var cells = Array.from(tr.querySelectorAll('td')).map(function(td) {{ return td.textContent.trim(); }});
+                    if (cells.length > 0) rows.push(cells);
+                }});
+                if (headers.length > 0 || rows.length > 0) tables.push({{headers: headers, rows: rows}});
+                totalRows = (totalRows || 0) + rows.length;
+            }});
+            data = tables.length > 0 ? tables : text.substring(0, 10000);
+        }} else {{
+            data = text.substring(0, 10000);
+        }}
+
+        return {{status: status, contentType: ct, data: data, totalRows: totalRows}};
+    }} catch(e) {{
+        return {{status: 0, contentType: '', data: e.message, totalRows: null}};
+    }}
+}})()"#,
+            method = method.to_uppercase(),
+            url = url.replace('\'', "\\'"),
+            headers = headers_obj,
+            body = body_str,
+        );
+
+        let result: serde_json::Value = page.evaluate(fetch_js.as_str())
+            .await
+            .map_err(|e| self.handle_page_error(e, "api_fetch"))?
+            .into_value()
+            .map_err(|e| format!("Failed to parse api_fetch result: {}", e))?;
+
+        let status = result["status"].as_u64().unwrap_or(0) as u16;
+        let content_type = result["contentType"].as_str().unwrap_or("").to_string();
+        let total_rows = result["totalRows"].as_u64();
+        let data = result["data"].clone();
+
+        // If data is large (>50KB JSON), save to file and return path + sample
+        let data_json = serde_json::to_string(&data).unwrap_or_default();
+        let (final_data, truncated, saved_file_path) = if data_json.len() > 50_000 {
+            // Save full data to file
+            let dir = self.get_app_data_dir().join("api-data");
+            std::fs::create_dir_all(&dir).ok();
+            let filename = format!("api_{}_{}.json",
+                chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+                url.split('/').last().unwrap_or("data").split('?').next().unwrap_or("data")
+            );
+            let path = dir.join(&filename);
+            let _ = std::fs::write(&path, &data_json);
+            info!("[CDP] api_fetch: large response ({} bytes) saved to {:?}", data_json.len(), path);
+
+            // Build sample: first 5 rows + schema info
+            let sample = Self::build_data_sample(&data, 5);
+            (sample, true, Some(path))
+        } else {
+            (data, false, None)
+        };
+
+        info!("[CDP] api_fetch complete: {} {} → status={}, rows={:?}, truncated={}, saved={:?}",
+            method, url, status, total_rows, truncated, saved_file_path);
+
+        Ok(ApiFetchResult { status, content_type, data: final_data, total_rows, truncated, saved_file_path })
     }
 
     /// Check and increment per-turn rate limit.
@@ -320,6 +715,10 @@ impl CdpBrowser {
         let old_handle = self.state.lock().await.reset();
         if let Some(handle) = old_handle {
             Self::shutdown_browser(handle).await;
+        }
+        // Kill any orphaned Chrome processes using our profile dir
+        if let Ok(dir) = self.get_profile_dir() {
+            self.cleanup_profile(&dir).await;
         }
     }
 
@@ -437,7 +836,11 @@ impl CdpBrowser {
 
         let handler_task = tokio::spawn(async move {
             while let Some(event) = handler.next().await {
-                if event.is_err() { break; }
+                // Log errors but keep processing — transient errors (e.g. from
+                // redirects or closed iframes) should not kill the handler.
+                if let Err(e) = event {
+                    log::warn!("[CDP] Handler event error (non-fatal): {}", e);
+                }
             }
         });
 
@@ -470,6 +873,8 @@ impl CdpBrowser {
     }
 
     /// Get a clone of the active page, or error if none.
+    /// Liveness is not checked here — if the page is dead, the subsequent
+    /// evaluate/goto call will fail and the caller handles recovery.
     async fn get_active_page(&self) -> Result<Page, String> {
         let state = self.state.lock().await;
         let origin = state.active_origin.as_ref()
@@ -477,22 +882,380 @@ impl CdpBrowser {
         let page = state.pages.get(origin)
             .ok_or("No active page. Use browse_navigate first.")?;
 
-        // Liveness check before returning
-        if page.evaluate("1").await.is_err() {
-            return Err("The browser tab was closed. Use browse_navigate to reopen.".to_string());
-        }
-
         Ok(page.clone())
     }
 
     // ── Utilities ───────────────────────────────────────────────
 
-    fn get_profile_dir(&self) -> Result<PathBuf, String> {
-        let dir = self.app_handle.path().app_data_dir()
+    fn get_app_data_dir(&self) -> PathBuf {
+        self.app_handle.path().app_data_dir()
             .unwrap_or_else(|_| std::env::temp_dir())
-            .join("cdp-browser-profile");
+    }
+
+    fn get_profile_dir(&self) -> Result<PathBuf, String> {
+        let dir = self.get_app_data_dir().join("cdp-browser-profile");
         std::fs::create_dir_all(&dir).ok();
         Ok(dir)
+    }
+
+    fn extract_path(url: &str) -> String {
+        url::Url::parse(url).ok()
+            .map(|u| u.path().to_string())
+            .unwrap_or_else(|| url.to_string())
+    }
+
+    /// Auto-explore a page: collect nav links, table schemas, forms, intercepted APIs.
+    /// Pure JS execution, no LLM involved. Typically < 500ms.
+    async fn auto_explore(
+        &self,
+        page: &Page,
+        title: &str,
+        _origin: &str,
+        url_path: &str,
+    ) -> PageProfile {
+        info!("[CDP] auto_explore: {}", url_path);
+
+        // Collect all info in one JS call for speed — scans main doc + all same-origin iframes
+        let js = r#"(() => {
+    var result = {nav_links: [], table_schemas: [], forms: [], api_endpoints: []};
+    var seen = {};
+
+    // Collect all documents: main + same-origin iframes (recursive)
+    function collectDocs(doc, depth) {
+        if (!doc || depth > 3) return;
+        var docs = [doc];
+        try {
+            var frames = doc.querySelectorAll('iframe, frame');
+            for (var i = 0; i < frames.length; i++) {
+                try {
+                    var fd = frames[i].contentDocument || (frames[i].contentWindow && frames[i].contentWindow.document);
+                    if (fd) { docs.push(fd); collectDocs(fd, depth + 1); }
+                } catch(e) {} // cross-origin, skip
+            }
+        } catch(e) {}
+        return docs;
+    }
+    var allDocs = [];
+    collectDocs(document, 0).forEach(function(d) { if (d) allDocs.push(d); });
+
+    allDocs.forEach(function(doc) {
+        // 1. Navigation links — menu items
+        var menuSels = 'nav a, nav [role="menuitem"], [role="navigation"] a, [role="menu"] a, ' +
+            '.sidebar a, .side-menu a, .ant-menu a, .el-menu a, .nav-menu a, ' +
+            '.ant-menu-item, .el-menu-item, .el-sub-menu__title, ' +
+            '.layui-nav a, .layui-side a, .left-nav a, #menu a, .menu a';
+        try {
+        doc.querySelectorAll(menuSels).forEach(function(el) {
+            if (result.nav_links.length >= 80) return;
+            var label = (el.innerText || el.title || el.getAttribute('aria-label') || '').trim().substring(0, 80).replace(/\n/g, ' ');
+            if (!label) return;
+            var href = el.href || el.getAttribute('data-href') || el.getAttribute('data-url') || '';
+            var key = 'menu|' + label;
+            if (seen[key]) return;
+            seen[key] = true;
+            var selector = '';
+            if (el.id) selector = '#' + el.id;
+            else if (el.className && typeof el.className === 'string') {
+                var cls = el.className.trim().split(/\s+/).slice(0, 3).join('.');
+                if (cls) selector = el.tagName.toLowerCase() + '.' + cls;
+            }
+            result.nav_links.push({label: label, href: href, type: 'menu', selector: selector});
+        });
+        } catch(e) {}
+
+        // Regular links
+        try {
+        doc.querySelectorAll('a[href]').forEach(function(a) {
+            if (result.nav_links.length >= 120) return;
+            var label = (a.innerText || a.title || '').trim().substring(0, 80).replace(/\n/g, ' ');
+            var href = a.href || '';
+            if (!label || !href || href === '#' || href.startsWith('javascript:')) return;
+            var key = label + '|' + href;
+            if (seen[key]) return;
+            seen[key] = true;
+            result.nav_links.push({label: label, href: href, type: 'link', selector: ''});
+        });
+        } catch(e) {}
+
+        // Buttons
+        try {
+        doc.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(function(btn) {
+            if (result.nav_links.length >= 150) return;
+            var label = (btn.innerText || btn.value || btn.title || '').trim().substring(0, 80).replace(/\n/g, ' ');
+            if (!label) return;
+            var key = 'btn|' + label;
+            if (seen[key]) return;
+            seen[key] = true;
+            result.nav_links.push({label: label, href: '', type: 'button', selector: ''});
+        });
+        } catch(e) {}
+
+        // 2. Table schemas
+        try {
+        doc.querySelectorAll('table').forEach(function(t, i) {
+            if (result.table_schemas.length >= 10) return;
+            var headers = [];
+            t.querySelectorAll('thead th, thead td, tr:first-child th').forEach(function(h) {
+                var text = h.innerText.trim();
+                if (text) headers.push(text);
+            });
+            if (headers.length === 0) {
+                var firstRow = t.querySelector('tr');
+                if (firstRow) firstRow.querySelectorAll('td, th').forEach(function(h) {
+                    var text = h.innerText.trim();
+                    if (text) headers.push(text);
+                });
+            }
+            var rowCount = t.querySelectorAll('tbody tr').length || Math.max(0, t.querySelectorAll('tr').length - 1);
+            var name = '';
+            var caption = t.querySelector('caption');
+            if (caption) name = caption.innerText.trim();
+            if (!name) {
+                var prev = t.previousElementSibling;
+                if (prev && /^H[1-6]$/.test(prev.tagName)) name = prev.innerText.trim();
+            }
+            if (headers.length > 0 || rowCount > 0) {
+                result.table_schemas.push({name: name, headers: headers, rowCount: rowCount});
+            }
+        });
+        } catch(e) {}
+
+        // 3. Forms
+        try {
+        doc.querySelectorAll('form').forEach(function(f, i) {
+            if (result.forms.length >= 10) return;
+            var fields = [];
+            f.querySelectorAll('input, select, textarea').forEach(function(el) {
+                var name = el.name || el.id || '';
+                if (!name) return;
+                var ftype = el.type || el.tagName.toLowerCase();
+                var value = el.value || '';
+                if (el.tagName === 'SELECT') {
+                    var opts = Array.from(el.options).map(function(o) { return o.value; });
+                    value = opts.join(',');
+                    ftype = 'select(' + opts.length + ')';
+                }
+                fields.push({name: name, fieldType: ftype, value: value.substring(0, 100)});
+            });
+            result.forms.push({
+                id: f.id || ('form_' + i),
+                action: f.action || '',
+                method: (f.method || 'GET').toUpperCase(),
+                fields: fields
+            });
+        });
+        } catch(e) {}
+    }); // end allDocs.forEach
+
+    // 4. Intercepted API calls (main window only)
+    var calls = window.__aijia_api_calls || [];
+    var apiSeen = {};
+    calls.forEach(function(c) {
+        var key = c.method + ' ' + c.url;
+        if (!apiSeen[key] || c.status > 0) apiSeen[key] = c;
+    });
+    Object.values(apiSeen).forEach(function(c) {
+        var u = c.url.toLowerCase();
+        if (u.match(/\.(js|css|png|jpg|gif|svg|woff|ttf|ico)(\?|$)/)) return;
+        if (c.url.length >= 500) return;
+        result.api_endpoints.push({
+            method: c.method, url: c.url, status: c.status || 0,
+            contentType: c.contentType || '', sizeBytes: c.sizeBytes || 0
+        });
+    });
+
+    return result;
+})()"#;
+
+        let data: serde_json::Value = match page.evaluate(js).await {
+            Ok(v) => v.into_value().unwrap_or(serde_json::Value::Null),
+            Err(e) => {
+                warn!("[CDP] auto_explore JS failed: {}", e);
+                return PageProfile {
+                    url_path: url_path.to_string(),
+                    title: title.to_string(),
+                    nav_links: vec![], table_schemas: vec![], forms: vec![],
+                    api_endpoints: vec![], explored_at: chrono::Utc::now(), access_denied: false,
+                };
+            }
+        };
+
+        // Parse results
+        let nav_links = Self::parse_links_from_value(&data["nav_links"]);
+        let table_schemas = Self::parse_table_schemas(&data["table_schemas"]);
+        let forms = Self::parse_forms_from_value(&data["forms"]);
+        let api_endpoints = Self::parse_apis_from_value(&data["api_endpoints"]);
+
+        info!("[CDP] auto_explore complete: path={}, links={}, tables={}, forms={}, apis={}",
+            url_path, nav_links.len(), table_schemas.len(), forms.len(), api_endpoints.len());
+
+        PageProfile {
+            url_path: url_path.to_string(),
+            title: title.to_string(),
+            nav_links,
+            table_schemas,
+            forms,
+            api_endpoints,
+            explored_at: chrono::Utc::now(),
+            access_denied: false,
+        }
+    }
+
+    /// Capture a screenshot of the current page, save to temp file, return path.
+    pub async fn capture_screenshot(&self) -> Option<PathBuf> {
+        let page = self.get_active_page().await.ok()?;
+
+        let params = chromiumoxide::page::ScreenshotParams::builder()
+            .format(chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat::Png)
+            .build();
+
+        let bytes = page.screenshot(params).await.ok()?;
+
+        if bytes.is_empty() {
+            warn!("[CDP] Screenshot returned empty data");
+            return None;
+        }
+
+        // Save to temp file
+        let dir = self.get_app_data_dir().join("screenshots");
+        std::fs::create_dir_all(&dir).ok()?;
+        let filename = format!("page_{}.png", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+        let path = dir.join(&filename);
+        std::fs::write(&path, &bytes).ok()?;
+
+        info!("[CDP] Screenshot saved: {:?} ({} bytes)", path, bytes.len());
+        Some(path)
+    }
+
+    /// Get the site map for a given origin (for context injection).
+    pub async fn get_site_map_context(&self, active_path: Option<&str>) -> Option<String> {
+        let state = self.state.lock().await;
+        let origin = state.active_origin.as_ref()?;
+        let maps = self.site_maps.lock().await;
+        let site_map = maps.get(origin)?;
+        Some(site_map.format_for_context(active_path))
+    }
+
+    /// Get the active origin.
+    pub async fn get_active_origin(&self) -> Option<String> {
+        self.state.lock().await.active_origin.clone()
+    }
+
+    fn parse_links_from_value(val: &serde_json::Value) -> Vec<LinkData> {
+        val.as_array().map(|arr| {
+            arr.iter().filter_map(|l| {
+                let label = l["label"].as_str()?.to_string();
+                if label.is_empty() { return None; }
+                Some(LinkData {
+                    label,
+                    href: l["href"].as_str().unwrap_or("").to_string(),
+                    link_type: l["type"].as_str().unwrap_or("link").to_string(),
+                    selector: l["selector"].as_str().unwrap_or("").to_string(),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    fn parse_table_schemas(val: &serde_json::Value) -> Vec<TableSchema> {
+        val.as_array().map(|arr| {
+            arr.iter().filter_map(|t| {
+                let headers: Vec<String> = t["headers"].as_array()?
+                    .iter().filter_map(|h| h.as_str().map(String::from)).collect();
+                Some(TableSchema {
+                    name: t["name"].as_str().unwrap_or("").to_string(),
+                    headers,
+                    row_count: t["rowCount"].as_u64().unwrap_or(0) as usize,
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    fn parse_forms_from_value(val: &serde_json::Value) -> Vec<FormData> {
+        val.as_array().map(|arr| {
+            arr.iter().filter_map(|f| {
+                Some(FormData {
+                    id: f["id"].as_str().unwrap_or("").to_string(),
+                    action: f["action"].as_str().unwrap_or("").to_string(),
+                    method: f["method"].as_str().unwrap_or("GET").to_string(),
+                    fields: f["fields"].as_array().map(|farr| {
+                        farr.iter().filter_map(|fl| {
+                            Some(FormField {
+                                name: fl["name"].as_str()?.to_string(),
+                                field_type: fl["fieldType"].as_str().unwrap_or("text").to_string(),
+                                value: fl["value"].as_str().unwrap_or("").to_string(),
+                            })
+                        }).collect()
+                    }).unwrap_or_default(),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    fn parse_apis_from_value(val: &serde_json::Value) -> Vec<DiscoveredApi> {
+        val.as_array().map(|arr| {
+            arr.iter().filter_map(|a| {
+                Some(DiscoveredApi {
+                    method: a["method"].as_str().unwrap_or("GET").to_string(),
+                    url: a["url"].as_str()?.to_string(),
+                    status: a["status"].as_u64().unwrap_or(0) as u16,
+                    content_type: a["contentType"].as_str().unwrap_or("").to_string(),
+                    size_bytes: a["sizeBytes"].as_u64().unwrap_or(0),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    /// Build a small sample from a large data set for LLM preview.
+    /// Returns JSON with schema info + first N rows.
+    fn build_data_sample(data: &serde_json::Value, sample_rows: usize) -> serde_json::Value {
+        // Find the data array (top-level or nested)
+        let (arr, wrapper_keys) = if let Some(arr) = data.as_array() {
+            (arr.clone(), vec![])
+        } else if let Some(obj) = data.as_object() {
+            let data_keys = ["list", "rows", "data", "items", "records", "content"];
+            let mut found = None;
+            let mut wrapper: Vec<String> = vec![];
+            for key in &data_keys {
+                if let Some(arr) = obj.get(*key).and_then(|v| v.as_array()) {
+                    found = Some(arr.clone());
+                    // Collect non-array fields as metadata
+                    for (k, v) in obj {
+                        if k != *key && !v.is_array() {
+                            wrapper.push(format!("{}: {}", k, v));
+                        }
+                    }
+                    break;
+                }
+            }
+            match found {
+                Some(arr) => (arr, wrapper),
+                None => return data.clone(), // Not a recognizable data structure
+            }
+        } else {
+            return data.clone();
+        };
+
+        // Build sample
+        let total = arr.len();
+        let sample: Vec<serde_json::Value> = arr.into_iter().take(sample_rows).collect();
+
+        // Extract column names from first row
+        let columns: Vec<String> = sample.first()
+            .and_then(|r| r.as_object())
+            .map(|obj| obj.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let mut result = serde_json::json!({
+            "_summary": format!("{} total rows, showing first {}", total, sample.len()),
+            "_columns": columns,
+            "_sample": sample,
+        });
+
+        if !wrapper_keys.is_empty() {
+            result["_metadata"] = serde_json::Value::String(wrapper_keys.join(", "));
+        }
+
+        result
     }
 
     /// Clean up stale locks and orphaned Chrome processes for a profile dir.
@@ -561,7 +1324,17 @@ impl CdpBrowser {
         }
     }
 
+    /// "oneshot canceled" typically means a redirect happened during navigation.
+    /// The page may still be alive — don't treat this as a fatal connection error.
+    fn is_redirect_cancel(err: &str) -> bool {
+        err.contains("oneshot canceled")
+    }
+
     fn is_connection_error(err: &str) -> bool {
+        // Exclude "oneshot canceled" — that's a redirect, not a dead connection
+        if Self::is_redirect_cancel(err) {
+            return false;
+        }
         err.contains("canceled") || err.contains("receiver is gone") || err.contains("timed out")
     }
 
@@ -570,13 +1343,15 @@ impl CdpBrowser {
         if final_origin != *target_origin {
             return true;
         }
-        // Same-origin: check if path changed to a login-like page
+        // Same-origin: check if path changed to a login/error page
         let target_path = url::Url::parse(original_url).ok().map(|u| u.path().to_string()).unwrap_or_default();
         let final_path = url::Url::parse(final_url).ok().map(|u| u.path().to_string()).unwrap_or_default();
         if final_path != target_path {
             let fp = final_path.to_lowercase();
             return fp.contains("login") || fp.contains("signin") || fp.contains("/sso")
-                || fp.contains("/auth") || fp.contains("/cas/");
+                || fp.contains("/auth") || fp.contains("/cas/")
+                || fp.contains("error") || fp.contains("forbidden") || fp.contains("/403")
+                || fp.contains("/404") || fp.contains("no_resource") || fp.contains("no_permission");
         }
         false
     }
@@ -612,6 +1387,110 @@ impl CdpBrowser {
         }).unwrap_or_default()
     }
 
+    fn parse_links(result: &serde_json::Value) -> Vec<LinkData> {
+        result["links"].as_array().map(|arr| {
+            arr.iter().filter_map(|l| {
+                let label = l["label"].as_str()?.to_string();
+                if label.is_empty() { return None; }
+                Some(LinkData {
+                    label,
+                    href: l["href"].as_str().unwrap_or("").to_string(),
+                    link_type: l["type"].as_str().unwrap_or("link").to_string(),
+                    selector: l["selector"].as_str().unwrap_or("").to_string(),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    /// Read intercepted XHR/fetch calls from window.__aijia_api_calls.
+    async fn read_intercepted_apis(page: &Page) -> Vec<DiscoveredApi> {
+        let js = r#"(() => {
+            var calls = window.__aijia_api_calls || [];
+            // Deduplicate by method+url, keep latest status
+            var seen = {};
+            calls.forEach(function(c) {
+                var key = c.method + ' ' + c.url;
+                if (!seen[key] || c.status > 0) seen[key] = c;
+            });
+            return Object.values(seen).filter(function(c) {
+                // Skip static assets, only keep API-like calls
+                var u = c.url.toLowerCase();
+                return !u.match(/\.(js|css|png|jpg|gif|svg|woff|ttf|ico)(\?|$)/) && c.url.length < 500;
+            }).slice(0, 30);
+        })()"#;
+
+        let result = match page.evaluate(js).await {
+            Ok(v) => v.into_value::<serde_json::Value>().unwrap_or(serde_json::Value::Null),
+            Err(_) => return vec![],
+        };
+
+        result.as_array().map(|arr| {
+            arr.iter().filter_map(|a| {
+                Some(DiscoveredApi {
+                    method: a["method"].as_str().unwrap_or("GET").to_string(),
+                    url: a["url"].as_str()?.to_string(),
+                    status: a["status"].as_u64().unwrap_or(0) as u16,
+                    content_type: a["contentType"].as_str().unwrap_or("").to_string(),
+                    size_bytes: a["sizeBytes"].as_u64().unwrap_or(0),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
+    /// Discover all <form> elements on the page.
+    async fn discover_forms(page: &Page) -> Vec<FormData> {
+        let js = r#"(() => {
+            var forms = [];
+            document.querySelectorAll('form').forEach(function(f, i) {
+                if (i >= 10) return;
+                var fields = [];
+                f.querySelectorAll('input, select, textarea').forEach(function(el) {
+                    var name = el.name || el.id || '';
+                    if (!name) return;
+                    var ftype = el.type || el.tagName.toLowerCase();
+                    var value = el.value || '';
+                    if (el.tagName === 'SELECT') {
+                        var opts = Array.from(el.options).map(function(o) { return o.value; });
+                        value = opts.join(',');
+                        ftype = 'select(' + opts.length + ')';
+                    }
+                    fields.push({name: name, fieldType: ftype, value: value.substring(0, 100)});
+                });
+                forms.push({
+                    id: f.id || ('form_' + i),
+                    action: f.action || '',
+                    method: (f.method || 'GET').toUpperCase(),
+                    fields: fields
+                });
+            });
+            return forms;
+        })()"#;
+
+        let result = match page.evaluate(js).await {
+            Ok(v) => v.into_value::<serde_json::Value>().unwrap_or(serde_json::Value::Null),
+            Err(_) => return vec![],
+        };
+
+        result.as_array().map(|arr| {
+            arr.iter().filter_map(|f| {
+                Some(FormData {
+                    id: f["id"].as_str().unwrap_or("").to_string(),
+                    action: f["action"].as_str().unwrap_or("").to_string(),
+                    method: f["method"].as_str().unwrap_or("GET").to_string(),
+                    fields: f["fields"].as_array().map(|farr| {
+                        farr.iter().filter_map(|fl| {
+                            Some(FormField {
+                                name: fl["name"].as_str()?.to_string(),
+                                field_type: fl["fieldType"].as_str().unwrap_or("text").to_string(),
+                                value: fl["value"].as_str().unwrap_or("").to_string(),
+                            })
+                        }).collect()
+                    }).unwrap_or_default(),
+                })
+            }).collect()
+        }).unwrap_or_default()
+    }
+
     async fn wait_for_content_stable(&self, page: &Page, timeout_ms: u64) {
         let js = r#"(() => {
             const el = document.querySelector('main, [role="main"], .main-content, #app') || document.body;
@@ -620,7 +1499,7 @@ impl CdpBrowser {
 
         let mut last_len: usize = 0;
         let mut stable_count = 0u32;
-        let interval = 300u64;
+        let interval = 150u64;
         let max_iters = (timeout_ms / interval) as usize;
 
         for _ in 0..max_iters {
@@ -631,7 +1510,7 @@ impl CdpBrowser {
 
             if len == last_len && len > 0 {
                 stable_count += 1;
-                if stable_count >= 3 { return; }
+                if stable_count >= 2 { return; }
             } else {
                 stable_count = 0;
             }

@@ -21,6 +21,7 @@ pub mod save_api_knowledge;
 pub mod browse_navigate;
 pub mod read_page_content;
 pub mod page_execute_js;
+pub mod browse_and_extract;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -49,6 +50,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(browse_navigate::BrowseNavigateTool),
         Arc::new(read_page_content::ReadPageContentTool),
         Arc::new(page_execute_js::PageExecuteJsTool),
+        Arc::new(browse_and_extract::BrowseAndExtractTool),
     ];
 
     for tool in tools {

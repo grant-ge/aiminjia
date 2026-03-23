@@ -104,9 +104,28 @@ pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) ->
     );
 
     if result.redirected_to_login {
-        output.push_str("\n\n⚠️ The page was redirected (possibly to a login page). Please ask the user to log in in the Chrome browser window, then call browse_navigate again with the same URL.");
+        let final_path = result.url.to_lowercase();
+        if final_path.contains("error") || final_path.contains("forbidden") || final_path.contains("no_resource") || final_path.contains("no_permission") || final_path.contains("/403") || final_path.contains("/404") {
+            return Err(anyhow!(
+                "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
+                result.url
+            ));
+        } else {
+            output.push_str("\n\n⚠️ The page was redirected (possibly to a login page). Please ask the user to log in in the Chrome browser window, then call browse_navigate again with the same URL.");
+        }
     } else {
-        output.push_str("\nUse read_page_content to extract data, or page_execute_js to interact.");
+        // Include auto-explored page profile
+        if let Some(ref profile) = result.page_profile {
+            output.push_str("\n\n");
+            output.push_str(&profile.format_detail());
+        } else {
+            output.push_str("\nUse read_page_content to extract data, or page_execute_js to interact.");
+        }
+    }
+
+    // Include screenshot path if available
+    if let Some(ref path) = result.screenshot_path {
+        output.push_str(&format!("\n\nScreenshot saved: {}", path.display()));
     }
 
     Ok(output)
@@ -163,6 +182,31 @@ pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) 
         output.push('\n');
     }
 
+    if !result.links.is_empty() {
+        output.push_str("\n### Navigation & Actions\n");
+        for link in &result.links {
+            match link.link_type.as_str() {
+                "menu" => {
+                    if !link.href.is_empty() {
+                        output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
+                    } else if !link.selector.is_empty() {
+                        output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                    } else {
+                        output.push_str(&format!("- [menu] {}\n", link.label));
+                    }
+                }
+                "button" => {
+                    output.push_str(&format!("- [button] {}\n", link.label));
+                }
+                _ => {
+                    if !link.href.is_empty() {
+                        output.push_str(&format!("- {} → {}\n", link.label, link.href));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(output)
 }
 
@@ -205,6 +249,171 @@ pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) ->
     output.push_str("Use read_page_content to see the updated page content.");
 
     Ok(output)
+}
+
+/// Handle browse_and_extract tool invocations.
+///
+/// Smart routing: page mode (navigate + full extraction) or API mode (in-page fetch).
+pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let url = require_str(args, "url")?;
+    let extract_script = optional_str(args, "extract_script");
+    let method = args["method"].as_str().unwrap_or("GET").to_uppercase();
+    let body = optional_str(args, "body");
+    let headers = optional_str(args, "headers");
+
+    let engine = ctx.connector_engine.as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    // Smart routing: non-GET or has body → API mode
+    let is_api_mode = method != "GET" || body.is_some();
+
+    if is_api_mode {
+        // ── API Mode ──
+        info!("[CONNECTOR] browse_and_extract API mode: {} '{}'", method, url);
+
+        let result = engine.browser_api_fetch(url, &method, body, headers).await
+            .map_err(|e| {
+                warn!("[CONNECTOR] browse_and_extract API failed: {}", e);
+                anyhow!(e)
+            })?;
+
+        let mut output = format!("API Response: {} {}\nStatus: {}, Content-Type: {}\n\n",
+            method, url, result.status, result.content_type);
+
+        if let Some(ref path) = result.saved_file_path {
+            // Large data saved to file — tell LLM to use Python to process it
+            let total = result.total_rows.map(|t| format!("{} rows", t)).unwrap_or("unknown size".to_string());
+            output.push_str(&format!("### Data saved to file ({}) \n", total));
+            output.push_str(&format!("File: {}\n\n", path.display()));
+            output.push_str("The full JSON data has been saved to the file above. ");
+            output.push_str("Use `execute_python` to load and process this JSON file (e.g. pd.read_json or json.load). ");
+            output.push_str("Do NOT use page_execute_js to re-fetch the data.\n\n");
+            output.push_str("### Sample (first rows)\n");
+        } else if let Some(total) = result.total_rows {
+            output.push_str(&format!("### Data ({} rows)\n", total));
+        }
+
+        // Format JSON data compactly
+        let data_str = serde_json::to_string_pretty(&result.data)
+            .unwrap_or_else(|_| format!("{}", result.data));
+        if data_str.len() > 8000 {
+            output.push_str(&data_str[..8000]);
+            output.push_str("\n...(truncated)\n");
+        } else {
+            output.push_str(&data_str);
+            output.push('\n');
+        }
+
+        Ok(output)
+    } else {
+        // ── Page Mode ──
+        info!("[CONNECTOR] browse_and_extract page mode: '{}'", url);
+
+        let result = engine.browser_navigate_and_extract(url, extract_script).await
+            .map_err(|e| {
+                warn!("[CONNECTOR] browse_and_extract page failed: {}", e);
+                anyhow!(e)
+            })?;
+
+        let mut output = format!("Page: {} ({})\n", result.navigate.title, result.navigate.url);
+
+        if result.navigate.redirected_to_login {
+            let final_path = result.navigate.url.to_lowercase();
+            if final_path.contains("error") || final_path.contains("forbidden") || final_path.contains("no_resource") || final_path.contains("no_permission") || final_path.contains("/403") || final_path.contains("/404") {
+                return Err(anyhow!(
+                    "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
+                    result.navigate.url
+                ));
+            } else {
+                output.push_str("\n⚠️ Redirected to login page. Ask the user to log in in Chrome, then call again.\n");
+            }
+            return Ok(output);
+        }
+
+        // Tables
+        if !result.content.tables.is_empty() {
+            for (i, table) in result.content.tables.iter().enumerate() {
+                output.push_str(&format!("\n### Table {} ({} rows)\n", i + 1, table.rows.len()));
+                if !table.headers.is_empty() {
+                    output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
+                }
+                for row in &table.rows {
+                    let cells: Vec<String> = if !table.headers.is_empty() {
+                        table.headers.iter().map(|h| row.get(h).cloned().unwrap_or_default()).collect()
+                    } else {
+                        row.values().cloned().collect()
+                    };
+                    output.push_str(&format!("{}\n", cells.join(" | ")));
+                }
+            }
+        }
+
+        // Navigation & Actions (links)
+        if !result.content.links.is_empty() {
+            output.push_str("\n### Navigation & Actions\n");
+            for link in &result.content.links {
+                match link.link_type.as_str() {
+                    "menu" => {
+                        if !link.href.is_empty() {
+                            output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
+                        } else if !link.selector.is_empty() {
+                            output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                        } else {
+                            output.push_str(&format!("- [menu] {}\n", link.label));
+                        }
+                    }
+                    "button" => {
+                        output.push_str(&format!("- [button] {}\n", link.label));
+                    }
+                    _ => {
+                        if !link.href.is_empty() {
+                            output.push_str(&format!("- {} → {}\n", link.label, link.href));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Discovered API endpoints
+        if !result.api_calls.is_empty() {
+            output.push_str("\n### Discovered API Endpoints\n");
+            for api in &result.api_calls {
+                let size = if api.size_bytes > 1024 {
+                    format!("{:.1}KB", api.size_bytes as f64 / 1024.0)
+                } else {
+                    format!("{}B", api.size_bytes)
+                };
+                let ct_short = if api.content_type.contains("json") { "JSON" }
+                    else if api.content_type.contains("html") { "HTML" }
+                    else { &api.content_type };
+                output.push_str(&format!("- {} {} → {} ({} {})\n",
+                    api.method, api.url, api.status, size, ct_short));
+            }
+            output.push_str("Tip: Use browse_and_extract with these API URLs to fetch data directly.\n");
+        }
+
+        // Forms
+        if !result.forms.is_empty() {
+            output.push_str("\n### Forms\n");
+            for form in &result.forms {
+                output.push_str(&format!("- Form#{}: {} {}\n", form.id, form.method, form.action));
+                for field in &form.fields {
+                    let val = if field.value.is_empty() { String::new() }
+                        else { format!("={}", field.value) };
+                    output.push_str(&format!("  - {} ({}{})\n", field.name, field.field_type, val));
+                }
+            }
+        }
+
+        // Page text (only if no tables)
+        if !result.content.text.is_empty() && result.content.tables.is_empty() {
+            output.push_str("\n### Page Text\n");
+            output.push_str(&result.content.text);
+            output.push('\n');
+        }
+
+        Ok(output)
+    }
 }
 
 /// Handle save_api_knowledge tool invocations.
