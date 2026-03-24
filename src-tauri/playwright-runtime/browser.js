@@ -506,6 +506,7 @@ async function handleExtractAllPages(params) {
   // Step 4: Paginate
   let allRows = [];
   let totalPages = 0;
+  let lastPageHash = null;
 
   for (let p = 1; p <= maxPages; p++) {
     urlObj.searchParams.set(pageParam, String(p));
@@ -542,6 +543,14 @@ async function handleExtractAllPages(params) {
       log(`extract_all_pages: page ${p} has 0 rows, stopping`);
       break;
     }
+
+    // Detect duplicate pages (pagination not working)
+    const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+    if (pageHash === lastPageHash) {
+      log(`extract_all_pages: page ${p} is duplicate of previous, stopping`);
+      break;
+    }
+    lastPageHash = pageHash;
 
     allRows.push(...pageRows);
     totalPages = p;

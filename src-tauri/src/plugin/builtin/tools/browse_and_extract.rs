@@ -15,17 +15,9 @@ impl ToolPlugin for BrowseAndExtractTool {
     fn name(&self) -> &str { "browse_and_extract" }
 
     fn description(&self) -> &str {
-        "Navigate to a URL and extract all data in one operation. Much more efficient than \
-         calling browse_navigate + read_page_content separately.\n\
-         \n\
-         For web pages: navigates, extracts tables, text, navigation links, forms, and \
-         discovers API endpoints the page calls (XHR/fetch interception).\n\
-         \n\
-         For REST APIs: set method/body/headers to execute fetch() in the browser context \
-         (automatically includes cookies/session). Returns parsed JSON or HTML table data.\n\
-         \n\
-         Use this as your primary tool for browsing and data extraction. Fall back to \
-         page_execute_js only for complex interactions (multi-step clicks, form filling)."
+        "Navigate to a URL and extract all data in one step. For pages: extracts tables, text, \
+         links, forms. For REST APIs: set method/body to execute fetch() with cookies. \
+         Primary browsing tool — use instead of separate browse_navigate + read_page_content."
     }
 
     fn input_schema(&self) -> Value {

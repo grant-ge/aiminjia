@@ -25,10 +25,18 @@ use super::webview_auth::{
 
 struct PlaywrightProcess {
     child: Child,
-    stdin: BufWriter<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
     next_id: u64,
 }
+
+/// I/O handles for the sidecar process, protected by a separate mutex
+/// to avoid holding the state lock during async I/O.
+struct PlaywrightIO {
+    stdin: BufWriter<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+}
+
+/// Timeout for a single Playwright command (covers navigate + extract).
+const PLAYWRIGHT_CMD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 struct BrowserState {
     process: Option<PlaywrightProcess>,
@@ -48,6 +56,8 @@ impl BrowserState {
 pub struct PlaywrightBrowser {
     app_handle: AppHandle,
     state: Mutex<BrowserState>,
+    /// Separate mutex for stdin/stdout I/O — prevents deadlock with state lock.
+    io: Mutex<Option<PlaywrightIO>>,
     site_maps: Mutex<HashMap<String, SiteMap>>,
 }
 
@@ -56,6 +66,7 @@ impl PlaywrightBrowser {
         Self {
             app_handle,
             state: Mutex::new(BrowserState::new()),
+            io: Mutex::new(None),
             site_maps: Mutex::new(HashMap::new()),
         }
     }
@@ -363,6 +374,9 @@ impl PlaywrightBrowser {
     /// Shutdown browser and Node.js process.
     pub async fn shutdown(&self) {
         let _ = self.send_command("shutdown", serde_json::json!({})).await;
+        // Clean up IO
+        *self.io.lock().await = None;
+        // Clean up process
         let mut state = self.state.lock().await;
         if let Some(mut proc) = state.process.take() {
             let _ = proc.child.kill().await;
@@ -464,15 +478,16 @@ impl PlaywrightBrowser {
         let stdin = child.stdin.take().ok_or("Failed to get stdin")?;
         let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
 
-        let mut proc = PlaywrightProcess {
-            child,
+        let mut io = PlaywrightIO {
             stdin: BufWriter::new(stdin),
             stdout: BufReader::new(stdout),
+        };
+        let mut proc = PlaywrightProcess {
+            child,
             next_id: 1,
         };
 
-        // Wait for "ready" message on stderr (already goes to inherit)
-        // Send launch command
+        // Send launch command (before storing in state, so failure kills process via drop)
         let launch_params = serde_json::json!({
             "userDataDir": user_data_dir.to_string_lossy(),
         });
@@ -480,14 +495,22 @@ impl PlaywrightBrowser {
         proc.next_id += 1;
         let cmd = serde_json::json!({ "id": id, "method": "launch", "params": launch_params });
         let line = serde_json::to_string(&cmd).unwrap() + "\n";
-        proc.stdin.write_all(line.as_bytes()).await
+        io.stdin.write_all(line.as_bytes()).await
             .map_err(|e| format!("Failed to send launch: {}", e))?;
-        proc.stdin.flush().await.map_err(|e| format!("stdin flush: {}", e))?;
+        io.stdin.flush().await.map_err(|e| format!("stdin flush: {}", e))?;
 
-        // Read launch response
+        // Read launch response with timeout
         let mut response_line = String::new();
-        proc.stdout.read_line(&mut response_line).await
+        let read_result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            io.stdout.read_line(&mut response_line)
+        ).await
+            .map_err(|_| "Playwright launch timeout (30s)".to_string())?
             .map_err(|e| format!("Failed to read launch response: {}", e))?;
+
+        if read_result == 0 {
+            return Err("Playwright sidecar process terminated during launch".to_string());
+        }
 
         let response: Value = serde_json::from_str(response_line.trim())
             .map_err(|e| format!("Invalid launch response: {} (raw: {})", e, response_line.trim()))?;
@@ -498,53 +521,69 @@ impl PlaywrightBrowser {
 
         info!("[Playwright] Sidecar launched and browser ready");
 
+        // Store process and IO separately
         let mut state = self.state.lock().await;
         state.process = Some(proc);
+        drop(state);
+        *self.io.lock().await = Some(io);
         Ok(())
     }
 
     /// Send a JSON-RPC command to the sidecar and return the result.
+    /// Uses separate IO mutex to avoid deadlock with state lock.
     async fn send_command(&self, method: &str, params: Value) -> Result<Value, String> {
-        let mut state = self.state.lock().await;
-        let proc = state.process.as_mut()
-            .ok_or("Playwright sidecar not running")?;
+        // Get next ID from state (brief lock)
+        let id = {
+            let mut state = self.state.lock().await;
+            let proc = state.process.as_mut()
+                .ok_or("Playwright sidecar not running")?;
+            let id = proc.next_id;
+            proc.next_id += 1;
+            id
+        }; // State lock released
 
-        let id = proc.next_id;
-        proc.next_id += 1;
+        // IO operations use separate lock (no deadlock risk)
+        let mut io_guard = self.io.lock().await;
+        let io = io_guard.as_mut()
+            .ok_or("Playwright IO not initialized")?;
 
         let cmd = serde_json::json!({ "id": id, "method": method, "params": params });
         let line = serde_json::to_string(&cmd).unwrap() + "\n";
 
-        proc.stdin.write_all(line.as_bytes()).await
+        io.stdin.write_all(line.as_bytes()).await
             .map_err(|e| format!("stdin write: {}", e))?;
-        proc.stdin.flush().await
+        io.stdin.flush().await
             .map_err(|e| format!("stdin flush: {}", e))?;
 
-        // Read response (may need to skip non-matching lines)
-        loop {
-            let mut response_line = String::new();
-            let bytes_read = proc.stdout.read_line(&mut response_line).await
-                .map_err(|e| format!("stdout read: {}", e))?;
+        // Read response with timeout
+        let read_future = async {
+            loop {
+                let mut response_line = String::new();
+                let bytes_read = io.stdout.read_line(&mut response_line).await
+                    .map_err(|e| format!("stdout read: {}", e))?;
 
-            if bytes_read == 0 {
-                return Err("Playwright sidecar process terminated".to_string());
-            }
-
-            let trimmed = response_line.trim();
-            if trimmed.is_empty() { continue; }
-
-            let response: Value = serde_json::from_str(trimmed)
-                .map_err(|e| format!("Invalid response JSON: {} (raw: {})", e, trimmed))?;
-
-            // Check if this response matches our request ID
-            if response["id"].as_u64() == Some(id) {
-                if let Some(err) = response.get("error").and_then(|e| e.as_str()) {
-                    return Err(err.to_string());
+                if bytes_read == 0 {
+                    return Err("Playwright sidecar process terminated".to_string());
                 }
-                return Ok(response["result"].clone());
+
+                let trimmed = response_line.trim();
+                if trimmed.is_empty() { continue; }
+
+                let response: Value = serde_json::from_str(trimmed)
+                    .map_err(|e| format!("Invalid response JSON: {} (raw: {})", e, trimmed))?;
+
+                if response["id"].as_u64() == Some(id) {
+                    if let Some(err) = response.get("error").and_then(|e| e.as_str()) {
+                        return Err(err.to_string());
+                    }
+                    return Ok(response["result"].clone());
+                }
             }
-            // Otherwise skip (shouldn't happen with sequential protocol)
-        }
+        };
+
+        tokio::time::timeout(PLAYWRIGHT_CMD_TIMEOUT, read_future)
+            .await
+            .map_err(|_| format!("Playwright command '{}' timed out after {:?}", method, PLAYWRIGHT_CMD_TIMEOUT))?
     }
 
     async fn auto_explore(&self, title: &str, origin: &str, url_path: &str) -> PageProfile {
