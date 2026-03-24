@@ -1,6 +1,5 @@
 pub mod auth;
 pub mod chat;
-pub mod connector;
 pub mod export;
 pub mod file;
 pub mod plugin;

@@ -53,8 +53,6 @@ pub(crate) use memory::handle_save_memory;
 pub(crate) use memory::handle_search_memory;
 pub(crate) use memory::handle_load_core_memory;
 pub(crate) use memory::handle_distill_memories;
-pub(crate) use internal_system::handle_http_request;
-pub(crate) use internal_system::handle_save_api_knowledge;
 pub(crate) use internal_system::handle_browse_navigate;
 pub(crate) use internal_system::handle_read_page_content;
 pub(crate) use internal_system::handle_page_execute_js;

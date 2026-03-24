@@ -106,24 +106,16 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
-            // Initialize WebView auth manager for internal system connections (legacy flow)
-            let webview_auth_manager = Arc::new(
-                connector::WebViewAuthManager::new(app.handle().clone())
-            );
-
             // Initialize Playwright browser — primary browser automation
             let playwright_browser = Arc::new(
                 connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone())
             );
 
-            // Initialize connector engine (uses AuthManager for dynamic session key)
+            // Initialize connector engine (browser automation only)
             let connector_engine = Arc::new(
-                connector::ConnectorEngine::new(db.clone())
+                connector::ConnectorEngine::new()
             );
             tauri::async_runtime::block_on(async {
-                connector_engine.init().await;
-                connector_engine.set_auth_manager(auth_manager.clone()).await;
-                connector_engine.set_webview_auth(webview_auth_manager.clone()).await;
                 connector_engine.set_playwright_browser(playwright_browser.clone()).await;
             });
 
@@ -191,7 +183,6 @@ pub fn run() {
             app.manage(secure_storage);
             app.manage(auth_manager);
             app.manage(connector_engine);
-            app.manage(webview_auth_manager);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
@@ -253,16 +244,6 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
-            // Internal system connector commands (WebView-based auth)
-            commands::connector::get_internal_apps,
-            commands::connector::sync_internal_apps,
-            commands::connector::connect_internal_app,
-            commands::connector::disconnect_internal_app,
-            commands::connector::open_internal_login,
-            commands::connector::proxy_internal_request,
-            commands::connector::has_internal_session,
-            commands::connector::close_internal_session,
-            commands::connector::show_browse_view,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -817,85 +817,6 @@ export function onAuthExpired(
   })
 }
 
-// ---------------------------------------------------------------------------
-// Internal System Connector (WebView-based auth)
-// ---------------------------------------------------------------------------
-
-export interface AppHint {
-  name: string
-  description: string
-  clues: string | null
-}
-
-export interface InternalAppInfo {
-  id: number
-  name: string
-  description: string
-  icon_url: string | null
-  base_url: string
-  login_url: string
-  success_url_prefix: string
-  allowed_methods: string[]
-  blocked_paths: string[]
-  max_requests_per_turn: number
-  hints: AppHint[]
-  status: string
-  connected: boolean
-}
-
-/** Get all internal apps from cached config. */
-export function getInternalApps(): Promise<InternalAppInfo[]> {
-  return invoke<InternalAppInfo[]>('get_internal_apps')
-}
-
-/** Sync internal apps config from Lotus API. */
-export function syncInternalApps(): Promise<void> {
-  return invoke<void>('sync_internal_apps')
-}
-
-/** Connect to an internal app (opens WebView login). */
-export function connectInternalApp(appId: number): Promise<void> {
-  return invoke<void>('connect_internal_app', { appId })
-}
-
-/** Disconnect from an internal app. */
-export function disconnectInternalApp(appId: number): Promise<void> {
-  return invoke<void>('disconnect_internal_app', { appId })
-}
-
-/** Open a WebView login window for an internal system (low-level). */
-export function openInternalLogin(params: {
-  appId: number
-  appName: string
-  loginUrl: string
-  baseUrl: string
-  successUrlPrefix: string
-}): Promise<unknown> {
-  return invoke('open_internal_login', params)
-}
-
-/** Proxy an HTTP request through an active WebView session. */
-export function proxyInternalRequest(params: {
-  appId: number
-  method: string
-  url: string
-  headers?: Record<string, string> | null
-  body?: unknown | null
-  cachedToken?: string | null
-}): Promise<{ status: number; body: string; truncated: boolean; error: string | null }> {
-  return invoke('proxy_internal_request', params)
-}
-
-/** Check if there's an active WebView session for an app. */
-export function hasInternalSession(appId: number): Promise<boolean> {
-  return invoke<boolean>('has_internal_session', { appId })
-}
-
-/** Close a WebView session. */
-export function closeInternalSession(appId: number): Promise<void> {
-  return invoke<void>('close_internal_session', { appId })
-}
-
 /** Show the CDP browser window (bring active tab to front). */
 export function showBrowseView(): Promise<void> {
   return invoke<void>('show_browse_view')
@@ -939,19 +860,4 @@ export function onBrowserClosed(
   handler: (payload: BrowserClosedPayload) => void,
 ): Promise<() => void> {
   return listen<BrowserClosedPayload>('browser:closed', (event) => handler(event.payload))
-}
-
-// Expose to window for console testing
-if (typeof window !== 'undefined') {
-  (window as any).__CONNECTOR_TEST__ = {
-    getInternalApps,
-    syncInternalApps,
-    connectInternalApp,
-    disconnectInternalApp,
-    openInternalLogin,
-    proxyInternalRequest,
-    hasInternalSession,
-    closeInternalSession,
-    showBrowseView,
-  }
 }

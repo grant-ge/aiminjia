@@ -1,5 +1,6 @@
-//! internal_system handlers — http_request, browse_navigate, read_page_content,
-//! page_execute_js, and save_api_knowledge tool executors.
+//! internal_system handlers — browser automation tool executors.
+//! browse_navigate, read_page_content, page_execute_js, browse_and_extract,
+//! browse_data (sub-agent), extract_all_pages.
 
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -8,79 +9,6 @@ use tauri::Manager;
 
 use crate::plugin::context::PluginContext;
 use super::{require_str, optional_str};
-
-/// Handle http_request tool invocations.
-pub(crate) async fn handle_http_request(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let app_name = require_str(args, "app_name")?;
-    let method = require_str(args, "method")?;
-    let url_raw = require_str(args, "url")?;
-
-    let engine = ctx.connector_engine.as_ref()
-        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
-
-    // Find app by name to get base_url and app_id
-    let apps = engine.get_apps().await;
-    let app = apps.iter()
-        .find(|a| a.name == app_name)
-        .ok_or_else(|| anyhow!(
-            "App '{}' not found. Available: {}",
-            app_name,
-            apps.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
-        ))?;
-
-    // If url is relative, prepend base_url
-    let url = if url_raw.starts_with("http://") || url_raw.starts_with("https://") {
-        url_raw.to_string()
-    } else {
-        format!("{}{}", app.base_url.trim_end_matches('/'), url_raw)
-    };
-
-    // Extract the path part (relative to base_url) for knowledge storage
-    let path_for_knowledge = url.strip_prefix(app.base_url.trim_end_matches('/'))
-        .unwrap_or(&url)
-        .split('?').next()
-        .unwrap_or("")
-        .to_string();
-
-    let headers = args.get("headers");
-    let body = args.get("body");
-
-    let response = engine.request(app.id, method, &url, headers, body).await
-        .map_err(|e| anyhow!(e))?;
-
-    // Detect HTML response — suggest browse_navigate instead
-    let body_trimmed = response.body.trim_start();
-    let body_lower = body_trimmed.get(..15).unwrap_or(body_trimmed).to_lowercase();
-    if response.status == 200 && (body_lower.starts_with("<!doctype") || body_lower.starts_with("<html")) {
-        info!("[CONNECTOR] {} {} returned HTML — suggesting browse_navigate", method, url);
-        let mut result = format!("HTTP {} — Status: {}\n", method, response.status);
-        result.push_str("(Response is HTML page, not JSON API. Use browse_navigate tool to open this page in the browser, then read_page_content to extract data.)");
-        return Ok(result);
-    }
-
-    // Auto-save knowledge when request succeeds (HTTP 200) with actual data
-    if response.status == 200 && response.body.len() > 10 && !path_for_knowledge.is_empty() {
-        let knowledge = serde_json::json!({
-            "name": format!("{} {}", method, path_for_knowledge),
-            "method": method,
-            "path": path_for_knowledge,
-            "params_doc": url.split('?').nth(1).unwrap_or(""),
-        });
-        match engine.save_knowledge(app.id, &knowledge).await {
-            Ok(_) => info!("[CONNECTOR] Auto-saved knowledge: {} {}", method, path_for_knowledge),
-            Err(e) => info!("[CONNECTOR] Failed to auto-save knowledge (non-fatal): {}", e),
-        }
-    }
-
-    // Format response for LLM
-    let mut result = format!("HTTP {} — Status: {}\n", method, response.status);
-    if response.truncated {
-        result.push_str("(Response truncated to 8000 chars)\n");
-    }
-    result.push_str(&response.body);
-
-    Ok(result)
-}
 
 /// Handle browse_navigate tool invocations (V4 — open browsing mode).
 ///
@@ -725,38 +653,4 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
 
         Ok(output)
     }
-}
-
-/// Handle save_api_knowledge tool invocations.
-pub(crate) async fn handle_save_api_knowledge(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let app_name = require_str(args, "app_name")?;
-    let name = require_str(args, "name")?;
-    let method = require_str(args, "method")?;
-    let path = require_str(args, "path")?;
-    let params_doc = optional_str(args, "params_doc");
-    let response_doc = optional_str(args, "response_doc");
-    let notes = optional_str(args, "notes");
-
-    let engine = ctx.connector_engine.as_ref()
-        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
-
-    // Find app by name
-    let apps = engine.get_apps().await;
-    let app = apps.iter()
-        .find(|a| a.name == app_name)
-        .ok_or_else(|| anyhow!("App '{}' not found", app_name))?;
-
-    let knowledge = serde_json::json!({
-        "name": name,
-        "method": method,
-        "path": path,
-        "params_doc": params_doc,
-        "response_doc": response_doc,
-        "notes": notes,
-    });
-
-    engine.save_knowledge(app.id, &knowledge).await
-        .map_err(|e| anyhow!(e))?;
-
-    Ok(format!("API knowledge '{}' saved for '{}'.", name, app_name))
 }
