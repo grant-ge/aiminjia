@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use super::webview_auth::{DiscoveredApi, FormData, LinkData};
+use super::types::{DiscoveredApi, FormData, LinkData};
 
 /// TTL for a page profile before re-exploration (seconds).
 const PAGE_PROFILE_TTL_SECS: i64 = 24 * 3600; // 24 hours

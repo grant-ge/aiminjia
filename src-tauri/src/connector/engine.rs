@@ -9,6 +9,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use super::playwright_browser::PlaywrightBrowser;
+use super::types::{ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FullPageResult};
 
 /// Max browser requests per LLM turn.
 const MAX_BROWSER_REQUESTS_PER_TURN: u32 = 50;
@@ -44,7 +45,7 @@ impl ConnectorEngine {
 
     // ── Browser Methods ─────────────────────────────────────────
 
-    pub async fn browser_navigate(&self, url: &str) -> Result<super::playwright_browser::BrowseNavigateResult, String> {
+    pub async fn browser_navigate(&self, url: &str) -> Result<BrowseNavigateResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -52,7 +53,7 @@ impl ConnectorEngine {
         pw.navigate(url).await
     }
 
-    pub async fn browser_read_content(&self, extract_script: Option<&str>) -> Result<super::playwright_browser::BrowseResult, String> {
+    pub async fn browser_read_content(&self, extract_script: Option<&str>) -> Result<BrowseResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -60,7 +61,7 @@ impl ConnectorEngine {
         pw.read_content(extract_script).await
     }
 
-    pub async fn browser_execute_js(&self, script: &str) -> Result<super::playwright_browser::ExecuteJsResult, String> {
+    pub async fn browser_execute_js(&self, script: &str) -> Result<ExecuteJsResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -74,7 +75,7 @@ impl ConnectorEngine {
         pw.show_active_page().await
     }
 
-    pub async fn browser_navigate_and_extract(&self, url: &str, extract_script: Option<&str>) -> Result<super::playwright_browser::FullPageResult, String> {
+    pub async fn browser_navigate_and_extract(&self, url: &str, extract_script: Option<&str>) -> Result<FullPageResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -82,7 +83,7 @@ impl ConnectorEngine {
         pw.navigate_and_extract(url, extract_script).await
     }
 
-    pub async fn browser_api_fetch(&self, url: &str, method: &str, body: Option<&str>, headers: Option<&str>) -> Result<super::playwright_browser::ApiFetchResult, String> {
+    pub async fn browser_api_fetch(&self, url: &str, method: &str, body: Option<&str>, headers: Option<&str>) -> Result<ApiFetchResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;

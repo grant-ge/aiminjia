@@ -16,7 +16,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
 use super::site_map::{PageProfile, SiteMap, TableSchema};
-use super::webview_auth::{
+use super::types::{
     ApiFetchResult, BrowseNavigateResult, BrowseResult, DiscoveredApi, ExecuteJsResult,
     FormData, FormField, FullPageResult, LinkData, TableData,
 };
