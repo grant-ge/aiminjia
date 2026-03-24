@@ -26,103 +26,131 @@ use super::webview_auth::{
 };
 
 /// Default JS extraction function for read_content().
+/// Scans main document + all same-origin iframes (recursive, max depth 3).
 pub(crate) const DEFAULT_EXTRACT_SCRIPT: &str = r#"
 function __aijia_extract() {
     var tables = [];
-    var tableEls = document.querySelectorAll('table');
-    for (var i = 0; i < tableEls.length && i < 10; i++) {
-        var t = tableEls[i];
-        var headers = [];
-        var thEls = t.querySelectorAll('thead th, thead td, tr:first-child th');
-        if (thEls.length === 0) {
-            var firstRow = t.querySelector('tr');
-            if (firstRow) thEls = firstRow.querySelectorAll('td, th');
-        }
-        for (var h = 0; h < thEls.length; h++) {
-            headers.push(thEls[h].innerText.trim());
-        }
-        var rows = [];
-        var trEls = t.querySelectorAll('tbody tr, tr');
-        var startIdx = (thEls.length > 0 && !t.querySelector('thead')) ? 1 : 0;
-        for (var r = startIdx; r < trEls.length && rows.length < 100; r++) {
-            var cells = trEls[r].querySelectorAll('td');
-            if (cells.length === 0) continue;
-            var row = {};
-            for (var c = 0; c < cells.length; c++) {
-                var key = (c < headers.length) ? headers[c] : ('col_' + c);
-                row[key] = cells[c].innerText.trim();
-            }
-            rows.push(row);
-        }
-        if (headers.length > 0 || rows.length > 0) {
-            tables.push({headers: headers, rows: rows});
-        }
-    }
-
-    var textEl = document.querySelector('main') || document.querySelector('[role="main"]')
-        || document.querySelector('.main-content') || document.querySelector('#app') || document.body;
-    var text = (textEl ? textEl.innerText : '').substring(0, 4000);
-
-    // Extract navigation links, menu items, and clickable elements
     var links = [];
     var seen = {};
+    var allText = '';
 
-    // 1. <a> tags with href
-    var anchors = document.querySelectorAll('a[href]');
-    for (var i = 0; i < anchors.length && links.length < 50; i++) {
-        var a = anchors[i];
-        var href = a.href || '';
-        var label = (a.innerText || a.title || a.getAttribute('aria-label') || '').trim();
-        if (!label || !href || href === '#' || href.startsWith('javascript:')) continue;
-        label = label.substring(0, 80).replace(/\n/g, ' ');
-        var key = label + '|' + href;
-        if (seen[key]) continue;
-        seen[key] = true;
-        links.push({label: label, href: href, type: 'link'});
+    // Collect all documents: main + same-origin iframes
+    function collectDocs(doc, depth) {
+        var docs = [doc];
+        if (depth > 3) return docs;
+        try {
+            var frames = doc.querySelectorAll('iframe, frame');
+            for (var i = 0; i < frames.length; i++) {
+                try {
+                    var fd = frames[i].contentDocument || (frames[i].contentWindow && frames[i].contentWindow.document);
+                    if (fd) {
+                        docs.push(fd);
+                        var sub = collectDocs(fd, depth + 1);
+                        for (var j = 1; j < sub.length; j++) docs.push(sub[j]);
+                    }
+                } catch(e) {}
+            }
+        } catch(e) {}
+        return docs;
     }
+    var allDocs = collectDocs(document, 0);
 
-    // 2. Menu items in nav, sidebar, [role="menu"], [role="navigation"]
-    var menuSels = 'nav a, nav [role="menuitem"], [role="navigation"] a, [role="menu"] a, ' +
-        '.sidebar a, .side-menu a, .ant-menu a, .el-menu a, .nav-menu a, ' +
-        '.ant-menu-item, .el-menu-item, .el-sub-menu__title';
-    var menuEls = document.querySelectorAll(menuSels);
-    for (var i = 0; i < menuEls.length && links.length < 80; i++) {
-        var el = menuEls[i];
-        var label = (el.innerText || el.title || el.getAttribute('aria-label') || '').trim();
-        if (!label) continue;
-        label = label.substring(0, 80).replace(/\n/g, ' ');
-        var href = el.href || el.getAttribute('data-href') || '';
-        var key = 'menu|' + label;
-        if (seen[key]) continue;
-        seen[key] = true;
-        // Build a CSS selector for AI to click
-        var selector = '';
-        if (el.id) selector = '#' + el.id;
-        else if (el.className && typeof el.className === 'string') {
-            var cls = el.className.trim().split(/\s+/).slice(0, 3).join('.');
-            if (cls) selector = el.tagName.toLowerCase() + '.' + cls;
+    for (var di = 0; di < allDocs.length; di++) {
+        var doc = allDocs[di];
+
+        // Tables
+        try {
+        var tableEls = doc.querySelectorAll('table');
+        for (var i = 0; i < tableEls.length && tables.length < 10; i++) {
+            var t = tableEls[i];
+            var headers = [];
+            var thEls = t.querySelectorAll('thead th, thead td, tr:first-child th');
+            if (thEls.length === 0) {
+                var firstRow = t.querySelector('tr');
+                if (firstRow) thEls = firstRow.querySelectorAll('td, th');
+            }
+            for (var h = 0; h < thEls.length; h++) {
+                headers.push(thEls[h].innerText.trim());
+            }
+            var rows = [];
+            var trEls = t.querySelectorAll('tbody tr, tr');
+            var startIdx = (thEls.length > 0 && !t.querySelector('thead')) ? 1 : 0;
+            for (var r = startIdx; r < trEls.length && rows.length < 100; r++) {
+                var cells = trEls[r].querySelectorAll('td');
+                if (cells.length === 0) continue;
+                var row = {};
+                for (var c = 0; c < cells.length; c++) {
+                    var key = (c < headers.length) ? headers[c] : ('col_' + c);
+                    row[key] = cells[c].innerText.trim();
+                }
+                rows.push(row);
+            }
+            if (headers.length > 0 || rows.length > 0) {
+                tables.push({headers: headers, rows: rows});
+            }
         }
-        links.push({label: label, href: href, type: 'menu', selector: selector});
-    }
+        } catch(e) {}
 
-    // 3. Buttons (submit, action buttons)
-    var buttons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
-    for (var i = 0; i < buttons.length && links.length < 100; i++) {
-        var btn = buttons[i];
-        var label = (btn.innerText || btn.value || btn.title || btn.getAttribute('aria-label') || '').trim();
-        if (!label || label.length > 80) continue;
-        label = label.replace(/\n/g, ' ');
-        var key = 'btn|' + label;
-        if (seen[key]) continue;
-        seen[key] = true;
-        links.push({label: label, href: '', type: 'button'});
+        // Text content
+        try {
+        if (!allText) {
+            var textEl = doc.querySelector('main') || doc.querySelector('[role="main"]')
+                || doc.querySelector('.main-content') || doc.querySelector('#app') || doc.body;
+            var t = textEl ? textEl.innerText : '';
+            if (t.length > allText.length) allText = t;
+        }
+        } catch(e) {}
+
+        // Links
+        try {
+        doc.querySelectorAll('a[href]').forEach(function(a) {
+            if (links.length >= 50) return;
+            var href = a.href || '';
+            var label = (a.innerText || a.title || a.getAttribute('aria-label') || '').trim();
+            if (!label || !href || href === '#' || href.startsWith('javascript:')) return;
+            label = label.substring(0, 80).replace(/\n/g, ' ');
+            var key = label + '|' + href;
+            if (seen[key]) return;
+            seen[key] = true;
+            links.push({label: label, href: href, type: 'link'});
+        });
+        } catch(e) {}
+
+        // Menu items
+        try {
+        var menuSels = 'nav a, [role="menu"] a, .sidebar a, .ant-menu a, .el-menu a, ' +
+            '.layui-nav a, .layui-side a, .left-nav a, #menu a, .menu a, .ant-menu-item, .el-menu-item';
+        doc.querySelectorAll(menuSels).forEach(function(el) {
+            if (links.length >= 80) return;
+            var label = (el.innerText || el.title || '').trim().substring(0, 80).replace(/\n/g, ' ');
+            if (!label) return;
+            var href = el.href || el.getAttribute('data-href') || '';
+            var key = 'menu|' + label;
+            if (seen[key]) return;
+            seen[key] = true;
+            links.push({label: label, href: href, type: 'menu', selector: ''});
+        });
+        } catch(e) {}
+
+        // Buttons
+        try {
+        doc.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(function(btn) {
+            if (links.length >= 100) return;
+            var label = (btn.innerText || btn.value || btn.title || '').trim().substring(0, 80).replace(/\n/g, ' ');
+            if (!label) return;
+            var key = 'btn|' + label;
+            if (seen[key]) return;
+            seen[key] = true;
+            links.push({label: label, href: '', type: 'button'});
+        });
+        } catch(e) {}
     }
 
     return {
         url: window.location.href,
         title: document.title,
         tables: tables,
-        text: text,
+        text: allText.substring(0, 4000),
         links: links
     };
 }
