@@ -198,11 +198,26 @@ pub async fn run_sub_agent(
                         files.push(f.clone());
                     }
 
-                    // Check for saved_file_path pattern in content
-                    if tool_output.content.contains("File: ") {
-                        for line in tool_output.content.lines() {
-                            if let Some(path) = line.strip_prefix("File: ") {
-                                files.push(path.trim().to_string());
+                    // Detect file paths in content (various formats)
+                    for line in tool_output.content.lines() {
+                        let trimmed = line.trim();
+                        // Match: "File: /path", "**File**: /path", "- **File**: /path"
+                        if let Some(rest) = trimmed.strip_prefix("File: ")
+                            .or_else(|| trimmed.strip_prefix("**File**: "))
+                            .or_else(|| trimmed.strip_prefix("- **File**: "))
+                        {
+                            let path = rest.trim();
+                            if path.starts_with('/') && !files.contains(&path.to_string()) {
+                                files.push(path.to_string());
+                            }
+                        }
+                        // Match paths in generated/ directory
+                        if trimmed.contains("/generated/") && trimmed.contains(".json") {
+                            for word in trimmed.split_whitespace() {
+                                let clean = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-');
+                                if clean.starts_with('/') && clean.contains("/generated/") && !files.contains(&clean.to_string()) {
+                                    files.push(clean.to_string());
+                                }
                             }
                         }
                     }
