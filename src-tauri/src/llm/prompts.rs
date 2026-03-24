@@ -16,7 +16,7 @@ use std::sync::{LazyLock, RwLock};
 const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 
 /// All recognized prompt names.
-const PROMPT_NAMES: &[&str] = &["base", "daily"];
+const PROMPT_NAMES: &[&str] = &["base", "daily", "browser_agent"];
 
 /// Source from which a prompt was loaded (for logging).
 #[derive(Debug, Clone, Copy)]
@@ -162,6 +162,12 @@ pub fn reload_prompts() {
 pub fn get_base_prompt() -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
     guard.get("base").to_string()
+}
+
+/// Get the browser agent prompt (for SubAgent).
+pub fn get_browser_agent_prompt() -> String {
+    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+    guard.get("browser_agent").to_string()
 }
 
 /// Compose the full system prompt by combining BASE + mode-specific prompt.
