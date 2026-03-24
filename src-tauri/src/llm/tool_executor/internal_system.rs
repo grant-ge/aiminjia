@@ -467,16 +467,8 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
 
     Ok(output)
 }
-         - **File size**: {:.1} KB\n\n\
-         Use `execute_python` to load: `pd.read_json('{}')` or `json.load(open('{}'))`",
-        total_rows, total_pages, headers,
-        save_path.display(), file_size as f64 / 1024.0,
-        save_path.display(), save_path.display(),
-    );
 
-    // Add sample rows
-    if let Some(sample) = result.get("sampleRows").and_then(|s| s.as_array()) {
-        output.push_str("\n\n### Sample (first 3 rows)\n```json\n");
+/// Handle browse_and_extract tool invocations.
         output.push_str(&serde_json::to_string_pretty(sample).unwrap_or_default());
         output.push_str("\n```");
     }
