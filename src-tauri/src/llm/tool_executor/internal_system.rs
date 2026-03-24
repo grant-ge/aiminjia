@@ -276,23 +276,70 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         .unwrap_or_else(|| "你是数据提取专家。使用 browse_and_extract 工具从内部系统提取数据。".to_string());
 
     // Build dynamic context: site map from connector engine
-    let dynamic_context = if let Some(ref engine) = ctx.connector_engine {
+    let mut dynamic_context = String::new();
+    let mut has_known_apis = false;
+    let mut has_known_tables = false;
+    let mut target_page_hint = String::new();
+
+    if let Some(ref engine) = ctx.connector_engine {
         let cdp = engine.cdp_browser_ref().await;
         if let Some(cdp) = cdp.as_ref() {
-            cdp.get_site_map_context(None).await.unwrap_or_default()
-        } else {
-            String::new()
+            if let Some(ctx_str) = cdp.get_site_map_context(None).await {
+                dynamic_context = ctx_str;
+            }
+            // Check if target URL has cached profile with APIs or tables
+            if let Some(target_url) = url {
+                let url_path = url::Url::parse(target_url).ok()
+                    .map(|u| u.path().to_string())
+                    .unwrap_or_default();
+                let maps = cdp.site_maps.lock().await;
+                let origin = url::Url::parse(target_url).ok()
+                    .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
+                    .unwrap_or_default();
+                if let Some(site_map) = maps.get(&origin) {
+                    if let Some(profile) = site_map.get_page(&url_path) {
+                        has_known_apis = !profile.api_endpoints.is_empty();
+                        has_known_tables = !profile.table_schemas.is_empty();
+                        if has_known_tables {
+                            let table_info: Vec<String> = profile.table_schemas.iter()
+                                .map(|t| format!("{} ({} rows, cols: {})",
+                                    if t.name.is_empty() { "table" } else { &t.name },
+                                    t.row_count, t.headers.join(", ")))
+                                .collect();
+                            target_page_hint = format!(
+                                "\n\n[已知页面信息: {}]\n表格: {}\nAPI端点: {}\n表单: {}",
+                                url_path,
+                                table_info.join("; "),
+                                if has_known_apis { "有" } else { "无（该系统可能是传统SSR架构，数据直接嵌在HTML中）" },
+                                if profile.forms.is_empty() { "无" } else { "有" },
+                            );
+                        }
+                    }
+                }
+            }
         }
-    } else {
-        String::new()
-    };
+    }
 
-    // Build task message
-    let task_msg = if let Some(url) = url {
+    // Build task message with strategy hints based on page profile
+    let mut task_msg = if let Some(url) = url {
         format!("{}\n\nTarget URL: {}", task, url)
     } else {
         task.to_string()
     };
+
+    task_msg.push_str(&target_page_hint);
+
+    // Add strategy based on what we know
+    if has_known_tables && !has_known_apis {
+        task_msg.push_str("\n\n**策略提示**: 该页面有表格数据但没有发现 JSON API 端点。这可能是传统服务端渲染系统。请按以下优先级操作：\n\
+            1. 先用 browse_and_extract 打开页面，查看返回的表格数据\n\
+            2. 如果表格数据不完整（被分页截断），用 page_execute_js 查找分页参数或导出按钮\n\
+            3. 优先寻找「导出」「下载」「export」按钮直接导出全量数据\n\
+            4. 如果没有导出按钮，尝试修改 URL 参数（如 pageSize=500）重新请求页面获取更多数据\n\
+            5. **不要花时间猜 API 路径** — 如果 auto_explore 没发现 API，该系统大概率没有 REST API");
+    } else if has_known_apis {
+        task_msg.push_str("\n\n**策略提示**: 该页面有已知的 API 端点。直接用 browse_and_extract 的 API 模式调用即可。");
+    }
 
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
