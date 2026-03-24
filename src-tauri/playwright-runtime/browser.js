@@ -751,43 +751,45 @@ async function handleExtractWithPagination(params) {
         break;
       }
     }
-  } else if (paginationJs) {
-    // Fallback: click-based pagination from live DOM
-    log('extract_with_pagination: HTTP pagination failed, falling back to click-based');
+  } else {
+    // Fallback: page.goto based pagination (renders page fully, handles JS-rendered tables)
+    log('extract_with_pagination: HTTP pagination failed (JS-rendered tables), falling back to page.goto');
 
-    // Extract first page from live DOM
-    for (const frame of page.frames()) {
-      const frameTables = await extractFromFrame(frame);
-      for (const t of frameTables) {
-        if (t.rows.length > allRows.length) allRows = t.rows;
-      }
+    // Use iframe URL if available, otherwise current URL
+    const gotoBaseUrl = new URL(dataUrlToUse);
+
+    // Detect page param from URL
+    let gotoPageParam = null;
+    for (const p of ['page', 'pageNum', 'pageNo', 'p']) {
+      if (gotoBaseUrl.searchParams.has(p)) { gotoPageParam = p; break; }
     }
-    totalPages = 1;
-    lastPageHash = allRows.length > 0 ? JSON.stringify(allRows.slice(0, 3).map(r => Object.values(r).join('|'))) : null;
+    if (!gotoPageParam) gotoPageParam = 'page';
 
-    for (let p = 2; p <= maxPages; p++) {
-      // Click next page
-      let clicked = false;
-      const selectorMatch = paginationJs.match(/querySelector\(['"]([^'"]+)['"]\)/);
-      for (const frame of page.frames()) {
-        try {
-          if (selectorMatch) {
-            const el = await frame.$(selectorMatch[1]);
-            if (el) { await el.click(); clicked = true; break; }
-          }
-          await frame.evaluate((code) => new Function(code)(), paginationJs);
-          clicked = true;
-          break;
-        } catch (e) {}
+    let gotoPSParam = null;
+    for (const p of ['pageSize', 'size', 'limit']) {
+      if (gotoBaseUrl.searchParams.has(p)) { gotoPSParam = p; break; }
+    }
+    if (!gotoPSParam) gotoPSParam = 'pageSize';
+
+    gotoBaseUrl.searchParams.set(gotoPSParam, String(pageSize));
+
+    for (let p = 1; p <= maxPages; p++) {
+      gotoBaseUrl.searchParams.set(gotoPageParam, String(p));
+      const pageUrl = gotoBaseUrl.toString();
+
+      log(`extract_with_pagination: goto page ${p} — ${pageUrl}`);
+
+      try {
+        await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+      } catch (e) {
+        log(`extract_with_pagination: goto failed: ${e.message}`);
       }
-      if (!clicked) {
-        log(`extract_with_pagination: click pagination failed on page ${p - 1}, stopping`);
-        break;
-      }
 
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 800));
+      // Wait extra for JS rendering (layui table needs time)
+      await new Promise(r => setTimeout(r, 1500));
 
+      // Extract from all frames (live DOM, JS-rendered)
       let pageRows = [];
       for (const frame of page.frames()) {
         const frameTables = await extractFromFrame(frame);
@@ -795,16 +797,23 @@ async function handleExtractWithPagination(params) {
           if (t.rows.length > pageRows.length) pageRows = t.rows;
         }
       }
-      if (pageRows.length === 0) break;
+
+      if (pageRows.length === 0) {
+        log(`extract_with_pagination: page ${p} has 0 rows, stopping`);
+        break;
+      }
+
       const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
-      if (pageHash === lastPageHash) break;
+      if (pageHash === lastPageHash) {
+        log(`extract_with_pagination: page ${p} is duplicate, stopping`);
+        break;
+      }
       lastPageHash = pageHash;
+
       allRows.push(...pageRows);
       totalPages = p;
-      log(`extract_with_pagination: click page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+      log(`extract_with_pagination: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
     }
-  } else {
-    return { error: 'No pagination method available. Provide paginationJs or ensure URL supports page param.' };
   }
 
   log(`extract_with_pagination: complete — ${allRows.length} total rows, ${totalPages} pages`);

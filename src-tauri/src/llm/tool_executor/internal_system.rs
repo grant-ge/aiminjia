@@ -530,7 +530,7 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
 
 /// Handle extract_with_pagination.
 pub(crate) async fn handle_extract_with_pagination(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let pagination_js = require_str(args, "pagination_js")?;
+    let pagination_js = optional_str(args, "pagination_js").unwrap_or("");
     let max_pages = args["max_pages"].as_u64().map(|v| v as u32);
     let engine = ctx.connector_engine.as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;

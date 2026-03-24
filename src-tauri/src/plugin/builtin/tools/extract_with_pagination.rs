@@ -16,9 +16,9 @@ impl ToolPlugin for ExtractWithPaginationTool {
 
     fn description(&self) -> &str {
         "Extract ALL table data from the current page by automatically looping through pages. \
-         You provide the JavaScript code to click the next-page button, this tool handles the loop: \
-         extract → run your JS → wait → extract → repeat until no more data. \
-         Returns total rows + file path. Use AFTER navigating to a data page."
+         Tries HTTP pagination first (fastest), falls back to page.goto with URL params. \
+         No pagination_js needed — just call this after navigating to a data page. \
+         Returns total rows + file path."
     }
 
     fn input_schema(&self) -> Value {
@@ -34,7 +34,7 @@ impl ToolPlugin for ExtractWithPaginationTool {
                     "description": "Maximum pages to extract (default 100)"
                 }
             },
-            "required": ["pagination_js"]
+            "required": []
         })
     }
 
