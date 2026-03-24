@@ -14,6 +14,18 @@ use crate::models::settings::AppSettings;
 use crate::plugin::context::PluginContext;
 use crate::plugin::registry::ToolRegistry;
 
+/// Truncate a string at a safe UTF-8 boundary.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Configuration for a sub-agent run.
 pub struct SubAgentConfig {
     /// The task description (becomes the initial user message).
@@ -56,6 +68,11 @@ pub async fn run_sub_agent(
         config.max_iterations
     );
 
+    // Guard against recursive sub-agent calls
+    if config.allowed_tools.contains(&"browse_data".to_string()) {
+        return Err(anyhow::anyhow!("Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"));
+    }
+
     // Build filtered tool schemas
     let all_schemas = tool_registry.get_all_schemas().await;
     let tool_defs: Vec<ToolDefinition> = all_schemas
@@ -71,6 +88,9 @@ pub async fn run_sub_agent(
     let mut output = String::new();
     let mut files: Vec<String> = vec![];
     let mut iterations_used = 0;
+
+    // Use a unique sub-agent conversation ID so gateway active_tasks doesn't conflict
+    let sub_conv_id = format!("sub_{}", uuid::Uuid::new_v4());
 
     let dynamic_ctx = if config.dynamic_context.is_empty() {
         None
@@ -93,7 +113,7 @@ pub async fn run_sub_agent(
                 dynamic_ctx,
                 Some(tool_defs.clone()),
                 4096,
-                None,
+                Some(&sub_conv_id),
             )
             .await;
 
@@ -189,7 +209,7 @@ pub async fn run_sub_agent(
                     }
 
                     let content = if tool_output.content.len() > 8000 {
-                        format!("{}...(truncated)", &tool_output.content[..8000])
+                        format!("{}...(truncated)", safe_truncate(&tool_output.content, 8000))
                     } else {
                         tool_output.content
                     };
@@ -208,6 +228,9 @@ pub async fn run_sub_agent(
     if iterations_used >= config.max_iterations && output.is_empty() {
         output = "Sub-agent reached iteration limit.".to_string();
     }
+
+    // Clean up gateway active task entry
+    gateway.clear_task(&sub_conv_id);
 
     info!(
         "[SubAgent] Complete: iterations={}, output_len={}, files={}",

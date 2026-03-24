@@ -333,9 +333,14 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
 
     if !result.output.is_empty() {
         output.push_str("### Agent Summary\n");
-        // Truncate if too long
+        // Truncate if too long (safe UTF-8 boundary)
         if result.output.len() > 2000 {
-            output.push_str(&result.output[..2000]);
+            let end = result.output.char_indices()
+                .take_while(|(i, _)| *i < 2000)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+            output.push_str(&result.output[..end]);
             output.push_str("\n...(truncated)");
         } else {
             output.push_str(&result.output);
