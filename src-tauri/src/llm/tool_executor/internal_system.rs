@@ -509,7 +509,13 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
             output.push_str("\n### Sample\n```json\n");
             let sample_str = serde_json::to_string_pretty(sample).unwrap_or_default();
             if sample_str.len() > 2000 {
-                output.push_str(&sample_str[..2000]);
+                // Safe UTF-8 truncation
+                let end = sample_str.char_indices()
+                    .take_while(|(i, _)| *i < 2000)
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(0);
+                output.push_str(&sample_str[..end]);
                 output.push_str("\n...");
             } else {
                 output.push_str(&sample_str);
