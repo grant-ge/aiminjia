@@ -450,21 +450,35 @@ async function handleExtractAllPages(params) {
     allTables.push(...frameTables);
   }
 
-  // Find the table with most headers (= main data table)
+  // Find the main data table: prefer table with most rows that has headers
+  // (not just most headers — some SSR systems have header-only tables)
+  let bestScore = -1;
   for (let i = 0; i < allTables.length; i++) {
-    if (allTables[i].headers.length > headers.length) {
-      headers = allTables[i].headers;
-      currentRows = Object.values(allTables[i].rows);
+    const t = allTables[i];
+    // Score: prefer tables with both headers AND rows
+    const score = t.rows.length * 100 + t.headers.length;
+    if (score > bestScore) {
+      bestScore = score;
+      headers = t.headers;
+      currentRows = t.rows;
       mainTableIndex = i;
     }
-  }
-  // If same headers count, prefer the one with more rows
-  if (mainTableIndex >= 0) {
-    currentRows = allTables[mainTableIndex].rows;
   }
 
   if (headers.length === 0 && currentRows.length === 0) {
     return { error: 'No tables found on current page', totalRows: 0 };
+  }
+
+  // If selected table has rows but no headers, borrow from another table with matching column count
+  if (headers.length === 0 && currentRows.length > 0) {
+    const colCount = Object.keys(currentRows[0]).length;
+    for (const t of allTables) {
+      if (t.headers.length >= colCount && t !== allTables[mainTableIndex]) {
+        headers = t.headers;
+        log(`extract_all_pages: borrowed ${headers.length} headers from another table`);
+        break;
+      }
+    }
   }
 
   log(`extract_all_pages: first page has ${currentRows.length} rows, ${headers.length} headers (picked table ${mainTableIndex} of ${allTables.length})`);
