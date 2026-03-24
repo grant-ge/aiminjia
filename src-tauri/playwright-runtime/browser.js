@@ -503,19 +503,36 @@ async function handleExtractAllPages(params) {
     }
   }
 
-  // If no page param in URL, try to detect from page content
+  // If no page param in URL, try to detect pagination from page content
   if (!pageParam) {
-    // Check if there's pagination info in the page (e.g. "共 X 条" or page controls)
     const paginationInfo = await page.evaluate(() => {
       const text = document.body.innerText;
-      const totalMatch = text.match(/共\s*(\d+)\s*条/);
-      return { total: totalMatch ? parseInt(totalMatch[1]) : 0 };
-    }).catch(() => ({ total: 0 }));
+      // Multiple patterns: "共 X 条", "total: X", "共有数据：X 条", page controls
+      const patterns = [
+        /共\s*(\d+)\s*条/,
+        /共有数据[：:]\s*(\d+)\s*条/,
+        /total[:\s]*(\d+)/i,
+        /共\s*(\d+)\s*页/,
+      ];
+      for (const p of patterns) {
+        const m = text.match(p);
+        if (m) return { total: parseInt(m[1]), hasPages: true };
+      }
+      // Check for pagination controls (layui, ant-design, element-ui)
+      const hasPager = document.querySelector('.layui-laypage, .ant-pagination, .el-pagination, .pagination, [class*="pager"]');
+      return { total: 0, hasPages: !!hasPager };
+    }).catch(() => ({ total: 0, hasPages: false }));
 
-    if (paginationInfo.total > currentRows.length) {
-      // There's more data but no page param — try adding page param
+    if (paginationInfo.total > currentRows.length || paginationInfo.hasPages) {
       pageParam = 'page';
       urlObj.searchParams.set('page', '1');
+      log(`extract_all_pages: detected pagination (total=${paginationInfo.total}, hasPages=${paginationInfo.hasPages})`);
+    } else if (currentRows.length > 0 && currentRows.length <= 20) {
+      // Small number of rows without detected pagination — still try page param
+      // (many SSR systems paginate without visible controls on first load)
+      pageParam = 'page';
+      urlObj.searchParams.set('page', '1');
+      log(`extract_all_pages: few rows (${currentRows.length}), trying pagination anyway`);
     } else {
       // All data is on one page
       log(`extract_all_pages: all data on one page (${currentRows.length} rows)`);
