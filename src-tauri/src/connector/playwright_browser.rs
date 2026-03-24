@@ -693,18 +693,27 @@ impl PlaywrightBrowser {
     }
 
     fn find_node(&self) -> Result<PathBuf, String> {
+        // Platform-specific node binary path
+        let node_subpath = if cfg!(target_os = "windows") {
+            "playwright-runtime/node/node.exe"
+        } else {
+            "playwright-runtime/node/bin/node"
+        };
+
         // Check bundled runtime first (production)
         if let Ok(resource_dir) = self.app_handle.path().resource_dir() {
-            let bundled = resource_dir.join("playwright-runtime/node/bin/node");
+            let bundled = resource_dir.join(node_subpath);
             if bundled.exists() { return Ok(bundled); }
         }
         // Dev mode: relative to src-tauri, canonicalize to absolute
-        let dev = PathBuf::from("playwright-runtime/node/bin/node");
+        let dev = PathBuf::from(node_subpath);
         if dev.exists() { return Ok(std::fs::canonicalize(&dev).unwrap_or(dev)); }
-        // System node
-        let system = PathBuf::from("/usr/local/bin/node");
-        if system.exists() { return Ok(system); }
-        Err("Node.js not found. Run scripts/setup-playwright.sh".to_string())
+        // System node (Unix only)
+        if !cfg!(target_os = "windows") {
+            let system = PathBuf::from("/usr/local/bin/node");
+            if system.exists() { return Ok(system); }
+        }
+        Err("Node.js not found. Run scripts/setup-playwright.sh (or .ps1 on Windows)".to_string())
     }
 
     fn find_browser_js(&self) -> Result<PathBuf, String> {
