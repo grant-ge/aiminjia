@@ -369,6 +369,9 @@ impl PlaywrightBrowser {
         }
         state.active_origin = None;
         state.active_url = None;
+        // Clean up profile lock
+        let lock_path = self.get_app_data_dir().join("playwright-profile/SingletonLock");
+        let _ = std::fs::remove_file(&lock_path);
         info!("[Playwright] Shutdown complete");
     }
 
@@ -407,6 +410,19 @@ impl PlaywrightBrowser {
         let browsers_path = self.find_browsers_dir()?;
         let user_data_dir = self.get_app_data_dir().join("playwright-profile");
         std::fs::create_dir_all(&user_data_dir).ok();
+
+        // Clean up stale profile locks from previous crashes
+        let singleton_lock = user_data_dir.join("SingletonLock");
+        if singleton_lock.exists() {
+            warn!("[Playwright] Removing stale SingletonLock");
+            let _ = std::fs::remove_file(&singleton_lock);
+            // Kill any orphaned Chromium processes using this profile
+            let dir_str = user_data_dir.to_string_lossy().to_string();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", &format!("--user-data-dir={}", dir_str)])
+                .output();
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
 
         info!("[Playwright] Launching sidecar: node={:?}, script={:?}", node_path, script_path);
 
