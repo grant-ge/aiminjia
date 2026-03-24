@@ -326,6 +326,36 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     if !result.files.is_empty() {
         output.push_str("### Extracted Data Files\n");
         for f in &result.files {
+            // Try to register each file into the conversation
+            let src = std::path::Path::new(f);
+            if src.exists() {
+                let file_name = src.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "data.json".to_string());
+                if let Ok(content) = std::fs::read(src) {
+                    match ctx.file_manager.write_file("generated", &file_name, &content) {
+                        Ok(file_info) => {
+                            let file_id = uuid::Uuid::new_v4().to_string();
+                            let _ = ctx.storage.insert_generated_file(
+                                &file_id,
+                                &ctx.conversation_id,
+                                None,
+                                &file_info.file_name,
+                                &file_info.stored_path,
+                                "json",
+                                file_info.file_size as i64,
+                                "data",
+                                Some("Browser agent extracted data"),
+                                1, true, None, None, None,
+                            );
+                            let full = ctx.file_manager.full_path(&file_info.stored_path);
+                            output.push_str(&format!("- {}\n", full.display()));
+                            continue;
+                        }
+                        Err(e) => warn!("[CONNECTOR] Failed to register sub-agent file: {}", e),
+                    }
+                }
+            }
             output.push_str(&format!("- {}\n", f));
         }
         output.push_str("\nUse `execute_python` to load these JSON files (e.g. `pd.read_json(path)` or `json.load`).\n\n");
@@ -380,10 +410,45 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
             method, url, result.status, result.content_type);
 
         if let Some(ref path) = result.saved_file_path {
+            // Copy to workspace and register in conversation file_index
+            let file_name = path.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "api_data.json".to_string());
+
+            let registered_path = if let Ok(content) = std::fs::read(path) {
+                // Write to conversation's generated dir via file_manager
+                match ctx.file_manager.write_file("generated", &file_name, &content) {
+                    Ok(file_info) => {
+                        let file_id = uuid::Uuid::new_v4().to_string();
+                        let _ = ctx.storage.insert_generated_file(
+                            &file_id,
+                            &ctx.conversation_id,
+                            None,
+                            &file_info.file_name,
+                            &file_info.stored_path,
+                            "json",
+                            file_info.file_size as i64,
+                            "data",
+                            Some(&format!("API data: {} {}", method, url)),
+                            1, true, None, None, None,
+                        );
+                        info!("[CONNECTOR] Registered API data file: {} ({})", file_info.stored_path, file_info.file_size);
+                        // Use the workspace path for LLM
+                        ctx.file_manager.full_path(&file_info.stored_path).display().to_string()
+                    }
+                    Err(e) => {
+                        warn!("[CONNECTOR] Failed to copy API data to workspace: {}", e);
+                        path.display().to_string()
+                    }
+                }
+            } else {
+                path.display().to_string()
+            };
+
             // Large data saved to file — tell LLM to use Python to process it
             let total = result.total_rows.map(|t| format!("{} rows", t)).unwrap_or("unknown size".to_string());
             output.push_str(&format!("### Data saved to file ({}) \n", total));
-            output.push_str(&format!("File: {}\n\n", path.display()));
+            output.push_str(&format!("File: {}\n\n", registered_path));
             output.push_str("The full JSON data has been saved to the file above. ");
             output.push_str("Use `execute_python` to load and process this JSON file (e.g. pd.read_json or json.load). ");
             output.push_str("Do NOT use page_execute_js to re-fetch the data.\n\n");
@@ -392,11 +457,16 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
             output.push_str(&format!("### Data ({} rows)\n", total));
         }
 
-        // Format JSON data compactly
+        // Format JSON data compactly (safe UTF-8 truncation)
         let data_str = serde_json::to_string_pretty(&result.data)
             .unwrap_or_else(|_| format!("{}", result.data));
         if data_str.len() > 8000 {
-            output.push_str(&data_str[..8000]);
+            let end = data_str.char_indices()
+                .take_while(|(i, _)| *i < 8000)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+            output.push_str(&data_str[..end]);
             output.push_str("\n...(truncated)\n");
         } else {
             output.push_str(&data_str);
