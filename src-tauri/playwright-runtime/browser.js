@@ -568,158 +568,221 @@ async function handleExtractTableData(params) {
  * params.maxPages — max pages to extract (default 100)
  * params.waitMs — ms to wait after pagination JS before extracting (default 1000)
  */
+
+/**
+ * Extract ALL paginated data using HTTP replay — no DOM manipulation needed.
+ *
+ * Strategy:
+ * 1. Use current page URL (after iframe redirect) as the data URL
+ * 2. Try URL pagination via page.request.get() (fast HTTP, no page render)
+ * 3. Parse tables from HTML response using DOMParser (in browser context)
+ * 4. If URL pagination fails, fall back to click-based pagination
+ *
+ * params.savePath — where to save JSON file (required)
+ * params.paginationJs — JS to click next button (fallback only)
+ * params.maxPages — max pages (default 100)
+ * params.pageSize — rows per page (default 100)
+ */
 async function handleExtractWithPagination(params) {
   if (!page) return { error: 'Browser not launched' };
 
   const savePath = params.savePath;
-  const paginationJs = params.paginationJs;
+  const paginationJs = params.paginationJs || '';
   const maxPages = params.maxPages || 100;
-  const waitMs = params.waitMs || 1000;
+  const pageSize = params.pageSize || 100;
 
   if (!savePath) return { error: 'savePath is required' };
-  if (!paginationJs) return { error: 'paginationJs is required' };
 
-  log(`extract_with_pagination: savePath=${savePath}, maxPages=${maxPages}, paginationJs="${paginationJs.substring(0, 80)}..."`);
+  const dataUrl = page.url();
+  log(`extract_with_pagination: dataUrl=${dataUrl}, maxPages=${maxPages}, pageSize=${pageSize}`);
 
-  // Auto-optimize: try to increase pageSize before extraction
-  for (const frame of page.frames()) {
-    try {
-      const changed = await frame.evaluate(() => {
-        // Common pageSize selectors (layui, ant-design, element-ui)
-        const selectors = [
-          'select[lay-filter*="pageSize"]',
-          '.layui-laypage-limits select',
-          '.ant-pagination-options-size-changer select',
-          '.el-pagination .el-select',
-          'select[name="pageSize"]',
-          'select.page-size',
-        ];
-        for (const sel of selectors) {
-          const select = document.querySelector(sel);
-          if (select) {
-            // Find the largest option
-            const options = Array.from(select.options || select.querySelectorAll('option'));
-            let maxVal = 0;
-            let maxOpt = null;
-            for (const opt of options) {
-              const v = parseInt(opt.value || opt.textContent);
-              if (v > maxVal) { maxVal = v; maxOpt = opt; }
-            }
-            if (maxOpt && maxVal > 10) {
-              select.value = maxOpt.value;
-              select.dispatchEvent(new Event('change', { bubbles: true }));
-              return { changed: true, pageSize: maxVal, selector: sel };
-            }
+  // Helper: parse tables from raw HTML string using browser's DOMParser
+  async function parseTablesFromHTML(html) {
+    return await page.evaluate((htmlStr) => {
+      const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+      const tables = [];
+      doc.querySelectorAll('table').forEach(t => {
+        const headers = [];
+        t.querySelectorAll('thead th, tr:first-child th').forEach(h => headers.push(h.textContent.trim()));
+        const rows = [];
+        const trs = t.querySelectorAll('tbody tr, tr');
+        const startIdx = (headers.length > 0 && !t.querySelector('thead')) ? 1 : 0;
+        for (let r = startIdx; r < trs.length; r++) {
+          const cells = trs[r].querySelectorAll('td');
+          if (cells.length < 3) continue; // Skip tiny rows
+          const row = {};
+          for (let c = 0; c < cells.length; c++) {
+            const key = (c < headers.length) ? headers[c] : ('col_' + c);
+            row[key] = cells[c].textContent.trim();
           }
+          rows.push(row);
         }
-        return { changed: false };
+        if (rows.length > 0) tables.push({ headers, rows });
       });
-      if (changed.changed) {
-        log(`extract_with_pagination: auto-set pageSize to ${changed.pageSize} via ${changed.selector}`);
-        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-        await new Promise(r => setTimeout(r, 1000));
-        break;
-      }
-    } catch (e) { /* try next frame */ }
+      return tables;
+    }, html);
   }
 
-  let allRows = [];
+  // Step 1: Get headers from current page (live DOM, most reliable)
   let headers = [];
-  let lastPageHash = null;
+  const allFrames = page.frames();
+  for (const frame of allFrames) {
+    const frameTables = await extractFromFrame(frame);
+    for (const t of frameTables) {
+      if (t.headers.length > headers.length) headers = t.headers;
+    }
+  }
+  log(`extract_with_pagination: got ${headers.length} headers from live DOM`);
+
+  // Step 2: Try URL-based pagination via HTTP requests
+  let allRows = [];
   let totalPages = 0;
+  let urlPaginationWorks = false;
+  let lastPageHash = null;
 
-  for (let p = 1; p <= maxPages; p++) {
-    // Extract current page from all frames
-    const allFrames = page.frames();
-    let bestTable = { headers: [], rows: [] };
-    let bestScore = -1;
-    let allTables = [];
+  const urlObj = new URL(dataUrl);
 
-    for (const frame of allFrames) {
-      const frameTables = await extractFromFrame(frame);
-      allTables.push(...frameTables);
-    }
+  // Detect existing page param names
+  let pageParam = null;
+  let pageSizeParam = null;
+  for (const p of ['page', 'pageNum', 'pageNo', 'p', 'currentPage']) {
+    if (urlObj.searchParams.has(p)) { pageParam = p; break; }
+  }
+  for (const p of ['pageSize', 'size', 'limit', 'rows', 'per_page']) {
+    if (urlObj.searchParams.has(p)) { pageSizeParam = p; break; }
+  }
+  if (!pageParam) pageParam = 'page';
+  if (!pageSizeParam) pageSizeParam = 'pageSize';
 
-    for (const t of allTables) {
-      const score = t.rows.length * 100 + t.headers.length;
-      if (score > bestScore) {
-        bestScore = score;
-        bestTable = t;
-      }
-    }
+  // Test page 1 via HTTP
+  urlObj.searchParams.set(pageParam, '1');
+  urlObj.searchParams.set(pageSizeParam, String(pageSize));
+  const testUrl = urlObj.toString();
 
-    let pageHeaders = bestTable.headers;
-    let pageRows = bestTable.rows;
+  log(`extract_with_pagination: testing HTTP pagination — ${testUrl}`);
 
-    // Borrow headers from header-only table if needed
-    if (pageHeaders.length === 0 && pageRows.length > 0) {
-      const colCount = Object.keys(pageRows[0]).length;
-      for (const t of allTables) {
-        if (t.headers.length >= colCount && t.rows.length === 0) {
-          pageHeaders = t.headers;
-          break;
+  try {
+    const resp = await page.request.get(testUrl);
+    if (resp.ok()) {
+      const html = await resp.text();
+      const tables = await parseTablesFromHTML(html);
+
+      // Pick best table (most rows)
+      let bestRows = [];
+      for (const t of tables) {
+        if (t.rows.length > bestRows.length) {
+          bestRows = t.rows;
+          if (t.headers.length > 0 && headers.length === 0) headers = t.headers;
         }
       }
-    }
 
-    if (p === 1 && pageHeaders.length > 0) {
-      headers = pageHeaders;
-    }
-
-    if (pageRows.length === 0) {
-      log(`extract_with_pagination: page ${p} has 0 rows, stopping`);
-      break;
-    }
-
-    // Dedup check
-    const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
-    if (pageHash === lastPageHash) {
-      log(`extract_with_pagination: page ${p} is duplicate, stopping`);
-      break;
-    }
-    lastPageHash = pageHash;
-
-    allRows.push(...pageRows);
-    totalPages = p;
-    log(`extract_with_pagination: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
-
-    // Execute pagination JS to flip to next page
-    try {
-      let clicked = false;
-      for (const frame of page.frames()) {
-        try {
-          // Try 1: Use Playwright's native click on the selector from the JS code
-          // Extract selector from common patterns like: document.querySelector('xxx').click()
-          const selectorMatch = paginationJs.match(/querySelector\(['"]([^'"]+)['"]\)/);
-          if (selectorMatch) {
-            const selector = selectorMatch[1];
-            const el = await frame.$(selector);
-            if (el) {
-              await el.click();
-              clicked = true;
-              break;
-            }
-          }
-          // Try 2: Run as raw JS via evaluate with Function constructor
-          await frame.evaluate((code) => {
-            return new Function(code)();
-          }, paginationJs);
-          clicked = true;
-          break;
-        } catch (e) { /* try next frame */ }
+      if (bestRows.length > 0) {
+        urlPaginationWorks = true;
+        allRows = bestRows;
+        totalPages = 1;
+        lastPageHash = JSON.stringify(bestRows.slice(0, 3).map(r => Object.values(r).join('|')));
+        log(`extract_with_pagination: HTTP pagination works! page 1 → ${bestRows.length} rows`);
       }
-      if (!clicked) {
-        log(`extract_with_pagination: pagination JS failed in all frames, stopping`);
+    }
+  } catch (e) {
+    log(`extract_with_pagination: HTTP test failed: ${e.message}`);
+  }
+
+  if (urlPaginationWorks) {
+    // Loop through remaining pages via HTTP (fast, no DOM)
+    for (let p = 2; p <= maxPages; p++) {
+      urlObj.searchParams.set(pageParam, String(p));
+      const pageUrl = urlObj.toString();
+
+      try {
+        const resp = await page.request.get(pageUrl);
+        if (!resp.ok()) {
+          log(`extract_with_pagination: page ${p} HTTP ${resp.status()}, stopping`);
+          break;
+        }
+        const html = await resp.text();
+        const tables = await parseTablesFromHTML(html);
+
+        let pageRows = [];
+        for (const t of tables) {
+          if (t.rows.length > pageRows.length) pageRows = t.rows;
+        }
+
+        if (pageRows.length === 0) {
+          log(`extract_with_pagination: page ${p} has 0 rows, stopping`);
+          break;
+        }
+
+        // Dedup check
+        const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+        if (pageHash === lastPageHash) {
+          log(`extract_with_pagination: page ${p} is duplicate, stopping`);
+          break;
+        }
+        lastPageHash = pageHash;
+
+        allRows.push(...pageRows);
+        totalPages = p;
+        log(`extract_with_pagination: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+      } catch (e) {
+        log(`extract_with_pagination: page ${p} error: ${e.message}, stopping`);
         break;
       }
-    } catch (e) {
-      log(`extract_with_pagination: pagination JS error: ${e.message}, stopping`);
-      break;
     }
+  } else if (paginationJs) {
+    // Fallback: click-based pagination from live DOM
+    log('extract_with_pagination: HTTP pagination failed, falling back to click-based');
 
-    // Wait for new data to load
-    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, waitMs));
+    // Extract first page from live DOM
+    for (const frame of page.frames()) {
+      const frameTables = await extractFromFrame(frame);
+      for (const t of frameTables) {
+        if (t.rows.length > allRows.length) allRows = t.rows;
+      }
+    }
+    totalPages = 1;
+    lastPageHash = allRows.length > 0 ? JSON.stringify(allRows.slice(0, 3).map(r => Object.values(r).join('|'))) : null;
+
+    for (let p = 2; p <= maxPages; p++) {
+      // Click next page
+      let clicked = false;
+      const selectorMatch = paginationJs.match(/querySelector\(['"]([^'"]+)['"]\)/);
+      for (const frame of page.frames()) {
+        try {
+          if (selectorMatch) {
+            const el = await frame.$(selectorMatch[1]);
+            if (el) { await el.click(); clicked = true; break; }
+          }
+          await frame.evaluate((code) => new Function(code)(), paginationJs);
+          clicked = true;
+          break;
+        } catch (e) {}
+      }
+      if (!clicked) {
+        log(`extract_with_pagination: click pagination failed on page ${p - 1}, stopping`);
+        break;
+      }
+
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 800));
+
+      let pageRows = [];
+      for (const frame of page.frames()) {
+        const frameTables = await extractFromFrame(frame);
+        for (const t of frameTables) {
+          if (t.rows.length > pageRows.length) pageRows = t.rows;
+        }
+      }
+      if (pageRows.length === 0) break;
+      const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+      if (pageHash === lastPageHash) break;
+      lastPageHash = pageHash;
+      allRows.push(...pageRows);
+      totalPages = p;
+      log(`extract_with_pagination: click page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+    }
+  } else {
+    return { error: 'No pagination method available. Provide paginationJs or ensure URL supports page param.' };
   }
 
   log(`extract_with_pagination: complete — ${allRows.length} total rows, ${totalPages} pages`);
@@ -739,7 +802,6 @@ async function handleExtractWithPagination(params) {
     sampleRows: allRows.slice(0, 3),
   };
 }
-
 // ── Main Loop ───────────────────────────────────────────────────
 
 const HANDLERS = {
