@@ -91,11 +91,11 @@ impl ConnectorEngine {
         pw.api_fetch(url, method, body, headers).await
     }
 
-    pub async fn browser_extract_all_pages(&self, save_path: &str, max_pages: Option<u32>, page_size: Option<u32>) -> Result<Value, String> {
+    pub async fn browser_extract_table_data(&self, save_path: &str, max_pages: Option<u32>, page_size: Option<u32>) -> Result<Value, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
-        info!("[CONNECTOR] browser_extract_all_pages");
-        pw.extract_all_pages(save_path, max_pages, page_size).await
+        info!("[CONNECTOR] browser_extract_table_data");
+        pw.extract_table_data(save_path, max_pages, page_size).await
     }
 
     pub async fn browser_screenshot(&self) -> Option<std::path::PathBuf> {

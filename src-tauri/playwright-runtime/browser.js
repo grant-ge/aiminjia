@@ -417,297 +417,102 @@ async function handleShutdown() {
 }
 
 /**
- * Auto-paginate and extract ALL table data from the current page.
- * Detects pagination pattern (URL param or next button), iterates through
- * all pages, merges all table rows. Saves result to JSON file.
+ * Extract table data from the current page (all frames).
+ * Does NOT auto-paginate — just reads what's visible now.
+ * Returns the largest table's data + pagination info for the LLM to decide next steps.
  *
- * params.savePath — where to save the JSON file
- * params.maxPages — max pages to fetch (default 50)
- * params.pageSize — override pageSize param (default: detected from URL or 100)
+ * params.savePath — if set, append rows to this JSON file (for incremental collection)
  */
-async function handleExtractAllPages(params) {
+async function handleExtractTableData(params) {
   if (!page) return { error: 'Browser not launched' };
 
-  const savePath = params.savePath;
-  const maxPages = params.maxPages || 50;
-  const pageSizeOverride = params.pageSize || null;
+  const savePath = params.savePath || null;
 
-  log(`extract_all_pages: savePath=${savePath}, maxPages=${maxPages}`);
+  log('extract_table_data: extracting current page');
 
-  // Step 1: Extract current page tables to determine the main data table
-  // Pick the table with the most columns (= likely the data table, not decorative)
+  // Extract from all frames
   const allFrames = page.frames();
-  let headers = [];
-  let currentRows = [];
-  let mainTableIndex = -1;
-
   let allTables = [];
   for (const frame of allFrames) {
     const frameTables = await extractFromFrame(frame);
     allTables.push(...frameTables);
   }
 
-  // Find the main data table: prefer table with most rows that has headers
-  // (not just most headers — some SSR systems have header-only tables)
+  // Pick the table with most rows (data table)
+  let bestTable = { headers: [], rows: [] };
   let bestScore = -1;
-  for (let i = 0; i < allTables.length; i++) {
-    const t = allTables[i];
-    // Score: prefer tables with both headers AND rows
+  for (const t of allTables) {
     const score = t.rows.length * 100 + t.headers.length;
     if (score > bestScore) {
       bestScore = score;
-      headers = t.headers;
-      currentRows = t.rows;
-      mainTableIndex = i;
+      bestTable = t;
     }
   }
 
-  if (headers.length === 0 && currentRows.length === 0) {
-    return { error: 'No tables found on current page', totalRows: 0 };
-  }
-
-  // If selected table has rows but no headers, borrow from another table with matching column count
-  if (headers.length === 0 && currentRows.length > 0) {
-    const colCount = Object.keys(currentRows[0]).length;
+  // If selected table has rows but no headers, borrow from header-only table
+  let headers = bestTable.headers;
+  let rows = bestTable.rows;
+  if (headers.length === 0 && rows.length > 0) {
+    const colCount = Object.keys(rows[0]).length;
     for (const t of allTables) {
-      if (t.headers.length >= colCount && t !== allTables[mainTableIndex]) {
+      if (t.headers.length >= colCount && t.rows.length === 0) {
         headers = t.headers;
-        log(`extract_all_pages: borrowed ${headers.length} headers from another table`);
+        log(`extract_table_data: borrowed ${headers.length} headers from header-only table`);
         break;
       }
     }
   }
 
-  log(`extract_all_pages: first page has ${currentRows.length} rows, ${headers.length} headers (picked table ${mainTableIndex} of ${allTables.length})`);
-
-  // Step 2: Detect pagination from URL
-  const currentUrl = page.url();
-  const urlObj = new URL(currentUrl);
-  let pageParam = null;
-  let pageSizeParam = null;
-
-  // Common pagination param names
-  for (const p of ['page', 'pageNum', 'pageNo', 'p', 'currentPage']) {
-    if (urlObj.searchParams.has(p)) {
-      pageParam = p;
-      break;
-    }
-  }
-  for (const p of ['pageSize', 'size', 'limit', 'rows', 'per_page']) {
-    if (urlObj.searchParams.has(p)) {
-      pageSizeParam = p;
-      break;
-    }
-  }
-
-  // If no page param in URL, try to detect pagination from page content
-  if (!pageParam) {
-    const paginationInfo = await page.evaluate(() => {
-      const text = document.body.innerText;
-      // Multiple patterns: "共 X 条", "total: X", "共有数据：X 条", page controls
-      const patterns = [
-        /共\s*(\d+)\s*条/,
-        /共有数据[：:]\s*(\d+)\s*条/,
-        /total[:\s]*(\d+)/i,
-        /共\s*(\d+)\s*页/,
-      ];
-      for (const p of patterns) {
-        const m = text.match(p);
-        if (m) return { total: parseInt(m[1]), hasPages: true };
-      }
-      // Check for pagination controls (layui, ant-design, element-ui)
-      const hasPager = document.querySelector('.layui-laypage, .ant-pagination, .el-pagination, .pagination, [class*="pager"]');
-      return { total: 0, hasPages: !!hasPager };
-    }).catch(() => ({ total: 0, hasPages: false }));
-
-    if (paginationInfo.total > currentRows.length || paginationInfo.hasPages) {
-      pageParam = 'page';
-      urlObj.searchParams.set('page', '1');
-      log(`extract_all_pages: detected pagination (total=${paginationInfo.total}, hasPages=${paginationInfo.hasPages})`);
-    } else if (currentRows.length > 0 && currentRows.length <= 20) {
-      // Small number of rows without detected pagination — still try page param
-      // (many SSR systems paginate without visible controls on first load)
-      pageParam = 'page';
-      urlObj.searchParams.set('page', '1');
-      log(`extract_all_pages: few rows (${currentRows.length}), trying pagination anyway`);
-    } else {
-      // All data is on one page
-      log(`extract_all_pages: all data on one page (${currentRows.length} rows)`);
-      if (savePath) {
-        fs.writeFileSync(savePath, JSON.stringify(currentRows, null, 2));
-        log(`extract_all_pages: saved to ${savePath}`);
-      }
-      return { totalRows: currentRows.length, totalPages: 1, headers, savedTo: savePath || null };
-    }
+  // Detect pagination info from all frames
+  let paginationInfo = { total: 0, currentPage: 0, totalPages: 0, hasNext: false, hasPager: false };
+  for (const frame of allFrames) {
+    try {
+      const info = await frame.evaluate(() => {
+        const text = document.body.innerText;
+        const patterns = [/共\s*(\d+)\s*条/, /共有数据[：:]\s*(\d+)\s*条/, /total[:\s]*(\d+)/i];
+        let total = 0;
+        for (const p of patterns) { const m = text.match(p); if (m) { total = parseInt(m[1]); break; } }
+        const activePage = document.querySelector('.layui-laypage-curr em, .ant-pagination-item-active a, .el-pager .active, .pagination .active');
+        let currentPage = activePage ? (parseInt(activePage.textContent) || 0) : 0;
+        const totalPagesMatch = text.match(/共\s*(\d+)\s*页/);
+        let totalPages = totalPagesMatch ? parseInt(totalPagesMatch[1]) : 0;
+        const nextBtn = document.querySelector('.layui-laypage-next:not(.layui-disabled), .ant-pagination-next:not(.ant-pagination-disabled), .el-pagination .btn-next:not(.disabled), a.next:not(.disabled)');
+        const hasPager = !!document.querySelector('.layui-laypage, .ant-pagination, .el-pagination, .pagination');
+        return { total, currentPage, totalPages, hasNext: !!nextBtn, hasPager };
+      });
+      if (info.total > paginationInfo.total) paginationInfo.total = info.total;
+      if (info.currentPage > paginationInfo.currentPage) paginationInfo.currentPage = info.currentPage;
+      if (info.totalPages > paginationInfo.totalPages) paginationInfo.totalPages = info.totalPages;
+      if (info.hasNext) paginationInfo.hasNext = true;
+      if (info.hasPager) paginationInfo.hasPager = true;
+    } catch (e) {}
   }
 
-  // Step 3: Set page size larger if possible
-  const effectivePageSize = pageSizeOverride ||
-    (pageSizeParam ? parseInt(urlObj.searchParams.get(pageSizeParam)) : null) || 100;
+  log(`extract_table_data: ${rows.length} rows, ${headers.length} headers, pagination: total=${paginationInfo.total}, page=${paginationInfo.currentPage}, hasNext=${paginationInfo.hasNext}`);
 
-  if (pageSizeParam) {
-    urlObj.searchParams.set(pageSizeParam, String(effectivePageSize));
-  } else {
-    urlObj.searchParams.set('pageSize', String(effectivePageSize));
-  }
-
-  // Step 4: Paginate — try URL pagination first, fallback to clicking page controls
-  let allRows = [...currentRows]; // Start with first page data
-  let totalPages = 1;
-  let lastPageHash = JSON.stringify(currentRows.slice(0, 3).map(r => Object.values(r).join('|')));
-
-  // Strategy A: Try URL-based pagination (works for standard MVC)
-  let urlPaginationWorks = false;
-
-  if (pageParam) {
-    urlObj.searchParams.set(pageParam, '2');
-    if (pageSizeParam) urlObj.searchParams.set(pageSizeParam, String(effectivePageSize));
-    else urlObj.searchParams.set('pageSize', String(effectivePageSize));
-
-    const testUrl = urlObj.toString();
-    log(`extract_all_pages: testing URL pagination — ${testUrl}`);
-
-    await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-
-    const testFrames = page.frames();
-    let testRows = [];
-    for (const frame of testFrames) {
-      const frameTables = await extractFromFrame(frame);
-      for (const t of frameTables) {
-        if (t.rows.length > testRows.length) testRows = t.rows;
+  // If savePath specified, append rows to file
+  if (savePath && rows.length > 0) {
+    let existing = { headers: [], rows: [], totalRows: 0 };
+    try {
+      if (fs.existsSync(savePath)) {
+        existing = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
       }
-    }
-
-    if (testRows.length > 0) {
-      const testHash = JSON.stringify(testRows.slice(0, 3).map(r => Object.values(r).join('|')));
-      if (testHash !== lastPageHash) {
-        urlPaginationWorks = true;
-        allRows.push(...testRows);
-        totalPages = 2;
-        lastPageHash = testHash;
-        log(`extract_all_pages: URL pagination works! page 2 → ${testRows.length} rows`);
-      }
-    }
-  }
-
-  if (urlPaginationWorks) {
-    // Continue URL-based pagination from page 3
-    for (let p = 3; p <= maxPages; p++) {
-      urlObj.searchParams.set(pageParam, String(p));
-      const pageUrl = urlObj.toString();
-      log(`extract_all_pages: fetching page ${p} — ${pageUrl}`);
-
-      await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-
-      const pageFrames = page.frames();
-      let pageRows = [];
-      for (const frame of pageFrames) {
-        const frameTables = await extractFromFrame(frame);
-        for (const t of frameTables) {
-          if (t.rows.length > pageRows.length) pageRows = t.rows;
-        }
-      }
-
-      if (pageRows.length === 0) {
-        log(`extract_all_pages: page ${p} has 0 rows, stopping`);
-        break;
-      }
-
-      const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
-      if (pageHash === lastPageHash) {
-        log(`extract_all_pages: page ${p} is duplicate, stopping`);
-        break;
-      }
-      lastPageHash = pageHash;
-
-      allRows.push(...pageRows);
-      totalPages = p;
-      log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
-
-      if (pageRows.length < effectivePageSize * 0.5) {
-        log(`extract_all_pages: last page detected`);
-        break;
-      }
-    }
-  } else {
-    // Strategy B: Click-based pagination (for iframe/JS-based systems like layui)
-    log('extract_all_pages: URL pagination failed, trying click-based pagination');
-
-    // Go back to original page first
-    await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-
-    for (let p = 2; p <= maxPages; p++) {
-      // Try clicking "next page" in any frame
-      let clicked = false;
-      const allFrames = page.frames();
-      for (const frame of allFrames) {
-        try {
-          // Common next-page selectors (layui, ant-design, element-ui, generic)
-          const nextBtn = await frame.$('.layui-laypage-next:not(.layui-disabled), .ant-pagination-next:not(.ant-pagination-disabled), .el-pagination .btn-next:not(.disabled), a.next:not(.disabled), [class*="next"]:not([class*="disabled"])');
-          if (nextBtn) {
-            await nextBtn.click();
-            clicked = true;
-            break;
-          }
-        } catch (e) { /* try next frame */ }
-      }
-
-      if (!clicked) {
-        log(`extract_all_pages: no next button found on page ${p - 1}, stopping`);
-        break;
-      }
-
-      // Wait for new data to load
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-      await new Promise(r => setTimeout(r, 500)); // Extra settle time
-
-      // Extract from all frames
-      const pageFrames2 = page.frames();
-      let pageRows = [];
-      for (const frame of pageFrames2) {
-        const frameTables = await extractFromFrame(frame);
-        for (const t of frameTables) {
-          if (t.rows.length > pageRows.length) pageRows = t.rows;
-        }
-      }
-
-      if (pageRows.length === 0) {
-        log(`extract_all_pages: page ${p} has 0 rows after click, stopping`);
-        break;
-      }
-
-      const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
-      if (pageHash === lastPageHash) {
-        log(`extract_all_pages: page ${p} is duplicate after click, stopping`);
-        break;
-      }
-      lastPageHash = pageHash;
-
-      allRows.push(...pageRows);
-      totalPages = p;
-      log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
-    }
-  }
-
-  log(`extract_all_pages: complete — ${allRows.length} total rows, ${totalPages} pages`);
-
-  // Step 5: Save to file
-  if (savePath) {
-    const output = { headers, rows: allRows, totalRows: allRows.length, totalPages };
-    fs.writeFileSync(savePath, JSON.stringify(output, null, 2));
-    const stats = fs.statSync(savePath);
-    log(`extract_all_pages: saved to ${savePath} (${stats.size} bytes)`);
+    } catch (e) {}
+    if (headers.length > 0) existing.headers = headers;
+    existing.rows.push(...rows);
+    existing.totalRows = existing.rows.length;
+    fs.writeFileSync(savePath, JSON.stringify(existing, null, 2));
+    log(`extract_table_data: appended ${rows.length} rows to ${savePath} (total: ${existing.totalRows})`);
   }
 
   return {
-    totalRows: allRows.length,
-    totalPages,
+    rows: rows.length,
     headers,
+    sampleRows: rows.slice(0, 3),
+    pagination: paginationInfo,
+    url: page.url(),
     savedTo: savePath || null,
-    sampleRows: allRows.slice(0, 3),
+    totalSaved: savePath ? (() => { try { return JSON.parse(fs.readFileSync(savePath, 'utf-8')).totalRows; } catch(e) { return 0; } })() : 0,
   };
 }
 
@@ -717,7 +522,7 @@ const HANDLERS = {
   launch: handleLaunch,
   navigate: handleNavigate,
   extract: handleExtract,
-  extract_all_pages: handleExtractAllPages,
+  extract_table_data: handleExtractTableData,
   execute_js: handleExecuteJs,
   fetch: handleFetch,
   screenshot: handleScreenshot,

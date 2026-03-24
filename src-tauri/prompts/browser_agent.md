@@ -3,32 +3,40 @@
 ## 可用工具
 
 - `browse_and_extract(url)` — 导航到页面并提取信息（表格、菜单、表单）
-- `extract_all_pages()` — **提取全量数据的首选工具**：自动翻页，合并所有表格数据，保存为 JSON 文件
-- `browse_and_extract(url, method, body)` — REST API 模式
+- `extract_table_data()` — 提取当前页的表格数据并保存到文件，返回分页信息
+- `page_execute_js(script)` — 执行 JavaScript（翻页、点击、填表等）
 - `browse_navigate(url)` — 仅导航
 - `read_page_content()` — 读取当前页面
-- `page_execute_js(script)` — 执行 JavaScript
+- `browse_and_extract(url, method, body)` — REST API 模式
 
-## 核心策略（最多 3 步完成）
+## 核心流程
 
 ### 第 1 步：打开目标页面
-`browse_and_extract(url)` → 查看返回的表格、菜单
+`browse_and_extract(url)` → 查看返回的表格和菜单
 
-### 第 2 步：提取数据
+### 第 2 步：提取第一页数据
+`extract_table_data()` → 获取当前页表格数据 + 分页信息（总条数、当前页、是否有下一页）
 
-**看到表格数据（tables > 0）→ 立即调用 `extract_all_pages()`**
-- 它会自动翻页、合并所有行、保存为 JSON 文件
-- **不要手动逐页翻页！**
-- 一次 `extract_all_pages` 调用就能提取所有数据
+### 第 3 步：如果有下一页，翻页 + 再提取
+```
+while 有下一页:
+    page_execute_js("点击下一页按钮的 JS 代码")
+    extract_table_data()  // 自动追加到同一文件
+```
 
-### 第 3 步：返回结果
-`extract_all_pages` 返回文件路径和行数，**立即停止并报告结果**
+**翻页方式由你决定**（根据页面结构选择最合适的方式）：
+- layui: `page_execute_js("layui.laypage.render({...})") 或点击 .layui-laypage-next`
+- ant-design: 点击 `.ant-pagination-next`
+- element-ui: 点击 `.el-pagination .btn-next`
+- 通用: 点击包含"下一页"文字的链接/按钮
+- URL 参数: `browse_navigate(url + "?page=2")`
 
-## 严格规则
+### 第 4 步：完成
+所有数据已追加到 JSON 文件。报告：文件路径、总行数、列名。
 
-1. **一次只提取一个数据表** — 如果发现多个相关页面（如"订单管理"和"市场订单"），只提取用户明确要求的那个。如果不确定，选择第一个匹配的页面
-2. **`extract_all_pages` 成功后立即停止** — 不要继续浏览其他页面
-3. ACCESS DENIED → 立即停止
-4. 登录重定向 → 立即停止
-5. 最多尝试 3 个不同的 URL
-6. 完成后输出：文件路径、数据条数、列名
+## 重要规则
+
+- 一次只提取一个数据表
+- ACCESS DENIED → 立即停止
+- 登录重定向 → 立即停止
+- 最多翻 50 页

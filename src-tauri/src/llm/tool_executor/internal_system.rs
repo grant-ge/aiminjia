@@ -1,6 +1,6 @@
 //! internal_system handlers — browser automation tool executors.
 //! browse_navigate, read_page_content, page_execute_js, browse_and_extract,
-//! browse_data (sub-agent), extract_all_pages.
+//! browse_data (sub-agent), extract_table_data.
 
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -303,7 +303,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
             "browse_navigate".to_string(),
             "read_page_content".to_string(),
             "page_execute_js".to_string(),
-            "extract_all_pages".to_string(),
+            "extract_table_data".to_string(),
         ],
         max_iterations: 15,
         dynamic_context,
@@ -383,56 +383,90 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     Ok(output)
 }
 
-/// Handle extract_all_pages — auto-paginate, extract all table data, save to file.
-pub(crate) async fn handle_extract_all_pages(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let max_pages = args["max_pages"].as_u64().map(|v| v as u32);
-    let page_size = args["page_size"].as_u64().map(|v| v as u32);
-
+/// Handle extract_table_data — extract current page table data + pagination info.
+/// Does NOT auto-paginate. LLM decides how to flip pages.
+pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value) -> Result<String> {
     let engine = ctx.connector_engine.as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
-    // Build save path in conversation's generated dir
+    // Build save path in conversation's generated dir (for incremental append)
     let filename = format!("table_data_{}.json", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
-    let file_info = ctx.file_manager.write_file("generated", &filename, b"[]")
+    let file_info = ctx.file_manager.write_file("generated", &filename, b"{}")
         .map_err(|e| anyhow!("Failed to create output file: {}", e))?;
     let save_path = ctx.file_manager.full_path(&file_info.stored_path);
 
-    info!("[CONNECTOR] extract_all_pages: save_path={:?}", save_path);
+    info!("[CONNECTOR] extract_table_data: save_path={:?}", save_path);
 
-    let result = engine.browser_extract_all_pages(
-        &save_path.to_string_lossy(),
-        max_pages,
-        page_size,
-    ).await.map_err(|e| anyhow!("extract_all_pages failed: {}", e))?;
+    let result = engine.browser_extract_table_data(
+        &save_path.to_string_lossy(), None, None,
+    ).await.map_err(|e| anyhow!("extract_table_data failed: {}", e))?;
 
-    let total_rows = result["totalRows"].as_u64().unwrap_or(0);
-    let total_pages = result["totalPages"].as_u64().unwrap_or(0);
+    let rows_count = result["rows"].as_u64().unwrap_or(0);
+    let total_saved = result["totalSaved"].as_u64().unwrap_or(0);
     let headers = result["headers"].as_array()
         .map(|arr| arr.iter().filter_map(|h| h.as_str()).collect::<Vec<_>>().join(", "))
         .unwrap_or_default();
+    let pagination = &result["pagination"];
+    let has_next = pagination["hasNext"].as_bool().unwrap_or(false);
+    let total = pagination["total"].as_u64().unwrap_or(0);
+    let current_page = pagination["currentPage"].as_u64().unwrap_or(0);
 
     // Register file in conversation
     let file_size = std::fs::metadata(&save_path).map(|m| m.len() as i64).unwrap_or(0);
-    let file_id = uuid::Uuid::new_v4().to_string();
-    let _ = ctx.storage.insert_generated_file(
-        &file_id,
-        &ctx.conversation_id,
-        None,
-        &filename,
-        &file_info.stored_path,
-        "json",
-        file_size,
-        "data",
-        Some("Auto-extracted table data (all pages)"),
-        1, true, None, None, None,
-    );
+    if file_size > 10 {
+        let file_id = uuid::Uuid::new_v4().to_string();
+        let _ = ctx.storage.insert_generated_file(
+            &file_id, &ctx.conversation_id, None,
+            &filename, &file_info.stored_path, "json", file_size,
+            "data", Some("Extracted table data"), 1, true, None, None, None,
+        );
+    }
 
     let mut output = format!(
-        "### Data extracted successfully\n\
-         - **Total rows**: {}\n\
-         - **Total pages**: {}\n\
+        "### Current page extracted\n\
+         - **Rows on this page**: {}\n\
          - **Columns**: {}\n\
          - **File**: {}\n\
+         - **Total saved so far**: {} rows\n",
+        rows_count, headers, save_path.display(), total_saved,
+    );
+
+    // Pagination info for LLM to decide next steps
+    output.push_str(&format!(
+        "\n### Pagination\n\
+         - Total records: {}\n\
+         - Current page: {}\n\
+         - Has next page: {}\n",
+        if total > 0 { total.to_string() } else { "unknown".to_string() },
+        if current_page > 0 { current_page.to_string() } else { "unknown".to_string() },
+        has_next,
+    ));
+
+    if has_next {
+        output.push_str("\nTo get more data: use `page_execute_js` to click the next page button, then call `extract_table_data` again. Rows will be appended to the same file.\n");
+    } else if total > 0 && total_saved < total {
+        output.push_str("\nThere may be more data. Try using `page_execute_js` to navigate to the next page, then call `extract_table_data` again.\n");
+    } else {
+        output.push_str("\nAll data has been extracted.\n");
+    }
+
+    // Sample rows
+    if let Some(sample) = result.get("sampleRows").and_then(|s| s.as_array()) {
+        if !sample.is_empty() {
+            output.push_str("\n### Sample\n```json\n");
+            let sample_str = serde_json::to_string_pretty(sample).unwrap_or_default();
+            if sample_str.len() > 2000 {
+                output.push_str(&sample_str[..2000]);
+                output.push_str("\n...");
+            } else {
+                output.push_str(&sample_str);
+            }
+            output.push_str("\n```");
+        }
+    }
+
+    Ok(output)
+}
          - **File size**: {:.1} KB\n\n\
          Use `execute_python` to load: `pd.read_json('{}')` or `json.load(open('{}'))`",
         total_rows, total_pages, headers,

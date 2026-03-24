@@ -21,7 +21,7 @@ pub mod read_page_content;
 pub mod page_execute_js;
 pub mod browse_and_extract;
 pub mod browse_data;
-pub mod extract_all_pages;
+pub mod extract_table_data;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -50,7 +50,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(page_execute_js::PageExecuteJsTool),
         Arc::new(browse_and_extract::BrowseAndExtractTool),
         Arc::new(browse_data::BrowseDataTool),
-        Arc::new(extract_all_pages::ExtractAllPagesTool),
+        Arc::new(extract_table_data::ExtractTableDataTool),
     ];
 
     for tool in tools {
