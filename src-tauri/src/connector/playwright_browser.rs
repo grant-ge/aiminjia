@@ -426,14 +426,27 @@ impl PlaywrightBrowser {
         // Clean up stale profile locks from previous crashes
         let singleton_lock = user_data_dir.join("SingletonLock");
         if singleton_lock.exists() {
-            warn!("[Playwright] Removing stale SingletonLock");
-            let _ = std::fs::remove_file(&singleton_lock);
-            // Kill any orphaned Chromium processes using this profile
+            warn!("[Playwright] Removing stale SingletonLock, killing orphaned Chromium");
+            // Kill all Chromium processes spawned by Playwright (our browsers dir)
+            let browsers_dir_str = browsers_path.to_string_lossy().to_string();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", &browsers_dir_str])
+                .output();
+            // Also try killing by profile dir
             let dir_str = user_data_dir.to_string_lossy().to_string();
             let _ = std::process::Command::new("pkill")
-                .args(["-f", &format!("--user-data-dir={}", dir_str)])
+                .args(["-f", &dir_str])
                 .output();
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            // Also kill by "Google Chrome for Testing" (Playwright's Chromium name)
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", "Google Chrome for Testing"])
+                .output();
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            // Force remove lock file
+            let _ = std::fs::remove_file(&singleton_lock);
+            // Also remove SingletonSocket and SingletonCookie
+            let _ = std::fs::remove_file(user_data_dir.join("SingletonSocket"));
+            let _ = std::fs::remove_file(user_data_dir.join("SingletonCookie"));
         }
 
         info!("[Playwright] Launching sidecar: node={:?}, script={:?}", node_path, script_path);
