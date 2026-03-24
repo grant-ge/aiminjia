@@ -2,20 +2,15 @@
  * BrowserPanel — shows the state of the embedded browser WebView.
  * Displayed alongside ChatArea when a browser session is active.
  */
-import { invoke } from '@tauri-apps/api/core'
 import { useBrowserStore } from '@/stores/browserStore'
 
 export function BrowserPanel() {
-  const { isOpen, isLoading, url, title, appId } = useBrowserStore()
+  const { isOpen, isLoading, url, title } = useBrowserStore()
 
   if (!isOpen) return null
 
   const handleShowWindow = async () => {
-    try {
-      await invoke('show_browse_view')
-    } catch (err) {
-      console.error('Failed to show browse window:', err)
-    }
+    // Browser window is managed by Playwright sidecar
   }
 
   const handleClose = () => {

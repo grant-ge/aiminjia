@@ -140,13 +140,13 @@ function App() {
   // Listen for browser events from backend (WebView state sync)
   useEffect(() => {
     const unlistenNavigating = onBrowserNavigating(({ appId, url }) => {
-      useBrowserStore.getState().setNavigating(appId, url)
+      useBrowserStore.getState().setNavigating(appId ?? 0, url)
     })
     const unlistenReady = onBrowserPageReady(({ appId, url, title }) => {
-      useBrowserStore.getState().setPageReady(appId, url, title)
+      useBrowserStore.getState().setPageReady(appId ?? 0, url, title)
     })
     const unlistenClosed = onBrowserClosed(({ appId }) => {
-      useBrowserStore.getState().setClosed(appId)
+      useBrowserStore.getState().setClosed(appId ?? 0)
     })
     return () => {
       unlistenNavigating.then((fn) => fn())
