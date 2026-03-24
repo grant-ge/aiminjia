@@ -2,7 +2,7 @@
 //!
 //! Talks to Lotus API for config sync, connect/disconnect, and knowledge CRUD.
 //! Delegates HTTP proxy requests to WebViewAuthManager (cookie-based auth).
-//! V4: Also manages CdpBrowser for open browsing mode (no pre-configuration needed).
+//! V4: Also manages PlaywrightBrowser for open browsing mode (no pre-configuration needed).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +13,6 @@ use tokio::sync::RwLock;
 
 use crate::storage::file_store::AppStorage;
 use crate::auth::AuthManager;
-use super::cdp_browser::CdpBrowser;
 use super::playwright_browser::PlaywrightBrowser;
 use super::credential_store;
 use super::types::*;
@@ -46,9 +45,7 @@ pub struct ConnectorEngine {
     auth_manager: RwLock<Option<Arc<AuthManager>>>,
     webview_auth: RwLock<Option<Arc<WebViewAuthManager>>>,
     request_counters: RwLock<HashMap<u64, u32>>,
-    /// CDP browser for open browsing mode (V4) — legacy, kept for fallback.
-    cdp_browser: RwLock<Option<Arc<CdpBrowser>>>,
-    /// Playwright browser — primary browser automation (replaces CDP for data extraction).
+    /// Playwright browser — primary browser automation.
     playwright_browser: RwLock<Option<Arc<PlaywrightBrowser>>>,
 }
 
@@ -60,7 +57,6 @@ impl ConnectorEngine {
             auth_manager: RwLock::new(None),
             webview_auth: RwLock::new(None),
             request_counters: RwLock::new(HashMap::new()),
-            cdp_browser: RwLock::new(None),
             playwright_browser: RwLock::new(None),
         }
     }
@@ -75,19 +71,9 @@ impl ConnectorEngine {
         *self.webview_auth.write().await = Some(wam);
     }
 
-    /// Inject the CdpBrowser after both are created in lib.rs setup.
-    pub async fn set_cdp_browser(&self, cdp: Arc<CdpBrowser>) {
-        *self.cdp_browser.write().await = Some(cdp);
-    }
-
     /// Inject the PlaywrightBrowser.
     pub async fn set_playwright_browser(&self, pw: Arc<PlaywrightBrowser>) {
         *self.playwright_browser.write().await = Some(pw);
-    }
-
-    /// Get a read reference to the CDP browser (for sub-agent context building).
-    pub async fn cdp_browser_ref(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<CdpBrowser>>> {
-        self.cdp_browser.read().await
     }
 
     /// Get a read reference to the Playwright browser (for sub-agent context building).
@@ -286,13 +272,12 @@ impl ConnectorEngine {
         wam.proxy_request(app_id, method, url, headers, body, None).await
     }
 
-    /// Reset all per-app request counters and CDP browser counter (call at start of each LLM turn).
+    /// Reset all per-app request counters and browser counter (call at start of each LLM turn).
     pub async fn reset_request_counters(&self) {
         self.request_counters.write().await.clear();
-        // Also reset CDP browser counter
-        let cdp = self.cdp_browser.read().await;
-        if let Some(ref cdp) = *cdp {
-            cdp.reset_counter().await;
+        let pw = self.playwright_browser.read().await;
+        if let Some(ref pw) = *pw {
+            pw.reset_counter().await;
         }
     }
 
@@ -374,15 +359,9 @@ impl ConnectorEngine {
 
     /// Shutdown browsers (call on app exit).
     pub async fn shutdown_cdp(&self) {
-        // Shutdown Playwright
         let pw = self.playwright_browser.read().await;
         if let Some(ref pw) = *pw {
             pw.shutdown().await;
-        }
-        // Shutdown legacy CDP (if still running)
-        let cdp = self.cdp_browser.read().await;
-        if let Some(ref cdp) = *cdp {
-            cdp.shutdown().await;
         }
     }
 
