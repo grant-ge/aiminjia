@@ -634,13 +634,33 @@ async function handleExtractWithPagination(params) {
   }
   log(`extract_with_pagination: got ${headers.length} headers from live DOM`);
 
+  // Step 1.5: Determine the actual data URL
+  // If current page has iframes with data, use the iframe URL instead
+  let dataUrlToUse = dataUrl;
+  const frames = page.frames();
+  if (frames.length > 1) {
+    for (const frame of frames) {
+      if (frame === page.mainFrame()) continue;
+      const frameUrl = frame.url();
+      if (frameUrl && frameUrl !== 'about:blank') {
+        const frameTables = await extractFromFrame(frame);
+        const frameRows = frameTables.reduce((sum, t) => sum + t.rows.length, 0);
+        if (frameRows > 0) {
+          dataUrlToUse = frameUrl;
+          log(`extract_with_pagination: using iframe URL for HTTP pagination: ${frameUrl} (${frameRows} rows)`);
+          break;
+        }
+      }
+    }
+  }
+
   // Step 2: Try URL-based pagination via HTTP requests
   let allRows = [];
   let totalPages = 0;
   let urlPaginationWorks = false;
   let lastPageHash = null;
 
-  const urlObj = new URL(dataUrl);
+  const urlObj = new URL(dataUrlToUse);
 
   // Detect existing page param names
   let pageParam = null;
@@ -682,6 +702,8 @@ async function handleExtractWithPagination(params) {
         totalPages = 1;
         lastPageHash = JSON.stringify(bestRows.slice(0, 3).map(r => Object.values(r).join('|')));
         log(`extract_with_pagination: HTTP pagination works! page 1 → ${bestRows.length} rows`);
+      } else {
+        log(`extract_with_pagination: HTTP response OK but no table rows found (${tables.length} tables, html ${html.length} chars)`);
       }
     }
   } catch (e) {
