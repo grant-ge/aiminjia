@@ -292,28 +292,25 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
                 let url_path = url::Url::parse(target_url).ok()
                     .map(|u| u.path().to_string())
                     .unwrap_or_default();
-                let maps = cdp.site_maps.lock().await;
                 let origin = url::Url::parse(target_url).ok()
                     .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                     .unwrap_or_default();
-                if let Some(site_map) = maps.get(&origin) {
-                    if let Some(profile) = site_map.get_page(&url_path) {
-                        has_known_apis = !profile.api_endpoints.is_empty();
-                        has_known_tables = !profile.table_schemas.is_empty();
-                        if has_known_tables {
-                            let table_info: Vec<String> = profile.table_schemas.iter()
-                                .map(|t| format!("{} ({} rows, cols: {})",
-                                    if t.name.is_empty() { "table" } else { &t.name },
-                                    t.row_count, t.headers.join(", ")))
-                                .collect();
-                            target_page_hint = format!(
-                                "\n\n[已知页面信息: {}]\n表格: {}\nAPI端点: {}\n表单: {}",
-                                url_path,
-                                table_info.join("; "),
-                                if has_known_apis { "有" } else { "无（该系统可能是传统SSR架构，数据直接嵌在HTML中）" },
-                                if profile.forms.is_empty() { "无" } else { "有" },
-                            );
-                        }
+                if let Some(profile) = cdp.get_cached_page_profile(&origin, &url_path).await {
+                    has_known_apis = !profile.api_endpoints.is_empty();
+                    has_known_tables = !profile.table_schemas.is_empty();
+                    if has_known_tables {
+                        let table_info: Vec<String> = profile.table_schemas.iter()
+                            .map(|t| format!("{} ({} rows, cols: {})",
+                                if t.name.is_empty() { "table" } else { &t.name },
+                                t.row_count, t.headers.join(", ")))
+                            .collect();
+                        target_page_hint = format!(
+                            "\n\n[已知页面信息: {}]\n表格: {}\nAPI端点: {}\n表单: {}",
+                            url_path,
+                            table_info.join("; "),
+                            if has_known_apis { "有" } else { "无（该系统可能是传统SSR架构，数据直接嵌在HTML中）" },
+                            if profile.forms.is_empty() { "无" } else { "有" },
+                        );
                     }
                 }
             }

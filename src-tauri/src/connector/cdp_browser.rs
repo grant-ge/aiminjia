@@ -1141,6 +1141,12 @@ window.__aijia_api_calls = [];
         self.state.lock().await.active_origin.clone()
     }
 
+    /// Get a cached PageProfile for a given origin + path.
+    pub async fn get_cached_page_profile(&self, origin: &str, url_path: &str) -> Option<PageProfile> {
+        let maps = self.site_maps.lock().await;
+        maps.get(origin)?.get_page(url_path).cloned()
+    }
+
     fn parse_links_from_value(val: &serde_json::Value) -> Vec<LinkData> {
         val.as_array().map(|arr| {
             arr.iter().filter_map(|l| {
