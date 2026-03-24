@@ -30,11 +30,7 @@ export function WelcomeScreen() {
   }
 
   const handleGeneralMode = () => {
-    // Focus the chat input textarea
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder]'
-    )
-    textarea?.focus()
+    sendUserMessage('你好')
   }
 
   // Greeting follows persona
