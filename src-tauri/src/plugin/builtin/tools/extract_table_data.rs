@@ -16,10 +16,10 @@ impl ToolPlugin for ExtractTableDataTool {
 
     fn description(&self) -> &str {
         "Extract table data from the current page and save to JSON file. \
-         Returns rows extracted + pagination info (total records, current page, has next). \
-         Call this AFTER navigating to a data page. If there are more pages, use \
-         page_execute_js to click the next-page button, then call extract_table_data again — \
-         rows will be appended to the same file."
+         This is the ONLY correct way to extract table data — do NOT use page_execute_js \
+         to read table rows. Returns: rows extracted, column names, pagination info \
+         (total records, current page, has next page). If has_next=true, use page_execute_js \
+         to click the next-page button, then call extract_table_data again to append more rows."
     }
 
     fn input_schema(&self) -> Value {

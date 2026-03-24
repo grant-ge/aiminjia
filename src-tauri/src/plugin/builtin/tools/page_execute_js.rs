@@ -14,9 +14,9 @@ impl ToolPlugin for PageExecuteJsTool {
     fn name(&self) -> &str { "page_execute_js" }
 
     fn description(&self) -> &str {
-        "Execute JavaScript on the active page in the Chrome browser. \
-         Use this to click buttons, fill forms, paginate, scroll, or perform any DOM interaction. \
-         After executing, use read_page_content to see the updated page content."
+        "Execute JavaScript on the active page. Use for: clicking buttons, filling forms, \
+         flipping pages (click next-page button), scrolling. Do NOT use this to extract \
+         table data — use extract_table_data instead."
     }
 
     fn input_schema(&self) -> Value {
