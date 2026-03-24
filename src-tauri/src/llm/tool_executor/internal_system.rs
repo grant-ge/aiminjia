@@ -469,14 +469,6 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
 }
 
 /// Handle browse_and_extract tool invocations.
-        output.push_str(&serde_json::to_string_pretty(sample).unwrap_or_default());
-        output.push_str("\n```");
-    }
-
-    Ok(output)
-}
-
-/// Handle browse_and_extract tool invocations.
 ///
 /// Smart routing: page mode (navigate + full extraction) or API mode (in-page fetch).
 pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value) -> Result<String> {
