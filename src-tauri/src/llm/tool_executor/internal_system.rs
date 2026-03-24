@@ -195,8 +195,38 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
 
     info!("[CONNECTOR] browse_data: task='{}', url={:?}", task, url);
 
-    // Load browser_agent prompt via PromptStore (same priority: override > bundled > fallback)
-    let system_prompt = crate::llm::prompts::get_browser_agent_prompt();
+    // Load browser_agent prompt
+    let loaded_prompt = crate::llm::prompts::get_browser_agent_prompt();
+    info!("[CONNECTOR] browser_agent prompt: {} chars, starts_with='{}'",
+        loaded_prompt.len(),
+        loaded_prompt.chars().take(60).collect::<String>());
+    let system_prompt = if loaded_prompt.len() > 50 {
+        loaded_prompt
+    } else {
+        // Fallback: inline prompt (in case file loading fails)
+        warn!("[CONNECTOR] browser_agent prompt NOT loaded (got {} chars), using inline fallback", loaded_prompt.len());
+        r#"你是数据提取专家。从内部业务系统中提取用户需要的数据。
+
+## 严格规则（必须遵守）
+
+1. **提取表格数据必须用 `extract_table_data()`** — 禁止用 page_execute_js 写 JS 自行提取表格
+2. **翻页必须用 `page_execute_js` 点击翻页按钮** — 不要用 URL 翻页
+3. **每翻一页后必须再调 `extract_table_data()`** — 数据会自动追加到同一文件
+4. 一次只提取一个数据表
+5. ACCESS DENIED → 立即停止并报告
+
+## 固定流程
+
+步骤 1: browse_and_extract(url) — 打开目标页面
+步骤 2: extract_table_data() — 提取当前页表格数据（返回分页信息）
+步骤 3: 如果有下一页：page_execute_js("点击下一页") → extract_table_data() → 循环
+步骤 4: 没有下一页时停止，报告文件路径、总行数、列名
+
+## 禁止事项
+- 禁止用 page_execute_js 提取表格数据
+- 禁止用 page_execute_js 遍历 DOM 获取行数据
+- 禁止用 browse_navigate 翻页"#.to_string()
+    };
 
     // Build dynamic context: site map from connector engine
     let mut dynamic_context = String::new();
