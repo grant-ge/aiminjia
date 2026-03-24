@@ -551,63 +551,144 @@ async function handleExtractAllPages(params) {
     urlObj.searchParams.set('pageSize', String(effectivePageSize));
   }
 
-  // Step 4: Paginate
-  let allRows = [];
-  let totalPages = 0;
-  let lastPageHash = null;
+  // Step 4: Paginate — try URL pagination first, fallback to clicking page controls
+  let allRows = [...currentRows]; // Start with first page data
+  let totalPages = 1;
+  let lastPageHash = JSON.stringify(currentRows.slice(0, 3).map(r => Object.values(r).join('|')));
 
-  for (let p = 1; p <= maxPages; p++) {
-    urlObj.searchParams.set(pageParam, String(p));
-    const pageUrl = urlObj.toString();
+  // Strategy A: Try URL-based pagination (works for standard MVC)
+  let urlPaginationWorks = false;
 
-    log(`extract_all_pages: fetching page ${p} — ${pageUrl}`);
+  if (pageParam) {
+    urlObj.searchParams.set(pageParam, '2');
+    if (pageSizeParam) urlObj.searchParams.set(pageSizeParam, String(effectivePageSize));
+    else urlObj.searchParams.set('pageSize', String(effectivePageSize));
 
-    await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    const testUrl = urlObj.toString();
+    log(`extract_all_pages: testing URL pagination — ${testUrl}`);
+
+    await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
-    // Extract only the main data table (match by header count)
-    const pageFrames = page.frames();
-    let pageRows = [];
-    for (const frame of pageFrames) {
+    const testFrames = page.frames();
+    let testRows = [];
+    for (const frame of testFrames) {
       const frameTables = await extractFromFrame(frame);
-      // Pick the table with matching headers (same column count as main table)
       for (const t of frameTables) {
-        if (t.headers.length === headers.length || (t.headers.length === 0 && t.rows.length > 0)) {
-          // Verify it's the right table by checking if rows have same keys
-          if (t.rows.length > 0) {
-            const rowKeys = Object.keys(t.rows[0]);
-            const headerMatch = headers.length === 0 || rowKeys.some(k => headers.includes(k));
-            if (headerMatch) {
-              pageRows.push(...t.rows);
-              break; // Only take one table per page
-            }
-          }
+        if (t.rows.length > testRows.length) testRows = t.rows;
+      }
+    }
+
+    if (testRows.length > 0) {
+      const testHash = JSON.stringify(testRows.slice(0, 3).map(r => Object.values(r).join('|')));
+      if (testHash !== lastPageHash) {
+        urlPaginationWorks = true;
+        allRows.push(...testRows);
+        totalPages = 2;
+        lastPageHash = testHash;
+        log(`extract_all_pages: URL pagination works! page 2 → ${testRows.length} rows`);
+      }
+    }
+  }
+
+  if (urlPaginationWorks) {
+    // Continue URL-based pagination from page 3
+    for (let p = 3; p <= maxPages; p++) {
+      urlObj.searchParams.set(pageParam, String(p));
+      const pageUrl = urlObj.toString();
+      log(`extract_all_pages: fetching page ${p} — ${pageUrl}`);
+
+      await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+      const pageFrames = page.frames();
+      let pageRows = [];
+      for (const frame of pageFrames) {
+        const frameTables = await extractFromFrame(frame);
+        for (const t of frameTables) {
+          if (t.rows.length > pageRows.length) pageRows = t.rows;
         }
       }
-      if (pageRows.length > 0) break; // Found the data table in this frame
+
+      if (pageRows.length === 0) {
+        log(`extract_all_pages: page ${p} has 0 rows, stopping`);
+        break;
+      }
+
+      const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+      if (pageHash === lastPageHash) {
+        log(`extract_all_pages: page ${p} is duplicate, stopping`);
+        break;
+      }
+      lastPageHash = pageHash;
+
+      allRows.push(...pageRows);
+      totalPages = p;
+      log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+
+      if (pageRows.length < effectivePageSize * 0.5) {
+        log(`extract_all_pages: last page detected`);
+        break;
+      }
     }
+  } else {
+    // Strategy B: Click-based pagination (for iframe/JS-based systems like layui)
+    log('extract_all_pages: URL pagination failed, trying click-based pagination');
 
-    if (pageRows.length === 0) {
-      log(`extract_all_pages: page ${p} has 0 rows, stopping`);
-      break;
-    }
+    // Go back to original page first
+    await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
-    // Detect duplicate pages (pagination not working)
-    const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
-    if (pageHash === lastPageHash) {
-      log(`extract_all_pages: page ${p} is duplicate of previous, stopping`);
-      break;
-    }
-    lastPageHash = pageHash;
+    for (let p = 2; p <= maxPages; p++) {
+      // Try clicking "next page" in any frame
+      let clicked = false;
+      const allFrames = page.frames();
+      for (const frame of allFrames) {
+        try {
+          // Common next-page selectors (layui, ant-design, element-ui, generic)
+          const nextBtn = await frame.$('.layui-laypage-next:not(.layui-disabled), .ant-pagination-next:not(.ant-pagination-disabled), .el-pagination .btn-next:not(.disabled), a.next:not(.disabled), [class*="next"]:not([class*="disabled"])');
+          if (nextBtn) {
+            await nextBtn.click();
+            clicked = true;
+            break;
+          }
+        } catch (e) { /* try next frame */ }
+      }
 
-    allRows.push(...pageRows);
-    totalPages = p;
-    log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+      if (!clicked) {
+        log(`extract_all_pages: no next button found on page ${p - 1}, stopping`);
+        break;
+      }
 
-    // If we got fewer rows than page size, we're on the last page
-    if (pageRows.length < effectivePageSize * 0.8) {
-      log(`extract_all_pages: last page detected (${pageRows.length} < ${effectivePageSize})`);
-      break;
+      // Wait for new data to load
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 500)); // Extra settle time
+
+      // Extract from all frames
+      const pageFrames2 = page.frames();
+      let pageRows = [];
+      for (const frame of pageFrames2) {
+        const frameTables = await extractFromFrame(frame);
+        for (const t of frameTables) {
+          if (t.rows.length > pageRows.length) pageRows = t.rows;
+        }
+      }
+
+      if (pageRows.length === 0) {
+        log(`extract_all_pages: page ${p} has 0 rows after click, stopping`);
+        break;
+      }
+
+      const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+      if (pageHash === lastPageHash) {
+        log(`extract_all_pages: page ${p} is duplicate after click, stopping`);
+        break;
+      }
+      lastPageHash = pageHash;
+
+      allRows.push(...pageRows);
+      totalPages = p;
+      log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
     }
   }
 
