@@ -1968,7 +1968,7 @@ async fn agent_loop(
         let daily_blocked: std::collections::HashSet<String> = [
             "hypothesis_test", "detect_anomalies", "save_analysis_note", "update_progress", "update_plan",
             // Browser tools are handled by browse_data sub-agent, not directly by daily mode
-            "browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js",
+            "browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js", "extract_all_pages",
         ].iter().map(|s| s.to_string()).collect();
         let daily_allowed: std::collections::HashSet<String> = tool_defs_override.as_ref()
             .map(|defs| defs.iter()

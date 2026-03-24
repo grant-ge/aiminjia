@@ -399,12 +399,164 @@ async function handleShutdown() {
   return { ok: true };
 }
 
+/**
+ * Auto-paginate and extract ALL table data from the current page.
+ * Detects pagination pattern (URL param or next button), iterates through
+ * all pages, merges all table rows. Saves result to JSON file.
+ *
+ * params.savePath — where to save the JSON file
+ * params.maxPages — max pages to fetch (default 50)
+ * params.pageSize — override pageSize param (default: detected from URL or 100)
+ */
+async function handleExtractAllPages(params) {
+  if (!page) return { error: 'Browser not launched' };
+
+  const savePath = params.savePath;
+  const maxPages = params.maxPages || 50;
+  const pageSizeOverride = params.pageSize || null;
+
+  log(`extract_all_pages: savePath=${savePath}, maxPages=${maxPages}`);
+
+  // Step 1: Extract current page tables to determine headers
+  const allFrames = page.frames();
+  let headers = [];
+  let currentRows = [];
+
+  for (const frame of allFrames) {
+    const frameTables = await extractFromFrame(frame);
+    for (const t of frameTables) {
+      if (t.headers.length > headers.length) {
+        headers = t.headers;
+      }
+      currentRows.push(...t.rows);
+    }
+  }
+
+  if (headers.length === 0 && currentRows.length === 0) {
+    return { error: 'No tables found on current page', totalRows: 0 };
+  }
+
+  log(`extract_all_pages: first page has ${currentRows.length} rows, ${headers.length} headers`);
+
+  // Step 2: Detect pagination from URL
+  const currentUrl = page.url();
+  const urlObj = new URL(currentUrl);
+  let pageParam = null;
+  let pageSizeParam = null;
+
+  // Common pagination param names
+  for (const p of ['page', 'pageNum', 'pageNo', 'p', 'currentPage']) {
+    if (urlObj.searchParams.has(p)) {
+      pageParam = p;
+      break;
+    }
+  }
+  for (const p of ['pageSize', 'size', 'limit', 'rows', 'per_page']) {
+    if (urlObj.searchParams.has(p)) {
+      pageSizeParam = p;
+      break;
+    }
+  }
+
+  // If no page param in URL, try to detect from page content
+  if (!pageParam) {
+    // Check if there's pagination info in the page (e.g. "共 X 条" or page controls)
+    const paginationInfo = await page.evaluate(() => {
+      const text = document.body.innerText;
+      const totalMatch = text.match(/共\s*(\d+)\s*条/);
+      return { total: totalMatch ? parseInt(totalMatch[1]) : 0 };
+    }).catch(() => ({ total: 0 }));
+
+    if (paginationInfo.total > currentRows.length) {
+      // There's more data but no page param — try adding page param
+      pageParam = 'page';
+      urlObj.searchParams.set('page', '1');
+    } else {
+      // All data is on one page
+      log(`extract_all_pages: all data on one page (${currentRows.length} rows)`);
+      if (savePath) {
+        fs.writeFileSync(savePath, JSON.stringify(currentRows, null, 2));
+        log(`extract_all_pages: saved to ${savePath}`);
+      }
+      return { totalRows: currentRows.length, totalPages: 1, headers, savedTo: savePath || null };
+    }
+  }
+
+  // Step 3: Set page size larger if possible
+  const effectivePageSize = pageSizeOverride ||
+    (pageSizeParam ? parseInt(urlObj.searchParams.get(pageSizeParam)) : null) || 100;
+
+  if (pageSizeParam) {
+    urlObj.searchParams.set(pageSizeParam, String(effectivePageSize));
+  } else {
+    urlObj.searchParams.set('pageSize', String(effectivePageSize));
+  }
+
+  // Step 4: Paginate
+  let allRows = [];
+  let totalPages = 0;
+
+  for (let p = 1; p <= maxPages; p++) {
+    urlObj.searchParams.set(pageParam, String(p));
+    const pageUrl = urlObj.toString();
+
+    log(`extract_all_pages: fetching page ${p} — ${pageUrl}`);
+
+    await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+
+    // Extract tables from all frames
+    const pageFrames = page.frames();
+    let pageRows = [];
+    for (const frame of pageFrames) {
+      const frameTables = await extractFromFrame(frame);
+      for (const t of frameTables) {
+        pageRows.push(...t.rows);
+      }
+    }
+
+    if (pageRows.length === 0) {
+      log(`extract_all_pages: page ${p} has 0 rows, stopping`);
+      break;
+    }
+
+    allRows.push(...pageRows);
+    totalPages = p;
+    log(`extract_all_pages: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+
+    // If we got fewer rows than page size, we're on the last page
+    if (pageRows.length < effectivePageSize * 0.8) {
+      log(`extract_all_pages: last page detected (${pageRows.length} < ${effectivePageSize})`);
+      break;
+    }
+  }
+
+  log(`extract_all_pages: complete — ${allRows.length} total rows, ${totalPages} pages`);
+
+  // Step 5: Save to file
+  if (savePath) {
+    const output = { headers, rows: allRows, totalRows: allRows.length, totalPages };
+    fs.writeFileSync(savePath, JSON.stringify(output, null, 2));
+    const stats = fs.statSync(savePath);
+    log(`extract_all_pages: saved to ${savePath} (${stats.size} bytes)`);
+  }
+
+  return {
+    totalRows: allRows.length,
+    totalPages,
+    headers,
+    savedTo: savePath || null,
+    sampleRows: allRows.slice(0, 3),
+  };
+}
+
 // ── Main Loop ───────────────────────────────────────────────────
 
 const HANDLERS = {
   launch: handleLaunch,
   navigate: handleNavigate,
   extract: handleExtract,
+  extract_all_pages: handleExtractAllPages,
   execute_js: handleExecuteJs,
   fetch: handleFetch,
   screenshot: handleScreenshot,

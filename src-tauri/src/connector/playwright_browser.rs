@@ -313,6 +313,38 @@ impl PlaywrightBrowser {
         Some(path)
     }
 
+    /// Auto-paginate and extract ALL table data. Saves to JSON file.
+    /// This is a single command that handles pagination automatically —
+    /// no LLM involvement needed for iterating pages.
+    pub async fn extract_all_pages(
+        &self,
+        save_path: &str,
+        max_pages: Option<u32>,
+        page_size: Option<u32>,
+    ) -> Result<Value, String> {
+        self.ensure_running().await?;
+
+        info!("[Playwright] extract_all_pages: save_path={}, max_pages={:?}, page_size={:?}",
+            save_path, max_pages, page_size);
+
+        let params = serde_json::json!({
+            "savePath": save_path,
+            "maxPages": max_pages.unwrap_or(50),
+            "pageSize": page_size,
+        });
+
+        let result = self.send_command("extract_all_pages", params).await?;
+
+        let total_rows = result["totalRows"].as_u64().unwrap_or(0);
+        let total_pages = result["totalPages"].as_u64().unwrap_or(0);
+        let saved_to = result["savedTo"].as_str().unwrap_or("");
+
+        info!("[Playwright] extract_all_pages complete: {} rows, {} pages, saved to {}",
+            total_rows, total_pages, saved_to);
+
+        Ok(result)
+    }
+
     /// Check and increment per-turn rate limit.
     pub async fn check_rate_limit(&self, max_per_turn: u32) -> Result<(), String> {
         let mut state = self.state.lock().await;
