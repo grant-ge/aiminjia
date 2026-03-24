@@ -395,6 +395,18 @@ impl PlaywrightBrowser {
         maps.get(origin)?.get_page(url_path).cloned()
     }
 
+    /// Get all cached pages with tables for a given origin.
+    pub async fn get_pages_with_tables(&self, origin: &str) -> Vec<PageProfile> {
+        let maps = self.site_maps.lock().await;
+        match maps.get(origin) {
+            Some(site_map) => site_map.pages.values()
+                .filter(|p| !p.table_schemas.is_empty() && !p.access_denied)
+                .cloned()
+                .collect(),
+            None => vec![],
+        }
+    }
+
     // ── Internals ───────────────────────────────────────────────
 
     /// Ensure Node.js sidecar is running, launch if needed.

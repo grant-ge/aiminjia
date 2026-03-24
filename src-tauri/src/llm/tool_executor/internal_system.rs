@@ -317,6 +317,35 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         }
     }
 
+    // Check if site map has multiple pages with tables — ask user to choose
+    if let Some(ref engine) = ctx.connector_engine {
+        if let Some(target_url) = url {
+            let origin = url::Url::parse(target_url).ok()
+                .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
+                .unwrap_or_default();
+            if !origin.is_empty() {
+                let pw = engine.playwright_browser_ref().await;
+                if let Some(pw) = pw.as_ref() {
+                    let pages_with_tables = pw.get_pages_with_tables(&origin).await;
+                    if pages_with_tables.len() > 1 {
+                        // Multiple data pages found — return list for user to choose
+                        let mut output = format!("Found {} pages with data tables on {}:\n\n", pages_with_tables.len(), origin);
+                        for (i, p) in pages_with_tables.iter().enumerate() {
+                            let tables_desc: Vec<String> = p.table_schemas.iter()
+                                .map(|t| format!("{} ({} rows)", if t.name.is_empty() { "table" } else { &t.name }, t.row_count))
+                                .collect();
+                            output.push_str(&format!("{}. **{}** — {}{}\n   Tables: {}\n\n",
+                                i + 1, p.title, origin, p.url_path,
+                                tables_desc.join(", ")));
+                        }
+                        output.push_str("Please ask the user which page to extract data from, then call browse_data again with the specific URL.");
+                        return Ok(output);
+                    }
+                }
+            }
+        }
+    }
+
     // Build task message with strategy hints based on page profile
     let mut task_msg = if let Some(url) = url {
         format!("{}\n\nTarget URL: {}", task, url)
