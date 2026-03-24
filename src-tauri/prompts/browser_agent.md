@@ -12,10 +12,20 @@
 ### 步骤 1：打开数据页面
 `browse_and_extract(url)` — 查看表格和菜单
 
-### 步骤 2：确认翻页方式
-用 `page_execute_js` 检查页面的分页控件：
+### 步骤 2：增大每页条数 + 确认翻页方式
+用 `page_execute_js` 做两件事：
 ```javascript
-// 查找翻页按钮
+// 1. 尝试修改每页显示条数（改为最大值）
+const selects = document.querySelectorAll('select');
+for (const s of selects) {
+  const opts = Array.from(s.options);
+  const maxOpt = opts.reduce((a, b) => parseInt(a.value||0) > parseInt(b.value||0) ? a : b, opts[0]);
+  if (parseInt(maxOpt.value) > 10) {
+    s.value = maxOpt.value;
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+// 2. 查找翻页按钮
 return {
   layui: !!document.querySelector('.layui-laypage-next'),
   ant: !!document.querySelector('.ant-pagination-next'),

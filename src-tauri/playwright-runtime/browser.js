@@ -581,6 +581,48 @@ async function handleExtractWithPagination(params) {
 
   log(`extract_with_pagination: savePath=${savePath}, maxPages=${maxPages}, paginationJs="${paginationJs.substring(0, 80)}..."`);
 
+  // Auto-optimize: try to increase pageSize before extraction
+  for (const frame of page.frames()) {
+    try {
+      const changed = await frame.evaluate(() => {
+        // Common pageSize selectors (layui, ant-design, element-ui)
+        const selectors = [
+          'select[lay-filter*="pageSize"]',
+          '.layui-laypage-limits select',
+          '.ant-pagination-options-size-changer select',
+          '.el-pagination .el-select',
+          'select[name="pageSize"]',
+          'select.page-size',
+        ];
+        for (const sel of selectors) {
+          const select = document.querySelector(sel);
+          if (select) {
+            // Find the largest option
+            const options = Array.from(select.options || select.querySelectorAll('option'));
+            let maxVal = 0;
+            let maxOpt = null;
+            for (const opt of options) {
+              const v = parseInt(opt.value || opt.textContent);
+              if (v > maxVal) { maxVal = v; maxOpt = opt; }
+            }
+            if (maxOpt && maxVal > 10) {
+              select.value = maxOpt.value;
+              select.dispatchEvent(new Event('change', { bubbles: true }));
+              return { changed: true, pageSize: maxVal, selector: sel };
+            }
+          }
+        }
+        return { changed: false };
+      });
+      if (changed.changed) {
+        log(`extract_with_pagination: auto-set pageSize to ${changed.pageSize} via ${changed.selector}`);
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
+        break;
+      }
+    } catch (e) { /* try next frame */ }
+  }
+
   let allRows = [];
   let headers = [];
   let lastPageHash = null;
