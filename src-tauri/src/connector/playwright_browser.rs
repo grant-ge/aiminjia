@@ -531,14 +531,14 @@ impl PlaywrightBrowser {
     }
 
     fn find_node(&self) -> Result<PathBuf, String> {
-        // Check bundled runtime first
+        // Check bundled runtime first (production)
         if let Ok(resource_dir) = self.app_handle.path().resource_dir() {
             let bundled = resource_dir.join("playwright-runtime/node/bin/node");
             if bundled.exists() { return Ok(bundled); }
         }
-        // Dev mode: relative to src-tauri
+        // Dev mode: relative to src-tauri, canonicalize to absolute
         let dev = PathBuf::from("playwright-runtime/node/bin/node");
-        if dev.exists() { return Ok(dev); }
+        if dev.exists() { return Ok(std::fs::canonicalize(&dev).unwrap_or(dev)); }
         // System node
         let system = PathBuf::from("/usr/local/bin/node");
         if system.exists() { return Ok(system); }
@@ -551,7 +551,7 @@ impl PlaywrightBrowser {
             if bundled.exists() { return Ok(bundled); }
         }
         let dev = PathBuf::from("playwright-runtime/browser.js");
-        if dev.exists() { return Ok(dev); }
+        if dev.exists() { return Ok(std::fs::canonicalize(&dev).unwrap_or(dev)); }
         Err("browser.js not found".to_string())
     }
 
@@ -561,7 +561,7 @@ impl PlaywrightBrowser {
             if bundled.exists() { return Ok(bundled); }
         }
         let dev = PathBuf::from("playwright-runtime/browsers");
-        if dev.exists() { return Ok(dev); }
+        if dev.exists() { return Ok(std::fs::canonicalize(&dev).unwrap_or(dev)); }
         Err("Playwright browsers not found. Run scripts/setup-playwright.sh".to_string())
     }
 
