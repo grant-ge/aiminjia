@@ -2562,8 +2562,8 @@ async fn agent_loop(
             connector_engine: app.try_state::<Arc<crate::connector::ConnectorEngine>>().map(|s| s.inner().clone()),
             use_cloud: settings.use_cloud,
             model: settings.primary_model.clone(),
-            gateway: Some(Arc::clone(gateway.inner())),
-            tool_registry: Some(Arc::clone(tool_registry.inner())),
+            gateway: Some((**gateway).clone()),
+            tool_registry: Some((**tool_registry).clone()),
             app_settings: Some(Arc::new(settings.clone())),
         };
 

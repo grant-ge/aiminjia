@@ -5,7 +5,6 @@
 use anyhow::Result;
 use futures::StreamExt;
 use log::{info, warn};
-use std::sync::Arc;
 
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
@@ -108,7 +107,7 @@ pub async fn run_sub_agent(
             .stream_message(
                 settings,
                 messages.clone(),
-                MaskingLevel::None,
+                MaskingLevel::Relaxed,
                 Some(&config.system_prompt),
                 dynamic_ctx,
                 Some(tool_defs.clone()),

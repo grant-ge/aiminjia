@@ -4,6 +4,7 @@
 use anyhow::{anyhow, Result};
 use log::{info, warn};
 use serde_json::Value;
+use tauri::Manager;
 
 use crate::plugin::context::PluginContext;
 use super::{require_str, optional_str};
@@ -269,7 +270,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     // Load browser_agent prompt
     let prompt_path = ctx.app_handle.as_ref()
         .and_then(|h| h.path().resource_dir().ok())
-        .map(|d| d.join("prompts/browser_agent.md"));
+        .map(|d: std::path::PathBuf| d.join("prompts/browser_agent.md"));
     let system_prompt = prompt_path
         .and_then(|p| std::fs::read_to_string(&p).ok())
         .unwrap_or_else(|| "你是数据提取专家。使用 browse_and_extract 工具从内部系统提取数据。".to_string());
