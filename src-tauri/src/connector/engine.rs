@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 use crate::storage::file_store::AppStorage;
 use crate::auth::AuthManager;
 use super::cdp_browser::CdpBrowser;
+use super::playwright_browser::PlaywrightBrowser;
 use super::credential_store;
 use super::types::*;
 use super::webview_auth::{ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FullPageResult, ProxyResponse, WebLoginConfig, WebViewAuthManager};
@@ -45,8 +46,10 @@ pub struct ConnectorEngine {
     auth_manager: RwLock<Option<Arc<AuthManager>>>,
     webview_auth: RwLock<Option<Arc<WebViewAuthManager>>>,
     request_counters: RwLock<HashMap<u64, u32>>,
-    /// CDP browser for open browsing mode (V4).
+    /// CDP browser for open browsing mode (V4) — legacy, kept for fallback.
     cdp_browser: RwLock<Option<Arc<CdpBrowser>>>,
+    /// Playwright browser — primary browser automation (replaces CDP for data extraction).
+    playwright_browser: RwLock<Option<Arc<PlaywrightBrowser>>>,
 }
 
 impl ConnectorEngine {
@@ -58,6 +61,7 @@ impl ConnectorEngine {
             webview_auth: RwLock::new(None),
             request_counters: RwLock::new(HashMap::new()),
             cdp_browser: RwLock::new(None),
+            playwright_browser: RwLock::new(None),
         }
     }
 
@@ -76,9 +80,19 @@ impl ConnectorEngine {
         *self.cdp_browser.write().await = Some(cdp);
     }
 
+    /// Inject the PlaywrightBrowser.
+    pub async fn set_playwright_browser(&self, pw: Arc<PlaywrightBrowser>) {
+        *self.playwright_browser.write().await = Some(pw);
+    }
+
     /// Get a read reference to the CDP browser (for sub-agent context building).
     pub async fn cdp_browser_ref(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<CdpBrowser>>> {
         self.cdp_browser.read().await
+    }
+
+    /// Get a read reference to the Playwright browser (for sub-agent context building).
+    pub async fn playwright_browser_ref(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<PlaywrightBrowser>>> {
+        self.playwright_browser.read().await
     }
 
     /// Get a valid session key from AuthManager, or error if not logged in.
@@ -288,45 +302,39 @@ impl ConnectorEngine {
     ///
     /// No URL whitelist, no pre-configuration. Rate limit only.
     pub async fn browser_navigate(&self, url: &str) -> Result<BrowseNavigateResult, String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-
-        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
-
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
         info!("[CONNECTOR] browser_navigate: url='{}'", url);
-        cdp.navigate(url).await
+        pw.navigate(url).await
     }
 
-    /// Read content from the active page in the CDP browser.
+    /// Read content from the active page.
     pub async fn browser_read_content(
         &self,
         extract_script: Option<&str>,
     ) -> Result<BrowseResult, String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-
-        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
-
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
         info!("[CONNECTOR] browser_read_content");
-        cdp.read_content(extract_script).await
+        pw.read_content(extract_script).await
     }
 
-    /// Execute JavaScript on the active page in the CDP browser.
+    /// Execute JavaScript on the active page.
     pub async fn browser_execute_js(&self, script: &str) -> Result<ExecuteJsResult, String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-
-        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
-
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
         info!("[CONNECTOR] browser_execute_js");
-        cdp.execute_js(script).await
+        pw.execute_js(script).await
     }
 
-    /// Show the active CDP browser tab (bring to front).
+    /// Show the active browser tab (bring to front).
     pub async fn browser_show(&self) -> Result<(), String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-        cdp.show_active_page().await
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.show_active_page().await
     }
 
     /// Navigate + extract everything in one shot (page mode).
@@ -335,13 +343,11 @@ impl ConnectorEngine {
         url: &str,
         extract_script: Option<&str>,
     ) -> Result<FullPageResult, String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-
-        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
-
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
         info!("[CONNECTOR] browser_navigate_and_extract: url='{}'", url);
-        cdp.navigate_and_extract(url, extract_script).await
+        pw.navigate_and_extract(url, extract_script).await
     }
 
     /// Execute fetch() in browser context for REST API calls.
@@ -352,24 +358,28 @@ impl ConnectorEngine {
         body: Option<&str>,
         headers: Option<&str>,
     ) -> Result<ApiFetchResult, String> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref().ok_or("CDP browser not initialized")?;
-
-        cdp.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
-
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
         info!("[CONNECTOR] browser_api_fetch: {} '{}'", method, url);
-        cdp.api_fetch(url, method, body, headers).await
+        pw.api_fetch(url, method, body, headers).await
     }
 
     /// Capture a screenshot of the active page. Returns file path.
     pub async fn browser_screenshot(&self) -> Option<std::path::PathBuf> {
-        let cdp = self.cdp_browser.read().await;
-        let cdp = cdp.as_ref()?;
-        cdp.capture_screenshot().await
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref()?;
+        pw.capture_screenshot().await
     }
 
-    /// Shutdown the CDP browser (call on app exit).
+    /// Shutdown browsers (call on app exit).
     pub async fn shutdown_cdp(&self) {
+        // Shutdown Playwright
+        let pw = self.playwright_browser.read().await;
+        if let Some(ref pw) = *pw {
+            pw.shutdown().await;
+        }
+        // Shutdown legacy CDP (if still running)
         let cdp = self.cdp_browser.read().await;
         if let Some(ref cdp) = *cdp {
             cdp.shutdown().await;

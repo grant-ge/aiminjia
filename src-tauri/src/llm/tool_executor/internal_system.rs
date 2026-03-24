@@ -282,12 +282,12 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     let mut target_page_hint = String::new();
 
     if let Some(ref engine) = ctx.connector_engine {
-        let cdp = engine.cdp_browser_ref().await;
-        if let Some(cdp) = cdp.as_ref() {
-            if let Some(ctx_str) = cdp.get_site_map_context(None).await {
+        // Try Playwright first, fall back to CDP for site map context
+        let pw = engine.playwright_browser_ref().await;
+        if let Some(pw) = pw.as_ref() {
+            if let Some(ctx_str) = pw.get_site_map_context(None).await {
                 dynamic_context = ctx_str;
             }
-            // Check if target URL has cached profile with APIs or tables
             if let Some(target_url) = url {
                 let url_path = url::Url::parse(target_url).ok()
                     .map(|u| u.path().to_string())
@@ -295,7 +295,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
                 let origin = url::Url::parse(target_url).ok()
                     .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                     .unwrap_or_default();
-                if let Some(profile) = cdp.get_cached_page_profile(&origin, &url_path).await {
+                if let Some(profile) = pw.get_cached_page_profile(&origin, &url_path).await {
                     has_known_apis = !profile.api_endpoints.is_empty();
                     has_known_tables = !profile.table_schemas.is_empty();
                     if has_known_tables {

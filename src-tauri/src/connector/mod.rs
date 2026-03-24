@@ -2,6 +2,7 @@ pub mod types;
 pub mod credential_store;
 pub mod webview_auth;
 pub mod cdp_browser;
+pub mod playwright_browser;
 pub mod site_map;
 pub mod engine;
 

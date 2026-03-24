@@ -111,10 +111,15 @@ pub fn run() {
                 connector::WebViewAuthManager::new(app.handle().clone())
             );
 
-            // Initialize CDP browser for open browsing mode (V4)
+            // Initialize CDP browser for open browsing mode (V4) — legacy fallback
             let chrome_path: Option<std::path::PathBuf> = None; // Will auto-detect
             let cdp_browser = Arc::new(
                 connector::cdp_browser::CdpBrowser::new(app.handle().clone(), chrome_path)
+            );
+
+            // Initialize Playwright browser — primary browser automation
+            let playwright_browser = Arc::new(
+                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone())
             );
 
             // Initialize connector engine (uses AuthManager for dynamic session key)
@@ -126,6 +131,7 @@ pub fn run() {
                 connector_engine.set_auth_manager(auth_manager.clone()).await;
                 connector_engine.set_webview_auth(webview_auth_manager.clone()).await;
                 connector_engine.set_cdp_browser(cdp_browser.clone()).await;
+                connector_engine.set_playwright_browser(playwright_browser.clone()).await;
             });
 
             // Initialize plugin registries
