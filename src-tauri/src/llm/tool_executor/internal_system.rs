@@ -299,25 +299,49 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         }
     }
 
-    // Build task message with strategy hints based on page profile
+    // Build task message with strategy hints based on cached site map
     let mut task_msg = if let Some(url) = url {
         format!("{}\n\nTarget URL: {}", task, url)
     } else {
         task.to_string()
     };
 
+    // If site map has a cached page with tables, give SubAgent a shortcut to skip exploration
+    if let Some(ref engine) = ctx.connector_engine {
+        if let Some(target_url) = url {
+            let origin = url::Url::parse(target_url).ok()
+                .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
+                .unwrap_or_default();
+            if !origin.is_empty() {
+                let pw = engine.playwright_browser_ref().await;
+                if let Some(pw) = pw.as_ref() {
+                    let pages = pw.get_pages_with_tables(&origin).await;
+                    if pages.len() == 1 {
+                        let p = &pages[0];
+                        let data_url = format!("{}{}", origin, p.url_path);
+                        task_msg.push_str(&format!(
+                            "\n\n**快速路径（跳过探索）**: 站点地图已缓存数据页面。\
+                             直接执行以下 3 步：\n\
+                             1. `browse_navigate(\"{}\")` — 打开数据页面\n\
+                             2. `extract_table_data()` — 提取第一页数据\n\
+                             3. 如果提示 MORE DATA AVAILABLE：`page_execute_js(\"...\")` 翻页 → `extract_table_data()` → 循环\n\
+                             **不需要从首页开始探索菜单。**",
+                            data_url,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     task_msg.push_str(&target_page_hint);
 
     // Add strategy based on what we know
     if has_known_tables && !has_known_apis {
-        task_msg.push_str("\n\n**策略提示**: 该页面有表格数据但没有发现 JSON API 端点。这可能是传统服务端渲染系统。请按以下优先级操作：\n\
-            1. 先用 browse_and_extract 打开页面，查看返回的表格数据\n\
-            2. 如果表格数据不完整（被分页截断），用 page_execute_js 查找分页参数或导出按钮\n\
-            3. 优先寻找「导出」「下载」「export」按钮直接导出全量数据\n\
-            4. 如果没有导出按钮，尝试修改 URL 参数（如 pageSize=500）重新请求页面获取更多数据\n\
-            5. **不要花时间猜 API 路径** — 如果 auto_explore 没发现 API，该系统大概率没有 REST API");
+        task_msg.push_str("\n\n**策略**: 该系统是传统 SSR，没有 JSON API。\
+            用 `extract_table_data` 提取表格，用 `page_execute_js` 翻页。");
     } else if has_known_apis {
-        task_msg.push_str("\n\n**策略提示**: 该页面有已知的 API 端点。直接用 browse_and_extract 的 API 模式调用即可。");
+        task_msg.push_str("\n\n**策略**: 该页面有已知的 API 端点。直接用 browse_and_extract 的 API 模式调用。");
     }
 
     let config = crate::llm::sub_agent::SubAgentConfig {
@@ -330,7 +354,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
             "page_execute_js".to_string(),
             "extract_table_data".to_string(),
         ],
-        max_iterations: 15,
+        max_iterations: 30,
         dynamic_context,
     };
 
