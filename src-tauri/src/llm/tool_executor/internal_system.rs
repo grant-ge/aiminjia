@@ -467,10 +467,14 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
         has_next,
     ));
 
-    if has_next {
-        output.push_str("\nTo get more data: use `page_execute_js` to click the next page button, then call `extract_table_data` again. Rows will be appended to the same file.\n");
-    } else if total > 0 && total_saved < total {
-        output.push_str("\nThere may be more data. Try using `page_execute_js` to navigate to the next page, then call `extract_table_data` again.\n");
+    if has_next || (total > 0 && total_saved < total) {
+        output.push_str(&format!(
+            "\n⚠️ MORE DATA AVAILABLE: {} total records but only {} saved. \
+             You MUST use `page_execute_js` to click the next-page button in the iframe, \
+             then call `extract_table_data` again. Repeat until all pages are extracted.\n\
+             Example: page_execute_js(\"document.querySelector('.layui-laypage-next').click()\")\n",
+            total, total_saved,
+        ));
     } else {
         output.push_str("\nAll data has been extracted.\n");
     }
