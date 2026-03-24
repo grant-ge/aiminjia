@@ -68,7 +68,7 @@ export function WelcomeScreen() {
       <div className="w-full max-w-[640px] px-4">
         <button
           type="button"
-          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-all duration-150 cursor-pointer"
+          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 active:scale-[0.98]"
           style={{
             background: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border-subtle)',
@@ -84,7 +84,7 @@ export function WelcomeScreen() {
           onClick={handleGeneralMode}
         >
           <span className="text-xl leading-none">💬</span>
-          <div>
+          <div className="flex-1">
             <span
               className="text-sm font-medium"
               style={{ color: 'var(--color-text-primary)' }}
@@ -98,6 +98,12 @@ export function WelcomeScreen() {
               直接对话，不使用专业技能
             </p>
           </div>
+          <span
+            className="text-sm"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            →
+          </span>
         </button>
       </div>
 
