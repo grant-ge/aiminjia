@@ -604,12 +604,24 @@ async function handleExtractWithPagination(params) {
 
     // Execute pagination JS to flip to next page
     try {
-      // Run pagination JS in all frames (it might be in an iframe)
       let clicked = false;
       for (const frame of page.frames()) {
         try {
+          // Try 1: Use Playwright's native click on the selector from the JS code
+          // Extract selector from common patterns like: document.querySelector('xxx').click()
+          const selectorMatch = paginationJs.match(/querySelector\(['"]([^'"]+)['"]\)/);
+          if (selectorMatch) {
+            const selector = selectorMatch[1];
+            const el = await frame.$(selector);
+            if (el) {
+              await el.click();
+              clicked = true;
+              break;
+            }
+          }
+          // Try 2: Run as raw JS via evaluate with Function constructor
           await frame.evaluate((code) => {
-            return eval(code);
+            return new Function(code)();
           }, paginationJs);
           clicked = true;
           break;
