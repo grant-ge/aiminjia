@@ -495,9 +495,12 @@ async function handleExtractTableData(params) {
     let existing = { headers: [], rows: [], totalRows: 0 };
     try {
       if (fs.existsSync(savePath)) {
-        existing = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
+        const raw = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
+        existing.headers = raw.headers || [];
+        existing.rows = Array.isArray(raw.rows) ? raw.rows : [];
+        existing.totalRows = existing.rows.length;
       }
-    } catch (e) {}
+    } catch (e) { /* start fresh */ }
     if (headers.length > 0) existing.headers = headers;
     existing.rows.push(...rows);
     existing.totalRows = existing.rows.length;
