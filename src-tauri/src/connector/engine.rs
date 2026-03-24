@@ -76,6 +76,11 @@ impl ConnectorEngine {
         *self.cdp_browser.write().await = Some(cdp);
     }
 
+    /// Get a read reference to the CDP browser (for sub-agent context building).
+    pub async fn cdp_browser_ref(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<CdpBrowser>>> {
+        self.cdp_browser.read().await
+    }
+
     /// Get a valid session key from AuthManager, or error if not logged in.
     async fn get_session_key(&self) -> Result<String, String> {
         let am = self.auth_manager.read().await;
@@ -439,17 +444,8 @@ impl ConnectorEngine {
     pub async fn build_context(&self) -> String {
         let mut ctx = String::new();
 
-        // Open browsing mode instructions (always available)
-        ctx.push_str("## 开放浏览模式\n\n");
-        ctx.push_str("你可以使用浏览器直接访问任何内部系统 URL，无需预配置：\n");
-        ctx.push_str("1. `browse_and_extract(url)` — **首选工具**：导航+自动探索页面（菜单、表格、表单、API 端点），一步到位\n");
-        ctx.push_str("2. `browse_and_extract(url, method, body)` — REST API 模式：在浏览器上下文执行 fetch，自动携带 cookie\n");
-        ctx.push_str("3. `browse_navigate(url)` — 仅导航（自动探索页面结构，结果在返回中）\n");
-        ctx.push_str("4. `read_page_content()` — 读取当前页面数据（表格+文本+链接）\n");
-        ctx.push_str("5. `page_execute_js(script)` — 在页面上执行 JS（点击、翻页、筛选等）\n");
-        ctx.push_str("6. 如果被重定向到登录页，提示用户在 Chrome 中登录，然后重新导航\n\n");
-        ctx.push_str("**重要：每个页面的菜单、表格结构、表单、API 端点会自动探索并缓存，不需要你手动扫描。**\n");
-        ctx.push_str("**如果站点地图中已有目标页面信息，直接使用，不要重复探索。**\n\n");
+        // Brief hint about browse_data — detailed instructions live in the sub-agent prompt
+        ctx.push_str("如需从内部业务系统（ERP/OA/CRM 等）提取数据，使用 `browse_data(task, url?)` 工具描述需求，浏览器助手会自动完成。\n\n");
 
         // Legacy connector apps section
         let config = self.config.read().await;
@@ -530,15 +526,8 @@ impl ConnectorEngine {
             ctx.push_str("6. **重要：每次成功获取到数据后，必须立刻调用 save_api_knowledge 保存该 API 的调用方法**\n");
         }
 
-        // Inject site map from auto-exploration cache
-        {
-            let cdp = self.cdp_browser.read().await;
-            if let Some(cdp) = cdp.as_ref() {
-                if let Some(context) = cdp.get_site_map_context(None).await {
-                    ctx.push_str(&context);
-                }
-            }
-        }
+        // Site map is now only injected into the browser sub-agent context,
+        // not into the main daily conversation.
 
         ctx
     }

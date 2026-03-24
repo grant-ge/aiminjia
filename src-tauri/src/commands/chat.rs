@@ -1793,6 +1793,9 @@ async fn agent_loop(
                     connector_engine: None,
                     use_cloud: settings.use_cloud,
                     model: settings.primary_model.clone(),
+                    gateway: None,
+                    tool_registry: None,
+                    app_settings: None,
                 };
                 for file in &uploaded_files {
                     let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -1964,6 +1967,8 @@ async fn agent_loop(
         // Daily mode: block analysis-only tools at runtime
         let daily_blocked: std::collections::HashSet<String> = [
             "hypothesis_test", "detect_anomalies", "save_analysis_note", "update_progress", "update_plan",
+            // Browser tools are handled by browse_data sub-agent, not directly by daily mode
+            "browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js",
         ].iter().map(|s| s.to_string()).collect();
         let daily_allowed: std::collections::HashSet<String> = tool_defs_override.as_ref()
             .map(|defs| defs.iter()
@@ -2557,6 +2562,9 @@ async fn agent_loop(
             connector_engine: app.try_state::<Arc<crate::connector::ConnectorEngine>>().map(|s| s.inner().clone()),
             use_cloud: settings.use_cloud,
             model: settings.primary_model.clone(),
+            gateway: Some(Arc::clone(gateway.inner())),
+            tool_registry: Some(Arc::clone(tool_registry.inner())),
+            app_settings: Some(Arc::new(settings.clone())),
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---

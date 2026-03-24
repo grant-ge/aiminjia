@@ -5,8 +5,11 @@ use std::sync::Arc;
 
 use crate::auth::AuthManager;
 use crate::connector::ConnectorEngine;
+use crate::llm::gateway::LlmGateway;
+use crate::models::settings::AppSettings;
 use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
+use crate::plugin::registry::ToolRegistry;
 use crate::python::session::PythonSessionManager;
 
 /// Shared service context passed to every plugin execution.
@@ -27,4 +30,10 @@ pub struct PluginContext {
     pub connector_engine: Option<Arc<ConnectorEngine>>,
     pub use_cloud: bool,
     pub model: String,
+    /// LLM gateway for sub-agent execution (delegation tools).
+    pub gateway: Option<Arc<LlmGateway>>,
+    /// Tool registry for sub-agent tool execution.
+    pub tool_registry: Option<Arc<ToolRegistry>>,
+    /// App settings for sub-agent LLM calls.
+    pub app_settings: Option<Arc<AppSettings>>,
 }

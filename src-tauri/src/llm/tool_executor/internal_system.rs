@@ -252,6 +252,100 @@ pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) ->
 }
 
 /// Handle browse_and_extract tool invocations.
+/// Handle browse_data tool — delegate to browser sub-agent.
+pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let task = require_str(args, "task")?;
+    let url = optional_str(args, "url");
+
+    let gateway = ctx.gateway.as_ref()
+        .ok_or_else(|| anyhow!("LLM gateway not available for sub-agent"))?;
+    let tool_registry = ctx.tool_registry.as_ref()
+        .ok_or_else(|| anyhow!("Tool registry not available for sub-agent"))?;
+    let app_settings = ctx.app_settings.as_ref()
+        .ok_or_else(|| anyhow!("App settings not available for sub-agent"))?;
+
+    info!("[CONNECTOR] browse_data: task='{}', url={:?}", task, url);
+
+    // Load browser_agent prompt
+    let prompt_path = ctx.app_handle.as_ref()
+        .and_then(|h| h.path().resource_dir().ok())
+        .map(|d| d.join("prompts/browser_agent.md"));
+    let system_prompt = prompt_path
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .unwrap_or_else(|| "你是数据提取专家。使用 browse_and_extract 工具从内部系统提取数据。".to_string());
+
+    // Build dynamic context: site map from connector engine
+    let dynamic_context = if let Some(ref engine) = ctx.connector_engine {
+        let cdp = engine.cdp_browser_ref().await;
+        if let Some(cdp) = cdp.as_ref() {
+            cdp.get_site_map_context(None).await.unwrap_or_default()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // Build task message
+    let task_msg = if let Some(url) = url {
+        format!("{}\n\nTarget URL: {}", task, url)
+    } else {
+        task.to_string()
+    };
+
+    let config = crate::llm::sub_agent::SubAgentConfig {
+        task: task_msg,
+        system_prompt,
+        allowed_tools: vec![
+            "browse_and_extract".to_string(),
+            "browse_navigate".to_string(),
+            "read_page_content".to_string(),
+            "page_execute_js".to_string(),
+        ],
+        max_iterations: 15,
+        dynamic_context,
+    };
+
+    let result = crate::llm::sub_agent::run_sub_agent(
+        gateway,
+        tool_registry,
+        ctx,
+        config,
+        app_settings,
+    ).await.map_err(|e| {
+        warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
+        anyhow!("Browser agent failed: {}", e)
+    })?;
+
+    info!("[CONNECTOR] browse_data complete: iterations={}, files={}, output_len={}",
+        result.iterations_used, result.files.len(), result.output.len());
+
+    // Format result for main agent
+    let mut output = format!("Browser agent completed in {} iterations.\n\n", result.iterations_used);
+
+    if !result.files.is_empty() {
+        output.push_str("### Extracted Data Files\n");
+        for f in &result.files {
+            output.push_str(&format!("- {}\n", f));
+        }
+        output.push_str("\nUse `execute_python` to load these JSON files (e.g. `pd.read_json(path)` or `json.load`).\n\n");
+    }
+
+    if !result.output.is_empty() {
+        output.push_str("### Agent Summary\n");
+        // Truncate if too long
+        if result.output.len() > 2000 {
+            output.push_str(&result.output[..2000]);
+            output.push_str("\n...(truncated)");
+        } else {
+            output.push_str(&result.output);
+        }
+    }
+
+    Ok(output)
+}
+
+/// Handle browse_and_extract tool invocations.
 ///
 /// Smart routing: page mode (navigate + full extraction) or API mode (in-page fetch).
 pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value) -> Result<String> {

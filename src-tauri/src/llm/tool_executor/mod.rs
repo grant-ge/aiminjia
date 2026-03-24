@@ -59,6 +59,7 @@ pub(crate) use internal_system::handle_browse_navigate;
 pub(crate) use internal_system::handle_read_page_content;
 pub(crate) use internal_system::handle_page_execute_js;
 pub(crate) use internal_system::handle_browse_and_extract;
+pub(crate) use internal_system::handle_browse_data;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────
@@ -127,6 +128,9 @@ pub(crate) mod tests {
             connector_engine: None,
             use_cloud: false,
             model: "test-model".to_string(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
         }
     }
 
