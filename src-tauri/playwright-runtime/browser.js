@@ -225,16 +225,55 @@ async function handleNavigate(params) {
     });
   } catch (e) {
     log(`goto error (may be redirect): ${e.message}`);
-    // Page may have loaded despite error (e.g., redirect)
   }
 
-  // Wait for network to settle (best-effort, don't block forever)
   await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+  // Iframe detection: if data tables are in a child frame, navigate directly to iframe URL
+  let iframeUrl = null;
+  const frames = page.frames();
+  if (frames.length > 1) {
+    let mainFrameRows = 0;
+    let bestIframeUrl = null;
+    let bestIframeRows = 0;
+
+    for (const frame of frames) {
+      const frameTables = await extractFromFrame(frame);
+      const rowCount = frameTables.reduce((sum, t) => sum + t.rows.length, 0);
+
+      if (frame === page.mainFrame()) {
+        mainFrameRows = rowCount;
+      } else {
+        const frameUrl = frame.url();
+        if (rowCount > bestIframeRows && frameUrl && frameUrl !== 'about:blank') {
+          bestIframeRows = rowCount;
+          bestIframeUrl = frameUrl;
+        }
+      }
+    }
+
+    // If iframe has more data than main frame, navigate to iframe URL
+    if (bestIframeRows > mainFrameRows && bestIframeUrl) {
+      log(`navigate: detected iframe site — data in ${bestIframeUrl} (${bestIframeRows} rows vs main ${mainFrameRows})`);
+      iframeUrl = bestIframeUrl;
+
+      try {
+        await page.goto(bestIframeUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        log(`navigate: redirected to iframe URL`);
+      } catch (e) {
+        log(`navigate: iframe redirect failed: ${e.message}`);
+      }
+    }
+  }
 
   const title = await page.title();
   const finalUrl = page.url();
 
-  return { url: finalUrl, title };
+  return { url: finalUrl, title, iframeUrl };
 }
 
 async function handleExtract(params) {

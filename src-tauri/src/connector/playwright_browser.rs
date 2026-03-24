@@ -79,10 +79,27 @@ impl PlaywrightBrowser {
         info!("[Playwright] navigate: url={}", url);
         let _ = self.app_handle.emit("browser:navigating", serde_json::json!({ "url": url }));
 
-        // Navigate
-        let nav_result = self.send_command("navigate", serde_json::json!({ "url": url })).await?;
+        // Check site map cache — if this origin has an iframe strategy, navigate to iframe URL directly
+        let cached_iframe_src = {
+            let url_path = Self::extract_path(url);
+            let maps = self.site_maps.lock().await;
+            maps.get(&target_origin)
+                .and_then(|m| m.get_page(&url_path))
+                .and_then(|p| p.iframe_src.clone())
+        };
+
+        let actual_url = if let Some(ref iframe_url) = cached_iframe_src {
+            info!("[Playwright] Using cached iframe strategy: {}", iframe_url);
+            iframe_url.as_str()
+        } else {
+            url
+        };
+
+        // Navigate (browser.js auto-detects iframe and redirects if needed)
+        let nav_result = self.send_command("navigate", serde_json::json!({ "url": actual_url })).await?;
         let title = nav_result["title"].as_str().unwrap_or("").to_string();
         let final_url = nav_result["url"].as_str().unwrap_or(url).to_string();
+        let iframe_url = nav_result["iframeUrl"].as_str().map(String::from);
 
         // Update state
         {
@@ -105,7 +122,7 @@ impl PlaywrightBrowser {
                 info!("[Playwright] Using cached profile for {}", url_path);
                 Some(profile)
             } else {
-                let profile = self.auto_explore(&title, &target_origin, &url_path).await;
+                let profile = self.auto_explore(&title, &target_origin, &url_path, iframe_url.clone()).await;
                 let app_data_dir = self.get_app_data_dir();
                 {
                     let mut maps = self.site_maps.lock().await;
@@ -240,6 +257,7 @@ impl PlaywrightBrowser {
                 api_endpoints: vec![],
                 explored_at: chrono::Utc::now(),
                 access_denied: false,
+                iframe_src: None,
             };
             let app_data_dir = self.get_app_data_dir();
             let mut maps = self.site_maps.lock().await;
@@ -616,8 +634,8 @@ impl PlaywrightBrowser {
             .map_err(|_| format!("Playwright command '{}' timed out after {:?}", method, PLAYWRIGHT_CMD_TIMEOUT))?
     }
 
-    async fn auto_explore(&self, title: &str, origin: &str, url_path: &str) -> PageProfile {
-        info!("[Playwright] auto_explore: {}", url_path);
+    async fn auto_explore(&self, title: &str, _origin: &str, url_path: &str, iframe_src: Option<String>) -> PageProfile {
+        info!("[Playwright] auto_explore: {} (iframe: {:?})", url_path, iframe_src);
 
         let data = match self.send_command("extract", serde_json::json!({})).await {
             Ok(d) => d,
@@ -627,6 +645,7 @@ impl PlaywrightBrowser {
                     url_path: url_path.to_string(), title: title.to_string(),
                     nav_links: vec![], table_schemas: vec![], forms: vec![],
                     api_endpoints: vec![], explored_at: chrono::Utc::now(), access_denied: false,
+                    iframe_src,
                 };
             }
         };
@@ -653,6 +672,7 @@ impl PlaywrightBrowser {
             api_endpoints: vec![],
             explored_at: chrono::Utc::now(),
             access_denied: false,
+            iframe_src,
         }
     }
 

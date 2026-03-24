@@ -44,6 +44,9 @@ pub struct PageProfile {
     pub explored_at: DateTime<Utc>,
     #[serde(default)]
     pub access_denied: bool,
+    /// If data is in an iframe, this is the iframe URL to navigate to directly.
+    #[serde(default)]
+    pub iframe_src: Option<String>,
 }
 
 impl PageProfile {
