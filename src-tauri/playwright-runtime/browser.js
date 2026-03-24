@@ -32,15 +32,12 @@ async function extractFromFrame(frame) {
       document.querySelectorAll('table').forEach((t, i) => {
         if (i >= 10) return;
         const headers = [];
-        const thEls = t.querySelectorAll('thead th, thead td, tr:first-child th');
-        if (thEls.length === 0) {
-          const firstRow = t.querySelector('tr');
-          if (firstRow) firstRow.querySelectorAll('td, th').forEach(h => headers.push(h.innerText.trim()));
-        } else {
-          thEls.forEach(h => headers.push(h.innerText.trim()));
-        }
+        // Only use <th> elements for headers (not <td> which could be data)
+        const thEls = t.querySelectorAll('thead th, tr:first-child th');
+        thEls.forEach(h => headers.push(h.innerText.trim()));
         const rows = [];
         const trEls = t.querySelectorAll('tbody tr, tr');
+        // Skip first row only if it contained <th> elements we used as headers
         const startIdx = (thEls.length > 0 && !t.querySelector('thead')) ? 1 : 0;
         for (let r = startIdx; r < trEls.length && rows.length < 200; r++) {
           const cells = trEls[r].querySelectorAll('td');
