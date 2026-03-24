@@ -417,26 +417,37 @@ async function handleExtractAllPages(params) {
 
   log(`extract_all_pages: savePath=${savePath}, maxPages=${maxPages}`);
 
-  // Step 1: Extract current page tables to determine headers
+  // Step 1: Extract current page tables to determine the main data table
+  // Pick the table with the most columns (= likely the data table, not decorative)
   const allFrames = page.frames();
   let headers = [];
   let currentRows = [];
+  let mainTableIndex = -1;
 
+  let allTables = [];
   for (const frame of allFrames) {
     const frameTables = await extractFromFrame(frame);
-    for (const t of frameTables) {
-      if (t.headers.length > headers.length) {
-        headers = t.headers;
-      }
-      currentRows.push(...t.rows);
+    allTables.push(...frameTables);
+  }
+
+  // Find the table with most headers (= main data table)
+  for (let i = 0; i < allTables.length; i++) {
+    if (allTables[i].headers.length > headers.length) {
+      headers = allTables[i].headers;
+      currentRows = Object.values(allTables[i].rows);
+      mainTableIndex = i;
     }
+  }
+  // If same headers count, prefer the one with more rows
+  if (mainTableIndex >= 0) {
+    currentRows = allTables[mainTableIndex].rows;
   }
 
   if (headers.length === 0 && currentRows.length === 0) {
     return { error: 'No tables found on current page', totalRows: 0 };
   }
 
-  log(`extract_all_pages: first page has ${currentRows.length} rows, ${headers.length} headers`);
+  log(`extract_all_pages: first page has ${currentRows.length} rows, ${headers.length} headers (picked table ${mainTableIndex} of ${allTables.length})`);
 
   // Step 2: Detect pagination from URL
   const currentUrl = page.url();
@@ -505,14 +516,26 @@ async function handleExtractAllPages(params) {
     await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
 
-    // Extract tables from all frames
+    // Extract only the main data table (match by header count)
     const pageFrames = page.frames();
     let pageRows = [];
     for (const frame of pageFrames) {
       const frameTables = await extractFromFrame(frame);
+      // Pick the table with matching headers (same column count as main table)
       for (const t of frameTables) {
-        pageRows.push(...t.rows);
+        if (t.headers.length === headers.length || (t.headers.length === 0 && t.rows.length > 0)) {
+          // Verify it's the right table by checking if rows have same keys
+          if (t.rows.length > 0) {
+            const rowKeys = Object.keys(t.rows[0]);
+            const headerMatch = headers.length === 0 || rowKeys.some(k => headers.includes(k));
+            if (headerMatch) {
+              pageRows.push(...t.rows);
+              break; // Only take one table per page
+            }
+          }
+        }
       }
+      if (pageRows.length > 0) break; // Found the data table in this frame
     }
 
     if (pageRows.length === 0) {
