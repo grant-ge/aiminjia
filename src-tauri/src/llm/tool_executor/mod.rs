@@ -59,6 +59,7 @@ pub(crate) use internal_system::handle_page_execute_js;
 pub(crate) use internal_system::handle_browse_and_extract;
 pub(crate) use internal_system::handle_browse_data;
 pub(crate) use internal_system::handle_extract_table_data;
+pub(crate) use internal_system::handle_extract_with_pagination;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────

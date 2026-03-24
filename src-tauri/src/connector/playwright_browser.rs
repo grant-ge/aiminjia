@@ -356,6 +356,36 @@ impl PlaywrightBrowser {
         Ok(result)
     }
 
+    /// Extract ALL table data with LLM-provided pagination JS.
+    /// Deterministic loop: extract → run paginationJs → wait → extract → repeat.
+    pub async fn extract_with_pagination(
+        &self,
+        save_path: &str,
+        pagination_js: &str,
+        max_pages: Option<u32>,
+    ) -> Result<Value, String> {
+        self.ensure_running().await?;
+
+        info!("[Playwright] extract_with_pagination: save_path={}, pagination_js_len={}, max_pages={:?}",
+            save_path, pagination_js.len(), max_pages);
+
+        let params = serde_json::json!({
+            "savePath": save_path,
+            "paginationJs": pagination_js,
+            "maxPages": max_pages.unwrap_or(100),
+        });
+
+        let result = self.send_command("extract_with_pagination", params).await?;
+
+        let total_rows = result["totalRows"].as_u64().unwrap_or(0);
+        let total_pages = result["totalPages"].as_u64().unwrap_or(0);
+
+        info!("[Playwright] extract_with_pagination complete: {} rows, {} pages",
+            total_rows, total_pages);
+
+        Ok(result)
+    }
+
     /// Check and increment per-turn rate limit.
     pub async fn check_rate_limit(&self, max_per_turn: u32) -> Result<(), String> {
         let mut state = self.state.lock().await;

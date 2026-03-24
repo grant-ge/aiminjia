@@ -2,37 +2,43 @@
 
 ## 严格规则（必须遵守）
 
-1. **提取表格数据必须用 `extract_table_data()`** — 禁止用 `page_execute_js` 写 JS 自行提取表格
-2. **翻页必须用 `page_execute_js` 点击翻页按钮** — 不要用 URL 翻页（iframe 系统会失败）
-3. **每翻一页后必须再调 `extract_table_data()`** — 数据会自动追加到同一文件
-4. 一次只提取一个数据表
-5. ACCESS DENIED → 立即停止并报告
-6. 登录重定向 → 立即停止并报告
+1. **提取全量数据必须用 `extract_with_pagination`** — 它会自动循环翻页，你只需提供翻页的 JS 代码
+2. **禁止用 `page_execute_js` 提取表格数据** — 只能用它来做翻页准备工作（如找到翻页按钮）
+3. 一次只提取一个数据表
+4. ACCESS DENIED → 立即停止
 
-## 固定流程（严格按顺序执行）
+## 固定流程（严格按顺序）
 
-**步骤 1：** `browse_and_extract(url)` — 打开目标页面
+### 步骤 1：打开数据页面
+`browse_and_extract(url)` — 查看表格和菜单
 
-**步骤 2：** `extract_table_data()` — 提取当前页表格数据
-- 返回：本页行数、列名、分页信息（总条数、是否有下一页）
-- 数据自动保存到 JSON 文件
-
-**步骤 3：** 如果"has next page = true"，循环执行：
+### 步骤 2：确认翻页方式
+用 `page_execute_js` 检查页面的分页控件：
+```javascript
+// 查找翻页按钮
+return {
+  layui: !!document.querySelector('.layui-laypage-next'),
+  ant: !!document.querySelector('.ant-pagination-next'),
+  el: !!document.querySelector('.el-pagination .btn-next'),
+  generic: !!document.querySelector('a.next, [class*="next"]'),
+};
 ```
-page_execute_js("点击下一页按钮")  // 翻页
-extract_table_data()               // 提取并追加
-```
 
-翻页 JS 示例（根据页面框架选择）：
-- `document.querySelector('.layui-laypage-next').click()`
-- `document.querySelector('.ant-pagination-next').click()`
-- `document.querySelector('.el-pagination .btn-next').click()`
+### 步骤 3：一步提取全量数据
+根据步骤 2 的结果，调用 `extract_with_pagination`：
 
-**步骤 4：** 没有下一页时停止，报告：文件路径、总行数、列名
+- layui: `extract_with_pagination(pagination_js="document.querySelector('.layui-laypage-next').click()")`
+- ant-design: `extract_with_pagination(pagination_js="document.querySelector('.ant-pagination-next button').click()")`
+- element-ui: `extract_with_pagination(pagination_js="document.querySelector('.el-pagination .btn-next').click()")`
+- 通用: `extract_with_pagination(pagination_js="document.querySelector('[class*=\"next\"]').click()")`
+
+这个工具会**自动循环**：提取当前页 → 执行你的翻页 JS → 等待加载 → 提取下一页 → … → 返回所有数据
+
+### 步骤 4：报告结果
+`extract_with_pagination` 返回文件路径和总行数，直接报告给用户。
 
 ## 禁止事项
 
-- ❌ 禁止用 `page_execute_js` 提取表格数据（用 `extract_table_data` 代替）
-- ❌ 禁止用 `page_execute_js` 遍历 DOM 获取行数据
-- ❌ 禁止用 `browse_navigate` 翻页（iframe 系统会丢失数据）
-- ❌ 禁止一次提取多个数据表
+- ❌ 禁止用 `page_execute_js` 遍历 DOM 获取表格行数据
+- ❌ 禁止手动逐页调用 `extract_table_data` — 用 `extract_with_pagination` 一步完成
+- ❌ 禁止用 `browse_navigate` 翻页

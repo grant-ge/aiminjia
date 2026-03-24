@@ -353,6 +353,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
             "read_page_content".to_string(),
             "page_execute_js".to_string(),
             "extract_table_data".to_string(),
+            "extract_with_pagination".to_string(),
         ],
         max_iterations: 30,
         dynamic_context,
@@ -524,6 +525,49 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
         }
     }
 
+    Ok(output)
+}
+
+/// Handle extract_with_pagination.
+pub(crate) async fn handle_extract_with_pagination(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let pagination_js = require_str(args, "pagination_js")?;
+    let max_pages = args["max_pages"].as_u64().map(|v| v as u32);
+    let engine = ctx.connector_engine.as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+    let filename = format!("table_data_{}.json", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+    let file_info = ctx.file_manager.write_file("generated", &filename, b"{}")
+        .map_err(|e| anyhow!("Failed to create output file: {}", e))?;
+    let save_path = ctx.file_manager.full_path(&file_info.stored_path);
+    info!("[CONNECTOR] extract_with_pagination: save_path={:?}", save_path);
+    let result = engine.browser_extract_with_pagination(
+        &save_path.to_string_lossy(), pagination_js, max_pages,
+    ).await.map_err(|e| anyhow!("extract_with_pagination failed: {}", e))?;
+    let total_rows = result["totalRows"].as_u64().unwrap_or(0);
+    let total_pages = result["totalPages"].as_u64().unwrap_or(0);
+    let file_size = result["fileSize"].as_u64().unwrap_or(0);
+    let headers = result["headers"].as_array()
+        .map(|arr| arr.iter().filter_map(|h| h.as_str()).collect::<Vec<_>>().join(", "))
+        .unwrap_or_default();
+    let file_id = uuid::Uuid::new_v4().to_string();
+    let _ = ctx.storage.insert_generated_file(
+        &file_id, &ctx.conversation_id, None, &filename, &file_info.stored_path,
+        "json", file_size as i64, "data", Some("Extracted table data (all pages)"),
+        1, true, None, None, None,
+    );
+    let mut output = format!(
+        "### Data extracted successfully\n- **Total rows**: {}\n- **Total pages**: {}\n- **Columns**: {}\n- **File**: {}\n- **Size**: {:.1} KB\n\nUse `execute_python` with `pd.read_json('{}')` to load.",
+        total_rows, total_pages, headers, save_path.display(), file_size as f64 / 1024.0, save_path.display(),
+    );
+    if let Some(sample) = result.get("sampleRows").and_then(|s| s.as_array()) {
+        if !sample.is_empty() {
+            let s = serde_json::to_string_pretty(sample).unwrap_or_default();
+            let end = s.char_indices().take_while(|(i, _)| *i < 1500).last()
+                .map(|(i, c)| i + c.len_utf8()).unwrap_or(s.len().min(1500));
+            output.push_str("\n\n### Sample\n```json\n");
+            output.push_str(&s[..end]);
+            output.push_str("\n```");
+        }
+    }
     Ok(output)
 }
 

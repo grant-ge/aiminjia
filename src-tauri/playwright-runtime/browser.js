@@ -519,6 +519,134 @@ async function handleExtractTableData(params) {
   };
 }
 
+/**
+ * Extract ALL table data by looping: extract current page → run pagination JS → repeat.
+ * The LLM provides the pagination JS code (e.g. click next button).
+ * This function handles the deterministic loop — no LLM involvement per page.
+ *
+ * params.savePath — where to save the JSON file (required)
+ * params.paginationJs — JS code to execute to flip to the next page (required)
+ * params.maxPages — max pages to extract (default 100)
+ * params.waitMs — ms to wait after pagination JS before extracting (default 1000)
+ */
+async function handleExtractWithPagination(params) {
+  if (!page) return { error: 'Browser not launched' };
+
+  const savePath = params.savePath;
+  const paginationJs = params.paginationJs;
+  const maxPages = params.maxPages || 100;
+  const waitMs = params.waitMs || 1000;
+
+  if (!savePath) return { error: 'savePath is required' };
+  if (!paginationJs) return { error: 'paginationJs is required' };
+
+  log(`extract_with_pagination: savePath=${savePath}, maxPages=${maxPages}, paginationJs="${paginationJs.substring(0, 80)}..."`);
+
+  let allRows = [];
+  let headers = [];
+  let lastPageHash = null;
+  let totalPages = 0;
+
+  for (let p = 1; p <= maxPages; p++) {
+    // Extract current page from all frames
+    const allFrames = page.frames();
+    let bestTable = { headers: [], rows: [] };
+    let bestScore = -1;
+    let allTables = [];
+
+    for (const frame of allFrames) {
+      const frameTables = await extractFromFrame(frame);
+      allTables.push(...frameTables);
+    }
+
+    for (const t of allTables) {
+      const score = t.rows.length * 100 + t.headers.length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestTable = t;
+      }
+    }
+
+    let pageHeaders = bestTable.headers;
+    let pageRows = bestTable.rows;
+
+    // Borrow headers from header-only table if needed
+    if (pageHeaders.length === 0 && pageRows.length > 0) {
+      const colCount = Object.keys(pageRows[0]).length;
+      for (const t of allTables) {
+        if (t.headers.length >= colCount && t.rows.length === 0) {
+          pageHeaders = t.headers;
+          break;
+        }
+      }
+    }
+
+    if (p === 1 && pageHeaders.length > 0) {
+      headers = pageHeaders;
+    }
+
+    if (pageRows.length === 0) {
+      log(`extract_with_pagination: page ${p} has 0 rows, stopping`);
+      break;
+    }
+
+    // Dedup check
+    const pageHash = JSON.stringify(pageRows.slice(0, 3).map(r => Object.values(r).join('|')));
+    if (pageHash === lastPageHash) {
+      log(`extract_with_pagination: page ${p} is duplicate, stopping`);
+      break;
+    }
+    lastPageHash = pageHash;
+
+    allRows.push(...pageRows);
+    totalPages = p;
+    log(`extract_with_pagination: page ${p} → ${pageRows.length} rows (total: ${allRows.length})`);
+
+    // Execute pagination JS to flip to next page
+    try {
+      // Run pagination JS in all frames (it might be in an iframe)
+      let clicked = false;
+      for (const frame of page.frames()) {
+        try {
+          await frame.evaluate((code) => {
+            return eval(code);
+          }, paginationJs);
+          clicked = true;
+          break;
+        } catch (e) { /* try next frame */ }
+      }
+      if (!clicked) {
+        log(`extract_with_pagination: pagination JS failed in all frames, stopping`);
+        break;
+      }
+    } catch (e) {
+      log(`extract_with_pagination: pagination JS error: ${e.message}, stopping`);
+      break;
+    }
+
+    // Wait for new data to load
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+
+  log(`extract_with_pagination: complete — ${allRows.length} total rows, ${totalPages} pages`);
+
+  // Save to file
+  const output = { headers, rows: allRows, totalRows: allRows.length, totalPages };
+  fs.writeFileSync(savePath, JSON.stringify(output, null, 2));
+  const stats = fs.statSync(savePath);
+  log(`extract_with_pagination: saved to ${savePath} (${stats.size} bytes)`);
+
+  return {
+    totalRows: allRows.length,
+    totalPages,
+    headers,
+    savedTo: savePath,
+    fileSize: stats.size,
+    sampleRows: allRows.slice(0, 3),
+  };
+}
+
 // ── Main Loop ───────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -526,6 +654,7 @@ const HANDLERS = {
   navigate: handleNavigate,
   extract: handleExtract,
   extract_table_data: handleExtractTableData,
+  extract_with_pagination: handleExtractWithPagination,
   execute_js: handleExecuteJs,
   fetch: handleFetch,
   screenshot: handleScreenshot,
