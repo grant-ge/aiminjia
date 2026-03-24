@@ -175,12 +175,32 @@ async function handleLaunch(params) {
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-extensions',
+      '--disable-session-crashed-bubble',
+      '--hide-crash-restore-bubble',
+      '--noerrdialogs',
+      '--disable-features=ProfilePicker,ChromeWhatsNewUI,TranslateUI',
     ],
   };
 
   // Use user data dir for session persistence (cookies, login state)
   const userDataDir = params.userDataDir || null;
   if (userDataDir) {
+    // Clean up crash markers to prevent "profile error" dialogs
+    const crashFiles = ['Default/Preferences'];
+    for (const f of crashFiles) {
+      const fp = path.join(userDataDir, f);
+      try {
+        if (fs.existsSync(fp)) {
+          const content = fs.readFileSync(fp, 'utf-8');
+          // Remove exit_type: Crashed marker
+          const fixed = content.replace(/"exit_type"\s*:\s*"Crashed"/g, '"exit_type":"Normal"');
+          if (fixed !== content) {
+            fs.writeFileSync(fp, fixed);
+            log('Fixed crash marker in ' + f);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
     // launchPersistentContext keeps cookies between sessions
     context = await chromium.launchPersistentContext(userDataDir, launchOpts);
     browser = context; // PersistentContext acts as both browser and context
