@@ -13,6 +13,8 @@ use crate::models::settings::AppSettings;
 use crate::plugin::context::PluginContext;
 use crate::plugin::registry::ToolRegistry;
 
+use tauri::Emitter;
+
 /// Truncate a string at a safe UTF-8 boundary.
 fn safe_truncate(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -37,6 +39,10 @@ pub struct SubAgentConfig {
     pub max_iterations: usize,
     /// Dynamic context injected alongside the system prompt.
     pub dynamic_context: String,
+    /// Conversation ID of the parent (for emitting heartbeat events to prevent watchdog timeout).
+    pub conversation_id: String,
+    /// App handle for emitting Tauri events.
+    pub app_handle: Option<tauri::AppHandle>,
 }
 
 /// Result from a sub-agent run.
@@ -187,12 +193,36 @@ pub async fn run_sub_agent(
 
             info!("[SubAgent] Executing tool '{}' (id={})", tc.name, tc.id);
 
+            // Emit tool:executing event to keep frontend watchdog alive
+            if let Some(ref app) = config.app_handle {
+                let _ = app.emit("tool:executing", serde_json::json!({
+                    "conversationId": config.conversation_id,
+                    "toolName": tc.name,
+                    "toolId": tc.id,
+                    "purpose": format!("[Browser Agent] {}", tc.name),
+                }));
+            }
+
             let result = tool_registry
                 .execute(&tc.name, plugin_ctx, tc.arguments.clone())
                 .await;
 
             match result {
                 Ok(tool_output) => {
+                    // Emit tool:completed
+                    if let Some(ref app) = config.app_handle {
+                        let summary = if tool_output.content.len() > 100 {
+                            format!("{}...", safe_truncate(&tool_output.content, 100))
+                        } else {
+                            tool_output.content.clone()
+                        };
+                        let _ = app.emit("tool:completed", serde_json::json!({
+                            "conversationId": config.conversation_id,
+                            "toolId": tc.id,
+                            "success": true,
+                            "summary": summary,
+                        }));
+                    }
                     // Collect file paths from tool output
                     for f in &tool_output.generated_files {
                         files.push(f.clone());
@@ -233,6 +263,14 @@ pub async fn run_sub_agent(
                 Err(e) => {
                     let err_msg = format!("Tool error: {}", e);
                     warn!("[SubAgent] Tool '{}' failed: {}", tc.name, err_msg);
+                    if let Some(ref app) = config.app_handle {
+                        let _ = app.emit("tool:completed", serde_json::json!({
+                            "conversationId": config.conversation_id,
+                            "toolId": tc.id,
+                            "success": false,
+                            "summary": err_msg.clone(),
+                        }));
+                    }
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
                 }
             }

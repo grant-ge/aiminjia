@@ -357,6 +357,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         ],
         max_iterations: 30,
         dynamic_context,
+        conversation_id: ctx.conversation_id.clone(),
+        app_handle: ctx.app_handle.clone(),
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(
