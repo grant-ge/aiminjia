@@ -175,6 +175,8 @@ async function handleLaunch(params) {
       '--disable-session-crashed-bubble',
       '--hide-crash-restore-bubble',
       '--noerrdialogs',
+      '--disable-breakpad',               // Disable crash reporter (prevents macOS "unexpectedly quit" dialog)
+      '--disable-crash-reporter',          // Same, belt-and-suspenders
       '--disable-features=ProfilePicker,ChromeWhatsNewUI,TranslateUI',
     ],
   };
@@ -209,6 +211,15 @@ async function handleLaunch(params) {
   }
 
   log('Browser launched');
+
+  // Listen for browser close (user closes Chrome window or Chrome crashes)
+  context.on('close', () => {
+    log('Browser context closed (user closed Chrome or crash)');
+    browser = null;
+    context = null;
+    page = null;
+  });
+
   return { ok: true };
 }
 

@@ -71,7 +71,7 @@ impl PlaywrightBrowser {
         }
     }
 
-    /// Navigate to a URL. Launches browser lazily.
+    /// Navigate to a URL. Launches browser lazily. Auto-recovers if Chrome was closed.
     pub async fn navigate(&self, url: &str) -> Result<BrowseNavigateResult, String> {
         self.ensure_running().await?;
 
@@ -579,6 +579,8 @@ impl PlaywrightBrowser {
 
     /// Send a JSON-RPC command to the sidecar and return the result.
     /// Uses separate IO mutex to avoid deadlock with state lock.
+    /// On fatal errors (process terminated, stdin/stdout broken), auto-cleans
+    /// state so the next call to `ensure_running()` can restart the sidecar.
     async fn send_command(&self, method: &str, params: Value) -> Result<Value, String> {
         // Get next ID from state (brief lock)
         let id = {
@@ -598,10 +600,17 @@ impl PlaywrightBrowser {
         let cmd = serde_json::json!({ "id": id, "method": method, "params": params });
         let line = serde_json::to_string(&cmd).unwrap() + "\n";
 
-        io.stdin.write_all(line.as_bytes()).await
-            .map_err(|e| format!("stdin write: {}", e))?;
-        io.stdin.flush().await
-            .map_err(|e| format!("stdin flush: {}", e))?;
+        // Write — if this fails, the sidecar is dead
+        if let Err(e) = io.stdin.write_all(line.as_bytes()).await {
+            drop(io_guard);
+            self.cleanup_dead_process().await;
+            return Err(format!("stdin write: {} (process cleaned up, will restart on next call)", e));
+        }
+        if let Err(e) = io.stdin.flush().await {
+            drop(io_guard);
+            self.cleanup_dead_process().await;
+            return Err(format!("stdin flush: {} (process cleaned up, will restart on next call)", e));
+        }
 
         // Read response with timeout
         let read_future = async {
@@ -611,7 +620,7 @@ impl PlaywrightBrowser {
                     .map_err(|e| format!("stdout read: {}", e))?;
 
                 if bytes_read == 0 {
-                    return Err("Playwright sidecar process terminated".to_string());
+                    return Err("__PROCESS_TERMINATED__".to_string());
                 }
 
                 let trimmed = response_line.trim();
@@ -622,6 +631,10 @@ impl PlaywrightBrowser {
 
                 if response["id"].as_u64() == Some(id) {
                     if let Some(err) = response.get("error").and_then(|e| e.as_str()) {
+                        // If Chrome was closed by user, sidecar returns "Browser not launched"
+                        if err.contains("not launched") {
+                            return Err("__BROWSER_CLOSED__".to_string());
+                        }
                         return Err(err.to_string());
                     }
                     return Ok(response["result"].clone());
@@ -629,9 +642,39 @@ impl PlaywrightBrowser {
             }
         };
 
-        tokio::time::timeout(PLAYWRIGHT_CMD_TIMEOUT, read_future)
+        let result = tokio::time::timeout(PLAYWRIGHT_CMD_TIMEOUT, read_future)
             .await
-            .map_err(|_| format!("Playwright command '{}' timed out after {:?}", method, PLAYWRIGHT_CMD_TIMEOUT))?
+            .map_err(|_| format!("Playwright command '{}' timed out after {:?}", method, PLAYWRIGHT_CMD_TIMEOUT))?;
+
+        // If process terminated or browser closed, clean up so next call restarts
+        if let Err(ref e) = result {
+            if e.contains("__PROCESS_TERMINATED__") || e.contains("__BROWSER_CLOSED__") {
+                drop(io_guard);
+                self.cleanup_dead_process().await;
+                let msg = if e.contains("__BROWSER_CLOSED__") {
+                    "Browser was closed (cleaned up, will restart on next call)"
+                } else {
+                    "Playwright process terminated (cleaned up, will restart on next call)"
+                };
+                return Err(msg.to_string());
+            }
+        }
+        result
+    }
+
+    /// Clean up dead process state so `ensure_running()` will relaunch.
+    async fn cleanup_dead_process(&self) {
+        warn!("[Playwright] Cleaning up dead process state");
+        *self.io.lock().await = None;
+        let mut state = self.state.lock().await;
+        if let Some(mut proc) = state.process.take() {
+            let _ = proc.child.kill().await;
+        }
+        state.active_origin = None;
+        state.active_url = None;
+        // Clean up profile lock
+        let lock_path = self.get_app_data_dir().join("playwright-profile/SingletonLock");
+        let _ = std::fs::remove_file(&lock_path);
     }
 
     async fn auto_explore(&self, title: &str, _origin: &str, url_path: &str, iframe_src: Option<String>) -> PageProfile {
