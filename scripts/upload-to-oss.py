@@ -240,15 +240,15 @@ def main():
             "sig_local_path": str(x64_bundle / "macos" / "AIjia.app.tar.gz.sig"),
             "sig_github_name": None,
         },
-        # Windows NSIS signed bundle (for updater) — from GitHub CI artifacts
+        # Windows NSIS signed bundle (for updater) — .exe.sig from GitHub CI
         {
             "local_path": None,
-            "github_name": f"AIjia_{version}_x64-setup.nsis.zip",
-            "local_name": f"AIjia_{version}_x64-setup.nsis.zip",
-            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.nsis.zip",
+            "github_name": None,
+            "local_name": f"AIjia_{version}_x64-setup.exe.sig",
+            "oss_key": f"{OSS_PREFIX}/v{version}/AIjia_{version}_x64-setup.exe.sig",
             "latest_key": None,
             "sig_local_path": None,
-            "sig_github_name": f"AIjia_{version}_x64-setup.nsis.zip.sig",
+            "sig_github_name": None,
         },
     ]
 

@@ -21,8 +21,7 @@ jobs:
             artifact-name: windows-installers
             artifact-path: |
               src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/nsis/*.nsis.zip
-              src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+              src-tauri/target/release/bundle/nsis/*.exe.sig
           - platform: macos-14
             artifact-name: macos-arm-installers
             artifact-path: |
