@@ -1,6 +1,7 @@
 /**
  * Avatar — AI product icon or gender-neutral user silhouette.
  */
+import { useBrandingStore } from '@/stores/brandingStore'
 
 interface AvatarProps {
   variant: 'ai' | 'user'
@@ -11,13 +12,20 @@ interface AvatarProps {
 
 export function Avatar({ variant, isLoggedIn = false }: AvatarProps) {
   const isAI = variant === 'ai'
+  const logoUrl = useBrandingStore((s) => s.logoUrl)
+  const productName = useBrandingStore((s) => s.productName)
 
   if (isAI) {
     return (
       <img
-        src="/app-icon.png"
-        alt="AI小家"
+        src={logoUrl}
+        alt={productName}
         className="h-7 w-7 shrink-0 rounded-full"
+        onError={(e) => {
+          if (e.currentTarget.src !== window.location.origin + '/app-icon.png') {
+            e.currentTarget.src = '/app-icon.png'
+          }
+        }}
       />
     )
   }

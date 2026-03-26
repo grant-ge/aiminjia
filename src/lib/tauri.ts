@@ -499,8 +499,19 @@ export function getPluginInfo(): Promise<PluginInfo> {
 export interface CloudAuthInfo {
   loggedIn: boolean
   user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string } | null
+  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
   models: CloudModel[]
+}
+
+/** Branding info from persisted auth (no network, instant). */
+export interface BrandingInfo {
+  productName?: string
+  logoUrl?: string
+  accentColor?: string
+  primaryColor?: string
+  bgColor?: string
+  sidebarBgColor?: string
+  fontFamily?: string
 }
 
 /** Cloud model info from /v1/models. */
@@ -552,6 +563,11 @@ export function cloudLogout(): Promise<void> {
 /** Get current cloud auth state (for app init / restore). */
 export function getCloudAuth(): Promise<CloudAuthInfo> {
   return invoke<CloudAuthInfo>('get_cloud_auth')
+}
+
+/** Get branding from persisted auth state (no network, instant). */
+export function getBranding(): Promise<BrandingInfo> {
+  return invoke<BrandingInfo>('get_branding')
 }
 
 /** Fetch available cloud models. */

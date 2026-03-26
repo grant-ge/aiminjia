@@ -101,6 +101,11 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
             src={logoUrl}
             alt={productName}
             className="h-6 w-6 rounded"
+            onError={(e) => {
+              if (e.currentTarget.src !== window.location.origin + '/app-icon.png') {
+                e.currentTarget.src = '/app-icon.png'
+              }
+            }}
           />
           <span
             className="text-lg font-bold"

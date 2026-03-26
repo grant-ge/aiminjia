@@ -31,6 +31,15 @@ pub struct TenantInfo {
     /// Custom primary color hex (empty/None = default #1D1D1F).
     #[serde(default)]
     pub primary_color: Option<String>,
+    /// Custom background color (empty/None = default).
+    #[serde(default)]
+    pub bg_color: Option<String>,
+    /// Custom sidebar background color (empty/None = default).
+    #[serde(default)]
+    pub sidebar_bg_color: Option<String>,
+    /// Custom font family identifier (empty/None = system default).
+    #[serde(default)]
+    pub font_family: Option<String>,
 }
 
 /// Cloud model info returned by /v1/models.

@@ -7,7 +7,7 @@ import type { CloudAuthInfo, CloudModel } from '@/lib/tauri'
 interface AuthState {
   isLoggedIn: boolean
   user: { id: number; name: string; username: string } | null
-  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string } | null
+  tenant: { id: number; name: string; balance: string; productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null
   cloudModels: CloudModel[]
   selectedCloudModel: string
 

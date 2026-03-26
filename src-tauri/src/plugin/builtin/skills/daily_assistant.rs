@@ -9,9 +9,11 @@ use std::sync::Arc;
 use crate::llm::prompts;
 use crate::plugin::skill_trait::*;
 use crate::storage::file_store::AppStorage;
+use crate::auth::AuthManager;
 
 pub struct DailyAssistantSkill {
     pub db: Arc<AppStorage>,
+    pub auth_manager: Arc<AuthManager>,
 }
 
 #[async_trait]
@@ -33,7 +35,10 @@ impl Skill for DailyAssistantSkill {
 
     fn system_prompt(&self, _state: &SkillState) -> String {
         let persona = self.db.get_active_persona().ok();
-        prompts::get_system_prompt(None, persona.as_ref(), None)
+        let product_name = tauri::async_runtime::block_on(self.auth_manager.get_auth_info())
+            .tenant
+            .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
+        prompts::get_system_prompt(None, persona.as_ref(), product_name.as_deref())
     }
 
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {

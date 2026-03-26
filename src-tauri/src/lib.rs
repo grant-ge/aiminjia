@@ -106,6 +106,17 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
+            // Set window title from persisted branding (before WebView renders)
+            {
+                let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
+                let title = format!("{} — 智能工作助手", info.tenant
+                    .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
+                    .unwrap_or_else(|| "AI小家".to_string()));
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_title(&title);
+                }
+            }
+
             // Initialize Playwright browser — primary browser automation
             let playwright_browser = Arc::new(
                 connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone())
@@ -126,7 +137,7 @@ pub fn run() {
             // Register builtin tools and skills
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(&skill_registry, db.clone()).await;
+                plugin::builtin::skills::register_builtin_skills(&skill_registry, db.clone(), auth_manager.clone()).await;
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
@@ -244,6 +255,7 @@ pub fn run() {
             commands::auth::get_cloud_auth,
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
+            commands::auth::get_branding,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

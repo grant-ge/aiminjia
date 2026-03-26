@@ -57,6 +57,12 @@ pub struct AuthTenantInfo {
     pub accent_color: Option<String>,
     #[serde(default)]
     pub primary_color: Option<String>,
+    #[serde(default)]
+    pub bg_color: Option<String>,
+    #[serde(default)]
+    pub sidebar_bg_color: Option<String>,
+    #[serde(default)]
+    pub font_family: Option<String>,
 }
 
 impl From<AuthUserInfo> for UserInfo {
@@ -71,6 +77,8 @@ impl From<AuthTenantInfo> for TenantInfo {
             id: t.id, name: t.name, balance: t.balance,
             product_name: t.product_name, logo_url: t.logo_url,
             accent_color: t.accent_color, primary_color: t.primary_color,
+            bg_color: t.bg_color, sidebar_bg_color: t.sidebar_bg_color,
+            font_family: t.font_family,
         }
     }
 }
@@ -233,6 +241,31 @@ impl AuthClient {
         }
 
         Ok(())
+    }
+
+    /// Get current user + tenant profile (including latest branding).
+    /// Uses session_key auth (Bearer), no token rotation.
+    pub async fn get_profile(&self, session_key: &str) -> Result<(AuthUserInfo, AuthTenantInfo)> {
+        let url = format!("{}/v1/profile", BASE_URL);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", session_key))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(parse_api_error(status.as_u16(), &body));
+        }
+
+        let body: serde_json::Value = resp.json().await?;
+        let user: AuthUserInfo = serde_json::from_value(body["user"].clone())
+            .map_err(|e| anyhow!("Failed to parse user profile: {}", e))?;
+        let tenant: AuthTenantInfo = serde_json::from_value(body["tenant"].clone())
+            .map_err(|e| anyhow!("Failed to parse tenant profile: {}", e))?;
+        Ok((user, tenant))
     }
 }
 

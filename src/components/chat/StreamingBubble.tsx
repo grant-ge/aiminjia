@@ -5,6 +5,7 @@
 import { Avatar } from '@/components/common/Avatar'
 import { useChatStore } from '@/stores/chatStore'
 import type { AgentPhase } from '@/stores/chatStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { TypingIndicator } from './TypingIndicator'
 import { markdownToHtml } from '@/lib/markdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
@@ -34,6 +35,7 @@ interface StreamingBubbleProps {
 
 export function StreamingBubble({ content }: StreamingBubbleProps) {
   const toolExecutions = useChatStore((s) => s.toolExecutions)
+  const productName = useBrandingStore((s) => s.productName)
   const agentPhase = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? s.streamStates[activeId]?.agentPhase : undefined
@@ -59,7 +61,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
           className="text-sm font-semibold"
           style={{ color: 'var(--color-text-primary)' }}
         >
-          AI小家
+          {productName}
         </span>
       </div>
 

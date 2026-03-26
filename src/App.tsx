@@ -10,7 +10,7 @@ import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo, getBranding } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -67,6 +67,14 @@ function App() {
   useEffect(() => {
     usePersonaStore.getState().reload()
       .catch((err) => console.error('Failed to load persona:', err))
+  }, [])
+
+  // Restore branding from local cache FIRST (instant, no network)
+  // Then getCloudAuth below will refresh with latest from server
+  useEffect(() => {
+    getBranding()
+      .then((branding) => useBrandingStore.getState().applyBranding(branding))
+      .catch(() => {})
   }, [])
 
   // Restore cloud auth state on startup

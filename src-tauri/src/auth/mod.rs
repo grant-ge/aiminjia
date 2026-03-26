@@ -192,6 +192,113 @@ impl AuthManager {
         }
     }
 
+    /// Refresh auth info from server using refresh_token and persist the latest tenant/user profile.
+    /// Best-effort: if refresh fails, falls back to current persisted auth info.
+    pub async fn refresh_auth_info(&self) -> CloudAuthInfo {
+        let (refresh_token, session_key) = {
+            let state = self.state.read().await;
+            match state.as_ref() {
+                Some(auth) => (
+                    if auth.refresh_expires_at > Utc::now() { Some(auth.refresh_token.clone()) } else { None },
+                    if auth.session_key_expires_at > Utc::now() { Some(auth.session_key.clone()) } else { None },
+                ),
+                _ => return self.get_auth_info().await,
+            }
+        };
+
+        // Strategy 1: use refresh_token to get new tokens + latest profile
+        if let Some(rt) = refresh_token {
+            match self.client.refresh_token(&rt).await {
+            Ok(auth_resp) => {
+                let now = Utc::now();
+
+                let user: state::UserInfo = auth_resp.user.into();
+                let tenant: state::TenantInfo = auth_resp.tenant.into();
+
+                // Persist refreshed tokens IMMEDIATELY — the old refresh_token is
+                // already revoked (single-use), so we must not lose the new one even
+                // if create_session_key fails below.
+                let mut cloud_auth = CloudAuth {
+                    access_token: auth_resp.access_token,
+                    access_expires_at: auth_resp.access_expires_at,
+                    refresh_token: auth_resp.refresh_token,
+                    refresh_expires_at: auth_resp.refresh_expires_at,
+                    // Keep existing session key for now — will update below if possible
+                    session_key: String::new(),
+                    session_key_expires_at: now,
+                    user: user.clone(),
+                    tenant: tenant.clone(),
+                };
+
+                // Copy existing session key from current state as fallback
+                {
+                    let state = self.state.read().await;
+                    if let Some(current) = state.as_ref() {
+                        cloud_auth.session_key = current.session_key.clone();
+                        cloud_auth.session_key_expires_at = current.session_key_expires_at;
+                    }
+                }
+
+                // Try to create a fresh session key (best-effort)
+                match self.client.create_session_key(&cloud_auth.access_token).await {
+                    Ok(sk) if sk.expires_at > now => {
+                        cloud_auth.session_key = sk.key;
+                        cloud_auth.session_key_expires_at = sk.expires_at;
+                    }
+                    Ok(_) => {
+                        log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
+                    }
+                    Err(e) => {
+                        log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
+                    }
+                }
+
+                self.persist_auth(&cloud_auth);
+                *self.state.write().await = Some(cloud_auth);
+
+                return CloudAuthInfo {
+                    logged_in: true,
+                    user: Some(user),
+                    tenant: Some(tenant),
+                    models: vec![],
+                };
+            }
+            Err(e) => {
+                log::warn!("refresh_auth_info: refresh_token failed: {}", e);
+            }
+        }
+        }
+
+        // Strategy 2: refresh_token unavailable/failed — use session_key to fetch profile only
+        if let Some(sk) = session_key {
+            match self.client.get_profile(&sk).await {
+                Ok((user_info, tenant_info)) => {
+                    let user: state::UserInfo = user_info.into();
+                    let tenant: state::TenantInfo = tenant_info.into();
+                    // Update only user/tenant in persisted state (keep existing tokens)
+                    let mut state = self.state.write().await;
+                    if let Some(auth) = state.as_mut() {
+                        auth.user = user.clone();
+                        auth.tenant = tenant.clone();
+                        self.persist_auth(auth);
+                    }
+                    return CloudAuthInfo {
+                        logged_in: true,
+                        user: Some(user),
+                        tenant: Some(tenant),
+                        models: vec![],
+                    };
+                }
+                Err(e) => {
+                    log::warn!("refresh_auth_info: get_profile failed: {}", e);
+                }
+            }
+        }
+
+        // Strategy 3: all failed — return persisted data as-is
+        self.get_auth_info().await
+    }
+
     /// Get a valid session key, auto-renewing if needed.
     ///
     /// Renewal chain:
