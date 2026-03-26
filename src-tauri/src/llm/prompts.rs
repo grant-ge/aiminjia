@@ -174,10 +174,15 @@ pub fn get_browser_agent_prompt() -> String {
 ///
 /// - `step = None` → daily consultation mode (BASE + date + persona + DAILY)
 /// - `step = Some(_)` → analysis mode (BASE + date only; step prompts are in the plugin)
-pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::file_store::persona::Persona>) -> String {
+pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::file_store::persona::Persona>, product_name: Option<&str>) -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
 
-    let base = guard.get("base");
+    let base_raw = guard.get("base");
+    // Replace default brand name with custom product name if provided
+    let base = match product_name {
+        Some(name) if !name.is_empty() && name != "AI小家" => base_raw.replace("AI小家", name),
+        _ => base_raw.to_string(),
+    };
     let mode_key = match step {
         None => Some("daily"),
         Some(_) => None, // step prompts now live in the declarative plugin
@@ -299,7 +304,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None, None);
+        let prompt = get_system_prompt(None, None, None);
         assert!(prompt.contains("Test base prompt"));
         assert!(prompt.contains("Test daily prompt"));
     }
@@ -320,7 +325,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None, None);
+        let prompt = get_system_prompt(None, None, None);
         assert!(prompt.contains("Custom base"), "User override should take priority");
         assert!(prompt.contains("Bundled daily"), "Non-overridden should use bundled");
     }
@@ -341,7 +346,7 @@ mod tests {
 
         init_prompts(&bundled, &user);
 
-        let prompt = get_system_prompt(None, None);
+        let prompt = get_system_prompt(None, None, None);
         assert!(prompt.contains("Bundled base"), "Empty override should fall through to bundled");
     }
 
@@ -355,7 +360,7 @@ mod tests {
 
         init_prompts(&empty_bundled, &empty_user);
 
-        let prompt = get_system_prompt(None, None);
+        let prompt = get_system_prompt(None, None, None);
         assert!(prompt.contains("AI小家"), "Should fall back to hardcoded base");
     }
 
@@ -374,22 +379,22 @@ mod tests {
         init_prompts(&bundled, &user);
 
         // Daily mode works
-        assert!(get_system_prompt(None, None).contains("日常工作助手"));
+        assert!(get_system_prompt(None, None, None).contains("日常工作助手"));
 
         // Step variants return base + date only (step prompts are in plugins now)
-        let step0 = get_system_prompt(Some(0), None);
+        let step0 = get_system_prompt(Some(0), None, None);
         assert!(step0.contains("AI小家 base"));
         assert!(!step0.contains("日常工作助手"));
 
         // Invalid step also returns base only
-        let step99 = get_system_prompt(Some(99), None);
+        let step99 = get_system_prompt(Some(99), None, None);
         assert!(step99.contains("AI小家 base"));
         assert!(!step99.contains("日常工作助手"));
 
         // Base always included
         for step in [None, Some(0), Some(1), Some(5)] {
             assert!(
-                get_system_prompt(step, None).contains("AI小家 base"),
+                get_system_prompt(step, None, None).contains("AI小家 base"),
                 "Step {:?} should include base prompt",
                 step,
             );

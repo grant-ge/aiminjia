@@ -18,6 +18,7 @@ import { usePersonaStore } from '@/stores/personaStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useBrowserStore } from '@/stores/browserStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 
 function App() {
   useStreaming()
@@ -74,6 +75,8 @@ function App() {
       .then(async (info) => {
         if (info.loggedIn) {
           useAuthStore.getState().setAuth(info)
+          // Apply tenant branding (product name, logo, colors)
+          useBrandingStore.getState().applyBranding(info.tenant ?? null)
           // Fetch cloud models (get_auth_info returns empty models)
           try {
             const models = await getCloudModels()
@@ -106,6 +109,7 @@ function App() {
     const unlisten = onAuthExpired(({ message }) => {
       console.warn('[auth:expired]', message)
       useAuthStore.getState().clearAuth()
+      useBrandingStore.getState().reset()
       // Keep useCloud unchanged — user must explicitly switch
       useNotificationStore.getState().push({
         level: 'warning',

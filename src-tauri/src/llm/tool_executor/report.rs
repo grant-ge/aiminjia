@@ -88,6 +88,17 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
 
     // Always generate HTML first (it's the universal intermediate format)
     let html_content = build_html_report(title, sections);
+    // Replace product name with custom branding if available
+    let html_content = if let Some(ref auth_mgr) = ctx.auth_manager {
+        let product_name = tokio::runtime::Handle::current().block_on(async {
+            auth_mgr.get_auth_info().await.tenant
+                .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
+                .unwrap_or_else(|| "AI小家".to_string())
+        });
+        html_content.replace("AI小家", &product_name)
+    } else {
+        html_content
+    };
     // Unmask PII placeholders in report content so users see real values
     let html_content = unmask_text(&html_content, &unmask_map);
 
@@ -632,7 +643,7 @@ fn build_html_report(title: &str, sections: &[Value]) -> String {
 
     let now = chrono::Local::now();
 
-    format!(
+    let formatted = format!(
         r##"<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -771,18 +782,20 @@ fn build_html_report(title: &str, sections: &[Value]) -> String {
 <body>
 <div class="report-header">
   <h1>{title}</h1>
-  <div class="meta">Generated: {timestamp} &nbsp;|&nbsp; AI小家 — 组织专家，工作助手</div>
+  <div class="meta">Generated: {timestamp} &nbsp;|&nbsp; {{PRODUCT_NAME}} — 组织专家，工作助手</div>
 </div>
 {body}
 <div class="report-footer">
-  本报告由 AI小家（组织专家，工作助手）自动生成 — {timestamp}
+  本报告由 {{PRODUCT_NAME}}（组织专家，工作助手）自动生成 — {timestamp}
 </div>
 </body>
 </html>"##,
         title = html_escape(title),
         body = body,
         timestamp = now.format("%Y-%m-%d %H:%M"),
-    )
+    );
+    // Replace product name placeholder (custom branding handled by caller)
+    formatted.replace("{{PRODUCT_NAME}}", "AI小家")
 }
 
 /// Render a structured table for report HTML.

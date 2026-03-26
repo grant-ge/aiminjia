@@ -1743,7 +1743,7 @@ async fn agent_loop(
             log::info!("Agent loop in DAILY CONSULTATION mode ({} tools)", all_tool_defs.len());
             let persona = db.get_active_persona().ok();
             (
-                prompts::get_system_prompt(None, persona.as_ref()),
+                prompts::get_system_prompt(None, persona.as_ref(), None),
                 Some(all_tool_defs), // all schemas for KV cache stability
                 MAX_TOOL_ITERATIONS,
                 8192u32, // daily consultation: needs headroom for generate_report JSON

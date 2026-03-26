@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { usePersonaStore } from '@/stores/personaStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { updateSettings, getSettings } from '@/lib/tauri'
 import type { Conversation } from '@/types/message'
 
@@ -62,6 +63,8 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const authUser = useAuthStore((s) => s.user)
   const authTenant = useAuthStore((s) => s.tenant)
+  const productName = useBrandingStore((s) => s.productName)
+  const logoUrl = useBrandingStore((s) => s.logoUrl)
   const useCloud = useSettingsStore((s) => s.useCloud)
 
   const { personas, activePersona, setActive: setActivePersona } = usePersonaStore()
@@ -95,15 +98,15 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
       >
         <div className="flex items-center gap-2.5">
           <img
-            src="/renlijia.png"
-            alt="AI小家"
+            src={logoUrl}
+            alt={productName}
             className="h-6 w-6 rounded"
           />
           <span
             className="text-lg font-bold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            AI小家
+            {productName}
           </span>
         </div>
 
@@ -425,7 +428,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           </div>
         )}
         <div className="flex items-center justify-between">
-        <span>AI小家 v{appVersion}</span>
+        <span>{productName} v{appVersion}</span>
         <button
           className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border px-3.5 text-sm font-medium transition-all duration-150"
           style={{

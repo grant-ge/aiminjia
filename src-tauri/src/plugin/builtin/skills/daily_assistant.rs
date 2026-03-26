@@ -33,7 +33,7 @@ impl Skill for DailyAssistantSkill {
 
     fn system_prompt(&self, _state: &SkillState) -> String {
         let persona = self.db.get_active_persona().ok();
-        prompts::get_system_prompt(None, persona.as_ref())
+        prompts::get_system_prompt(None, persona.as_ref(), None)
     }
 
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {

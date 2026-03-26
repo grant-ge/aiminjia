@@ -3,6 +3,7 @@
  */
 import { useState } from 'react'
 import { usePersonaStore } from '@/stores/personaStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { Button } from '@/components/common/Button'
 import type { PersonaSummary } from '@/lib/tauri'
 
@@ -12,6 +13,7 @@ interface PersonaSelectorProps {
 
 export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
   const { personas, setActive } = usePersonaStore()
+  const productName = useBrandingStore((s) => s.productName)
   const [selected, setSelected] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
@@ -38,7 +40,7 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
             className="mb-2 text-2xl font-bold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            欢迎使用 AI小家
+            欢迎使用 {productName}
           </h1>
           <p
             className="text-sm"

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { cloudLogin, cloudLogout, updateSettings, getSettings, cloudChangePassword } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 
 interface LoginSectionProps {
   onLoginSuccess?: () => void
@@ -43,6 +44,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     try {
       const result = await cloudLogin(username.trim(), password)
       auth.setAuth(result)
+      useBrandingStore.getState().applyBranding(result.tenant ?? null)
 
       // Persist the selected cloud model to settings (only if not already set)
       if (result.models.length > 0) {
@@ -102,6 +104,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     }
     // Always clear frontend state regardless of IPC result
     auth.clearAuth()
+    useBrandingStore.getState().reset()
     // Disable cloud mode
     try {
       const settings = await getSettings()
@@ -142,6 +145,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       await cloudChangePassword(oldPassword, newPassword)
       // Server-side logout already happened, clear frontend state
       auth.clearAuth()
+      useBrandingStore.getState().reset()
       try {
         const settings = await getSettings()
         await updateSettings({ ...settings, useCloud: false })

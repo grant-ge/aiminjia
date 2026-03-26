@@ -49,6 +49,14 @@ pub struct AuthTenantInfo {
     pub name: String,
     #[serde(default)]
     pub balance: String,
+    #[serde(default)]
+    pub product_name: Option<String>,
+    #[serde(default)]
+    pub logo_url: Option<String>,
+    #[serde(default)]
+    pub accent_color: Option<String>,
+    #[serde(default)]
+    pub primary_color: Option<String>,
 }
 
 impl From<AuthUserInfo> for UserInfo {
@@ -59,7 +67,11 @@ impl From<AuthUserInfo> for UserInfo {
 
 impl From<AuthTenantInfo> for TenantInfo {
     fn from(t: AuthTenantInfo) -> Self {
-        Self { id: t.id, name: t.name, balance: t.balance }
+        Self {
+            id: t.id, name: t.name, balance: t.balance,
+            product_name: t.product_name, logo_url: t.logo_url,
+            accent_color: t.accent_color, primary_color: t.primary_color,
+        }
     }
 }
 

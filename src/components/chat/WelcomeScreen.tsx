@@ -5,11 +5,13 @@
  */
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePersonaStore } from '@/stores/personaStore'
+import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 
 export function WelcomeScreen() {
   const skills = usePluginStore((s) => s.skills)
   const activePersona = usePersonaStore((s) => s.activePersona)
+  const productName = useBrandingStore((s) => s.productName)
   const { sendUserMessage } = useChat()
 
   // Linked categories from active persona (default: show all)
@@ -35,8 +37,8 @@ export function WelcomeScreen() {
 
   // Greeting follows persona
   const greeting = activePersona
-    ? `你好！我是 AI小家 · ${activePersona.name}`
-    : '你好！我是 AI小家'
+    ? `你好！我是 ${productName} · ${activePersona.name}`
+    : `你好！我是 ${productName}`
   const subtitle = activePersona?.description || '你的智能工作助手'
 
   return (

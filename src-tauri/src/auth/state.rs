@@ -19,6 +19,18 @@ pub struct TenantInfo {
     pub id: i64,
     pub name: String,
     pub balance: String,
+    /// Custom product name (empty/None = default "AI小家").
+    #[serde(default)]
+    pub product_name: Option<String>,
+    /// Custom logo URL (empty/None = default logo).
+    #[serde(default)]
+    pub logo_url: Option<String>,
+    /// Custom accent color hex (empty/None = default #D4A843).
+    #[serde(default)]
+    pub accent_color: Option<String>,
+    /// Custom primary color hex (empty/None = default #1D1D1F).
+    #[serde(default)]
+    pub primary_color: Option<String>,
 }
 
 /// Cloud model info returned by /v1/models.
