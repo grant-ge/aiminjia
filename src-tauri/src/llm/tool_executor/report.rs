@@ -90,11 +90,9 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
     let html_content = build_html_report(title, sections);
     // Replace product name with custom branding if available
     let html_content = if let Some(ref auth_mgr) = ctx.auth_manager {
-        let product_name = tokio::runtime::Handle::current().block_on(async {
-            auth_mgr.get_auth_info().await.tenant
-                .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
-                .unwrap_or_else(|| "AI小家".to_string())
-        });
+        let product_name = auth_mgr.get_auth_info().await.tenant
+            .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
+            .unwrap_or_else(|| "AI小家".to_string());
         html_content.replace("AI小家", &product_name)
     } else {
         html_content
