@@ -169,7 +169,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen w-full flex-col">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar onOpenSettings={() => setSettingsOpen(true)} />

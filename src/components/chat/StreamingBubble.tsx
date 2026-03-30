@@ -4,7 +4,7 @@
  */
 import { Avatar } from '@/components/common/Avatar'
 import { useChatStore } from '@/stores/chatStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { TypingIndicator } from './TypingIndicator'
 import { markdownToHtml } from '@/lib/markdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
@@ -17,7 +17,7 @@ interface StreamingBubbleProps {
 export function StreamingBubble({ content }: StreamingBubbleProps) {
   const { t } = useTranslation()
   const toolExecutions = useChatStore((s) => s.toolExecutions)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const agentPhase = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? s.streamStates[activeId]?.agentPhase : undefined

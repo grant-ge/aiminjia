@@ -5,7 +5,7 @@
  */
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePersonaStore } from '@/stores/personaStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
 
@@ -19,7 +19,7 @@ export function WelcomeScreen() {
   const lang = i18n.language
   const skills = usePluginStore((s) => s.skills)
   const activePersona = usePersonaStore((s) => s.activePersona)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const { sendUserMessage } = useChat()
 
   // Linked categories from active persona (default: show all)
@@ -43,16 +43,17 @@ export function WelcomeScreen() {
     sendUserMessage(t('welcome.hello'))
   }
 
-  // Greeting follows persona — use localized name
+  // Greeting follows persona — use i18n key for builtins, fallback to name for user-created
   const personaLocalName = activePersona
-    ? localized(activePersona.name, (activePersona as any).nameEn || '', lang)
+    ? t(`personas.${activePersona.id}`, activePersona.name)
     : ''
   const greeting = activePersona
     ? t('welcome.greetingWithPersona', { productName, personaName: personaLocalName })
     : t('welcome.greeting', { productName })
-  const subtitleZh = activePersona?.description || t('welcome.defaultSubtitle')
+  // Subtitle: builtins have no translation key for description, use descriptionEn from store or zh fallback
   const subtitleEn = (activePersona as any)?.descriptionEn || ''
-  const subtitle = localized(subtitleZh, subtitleEn, lang) || t('welcome.defaultSubtitle')
+  const subtitleZh = activePersona?.description || ''
+  const subtitle = (lang === 'en-US' && subtitleEn ? subtitleEn : subtitleZh) || t('welcome.defaultSubtitle')
 
   return (
     <div className="animate-[fadeUp_0.3s_ease] flex flex-col items-center pt-12">
@@ -150,7 +151,7 @@ export function WelcomeScreen() {
                   className="text-xs font-medium leading-tight"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {localized(skill.displayName, skill.displayNameEn, lang)}
+                  {t(`skills.${skill.id}`, skill.displayName)}
                 </span>
               </button>
             ))}

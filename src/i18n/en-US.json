@@ -1,4 +1,36 @@
 {
+  "personas": {
+    "default": "General Assistant",
+    "hr-expert": "HR Expert",
+    "finance-analyst": "Finance Analyst",
+    "sales-manager": "Sales Manager",
+    "ops-specialist": "Operations Specialist",
+    "legal-advisor": "Legal Advisor",
+    "data-analyst": "Data Analyst",
+    "project-manager": "Project Manager"
+  },
+  "skills": {
+    "biz-proposal": "Business Proposal Writing",
+    "biz-writing": "Business Document Writing",
+    "budget-analysis": "Budget Execution Analysis",
+    "comp-analysis-v2": "Compensation Equity Analysis",
+    "contract-review": "Contract Risk Review",
+    "customer-segmentation": "Customer Segmentation Analysis",
+    "engagement-survey": "Employee Engagement Analysis",
+    "finance-analysis": "Financial Data Analysis",
+    "labor-compliance": "Labor Compliance Risk Check",
+    "okr-coach": "OKR Goal Coaching",
+    "ops-analysis": "Operations Data Analysis",
+    "org-diagnosis": "Organizational Diagnosis Report",
+    "pa-maturity": "HR Analytics Maturity Assessment",
+    "perf-system-design": "Performance System Design",
+    "policy-compliance-audit": "Policy Compliance Audit",
+    "recruitment-funnel": "Recruitment Funnel Analysis",
+    "salary-benchmarking": "Salary Benchmarking Analysis",
+    "sales-analysis": "Sales Data Analysis",
+    "survey-analysis": "Survey Research Analysis",
+    "talent-9box": "Talent 9-Box Assessment"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

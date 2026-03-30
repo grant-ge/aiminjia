@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { usePersonaStore } from '@/stores/personaStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { updateSettings, getSettings } from '@/lib/tauri'
 import type { Conversation } from '@/types/message'
 
@@ -50,8 +51,7 @@ function groupConversations(
 }
 
 export function Sidebar({ onOpenSettings }: SidebarProps) {
-  const { t, i18n } = useTranslation()
-  const lang = i18n.language
+  const { t } = useTranslation()
   const {
     conversations,
     activeConversationId,
@@ -66,7 +66,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const authUser = useAuthStore((s) => s.user)
   const authTenant = useAuthStore((s) => s.tenant)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const logoUrl = useBrandingStore((s) => s.logoUrl)
   const accentColor = useBrandingStore((s) => s.accentColor)
   const useCloud = useSettingsStore((s) => s.useCloud)
@@ -141,7 +141,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           >
             <span className="text-base leading-none">{activePersona?.icon || '👤'}</span>
             <span className="flex-1 truncate text-sm font-semibold">
-              {(lang === 'en-US' && (activePersona as any)?.nameEn ? (activePersona as any).nameEn : activePersona?.name) || t('sidebar.selectPersona')}
+              {activePersona ? t(`personas.${activePersona.id}`, activePersona.name) : t('sidebar.selectPersona')}
             </span>
             <span
               className="text-xs transition-transform"
@@ -187,7 +187,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                   }}
                 >
                   <span className="text-base leading-none">{p.icon}</span>
-                  <span className="flex-1 truncate">{lang === 'en-US' && (p as any).nameEn ? (p as any).nameEn : p.name}</span>
+                  <span className="flex-1 truncate">{t(`personas.${p.id}`, p.name)}</span>
                   {p.id === activePersona?.id && (
                     <span style={{ color: 'var(--color-primary)' }}>✓</span>
                   )}

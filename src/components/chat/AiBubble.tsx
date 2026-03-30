@@ -44,7 +44,7 @@ import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useCallback, useState } from 'react'
 import { markdownToHtml } from '@/lib/markdown'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { useTranslation } from 'react-i18next'
 
 interface AiBubbleProps {
@@ -56,7 +56,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
   // historical empty messages or tool-call-only iterations)

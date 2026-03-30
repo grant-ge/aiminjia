@@ -15,6 +15,7 @@ import { lighten, darken, rgba, isDarkColor } from '@/lib/themeUtils'
 
 export const DEFAULTS = {
   productName: 'AI小家',
+  productNameEn: 'AIjia',
   logoUrl: '/app-icon.png',
   accentColor: '#D4A843',
   primaryColor: '#1D1D1F',
@@ -32,6 +33,7 @@ const FONT_MAP: Record<string, string> = {
 
 interface BrandingState {
   productName: string
+  productNameEn: string
   logoUrl: string
   accentColor: string
   primaryColor: string
@@ -129,8 +131,9 @@ function resolveLogoUrl(raw: string): string {
 function setWindowTitle(title: string) {
   const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
+  // Set window title to empty string to avoid duplicate text in overlay titlebar
   import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
-    getCurrentWebviewWindow().setTitle(fullTitle).catch(() => {})
+    getCurrentWebviewWindow().setTitle(' ').catch(() => {})
   }).catch(() => {})
 }
 

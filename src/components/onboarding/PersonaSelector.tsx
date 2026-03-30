@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePersonaStore } from '@/stores/personaStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { Button } from '@/components/common/Button'
 import type { PersonaSummary } from '@/lib/tauri'
 
@@ -20,7 +20,7 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const { personas, setActive } = usePersonaStore()
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const [selected, setSelected] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
@@ -75,7 +75,7 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
                   className="mb-1 text-sm font-semibold"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {localized(p.name, p.nameEn, lang)}
+                  {t(`personas.${p.id}`, p.name)}
                 </div>
                 <div
                   className="text-xs leading-relaxed"

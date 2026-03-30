@@ -1,4 +1,36 @@
 {
+  "personas": {
+    "default": "通用工作助手",
+    "hr-expert": "HR 专家",
+    "finance-analyst": "财务分析师",
+    "sales-manager": "销售经理",
+    "ops-specialist": "运营专家",
+    "legal-advisor": "法务顾问",
+    "data-analyst": "数据分析师",
+    "project-manager": "项目经理"
+  },
+  "skills": {
+    "biz-proposal": "商业方案撰写",
+    "biz-writing": "商务文档撰写",
+    "budget-analysis": "预算执行分析",
+    "comp-analysis-v2": "薪酬公平性分析",
+    "contract-review": "合同风险审查",
+    "customer-segmentation": "客户细分分析",
+    "engagement-survey": "员工敬业度分析",
+    "finance-analysis": "财务数据分析",
+    "labor-compliance": "劳动合规风险检查",
+    "okr-coach": "OKR 制定辅导",
+    "ops-analysis": "运营数据分析",
+    "org-diagnosis": "组织诊断报告",
+    "pa-maturity": "HR数据分析成熟度评估",
+    "perf-system-design": "绩效体系设计向导",
+    "policy-compliance-audit": "规章制度合规审查",
+    "recruitment-funnel": "招聘漏斗分析",
+    "salary-benchmarking": "薪酬市场对标分析",
+    "sales-analysis": "销售数据分析",
+    "survey-analysis": "问卷调研分析",
+    "talent-9box": "人才盘点九宫格"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

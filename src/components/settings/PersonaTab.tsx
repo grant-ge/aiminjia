@@ -182,7 +182,7 @@ export function PersonaTab() {
           >
             <span className="text-2xl">{p.icon}</span>
             <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              {lang === 'en-US' && p.nameEn ? p.nameEn : p.name}
+              {t(`personas.${p.id}`, p.name)}
             </span>
             {activePersona?.id === p.id && (
               <span className="text-xs" style={{ color: 'var(--color-accent)' }}>
