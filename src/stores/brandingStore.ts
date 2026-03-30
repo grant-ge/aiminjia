@@ -153,19 +153,22 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     const sidebarBgColor = hasValue(tenant.sidebarBgColor) ? tenant.sidebarBgColor : DEFAULTS.sidebarBgColor
 
     const isCustom = hasValue(tenant.accentColor) || hasValue(tenant.primaryColor)
+    const hasBgTint = hasValue(tenant.bgColor) || hasValue(tenant.sidebarBgColor)
 
     if (isCustom) {
       deriveAccentPalette(accentColor)
       derivePrimaryPalette(primaryColor)
-      // Subtle bg tint if tenant provided bg/sidebarBg colors
-      if (hasValue(tenant.bgColor)) {
-        setVar('--color-bg-main', bgColor)
-      }
-      if (hasValue(tenant.sidebarBgColor)) {
-        setVar('--color-bg-sidebar', sidebarBgColor)
-      }
     } else {
       ALL_CSS_VARS.forEach(removeVar)
+    }
+
+    // Apply bg tint independently — even if only bg colors are set without accent/primary
+    if (hasBgTint) {
+      if (hasValue(tenant.bgColor)) setVar('--color-bg-main', bgColor)
+      if (hasValue(tenant.sidebarBgColor)) setVar('--color-bg-sidebar', sidebarBgColor)
+    } else if (!isCustom) {
+      removeVar('--color-bg-main')
+      removeVar('--color-bg-sidebar')
     }
 
     if (hasValue(tenant.fontFamily)) {

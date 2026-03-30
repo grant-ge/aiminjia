@@ -1,9 +1,17 @@
 /** Shared color utilities for runtime theming. */
 
 export function hexToRgb(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
+  // Normalize: support #RGB shorthand
+  const clean = hex.startsWith('#') ? hex.slice(1) : hex
+  const full = clean.length === 3
+    ? clean.split('').map((c) => c + c).join('')
+    : clean
+  if (full.length !== 6 || !/^[0-9A-Fa-f]{6}$/.test(full)) {
+    return [0, 0, 0] // fallback to black on invalid input
+  }
+  const r = parseInt(full.slice(0, 2), 16)
+  const g = parseInt(full.slice(2, 4), 16)
+  const b = parseInt(full.slice(4, 6), 16)
   return [r, g, b]
 }
 

@@ -11,7 +11,6 @@ import { useChat } from '@/hooks/useChat'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import type { PendingFileInfo } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { isDarkColor } from '@/lib/themeUtils'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
@@ -32,7 +31,6 @@ export function InputBar() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const accentColor = useBrandingStore((s) => s.accentColor)
-  const accentTextColor = isDarkColor(accentColor) ? '#FFFFFF' : '#1A1A1A'
 
   // Auto-focus textarea when switching conversations or when streaming completes
   useEffect(() => {
@@ -254,11 +252,11 @@ export function InputBar() {
             disabled={isSendDisabled}
           >
             {isStreaming ? (
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill={accentTextColor}>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="var(--color-text-on-accent)">
                 <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
             ) : (
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill={accentTextColor}>
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="var(--color-text-on-accent)">
                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
               </svg>
             )}
