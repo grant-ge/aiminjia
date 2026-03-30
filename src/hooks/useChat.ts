@@ -245,7 +245,7 @@ export function useChat() {
         })),
       },
       sender: {
-        name: auth.user?.name || '我',
+        name: auth.user?.name || i18n.t('userBubble.me'),
         isLoggedIn: auth.isLoggedIn,
       },
     }
