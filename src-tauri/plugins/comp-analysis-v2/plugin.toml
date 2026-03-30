@@ -34,4 +34,6 @@ token_budget = 8192
 category = "hr"
 icon = "💰"
 short_description = "薪酬公平性诊断、离群值识别、调薪建议"
+short_description_en = "Compensation equity diagnosis, outlier detection, and salary adjustment recommendations"
 trigger_text = "帮我做薪酬公平性分析"
+name_en = "Compensation Equity Analysis"

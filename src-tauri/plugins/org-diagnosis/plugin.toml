@@ -27,4 +27,6 @@ token_budget = 8192
 category = "hr"
 icon = "🏢"
 short_description = "六盒子模型 + 麦肯锡 7S 框架诊断"
+short_description_en = "Org structure assessment, span of control, and efficiency improvements"
 trigger_text = "帮我做组织诊断"
+name_en = "Organizational Diagnosis Report"

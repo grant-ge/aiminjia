@@ -33,4 +33,6 @@ token_budget = 8192
 category = "hr"
 icon = "📈"
 short_description = "eNPS 计算、维度评分、差距分析"
+short_description_en = "Calculate engagement scores, root cause diagnosis, and action plans"
 trigger_text = "帮我做员工敬业度分析"
+name_en = "Employee Engagement Analysis"

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
-import { BrandBar } from '@/components/layout/BrandBar'
+import { TitleBar } from '@/components/layout/TitleBar'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
@@ -169,18 +169,21 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
-    <div className="flex h-screen">
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <TopBar />
-        <div className="relative flex flex-1 overflow-hidden">
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <ChatArea />
-            <InputBar />
+    <div className="flex h-screen flex-col">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <TopBar />
+          <div className="relative flex flex-1 overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <ChatArea />
+              <InputBar />
+            </div>
+            <BrowserPanel />
           </div>
-          <BrowserPanel />
-        </div>
-      </main>
+        </main>
+      </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
     

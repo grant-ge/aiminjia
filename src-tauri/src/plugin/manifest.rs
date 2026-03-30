@@ -9,6 +9,8 @@ pub struct DisplayConfig {
     pub short_description: Option<String>,
     pub trigger_text: Option<String>,
     pub category: Option<String>,
+    pub name_en: Option<String>,
+    pub short_description_en: Option<String>,
 }
 
 /// Top-level plugin.toml structure.

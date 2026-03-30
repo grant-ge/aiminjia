@@ -28,4 +28,6 @@ token_budget = 8192
 category = "hr"
 icon = "📋"
 short_description = "KPI/OKR 方案推荐，考核流程设计"
+short_description_en = "Design KPI/OKR/360 performance frameworks and grading systems"
 trigger_text = "帮我做绩效体系设计"
+name_en = "Performance System Design"

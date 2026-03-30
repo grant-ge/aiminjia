@@ -28,4 +28,6 @@ token_budget = 8192
 category = "general"
 icon = "✍️"
 short_description = "邮件、报告、纪要、PPT 大纲"
+short_description_en = "Write emails, meeting summaries, reports, and other business documents"
 trigger_text = "帮我写商务文档"
+name_en = "Business Document Writing"

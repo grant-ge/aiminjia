@@ -9,8 +9,14 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
 
+/** Pick localized string: use English value if language is en-US and value is non-empty, else Chinese. */
+function localized(zhValue: string, enValue: string, lang: string): string {
+  return lang === 'en-US' && enValue ? enValue : zhValue
+}
+
 export function WelcomeScreen() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const skills = usePluginStore((s) => s.skills)
   const activePersona = usePersonaStore((s) => s.activePersona)
   const productName = useBrandingStore((s) => s.productName)
@@ -37,11 +43,16 @@ export function WelcomeScreen() {
     sendUserMessage(t('welcome.hello'))
   }
 
-  // Greeting follows persona
+  // Greeting follows persona — use localized name
+  const personaLocalName = activePersona
+    ? localized(activePersona.name, (activePersona as any).nameEn || '', lang)
+    : ''
   const greeting = activePersona
-    ? t('welcome.greetingWithPersona', { productName, personaName: activePersona.name })
+    ? t('welcome.greetingWithPersona', { productName, personaName: personaLocalName })
     : t('welcome.greeting', { productName })
-  const subtitle = activePersona?.description || t('welcome.defaultSubtitle')
+  const subtitleZh = activePersona?.description || t('welcome.defaultSubtitle')
+  const subtitleEn = (activePersona as any)?.descriptionEn || ''
+  const subtitle = localized(subtitleZh, subtitleEn, lang) || t('welcome.defaultSubtitle')
 
   return (
     <div className="animate-[fadeUp_0.3s_ease] flex flex-col items-center pt-12">
@@ -139,7 +150,7 @@ export function WelcomeScreen() {
                   className="text-xs font-medium leading-tight"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {skill.displayName}
+                  {localized(skill.displayName, skill.displayNameEn, lang)}
                 </span>
               </button>
             ))}

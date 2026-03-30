@@ -33,6 +33,10 @@ pub struct Persona {
     pub name: String,
     pub icon: String,
     pub description: String,
+    #[serde(default)]
+    pub name_en: String,
+    #[serde(default)]
+    pub description_en: String,
     /// Identity injected into system prompt (role setting).
     pub identity: String,
     /// Areas of expertise (for display).
@@ -62,6 +66,10 @@ pub struct PersonaSummary {
     pub icon: String,
     pub description: String,
     pub builtin: bool,
+    #[serde(default)]
+    pub name_en: String,
+    #[serde(default)]
+    pub description_en: String,
 }
 
 /// Persona export format.
@@ -137,6 +145,8 @@ pub fn list_personas(base_dir: &Path) -> Result<Vec<PersonaSummary>> {
                 icon: persona.icon,
                 description: persona.description,
                 builtin: persona.builtin,
+                name_en: persona.name_en.clone(),
+                description_en: persona.description_en.clone(),
             });
         }
     }
@@ -260,6 +270,8 @@ pub fn import_persona(base_dir: &Path, json: &str) -> Result<String> {
         name: export.persona.name,
         icon: export.persona.icon,
         description: export.persona.description,
+        name_en: String::new(),
+        description_en: String::new(),
         identity: export.persona.identity,
         expertise: export.persona.expertise,
         memory_hints: export.persona.memory_hints,
@@ -288,6 +300,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "通用工作助手".to_string(),
             icon: "🏠".to_string(),
             description: "适合日常工作的通用助手，可处理数据分析、文档生成、翻译搜索等各类任务".to_string(),
+            name_en: "General Assistant".to_string(),
+            description_en: "General-purpose work assistant for data analysis, document generation, translation, and search".to_string(),
             identity: "你是用户的通用工作助手，可处理各类日常工作任务。".to_string(),
             expertise: vec![
                 "数据处理与分析".to_string(),
@@ -313,6 +327,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "HR 专家".to_string(),
             icon: "👔".to_string(),
             description: "资深 HR 顾问，擅长薪酬分析、组织设计、人才盘点、绩效体系等".to_string(),
+            name_en: "HR Expert".to_string(),
+            description_en: "Senior HR consultant specializing in compensation analysis, org design, talent review, and performance systems".to_string(),
             identity: "你是一位资深的 HR 专家和组织咨询顾问，擅长薪酬分析、岗位评估、组织设计、人才盘点、绩效体系设计等。".to_string(),
             expertise: vec![
                 "薪酬公平性分析".to_string(),
@@ -339,6 +355,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "财务分析师".to_string(),
             icon: "💹".to_string(),
             description: "专业财务分析师，擅长财务报表分析、预算管理、成本控制、投资分析".to_string(),
+            name_en: "Finance Analyst".to_string(),
+            description_en: "Professional financial analyst specializing in financial statements, budgeting, cost control, and investment analysis".to_string(),
             identity: "你是一位专业的财务分析师，擅长财务报表分析、预算管理、成本控制、投资分析等。".to_string(),
             expertise: vec![
                 "财务报表分析".to_string(),
@@ -364,6 +382,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "销售经理".to_string(),
             icon: "📈".to_string(),
             description: "资深销售管理者，擅长销售数据分析、客户管理、销售预测、团队管理".to_string(),
+            name_en: "Sales Manager".to_string(),
+            description_en: "Senior sales manager specializing in sales analytics, customer management, sales forecasting, and team management".to_string(),
             identity: "你是一位资深的销售经理，擅长销售数据分析、客户管理、销售预测、团队管理等。".to_string(),
             expertise: vec![
                 "销售数据分析".to_string(),
@@ -389,6 +409,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "运营专家".to_string(),
             icon: "🛒".to_string(),
             description: "资深运营专家，擅长用户运营与增长策划、数据分析、增长策略".to_string(),
+            name_en: "Operations Specialist".to_string(),
+            description_en: "Senior operations expert specializing in user growth, campaign planning, data analysis, and growth strategy".to_string(),
             identity: "你是一位资深的运营专家，擅长用户运营与增长策划、数据分析、增长策略等。".to_string(),
             expertise: vec![
                 "用户运营与增长".to_string(),
@@ -414,6 +436,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "法务顾问".to_string(),
             icon: "⚖️".to_string(),
             description: "专业法务顾问，擅长合同审查、法律风险评估、合规咨询".to_string(),
+            name_en: "Legal Advisor".to_string(),
+            description_en: "Professional legal advisor specializing in contract review, legal risk assessment, and compliance consulting".to_string(),
             identity: "你是一位专业的法务顾问，擅长合同审查、法律风险评估、合规咨询等。".to_string(),
             expertise: vec![
                 "合同审查与起草".to_string(),
@@ -439,6 +463,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "数据分析师".to_string(),
             icon: "📊".to_string(),
             description: "专业数据分析师，擅长数据清洗、统计分析、可视化、机器学习".to_string(),
+            name_en: "Data Analyst".to_string(),
+            description_en: "Professional data analyst specializing in data cleaning, statistical analysis, visualization, and machine learning".to_string(),
             identity: "你是一位专业的数据分析师，擅长数据清洗、统计分析、数据可视化、机器学习等。".to_string(),
             expertise: vec![
                 "数据清洗与处理".to_string(),
@@ -464,6 +490,8 @@ fn builtin_personas() -> Vec<Persona> {
             name: "项目经理".to_string(),
             icon: "🎯".to_string(),
             description: "资深项目经理，擅长项目规划、进度管理、风险控制、团队协作".to_string(),
+            name_en: "Project Manager".to_string(),
+            description_en: "Senior project manager specializing in project planning, schedule management, risk control, and team collaboration".to_string(),
             identity: "你是一位资深的项目经理，擅长项目规划、进度管理、风险控制、团队协作等。".to_string(),
             expertise: vec![
                 "项目规划与分解".to_string(),

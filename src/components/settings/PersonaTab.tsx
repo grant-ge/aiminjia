@@ -10,7 +10,8 @@ import type { Persona } from '@/lib/tauri'
 import { getPersona } from '@/lib/tauri'
 
 export function PersonaTab() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const { personas, activePersona, reload, setActive, save: savePersona, delete: deletePersona } = usePersonaStore()
   const notifications = useNotificationStore()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -181,7 +182,7 @@ export function PersonaTab() {
           >
             <span className="text-2xl">{p.icon}</span>
             <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              {p.name}
+              {lang === 'en-US' && p.nameEn ? p.nameEn : p.name}
             </span>
             {activePersona?.id === p.id && (
               <span className="text-xs" style={{ color: 'var(--color-accent)' }}>

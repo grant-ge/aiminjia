@@ -33,4 +33,6 @@ token_budget = 8192
 category = "hr"
 icon = "📊"
 short_description = "分析招聘各阶段转化率、渠道 ROI，定位招聘瓶颈"
+short_description_en = "Analyze hiring pipeline efficiency, conversion rates, and bottlenecks"
 trigger_text = "帮我做招聘漏斗分析"
+name_en = "Recruitment Funnel Analysis"

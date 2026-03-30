@@ -8,12 +8,17 @@ import { useBrandingStore } from '@/stores/brandingStore'
 import { Button } from '@/components/common/Button'
 import type { PersonaSummary } from '@/lib/tauri'
 
+function localized(zh: string, en: string, lang: string): string {
+  return lang === 'en-US' && en ? en : zh
+}
+
 interface PersonaSelectorProps {
   onComplete: () => void
 }
 
 export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const { personas, setActive } = usePersonaStore()
   const productName = useBrandingStore((s) => s.productName)
   const [selected, setSelected] = useState<string | null>(null)
@@ -70,13 +75,13 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
                   className="mb-1 text-sm font-semibold"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {p.name}
+                  {localized(p.name, p.nameEn, lang)}
                 </div>
                 <div
                   className="text-xs leading-relaxed"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
-                  {p.description}
+                  {localized(p.description, p.descriptionEn, lang)}
                 </div>
               </div>
             </button>

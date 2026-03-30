@@ -161,6 +161,12 @@ pub trait Skill: Send + Sync + 'static {
     /// Category for skill grouping in UI (e.g., "hr", "finance", "general").
     fn category(&self) -> &str { "general" }
 
+    /// English display name for i18n.
+    fn display_name_en(&self) -> &str { "" }
+
+    /// English short description for i18n.
+    fn short_description_en(&self) -> &str { "" }
+
     // ── Activation ──
 
     /// Should this Skill activate for the given message?

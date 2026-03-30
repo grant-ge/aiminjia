@@ -33,6 +33,8 @@ pub struct SkillInfo {
     pub short_description: String,
     pub trigger_text: String,
     pub category: String,
+    pub display_name_en: String,
+    pub short_description_en: String,
 }
 
 // ─────────────────────────────────────────────────
@@ -234,6 +236,8 @@ impl SkillRegistry {
             short_description: rs.skill.short_description().to_string(),
             trigger_text: rs.skill.trigger_text().to_string(),
             category: rs.skill.category().to_string(),
+            display_name_en: rs.skill.display_name_en().to_string(),
+            short_description_en: rs.skill.short_description_en().to_string(),
         }).collect()
     }
 }

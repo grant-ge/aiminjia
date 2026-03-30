@@ -27,4 +27,6 @@ token_budget = 8192
 category = "finance"
 icon = "📝"
 short_description = "结构化方案撰写、论证逻辑"
+short_description_en = "Draft business proposals, project plans, and investment reports"
 trigger_text = "帮我写商业方案"
+name_en = "Business Proposal Writing"

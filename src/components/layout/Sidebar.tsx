@@ -50,7 +50,8 @@ function groupConversations(
 }
 
 export function Sidebar({ onOpenSettings }: SidebarProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const {
     conversations,
     activeConversationId,
@@ -140,7 +141,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           >
             <span className="text-base leading-none">{activePersona?.icon || '👤'}</span>
             <span className="flex-1 truncate text-sm font-semibold">
-              {activePersona?.name || t('sidebar.selectPersona')}
+              {(lang === 'en-US' && (activePersona as any)?.nameEn ? (activePersona as any).nameEn : activePersona?.name) || t('sidebar.selectPersona')}
             </span>
             <span
               className="text-xs transition-transform"
@@ -186,7 +187,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                   }}
                 >
                   <span className="text-base leading-none">{p.icon}</span>
-                  <span className="flex-1 truncate">{p.name}</span>
+                  <span className="flex-1 truncate">{lang === 'en-US' && (p as any).nameEn ? (p as any).nameEn : p.name}</span>
                   {p.id === activePersona?.id && (
                     <span style={{ color: 'var(--color-primary)' }}>✓</span>
                   )}
