@@ -8,14 +8,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { MessageItem } from './MessageItem'
 import { StepDivider } from './StepDivider'
 import { StreamingBubble } from './StreamingBubble'
-
-const STEP_TITLES: Record<number, string> = {
-  1: '数据清洗与理解',
-  2: '岗位体系',
-  3: '职级框架',
-  4: '公平性诊断 + 根因分析',
-  5: '行动方案 + 管理层材料',
-}
+import { useTranslation } from 'react-i18next'
 
 /**
  * Detect analysis step transitions from progress state.
@@ -32,6 +25,7 @@ function getStepTransition(message: Message, prevMessage?: Message): number | nu
 }
 
 export function MessageList() {
+  const { t } = useTranslation()
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => s.streamingContent)
@@ -46,7 +40,7 @@ export function MessageList() {
             {stepTransition && (
               <StepDivider
                 stepNumber={stepTransition}
-                title={STEP_TITLES[stepTransition] ?? `Step ${stepTransition}`}
+                title={t('messageList.steps.' + stepTransition, 'Step ' + stepTransition)}
               />
             )}
             <MessageItem message={msg} />

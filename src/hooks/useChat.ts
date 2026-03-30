@@ -13,6 +13,7 @@ import { useCallback } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import i18n from '@/i18n'
 import {
   sendMessage,
   stopStreaming,
@@ -179,8 +180,8 @@ export function useChat() {
     if (conversationId && store.busyConversations.has(conversationId)) {
       useNotificationStore.getState().push({
         level: 'warning',
-        title: '请稍候',
-        message: '当前对话正在处理中，请等待完成后再发送。',
+        title: i18n.t('errors.pleaseWait'),
+        message: i18n.t('errors.chatBusy'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -193,8 +194,8 @@ export function useChat() {
     if (store.busyConversations.size >= MAX_CONCURRENT_AGENTS) {
       useNotificationStore.getState().push({
         level: 'warning',
-        title: '请稍候',
-        message: `最多同时处理 ${MAX_CONCURRENT_AGENTS} 个对话，请等待其他对话完成。`,
+        title: i18n.t('errors.pleaseWait'),
+        message: i18n.t('errors.maxConcurrent', { max: MAX_CONCURRENT_AGENTS }),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -267,8 +268,8 @@ export function useChat() {
       // Show error toast so user knows the message failed
       useNotificationStore.getState().push({
         level: 'error',
-        title: '发送失败',
-        message: String(err) || '消息发送失败，请检查网络和设置。',
+        title: i18n.t('errors.sendFailed'),
+        message: String(err) || i18n.t('errors.sendFailedDesc'),
         actions: [],
         dismissible: true,
         autoHide: 8,

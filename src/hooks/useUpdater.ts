@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { useNotificationStore } from '@/stores/notificationStore'
+import i18n from '@/i18n'
 
 export function useUpdater() {
   useEffect(() => {
@@ -13,7 +14,7 @@ export function useUpdater() {
         if (cancelled || !update) return
 
         const yes = window.confirm(
-          `发现新版本 v${update.version}，是否立即更新？\n\n${update.body ?? ''}`
+          `${i18n.t('updater.newVersionFound', { version: update.version })}\n\n${update.body ?? ''}`
         )
         if (!yes) return
 
@@ -22,8 +23,8 @@ export function useUpdater() {
         useNotificationStore.getState().push({
           id: downloadToastId,
           level: 'info',
-          title: '正在下载更新',
-          message: `正在下载 v${update.version}，请稍候...`,
+          title: i18n.t('updater.downloading'),
+          message: i18n.t('updater.downloadingDesc', { version: update.version }),
           actions: [],
           dismissible: false,
           persistent: true,
@@ -46,8 +47,8 @@ export function useUpdater() {
               useNotificationStore.getState().dismiss(downloadToastId)
               useNotificationStore.getState().push({
                 level: 'success',
-                title: '更新下载完成',
-                message: '即将重启应用...',
+                title: i18n.t('updater.downloadComplete'),
+                message: i18n.t('updater.restarting'),
                 actions: [],
                 dismissible: false,
                 autoHide: 3,
@@ -60,8 +61,8 @@ export function useUpdater() {
           useNotificationStore.getState().dismiss(downloadToastId)
           useNotificationStore.getState().push({
             level: 'error',
-            title: '更新下载失败',
-            message: '请稍后重试或手动下载新版本',
+            title: i18n.t('updater.downloadFailed'),
+            message: i18n.t('updater.downloadFailedDesc'),
             actions: [],
             dismissible: true,
             autoHide: 8,

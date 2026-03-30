@@ -20,8 +20,10 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-updater": "^2.10.0",
+    "i18next": "^26.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-i18next": "^17.0.1",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

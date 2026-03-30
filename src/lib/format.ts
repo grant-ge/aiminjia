@@ -1,9 +1,15 @@
 /**
  * Data formatting utilities used across the app.
  *
- * All date/number formatting uses the zh-CN locale by default.
- * No external dependencies — relies entirely on native Intl APIs.
+ * Date/number formatting uses the current i18n locale by default.
+ * No external dependencies — relies entirely on native Intl APIs + i18next.
  */
+import i18n from '@/i18n'
+
+/** Get the current locale string for Intl APIs. */
+function currentLocale(): string {
+  return i18n.language || 'zh-CN'
+}
 
 /**
  * Format bytes to a human-readable size string.
@@ -38,25 +44,22 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * Format an ISO date string to a localized Chinese display string.
+ * Format an ISO date string to a localized display string.
  *
  * @param isoString - An ISO 8601 date string (e.g., "2025-12-15T14:30:00Z").
- * @returns A formatted date string in zh-CN locale.
- *
- * @example
- * formatDate("2025-12-15T14:30:00Z") // "2025年12月15日 14:30"
- * formatDate("2024-01-01T00:00:00Z") // "2024年1月1日 00:00"
+ * @returns A formatted date string in the current locale.
  */
 export function formatDate(isoString: string): string {
   const date = new Date(isoString);
+  const locale = currentLocale();
 
-  const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
 
-  const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  const timeFormatter = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -66,23 +69,12 @@ export function formatDate(isoString: string): string {
 }
 
 /**
- * Format an ISO date string as a relative time description in Chinese.
+ * Format an ISO date string as a relative time description.
  *
- * Returns human-friendly descriptions like "刚刚", "3 分钟前", "2 小时前",
- * "昨天", or falls back to an absolute date for older dates.
+ * Uses i18n translation keys for the time labels.
  *
  * @param isoString - An ISO 8601 date string.
- * @returns A relative time string in Chinese.
- *
- * @example
- * // Assuming current time is 2025-12-15T14:30:00Z:
- * formatRelativeTime("2025-12-15T14:29:30Z") // "刚刚"
- * formatRelativeTime("2025-12-15T14:27:00Z") // "3 分钟前"
- * formatRelativeTime("2025-12-15T12:30:00Z") // "2 小时前"
- * formatRelativeTime("2025-12-14T10:00:00Z") // "昨天"
- * formatRelativeTime("2025-12-13T10:00:00Z") // "2 天前"
- * formatRelativeTime("2025-11-15T10:00:00Z") // "1 个月前"
- * formatRelativeTime("2024-12-15T10:00:00Z") // "1 年前"
+ * @returns A relative time string in the current language.
  */
 export function formatRelativeTime(isoString: string): string {
   const date = new Date(isoString);
@@ -96,30 +88,30 @@ export function formatRelativeTime(isoString: string): string {
   const diffYears = Math.floor(diffDays / 365);
 
   if (diffSeconds < 60) {
-    return "刚刚";
+    return i18n.t("format.justNow");
   }
 
   if (diffMinutes < 60) {
-    return `${diffMinutes} 分钟前`;
+    return i18n.t("format.minutesAgo", { count: diffMinutes });
   }
 
   if (diffHours < 24) {
-    return `${diffHours} 小时前`;
+    return i18n.t("format.hoursAgo", { count: diffHours });
   }
 
   if (diffDays === 1) {
-    return "昨天";
+    return i18n.t("format.yesterday");
   }
 
   if (diffDays < 30) {
-    return `${diffDays} 天前`;
+    return i18n.t("format.daysAgo", { count: diffDays });
   }
 
   if (diffMonths < 12) {
-    return `${diffMonths} 个月前`;
+    return i18n.t("format.monthsAgo", { count: diffMonths });
   }
 
-  return `${diffYears} 年前`;
+  return i18n.t("format.yearsAgo", { count: diffYears });
 }
 
 /**
@@ -129,16 +121,10 @@ export function formatRelativeTime(isoString: string): string {
  *
  * @param amount - The numeric amount to format.
  * @param currency - An ISO 4217 currency code (default: "CNY").
- * @returns A formatted currency string in zh-CN locale.
- *
- * @example
- * formatCurrency(12345)           // "¥12,345.00"
- * formatCurrency(12345.678)       // "¥12,345.68"
- * formatCurrency(99.9, "USD")     // "US$99.90"
- * formatCurrency(0)               // "¥0.00"
+ * @returns A formatted currency string in the current locale.
  */
 export function formatCurrency(amount: number, currency: string = "CNY"): string {
-  return new Intl.NumberFormat("zh-CN", {
+  return new Intl.NumberFormat(currentLocale(), {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
@@ -155,12 +141,6 @@ export function formatCurrency(amount: number, currency: string = "CNY"): string
  * @param value - The numeric value to format as a percentage.
  * @param decimals - Number of decimal places to display (default: 1).
  * @returns A formatted percentage string.
- *
- * @example
- * formatPercentage(84.6)      // "84.6%"
- * formatPercentage(100)       // "100.0%"
- * formatPercentage(0.5, 2)    // "0.50%"
- * formatPercentage(33.333, 0) // "33%"
  */
 export function formatPercentage(value: number, decimals: number = 1): string {
   return `${value.toFixed(decimals)}%`;
@@ -169,17 +149,9 @@ export function formatPercentage(value: number, decimals: number = 1): string {
 /**
  * Truncate text to a maximum length and append an ellipsis if truncated.
  *
- * If the text is shorter than or equal to `maxLength`, it is returned as-is.
- * Otherwise, it is cut at `maxLength` characters and "..." is appended.
- *
  * @param text - The text string to truncate.
  * @param maxLength - The maximum number of characters before truncation.
  * @returns The original or truncated text.
- *
- * @example
- * truncateText("Hello", 10)                        // "Hello"
- * truncateText("Hello, World!", 5)                  // "Hello..."
- * truncateText("这是一段很长的中文文本", 6)            // "这是一段很长..."
  */
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
@@ -192,17 +164,11 @@ export function truncateText(text: string, maxLength: number): string {
 /**
  * Format a large number with comma separators for readability.
  *
- * Uses the zh-CN locale grouping (standard 3-digit comma separation).
+ * Uses the current locale grouping.
  *
  * @param value - The number to format.
  * @returns A formatted number string with commas.
- *
- * @example
- * formatNumber(1032)       // "1,032"
- * formatNumber(1000000)    // "1,000,000"
- * formatNumber(42)         // "42"
- * formatNumber(1234567.89) // "1,234,567.89"
  */
 export function formatNumber(value: number): string {
-  return new Intl.NumberFormat("zh-CN").format(value);
+  return new Intl.NumberFormat(currentLocale()).format(value);
 }

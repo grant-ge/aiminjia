@@ -3,11 +3,13 @@
  * Based on visual-prototype-zh.html top-bar section.
  */
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { exportConversation, openGeneratedFile } from '@/lib/tauri'
 
 export function TopBar() {
+  const { t } = useTranslation()
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const conversations = useChatStore((s) => s.conversations)
   const streamStates = useChatStore((s) => s.streamStates)
@@ -46,8 +48,8 @@ export function TopBar() {
       const result = await exportConversation(activeConversationId, format)
       useNotificationStore.getState().push({
         level: 'success',
-        title: '导出成功',
-        message: `${result.fileName} 已保存`,
+        title: t('topBar.exportSuccess'),
+        message: `${result.fileName} ${t('topBar.saved')}`,
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -58,7 +60,7 @@ export function TopBar() {
       console.error('Export failed:', err)
       useNotificationStore.getState().push({
         level: 'error',
-        title: '导出失败',
+        title: t('topBar.exportFailed'),
         message: String(err),
         actions: [],
         dismissible: true,
@@ -95,7 +97,7 @@ export function TopBar() {
                 borderColor: 'var(--color-border)',
                 color: 'var(--color-text-muted)',
               }}
-              title="导出对话"
+              title={t('topBar.exportConversation')}
               disabled={exporting}
               onClick={() => setExportDropdownOpen((prev) => !prev)}
               onMouseEnter={(e) => {
@@ -126,7 +128,7 @@ export function TopBar() {
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
               )}
-              <span>导出</span>
+              <span>{t('topBar.export')}</span>
             </button>
 
             {exportDropdownOpen && (
@@ -149,7 +151,7 @@ export function TopBar() {
                     <svg className="h-4 w-4 opacity-60" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
                     </svg>
-                    <span>导出为 PDF</span>
+                    <span>{t('topBar.exportAsPdf')}</span>
                   </button>
                   <button
                     className="flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-sm transition-colors duration-100"
@@ -161,7 +163,7 @@ export function TopBar() {
                     <svg className="h-4 w-4 opacity-60" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
                     </svg>
-                    <span>导出为 HTML</span>
+                    <span>{t('topBar.exportAsHtml')}</span>
                   </button>
                 </div>
               </div>

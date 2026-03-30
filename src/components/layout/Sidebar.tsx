@@ -3,6 +3,7 @@
  * Includes persona switcher at the top.
  */
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,7 +17,7 @@ interface SidebarProps {
   onOpenSettings: () => void
 }
 
-type TimeGroup = '今天' | '昨天' | '本周' | '更早'
+type TimeGroup = 'today' | 'yesterday' | 'thisWeek' | 'earlier'
 
 function getTimeGroup(dateStr: string): TimeGroup {
   const date = new Date(dateStr)
@@ -27,16 +28,16 @@ function getTimeGroup(dateStr: string): TimeGroup {
   const weekStart = new Date(today)
   weekStart.setDate(weekStart.getDate() - today.getDay())
 
-  if (date >= today) return '今天'
-  if (date >= yesterday) return '昨天'
-  if (date >= weekStart) return '本周'
-  return '更早'
+  if (date >= today) return 'today'
+  if (date >= yesterday) return 'yesterday'
+  if (date >= weekStart) return 'thisWeek'
+  return 'earlier'
 }
 
 function groupConversations(
   conversations: Conversation[],
 ): { group: TimeGroup; items: Conversation[] }[] {
-  const order: TimeGroup[] = ['今天', '昨天', '本周', '更早']
+  const order: TimeGroup[] = ['today', 'yesterday', 'thisWeek', 'earlier']
   const groups = new Map<TimeGroup, Conversation[]>()
 
   for (const conv of conversations) {
@@ -49,6 +50,7 @@ function groupConversations(
 }
 
 export function Sidebar({ onOpenSettings }: SidebarProps) {
+  const { t } = useTranslation()
   const {
     conversations,
     activeConversationId,
@@ -65,6 +67,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
   const authTenant = useAuthStore((s) => s.tenant)
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
+  const accentColor = useBrandingStore((s) => s.accentColor)
   const useCloud = useSettingsStore((s) => s.useCloud)
 
   const { personas, activePersona, setActive: setActivePersona } = usePersonaStore()
@@ -91,7 +94,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
         borderColor: 'var(--color-border)',
       }}
     >
-      {/* Header */}
+      {/* Header — same bg as sidebar, logo icon uses accent */}
       <div
         className="border-b px-4 pt-4 pb-3"
         style={{ borderColor: 'var(--color-border)' }}
@@ -115,7 +118,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           </span>
         </div>
 
-        {/* Persona switcher */}
+        {/* Persona switcher — accent subtle bg + accent text */}
         <div className="mt-2">
           <button
             type="button"
@@ -137,7 +140,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           >
             <span className="text-base leading-none">{activePersona?.icon || '👤'}</span>
             <span className="flex-1 truncate text-sm font-semibold">
-              {activePersona?.name || '选择角色'}
+              {activePersona?.name || t('sidebar.selectPersona')}
             </span>
             <span
               className="text-xs transition-transform"
@@ -209,7 +212,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
             e.currentTarget.style.background = 'transparent'
           }}
           disabled={isNewDisabled}
-          title={isNewDisabled ? '已达最大并发数，请等待' : ''}
+          title={isNewDisabled ? t('sidebar.maxConcurrent') : ''}
           onClick={() => !isNewDisabled && createNewConversation()}
         >
           <svg
@@ -219,7 +222,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           >
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          新对话
+          {t('sidebar.newChat')}
         </button>
       </div>
 
@@ -230,7 +233,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
             className="px-3 py-8 text-center text-sm"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            暂无对话记录
+            {t('sidebar.noConversations')}
           </p>
         ) : (
           grouped.map(({ group, items }) => (
@@ -239,7 +242,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                 className="px-3 pt-2 pb-1 text-xs font-medium"
                 style={{ color: 'var(--color-text-muted)' }}
               >
-                {group}
+                {t('sidebar.timeGroup.' + group)}
               </div>
               {items.map((conv) => (
                 <div
@@ -263,10 +266,11 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                     }
                   }}
                 >
+                  {/* Active indicator: accent-colored left bar */}
                   {conv.id === activeConversationId && (
                     <span
                       className="absolute top-2 bottom-2 left-0 w-[3px] rounded"
-                      style={{ background: 'var(--color-primary)' }}
+                      style={{ background: accentColor }}
                     />
                   )}
                   <button
@@ -283,11 +287,11 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                       <span className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center">
                         <span
                           className="absolute h-[14px] w-[14px] animate-ping rounded-full opacity-40"
-                          style={{ background: 'var(--color-primary)' }}
+                          style={{ background: accentColor }}
                         />
                         <span
                           className="relative h-[8px] w-[8px] rounded-full"
-                          style={{ background: 'var(--color-primary)' }}
+                          style={{ background: accentColor }}
                         />
                       </span>
                     ) : (
@@ -348,7 +352,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                       background: 'transparent',
                       color: 'var(--color-text-muted)',
                     }}
-                    title="删除对话"
+                    title={t('sidebar.deleteConversation')}
                     onClick={(e) => {
                       e.stopPropagation()
                       deleteConversation(conv.id)
@@ -417,7 +421,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                 borderColor: useCloud ? 'var(--color-primary)' : 'var(--color-border)',
                 cursor: 'pointer',
               }}
-              title={useCloud ? '点击切换到本地模式' : '点击切换到云端模式'}
+              title={useCloud ? t('sidebar.switchToLocal') : t('sidebar.switchToCloud')}
               onClick={async () => {
                 try {
                   const s = await getSettings()
@@ -428,7 +432,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                 }
               }}
             >
-              {useCloud ? '☁ 云端' : '⚡ 本地'}
+              {useCloud ? t('sidebar.cloud') : t('sidebar.local')}
             </button>
           </div>
         )}
@@ -458,7 +462,7 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           >
             <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
           </svg>
-          设置
+          {t('sidebar.settings')}
         </button>
         </div>
       </div>

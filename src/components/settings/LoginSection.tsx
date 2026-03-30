@@ -3,6 +3,7 @@
  * Displayed inside SettingsModal when in cloud mode or to trigger login.
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { open } from '@tauri-apps/plugin-shell'
 import { Button } from '@/components/common/Button'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,6 +17,7 @@ interface LoginSectionProps {
 }
 
 export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
+  const { t } = useTranslation()
   const auth = useAuthStore()
   const notifications = useNotificationStore()
   const useCloud = useSettingsStore((s) => s.useCloud)
@@ -35,7 +37,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
 
   const handleLogin = async () => {
     if (!username.trim() || !password) {
-      setError('请输入用户名和密码')
+      setError(t('login.fillAllFields'))
       return
     }
 
@@ -80,8 +82,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       setPassword('')
       notifications.push({
         level: 'success',
-        title: '登录成功',
-        message: `欢迎，${result.user?.name ?? result.user?.username}`,
+        title: t('login.loginSuccess'),
+        message: t('login.welcome', { name: result.user?.name ?? result.user?.username }),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -116,8 +118,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     useSettingsStore.getState().setSettings({ useCloud: false })
     notifications.push({
       level: 'info',
-      title: '已退出登录',
-      message: '已切换到本地模式',
+      title: t('login.loggedOut'),
+      message: t('login.switchedToLocal'),
       actions: [],
       dismissible: true,
       autoHide: 3,
@@ -127,15 +129,15 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      setChangePasswordError('请填写所有字段')
+      setChangePasswordError(t('login.fillAllFields'))
       return
     }
     if (newPassword.length < 8) {
-      setChangePasswordError('新密码长度至少 8 个字符')
+      setChangePasswordError(t('login.newPasswordMinLength'))
       return
     }
     if (newPassword !== confirmPassword) {
-      setChangePasswordError('两次输入的新密码不一致')
+      setChangePasswordError(t('login.passwordMismatch'))
       return
     }
 
@@ -155,8 +157,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
       }
       notifications.push({
         level: 'success',
-        title: '密码修改成功',
-        message: '请重新登录',
+        title: t('login.passwordChanged'),
+        message: t('login.pleaseRelogin'),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -224,7 +226,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               </div>
             </div>
             <Button variant="secondary" onClick={handleLogout}>
-              退出登录
+              {t('login.logout')}
             </Button>
           </div>
 
@@ -243,7 +245,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               setConfirmPassword('')
             }}
           >
-            {showChangePassword ? '▼ 取消修改密码' : '▶ 修改密码'}
+            {showChangePassword ? `▼ ${t('login.cancelChangePassword')}` : `▶ ${t('login.changePassword')}`}
           </button>
 
           {showChangePassword && (
@@ -256,7 +258,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
                   borderColor: 'var(--color-border)',
                   color: 'var(--color-text-primary)',
                 }}
-                placeholder="旧密码"
+                placeholder={t('login.oldPassword')}
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
               />
@@ -268,7 +270,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
                   borderColor: 'var(--color-border)',
                   color: 'var(--color-text-primary)',
                 }}
-                placeholder="新密码（至少 8 个字符）"
+                placeholder={t('login.newPassword')}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
@@ -280,7 +282,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
                   borderColor: 'var(--color-border)',
                   color: 'var(--color-text-primary)',
                 }}
-                placeholder="确认新密码"
+                placeholder={t('login.confirmNewPassword')}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
@@ -297,7 +299,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
                 onClick={handleChangePassword}
                 disabled={changingPassword}
               >
-                {changingPassword ? '修改中...' : '确认修改'}
+                {changingPassword ? t('login.changing') : t('login.confirmChange')}
               </Button>
             </div>
           )}
@@ -309,7 +311,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             className="mb-1.5 block text-sm font-semibold"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            模型模式
+            {t('login.modelMode')}
           </label>
           <div
             className="inline-flex rounded-md border"
@@ -325,7 +327,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               }}
               onClick={() => handleToggleCloud(true)}
             >
-              云端模型
+              {t('login.cloudModel')}
             </button>
             <button
               className="rounded-r-md px-4 py-1.5 text-sm font-medium transition-colors"
@@ -338,14 +340,14 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               }}
               onClick={() => handleToggleCloud(false)}
             >
-              本地模型
+              {t('login.localModel')}
             </button>
           </div>
           <div
             className="mt-1 text-xs"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            {useCloud ? '使用企业云端模型，无需 API Key' : '使用本地配置的 API Key 调用模型'}
+            {useCloud ? t('login.cloudEnabled') : t('login.localEnabled')}
           </div>
         </div>
 
@@ -359,8 +361,8 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           }}
         >
           {useCloud
-            ? '云端模式已启用，大模型和搜索请求通过服务端处理。'
-            : '本地模式，使用你配置的 API Key 直接调用模型。'}
+            ? t('login.cloudEnabledInfo')
+            : t('login.localEnabledInfo')}
         </div>
       </div>
     )
@@ -380,14 +382,14 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           className="mb-2 text-sm font-semibold"
           style={{ color: 'var(--color-text-secondary)' }}
         >
-          登录企业账号
+          {t('login.loginTitle')}
         </div>
         <div
           className="mb-3 text-xs"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          登录后可直接使用云端大模型和联网搜索，无需配置 API Key。
-          企业账号由管理员分配，
+          {t('login.loginDesc')}
+          {t('login.adminAssigned')}
           <a
             href="#"
             onClick={(e) => {
@@ -396,7 +398,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
             }}
             style={{ color: 'var(--color-primary)' }}
           >
-            注册企业 →
+            {t('login.registerEnterprise')}
           </a>
         </div>
 
@@ -409,7 +411,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               borderColor: 'var(--color-border)',
               color: 'var(--color-text-primary)',
             }}
-            placeholder="用户名@企业编码 如 zhangsan@001"
+            placeholder={t('login.usernamePlaceholder')}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -422,7 +424,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
               borderColor: 'var(--color-border)',
               color: 'var(--color-text-primary)',
             }}
-            placeholder="密码"
+            placeholder={t('login.passwordPlaceholder')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -443,7 +445,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           onClick={handleLogin}
           disabled={loading}
         >
-          {loading ? '登录中...' : '登录'}
+          {loading ? t('login.loggingIn') : t('login.loginButton')}
         </Button>
       </div>
     </div>

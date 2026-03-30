@@ -5,6 +5,8 @@
 import { create } from 'zustand'
 import type { Settings, LlmProvider } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
+import type { AppLanguage } from '@/i18n'
+import i18n, { persistLanguage } from '@/i18n'
 
 interface SettingsState extends Settings {
   // Whether settings have been loaded from backend
@@ -24,6 +26,7 @@ interface SettingsState extends Settings {
   setCustomModelEndpoint: (endpoint: string) => void
   setCustomModelName: (name: string) => void
   setConfiguredProviders: (providers: LlmProvider[]) => void
+  setAppLanguage: (language: AppLanguage) => void
   markLoaded: () => void
 }
 
@@ -51,6 +54,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCustomModelName: (customModelName) => set({ customModelName }),
 
   setConfiguredProviders: (configuredProviders) => set({ configuredProviders }),
+
+  setAppLanguage: (appLanguage) => {
+    i18n.changeLanguage(appLanguage)
+    persistLanguage(appLanguage)
+    set({ appLanguage })
+  },
 
   markLoaded: () => set({ isLoaded: true }),
 }))

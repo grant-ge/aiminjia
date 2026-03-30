@@ -5,10 +5,13 @@
  * Wired to useChat (send / stop) and useFileUpload (native file picker).
  */
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useChat } from '@/hooks/useChat'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import type { PendingFileInfo } from '@/hooks/useChat'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { isDarkColor } from '@/lib/themeUtils'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
@@ -19,6 +22,7 @@ const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: strin
 }
 
 export function InputBar() {
+  const { t } = useTranslation()
   const [input, setInput] = useState('')
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
   const [isSending, setIsSending] = useState(false)
@@ -27,6 +31,8 @@ export function InputBar() {
   const { isUploading, selectAndUploadFile } = useFileUpload()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const accentColor = useBrandingStore((s) => s.accentColor)
+  const accentTextColor = isDarkColor(accentColor) ? '#FFFFFF' : '#1A1A1A'
 
   // Auto-focus textarea when switching conversations or when streaming completes
   useEffect(() => {
@@ -66,7 +72,7 @@ export function InputBar() {
     const IPC_TIMEOUT_MS = 15_000
     try {
       await Promise.race([
-        sendUserMessage(trimmed || '请分析这个文件', fileInfos.length > 0 ? fileInfos : undefined),
+        sendUserMessage(trimmed || t('inputBar.analyzeFile'), fileInfos.length > 0 ? fileInfos : undefined),
         new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS)
         ),
@@ -184,7 +190,7 @@ export function InputBar() {
               color: isUploading ? 'var(--color-text-secondary)' : 'var(--color-text-muted)',
               background: 'transparent',
             }}
-            title="上传文件（Excel/Word/PDF）"
+            title={t('inputBar.uploadFile')}
             disabled={isUploading}
             onClick={handleUploadClick}
             onMouseEnter={(e) => {
@@ -220,8 +226,8 @@ export function InputBar() {
             }}
             rows={1}
             placeholder={pendingFiles.length > 0
-              ? '添加说明（可选），然后按回车发送...'
-              : '随时提问，或上传文件让我分析...'}
+              ? t('inputBar.placeholderWithFile')
+              : t('inputBar.placeholder')}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -240,7 +246,7 @@ export function InputBar() {
             style={{
               background:
                 isStreaming || hasPendingContent
-                  ? 'var(--color-primary)'
+                  ? accentColor
                   : 'var(--color-border)',
               cursor: isSendDisabled ? 'default' : 'pointer',
             }}
@@ -248,11 +254,11 @@ export function InputBar() {
             disabled={isSendDisabled}
           >
             {isStreaming ? (
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="var(--color-text-on-primary)">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill={accentTextColor}>
                 <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
             ) : (
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="var(--color-text-on-primary)">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill={accentTextColor}>
                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
               </svg>
             )}

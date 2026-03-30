@@ -3,6 +3,7 @@
  * Based on visual-prototype-zh.html .code-block styles.
  */
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { CodeBlock, CodeResult } from '@/types/message'
 
 interface RichCodeBlockProps {
@@ -20,6 +21,7 @@ const STATUS_INDICATOR: Record<CodeBlock['status'], { label: string; color: stri
 export function RichCodeBlock({ block, result }: RichCodeBlockProps) {
   const status = STATUS_INDICATOR[block.status]
   const [copied, setCopied] = useState(false)
+  const { t } = useTranslation()
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(block.code).then(() => {
@@ -57,7 +59,7 @@ export function RichCodeBlock({ block, result }: RichCodeBlockProps) {
             className="flex items-center gap-1 text-xs transition-colors"
             style={{ color: copied ? 'var(--color-semantic-green)' : 'var(--color-text-muted)' }}
           >
-            {copied ? '已复制' : '复制'}
+            {copied ? t('common.copied') : t('common.copy')}
           </button>
           <span className="text-xs font-medium" style={{ color: status.color }}>
             {status.label}

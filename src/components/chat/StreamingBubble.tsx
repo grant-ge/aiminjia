@@ -4,36 +4,18 @@
  */
 import { Avatar } from '@/components/common/Avatar'
 import { useChatStore } from '@/stores/chatStore'
-import type { AgentPhase } from '@/stores/chatStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { TypingIndicator } from './TypingIndicator'
 import { markdownToHtml } from '@/lib/markdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
-
-const TOOL_LABELS: Record<string, string> = {
-  execute_python: '正在分析数据...',
-  load_file: '正在加载文件...',
-  save_analysis_note: '正在保存分析记录...',
-  update_progress: '正在更新分析进度...',
-  web_search: '正在搜索相关信息...',
-  generate_report: '正在生成报告...',
-  export_data: '正在导出数据...',
-  hypothesis_test: '正在进行统计检验...',
-  detect_anomalies: '正在检测异常数据...',
-  generate_chart: '正在生成图表...',
-}
-
-const PHASE_LABELS: Record<AgentPhase, string> = {
-  think: '正在思考...',
-  act: '正在执行...',
-  observe: '正在整理...',
-}
+import { useTranslation } from 'react-i18next'
 
 interface StreamingBubbleProps {
   content: string
 }
 
 export function StreamingBubble({ content }: StreamingBubbleProps) {
+  const { t } = useTranslation()
   const toolExecutions = useChatStore((s) => s.toolExecutions)
   const productName = useBrandingStore((s) => s.productName)
   const agentPhase = useChatStore((s) => {
@@ -45,12 +27,15 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
   // Strip hallucinated XML blocks that some models emit in text content
   const cleanContent = stripHallucinatedXml(content)
 
+  const toolLabel = activeTool ? t('streaming.tools.' + activeTool.toolName, activeTool.toolName) : ''
+  const phaseLabel = agentPhase ? t('streaming.phases.' + agentPhase) : ''
+
   // Phase-aware status text: use TAOR phase if available, otherwise fall back
   const statusText = activeTool
-    ? (TOOL_LABELS[activeTool.toolName] || activeTool.toolName)
+    ? toolLabel
     : agentPhase
-      ? PHASE_LABELS[agentPhase]
-      : (cleanContent ? '' : '正在思考...')
+      ? phaseLabel
+      : (cleanContent ? '' : t('streaming.phases.think'))
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">

@@ -6,6 +6,7 @@
  *
  * Security: all text content is HTML-escaped before insertion.
  */
+import i18n from '@/i18n'
 
 /** Escape HTML entities to prevent XSS from LLM-generated content. */
 function esc(s: string): string {
@@ -167,7 +168,7 @@ function renderCodeBlock(lines: string[], lang: string): string {
     ? btoa(Array.from(new TextEncoder().encode(rawCode), (b) => String.fromCharCode(b)).join(''))
     : ''
   const copyBtn = encoded
-    ? `<button data-copy-code="${encoded}" style="cursor:pointer;border:none;background:none;font-size:0.7rem;color:var(--color-text-muted);font-family:var(--font-mono);padding:2px 6px;border-radius:3px;transition:color 0.2s">复制</button>`
+    ? `<button data-copy-code="${encoded}" style="cursor:pointer;border:none;background:none;font-size:0.7rem;color:var(--color-text-muted);font-family:var(--font-mono);padding:2px 6px;border-radius:3px;transition:color 0.2s">${i18n.t('common.copy')}</button>`
     : ''
   return `<div style="margin:12px 0;border-radius:8px;overflow:hidden;border:1px solid var(--color-border-subtle)"><div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--color-bg-base);font-size:0.75rem;color:var(--color-text-muted);font-family:var(--font-mono)"><span>${esc(lang || 'code')}</span>${copyBtn}</div><pre style="margin:0;padding:12px 14px;overflow-x:auto;background:var(--color-bg-elevated);font-size:0.82rem;line-height:1.55;font-family:var(--font-mono);color:var(--color-text-primary)"><code>${code}</code></pre></div>`
 }
