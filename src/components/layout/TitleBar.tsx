@@ -1,12 +1,4 @@
-/**
- * TitleBar — replaces macOS native title bar content.
- * With titleBarStyle: "overlay", the native title bar is transparent and
- * HTML content extends underneath. This component fills that area with
- * the accent color and provides a drag region.
- *
- * Height: 28px (macOS standard title bar height).
- * Left padding: 78px (space for red/yellow/green traffic light buttons).
- */
+import React from 'react'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useTranslation } from 'react-i18next'
@@ -25,20 +17,18 @@ export function TitleBar() {
     <div
       data-tauri-drag-region
       className="flex h-7 w-full shrink-0 items-center"
-      style={{ background: bg }}
+      style={{ background: bg, WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* Space for red/yellow/green traffic light buttons */}
-      <div data-tauri-drag-region className="w-[78px] shrink-0" />
+      {/* Space for red/yellow/green traffic light buttons — no-drag so clicks reach OS buttons */}
+      <div className="w-[78px] shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
       {/* Centered title */}
       <span
-        data-tauri-drag-region
         className="flex-1 text-center text-xs font-medium select-none"
         style={{ color: textColor }}
       >
         {productName} — {t('welcome.defaultSubtitle')}
       </span>
-      {/* Right balance space */}
-      <div data-tauri-drag-region className="w-[78px] shrink-0" />
+      <div className="w-[78px] shrink-0" />
     </div>
   )
 }

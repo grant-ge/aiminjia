@@ -9,11 +9,6 @@ import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
 
-/** Pick localized string: use English value if language is en-US and value is non-empty, else Chinese. */
-function localized(zhValue: string, enValue: string, lang: string): string {
-  return lang === 'en-US' && enValue ? enValue : zhValue
-}
-
 export function WelcomeScreen() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language

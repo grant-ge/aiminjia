@@ -10,8 +10,7 @@ import type { Persona } from '@/lib/tauri'
 import { getPersona } from '@/lib/tauri'
 
 export function PersonaTab() {
-  const { t, i18n } = useTranslation()
-  const lang = i18n.language
+  const { t } = useTranslation()
   const { personas, activePersona, reload, setActive, save: savePersona, delete: deletePersona } = usePersonaStore()
   const notifications = useNotificationStore()
   const [selectedId, setSelectedId] = useState<string | null>(null)

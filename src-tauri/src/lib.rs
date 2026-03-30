@@ -108,12 +108,10 @@ pub fn run() {
 
             // Set window title from persisted branding (before WebView renders)
             {
-                let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
-                let title = format!("{} — 智能工作助手", info.tenant
-                    .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
-                    .unwrap_or_else(|| "AI小家".to_string()));
+                // Title bar is rendered by HTML TitleBar component (titleBarStyle: Overlay)
+                // Set native window title to empty to avoid duplicate text
                 if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.set_title(&title);
+                    let _ = win.set_title(" ");
                 }
             }
 
