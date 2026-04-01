@@ -1,8 +1,17 @@
 import React from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useTranslation } from 'react-i18next'
 import { isDarkColor } from '@/lib/themeUtils'
+
+function handleDragStart(e: React.MouseEvent) {
+  if (e.buttons === 1) {
+    e.detail === 2
+      ? getCurrentWindow().toggleMaximize()
+      : getCurrentWindow().startDragging()
+  }
+}
 
 export function TitleBar() {
   const { t } = useTranslation()
@@ -15,15 +24,15 @@ export function TitleBar() {
 
   return (
     <div
-      data-tauri-drag-region
       className="flex h-7 w-full shrink-0 items-center"
-      style={{ background: bg, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      style={{ background: bg }}
+      onMouseDown={handleDragStart}
     >
-      {/* Space for red/yellow/green traffic light buttons — no-drag so clicks reach OS buttons */}
-      <div className="w-[78px] shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties} />
+      {/* Space for red/yellow/green traffic light buttons — no mousedown handler so OS receives clicks */}
+      <div className="w-[78px] shrink-0" onMouseDown={(e) => e.stopPropagation()} />
       {/* Centered title */}
       <span
-        className="flex-1 text-center text-xs font-medium select-none"
+        className="flex-1 text-center text-xs font-medium select-none pointer-events-none"
         style={{ color: textColor }}
       >
         {productName} — {t('welcome.defaultSubtitle')}
