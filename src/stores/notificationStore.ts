@@ -31,6 +31,7 @@ interface NotificationState {
 
   // Actions
   push: (notification: Omit<Notification, 'id' | 'createdAt'> & { id?: string }) => void
+  update: (id: string, partial: Partial<Pick<Notification, 'title' | 'message'>>) => void
   dismiss: (id: string) => void
   dismissAll: () => void
 }
@@ -61,6 +62,13 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       }, notification.autoHide * 1000)
     }
   },
+
+  update: (id, partial) =>
+    set((state) => ({
+      notifications: state.notifications.map((n) =>
+        n.id === id ? { ...n, ...partial } : n
+      ),
+    })),
 
   dismiss: (id) =>
     set((state) => ({

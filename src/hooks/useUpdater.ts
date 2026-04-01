@@ -41,7 +41,9 @@ export function useUpdater() {
               downloaded += event.data.chunkLength
               if (total > 0) {
                 const pct = Math.round((downloaded / total) * 100)
-                console.log(`Update download: ${pct}%`)
+                useNotificationStore.getState().update(downloadToastId, {
+                  message: i18n.t('updater.downloadingProgress', { version: update.version, pct }),
+                })
               }
             } else if (event.event === 'Finished') {
               useNotificationStore.getState().dismiss(downloadToastId)

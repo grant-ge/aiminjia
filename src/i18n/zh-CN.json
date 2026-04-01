@@ -296,6 +296,7 @@
     "newVersionFound": "发现新版本 v{{version}}，是否立即更新？",
     "downloading": "正在下载更新",
     "downloadingDesc": "正在下载 v{{version}}，请稍候...",
+    "downloadingProgress": "正在下载 v{{version}}，{{pct}}%...",
     "downloadComplete": "更新下载完成",
     "restarting": "即将重启应用...",
     "downloadFailed": "更新下载失败",

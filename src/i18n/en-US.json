@@ -296,6 +296,7 @@
     "newVersionFound": "New version v{{version}} available. Update now?\n\n",
     "downloading": "Downloading update",
     "downloadingDesc": "Downloading v{{version}}, please wait...",
+    "downloadingProgress": "Downloading v{{version}}, {{pct}}%...",
     "downloadComplete": "Update downloaded",
     "restarting": "Restarting app...",
     "downloadFailed": "Update download failed",
