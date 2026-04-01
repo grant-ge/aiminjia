@@ -34,4 +34,6 @@ token_budget = 8192
 category = "legal"
 icon = "📜"
 short_description = "逐条对照劳动法，识别无效/违规条款"
+short_description_en = "Audit company policies for legal compliance and risk gaps"
 trigger_text = "帮我审查公司规章制度"
+name_en = "Policy Compliance Audit"

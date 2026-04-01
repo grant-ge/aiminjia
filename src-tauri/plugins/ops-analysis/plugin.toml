@@ -34,4 +34,6 @@ token_budget = 8192
 category = "ops"
 icon = "🛒"
 short_description = "转化漏斗、渠道 ROI、留存分析"
+short_description_en = "User behavior, funnel analysis, and growth strategy"
 trigger_text = "帮我分析运营数据"
+name_en = "Operations Data Analysis"

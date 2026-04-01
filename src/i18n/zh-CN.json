@@ -1,0 +1,368 @@
+{
+  "personas": {
+    "default": "通用工作助手",
+    "hr-expert": "HR 专家",
+    "finance-analyst": "财务分析师",
+    "sales-manager": "销售经理",
+    "ops-specialist": "运营专家",
+    "legal-advisor": "法务顾问",
+    "data-analyst": "数据分析师",
+    "project-manager": "项目经理"
+  },
+  "skills": {
+    "biz-proposal": "商业方案撰写",
+    "biz-writing": "商务文档撰写",
+    "budget-analysis": "预算执行分析",
+    "comp-analysis-v2": "薪酬公平性分析",
+    "contract-review": "合同风险审查",
+    "customer-segmentation": "客户细分分析",
+    "engagement-survey": "员工敬业度分析",
+    "finance-analysis": "财务数据分析",
+    "labor-compliance": "劳动合规风险检查",
+    "okr-coach": "OKR 制定辅导",
+    "ops-analysis": "运营数据分析",
+    "org-diagnosis": "组织诊断报告",
+    "pa-maturity": "HR数据分析成熟度评估",
+    "perf-system-design": "绩效体系设计向导",
+    "policy-compliance-audit": "规章制度合规审查",
+    "recruitment-funnel": "招聘漏斗分析",
+    "salary-benchmarking": "薪酬市场对标分析",
+    "sales-analysis": "销售数据分析",
+    "survey-analysis": "问卷调研分析",
+    "talent-9box": "人才盘点九宫格"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "export": "导出",
+    "edit": "编辑",
+    "confirm": "确认",
+    "show": "显示",
+    "hide": "隐藏",
+    "copied": "已复制",
+    "copy": "复制",
+    "copyTable": "复制表格",
+    "copyFailed": "复制失败",
+    "close": "关闭",
+    "loading": "加载中...",
+    "unknownError": "未知错误"
+  },
+
+  "sidebar": {
+    "newChat": "新对话",
+    "noConversations": "暂无对话记录",
+    "deleteConversation": "删除对话",
+    "selectPersona": "选择角色",
+    "settings": "设置",
+    "switchToLocal": "点击切换到本地模式",
+    "switchToCloud": "点击切换到云端模式",
+    "cloud": "☁ 云端",
+    "local": "⚡ 本地",
+    "maxConcurrent": "已达最大并发数，请等待",
+    "timeGroup": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "thisWeek": "本周",
+      "earlier": "更早"
+    }
+  },
+
+  "topBar": {
+    "exportConversation": "导出对话",
+    "export": "导出",
+    "exportSuccess": "导出成功",
+    "saved": "已保存",
+    "exportFailed": "导出失败",
+    "exportAsPdf": "导出为 PDF",
+    "exportAsHtml": "导出为 HTML"
+  },
+
+  "inputBar": {
+    "uploadFile": "上传文件（Excel/Word/PDF）",
+    "placeholderWithFile": "添加说明（可选），然后按回车发送...",
+    "placeholder": "随时提问，或上传文件让我分析...",
+    "analyzeFile": "请分析这个文件"
+  },
+
+  "chatArea": {
+    "fileNotFound": "文件未找到",
+    "cannotOpenFile": "无法打开文件 \"{{fileName}}\"，文件可能尚未生成或已被移动。"
+  },
+
+  "welcome": {
+    "greeting": "你好！我是 {{productName}}",
+    "greetingWithPersona": "你好！我是 {{productName}} · {{personaName}}",
+    "defaultSubtitle": "你的智能工作助手",
+    "generalMode": "通用模式",
+    "generalModeDesc": "直接对话，不使用专业技能",
+    "askAnything": "也可以直接问我任何工作相关问题",
+    "hello": "你好"
+  },
+
+  "aiBubble": {
+    "sendFailed": "发送失败",
+    "sendFailedDesc": "未能发送回复，请重试。",
+    "openFileFailed": "打开文件失败",
+    "openFileFailedDesc": "无法打开文件，文件可能已被移动或删除。",
+    "revealFileFailed": "定位文件失败",
+    "revealFileFailedDesc": "无法在文件管理器中显示文件。",
+    "selectAction": "[选择]",
+    "confirmAction": "[确认]",
+    "rejectAction": "[拒绝]"
+  },
+
+  "userBubble": {
+    "me": "我"
+  },
+
+  "streaming": {
+    "tools": {
+      "execute_python": "正在分析数据...",
+      "load_file": "正在加载文件...",
+      "save_analysis_note": "正在保存分析记录...",
+      "update_progress": "正在更新分析进度...",
+      "web_search": "正在搜索相关信息...",
+      "generate_report": "正在生成报告...",
+      "export_data": "正在导出数据...",
+      "hypothesis_test": "正在进行统计检验...",
+      "detect_anomalies": "正在检测异常数据...",
+      "generate_chart": "正在生成图表..."
+    },
+    "phases": {
+      "think": "正在思考...",
+      "act": "正在执行...",
+      "observe": "正在整理..."
+    }
+  },
+
+  "messageList": {
+    "steps": {
+      "1": "数据清洗与理解",
+      "2": "岗位体系",
+      "3": "职级框架",
+      "4": "公平性诊断 + 根因分析",
+      "5": "行动方案 + 管理层材料"
+    }
+  },
+
+  "settings": {
+    "title": "设置",
+    "tabs": {
+      "account": "账户",
+      "models": "模型配置",
+      "search": "搜索配置",
+      "general": "通用设置",
+      "persona": "角色"
+    },
+    "saving": "保存中...",
+    "saveSettings": "保存设置",
+    "saveFailed": "保存失败",
+    "saveFailedDesc": "保存设置时发生未知错误",
+    "switchedModel": "已切换默认模型",
+    "switchFailed": "切换失败",
+    "switchFailedDesc": "切换默认模型时发生错误",
+    "currentDefault": "当前默认模型",
+    "validating": "验证中...",
+    "testConnection": "测试连接",
+    "validateKey": "验证 Key",
+    "setAsDefault": "设为默认模型",
+    "keyValid": "Key 有效",
+    "keyInvalid": "Key 无效或验证失败",
+    "enterApiKey": "请输入 {{provider}} 的 API Key",
+    "apiKeyOptional": "API Key（可选，本地模型留空）",
+
+    "customModel": {
+      "endpointLabel": "API Endpoint",
+      "endpointDesc": "OpenAI 兼容的 API 地址（必填，填到 /v1 即可，系统自动拼接 /chat/completions）",
+      "modelNameLabel": "模型名称",
+      "modelNameDesc": "要使用的模型 ID（必填）",
+      "examplesTitle": "常见服务配置示例",
+      "ollamaLocal": "Ollama（本地）",
+      "lmStudioLocal": "LM Studio（本地）",
+      "openRouter": "OpenRouter",
+      "siliconFlow": "硅基流动 SiliconFlow",
+      "otherCompatible": "其他 OpenAI 兼容服务",
+      "otherDesc": "填入服务提供的 API 地址（到 /v1），填入对应的模型名和 Key",
+      "endpoint": "Endpoint",
+      "modelLike": "模型如",
+      "keyEmpty": "Key 留空"
+    },
+
+    "availableModels": "可用模型",
+    "reasoningRouting": "支持推理模型自动路由",
+
+    "search": {
+      "tavilyLabel": "Tavily Search API Key",
+      "tavilyDesc": "用于联网搜索（可选，备用）",
+      "bochaLabel": "博查搜索 API Key",
+      "bochaDesc": "用于联网搜索市场薪酬数据（推荐）",
+      "bochaGetKey": "获取 Key →"
+    },
+
+    "general": {
+      "language": "界面语言",
+      "languageDesc": "选择应用界面的显示语言",
+      "workspace": "工作目录",
+      "workspaceDesc": "Agent 会在此目录下存放分析文件、报告和临时文件",
+      "selectDir": "选择目录",
+      "openDir": "打开目录",
+      "systemInfo": "系统信息",
+      "logs": "运行日志：",
+      "openLogs": "打开日志目录",
+      "metrics": "度量数据：",
+      "metricsCount": "{{count}} 条 ({{size}})",
+      "exportSuccess": "导出成功",
+      "exportedCount": "已导出 {{count}} 条度量数据",
+      "exportFailed": "导出失败",
+      "cleanupDone": "清理完成",
+      "metricsCleared": "度量数据已清理",
+      "cleanupFailed": "清理失败",
+      "cleanup": "清理"
+    }
+  },
+
+  "login": {
+    "loginSuccess": "登录成功",
+    "welcome": "欢迎，{{name}}",
+    "loggedOut": "已退出登录",
+    "switchedToLocal": "已切换到本地模式",
+    "fillAllFields": "请输入用户名和密码",
+    "newPasswordMinLength": "新密码长度至少 8 个字符",
+    "passwordMismatch": "两次输入的新密码不一致",
+    "passwordChanged": "密码修改成功",
+    "pleaseRelogin": "请重新登录",
+    "logout": "退出登录",
+    "changePassword": "修改密码",
+    "cancelChangePassword": "取消修改密码",
+    "oldPassword": "旧密码",
+    "newPassword": "新密码（至少 8 个字符）",
+    "confirmNewPassword": "确认新密码",
+    "changing": "修改中...",
+    "confirmChange": "确认修改",
+    "modelMode": "模型模式",
+    "cloudModel": "云端模型",
+    "localModel": "本地模型",
+    "cloudEnabled": "使用企业云端模型，无需 API Key",
+    "localEnabled": "使用本地配置的 API Key 调用模型",
+    "cloudEnabledInfo": "云端模式已启用，大模型和搜索请求通过服务端处理。",
+    "localEnabledInfo": "本地模式，使用你配置的 API Key 直接调用模型。",
+    "loginTitle": "登录企业账号",
+    "loginDesc": "登录后可直接使用云端大模型和联网搜索，无需配置 API Key。",
+    "adminAssigned": "企业账号由管理员分配，",
+    "registerEnterprise": "注册企业 →",
+    "usernamePlaceholder": "用户名@企业编码 如 zhangsan@001",
+    "passwordPlaceholder": "密码",
+    "loggingIn": "登录中...",
+    "loginButton": "登录"
+  },
+
+  "persona": {
+    "description": "选择或自定义你的工作角色,AI 会根据角色调整专业能力和记忆重点",
+    "import": "导入角色",
+    "switched": "已切换角色",
+    "currentPersona": "当前角色：{{name}}",
+    "switchFailed": "切换失败",
+    "saveSuccess": "保存成功",
+    "personaUpdated": "角色已更新",
+    "saveFailed": "保存失败",
+    "cannotDelete": "无法删除",
+    "builtinCannotDelete": "内置角色不能删除",
+    "confirmDelete": "确定删除角色\"{{name}}\"吗？",
+    "deleted": "已删除",
+    "personaDeleted": "角色\"{{name}}\"已删除",
+    "deleteFailed": "删除失败",
+    "featureInDev": "功能开发中",
+    "exportComingSoon": "导出功能即将上线",
+    "importComingSoon": "导入功能即将上线",
+    "current": "当前",
+    "setAsCurrent": "设为当前角色",
+    "editPersona": "编辑角色",
+    "name": "名称",
+    "icon": "图标 (emoji)",
+    "descriptionLabel": "描述",
+    "identity": "角色设定 (注入系统提示词)"
+  },
+
+  "onboarding": {
+    "welcome": "欢迎使用 {{productName}}",
+    "selectPersona": "选择一个角色开始,AI 会根据你的角色调整专业能力和记忆重点",
+    "settingUp": "正在设置...",
+    "startUsing": "开始使用",
+    "canSwitchLater": "你可以随时在设置中切换或自定义角色"
+  },
+
+  "updater": {
+    "newVersionFound": "发现新版本 v{{version}}，是否立即更新？",
+    "downloading": "正在下载更新",
+    "downloadingDesc": "正在下载 v{{version}}，请稍候...",
+    "downloadingProgress": "正在下载 v{{version}}，{{pct}}%...",
+    "downloadComplete": "更新下载完成",
+    "restarting": "即将重启应用...",
+    "downloadFailed": "更新下载失败",
+    "downloadFailedDesc": "请稍后重试或手动下载新版本"
+  },
+
+  "auth": {
+    "expired": "登录已过期",
+    "expiredDesc": "云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。"
+  },
+
+  "streaming": {
+    "tools": {
+      "execute_python": "正在分析数据...",
+      "load_file": "正在加载文件...",
+      "save_analysis_note": "正在保存分析记录...",
+      "update_progress": "正在更新分析进度...",
+      "web_search": "正在搜索相关信息...",
+      "generate_report": "正在生成报告...",
+      "export_data": "正在导出数据...",
+      "hypothesis_test": "正在进行统计检验...",
+      "detect_anomalies": "正在检测异常数据...",
+      "generate_chart": "正在生成图表..."
+    },
+    "phases": {
+      "think": "正在思考...",
+      "act": "正在执行...",
+      "observe": "正在整理..."
+    }
+  },
+  "errors": {
+    "streamingError": "响应异常",
+    "partialSaved": "\n\n已保存部分回复内容。",
+    "unknownRetry": "未知错误，请重试。",
+    "streamTimeout": "响应超时",
+    "streamTimeoutDesc": "已超过 {{seconds}} 秒无响应，已自动停止。请检查网络连接后重试。",
+    "pleaseWait": "请稍候",
+    "chatBusy": "当前对话正在处理中，请等待完成后再发送。",
+    "maxConcurrent": "最多同时处理 {{max}} 个对话，请等待其他对话完成。",
+    "sendFailed": "发送失败",
+    "sendFailedDesc": "消息发送失败，请检查网络和设置。"
+  },
+  "format": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "yesterday": "昨天",
+    "daysAgo": "{{count}} 天前",
+    "monthsAgo": "{{count}} 个月前",
+    "yearsAgo": "{{count}} 年前"
+  },
+
+  "providers": {
+    "deepseek-v3": "DeepSeek",
+    "qwen-plus": "通义千问",
+    "volcano": "火山引擎",
+    "openai": "GPT-4o",
+    "claude": "Claude",
+    "custom": "自定义模型",
+    "capabilities": {
+      "deepseek-v3": "默认: deepseek-chat | 推理: deepseek-reasoner",
+      "qwen-plus": "默认: qwen-plus",
+      "openai": "默认: GPT-4o",
+      "claude": "默认: Claude Sonnet",
+      "volcano": "默认: 字节跳动大模型",
+      "custom": "自定义 OpenAI 兼容模型"
+    }
+  }
+}

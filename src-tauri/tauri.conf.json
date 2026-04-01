@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.3.35",
+  "version": "0.3.39",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
@@ -12,14 +12,15 @@
   "app": {
     "windows": [
       {
-        "title": "AI小家",
+        "title": " ",
         "width": 1280,
         "height": 800,
         "minWidth": 1080,
         "minHeight": 640,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

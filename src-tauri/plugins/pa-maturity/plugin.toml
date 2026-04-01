@@ -27,4 +27,6 @@ token_budget = 8192
 category = "hr"
 icon = "📐"
 short_description = "4 级成熟度定位 + 升级路径规划"
+short_description_en = "Evaluate HR data analytics capability and improvement roadmap"
 trigger_text = "帮我做 HR 数据成熟度评估"
+name_en = "HR Analytics Maturity Assessment"

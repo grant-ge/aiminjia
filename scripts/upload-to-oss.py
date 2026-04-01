@@ -167,7 +167,32 @@ def main():
                          f"{OSS_PREFIX}/v{version}/AIjia_{version}_aarch64.dmg",
                          f"{OSS_PREFIX}/latest/macos-arm64"))
     else:
-        print(f"\n⚠ macOS ARM DMG not found: {mac_dmg}")
+        # Tauri's bundle_dmg.sh sometimes fails — build DMG manually with create-dmg
+        app_path = arm_bundle / "macos" / "AIjia.app"
+        if app_path.exists():
+            print(f"\n⚠ macOS ARM DMG not found, building with create-dmg...")
+            result = subprocess.run([
+                "create-dmg",
+                "--volname", "AIjia",
+                "--window-pos", "200", "120",
+                "--window-size", "600", "400",
+                "--icon-size", "100",
+                "--icon", "AIjia.app", "175", "190",
+                "--hide-extension", "AIjia.app",
+                "--app-drop-link", "425", "190",
+                "--skip-jenkins",
+                str(mac_dmg),
+                str(app_path),
+            ], capture_output=True, text=True)
+            if result.returncode == 0 and mac_dmg.exists():
+                print(f"  ✓ DMG created: {mac_dmg}")
+                uploads.append(("macOS ARM DMG", mac_dmg,
+                                 f"{OSS_PREFIX}/v{version}/AIjia_{version}_aarch64.dmg",
+                                 f"{OSS_PREFIX}/latest/macos-arm64"))
+            else:
+                print(f"  ✗ create-dmg failed: {result.stderr.strip()[-200:]}")
+        else:
+            print(f"\n⚠ macOS ARM DMG not found: {mac_dmg}")
 
     if mac_tar.exists():
         tar_key = f"{OSS_PREFIX}/v{version}/AIjia.app.tar.gz"
@@ -253,6 +278,41 @@ def main():
     print(f"  Windows:    {CDN_BASE}/{OSS_PREFIX}/latest/windows-x64")
     print(f"\nVersioned:    {CDN_BASE}/{OSS_PREFIX}/v{version}/")
     print(f"Updater:      {CDN_BASE}/{OSS_PREFIX}/update.json")
+
+    # ── Update Homebrew Cask ─────────────────────────────────────
+    print(f"\n── Updating Homebrew Cask ──")
+    tap_path = Path("/opt/homebrew/Library/Taps/grant-ge/homebrew-tap")
+    if not tap_path.exists():
+        # Try to find via brew --repository
+        result = subprocess.run(
+            ["brew", "--repository", "grant-ge/tap"],
+            capture_output=True, text=True
+        )
+        tap_path = Path(result.stdout.strip()) if result.returncode == 0 else None
+
+    if tap_path and (tap_path / "Casks" / "aijia.rb").exists():
+        cask_file = tap_path / "Casks" / "aijia.rb"
+        content = cask_file.read_text()
+        # Update version line
+        import re
+        new_content = re.sub(r'version "\d+\.\d+\.\d+"', f'version "{version}"', content)
+        if new_content != content:
+            cask_file.write_text(new_content)
+            subprocess.run(["git", "add", "Casks/aijia.rb"], cwd=tap_path, capture_output=True)
+            subprocess.run(["git", "commit", "-m", f"chore: bump aijia to v{version}"], cwd=tap_path, capture_output=True)
+            # Switch to grant-ge account for push
+            subprocess.run(["gh", "auth", "switch", "--user", "grant-ge"], capture_output=True)
+            result = subprocess.run(["git", "push", "origin", "main"], cwd=tap_path, capture_output=True, text=True)
+            subprocess.run(["gh", "auth", "switch", "--user", "gezhigang000"], capture_output=True)
+            if result.returncode == 0:
+                print(f"  ✓ Homebrew cask updated to v{version}")
+                print(f"    brew tap grant-ge/tap && brew install --cask aijia")
+            else:
+                print(f"  ✗ git push failed: {result.stderr.strip()}")
+        else:
+            print(f"  ℹ Cask already at v{version}")
+    else:
+        print(f"  ⚠ Homebrew tap not found, skipping cask update")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { openFileByName } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
+import i18n from '@/i18n'
 import { MessageList } from '@/components/chat/MessageList'
 import { WelcomeScreen } from '@/components/chat/WelcomeScreen'
 
@@ -75,11 +76,11 @@ export function ChatArea() {
           const code = atob(encoded)
           navigator.clipboard.writeText(code).then(() => {
             const prev = copyTarget.textContent
-            copyTarget.textContent = '已复制'
+            copyTarget.textContent = i18n.t('common.copied')
             setTimeout(() => { copyTarget.textContent = prev }, 2000)
           }).catch(() => {
             const prev = copyTarget.textContent
-            copyTarget.textContent = '复制失败'
+            copyTarget.textContent = i18n.t('common.copyFailed')
             setTimeout(() => { copyTarget.textContent = prev }, 2000)
           })
         } catch {
@@ -101,8 +102,8 @@ export function ChatArea() {
           }, 2000)
           useNotificationStore.getState().push({
             level: 'error',
-            title: '文件未找到',
-            message: `无法打开文件 "${fileName}"，文件可能尚未生成或已被移动。`,
+            title: i18n.t('chatArea.fileNotFound'),
+            message: i18n.t('chatArea.cannotOpenFile', { fileName }),
             actions: [],
             dismissible: true,
             autoHide: 5,

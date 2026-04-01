@@ -5,13 +5,16 @@
  */
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePersonaStore } from '@/stores/personaStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
+import { useTranslation } from 'react-i18next'
 
 export function WelcomeScreen() {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const skills = usePluginStore((s) => s.skills)
   const activePersona = usePersonaStore((s) => s.activePersona)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const { sendUserMessage } = useChat()
 
   // Linked categories from active persona (default: show all)
@@ -32,14 +35,20 @@ export function WelcomeScreen() {
   }
 
   const handleGeneralMode = () => {
-    sendUserMessage('你好')
+    sendUserMessage(t('welcome.hello'))
   }
 
-  // Greeting follows persona
+  // Greeting follows persona — use i18n key for builtins, fallback to name for user-created
+  const personaLocalName = activePersona
+    ? t(`personas.${activePersona.id}`, activePersona.name)
+    : ''
   const greeting = activePersona
-    ? `你好！我是 ${productName} · ${activePersona.name}`
-    : `你好！我是 ${productName}`
-  const subtitle = activePersona?.description || '你的智能工作助手'
+    ? t('welcome.greetingWithPersona', { productName, personaName: personaLocalName })
+    : t('welcome.greeting', { productName })
+  // Subtitle: builtins have no translation key for description, use descriptionEn from store or zh fallback
+  const subtitleEn = (activePersona as any)?.descriptionEn || ''
+  const subtitleZh = activePersona?.description || ''
+  const subtitle = (lang === 'en-US' && subtitleEn ? subtitleEn : subtitleZh) || t('welcome.defaultSubtitle')
 
   return (
     <div className="animate-[fadeUp_0.3s_ease] flex flex-col items-center pt-12">
@@ -91,13 +100,13 @@ export function WelcomeScreen() {
               className="text-sm font-medium"
               style={{ color: 'var(--color-text-primary)' }}
             >
-              通用模式
+              {t('welcome.generalMode')}
             </span>
             <p
               className="mt-0.5 text-xs"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              直接对话，不使用专业技能
+              {t('welcome.generalModeDesc')}
             </p>
           </div>
           <span
@@ -137,7 +146,7 @@ export function WelcomeScreen() {
                   className="text-xs font-medium leading-tight"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {skill.displayName}
+                  {t(`skills.${skill.id}`, skill.displayName)}
                 </span>
               </button>
             ))}
@@ -149,7 +158,7 @@ export function WelcomeScreen() {
         className="mt-5 text-xs"
         style={{ color: 'var(--color-text-muted)' }}
       >
-        也可以直接问我任何工作相关问题
+        {t('welcome.askAnything')}
       </p>
     </div>
   )

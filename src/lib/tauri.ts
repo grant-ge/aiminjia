@@ -461,11 +461,13 @@ export interface ToolInfo {
 export interface SkillInfo {
   id: string
   displayName: string
+  displayNameEn: string
   description: string
   source: string
   hasWorkflow: boolean
   icon: string
   shortDescription: string
+  shortDescriptionEn: string
   triggerText: string
   category: string
 }
@@ -525,8 +527,10 @@ export interface CloudModel {
 export interface PersonaSummary {
   id: string
   name: string
+  nameEn: string
   icon: string
   description: string
+  descriptionEn: string
   builtin: boolean
 }
 

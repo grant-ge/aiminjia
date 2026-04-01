@@ -2,6 +2,7 @@
  * PersonaTab — persona management UI in settings modal.
  */
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { usePersonaStore } from '@/stores/personaStore'
 import { Button } from '@/components/common/Button'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -9,6 +10,7 @@ import type { Persona } from '@/lib/tauri'
 import { getPersona } from '@/lib/tauri'
 
 export function PersonaTab() {
+  const { t } = useTranslation()
   const { personas, activePersona, reload, setActive, save: savePersona, delete: deletePersona } = usePersonaStore()
   const notifications = useNotificationStore()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -29,8 +31,8 @@ export function PersonaTab() {
       await setActive(id)
       notifications.push({
         level: 'success',
-        title: '已切换角色',
-        message: `当前角色：${personas.find(p => p.id === id)?.name}`,
+        title: t('persona.switched'),
+        message: t('persona.currentPersona', { name: personas.find(p => p.id === id)?.name }),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -39,8 +41,8 @@ export function PersonaTab() {
     } catch (err) {
       notifications.push({
         level: 'error',
-        title: '切换失败',
-        message: err instanceof Error ? err.message : '未知错误',
+        title: t('persona.switchFailed'),
+        message: err instanceof Error ? err.message : t('common.unknownError'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -67,8 +69,8 @@ export function PersonaTab() {
       setEditingPersona(null)
       notifications.push({
         level: 'success',
-        title: '保存成功',
-        message: '角色已更新',
+        title: t('persona.saveSuccess'),
+        message: t('persona.personaUpdated'),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -77,8 +79,8 @@ export function PersonaTab() {
     } catch (err) {
       notifications.push({
         level: 'error',
-        title: '保存失败',
-        message: err instanceof Error ? err.message : '未知错误',
+        title: t('persona.saveFailed'),
+        message: err instanceof Error ? err.message : t('common.unknownError'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -93,8 +95,8 @@ export function PersonaTab() {
     if (persona.builtin) {
       notifications.push({
         level: 'error',
-        title: '无法删除',
-        message: '内置角色不能删除',
+        title: t('persona.cannotDelete'),
+        message: t('persona.builtinCannotDelete'),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -102,14 +104,14 @@ export function PersonaTab() {
       })
       return
     }
-    if (!confirm(`确定删除角色"${persona.name}"吗？`)) return
+    if (!confirm(t('persona.confirmDelete', { name: persona.name }))) return
     try {
       await deletePersona(id)
       if (selectedId === id) setSelectedId(null)
       notifications.push({
         level: 'success',
-        title: '已删除',
-        message: `角色"${persona.name}"已删除`,
+        title: t('persona.deleted'),
+        message: t('persona.personaDeleted', { name: persona.name }),
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -118,8 +120,8 @@ export function PersonaTab() {
     } catch (err) {
       notifications.push({
         level: 'error',
-        title: '删除失败',
-        message: err instanceof Error ? err.message : '未知错误',
+        title: t('persona.deleteFailed'),
+        message: err instanceof Error ? err.message : t('common.unknownError'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -132,8 +134,8 @@ export function PersonaTab() {
     // TODO: Implement export (requires plugin-fs or clipboard API)
     notifications.push({
       level: 'info',
-      title: '功能开发中',
-      message: '导出功能即将上线',
+      title: t('persona.featureInDev'),
+      message: t('persona.exportComingSoon'),
       actions: [],
       dismissible: true,
       autoHide: 3,
@@ -145,8 +147,8 @@ export function PersonaTab() {
     // TODO: Implement import (requires plugin-fs or clipboard API)
     notifications.push({
       level: 'info',
-      title: '功能开发中',
-      message: '导入功能即将上线',
+      title: t('persona.featureInDev'),
+      message: t('persona.importComingSoon'),
       actions: [],
       dismissible: true,
       autoHide: 3,
@@ -158,10 +160,10 @@ export function PersonaTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          选择或自定义你的工作角色,AI 会根据角色调整专业能力和记忆重点
+          {t('persona.description')}
         </p>
         <Button onClick={handleImport} variant="secondary" size="sm">
-          导入角色
+          {t('persona.import')}
         </Button>
       </div>
 
@@ -179,11 +181,11 @@ export function PersonaTab() {
           >
             <span className="text-2xl">{p.icon}</span>
             <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              {p.name}
+              {t(`personas.${p.id}`, p.name)}
             </span>
             {activePersona?.id === p.id && (
               <span className="text-xs" style={{ color: 'var(--color-accent)' }}>
-                当前
+                {t('persona.current')}
               </span>
             )}
           </button>
@@ -197,17 +199,17 @@ export function PersonaTab() {
             disabled={activePersona?.id === selectedId}
             size="sm"
           >
-            设为当前角色
+            {t('persona.setAsCurrent')}
           </Button>
           <Button onClick={() => handleEdit(selectedId)} variant="secondary" size="sm">
-            编辑
+            {t('common.edit')}
           </Button>
           <Button onClick={() => handleExport(selectedId)} variant="secondary" size="sm">
-            导出
+            {t('common.export')}
           </Button>
           {!personas.find(p => p.id === selectedId)?.builtin && (
             <Button onClick={() => handleDelete(selectedId)} variant="secondary" size="sm">
-              删除
+              {t('common.delete')}
             </Button>
           )}
         </div>
@@ -216,11 +218,11 @@ export function PersonaTab() {
       {editing && editingPersona && (
         <div className="space-y-3 rounded-lg border p-4" style={{ borderColor: 'var(--color-border)' }}>
           <h3 className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-            编辑角色
+            {t('persona.editPersona')}
           </h3>
           <div className="space-y-2">
             <label className="block text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              名称
+              {t('persona.name')}
               <input
                 type="text"
                 value={editingPersona.name}
@@ -234,7 +236,7 @@ export function PersonaTab() {
               />
             </label>
             <label className="block text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              图标 (emoji)
+              {t('persona.icon')}
               <input
                 type="text"
                 value={editingPersona.icon}
@@ -248,7 +250,7 @@ export function PersonaTab() {
               />
             </label>
             <label className="block text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              描述
+              {t('persona.descriptionLabel')}
               <textarea
                 value={editingPersona.description}
                 onChange={(e) => setEditingPersona({ ...editingPersona, description: e.target.value })}
@@ -262,7 +264,7 @@ export function PersonaTab() {
               />
             </label>
             <label className="block text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              角色设定 (注入系统提示词)
+              {t('persona.identity')}
               <textarea
                 value={editingPersona.identity}
                 onChange={(e) => setEditingPersona({ ...editingPersona, identity: e.target.value })}
@@ -278,10 +280,10 @@ export function PersonaTab() {
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave} size="sm">
-              保存
+              {t('common.save')}
             </Button>
             <Button onClick={() => setEditing(false)} variant="secondary" size="sm">
-              取消
+              {t('common.cancel')}
             </Button>
           </div>
         </div>

@@ -2,6 +2,7 @@
  * SettingsModal — tabbed settings: model configuration (per-provider) + general settings.
  */
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal } from '@/components/common/Modal'
 import { Button } from '@/components/common/Button'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -22,10 +23,11 @@ import {
   getMetricsInfo,
 } from '@/lib/tauri'
 import type { LlmProvider } from '@/types/settings'
-import { PROVIDER_CAPABILITIES, LLM_PROVIDER_LABELS } from '@/types/settings'
+import { PROVIDER_CAPABILITIES } from '@/types/settings'
 import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
+import type { AppLanguage } from '@/i18n'
 
 interface SettingsModalProps {
   open: boolean
@@ -34,13 +36,13 @@ interface SettingsModalProps {
 
 type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona'
 
-const PROVIDER_LIST: { value: LlmProvider; label: string }[] = [
-  { value: 'deepseek-v3', label: 'DeepSeek' },
-  { value: 'qwen-plus', label: '通义千问' },
-  { value: 'volcano', label: '火山引擎' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'custom', label: '自定义模型' },
+const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
+  { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
+  { value: 'qwen-plus', labelKey: 'providers.qwen-plus' },
+  { value: 'volcano', labelKey: 'providers.volcano' },
+  { value: 'openai', labelKey: 'providers.openai' },
+  { value: 'claude', labelKey: 'providers.claude' },
+  { value: 'custom', labelKey: 'providers.custom' },
 ]
 
 const API_KEY_PLACEHOLDERS: Record<LlmProvider, string> = {
@@ -49,12 +51,13 @@ const API_KEY_PLACEHOLDERS: Record<LlmProvider, string> = {
   'volcano': 'API Key...',
   'openai': 'sk-...',
   'claude': 'sk-ant-...',
-  'custom': 'API Key（可选，本地模型留空）',
+  'custom': '', // will use t() at render time
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const settings = useSettingsStore()
   const notifications = useNotificationStore()
+  const { t } = useTranslation()
 
   const [mainTab, setMainTab] = useState<MainTab>('account')
   const [activeProvider, setActiveProvider] = useState<LlmProvider>('deepseek-v3')
@@ -147,6 +150,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         useCloud: settings.useCloud,
         cloudModel: settings.cloudModel,
         cloudModelType: settings.cloudModelType,
+        appLanguage: settings.appLanguage,
       })
       const providers = await getConfiguredProviders()
       useSettingsStore.getState().setConfiguredProviders(providers as LlmProvider[])
@@ -156,8 +160,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       console.error('Failed to save settings:', err)
       notifications.push({
         level: 'error',
-        title: '保存失败',
-        message: err instanceof Error ? err.message : '保存设置时发生未知错误',
+        title: t('settings.saveFailed'),
+        message: err instanceof Error ? err.message : t('settings.saveFailedDesc'),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -205,8 +209,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
       notifications.push({
         level: 'success',
-        title: '已切换默认模型',
-        message: `已设为 ${LLM_PROVIDER_LABELS[provider] ?? provider}`,
+        title: t('settings.switchedModel'),
+        message: `${t('providers.' + provider)}`,
         actions: [],
         dismissible: true,
         autoHide: 3,
@@ -216,8 +220,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       console.error('Failed to switch provider:', err)
       notifications.push({
         level: 'error',
-        title: '切换失败',
-        message: err instanceof Error ? err.message : '切换默认模型时发生错误',
+        title: t('settings.switchFailed'),
+        message: err instanceof Error ? err.message : t('settings.switchFailedDesc'),
         actions: [],
         dismissible: true,
         autoHide: 6,
@@ -232,16 +236,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const footer = (
     <>
       <Button variant="secondary" onClick={onClose}>
-        取消
+        {t('common.cancel')}
       </Button>
       <Button variant="primary" onClick={handleSave} disabled={saving}>
-        {saving ? '保存中...' : '保存设置'}
+        {saving ? t('settings.saving') : t('settings.saveSettings')}
       </Button>
     </>
   )
 
   return (
-    <Modal open={open} onClose={onClose} title="设置" footer={footer}>
+    <Modal open={open} onClose={onClose} title={t('settings.title')} footer={footer}>
       {/* Main Tab Bar */}
       <div
         className="mb-4 flex items-center gap-1 border-b pb-3"
@@ -251,14 +255,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           active={mainTab === 'account'}
           onClick={() => setMainTab('account')}
         >
-          账户
+          {t('settings.tabs.account')}
         </TabButton>
         {!isLoggedIn && (
           <TabButton
             active={mainTab === 'models'}
             onClick={() => setMainTab('models')}
           >
-            模型配置
+            {t('settings.tabs.models')}
           </TabButton>
         )}
         {!isLoggedIn && (
@@ -266,20 +270,20 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             active={mainTab === 'search'}
             onClick={() => setMainTab('search')}
           >
-            搜索配置
+            {t('settings.tabs.search')}
           </TabButton>
         )}
         <TabButton
           active={mainTab === 'general'}
           onClick={() => setMainTab('general')}
         >
-          通用设置
+          {t('settings.tabs.general')}
         </TabButton>
         <TabButton
           active={mainTab === 'persona'}
           onClick={() => setMainTab('persona')}
         >
-          角色
+          {t('settings.tabs.persona')}
         </TabButton>
       </div>
 
@@ -302,7 +306,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   setKeyValid((prev) => ({ ...prev, [p.value]: null }))
                 }}
               >
-                {p.label}
+                {t(p.labelKey)}
               </SubTabButton>
             ))}
           </div>
@@ -320,14 +324,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ background: 'var(--color-semantic-green)' }}
               />
-              当前默认模型
+              {t('settings.currentDefault')}
             </div>
           )}
 
           {/* API Key Input */}
           <FormGroup
             label="API Key"
-            desc={`请输入 ${LLM_PROVIDER_LABELS[activeProvider]} 的 API Key`}
+            desc={t('settings.enterApiKey', { provider: t('providers.' + activeProvider) })}
           >
             <div className="relative">
               <input
@@ -338,7 +342,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   borderColor: 'var(--color-border)',
                   color: 'var(--color-text-primary)',
                 }}
-                placeholder={API_KEY_PLACEHOLDERS[activeProvider] ?? 'sk-...'}
+                placeholder={activeProvider === 'custom' ? t('settings.apiKeyOptional') : (API_KEY_PLACEHOLDERS[activeProvider] ?? 'sk-...')}
                 value={currentKeyForProvider}
                 onChange={(e) => {
                   setKeyCache((prev) => ({ ...prev, [activeProvider]: e.target.value }))
@@ -351,7 +355,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 style={{ color: 'var(--color-text-muted)' }}
                 onClick={() => setShowApiKey(!showApiKey)}
               >
-                {showApiKey ? '隐藏' : '显示'}
+                {showApiKey ? t('common.hide') : t('common.show')}
               </button>
             </div>
           </FormGroup>
@@ -373,7 +377,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               }}
               disabled={(activeProvider !== 'custom' && !currentKeyForProvider) || validating}
             >
-              {validating ? '验证中...' : activeProvider === 'custom' ? '测试连接' : '验证 Key'}
+              {validating ? t('settings.validating') : activeProvider === 'custom' ? t('settings.testConnection') : t('settings.validateKey')}
             </Button>
 
             {activeProvider !== settings.primaryModel && (
@@ -381,18 +385,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 variant="secondary"
                 onClick={() => handleSetAsPrimary(activeProvider)}
               >
-                设为默认模型
+                {t('settings.setAsDefault')}
               </Button>
             )}
 
             {keyValid[activeProvider] === true && (
               <span className="text-sm" style={{ color: 'var(--color-semantic-green)' }}>
-                Key 有效
+                {t('settings.keyValid')}
               </span>
             )}
             {keyValid[activeProvider] === false && (
               <span className="text-sm" style={{ color: 'var(--color-semantic-red)' }}>
-                Key 无效或验证失败
+                {t('settings.keyInvalid')}
               </span>
             )}
           </div>
@@ -401,8 +405,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           {activeProvider === 'custom' && (
             <>
               <FormGroup
-                label="API Endpoint"
-                desc="OpenAI 兼容的 API 地址（必填，填到 /v1 即可，系统自动拼接 /chat/completions）"
+                label={t('settings.customModel.endpointLabel')}
+                desc={t('settings.customModel.endpointDesc')}
               >
                 <FormInput
                   value={settings.customModelEndpoint}
@@ -411,8 +415,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 />
               </FormGroup>
               <FormGroup
-                label="模型名称"
-                desc="要使用的模型 ID（必填）"
+                label={t('settings.customModel.modelNameLabel')}
+                desc={t('settings.customModel.modelNameDesc')}
               >
                 <FormInput
                   value={settings.customModelName}
@@ -434,34 +438,34 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   className="mb-2 text-xs font-semibold"
                   style={{ color: 'var(--color-text-secondary)' }}
                 >
-                  常见服务配置示例
+                  {t('settings.customModel.examplesTitle')}
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>Ollama（本地）</span>
-                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:11434/v1</code>
-                    ，模型如 <code>qwen2.5:7b</code>
-                    ，Key 留空
+                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.ollamaLocal')}</span>
+                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:11434/v1</code>
+                    ，{t('settings.customModel.modelLike')} <code>qwen2.5:7b</code>
+                    ，{t('settings.customModel.keyEmpty')}
                   </div>
                   <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>LM Studio（本地）</span>
-                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:1234/v1</code>
-                    ，模型如 <code>llama3</code>
-                    ，Key 留空
+                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.lmStudioLocal')}</span>
+                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:1234/v1</code>
+                    ，{t('settings.customModel.modelLike')} <code>llama3</code>
+                    ，{t('settings.customModel.keyEmpty')}
                   </div>
                   <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>OpenRouter</span>
-                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>https://openrouter.ai/api/v1</code>
-                    ，模型如 <code>google/gemini-pro</code>
+                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.openRouter')}</span>
+                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>https://openrouter.ai/api/v1</code>
+                    ，{t('settings.customModel.modelLike')} <code>google/gemini-pro</code>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>硅基流动 SiliconFlow</span>
-                    ：Endpoint <code style={{ color: 'var(--color-semantic-blue)' }}>https://api.siliconflow.cn/v1</code>
-                    ，模型如 <code>deepseek-ai/DeepSeek-V3</code>
+                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.siliconFlow')}</span>
+                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>https://api.siliconflow.cn/v1</code>
+                    ，{t('settings.customModel.modelLike')} <code>deepseek-ai/DeepSeek-V3</code>
                   </div>
                   <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>其他 OpenAI 兼容服务</span>
-                    ：填入服务提供的 API 地址（到 /v1），填入对应的模型名和 Key
+                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.otherCompatible')}</span>
+                    ：{t('settings.customModel.otherDesc')}
                   </div>
                 </div>
               </div>
@@ -477,9 +481,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 color: 'var(--color-text-muted)',
               }}
             >
-              <div>可用模型：{providerCaps.modelsDesc}</div>
+              <div>{t('settings.availableModels')}：{t('providers.capabilities.' + activeProvider)}</div>
               {providerCaps.hasReasoning && (
-                <div className="mt-1">支持推理模型自动路由</div>
+                <div className="mt-1">{t('settings.reasoningRouting')}</div>
               )}
             </div>
           )}
@@ -489,7 +493,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       {mainTab === 'search' && !isLoggedIn && (
         <div>
           {/* Tavily Search API Key */}
-          <FormGroup label="Tavily Search API Key" desc="用于联网搜索（可选，备用）">
+          <FormGroup label={t('settings.search.tavilyLabel')} desc={t('settings.search.tavilyDesc')}>
             <div className="relative">
               <input
                 type={showTavilyKey ? 'text' : 'password'}
@@ -509,13 +513,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 style={{ color: 'var(--color-text-muted)' }}
                 onClick={() => setShowTavilyKey(!showTavilyKey)}
               >
-                {showTavilyKey ? '隐藏' : '显示'}
+                {showTavilyKey ? t('common.hide') : t('common.show')}
               </button>
             </div>
           </FormGroup>
 
           {/* Bocha Search API Key */}
-          <FormGroup label="博查搜索 API Key" desc={<>用于联网搜索市场薪酬数据（推荐）。<a href="https://open.bochaai.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>获取 Key →</a></>}>
+          <FormGroup label={t('settings.search.bochaLabel')} desc={<>{t('settings.search.bochaDesc')}。<a href="https://open.bochaai.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>{t('settings.search.bochaGetKey')}</a></>}>
             <div className="relative">
               <input
                 type={showBochaKey ? 'text' : 'password'}
@@ -535,7 +539,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 style={{ color: 'var(--color-text-muted)' }}
                 onClick={() => setShowBochaKey(!showBochaKey)}
               >
-                {showBochaKey ? '隐藏' : '显示'}
+                {showBochaKey ? t('common.hide') : t('common.show')}
               </button>
             </div>
           </FormGroup>
@@ -544,12 +548,37 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
       {mainTab === 'general' && (
         <div>
+          {/* Language toggle */}
+          <FormGroup label={t('settings.general.language')} desc={t('settings.general.languageDesc')}>
+            <div
+              className="inline-flex rounded-md border"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              {([['zh-CN', '中文'], ['en-US', 'English']] as const).map(([lang, label], idx) => (
+                <button
+                  key={lang}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${idx === 0 ? 'rounded-l-md' : 'rounded-r-md'}`}
+                  style={{
+                    background: (settings.appLanguage || 'zh-CN') === lang ? 'var(--color-primary-subtle)' : 'transparent',
+                    color: (settings.appLanguage || 'zh-CN') === lang ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                    border: 'none',
+                    borderLeft: idx > 0 ? '1px solid var(--color-border)' : 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => settings.setAppLanguage(lang as AppLanguage)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </FormGroup>
+
           {/* Workspace */}
-          <FormGroup label="工作目录" desc="Agent 会在此目录下存放分析文件、报告和临时文件">
+          <FormGroup label={t('settings.general.workspace')} desc={t('settings.general.workspaceDesc')}>
             <div className="flex items-center gap-2">
               <FormInput
                 value={settings.workspacePath}
-                placeholder="/Users/hr/AI小家工作区"
+                placeholder="/Users/hr/workspace"
                 onChange={(v) => settings.setWorkspacePath(v)}
               />
               <Button
@@ -568,7 +597,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   }
                 }}
               >
-                选择目录
+                {t('settings.general.selectDir')}
               </Button>
               <Button
                 variant="secondary"
@@ -582,7 +611,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }}
                 disabled={!settings.workspacePath}
               >
-                打开目录
+                {t('settings.general.openDir')}
               </Button>
             </div>
           </FormGroup>
@@ -596,11 +625,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               className="mb-3 text-sm font-semibold"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              系统信息
+              {t('settings.general.systemInfo')}
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-3">
-                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>运行日志：</span>
+                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('settings.general.logs')}</span>
                 <Button
                   variant="secondary"
                   onClick={async () => {
@@ -611,13 +640,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     }
                   }}
                 >
-                  打开日志目录
+                  {t('settings.general.openLogs')}
                 </Button>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>度量数据：</span>
+                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('settings.general.metrics')}</span>
                 <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  {metricsCount} 条 ({metricsBytes < 1024 ? `${metricsBytes} B` : `${(metricsBytes / 1024).toFixed(0)} KB`})
+                  {t('settings.general.metricsCount', {
+                    count: metricsCount,
+                    size: metricsBytes < 1024 ? `${metricsBytes} B` : `${(metricsBytes / 1024).toFixed(0)} KB`,
+                  })}
                 </span>
                 <Button
                   variant="secondary"
@@ -634,17 +666,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       })
                       if (dest) {
                         const result = await exportMetrics(dest)
-                        notifications.push({ level: 'success', title: '导出成功', message: `已导出 ${result.entryCount} 条度量数据`, actions: [], dismissible: true, autoHide: 3, context: 'toast' })
+                        notifications.push({ level: 'success', title: t('settings.general.exportSuccess'), message: t('settings.general.exportedCount', { count: result.entryCount }), actions: [], dismissible: true, autoHide: 3, context: 'toast' })
                       }
                     } catch (err) {
                       console.error('Failed to export metrics:', err)
-                      notifications.push({ level: 'error', title: '导出失败', message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
+                      notifications.push({ level: 'error', title: t('settings.general.exportFailed'), message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
                     } finally {
                       setMetricsLoading(false)
                     }
                   }}
                 >
-                  导出
+                  {t('common.export')}
                 </Button>
                 <Button
                   variant="secondary"
@@ -655,16 +687,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       await clearMetrics()
                       setMetricsCount(0)
                       setMetricsBytes(0)
-                      notifications.push({ level: 'success', title: '清理完成', message: '度量数据已清理', actions: [], dismissible: true, autoHide: 3, context: 'toast' })
+                      notifications.push({ level: 'success', title: t('settings.general.cleanupDone'), message: t('settings.general.metricsCleared'), actions: [], dismissible: true, autoHide: 3, context: 'toast' })
                     } catch (err) {
                       console.error('Failed to clear metrics:', err)
-                      notifications.push({ level: 'error', title: '清理失败', message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
+                      notifications.push({ level: 'error', title: t('settings.general.cleanupFailed'), message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
                     } finally {
                       setMetricsLoading(false)
                     }
                   }}
                 >
-                  清理
+                  {t('settings.general.cleanup')}
                 </Button>
               </div>
             </div>
@@ -672,7 +704,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
       )}
 
-    
+
       {mainTab === 'persona' && (
         <PersonaTab />
       )}

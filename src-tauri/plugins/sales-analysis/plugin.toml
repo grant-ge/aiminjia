@@ -33,4 +33,6 @@ token_budget = 8192
 category = "sales"
 icon = "📊"
 short_description = "销售趋势、转化漏斗、客户细分分析"
+short_description_en = "Sales performance, pipeline analysis, and revenue forecasting"
 trigger_text = "帮我分析销售数据"
+name_en = "Sales Data Analysis"

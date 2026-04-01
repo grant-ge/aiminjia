@@ -28,4 +28,6 @@ token_budget = 8192
 category = "legal"
 icon = "⚖️"
 short_description = "用工风险评估，劳动合规建议输出"
+short_description_en = "Labor law compliance audit and risk remediation recommendations"
 trigger_text = "帮我做劳动合规检查"
+name_en = "Labor Compliance Risk Check"

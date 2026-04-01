@@ -33,4 +33,6 @@ token_budget = 8192
 category = "sales"
 icon = "👥"
 short_description = "RFM 分层、生命周期、价值聚类分析"
+short_description_en = "Segment customers by behavior/value for targeted operations"
 trigger_text = "帮我做客户细分分析"
+name_en = "Customer Segmentation Analysis"

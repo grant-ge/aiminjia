@@ -33,4 +33,6 @@ token_budget = 8192
 category = "hr"
 icon = "💼"
 short_description = "内部结构分析 + 市场竞争力对比"
+short_description_en = "Market compensation benchmarking and pay positioning analysis"
 trigger_text = "帮我做薪酬市场对标分析"
+name_en = "Salary Benchmarking Analysis"

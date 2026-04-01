@@ -2,18 +2,25 @@
  * PersonaSelector — full-screen persona selection for first-time users.
  */
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { usePersonaStore } from '@/stores/personaStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
 import { Button } from '@/components/common/Button'
 import type { PersonaSummary } from '@/lib/tauri'
+
+function localized(zh: string, en: string, lang: string): string {
+  return lang === 'en-US' && en ? en : zh
+}
 
 interface PersonaSelectorProps {
   onComplete: () => void
 }
 
 export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
   const { personas, setActive } = usePersonaStore()
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
   const [selected, setSelected] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
@@ -40,13 +47,13 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
             className="mb-2 text-2xl font-bold"
             style={{ color: 'var(--color-text-primary)' }}
           >
-            欢迎使用 {productName}
+            {t('onboarding.welcome', { productName })}
           </h1>
           <p
             className="text-sm"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            选择一个角色开始,AI 会根据你的角色调整专业能力和记忆重点
+            {t('onboarding.selectPersona')}
           </p>
         </div>
 
@@ -68,13 +75,13 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
                   className="mb-1 text-sm font-semibold"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  {p.name}
+                  {t(`personas.${p.id}`, p.name)}
                 </div>
                 <div
                   className="text-xs leading-relaxed"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
-                  {p.description}
+                  {localized(p.description, p.descriptionEn, lang)}
                 </div>
               </div>
             </button>
@@ -87,7 +94,7 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
             disabled={!selected || confirming}
             size="md"
           >
-            {confirming ? '正在设置...' : '开始使用'}
+            {confirming ? t('onboarding.settingUp') : t('onboarding.startUsing')}
           </Button>
         </div>
 
@@ -95,7 +102,7 @@ export function PersonaSelector({ onComplete }: PersonaSelectorProps) {
           className="mt-4 text-center text-xs"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          你可以随时在设置中切换或自定义角色
+          {t('onboarding.canSwitchLater')}
         </p>
       </div>
     </div>

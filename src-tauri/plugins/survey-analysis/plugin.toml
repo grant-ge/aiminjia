@@ -33,4 +33,6 @@ token_budget = 8192
 category = "general"
 icon = "📋"
 short_description = "问卷统计、交叉分析、情感分析"
+short_description_en = "Analyze survey data for insights, patterns, and recommendations"
 trigger_text = "帮我分析问卷数据"
+name_en = "Survey Research Analysis"

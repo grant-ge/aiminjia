@@ -32,4 +32,6 @@ token_budget = 8192
 category = "hr"
 icon = "🎯"
 short_description = "绩效 × 潜力交叉定位，人才结构全景分布"
+short_description_en = "Plot talent on performance/potential matrix for development planning"
 trigger_text = "帮我做人才盘点"
+name_en = "Talent 9-Box Assessment"

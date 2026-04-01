@@ -36,6 +36,8 @@ pub struct DeclarativeSkill {
     short_desc: String,
     trigger: String,
     category: String,
+    name_en: String,
+    short_desc_en: String,
 }
 
 struct StepToolConfig {
@@ -111,6 +113,8 @@ impl DeclarativeSkill {
         let short_desc = display.and_then(|d| d.short_description.clone()).unwrap_or_default();
         let trigger = display.and_then(|d| d.trigger_text.clone()).unwrap_or_default();
         let category = display.and_then(|d| d.category.clone()).unwrap_or_else(|| "general".to_string());
+        let name_en = display.and_then(|d| d.name_en.clone()).unwrap_or_default();
+        let short_desc_en = display.and_then(|d| d.short_description_en.clone()).unwrap_or_default();
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
@@ -185,6 +189,8 @@ impl DeclarativeSkill {
             short_desc,
             trigger,
             category,
+            name_en,
+            short_desc_en,
         })
     }
 
@@ -225,6 +231,8 @@ impl Skill for DeclarativeSkill {
     fn short_description(&self) -> &str { &self.short_desc }
     fn trigger_text(&self) -> &str { &self.trigger }
     fn category(&self) -> &str { &self.category }
+    fn display_name_en(&self) -> &str { &self.name_en }
+    fn short_description_en(&self) -> &str { &self.short_desc_en }
 
     fn priority(&self) -> u32 { self.priority_val }
 

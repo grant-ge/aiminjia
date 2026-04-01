@@ -3,6 +3,8 @@
  * Based on tech-architecture.md §3.2
  */
 
+import type { AppLanguage } from '@/i18n'
+
 export type LlmProvider = 'deepseek-v3' | 'qwen-plus' | 'volcano' | 'openai' | 'claude' | 'custom'
 export type DataMaskingLevel = 'strict' | 'standard' | 'relaxed'
 
@@ -37,6 +39,9 @@ export interface Settings {
 
   // Onboarding
   personaOnboardingDone?: boolean
+
+  // Language
+  appLanguage?: AppLanguage
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -57,23 +62,24 @@ export const DEFAULT_SETTINGS: Settings = {
   cloudModel: '',
   cloudModelType: '',
   personaOnboardingDone: false,
+  appLanguage: 'zh-CN',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   'deepseek-v3': 'DeepSeek',
-  'qwen-plus': '通义千问',
-  'volcano': '火山引擎',
+  'qwen-plus': 'Qwen Plus',
+  'volcano': 'Volcano Engine',
   'openai': 'GPT-4o',
   'claude': 'Claude',
-  'custom': '自定义模型',
+  'custom': 'Custom Model',
 }
 
 /** Provider model capabilities — mirrors router::get_provider_capabilities in Rust */
 export const PROVIDER_CAPABILITIES: Record<LlmProvider, { modelsDesc: string; hasReasoning: boolean }> = {
-  'deepseek-v3': { modelsDesc: '默认: deepseek-chat | 推理: deepseek-reasoner', hasReasoning: true },
-  'qwen-plus': { modelsDesc: '默认: qwen-plus', hasReasoning: false },
-  'openai': { modelsDesc: '默认: GPT-4o', hasReasoning: false },
-  'claude': { modelsDesc: '默认: Claude Sonnet', hasReasoning: false },
-  'volcano': { modelsDesc: '默认: 字节跳动大模型', hasReasoning: false },
-  'custom': { modelsDesc: '自定义 OpenAI 兼容模型', hasReasoning: false },
+  'deepseek-v3': { modelsDesc: 'Default: deepseek-chat | Reasoning: deepseek-reasoner', hasReasoning: true },
+  'qwen-plus': { modelsDesc: 'Default: qwen-plus', hasReasoning: false },
+  'openai': { modelsDesc: 'Default: GPT-4o', hasReasoning: false },
+  'claude': { modelsDesc: 'Default: Claude Sonnet', hasReasoning: false },
+  'volcano': { modelsDesc: 'Default: ByteDance LLM', hasReasoning: false },
+  'custom': { modelsDesc: 'Custom OpenAI-compatible model', hasReasoning: false },
 }

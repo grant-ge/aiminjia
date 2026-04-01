@@ -3,6 +3,7 @@
  * Based on visual-prototype-zh.html .tbl-wrap styles.
  */
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { DataTable, TableCellValue } from '@/types/message'
 import { Badge } from '@/components/common/Badge'
 
@@ -20,6 +21,7 @@ const CELL_COLOR_MAP: Record<string, string> = {
 
 export function RichDataTable({ table }: RichDataTableProps) {
   const [copied, setCopied] = useState(false)
+  const { t } = useTranslation()
 
   /** Copy table data as TSV (tab-separated values) for pasting into Excel. */
   const handleCopy = useCallback(() => {
@@ -61,7 +63,7 @@ export function RichDataTable({ table }: RichDataTableProps) {
             className="flex items-center gap-1 text-xs transition-colors"
             style={{ color: copied ? 'var(--color-semantic-green)' : 'var(--color-text-muted)' }}
           >
-            {copied ? '已复制' : '复制表格'}
+            {copied ? t('common.copied') : t('common.copyTable')}
           </button>
         </div>
       )}

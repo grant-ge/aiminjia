@@ -34,4 +34,6 @@ token_budget = 8192
 category = "finance"
 icon = "💹"
 short_description = "三大报表分析、杜邦分解、经营诊断"
+short_description_en = "Financial statement analysis, profitability, and trend analysis"
 trigger_text = "帮我分析财务数据"
+name_en = "Financial Data Analysis"

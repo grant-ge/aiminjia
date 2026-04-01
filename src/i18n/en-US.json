@@ -1,0 +1,368 @@
+{
+  "personas": {
+    "default": "General Assistant",
+    "hr-expert": "HR Expert",
+    "finance-analyst": "Finance Analyst",
+    "sales-manager": "Sales Manager",
+    "ops-specialist": "Operations Specialist",
+    "legal-advisor": "Legal Advisor",
+    "data-analyst": "Data Analyst",
+    "project-manager": "Project Manager"
+  },
+  "skills": {
+    "biz-proposal": "Business Proposal Writing",
+    "biz-writing": "Business Document Writing",
+    "budget-analysis": "Budget Execution Analysis",
+    "comp-analysis-v2": "Compensation Equity Analysis",
+    "contract-review": "Contract Risk Review",
+    "customer-segmentation": "Customer Segmentation Analysis",
+    "engagement-survey": "Employee Engagement Analysis",
+    "finance-analysis": "Financial Data Analysis",
+    "labor-compliance": "Labor Compliance Risk Check",
+    "okr-coach": "OKR Goal Coaching",
+    "ops-analysis": "Operations Data Analysis",
+    "org-diagnosis": "Organizational Diagnosis Report",
+    "pa-maturity": "HR Analytics Maturity Assessment",
+    "perf-system-design": "Performance System Design",
+    "policy-compliance-audit": "Policy Compliance Audit",
+    "recruitment-funnel": "Recruitment Funnel Analysis",
+    "salary-benchmarking": "Salary Benchmarking Analysis",
+    "sales-analysis": "Sales Data Analysis",
+    "survey-analysis": "Survey Research Analysis",
+    "talent-9box": "Talent 9-Box Assessment"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "export": "Export",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "show": "Show",
+    "hide": "Hide",
+    "copied": "Copied",
+    "copy": "Copy",
+    "copyTable": "Copy Table",
+    "copyFailed": "Copy failed",
+    "close": "Close",
+    "loading": "Loading...",
+    "unknownError": "Unknown error"
+  },
+
+  "sidebar": {
+    "newChat": "New Chat",
+    "noConversations": "No conversations yet",
+    "deleteConversation": "Delete conversation",
+    "selectPersona": "Select persona",
+    "settings": "Settings",
+    "switchToLocal": "Switch to local mode",
+    "switchToCloud": "Switch to cloud mode",
+    "cloud": "☁ Cloud",
+    "local": "⚡ Local",
+    "maxConcurrent": "Max concurrent chats reached, please wait",
+    "timeGroup": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "thisWeek": "This Week",
+      "earlier": "Earlier"
+    }
+  },
+
+  "topBar": {
+    "exportConversation": "Export conversation",
+    "export": "Export",
+    "exportSuccess": "Export successful",
+    "saved": "saved",
+    "exportFailed": "Export failed",
+    "exportAsPdf": "Export as PDF",
+    "exportAsHtml": "Export as HTML"
+  },
+
+  "inputBar": {
+    "uploadFile": "Upload file (Excel/Word/PDF)",
+    "placeholderWithFile": "Add a note (optional), then press Enter to send...",
+    "placeholder": "Ask anything, or upload a file for analysis...",
+    "analyzeFile": "Please analyze this file"
+  },
+
+  "chatArea": {
+    "fileNotFound": "File not found",
+    "cannotOpenFile": "Cannot open file \"{{fileName}}\". It may not have been generated yet or has been moved."
+  },
+
+  "welcome": {
+    "greeting": "Hi! I'm {{productName}}",
+    "greetingWithPersona": "Hi! I'm {{productName}} · {{personaName}}",
+    "defaultSubtitle": "Your intelligent work assistant",
+    "generalMode": "General Mode",
+    "generalModeDesc": "Chat directly without specialized skills",
+    "askAnything": "Or ask me any work-related question",
+    "hello": "Hello"
+  },
+
+  "aiBubble": {
+    "sendFailed": "Send failed",
+    "sendFailedDesc": "Failed to send reply. Please try again.",
+    "openFileFailed": "Failed to open file",
+    "openFileFailedDesc": "Cannot open file. It may have been moved or deleted.",
+    "revealFileFailed": "Failed to locate file",
+    "revealFileFailedDesc": "Cannot show file in file manager.",
+    "selectAction": "[Select]",
+    "confirmAction": "[Confirm]",
+    "rejectAction": "[Reject]"
+  },
+
+  "userBubble": {
+    "me": "Me"
+  },
+
+  "streaming": {
+    "tools": {
+      "execute_python": "Analyzing data...",
+      "load_file": "Loading file...",
+      "save_analysis_note": "Saving analysis notes...",
+      "update_progress": "Updating analysis progress...",
+      "web_search": "Searching for information...",
+      "generate_report": "Generating report...",
+      "export_data": "Exporting data...",
+      "hypothesis_test": "Running statistical tests...",
+      "detect_anomalies": "Detecting anomalies...",
+      "generate_chart": "Generating chart..."
+    },
+    "phases": {
+      "think": "Thinking...",
+      "act": "Executing...",
+      "observe": "Summarizing..."
+    }
+  },
+
+  "messageList": {
+    "steps": {
+      "1": "Data Cleaning & Understanding",
+      "2": "Job Structure",
+      "3": "Grade Framework",
+      "4": "Equity Diagnosis & Root Cause Analysis",
+      "5": "Action Plan & Executive Materials"
+    }
+  },
+
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "account": "Account",
+      "models": "Models",
+      "search": "Search",
+      "general": "General",
+      "persona": "Persona"
+    },
+    "saving": "Saving...",
+    "saveSettings": "Save Settings",
+    "saveFailed": "Save failed",
+    "saveFailedDesc": "An unknown error occurred while saving settings",
+    "switchedModel": "Default model switched",
+    "switchFailed": "Switch failed",
+    "switchFailedDesc": "An error occurred while switching the default model",
+    "currentDefault": "Current default model",
+    "validating": "Validating...",
+    "testConnection": "Test Connection",
+    "validateKey": "Validate Key",
+    "setAsDefault": "Set as Default",
+    "keyValid": "Key is valid",
+    "keyInvalid": "Key is invalid or validation failed",
+    "enterApiKey": "Enter the API Key for {{provider}}",
+    "apiKeyOptional": "API Key (optional, leave empty for local models)",
+
+    "customModel": {
+      "endpointLabel": "API Endpoint",
+      "endpointDesc": "OpenAI-compatible API URL (required, enter up to /v1, the system will append /chat/completions)",
+      "modelNameLabel": "Model Name",
+      "modelNameDesc": "Model ID to use (required)",
+      "examplesTitle": "Common Service Examples",
+      "ollamaLocal": "Ollama (Local)",
+      "lmStudioLocal": "LM Studio (Local)",
+      "openRouter": "OpenRouter",
+      "siliconFlow": "SiliconFlow",
+      "otherCompatible": "Other OpenAI-compatible services",
+      "otherDesc": "Enter the API URL (up to /v1), model name and Key provided by the service",
+      "endpoint": "Endpoint",
+      "modelLike": "model e.g.",
+      "keyEmpty": "leave Key empty"
+    },
+
+    "availableModels": "Available models",
+    "reasoningRouting": "Supports reasoning model auto-routing",
+
+    "search": {
+      "tavilyLabel": "Tavily Search API Key",
+      "tavilyDesc": "For web search (optional, backup)",
+      "bochaLabel": "Bocha Search API Key",
+      "bochaDesc": "For web search of market compensation data (recommended)",
+      "bochaGetKey": "Get Key →"
+    },
+
+    "general": {
+      "language": "Language",
+      "languageDesc": "Select the display language for the interface",
+      "workspace": "Workspace",
+      "workspaceDesc": "Agent stores analysis files, reports, and temp files in this directory",
+      "selectDir": "Browse",
+      "openDir": "Open",
+      "systemInfo": "System Info",
+      "logs": "Logs:",
+      "openLogs": "Open Logs Folder",
+      "metrics": "Metrics:",
+      "metricsCount": "{{count}} entries ({{size}})",
+      "exportSuccess": "Export successful",
+      "exportedCount": "Exported {{count}} metric entries",
+      "exportFailed": "Export failed",
+      "cleanupDone": "Cleanup complete",
+      "metricsCleared": "Metrics data cleared",
+      "cleanupFailed": "Cleanup failed",
+      "cleanup": "Clear"
+    }
+  },
+
+  "login": {
+    "loginSuccess": "Login successful",
+    "welcome": "Welcome, {{name}}",
+    "loggedOut": "Logged out",
+    "switchedToLocal": "Switched to local mode",
+    "fillAllFields": "Please enter username and password",
+    "newPasswordMinLength": "New password must be at least 8 characters",
+    "passwordMismatch": "New passwords do not match",
+    "passwordChanged": "Password changed successfully",
+    "pleaseRelogin": "Please log in again",
+    "logout": "Log Out",
+    "changePassword": "Change Password",
+    "cancelChangePassword": "Cancel Password Change",
+    "oldPassword": "Current password",
+    "newPassword": "New password (at least 8 characters)",
+    "confirmNewPassword": "Confirm new password",
+    "changing": "Changing...",
+    "confirmChange": "Confirm Change",
+    "modelMode": "Model Mode",
+    "cloudModel": "Cloud Model",
+    "localModel": "Local Model",
+    "cloudEnabled": "Use enterprise cloud model, no API Key needed",
+    "localEnabled": "Use locally configured API Key to call models",
+    "cloudEnabledInfo": "Cloud mode enabled. AI and search requests are processed server-side.",
+    "localEnabledInfo": "Local mode. Using your configured API Key to call models directly.",
+    "loginTitle": "Enterprise Login",
+    "loginDesc": "Log in to use cloud AI models and web search without configuring API Keys.",
+    "adminAssigned": "Enterprise accounts are assigned by administrators. ",
+    "registerEnterprise": "Register Enterprise →",
+    "usernamePlaceholder": "username@orgcode e.g. zhangsan@001",
+    "passwordPlaceholder": "Password",
+    "loggingIn": "Logging in...",
+    "loginButton": "Log In"
+  },
+
+  "persona": {
+    "description": "Select or customize your work persona. AI will adjust its expertise and memory focus based on your persona.",
+    "import": "Import Persona",
+    "switched": "Persona switched",
+    "currentPersona": "Current persona: {{name}}",
+    "switchFailed": "Switch failed",
+    "saveSuccess": "Save successful",
+    "personaUpdated": "Persona updated",
+    "saveFailed": "Save failed",
+    "cannotDelete": "Cannot delete",
+    "builtinCannotDelete": "Built-in personas cannot be deleted",
+    "confirmDelete": "Are you sure you want to delete persona \"{{name}}\"?",
+    "deleted": "Deleted",
+    "personaDeleted": "Persona \"{{name}}\" has been deleted",
+    "deleteFailed": "Delete failed",
+    "featureInDev": "Coming Soon",
+    "exportComingSoon": "Export feature coming soon",
+    "importComingSoon": "Import feature coming soon",
+    "current": "Active",
+    "setAsCurrent": "Set as Active",
+    "editPersona": "Edit Persona",
+    "name": "Name",
+    "icon": "Icon (emoji)",
+    "descriptionLabel": "Description",
+    "identity": "Persona Identity (system prompt injection)"
+  },
+
+  "onboarding": {
+    "welcome": "Welcome to {{productName}}",
+    "selectPersona": "Choose a persona to get started. AI will adjust its expertise based on your role.",
+    "settingUp": "Setting up...",
+    "startUsing": "Get Started",
+    "canSwitchLater": "You can switch or customize your persona anytime in Settings"
+  },
+
+  "updater": {
+    "newVersionFound": "New version v{{version}} available. Update now?\n\n",
+    "downloading": "Downloading update",
+    "downloadingDesc": "Downloading v{{version}}, please wait...",
+    "downloadingProgress": "Downloading v{{version}}, {{pct}}%...",
+    "downloadComplete": "Update downloaded",
+    "restarting": "Restarting app...",
+    "downloadFailed": "Update download failed",
+    "downloadFailedDesc": "Please try again later or download the new version manually"
+  },
+
+  "auth": {
+    "expired": "Session expired",
+    "expiredDesc": "Cloud service is temporarily unavailable. You can log in again or switch to local mode in Settings."
+  },
+
+  "streaming": {
+    "tools": {
+      "execute_python": "Analyzing data...",
+      "load_file": "Loading file...",
+      "save_analysis_note": "Saving analysis notes...",
+      "update_progress": "Updating analysis progress...",
+      "web_search": "Searching for information...",
+      "generate_report": "Generating report...",
+      "export_data": "Exporting data...",
+      "hypothesis_test": "Running statistical tests...",
+      "detect_anomalies": "Detecting anomalies...",
+      "generate_chart": "Generating chart..."
+    },
+    "phases": {
+      "think": "Thinking...",
+      "act": "Executing...",
+      "observe": "Summarizing..."
+    }
+  },
+  "errors": {
+    "streamingError": "Response error",
+    "partialSaved": "\n\nPartial response has been saved.",
+    "unknownRetry": "Unknown error, please try again.",
+    "streamTimeout": "Response timeout",
+    "streamTimeoutDesc": "No response for {{seconds}} seconds, stopped automatically. Please check your network and try again.",
+    "pleaseWait": "Please wait",
+    "chatBusy": "This conversation is being processed. Please wait for it to finish before sending.",
+    "maxConcurrent": "Up to {{max}} conversations can be processed simultaneously. Please wait for others to finish.",
+    "sendFailed": "Send failed",
+    "sendFailedDesc": "Failed to send message. Please check your network and settings."
+  },
+  "format": {
+    "justNow": "Just now",
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}} hr ago",
+    "yesterday": "Yesterday",
+    "daysAgo": "{{count}} days ago",
+    "monthsAgo": "{{count}} months ago",
+    "yearsAgo": "{{count}} years ago"
+  },
+
+  "providers": {
+    "deepseek-v3": "DeepSeek",
+    "qwen-plus": "Qwen Plus",
+    "volcano": "Volcano Engine",
+    "openai": "GPT-4o",
+    "claude": "Claude",
+    "custom": "Custom Model",
+    "capabilities": {
+      "deepseek-v3": "Default: deepseek-chat | Reasoning: deepseek-reasoner",
+      "qwen-plus": "Default: qwen-plus",
+      "openai": "Default: GPT-4o",
+      "claude": "Default: Claude Sonnet",
+      "volcano": "Default: ByteDance LLM",
+      "custom": "Custom OpenAI-compatible model"
+    }
+  }
+}

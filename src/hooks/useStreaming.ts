@@ -34,6 +34,7 @@
 import { useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import i18n from '@/i18n'
 import {
   onStreamingDelta,
   onStreamingDone,
@@ -186,12 +187,12 @@ export function useStreaming() {
       // Show longer auto-hide for timeout errors (user needs time to read)
       const autoHideSecs = errorType === 'chunk_timeout' || errorType === 'agent_timeout' ? 15 : 8
 
-      const suffix = partialContent ? '\n\n已保存部分回复内容。' : ''
+      const suffix = partialContent ? i18n.t('errors.partialSaved') : ''
 
       useNotificationStore.getState().push({
         level: 'error',
-        title: '响应异常',
-        message: (error ?? '未知错误，请重试。') + suffix,
+        title: i18n.t('errors.streamingError'),
+        message: (error ?? i18n.t('errors.unknownRetry')) + suffix,
         actions: [],
         dismissible: true,
         autoHide: autoHideSecs,
@@ -389,8 +390,8 @@ export function useStreaming() {
           // Show user-friendly notification
           useNotificationStore.getState().push({
             level: 'warning',
-            title: '响应超时',
-            message: `已超过 ${STALE_STREAM_TIMEOUT_MS / 1000} 秒无响应，已自动停止。请检查网络连接后重试。`,
+            title: i18n.t('errors.streamTimeout'),
+            message: i18n.t('errors.streamTimeoutDesc', { seconds: STALE_STREAM_TIMEOUT_MS / 1000 }),
             actions: [],
             dismissible: true,
             autoHide: 10,

@@ -6,17 +6,19 @@
 import type { Message } from '@/types/message'
 import { Avatar } from '@/components/common/Avatar'
 import { FileAttachmentChip } from './FileAttachmentChip'
+import { useTranslation } from 'react-i18next'
 
 interface UserBubbleProps {
   message: Message
 }
 
 export function UserBubble({ message }: UserBubbleProps) {
+  const { t } = useTranslation()
   const { content, sender } = message
   const hasFiles = content.files && content.files.length > 0
 
   // Display sender name: use sender.name if available, fallback to "我"
-  const displayName = sender?.name || '我'
+  const displayName = sender?.name || t('userBubble.me')
   const isLoggedIn = sender?.isLoggedIn ?? false
 
   return (

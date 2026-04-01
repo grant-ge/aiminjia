@@ -28,4 +28,6 @@ token_budget = 8192
 category = "general"
 icon = "🎯"
 short_description = "目标制定、KR 设计、对齐检查"
+short_description_en = "Guide OKR setting with SMART criteria and alignment check"
 trigger_text = "帮我制定 OKR"
+name_en = "OKR Goal Coaching"

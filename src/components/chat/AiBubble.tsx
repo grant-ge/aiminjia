@@ -44,7 +44,8 @@ import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useCallback, useState } from 'react'
 import { markdownToHtml } from '@/lib/markdown'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useProductName } from '@/hooks/useProductName'
+import { useTranslation } from 'react-i18next'
 
 interface AiBubbleProps {
   message: Message
@@ -52,9 +53,10 @@ interface AiBubbleProps {
 }
 
 export function AiBubble({ message, isStreaming }: AiBubbleProps) {
+  const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
-  const productName = useBrandingStore((s) => s.productName)
+  const productName = useProductName()
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
   // historical empty messages or tool-call-only iterations)
@@ -66,8 +68,8 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
         console.error('[AiBubble] Failed to send user response:', err)
         useNotificationStore.getState().push({
           level: 'error',
-          title: '发送失败',
-          message: '未能发送回复，请重试。',
+          title: t('aiBubble.sendFailed'),
+          message: t('aiBubble.sendFailedDesc'),
           actions: [],
           dismissible: true,
           autoHide: 5,
@@ -85,8 +87,8 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
       console.error('[AiBubble] Failed to open file:', err)
       useNotificationStore.getState().push({
         level: 'error',
-        title: '打开文件失败',
-        message: '无法打开文件，文件可能已被移动或删除。',
+        title: t('aiBubble.openFileFailed'),
+        message: t('aiBubble.openFileFailedDesc'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -102,8 +104,8 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
       console.error('[AiBubble] Failed to reveal file:', err)
       useNotificationStore.getState().push({
         level: 'error',
-        title: '定位文件失败',
-        message: '无法在文件管理器中显示文件。',
+        title: t('aiBubble.revealFileFailed'),
+        message: t('aiBubble.revealFileFailedDesc'),
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -180,6 +182,7 @@ function ContentRenderer({
   onOpenFile: (fileId: string) => void
   onRevealFile: (fileId: string) => void
 }) {
+  const { t } = useTranslation()
   switch (field) {
     case 'text':
       return <TextRenderer text={value as string} />
@@ -225,7 +228,7 @@ function ContentRenderer({
               group={group}
               onSelect={(optionId) => {
                 const opt = group.options.find((o) => o.id === optionId)
-                if (opt) onUserResponse(`[选择] ${opt.title}`)
+                if (opt) onUserResponse(`${t('aiBubble.selectAction')} ${opt.title}`)
               }}
             />
           ))}
@@ -296,8 +299,8 @@ function ContentRenderer({
             <ConfirmBlock
               key={c.id}
               confirm={c}
-              onConfirm={(action) => onUserResponse(`[确认] ${action}`)}
-              onReject={(action) => onUserResponse(`[拒绝] ${action}`)}
+              onConfirm={(action) => onUserResponse(`${t('aiBubble.confirmAction')} ${action}`)}
+              onReject={(action) => onUserResponse(`${t('aiBubble.rejectAction')} ${action}`)}
             />
           ))}
         </>
@@ -310,6 +313,7 @@ function ContentRenderer({
 
 /** Copy button that appears on hover over the AI message body. */
 function CopyButton({ text }: { text?: string }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
@@ -332,7 +336,7 @@ function CopyButton({ text }: { text?: string }) {
         border: '1px solid var(--color-border)',
       }}
     >
-      {copied ? '已复制' : '复制'}
+      {copied ? t('common.copied') : t('common.copy')}
     </button>
   )
 }

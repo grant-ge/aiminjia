@@ -33,4 +33,6 @@ token_budget = 8192
 category = "finance"
 icon = "📊"
 short_description = "预实差异分析、达成率、偏差归因"
+short_description_en = "Budget variance analysis, rolling forecast, and cost control recommendations"
 trigger_text = "帮我分析预算执行情况"
+name_en = "Budget Execution Analysis"

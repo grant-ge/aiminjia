@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
+import { TitleBar } from '@/components/layout/TitleBar'
 import { ChatArea } from '@/components/layout/ChatArea'
 import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
@@ -10,7 +12,7 @@ import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo, getBranding } from '@/lib/tauri'
+import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -23,6 +25,7 @@ import { useBrandingStore } from '@/stores/brandingStore'
 function App() {
   useStreaming()
   useUpdater()
+  const { t, i18n } = useTranslation()
 
   const { loadConversations } = useChat()
 
@@ -34,6 +37,10 @@ function App() {
       .then((saved) => {
         if (!saved.personaOnboardingDone) {
           setShowPersonaSelector(true)
+        }
+        // Sync persisted language preference to i18next
+        if (saved.appLanguage && saved.appLanguage !== i18n.language) {
+          i18n.changeLanguage(saved.appLanguage)
         }
       })
       .catch((err) => console.error('Failed to check onboarding:', err))
@@ -69,15 +76,7 @@ function App() {
       .catch((err) => console.error('Failed to load persona:', err))
   }, [])
 
-  // Restore branding from local cache FIRST (instant, no network)
-  // Then getCloudAuth below will refresh with latest from server
-  useEffect(() => {
-    getBranding()
-      .then((branding) => useBrandingStore.getState().applyBranding(branding))
-      .catch(() => {})
-  }, [])
-
-  // Restore cloud auth state on startup
+  // Restore cloud auth state + branding on startup (single authoritative source)
   useEffect(() => {
     getCloudAuth()
       .then(async (info) => {
@@ -121,8 +120,8 @@ function App() {
       // Keep useCloud unchanged — user must explicitly switch
       useNotificationStore.getState().push({
         level: 'warning',
-        title: '登录已过期',
-        message: '云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。',
+        title: t('auth.expired'),
+        message: t('auth.expiredDesc'),
         actions: [],
         dismissible: true,
         autoHide: 8,
@@ -170,18 +169,21 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
-    <>
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <TopBar />
-        <div className="relative flex flex-1 overflow-hidden">
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <ChatArea />
-            <InputBar />
+    <div className="flex h-screen w-full flex-col">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <TopBar />
+          <div className="relative flex flex-1 overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <ChatArea />
+              <InputBar />
+            </div>
+            <BrowserPanel />
           </div>
-          <BrowserPanel />
-        </div>
-      </main>
+        </main>
+      </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
     
@@ -189,7 +191,7 @@ function App() {
         <PersonaSelector onComplete={handlePersonaOnboardingComplete} />
       )}
 
-    </>
+    </div>
   )
 }
 

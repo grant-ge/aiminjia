@@ -1,14 +1,21 @@
+import i18n from '@/i18n'
 /**
  * brandingStore — runtime brand customization from tenant config.
  *
- * From 3 base colors (accent, primary, bg) + sidebar bg, derives the full
- * set of ~30 CSS variables that globals.css defines. This ensures theme
- * changes are visually obvious across every UI element.
+ * Colors are set by tenant admin via lotus portal.
+ * Desktop client receives colors on login and applies via CSS custom properties.
+ *
+ * Architecture:
+ * - globals.css :root {} defines default color values
+ * - applyBranding() overrides them via document.documentElement.style.setProperty()
+ * - reset() clears overrides via removeProperty(), falling back to :root defaults
  */
 import { create } from 'zustand'
+import { lighten, darken, rgba, isDarkColor } from '@/lib/themeUtils'
 
-const DEFAULTS = {
+export const DEFAULTS = {
   productName: 'AI小家',
+  productNameEn: 'AIjia',
   logoUrl: '/app-icon.png',
   accentColor: '#D4A843',
   primaryColor: '#1D1D1F',
@@ -26,6 +33,7 @@ const FONT_MAP: Record<string, string> = {
 
 interface BrandingState {
   productName: string
+  productNameEn: string
   logoUrl: string
   accentColor: string
   primaryColor: string
@@ -34,159 +42,61 @@ interface BrandingState {
   fontFamily: string
   isCustom: boolean
 
-  applyBranding(tenant: { productName?: string; logoUrl?: string; accentColor?: string; primaryColor?: string; bgColor?: string; sidebarBgColor?: string; fontFamily?: string } | null): void
+  applyBranding(tenant: {
+    productName?: string
+    logoUrl?: string
+    accentColor?: string
+    primaryColor?: string
+    bgColor?: string
+    sidebarBgColor?: string
+    fontFamily?: string
+  } | null): void
   reset(): void
 }
 
-// --- Color utilities ---
+// --- CSS variable helpers (inline style on :root, guaranteed to override :root {} rules) ---
 
-function hexToRgb(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return [r, g, b]
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
-  return `#${clamp(r).toString(16).padStart(2, '0')}${clamp(g).toString(16).padStart(2, '0')}${clamp(b).toString(16).padStart(2, '0')}`
-}
-
-/** Mix color towards white (factor 0-1) */
-function lighten(hex: string, factor: number): string {
-  const [r, g, b] = hexToRgb(hex)
-  return rgbToHex(r + (255 - r) * factor, g + (255 - g) * factor, b + (255 - b) * factor)
-}
-
-/** Mix color towards black (factor 0-1) */
-function darken(hex: string, factor: number): string {
-  const [r, g, b] = hexToRgb(hex)
-  return rgbToHex(r * (1 - factor), g * (1 - factor), b * (1 - factor))
-}
-
-/** Generate rgba string from hex + alpha */
-function rgba(hex: string, alpha: number): string {
-  const [r, g, b] = hexToRgb(hex)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
-/** Determine if a color is dark (for choosing text-on-color) */
-function isDark(hex: string): boolean {
-  const [r, g, b] = hexToRgb(hex)
-  return (r * 0.299 + g * 0.587 + b * 0.114) < 128
-}
-
-/** Mix two hex colors */
-function mixColors(hex1: string, hex2: string, weight: number): string {
-  const [r1, g1, b1] = hexToRgb(hex1)
-  const [r2, g2, b2] = hexToRgb(hex2)
-  return rgbToHex(
-    r1 * weight + r2 * (1 - weight),
-    g1 * weight + g2 * (1 - weight),
-    b1 * weight + b2 * (1 - weight),
-  )
-}
-
-// --- CSS injection ---
-
-function setCSSVar(name: string, value: string) {
+function setVar(name: string, value: string) {
   document.documentElement.style.setProperty(name, value)
 }
 
-function removeCSSVar(name: string) {
+function removeVar(name: string) {
   document.documentElement.style.removeProperty(name)
 }
 
-/** Derive full accent palette from a single accent color */
+// --- Palette derivation ---
+
 function deriveAccentPalette(accent: string) {
-  setCSSVar('--color-accent', accent)
-  setCSSVar('--color-accent-hover', darken(accent, 0.1))
-  setCSSVar('--color-accent-active', darken(accent, 0.2))
-  setCSSVar('--color-accent-light', lighten(accent, 0.4))
-  // Full shade scale (50-700)
-  setCSSVar('--color-accent-50', lighten(accent, 0.9))
-  setCSSVar('--color-accent-100', lighten(accent, 0.75))
-  setCSSVar('--color-accent-200', lighten(accent, 0.55))
-  setCSSVar('--color-accent-300', lighten(accent, 0.35))
-  setCSSVar('--color-accent-400', accent)
-  setCSSVar('--color-accent-500', darken(accent, 0.1))
-  setCSSVar('--color-accent-600', darken(accent, 0.2))
-  setCSSVar('--color-accent-700', darken(accent, 0.35))
-  // Alpha variants
-  setCSSVar('--color-accent-subtle', rgba(accent, 0.12))
-  setCSSVar('--color-accent-muted', rgba(accent, 0.25))
-  setCSSVar('--color-accent-bg-light', rgba(accent, 0.04))
-  setCSSVar('--color-accent-border', rgba(accent, 0.25))
-  // Text on accent
-  setCSSVar('--color-text-on-accent', isDark(accent) ? '#FFFFFF' : '#1A1A1A')
+  setVar('--color-accent', accent)
+  setVar('--color-accent-hover', darken(accent, 0.1))
+  setVar('--color-accent-active', darken(accent, 0.2))
+  setVar('--color-accent-light', lighten(accent, 0.4))
+  setVar('--color-accent-50', lighten(accent, 0.9))
+  setVar('--color-accent-100', lighten(accent, 0.75))
+  setVar('--color-accent-200', lighten(accent, 0.55))
+  setVar('--color-accent-300', lighten(accent, 0.35))
+  setVar('--color-accent-400', accent)
+  setVar('--color-accent-500', darken(accent, 0.1))
+  setVar('--color-accent-600', darken(accent, 0.2))
+  setVar('--color-accent-700', darken(accent, 0.35))
+  setVar('--color-accent-subtle', rgba(accent, 0.12))
+  setVar('--color-accent-muted', rgba(accent, 0.25))
+  setVar('--color-accent-bg-light', rgba(accent, 0.04))
+  setVar('--color-accent-border', rgba(accent, 0.25))
+  setVar('--color-text-on-accent', isDarkColor(accent) ? '#FFFFFF' : '#1A1A1A')
 }
 
-/** Derive full primary palette from a single primary color */
 function derivePrimaryPalette(primary: string) {
-  setCSSVar('--color-primary', primary)
-  setCSSVar('--color-primary-hover', lighten(primary, 0.15))
-  setCSSVar('--color-primary-active', darken(primary, 0.1))
-  setCSSVar('--color-text-primary', primary)
-  setCSSVar('--color-text-on-primary', isDark(primary) ? '#FFFFFF' : '#1A1A1A')
-  // Alpha variants
-  setCSSVar('--color-primary-subtle', rgba(primary, 0.08))
-  setCSSVar('--color-primary-muted', rgba(primary, 0.15))
-  // Derived text shades
-  setCSSVar('--color-text-secondary', lighten(primary, 0.3))
-  setCSSVar('--color-text-muted', lighten(primary, 0.5))
-  setCSSVar('--color-text-disabled', lighten(primary, 0.7))
+  const dark = isDarkColor(primary)
+  setVar('--color-primary', primary)
+  setVar('--color-primary-hover', dark ? lighten(primary, 0.15) : darken(primary, 0.1))
+  setVar('--color-primary-active', dark ? lighten(primary, 0.25) : darken(primary, 0.2))
+  setVar('--color-text-on-primary', dark ? '#FFFFFF' : '#1A1A1A')
+  setVar('--color-primary-subtle', rgba(primary, 0.08))
+  setVar('--color-primary-muted', rgba(primary, 0.15))
 }
 
-/** Derive background palette from main bg + sidebar bg */
-function deriveBgPalette(bg: string, sidebarBg: string) {
-  setCSSVar('--color-bg-main', bg)
-  setCSSVar('--color-bg-sidebar', sidebarBg)
-  setCSSVar('--color-bg-sidebar-hover', darken(sidebarBg, 0.04))
-
-  // Determine if this is a dark theme
-  const dark = isDark(bg)
-
-  if (dark) {
-    // Dark theme: elevated surfaces are lighter than base
-    setCSSVar('--color-bg-base', darken(bg, 0.1))
-    setCSSVar('--color-bg-elevated', lighten(bg, 0.08))
-    setCSSVar('--color-bg-card', lighten(bg, 0.06))
-    setCSSVar('--color-bg-card-hover', lighten(bg, 0.1))
-    setCSSVar('--color-bg-input', lighten(bg, 0.08))
-    setCSSVar('--color-bg-msg-user', lighten(bg, 0.1))
-    setCSSVar('--color-bg-code', lighten(bg, 0.06))
-    setCSSVar('--color-bg-code-header', rgba('#FFFFFF', 0.04))
-    setCSSVar('--color-bg-neutral', rgba('#AAAAAA', 0.15))
-    setCSSVar('--color-bg-neutral-subtle', rgba('#AAAAAA', 0.1))
-    // Dark borders
-    setCSSVar('--color-border', rgba('#FFFFFF', 0.12))
-    setCSSVar('--color-border-light', rgba('#FFFFFF', 0.08))
-    setCSSVar('--color-border-subtle', rgba('#FFFFFF', 0.06))
-    // Code text
-    setCSSVar('--color-text-code', '#E0E0E0')
-  } else {
-    // Light theme: derive from bg
-    setCSSVar('--color-bg-base', darken(bg, 0.03))
-    setCSSVar('--color-bg-elevated', '#FFFFFF')
-    setCSSVar('--color-bg-card', '#FFFFFF')
-    setCSSVar('--color-bg-card-hover', mixColors(bg, sidebarBg, 0.5))
-    setCSSVar('--color-bg-input', '#FFFFFF')
-    setCSSVar('--color-bg-msg-user', darken(bg, 0.03))
-    setCSSVar('--color-bg-code', darken(bg, 0.02))
-    setCSSVar('--color-bg-code-header', rgba('#000000', 0.02))
-    setCSSVar('--color-bg-neutral', rgba('#A8A8A8', 0.12))
-    setCSSVar('--color-bg-neutral-subtle', rgba('#A8A8A8', 0.1))
-    // Light borders
-    const borderBase = darken(bg, 0.1)
-    setCSSVar('--color-border', borderBase)
-    setCSSVar('--color-border-light', darken(bg, 0.15))
-    setCSSVar('--color-border-subtle', darken(bg, 0.05))
-    // Code text
-    setCSSVar('--color-text-code', '#383838')
-  }
-}
-
-// --- All CSS vars that we override (for reset) ---
+// All CSS vars that get overridden (for reset)
 const ALL_CSS_VARS = [
   // Accent
   '--color-accent', '--color-accent-hover', '--color-accent-active', '--color-accent-light',
@@ -196,18 +106,9 @@ const ALL_CSS_VARS = [
   '--color-text-on-accent',
   // Primary
   '--color-primary', '--color-primary-hover', '--color-primary-active',
-  '--color-text-primary', '--color-text-on-primary',
-  '--color-primary-subtle', '--color-primary-muted',
-  '--color-text-secondary', '--color-text-muted', '--color-text-disabled',
-  // Background
-  '--color-bg-main', '--color-bg-sidebar', '--color-bg-sidebar-hover',
-  '--color-bg-base', '--color-bg-elevated', '--color-bg-card', '--color-bg-card-hover',
-  '--color-bg-input', '--color-bg-msg-user', '--color-bg-code', '--color-bg-code-header',
-  '--color-bg-neutral', '--color-bg-neutral-subtle',
-  // Border
-  '--color-border', '--color-border-light', '--color-border-subtle',
-  // Code
-  '--color-text-code',
+  '--color-text-on-primary', '--color-primary-subtle', '--color-primary-muted',
+  // Background (subtle tint)
+  '--color-bg-main', '--color-bg-sidebar',
   // Font
   '--font-sans',
 ]
@@ -228,10 +129,11 @@ function resolveLogoUrl(raw: string): string {
 }
 
 function setWindowTitle(title: string) {
-  const fullTitle = `${title} — 智能工作助手`
+  const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
+  // Set window title to empty string to avoid duplicate text in overlay titlebar
   import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
-    getCurrentWebviewWindow().setTitle(fullTitle).catch(() => {})
+    getCurrentWebviewWindow().setTitle(' ').catch(() => {})
   }).catch(() => {})
 }
 
@@ -244,25 +146,35 @@ export const useBrandingStore = create<BrandingState>((set) => ({
 
     const productName = hasValue(tenant.productName) ? tenant.productName : DEFAULTS.productName
     const logoUrl = hasValue(tenant.logoUrl) ? resolveLogoUrl(tenant.logoUrl) : DEFAULTS.logoUrl
+    const fontFamily = hasValue(tenant.fontFamily) ? tenant.fontFamily : DEFAULTS.fontFamily
     const accentColor = hasValue(tenant.accentColor) ? tenant.accentColor : DEFAULTS.accentColor
     const primaryColor = hasValue(tenant.primaryColor) ? tenant.primaryColor : DEFAULTS.primaryColor
     const bgColor = hasValue(tenant.bgColor) ? tenant.bgColor : DEFAULTS.bgColor
     const sidebarBgColor = hasValue(tenant.sidebarBgColor) ? tenant.sidebarBgColor : DEFAULTS.sidebarBgColor
-    const fontFamily = hasValue(tenant.fontFamily) ? tenant.fontFamily : DEFAULTS.fontFamily
 
-    const isCustom = hasValue(tenant.productName) || hasValue(tenant.logoUrl)
-      || hasValue(tenant.accentColor) || hasValue(tenant.primaryColor)
-      || hasValue(tenant.bgColor) || hasValue(tenant.sidebarBgColor)
-      || hasValue(tenant.fontFamily)
+    const isCustom = hasValue(tenant.accentColor) || hasValue(tenant.primaryColor)
+    const hasBgTint = hasValue(tenant.bgColor) || hasValue(tenant.sidebarBgColor)
 
-    // Derive full palettes from base colors
     if (isCustom) {
       deriveAccentPalette(accentColor)
       derivePrimaryPalette(primaryColor)
-      deriveBgPalette(bgColor, sidebarBgColor)
-      if (hasValue(tenant.fontFamily)) {
-        setCSSVar('--font-sans', FONT_MAP[fontFamily] || FONT_MAP[''])
-      }
+    } else {
+      ALL_CSS_VARS.forEach(removeVar)
+    }
+
+    // Apply bg tint independently — even if only bg colors are set without accent/primary
+    if (hasBgTint) {
+      if (hasValue(tenant.bgColor)) setVar('--color-bg-main', bgColor)
+      if (hasValue(tenant.sidebarBgColor)) setVar('--color-bg-sidebar', sidebarBgColor)
+    } else if (!isCustom) {
+      removeVar('--color-bg-main')
+      removeVar('--color-bg-sidebar')
+    }
+
+    if (hasValue(tenant.fontFamily)) {
+      setVar('--font-sans', FONT_MAP[fontFamily] || FONT_MAP[''])
+    } else {
+      removeVar('--font-sans')
     }
 
     setWindowTitle(productName)
@@ -270,7 +182,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
   },
 
   reset() {
-    ALL_CSS_VARS.forEach(removeCSSVar)
+    ALL_CSS_VARS.forEach(removeVar)
     setWindowTitle(DEFAULTS.productName)
     set({ ...DEFAULTS, isCustom: false })
   },
