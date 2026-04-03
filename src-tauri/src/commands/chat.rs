@@ -31,6 +31,14 @@ const AGENT_TIMEOUT_SECS: u64 = 900;
 /// If no data arrives within this window, the stream is considered stalled.
 const CHUNK_TIMEOUT_SECS: u64 = 90;
 
+/// Maximum number of stream-level retries within the agent loop.
+/// When a stream error or gateway error is retryable (5xx, timeout, connection),
+/// the current iteration is retried instead of aborting the entire agent loop.
+const MAX_STREAM_RETRIES: u32 = 2;
+
+/// Delay before retrying a failed stream (seconds).
+const STREAM_RETRY_DELAY_SECS: u64 = 2;
+
 /// Character threshold for triggering context compression in daily mode.
 /// When total message content exceeds this, older messages are summarized.
 /// ~24K chars ≈ 8K tokens (Chinese averages ~3 chars/token).
@@ -2047,6 +2055,9 @@ async fn agent_loop(
         );
     }
 
+    let mut stream_retry_count: u32 = 0;
+    let mut stream_needs_retry: bool = false;
+
     for iteration in 0..max_iterations {
         iteration_count = iteration + 1;
         phase.next_iteration(iteration);
@@ -2204,27 +2215,21 @@ async fn agent_loop(
                 r
             }
             Err(e) => {
-                log::error!("gateway.stream_message() FAILED at iteration {}/{}: {}", iteration_count, max_iterations, e);
-
-                // Classify error for user-friendly messaging
                 let err_str = e.to_string();
-                let lower_err = err_str.to_lowercase();
-                let user_error = if lower_err.contains("429") || lower_err.contains("rate limit") {
-                    "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
-                } else if lower_err.contains("401") || lower_err.contains("unauthorized") || lower_err.contains("authentication") {
-                    "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
-                } else if lower_err.contains("402") || lower_err.contains("insufficient") || lower_err.contains("quota") {
-                    "API 额度不足，请检查账户余额。".to_string()
-                } else if lower_err.contains("timeout") || lower_err.contains("timed out") {
-                    "AI 服务连接超时，请检查网络连接后重试。".to_string()
-                } else if lower_err.contains("connection") || lower_err.contains("network") {
-                    "网络连接异常，请检查网络后重试。".to_string()
-                } else if lower_err.contains("500") || lower_err.contains("502") || lower_err.contains("503") || lower_err.contains("504") {
-                    "AI 服务暂时不可用，请稍后重试。".to_string()
-                } else {
-                    format!("服务异常：{}。请重试。", truncate_for_ui(&err_str, 100))
-                };
+                log::error!("gateway.stream_message() FAILED at iteration {}/{}: {}", iteration_count, max_iterations, err_str);
 
+                // Retry transient errors within the iteration loop
+                if stream_retry_count < MAX_STREAM_RETRIES && is_retryable_stream_error(&err_str) {
+                    stream_retry_count += 1;
+                    log::warn!(
+                        "[AGENT] Gateway error is retryable, retrying in {}s (attempt {}/{}) conv={}",
+                        STREAM_RETRY_DELAY_SECS, stream_retry_count, MAX_STREAM_RETRIES, conversation_id
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
+                    continue;
+                }
+
+                let user_error = classify_llm_error(&err_str);
                 let _ = app.emit(
                     "streaming:error",
                     serde_json::json!({
@@ -2284,7 +2289,20 @@ async fn agent_loop(
                     log::error!("[AGENT] Chunk timeout ({}s) for conversation {} at iteration {}/{}",
                         chunk_timeout_secs, conversation_id, iteration_count, max_iterations);
 
-                    // Emit detailed timeout error with diagnostic info
+                    // Retry chunk timeout as a transient error
+                    if stream_retry_count < MAX_STREAM_RETRIES {
+                        stream_retry_count += 1;
+                        log::warn!(
+                            "[AGENT] Chunk timeout is retryable, will retry iteration (attempt {}/{}) conv={}",
+                            stream_retry_count, MAX_STREAM_RETRIES, conversation_id
+                        );
+                        iter_content.clear();
+                        tool_calls.clear();
+                        stream_needs_retry = true;
+                        break;
+                    }
+
+                    // All retries exhausted — emit error and exit
                     let error_msg = if is_analysis {
                         format!(
                             "响应超时（{}秒无数据）。可能原因：\n\
@@ -2425,24 +2443,23 @@ async fn agent_loop(
                         Some(StreamEvent::Error { error }) => {
                             log::error!("[AGENT] Stream error at iteration {}/{}: {}", iteration_count, max_iterations, error);
 
-                            // Classify error for user-friendly messaging
-                            let lower_err = error.to_lowercase();
-                            let user_error = if lower_err.contains("429") || lower_err.contains("rate limit") {
-                                "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
-                            } else if lower_err.contains("401") || lower_err.contains("unauthorized") || lower_err.contains("authentication") {
-                                "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
-                            } else if lower_err.contains("402") || lower_err.contains("insufficient") || lower_err.contains("quota") {
-                                "API 额度不足，请检查账户余额。".to_string()
-                            } else if lower_err.contains("timeout") || lower_err.contains("timed out") {
-                                "AI 服务连接超时，请检查网络连接后重试。".to_string()
-                            } else if lower_err.contains("connection") || lower_err.contains("network") {
-                                "网络连接异常，请检查网络后重试。".to_string()
-                            } else if lower_err.contains("500") || lower_err.contains("502") || lower_err.contains("503") || lower_err.contains("504") {
-                                "AI 服务暂时不可用，请稍后重试。".to_string()
-                            } else {
-                                format!("服务异常：{}。请重试。", truncate_for_ui(&error, 100))
-                            };
+                            // Retry transient stream errors (5xx, timeout, connection)
+                            if stream_retry_count < MAX_STREAM_RETRIES && is_retryable_stream_error(&error) {
+                                stream_retry_count += 1;
+                                log::warn!(
+                                    "[AGENT] Stream error is retryable, will retry iteration (attempt {}/{}) conv={}",
+                                    stream_retry_count, MAX_STREAM_RETRIES, conversation_id
+                                );
+                                // Discard partial content from this failed iteration
+                                // (full_content already has prior iterations' content — safe)
+                                iter_content.clear();
+                                tool_calls.clear();
+                                // Break inner stream loop to trigger retry via `continue` in outer loop
+                                stream_needs_retry = true;
+                                break;
+                            }
 
+                            let user_error = classify_llm_error(&error);
                             let _ = app.emit(
                                 "streaming:error",
                                 serde_json::json!({
@@ -2481,13 +2498,25 @@ async fn agent_loop(
             break;
         }
 
+        // If stream error triggered a retry, skip tool processing and re-enter the iteration loop.
+        if stream_needs_retry {
+            stream_needs_retry = false;
+            log::info!("[AGENT] Stream retry: re-entering iteration loop after {}s delay (retry {}/{})",
+                STREAM_RETRY_DELAY_SECS, stream_retry_count, MAX_STREAM_RETRIES);
+            tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
+            continue;
+        }
+
+        // Reset stream retry counter on successful iteration
+        stream_retry_count = 0;
+
         // If no tool calls, finish this step — unless ghost calls were dropped
         if tool_calls.is_empty() {
             // Ghost call recovery: if stop_reason=ToolUse but all tool calls were
             // dropped (empty args from SSE chunk loss), inject a retry prompt instead
             // of exiting. This prevents "模型未能生成回复" when the LLM tried to call
             // a tool but SSE transmission lost all argument data.
-            if stop_reason == StopReason::ToolUse && iter_content.is_empty() && is_analysis {
+            if stop_reason == StopReason::ToolUse && iter_content.is_empty() {
                 log::warn!(
                     "[AGENT] Ghost call recovery: stop_reason=ToolUse but 0 tool calls survived \
                      (SSE chunk loss dropped all args). Injecting retry prompt. conv={} step={:?} iter={}/{}",
@@ -3549,6 +3578,36 @@ fn truncate_for_ui(text: &str, max_len: usize) -> String {
         truncated.push_str("...");
         truncated
     }
+}
+
+/// Classify an LLM error into a user-friendly message.
+fn classify_llm_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+    if lower.contains("429") || lower.contains("rate limit") {
+        "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
+    } else if lower.contains("401") || lower.contains("unauthorized") || lower.contains("authentication") {
+        "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
+    } else if lower.contains("402") || lower.contains("insufficient") || lower.contains("quota") {
+        "API 额度不足，请检查账户余额。".to_string()
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "AI 服务连接超时，请检查网络连接后重试。".to_string()
+    } else if lower.contains("connection") || lower.contains("network") {
+        "网络连接异常，请检查网络后重试。".to_string()
+    } else if lower.contains("500") || lower.contains("502") || lower.contains("503") || lower.contains("504") {
+        "AI 服务暂时不可用，请稍后重试。".to_string()
+    } else {
+        format!("服务异常：{}。请重试。", truncate_for_ui(error, 100))
+    }
+}
+
+/// Check if an LLM error is retryable (transient server/network errors).
+fn is_retryable_stream_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("500") || lower.contains("502") || lower.contains("503") || lower.contains("504")
+        || lower.contains("timeout") || lower.contains("timed out")
+        || lower.contains("connection reset") || lower.contains("connection refused")
+        || lower.contains("broken pipe") || lower.contains("network")
+        || lower.contains("429") || lower.contains("rate limit")
 }
 
 /// Stop the streaming response for a specific conversation.

@@ -8,6 +8,27 @@
  */
 import i18n from '@/i18n'
 
+/**
+ * Strip HTML tags from LLM output, keeping only text content.
+ * Some models (deepseek, qwen) spontaneously output HTML tags like
+ * `<span style="...">text</span>` which get escaped by esc() and
+ * displayed as raw source code. This pre-processing removes the tags
+ * so the text renders cleanly as markdown.
+ */
+function stripLlmHtml(md: string): string {
+  // Only process if the input actually contains HTML-like tags
+  // (avoid unnecessary regex work on clean markdown)
+  if (!md.includes('<')) return md
+  // Strip <tag ...> and </tag> but keep inner text.
+  // Preserve markdown code blocks (``` ... ```) — don't strip inside them.
+  const parts = md.split(/(```[\s\S]*?```)/g)
+  for (let i = 0; i < parts.length; i += 2) {
+    // Even indices are outside code blocks
+    parts[i] = parts[i].replace(/<\/?[a-z][a-z0-9]*\b[^>]*>/gi, '')
+  }
+  return parts.join('')
+}
+
 /** Escape HTML entities to prevent XSS from LLM-generated content. */
 function esc(s: string): string {
   return s
@@ -201,7 +222,7 @@ export function markdownToHtml(md: string): string {
 }
 
 function _markdownToHtmlImpl(md: string): string {
-  const lines = md.split('\n')
+  const lines = stripLlmHtml(md).split('\n')
   const output: string[] = []
   let i = 0
 
