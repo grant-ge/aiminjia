@@ -1,0 +1,38 @@
+{
+  "levels": {
+    "L1_描述性": {
+      "name": "描述性分析",
+      "description": "能回答'发生了什么'",
+      "characteristics": ["Excel为主", "手动报表", "事后统计", "数据分散在多个系统"],
+      "typical_tools": ["Excel", "Google Sheets"],
+      "typical_headcount": "0专职（HR兼任）"
+    },
+    "L2_诊断性": {
+      "name": "诊断性分析",
+      "description": "能回答'为什么发生'",
+      "characteristics": ["BI工具可视化", "多维度交叉分析", "趋势对比", "基本仪表盘"],
+      "typical_tools": ["Power BI", "Tableau", "FineBI"],
+      "typical_headcount": "1-2人"
+    },
+    "L3_预测性": {
+      "name": "预测性分析",
+      "description": "能回答'将会发生什么'",
+      "characteristics": ["统计模型", "离职预测", "人才供给预测", "薪酬市场预测"],
+      "typical_tools": ["Python/R", "People Analytics平台"],
+      "typical_headcount": "3-5人"
+    },
+    "L4_处方性": {
+      "name": "处方性分析",
+      "description": "能回答'应该怎么做'",
+      "characteristics": ["AI辅助决策", "自动化推荐", "场景模拟", "实时干预"],
+      "typical_tools": ["ML平台", "AI Agent", "实时数据管道"],
+      "typical_headcount": "5-10人"
+    }
+  },
+  "dimensions": ["数据采集", "数据存储", "分析能力", "可视化", "决策支持", "数据文化"],
+  "industry_distribution": {
+    "中国企业整体": {"L1": 0.55, "L2": 0.30, "L3": 0.12, "L4": 0.03},
+    "互联网/科技": {"L1": 0.20, "L2": 0.40, "L3": 0.30, "L4": 0.10},
+    "制造业": {"L1": 0.65, "L2": 0.25, "L3": 0.08, "L4": 0.02}
+  }
+}

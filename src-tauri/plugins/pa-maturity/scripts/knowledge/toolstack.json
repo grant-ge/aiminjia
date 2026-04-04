@@ -1,0 +1,20 @@
+{
+  "L1_to_L2": {
+    "actions": ["统一HR数据源（选择一个HRIS系统）", "引入BI工具做常规报表自动化", "建立月度HR仪表盘"],
+    "tools": ["北森/i人事/薪人薪事（国内HRIS）", "Power BI/FineBI（BI工具）"],
+    "investment": "5-15万/年",
+    "timeline": "3-6个月"
+  },
+  "L2_to_L3": {
+    "actions": ["招聘People Analytics专岗", "建立预测模型（离职/招聘/薪酬）", "数据治理（质量+标准化）"],
+    "tools": ["Python + Jupyter", "Visier/One Model（PA平台）"],
+    "investment": "30-80万/年",
+    "timeline": "6-12个月"
+  },
+  "L3_to_L4": {
+    "actions": ["AI辅助决策系统", "实时数据管道", "嵌入式分析（在HR系统内提供洞察）"],
+    "tools": ["ML平台（如AWS SageMaker）", "实时ETL（如Fivetran）", "嵌入式BI"],
+    "investment": "100万+/年",
+    "timeline": "12-24个月"
+  }
+}
