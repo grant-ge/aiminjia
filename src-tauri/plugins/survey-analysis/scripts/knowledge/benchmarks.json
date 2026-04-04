@@ -1,0 +1,5 @@
+{
+  "nps": {"excellent": 50, "good": 30, "average": 10, "poor": 0, "critical": -10},
+  "satisfaction": {"5_scale": {"excellent": 4.2, "good": 3.8, "average": 3.5, "poor": 3.0}, "response_rate": {"internal_good": 0.70, "external_good": 0.15}},
+  "industry_nps": {"互联网": 25, "金融": 15, "制造业": 10, "零售": 5, "教育": 20}
+}
