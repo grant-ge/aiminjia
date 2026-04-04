@@ -1,0 +1,7 @@
+{
+  "customer_structure": {
+    "电商": {"top5_revenue_share_warning": 0.50, "repeat_rate_healthy": 0.30, "annual_churn_healthy": 0.20},
+    "SaaS": {"top5_revenue_share_warning": 0.40, "nrr_healthy": 1.10, "annual_churn_healthy": 0.10},
+    "零售": {"top5_revenue_share_warning": 0.30, "repeat_rate_healthy": 0.40, "annual_churn_healthy": 0.25}
+  }
+}

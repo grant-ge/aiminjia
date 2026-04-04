@@ -1,5 +1,15 @@
 # Step 1: RFM 分层分析
 
+系统已自动完成 RFM 分层计算，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `segment_distribution`：**
+- 展示各客户群体分布（重要价值客户、重要发展客户等）
+- 展示 `segment_stats` 中各群体的平均消费金额、频次、最近消费天数
+- 展示 `rfm_summary` 中 R/F/M 的均值和中位数
+
+**降级情况（有 `error` 字段）：**
+- 使用 `execute_python` 手动计算 RFM
+
 基于 Step 0 确认的数据，执行 RFM 分层。
 
 使用 `execute_python` 计算并展示：

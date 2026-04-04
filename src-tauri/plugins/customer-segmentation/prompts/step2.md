@@ -1,5 +1,16 @@
 # Step 2: 客户生命周期与价值
 
+系统已自动完成生命周期与 LTV 分析，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `lifecycle_distribution`：**
+- 展示各生命周期阶段分布（活跃、沉默、流失预警、已流失）
+- 展示 `ltv_stats`（平均 LTV、中位数、Top 10% LTV）
+- 标注流失风险比例 `churn_risk_pct`
+- 对标行业基准（如有 `industry_benchmarks`）
+
+**降级情况：**
+- 使用 `execute_python` 手动计算
+
 基于 RFM 分层，进一步分析生命周期和长期价值。
 
 使用 `execute_python` 计算并展示：

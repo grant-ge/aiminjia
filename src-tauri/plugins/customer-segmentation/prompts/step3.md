@@ -1,5 +1,7 @@
 # Step 3: 策略建议与报告
 
+如果 [precompute_result] 中有 `retention_playbooks`，基于分析发现匹配对应的留存策略建议。
+
 综合前面所有分析结果，输出最终报告。
 
 **报告结构：**
