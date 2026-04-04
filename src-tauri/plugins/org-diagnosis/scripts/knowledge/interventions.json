@@ -1,0 +1,22 @@
+{
+  "使命与目标": [
+    {"action": "战略共创工作坊", "difficulty": "中", "timeline": "1-2个月", "cost": "中"},
+    {"action": "使命愿景重新定义与全员宣贯", "difficulty": "高", "timeline": "3-6个月", "cost": "低"}
+  ],
+  "组织结构": [
+    {"action": "组织架构扁平化调整", "difficulty": "高", "timeline": "3-6个月", "cost": "中"},
+    {"action": "跨部门协作机制（虚拟团队/项目制）", "difficulty": "中", "timeline": "1-3个月", "cost": "低"}
+  ],
+  "关系与协作": [
+    {"action": "团队建设活动", "difficulty": "低", "timeline": "立即", "cost": "低"},
+    {"action": "跨部门轮岗/交流计划", "difficulty": "中", "timeline": "3个月", "cost": "中"}
+  ],
+  "奖励机制": [
+    {"action": "薪酬竞争力对标调整", "difficulty": "中", "timeline": "1-3个月", "cost": "高"},
+    {"action": "非物质激励体系（认可/发展/弹性）", "difficulty": "低", "timeline": "1个月", "cost": "低"}
+  ],
+  "领导力": [
+    {"action": "管理层360度反馈+教练辅导", "difficulty": "中", "timeline": "3-6个月", "cost": "中"},
+    {"action": "领导力发展项目", "difficulty": "高", "timeline": "6-12个月", "cost": "高"}
+  ]
+}

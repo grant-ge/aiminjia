@@ -1,0 +1,23 @@
+{
+  "六盒子": {
+    "name": "Weisbord六盒模型",
+    "dimensions": ["使命与目标", "组织结构", "关系与协作", "奖励机制", "支持机制", "领导力"],
+    "applicable": "通用，适合快速诊断",
+    "scoring": "每维度1-5分",
+    "questions_per_dim": 5
+  },
+  "7S": {
+    "name": "McKinsey 7S模型",
+    "dimensions": ["战略(Strategy)", "结构(Structure)", "制度(Systems)", "员工(Staff)", "技能(Skills)", "风格(Style)", "共同价值观(Shared Values)"],
+    "applicable": "大型组织变革诊断",
+    "scoring": "每维度1-5分",
+    "questions_per_dim": 4
+  },
+  "Burke-Litwin": {
+    "name": "Burke-Litwin因果模型",
+    "dimensions": ["外部环境", "使命战略", "领导力", "组织文化", "结构", "管理实践", "系统政策", "工作氛围", "任务与技能", "个人需求", "动机", "绩效"],
+    "applicable": "深度因果分析，适合复杂组织问题",
+    "scoring": "每维度1-5分",
+    "questions_per_dim": 3
+  }
+}
