@@ -146,6 +146,20 @@ pub fn run() {
                         &tool_registry,
                         &skill_registry,
                         file_mgr.workspace_path(),
+                        "builtin",
+                    ).await;
+                }
+
+                // Scan user-installed custom plugins
+                let custom_plugins_dir = app_data_dir.join("custom_plugins");
+                if custom_plugins_dir.is_dir() {
+                    log::info!("Scanning custom plugins from: {:?}", custom_plugins_dir);
+                    scan_external_plugins(
+                        &custom_plugins_dir,
+                        &tool_registry,
+                        &skill_registry,
+                        file_mgr.workspace_path(),
+                        "custom",
                     ).await;
                 }
             });
@@ -254,6 +268,10 @@ pub fn run() {
             commands::auth::get_cloud_models,
             commands::auth::cloud_change_password,
             commands::auth::get_branding,
+            // Skill management commands
+            commands::skill_management::list_custom_skills,
+            commands::skill_management::install_custom_skill,
+            commands::skill_management::uninstall_custom_skill,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -271,12 +289,14 @@ pub fn run() {
         });
 }
 
-/// Scan bundled plugin directories for external plugins (resource_dir/plugins/).
+/// Scan a plugin directory for external plugins.
+/// `source` identifies the origin: "builtin" for bundled, "custom" for user-installed.
 async fn scan_external_plugins(
     plugins_dir: &std::path::Path,
     tool_registry: &plugin::ToolRegistry,
     skill_registry: &plugin::SkillRegistry,
     workspace_path: &std::path::Path,
+    source: &str,
 ) {
     let entries = match std::fs::read_dir(plugins_dir) {
         Ok(e) => e,
@@ -331,7 +351,7 @@ async fn scan_external_plugins(
                             }
                             tool_registry.register(
                                 std::sync::Arc::new(bridge),
-                                "plugin",
+                                source,
                             ).await;
                             log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
                         }
