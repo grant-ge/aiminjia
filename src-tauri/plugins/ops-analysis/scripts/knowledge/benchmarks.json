@@ -1,0 +1,5 @@
+{
+  "ecommerce": {"conversion_rate": {"P25": 0.015, "P50": 0.03, "P75": 0.05}, "bounce_rate": {"healthy_max": 0.50}, "cart_abandon": {"industry_avg": 0.70}},
+  "app": {"day1_retention": {"P25": 0.25, "P50": 0.35, "P75": 0.45}, "day7_retention": {"P25": 0.10, "P50": 0.18, "P75": 0.25}, "day30_retention": {"P25": 0.05, "P50": 0.10, "P75": 0.15}},
+  "content": {"avg_engagement_rate": {"P25": 0.02, "P50": 0.04, "P75": 0.08}, "content_conversion": {"P25": 0.005, "P50": 0.01, "P75": 0.03}}
+}

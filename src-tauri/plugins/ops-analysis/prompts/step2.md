@@ -1,5 +1,15 @@
 # Step 2: 渠道效率与用户留存
 
+系统已自动完成渠道与留存分析，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `channel_ranking` 或 `retention_data`：**
+- 展示渠道排名和效率对比
+- 展示留存矩阵（Cohort 分析）
+- 对标行业基准
+
+**降级情况：**
+- 使用 `execute_python` 手动计算
+
 深入渠道和留存维度分析。
 
 使用 `execute_python` 计算并展示：
