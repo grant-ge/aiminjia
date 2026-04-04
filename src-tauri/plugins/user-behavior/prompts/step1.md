@@ -1,5 +1,16 @@
 # Step 1: 行为路径与功能使用
 
+系统已自动完成DAU/留存/活跃度计算，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `dau_trend`：**
+- 展示DAU趋势、DAU/MAU比值
+- 展示留存率（day1/day7/day30）
+- 展示用户活跃度分层
+- 对标行业基准（如有 `industry_benchmarks`）
+
+**降级情况（有 `error` 字段）：**
+- 使用 `execute_python` 手动计算
+
 1. **关键路径分析** — 用户完成核心任务的典型路径
 2. **流失路径** — 哪些路径流失率最高
 3. **功能渗透率** — 各功能的使用人数占比

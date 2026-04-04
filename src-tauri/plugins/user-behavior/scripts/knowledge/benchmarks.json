@@ -1,0 +1,4 @@
+{
+  "retention": {"SaaS": {"day1": 0.45, "day7": 0.25, "day30": 0.15}, "消费App": {"day1": 0.35, "day7": 0.18, "day30": 0.10}, "工具App": {"day1": 0.30, "day7": 0.15, "day30": 0.08}},
+  "engagement": {"dau_mau_ratio": {"healthy_min": 0.20, "excellent": 0.40}, "sessions_per_day": {"low": 1, "moderate": 3, "high": 7}}
+}
