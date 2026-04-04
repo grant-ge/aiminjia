@@ -1,0 +1,25 @@
+{
+  "enps_benchmarks": {
+    "excellent": {"min": 50, "description": "卓越（行业Top 10%）"},
+    "good": {"min": 30, "max": 49, "description": "优秀（行业领先）"},
+    "average": {"min": 10, "max": 29, "description": "一般（行业平均水平）"},
+    "below_average": {"min": 0, "max": 9, "description": "偏低（需关注）"},
+    "poor": {"max": -1, "description": "危险（需立即干预）"}
+  },
+  "industry_enps": {
+    "互联网": {"median": 25, "top_quartile": 45},
+    "制造业": {"median": 10, "top_quartile": 25},
+    "金融": {"median": 15, "top_quartile": 35},
+    "零售": {"median": 5, "top_quartile": 20},
+    "教育": {"median": 20, "top_quartile": 40}
+  },
+  "dimension_benchmarks": {
+    "工作本身": {"healthy_min": 3.8, "industry_avg": 3.6},
+    "薪酬福利": {"healthy_min": 3.5, "industry_avg": 3.2},
+    "管理者": {"healthy_min": 3.8, "industry_avg": 3.5},
+    "职业发展": {"healthy_min": 3.6, "industry_avg": 3.3},
+    "团队协作": {"healthy_min": 4.0, "industry_avg": 3.7},
+    "企业文化": {"healthy_min": 3.7, "industry_avg": 3.4},
+    "工作环境": {"healthy_min": 3.9, "industry_avg": 3.6}
+  }
+}

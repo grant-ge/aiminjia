@@ -5,6 +5,9 @@
 import json as _json_mod
 import pandas as _pd_mod
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+_rules = _KNOWLEDGE.get('rules', {}) if '_KNOWLEDGE' in dir() else {}
+
 # --- Field detection ---
 _survey_field_patterns = {
     'respondent_id': ['编号', '序号', 'id', 'respondent_id', '员工编号'],
@@ -94,6 +97,13 @@ _precompute = {
     'overall_engagement_score': overall_score,
     'total_responses': len(_df),
 }
+
+if _benchmarks.get('enps_benchmarks'):
+    _precompute['enps_rating_scale'] = _benchmarks['enps_benchmarks']
+if _benchmarks.get('dimension_benchmarks'):
+    _precompute['dimension_benchmarks'] = _benchmarks['dimension_benchmarks']
+if _rules.get('driver_priority_matrix'):
+    _precompute['priority_framework'] = _rules['driver_priority_matrix']
 
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)

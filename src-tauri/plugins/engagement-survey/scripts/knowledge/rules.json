@@ -1,0 +1,20 @@
+{
+  "driver_priority_matrix": {
+    "description": "满意度×影响力四象限",
+    "quadrants": {
+      "高影响-低满意": {"priority": 1, "action": "立即改善（最大杠杆点）"},
+      "高影响-高满意": {"priority": 2, "action": "保持优势（继续投入）"},
+      "低影响-低满意": {"priority": 3, "action": "逐步改善（非紧急）"},
+      "低影响-高满意": {"priority": 4, "action": "维持现状（低优先级）"}
+    }
+  },
+  "response_rate_thresholds": {
+    "excellent": 0.85, "good": 0.70, "minimum_valid": 0.50,
+    "warning": "回收率低于50%时结果代表性存疑，需在报告中标注"
+  },
+  "alert_rules": [
+    {"condition": "eNPS < 0", "severity": "critical", "action": "建议召开管理层专项会议"},
+    {"condition": "任一维度 < 3.0", "severity": "warning", "action": "该维度需专项改善计划"},
+    {"condition": "同比下降 > 0.3", "severity": "warning", "action": "关注近期组织变动对该维度的影响"}
+  ]
+}
