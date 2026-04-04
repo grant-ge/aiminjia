@@ -21,6 +21,16 @@ try:
 except Exception as e:
     result = {'error': str(e)}
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+_models = _KNOWLEDGE.get('diagnostic_models', {}) if '_KNOWLEDGE' in dir() else {}
+_rules = _KNOWLEDGE.get('rules', {}) if '_KNOWLEDGE' in dir() else {}
+if _benchmarks.get('financial_ratios'):
+    result['industry_benchmarks'] = _benchmarks['financial_ratios']
+if _rules.get('health_alerts'):
+    result['alert_rules'] = _rules['health_alerts']
+if _models:
+    result['available_models'] = list(_models.keys())
+
 _cache_result('finance_step1', result)
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, default=str, indent=2)

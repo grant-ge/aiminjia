@@ -1,0 +1,10 @@
+{
+  "health_alerts": [
+    {"metric": "资产负债率", "threshold": 0.70, "op": ">", "severity": "critical", "msg": "资产负债率超过70%，财务风险较高"},
+    {"metric": "流动比率", "threshold": 1.0, "op": "<", "severity": "critical", "msg": "流动比率低于1，短期偿债能力不足"},
+    {"metric": "经营现金流", "threshold": 0, "op": "<", "severity": "warning", "msg": "经营现金流为负，主营业务造血不足"},
+    {"metric": "净利率", "threshold": 0, "op": "<", "severity": "warning", "msg": "净利润为负，需关注亏损原因"},
+    {"metric": "应收周转天数", "threshold": 90, "op": ">", "severity": "warning", "msg": "应收账款回收周期过长，存在坏账风险"},
+    {"metric": "毛利率同比", "threshold": -0.05, "op": "<", "severity": "warning", "msg": "毛利率同比下降超过5个百分点，盈利能力恶化"}
+  ]
+}

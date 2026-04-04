@@ -1,0 +1,30 @@
+{
+  "dupont_5factor": {
+    "name": "杜邦五因素分解",
+    "formula": "ROE = 净利率 × 资产周转率 × 权益乘数",
+    "extended": "ROE = (净利润/收入) × (收入/总资产) × (总资产/股东权益)",
+    "requires": ["利润表", "资产负债表"],
+    "factors": ["税负效应", "利息负担", "经营利润率", "资产周转率", "财务杠杆"]
+  },
+  "cash_flow_3d": {
+    "name": "现金流三维分析",
+    "dimensions": ["经营活动", "投资活动", "筹资活动"],
+    "healthy_pattern": "经营为正、投资为负（扩张）、筹资视阶段",
+    "requires": ["现金流量表"],
+    "warning_patterns": [
+      {"pattern": "经营为负", "meaning": "主营业务造血能力不足"},
+      {"pattern": "经营+投资+筹资均为负", "meaning": "企业可能面临流动性危机"}
+    ]
+  },
+  "cost_structure_waterfall": {
+    "name": "成本费用瀑布分析",
+    "layers": ["营业收入", "营业成本", "毛利", "销售费用", "管理费用", "研发费用", "营业利润", "净利润"],
+    "requires": ["利润表"],
+    "insight": "识别利润侵蚀的主要环节"
+  },
+  "breakeven_analysis": {
+    "name": "盈亏平衡分析",
+    "requires": ["成本按固定/变动分类的数据"],
+    "formula": "盈亏平衡收入 = 固定成本 / (1 - 变动成本率)"
+  }
+}
