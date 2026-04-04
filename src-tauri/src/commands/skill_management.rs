@@ -1,6 +1,15 @@
 use tauri::AppHandle;
+use tauri::Emitter;
 use tauri::Manager;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use notify::{Watcher, RecursiveMode, RecommendedWatcher};
+
+/// Global storage for the dev-mode file watcher.
+/// Only one skill can be watched at a time.
+static DEV_WATCHER: once_cell::sync::Lazy<std::sync::Mutex<Option<RecommendedWatcher>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
 
 #[derive(serde::Serialize)]
 pub struct CustomSkillInfo {
@@ -353,6 +362,82 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
     zip.finish().map_err(|e| e.to_string())?;
 
     Ok(output_path.to_string_lossy().to_string())
+}
+
+/// Reload a custom skill from disk (hot-reload for dev mode).
+/// Re-reads plugin.toml, unregisters the old version, and registers the new one.
+#[tauri::command]
+pub async fn reload_skill(
+    app: AppHandle,
+    skill_path: String,
+) -> Result<String, String> {
+    let path = PathBuf::from(&skill_path);
+    if !path.join("plugin.toml").exists() {
+        return Err("No plugin.toml found".to_string());
+    }
+
+    // Parse manifest
+    let manifest_content = std::fs::read_to_string(path.join("plugin.toml"))
+        .map_err(|e| e.to_string())?;
+    let manifest = crate::plugin::manifest::parse_plugin_manifest(&manifest_content)
+        .map_err(|e| e.to_string())?;
+
+    let plugin_id = manifest.plugin.id.clone();
+
+    // Load the skill
+    let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path)
+        .map_err(|e| e.to_string())?;
+
+    // Get registry from app state and replace
+    let registry = app.state::<Arc<crate::plugin::SkillRegistry>>();
+
+    // Unregister old version (if exists), then register new version
+    registry.unregister(&plugin_id).await;
+    registry.register(Arc::new(skill), "custom").await;
+
+    log::info!("Dev mode: reloaded skill '{}'", plugin_id);
+    Ok(format!("Skill '{}' reloaded", plugin_id))
+}
+
+/// Start watching a skill directory for file changes (dev mode).
+/// Emits `skill-file-changed` Tauri event when files are modified.
+#[tauri::command]
+pub async fn start_skill_watch(
+    app: AppHandle,
+    skill_path: String,
+) -> Result<String, String> {
+    let path = PathBuf::from(&skill_path);
+    if !path.is_dir() {
+        return Err("Not a valid directory".to_string());
+    }
+
+    let app_clone = app.clone();
+    let path_str = skill_path.clone();
+
+    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        if let Ok(event) = res {
+            // Only emit on content changes (modify/create), not on access or removal
+            if event.kind.is_modify() || event.kind.is_create() {
+                let _ = app_clone.emit("skill-file-changed", &path_str);
+            }
+        }
+    }).map_err(|e| e.to_string())?;
+
+    watcher.watch(&path, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+
+    // Store the watcher (drops any previous watcher, stopping its watch)
+    *DEV_WATCHER.lock().unwrap() = Some(watcher);
+
+    log::info!("Dev mode: watching skill directory '{}'", path.display());
+    Ok(format!("Watching '{}'", path.display()))
+}
+
+/// Stop watching the skill directory (dev mode).
+#[tauri::command]
+pub async fn stop_skill_watch() -> Result<String, String> {
+    *DEV_WATCHER.lock().unwrap() = None;
+    log::info!("Dev mode: stopped watching skill directory");
+    Ok("Stopped watching".to_string())
 }
 
 fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {

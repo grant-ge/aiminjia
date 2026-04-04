@@ -36,6 +36,7 @@ export const TAURI_EVENTS = {
   AGENT_PHASE: 'agent:phase',
   STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
+  SKILL_FILE_CHANGED: 'skill-file-changed',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -918,4 +919,31 @@ export async function initSkillTemplate(targetDir: string, skillId: string, skil
 /** Pack a skill directory into a .aijia-skill zip file. */
 export async function packSkill(skillDir: string): Promise<string> {
   return invoke<string>('pack_skill', { skillDir })
+}
+
+/** Reload a custom skill from disk (dev mode hot-reload). */
+export function reloadSkill(skillPath: string): Promise<string> {
+  return invoke<string>('reload_skill', { skillPath })
+}
+
+/** Start watching a skill directory for file changes (dev mode). */
+export function startSkillWatch(skillPath: string): Promise<string> {
+  return invoke<string>('start_skill_watch', { skillPath })
+}
+
+/** Stop watching the skill directory (dev mode). */
+export function stopSkillWatch(): Promise<string> {
+  return invoke<string>('stop_skill_watch')
+}
+
+/**
+ * Listen for skill file change events (dev mode hot-reload).
+ * The payload is the skill directory path that changed.
+ */
+export function onSkillFileChanged(
+  handler: (skillPath: string) => void,
+): Promise<() => void> {
+  return listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => {
+    handler(event.payload)
+  })
 }

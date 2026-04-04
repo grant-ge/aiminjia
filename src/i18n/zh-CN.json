@@ -171,7 +171,12 @@
       "created": "技能模板已创建：{{path}}",
       "pack": "打包",
       "packSuccess": "技能包已生成：{{path}}",
-      "packStandalone": "打包技能"
+      "packStandalone": "打包技能",
+      "devMode": "开发模式",
+      "devModeOff": "关闭开发",
+      "devWatching": "监听中...",
+      "devReloaded": "技能已热重载",
+      "devReloadFailed": "热重载失败"
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",

@@ -223,6 +223,14 @@ impl SkillRegistry {
         &self.default_skill_id
     }
 
+    /// Unregister a skill by ID.
+    pub async fn unregister(&self, id: &str) {
+        let mut skills = self.skills.write().await;
+        if skills.remove(id).is_some() {
+            log::info!("Unregistered skill: {}", id);
+        }
+    }
+
     /// List all registered skills (for management UI).
     pub async fn list(&self) -> Vec<SkillInfo> {
         let skills = self.skills.read().await;

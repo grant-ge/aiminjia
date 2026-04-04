@@ -68,6 +68,9 @@ async-trait = "0.1"
 toml = "0.8"
 zip = "2"
 
+# File watching (skill dev mode hot-reload)
+notify = "7"
+
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

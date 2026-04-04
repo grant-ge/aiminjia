@@ -1,13 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
-import { listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill } from '@/lib/tauri'
+import {
+  listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill,
+  reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
+} from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 export function SkillsTab() {
   const { t } = useTranslation()
   const [skills, setSkills] = useState<CustomSkillInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [devWatchPath, setDevWatchPath] = useState<string | null>(null)
+  const pushNotification = useNotificationStore((s) => s.push)
+
+  // Debounce timer for file change events
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadSkills = async () => {
     setLoading(true)
@@ -19,6 +28,51 @@ export function SkillsTab() {
     }
     setLoading(false)
   }
+
+  // Handle debounced reload when files change
+  const handleFileChanged = useCallback((changedPath: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      try {
+        await reloadSkill(changedPath)
+        pushNotification({
+          level: 'success',
+          title: t('settings.skills.devReloaded'),
+          message: '',
+          actions: [],
+          dismissible: true,
+          autoHide: 3,
+          context: 'toast',
+        })
+      } catch (e) {
+        pushNotification({
+          level: 'error',
+          title: t('settings.skills.devReloadFailed'),
+          message: String(e),
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+      }
+    }, 500)
+  }, [pushNotification, t])
+
+  // Subscribe to file change events when dev mode is active
+  useEffect(() => {
+    if (!devWatchPath) return
+
+    let unlisten: (() => void) | null = null
+    const setup = async () => {
+      unlisten = await onSkillFileChanged(handleFileChanged)
+    }
+    setup()
+
+    return () => {
+      unlisten?.()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [devWatchPath, handleFileChanged])
 
   useEffect(() => { loadSkills() }, [])
 
@@ -73,6 +127,26 @@ export function SkillsTab() {
     }
   }
 
+  const handleToggleDevMode = async (skillPath: string) => {
+    if (devWatchPath === skillPath) {
+      // Turn off dev mode
+      try {
+        await stopSkillWatch()
+        setDevWatchPath(null)
+      } catch (e) {
+        alert(String(e))
+      }
+    } else {
+      // Turn on dev mode (stops any previous watcher)
+      try {
+        await startSkillWatch(skillPath)
+        setDevWatchPath(skillPath)
+      } catch (e) {
+        alert(String(e))
+      }
+    }
+  }
+
   const handlePackStandalone = async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog')
@@ -123,15 +197,38 @@ export function SkillsTab() {
               className="flex items-center justify-between rounded-lg border px-4 py-3"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-main)' }}
             >
-              <div>
-                <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {skill.name || skill.id}
+              <div className="flex items-center gap-2">
+                <div>
+                  <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    {skill.name || skill.id}
+                  </div>
+                  <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>
+                    {skill.description || skill.id}
+                  </div>
                 </div>
-                <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem' }}>
-                  {skill.description || skill.id}
-                </div>
+                {devWatchPath === skill.path && (
+                  <span
+                    className="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                    style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a' }}
+                  >
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ background: '#16a34a' }}
+                    />
+                    {t('settings.skills.devWatching')}
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleToggleDevMode(skill.path)}
+                >
+                  {devWatchPath === skill.path
+                    ? t('settings.skills.devModeOff')
+                    : t('settings.skills.devMode')}
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"

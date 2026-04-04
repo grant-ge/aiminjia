@@ -171,7 +171,12 @@
       "created": "Skill template created: {{path}}",
       "pack": "Pack",
       "packSuccess": "Skill pack created: {{path}}",
-      "packStandalone": "Pack Skill"
+      "packStandalone": "Pack Skill",
+      "devMode": "Dev Mode",
+      "devModeOff": "Stop Dev",
+      "devWatching": "Watching...",
+      "devReloaded": "Skill reloaded",
+      "devReloadFailed": "Reload failed"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",
