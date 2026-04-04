@@ -11,6 +11,7 @@ advance_on = "any"
 id = "step1"
 name = "绩效工具选择推荐"
 prompt = "prompts/step1.md"
+precompute = "scripts/step1.py"
 tools_only = ["save_analysis_note"]
 max_iterations = 8
 token_budget = 8192
