@@ -1,10 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { ask } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 
 export function useUpdater() {
+  const userDeclinedRef = useRef(false)
+
   useEffect(() => {
     let cancelled = false
 
@@ -13,10 +16,25 @@ export function useUpdater() {
         const update = await check()
         if (cancelled || !update) return
 
-        const yes = window.confirm(
-          `${i18n.t('updater.newVersionFound', { version: update.version })}\n\n${update.body ?? ''}`
+        // User already declined this session — don't ask again
+        if (userDeclinedRef.current) return
+
+        const yes = await ask(
+          `${update.body ?? i18n.t('updater.updateAvailableDesc')}`,
+          {
+            title: i18n.t('updater.newVersionFound', { version: update.version }),
+            kind: 'info',
+            okLabel: i18n.t('updater.updateNow'),
+            cancelLabel: i18n.t('updater.updateLater'),
+          }
         )
-        if (!yes) return
+        if (!yes) {
+          // Mark as declined so we don't prompt again this session.
+          // Do NOT call downloadAndInstall — just discard the update reference.
+          userDeclinedRef.current = true
+          console.info('User declined update to', update.version)
+          return
+        }
 
         // Show downloading toast with a unique id so we can dismiss it later
         const downloadToastId = `update-download-${Date.now()}`

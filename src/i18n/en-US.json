@@ -310,7 +310,10 @@
     "downloadComplete": "Update downloaded",
     "restarting": "Restarting app...",
     "downloadFailed": "Update download failed",
-    "downloadFailedDesc": "Please try again later or download the new version manually"
+    "downloadFailedDesc": "Please try again later or download the new version manually",
+    "updateNow": "Update Now",
+    "updateLater": "Later",
+    "updateAvailableDesc": "A new version is available. Would you like to update now?"
   },
 
   "auth": {
