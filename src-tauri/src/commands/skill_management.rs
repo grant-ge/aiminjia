@@ -440,6 +440,192 @@ pub async fn stop_skill_watch() -> Result<String, String> {
     Ok("Stopped watching".to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Marketplace Commands
+// ---------------------------------------------------------------------------
+
+/// Marketplace skill package returned from the API.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceSkillItem {
+    pub id: i64,
+    pub plugin_id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub icon: String,
+    pub version: String,
+    pub scope: String,
+    pub status: String,
+    pub downloads: i64,
+    pub featured: bool,
+    pub package_size: i64,
+    pub tenant_name: String,
+    pub created_at: String,
+}
+
+/// Paginated response from the marketplace API.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceResponse {
+    pub items: Vec<MarketplaceSkillItem>,
+    pub total: i64,
+    pub page: i64,
+    pub size: i64,
+}
+
+/// List skill packages from the cloud marketplace.
+#[tauri::command]
+pub async fn list_marketplace_skills(
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    page: u32,
+    size: u32,
+    category: Option<String>,
+    search: Option<String>,
+) -> Result<MarketplaceResponse, String> {
+    let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
+
+    let client = reqwest::Client::new();
+    let mut url = format!(
+        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}&scope=public",
+        page, size
+    );
+    if let Some(cat) = &category {
+        if !cat.is_empty() {
+            url.push_str(&format!("&category={}", cat));
+        }
+    }
+    if let Some(q) = &search {
+        if !q.is_empty() {
+            // Simple percent-encode for CJK search terms
+            let encoded: String = q.chars().map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
+                    c.to_string()
+                } else {
+                    let mut buf = [0u8; 4];
+                    c.encode_utf8(&mut buf);
+                    buf[..c.len_utf8()].iter().map(|b| format!("%{:02X}", b)).collect()
+                }
+            }).collect();
+            url.push_str(&format!("&search={}", encoded));
+        }
+    }
+
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error ({}): {}", status, body));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    // Parse { code: 0, data: { items, total, page, size } }
+    let data = &body["data"];
+    let items: Vec<MarketplaceSkillItem> = serde_json::from_value(
+        data["items"].clone()
+    ).unwrap_or_default();
+
+    Ok(MarketplaceResponse {
+        items,
+        total: data["total"].as_i64().unwrap_or(0),
+        page: data["page"].as_i64().unwrap_or(1),
+        size: data["size"].as_i64().unwrap_or(20),
+    })
+}
+
+/// Download and install a skill package from the marketplace.
+/// Downloads the zip from `package_url` and extracts to `custom_plugins/{plugin_id}/`.
+#[tauri::command]
+pub async fn install_marketplace_skill(
+    app: AppHandle,
+    auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
+    package_id: i64,
+    plugin_id: String,
+) -> Result<String, String> {
+    let session_key = auth.get_session_key().await.map_err(|e| e.to_string())?;
+
+    let client = reqwest::Client::new();
+
+    // Step 1: Get the download URL
+    let download_url = format!(
+        "https://ai-tenant.renlijia.com/v1/skill-packages/{}/download",
+        package_id
+    );
+    let resp = client
+        .post(&download_url)
+        .header("Authorization", format!("Bearer {}", session_key))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Download API error: {}", body));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let package_url = body["package_url"]
+        .as_str()
+        .or_else(|| body["data"]["package_url"].as_str())
+        .ok_or("No package_url in response")?
+        .to_string();
+
+    // Step 2: Download the zip file
+    let zip_resp = client
+        .get(&package_url)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
+
+    if !zip_resp.status().is_success() {
+        return Err(format!("Failed to download package: HTTP {}", zip_resp.status()));
+    }
+
+    let zip_bytes = zip_resp.bytes().await.map_err(|e| format!("Download error: {}", e))?;
+
+    // Step 3: Extract to custom_plugins/{plugin_id}/
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let custom_dir = app_data.join("custom_plugins");
+    std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
+
+    let dest = custom_dir.join(&plugin_id);
+    if dest.exists() {
+        std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
+    }
+    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+
+    let cursor = std::io::Cursor::new(zip_bytes.as_ref());
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Invalid zip: {}", e))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let out_path = dest.join(file.mangled_name());
+
+        if file.is_dir() {
+            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut outfile = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        }
+    }
+
+    log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
+    Ok(format!("Installed '{}' — restart app to activate", plugin_id))
+}
+
 fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {

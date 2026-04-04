@@ -947,3 +947,59 @@ export function onSkillFileChanged(
     handler(event.payload)
   })
 }
+
+// ---------------------------------------------------------------------------
+// Marketplace Commands
+// ---------------------------------------------------------------------------
+
+/** A skill package from the cloud marketplace. */
+export interface MarketplaceSkillItem {
+  id: number
+  pluginId: string
+  name: string
+  description: string
+  category: string
+  icon: string
+  version: string
+  scope: string
+  status: string
+  downloads: number
+  featured: boolean
+  packageSize: number
+  tenantName: string
+  createdAt: string
+}
+
+/** Paginated marketplace response. */
+export interface MarketplaceResponse {
+  items: MarketplaceSkillItem[]
+  total: number
+  page: number
+  size: number
+}
+
+/** List skill packages from the cloud marketplace. */
+export function listMarketplaceSkills(
+  page: number,
+  size: number,
+  category?: string,
+  search?: string,
+): Promise<MarketplaceResponse> {
+  return invoke<MarketplaceResponse>('list_marketplace_skills', {
+    page,
+    size,
+    category: category || null,
+    search: search || null,
+  })
+}
+
+/** Download and install a skill package from the marketplace. */
+export function installMarketplaceSkill(
+  packageId: number,
+  pluginId: string,
+): Promise<string> {
+  return invoke<string>('install_marketplace_skill', {
+    packageId,
+    pluginId,
+  })
+}

@@ -277,6 +277,9 @@ pub fn run() {
             commands::skill_management::reload_skill,
             commands::skill_management::start_skill_watch,
             commands::skill_management::stop_skill_watch,
+            // Marketplace commands
+            commands::skill_management::list_marketplace_skills,
+            commands::skill_management::install_marketplace_skill,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
