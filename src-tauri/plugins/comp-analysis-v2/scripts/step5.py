@@ -6,6 +6,8 @@
 import json as _json_mod
 import pandas as _pd_mod
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+
 step1 = _load_cached('step1')
 step4 = _load_cached('step4')
 col_map = step1.get('col_map') if step1 else _detect_columns(_df)
@@ -26,6 +28,8 @@ _precompute = {
     'scenarios': scenarios,
     'report_sections': sections,
 }
+if _benchmarks.get('salary_percentiles'):
+    _precompute['market_data'] = _benchmarks['salary_percentiles']
 with open(os.path.join(_ANALYSIS_DIR, 'step5_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 

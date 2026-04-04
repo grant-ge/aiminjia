@@ -1,0 +1,28 @@
+{
+  "minimum_wage_2025": {
+    "北京": 2420, "上海": 2690, "广州": 2300, "深圳": 2360,
+    "杭州": 2280, "成都": 2100, "武汉": 2010, "南京": 2280,
+    "苏州": 2280, "西安": 2160, "长沙": 1930, "重庆": 2100
+  },
+  "social_insurance_base_2025": {
+    "北京": {"min": 6326, "max": 35283},
+    "上海": {"min": 7310, "max": 36549},
+    "广州": {"min": 5284, "max": 26421},
+    "深圳": {"min": 2360, "max": 25299}
+  },
+  "fairness_thresholds": {
+    "compa_ratio": {"healthy_min": 0.85, "healthy_max": 1.15, "warning": 0.80, "critical": 0.75},
+    "gender_pay_gap": {"acceptable_max": 0.05, "warning": 0.10, "critical": 0.15},
+    "range_penetration": {"underpaid": 0.25, "overpaid": 0.85},
+    "cv_coefficient": {"low": 0.15, "moderate": 0.25, "high": 0.35}
+  },
+  "tax_brackets_2025": [
+    {"min": 0, "max": 36000, "rate": 0.03, "deduction": 0},
+    {"min": 36000, "max": 144000, "rate": 0.10, "deduction": 2520},
+    {"min": 144000, "max": 300000, "rate": 0.20, "deduction": 16920},
+    {"min": 300000, "max": 420000, "rate": 0.25, "deduction": 31920},
+    {"min": 420000, "max": 660000, "rate": 0.30, "deduction": 52920},
+    {"min": 660000, "max": 960000, "rate": 0.35, "deduction": 85920},
+    {"min": 960000, "max": null, "rate": 0.45, "deduction": 181920}
+  ]
+}
