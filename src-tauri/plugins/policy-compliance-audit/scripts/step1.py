@@ -19,6 +19,7 @@ try:
 except Exception as e:
     result = {'error': str(e)}
 
+_cache_result('policy_audit_step1', result)
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, indent=2)
 print(_json_mod.dumps(result, ensure_ascii=False, indent=2))

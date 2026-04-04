@@ -68,6 +68,7 @@ result = {
 if _risk_patterns and 'patterns' in _risk_patterns:
     result['risk_patterns'] = _risk_patterns['patterns']
 
+_cache_result('contract_review_step2', result)
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step2_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, indent=2)
 

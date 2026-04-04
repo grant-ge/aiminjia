@@ -138,6 +138,7 @@ if _benchmarks.get('salary_percentiles'):
 if _rules.get('competitiveness_rating'):
     _precompute['rating_scale'] = _rules['competitiveness_rating']
 
+_cache_result('salary_bench_step1', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 print(_json_mod.dumps(_precompute, ensure_ascii=False, default=str, indent=2))

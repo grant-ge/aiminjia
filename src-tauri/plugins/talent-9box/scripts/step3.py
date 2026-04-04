@@ -135,6 +135,7 @@ if _benchmarks.get('healthy_distribution'):
 if _templates.get('idp_actions'):
     _precompute['idp_recommendations'] = _templates['idp_actions']
 
+_cache_result('talent_9box_step3', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step3_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 print(_json_mod.dumps(_precompute, ensure_ascii=False, default=str, indent=2))

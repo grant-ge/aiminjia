@@ -109,6 +109,7 @@ if _benchmarks.get('conversion_rates'):
 if _templates.get('diagnostic_rules'):
     _precompute['diagnostic_rules'] = _templates['diagnostic_rules']
 
+_cache_result('recruitment_step1', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 print(_json_mod.dumps(_precompute, ensure_ascii=False, default=str, indent=2))

@@ -105,6 +105,7 @@ if _benchmarks.get('dimension_benchmarks'):
 if _rules.get('driver_priority_matrix'):
     _precompute['priority_framework'] = _rules['driver_priority_matrix']
 
+_cache_result('engagement_survey_step1', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 print(_json_mod.dumps(_precompute, ensure_ascii=False, default=str, indent=2))
