@@ -163,7 +163,15 @@
       "selectFolder": "选择技能目录",
       "confirmUninstall": "确定要卸载技能「{{name}}」吗？",
       "empty": "暂无自定义技能",
-      "emptyHint": "点击「安装技能」添加自定义技能包"
+      "emptyHint": "点击「安装技能」添加自定义技能包",
+      "createNew": "创建新技能",
+      "skillIdPlaceholder": "技能ID（英文，如 my-skill）",
+      "skillNamePlaceholder": "技能名称（如 我的分析技能）",
+      "selectTargetDir": "选择创建位置",
+      "created": "技能模板已创建：{{path}}",
+      "pack": "打包",
+      "packSuccess": "技能包已生成：{{path}}",
+      "packStandalone": "打包技能"
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",

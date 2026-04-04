@@ -272,6 +272,8 @@ pub fn run() {
             commands::skill_management::list_custom_skills,
             commands::skill_management::install_custom_skill,
             commands::skill_management::uninstall_custom_skill,
+            commands::skill_management::init_skill_template,
+            commands::skill_management::pack_skill,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

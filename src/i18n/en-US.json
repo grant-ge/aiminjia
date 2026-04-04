@@ -163,7 +163,15 @@
       "selectFolder": "Select skill directory",
       "confirmUninstall": "Uninstall skill \"{{name}}\"?",
       "empty": "No custom skills installed",
-      "emptyHint": "Click \"Install Skill\" to add custom skill packs"
+      "emptyHint": "Click \"Install Skill\" to add custom skill packs",
+      "createNew": "Create New",
+      "skillIdPlaceholder": "Skill ID (e.g., my-skill)",
+      "skillNamePlaceholder": "Skill name (e.g., My Analysis)",
+      "selectTargetDir": "Select target directory",
+      "created": "Skill template created: {{path}}",
+      "pack": "Pack",
+      "packSuccess": "Skill pack created: {{path}}",
+      "packStandalone": "Pack Skill"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",

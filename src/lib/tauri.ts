@@ -909,3 +909,13 @@ export function installCustomSkill(sourcePath: string): Promise<string> {
 export function uninstallCustomSkill(skillId: string): Promise<string> {
   return invoke<string>('uninstall_custom_skill', { skillId })
 }
+
+/** Create a new skill template directory with scaffolding files. */
+export async function initSkillTemplate(targetDir: string, skillId: string, skillName: string): Promise<string> {
+  return invoke<string>('init_skill_template', { targetDir, skillId, skillName })
+}
+
+/** Pack a skill directory into a .aijia-skill zip file. */
+export async function packSkill(skillDir: string): Promise<string> {
+  return invoke<string>('pack_skill', { skillDir })
+}

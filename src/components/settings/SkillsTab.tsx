@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
-import { listCustomSkills, installCustomSkill, uninstallCustomSkill } from '@/lib/tauri'
+import { listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill } from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
 
 export function SkillsTab() {
@@ -46,15 +46,63 @@ export function SkillsTab() {
     }
   }
 
+  const handleCreateNew = async () => {
+    try {
+      const skillId = prompt(t('settings.skills.skillIdPlaceholder'))
+      if (!skillId) return
+      const skillName = prompt(t('settings.skills.skillNamePlaceholder'))
+      if (!skillName) return
+
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const targetDir = await open({ directory: true, title: t('settings.skills.selectTargetDir') })
+      if (!targetDir) return
+
+      const createdPath = await initSkillTemplate(targetDir, skillId, skillName)
+      alert(t('settings.skills.created', { path: createdPath }))
+    } catch (e) {
+      alert(String(e))
+    }
+  }
+
+  const handlePackSkill = async (skillPath: string) => {
+    try {
+      const outputPath = await packSkill(skillPath)
+      alert(t('settings.skills.packSuccess', { path: outputPath }))
+    } catch (e) {
+      alert(String(e))
+    }
+  }
+
+  const handlePackStandalone = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
+      if (selected) {
+        const outputPath = await packSkill(selected)
+        alert(t('settings.skills.packSuccess', { path: outputPath }))
+      }
+    } catch (e) {
+      alert(String(e))
+    }
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
           {t('settings.skills.description')}
         </p>
-        <Button variant="primary" size="sm" onClick={handleInstall}>
-          {t('settings.skills.install')}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={handleCreateNew}>
+            {t('settings.skills.createNew')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handlePackStandalone}>
+            {t('settings.skills.packStandalone')}
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleInstall}>
+            {t('settings.skills.install')}
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -83,13 +131,22 @@ export function SkillsTab() {
                   {skill.description || skill.id}
                 </div>
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleUninstall(skill.id, skill.name || skill.id)}
-              >
-                {t('settings.skills.uninstall')}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handlePackSkill(skill.path)}
+                >
+                  {t('settings.skills.pack')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleUninstall(skill.id, skill.name || skill.id)}
+                >
+                  {t('settings.skills.uninstall')}
+                </Button>
+              </div>
             </div>
           ))}
         </div>

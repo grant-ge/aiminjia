@@ -66,6 +66,7 @@ url = "2"
 # Plugin system
 async-trait = "0.1"
 toml = "0.8"
+zip = "2"
 
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
