@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use notify::{Watcher, RecursiveMode, RecommendedWatcher};
@@ -426,7 +426,7 @@ pub async fn start_skill_watch(
     watcher.watch(&path, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
 
     // Store the watcher (drops any previous watcher, stopping its watch)
-    *DEV_WATCHER.lock().unwrap() = Some(watcher);
+    *DEV_WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
 
     log::info!("Dev mode: watching skill directory '{}'", path.display());
     Ok(format!("Watching '{}'", path.display()))
@@ -435,7 +435,7 @@ pub async fn start_skill_watch(
 /// Stop watching the skill directory (dev mode).
 #[tauri::command]
 pub async fn stop_skill_watch() -> Result<String, String> {
-    *DEV_WATCHER.lock().unwrap() = None;
+    *DEV_WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = None;
     log::info!("Dev mode: stopped watching skill directory");
     Ok("Stopped watching".to_string())
 }
@@ -607,8 +607,18 @@ pub async fn install_marketplace_skill(
     let cursor = std::io::Cursor::new(zip_bytes.as_ref());
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("Invalid zip: {}", e))?;
 
+    const MAX_EXTRACT_SIZE: u64 = 50 * 1024 * 1024; // 50 MB limit
+    let mut total_extracted: u64 = 0;
+
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+
+        total_extracted += file.size();
+        if total_extracted > MAX_EXTRACT_SIZE {
+            let _ = std::fs::remove_dir_all(&dest);
+            return Err("Package too large (exceeds 50MB extraction limit)".to_string());
+        }
+
         let out_path = dest.join(file.mangled_name());
 
         if file.is_dir() {
@@ -626,12 +636,17 @@ pub async fn install_marketplace_skill(
     Ok(format!("Installed '{}' — restart app to activate", plugin_id))
 }
 
-fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
+        // Skip symlinks to prevent path traversal attacks
+        if src_path.is_symlink() {
+            log::warn!("Skipping symlink during copy: {}", src_path.display());
+            continue;
+        }
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {

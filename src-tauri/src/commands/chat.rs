@@ -72,6 +72,18 @@ fn build_knowledge_preamble(knowledge_dir: &Path) -> String {
             Some(s) => s.to_string(),
             None => continue,
         };
+        // Validate key contains only safe characters (prevent Python code injection via filename)
+        if !stem.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            log::warn!("Unsafe knowledge filename '{}', skipping", stem);
+            continue;
+        }
+        // Skip files larger than 5MB to prevent memory issues
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.len() > 5 * 1024 * 1024 {
+                log::warn!("Knowledge file '{}' too large ({} bytes), skipping", path.display(), meta.len());
+                continue;
+            }
+        }
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(e) => {
