@@ -5,6 +5,9 @@
 import json as _json_mod
 import pandas as _pd_mod
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+_templates = _KNOWLEDGE.get('templates', {}) if '_KNOWLEDGE' in dir() else {}
+
 # Load step1 cache for field mapping
 try:
     step1_path = os.path.join(_ANALYSIS_DIR, 'step1_precompute.json')
@@ -126,6 +129,11 @@ _precompute = {
     'age_analysis': age_analysis,
     'tenure_analysis': tenure_analysis,
 }
+if _benchmarks.get('healthy_distribution'):
+    _precompute['industry_benchmark'] = _benchmarks['healthy_distribution']
+    _precompute['warning_signals'] = _benchmarks.get('warning_signals', [])
+if _templates.get('idp_actions'):
+    _precompute['idp_recommendations'] = _templates['idp_actions']
 
 with open(os.path.join(_ANALYSIS_DIR, 'step3_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
