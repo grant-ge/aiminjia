@@ -5,6 +5,9 @@
 import json as _json_mod
 import pandas as _pd_mod
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+_templates = _KNOWLEDGE.get('templates', {}) if '_KNOWLEDGE' in dir() else {}
+
 # --- Field detection ---
 # Common recruitment field patterns
 _recruitment_field_patterns = {
@@ -100,6 +103,11 @@ _precompute = {
     'stages_detected': stages_detected,
     'quality': quality,
 }
+
+if _benchmarks.get('conversion_rates'):
+    _precompute['industry_benchmarks'] = _benchmarks['conversion_rates']
+if _templates.get('diagnostic_rules'):
+    _precompute['diagnostic_rules'] = _templates['diagnostic_rules']
 
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)

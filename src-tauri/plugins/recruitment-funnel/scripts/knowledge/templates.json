@@ -1,0 +1,12 @@
+{
+  "funnel_stages_standard": ["简历收集", "简历初筛", "电话/AI面", "一面", "二面", "终面", "Offer", "入职"],
+  "funnel_stages_simple": ["简历", "初筛", "面试", "Offer", "入职"],
+  "roi_formula": "渠道ROI = (该渠道入职人数 × 平均产值) / 该渠道总投入成本",
+  "quality_metrics": ["试用期通过率", "6个月留存率", "绩效达标率", "用人经理满意度"],
+  "diagnostic_rules": [
+    {"stage": "简历→初筛", "low_threshold": 0.20, "diagnosis": "JD精准度不足或渠道质量差"},
+    {"stage": "初筛→面试", "low_threshold": 0.35, "diagnosis": "初筛标准过严或候选人意向低"},
+    {"stage": "面试→Offer", "low_threshold": 0.15, "diagnosis": "面试评估标准不一致或岗位要求与市场脱节"},
+    {"stage": "Offer→入职", "low_threshold": 0.75, "diagnosis": "薪酬竞争力不足或Offer决策周期过长"}
+  ]
+}
