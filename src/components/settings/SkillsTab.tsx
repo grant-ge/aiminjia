@@ -206,7 +206,7 @@ export function SkillsTab() {
       {subTab === 'installed' ? (
         <div>
           <div className="mb-4 flex items-center justify-between">
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               {t('settings.skills.description')}
             </p>
             <div className="flex gap-2">
@@ -252,11 +252,11 @@ export function SkillsTab() {
                     {devWatchPath === skill.path && (
                       <span
                         className="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                        style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a' }}
+                        style={{ background: 'var(--color-semantic-green-bg, rgba(52,199,89,0.15))', color: 'var(--color-semantic-green, #34C759)' }}
                       >
                         <span
                           className="inline-block h-1.5 w-1.5 rounded-full"
-                          style={{ background: '#16a34a' }}
+                          style={{ background: 'var(--color-semantic-green, #34C759)' }}
                         />
                         {t('settings.skills.devWatching')}
                       </span>

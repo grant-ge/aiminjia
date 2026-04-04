@@ -98,7 +98,7 @@ export function SkillMarketplace() {
   return (
     <div>
       {/* Description */}
-      <p className="mb-3" style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+      <p className="mb-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
         {t('settings.skills.marketplaceDesc')}
       </p>
 
@@ -146,7 +146,7 @@ export function SkillMarketplace() {
         >
           <p>{t('settings.skills.loadFailed')}</p>
           <Button variant="secondary" size="sm" className="mt-2" onClick={() => loadSkills(page, category, search)}>
-            {t('common.confirm')}
+            {t('settings.skills.retry')}
           </Button>
         </div>
       ) : items.length === 0 ? (
@@ -173,15 +173,15 @@ export function SkillMarketplace() {
                 <div className="flex items-center gap-2">
                   <span style={{ fontSize: '1.3rem' }}>{item.icon || '🔧'}</span>
                   <span
-                    className="font-medium truncate flex-1"
-                    style={{ color: 'var(--color-text-primary)', fontSize: '0.9rem' }}
+                    className="font-medium truncate flex-1 text-sm"
+                    style={{ color: 'var(--color-text-primary)' }}
                   >
                     {item.name}
                   </span>
                   {item.featured && (
                     <span
                       className="rounded-full px-1.5 py-0.5 text-xs font-medium"
-                      style={{ background: 'rgba(234,179,8,0.15)', color: '#ca8a04' }}
+                      style={{ background: 'var(--color-semantic-yellow-bg, rgba(232,200,106,0.15))', color: 'var(--color-semantic-yellow, #E8C86A)' }}
                     >
                       {t('settings.skills.featured')}
                     </span>
