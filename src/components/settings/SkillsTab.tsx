@@ -6,6 +6,7 @@ import {
   reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
 } from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
+import { message, ask } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { SkillMarketplace } from './SkillMarketplace'
@@ -89,28 +90,31 @@ export function SkillsTab() {
       if (selected) {
         const msg = await installCustomSkill(selected)
         await loadSkills()
-        alert(msg)
+        await message(msg, { title: 'AI小家' })
       }
     } catch (e) {
-      alert(String(e))
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
   const handleUninstall = async (id: string, name: string) => {
-    if (!confirm(t('settings.skills.confirmUninstall', { name }))) return
+    const confirmed = await ask(t('settings.skills.confirmUninstall', { name }), { title: 'AI小家', kind: 'warning' })
+    if (!confirmed) return
     try {
       await uninstallCustomSkill(id)
       await loadSkills()
     } catch (e) {
-      alert(String(e))
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
   const handleCreateNew = async () => {
     try {
-      const skillId = prompt(t('settings.skills.skillIdPlaceholder'))
+      // TODO: replace with custom input dialog (no native Tauri text input dialog available)
+      const skillId = window.prompt(t('settings.skills.skillIdPlaceholder'))
       if (!skillId) return
-      const skillName = prompt(t('settings.skills.skillNamePlaceholder'))
+      // TODO: replace with custom input dialog (no native Tauri text input dialog available)
+      const skillName = window.prompt(t('settings.skills.skillNamePlaceholder'))
       if (!skillName) return
 
       const { open } = await import('@tauri-apps/plugin-dialog')
@@ -118,18 +122,18 @@ export function SkillsTab() {
       if (!targetDir) return
 
       const createdPath = await initSkillTemplate(targetDir, skillId, skillName)
-      alert(t('settings.skills.created', { path: createdPath }))
+      await message(t('settings.skills.created', { path: createdPath }), { title: 'AI小家' })
     } catch (e) {
-      alert(String(e))
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
   const handlePackSkill = async (skillPath: string) => {
     try {
       const outputPath = await packSkill(skillPath)
-      alert(t('settings.skills.packSuccess', { path: outputPath }))
+      await message(t('settings.skills.packSuccess', { path: outputPath }), { title: 'AI小家' })
     } catch (e) {
-      alert(String(e))
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
@@ -140,7 +144,7 @@ export function SkillsTab() {
         await stopSkillWatch()
         setDevWatchPath(null)
       } catch (e) {
-        alert(String(e))
+        await message(String(e), { title: 'AI小家', kind: 'error' })
       }
     } else {
       // Turn on dev mode (stops any previous watcher)
@@ -148,7 +152,7 @@ export function SkillsTab() {
         await startSkillWatch(skillPath)
         setDevWatchPath(skillPath)
       } catch (e) {
-        alert(String(e))
+        await message(String(e), { title: 'AI小家', kind: 'error' })
       }
     }
   }
@@ -159,10 +163,10 @@ export function SkillsTab() {
       const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
       if (selected) {
         const outputPath = await packSkill(selected)
-        alert(t('settings.skills.packSuccess', { path: outputPath }))
+        await message(t('settings.skills.packSuccess', { path: outputPath }), { title: 'AI小家' })
       }
     } catch (e) {
-      alert(String(e))
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
