@@ -11,8 +11,11 @@ advance_on = "any"
 id = "step1"
 name = "基本要素与风险条款"
 prompt = "prompts/step1.md"
+precompute = "scripts/step1.py"
 tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
+max_iterations_feedback = 3
 token_budget = 8192
 advance_on = "confirm"
 
@@ -20,8 +23,11 @@ advance_on = "confirm"
 id = "step2"
 name = "遗漏条款与合规检查"
 prompt = "prompts/step2.md"
+precompute = "scripts/step2.py"
 tools_only = ["export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
+max_iterations_feedback = 3
 token_budget = 8192
 advance_on = "confirm"
 

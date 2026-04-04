@@ -2499,6 +2499,469 @@ def _export_current(filename='current_data', title='Current Data', format='excel
         print("_df not loaded, cannot export")
         return
     _export_detail(df, filename, title, format=format)
+
+# ============================================================
+# FINANCIAL ANALYSIS UTILS
+# ============================================================
+
+def _detect_financial_sheets(dfs):
+    """
+    从多个 DataFrame 中识别利润表、资产负债表、现金流量表。
+    dfs: dict {sheet_name: DataFrame} 或 list of DataFrames
+    Returns: dict {sheet_type: (sheet_name, df)}
+      sheet_type: 'income_statement' | 'balance_sheet' | 'cash_flow' | 'unknown'
+    """
+    import re as _re_fs
+    INCOME_KEYWORDS = ['收入', '营业收入', '营业成本', '毛利', '净利润', '利润', 'revenue', 'income', 'profit', 'sales', 'p&l']
+    BALANCE_KEYWORDS = ['资产', '负债', '股东权益', '所有者权益', '流动资产', '固定资产', 'asset', 'liability', 'equity', 'balance sheet']
+    CASH_KEYWORDS = ['现金流', '经营活动', '投资活动', '筹资活动', 'cash flow', 'operating activities']
+
+    def _score(df, keywords):
+        text = ' '.join(str(c).lower() for c in df.columns) + ' '
+        if df.index.dtype == object:
+            text += ' '.join(str(i).lower() for i in df.index[:20])
+        return sum(1 for k in keywords if k.lower() in text)
+
+    if isinstance(dfs, list):
+        dfs = {f'sheet{i}': df for i, df in enumerate(dfs)}
+
+    result = {}
+    assigned = set()
+    type_map = [
+        ('income_statement', INCOME_KEYWORDS),
+        ('balance_sheet', BALANCE_KEYWORDS),
+        ('cash_flow', CASH_KEYWORDS),
+    ]
+    for sheet_type, keywords in type_map:
+        best_name, best_score, best_df = None, 0, None
+        for name, df in dfs.items():
+            if name in assigned:
+                continue
+            score = _score(df, keywords)
+            if score > best_score:
+                best_score, best_name, best_df = score, name, df
+        if best_name and best_score > 0:
+            result[sheet_type] = (best_name, best_df)
+            assigned.add(best_name)
+    return result
+
+
+def _step1_income_cost(df_pl, period_col=None, amount_col=None):
+    """
+    利润表收入成本结构分析。
+    df_pl: 利润表 DataFrame（行=科目，列=期间；或列=科目+金额）
+    Returns: dict with keys: summary, revenue_structure, cost_structure, gross_margin, anomalies
+    """
+    import numpy as _np_ic
+
+    result = {
+        'summary': {},
+        'revenue_structure': [],
+        'cost_structure': [],
+        'gross_margin_trend': [],
+        'anomalies': [],
+    }
+
+    # 尝试识别关键行：收入、成本、毛利、净利润
+    ROW_KEYWORDS = {
+        'revenue': ['营业收入', '主营业务收入', '总收入', 'revenue', 'total revenue', 'sales'],
+        'cogs': ['营业成本', '主营业务成本', '销售成本', 'cost of goods sold', 'cogs', 'cost of revenue'],
+        'gross_profit': ['毛利', '毛利润', 'gross profit'],
+        'operating_profit': ['营业利润', '经营利润', 'operating profit', 'ebit'],
+        'net_profit': ['净利润', '净利', 'net profit', 'net income'],
+        'selling_expense': ['销售费用', 'selling expense', 'sales expense'],
+        'admin_expense': ['管理费用', '行政费用', 'admin expense', 'general expense'],
+        'rd_expense': ['研发费用', 'r&d expense', 'research and development'],
+    }
+
+    # 检测科目列（行索引或第一列）
+    index_as_text = df_pl.index.astype(str).str.lower()
+    col_as_text = None
+    if df_pl.columns.dtype == object:
+        first_col = df_pl.columns[0]
+        col_as_text = df_pl[first_col].astype(str).str.lower()
+
+    def _find_row(key_list):
+        for key in key_list:
+            matches = index_as_text[index_as_text.str.contains(key, na=False)]
+            if len(matches) > 0:
+                return matches.index[0]
+            if col_as_text is not None:
+                matches2 = col_as_text[col_as_text.str.contains(key, na=False)]
+                if len(matches2) > 0:
+                    return matches2.index[0]
+        return None
+
+    found = {}
+    for semantic, keywords in ROW_KEYWORDS.items():
+        idx = _find_row(keywords)
+        if idx is not None:
+            found[semantic] = idx
+
+    # 获取数值列（排除科目列）
+    num_cols = df_pl.select_dtypes(include=[_np_ic.number]).columns.tolist()
+    if not num_cols and col_as_text is not None:
+        # 尝试第2列起作为数值列
+        num_cols = df_pl.columns[1:].tolist()
+
+    if not num_cols:
+        result['summary']['error'] = '未找到数值列，无法计算'
+        return result
+
+    def _get_values(idx):
+        if idx is None:
+            return None
+        try:
+            row = df_pl.loc[idx, num_cols] if num_cols else df_pl.loc[idx]
+            return _pd.to_numeric(row, errors='coerce')
+        except Exception:
+            return None
+
+    rev = _get_values(found.get('revenue'))
+    cogs = _get_values(found.get('cogs'))
+    gross = _get_values(found.get('gross_profit'))
+    net = _get_values(found.get('net_profit'))
+
+    # 毛利率趋势
+    if rev is not None and cogs is not None:
+        gm = ((rev - cogs) / rev * 100).round(2)
+        result['gross_margin_trend'] = [
+            {'period': str(col), 'revenue': float(rev[col]) if not _np_ic.isnan(rev[col]) else None,
+             'gross_margin_pct': float(gm[col]) if not _np_ic.isnan(gm[col]) else None}
+            for col in num_cols
+        ]
+        # 异常检测：毛利率变化 >5pp
+        if len(gm.dropna()) >= 2:
+            gm_clean = gm.dropna()
+            diff = gm_clean.diff().abs()
+            for col in diff[diff > 5].index:
+                result['anomalies'].append(f'毛利率在 {col} 期变化超过5个百分点，需关注')
+
+    # 净利率
+    if rev is not None and net is not None:
+        nm = (net / rev * 100).round(2)
+        result['summary']['net_margin_latest'] = float(nm.iloc[-1]) if not nm.empty else None
+
+    result['summary']['periods'] = [str(c) for c in num_cols]
+    result['summary']['found_items'] = list(found.keys())
+    return result
+
+
+def _step2_financial_ratios(df_pl, df_bs=None):
+    """
+    计算关键财务比率和杜邦三因素分解。
+    df_pl: 利润表 DataFrame
+    df_bs: 资产负债表 DataFrame（可选）
+    Returns: dict with keys: ratios, dupont, health_score
+    """
+    import numpy as _np_fr
+
+    ratios = {}
+
+    # 从利润表提取关键数字（取最新期）
+    def _extract_latest(df, keywords):
+        if df is None:
+            return None
+        for kw in keywords:
+            matches = df.index.astype(str).str.lower().str.contains(kw, na=False)
+            if matches.any():
+                row = df[matches].iloc[0]
+                num = _pd.to_numeric(row, errors='coerce').dropna()
+                if not num.empty:
+                    return float(num.iloc[-1])
+            # also try first column as label
+            if df.columns.dtype == object:
+                col0 = df.columns[0]
+                label_matches = df[col0].astype(str).str.lower().str.contains(kw, na=False)
+                if label_matches.any():
+                    row = df[label_matches].iloc[0]
+                    num_cols = df.select_dtypes(include=[_np_fr.number]).columns
+                    if len(num_cols) > 0:
+                        return float(df.loc[row.name, num_cols].iloc[-1])
+        return None
+
+    revenue = _extract_latest(df_pl, ['营业收入', 'revenue', 'total revenue', 'sales'])
+    gross_profit = _extract_latest(df_pl, ['毛利', 'gross profit'])
+    cogs = _extract_latest(df_pl, ['营业成本', 'cogs', 'cost of goods'])
+    operating_profit = _extract_latest(df_pl, ['营业利润', 'operating profit', 'ebit'])
+    net_profit = _extract_latest(df_pl, ['净利润', 'net profit', 'net income'])
+
+    if revenue and revenue != 0:
+        if gross_profit:
+            ratios['gross_margin'] = round(gross_profit / revenue * 100, 2)
+        elif cogs:
+            ratios['gross_margin'] = round((revenue - cogs) / revenue * 100, 2)
+        if operating_profit:
+            ratios['operating_margin'] = round(operating_profit / revenue * 100, 2)
+        if net_profit:
+            ratios['net_margin'] = round(net_profit / revenue * 100, 2)
+
+    # 资产负债表比率
+    if df_bs is not None:
+        total_assets = _extract_latest(df_bs, ['总资产', 'total assets'])
+        current_assets = _extract_latest(df_bs, ['流动资产', 'current assets'])
+        current_liabilities = _extract_latest(df_bs, ['流动负债', 'current liabilities'])
+        total_liabilities = _extract_latest(df_bs, ['总负债', 'total liabilities', 'total debt'])
+        equity = _extract_latest(df_bs, ['股东权益', '所有者权益', 'equity', "shareholders' equity"])
+        inventory = _extract_latest(df_bs, ['存货', '库存', 'inventory'])
+
+        if current_assets and current_liabilities and current_liabilities != 0:
+            ratios['current_ratio'] = round(current_assets / current_liabilities, 2)
+            if inventory:
+                ratios['quick_ratio'] = round((current_assets - inventory) / current_liabilities, 2)
+
+        if total_liabilities and total_assets and total_assets != 0:
+            ratios['debt_ratio'] = round(total_liabilities / total_assets * 100, 2)
+
+        if net_profit and total_assets and total_assets != 0:
+            ratios['roa'] = round(net_profit / total_assets * 100, 2)
+
+        # 杜邦分解：ROE = 净利率 × 资产周转率 × 权益乘数
+        dupont = {}
+        if net_profit and revenue and revenue != 0:
+            dupont['net_margin'] = round(net_profit / revenue * 100, 2)
+        if revenue and total_assets and total_assets != 0:
+            dupont['asset_turnover'] = round(revenue / total_assets, 3)
+        if total_assets and equity and equity != 0:
+            dupont['equity_multiplier'] = round(total_assets / equity, 2)
+        if len(dupont) == 3:
+            dupont['roe'] = round(dupont['net_margin'] / 100 * dupont['asset_turnover'] * dupont['equity_multiplier'] * 100, 2)
+        ratios['dupont'] = dupont
+
+    # 健康度评分（简单规则）
+    score = 70  # 基础分
+    if ratios.get('gross_margin', 0) > 30: score += 5
+    if ratios.get('gross_margin', 0) < 10: score -= 10
+    if ratios.get('net_margin', 0) > 10: score += 5
+    if ratios.get('net_margin', 0) < 0: score -= 20
+    if ratios.get('current_ratio', 1) >= 1.5: score += 5
+    if ratios.get('current_ratio', 1) < 1: score -= 15
+    if ratios.get('debt_ratio', 50) > 70: score -= 10
+    score = max(0, min(100, score))
+
+    grade = 'A（优秀）' if score >= 85 else 'B（良好）' if score >= 70 else 'C（一般）' if score >= 55 else 'D（预警）'
+
+    return {
+        'ratios': ratios,
+        'health_score': score,
+        'health_grade': grade,
+    }
+
+
+# ============================================================
+# BUDGET ANALYSIS UTILS
+# ============================================================
+
+def _detect_budget_vs_actual(dfs):
+    """
+    从多个 DataFrame 中识别预算表和实际表。
+    dfs: dict {sheet_name: DataFrame}
+    Returns: dict with keys 'budget' and 'actual', each (sheet_name, df) or None
+    """
+    BUDGET_KEYWORDS = ['预算', 'budget', 'plan', '计划']
+    ACTUAL_KEYWORDS = ['实际', '实发', 'actual', 'realized', '执行']
+
+    def _score(name, df, keywords):
+        score = sum(1 for k in keywords if k.lower() in name.lower())
+        # also check column names
+        col_text = ' '.join(str(c).lower() for c in df.columns)
+        score += sum(1 for k in keywords if k.lower() in col_text)
+        return score
+
+    if isinstance(dfs, list):
+        dfs = {f'sheet{i}': df for i, df in enumerate(dfs)}
+
+    budget_name, budget_score, budget_df = None, 0, None
+    actual_name, actual_score, actual_df = None, 0, None
+
+    for name, df in dfs.items():
+        bs = _score(name, df, BUDGET_KEYWORDS)
+        as_ = _score(name, df, ACTUAL_KEYWORDS)
+        if bs > budget_score:
+            budget_score, budget_name, budget_df = bs, name, df
+        if as_ > actual_score:
+            actual_score, actual_name, actual_df = as_, name, df
+
+    # If same sheet identified as both, try to separate by column names
+    if budget_name == actual_name and budget_name is not None:
+        df = budget_df
+        budget_cols = [c for c in df.columns if any(k in str(c).lower() for k in BUDGET_KEYWORDS)]
+        actual_cols = [c for c in df.columns if any(k in str(c).lower() for k in ACTUAL_KEYWORDS)]
+        if budget_cols and actual_cols:
+            label_col = [c for c in df.columns if df[c].dtype == object]
+            return {
+                'budget': (budget_name + '_budget_cols', df[label_col + budget_cols] if label_col else df[budget_cols]),
+                'actual': (actual_name + '_actual_cols', df[label_col + actual_cols] if label_col else df[actual_cols]),
+                'source': 'same_sheet_split',
+            }
+
+    return {
+        'budget': (budget_name, budget_df) if budget_name else None,
+        'actual': (actual_name, actual_df) if actual_name else None,
+        'source': 'separate_sheets',
+    }
+
+
+def _step1_variance_analysis(df_budget, df_actual):
+    """
+    预实差异分析：计算预算 vs 实际的绝对差异和相对差异。
+    Returns: dict with keys: summary, variance_table, top_unfavorable, top_favorable, anomalies
+    """
+    import numpy as _np_va
+
+    result = {
+        'summary': {},
+        'variance_table': [],
+        'top_unfavorable': [],
+        'top_favorable': [],
+        'anomalies': [],
+    }
+
+    try:
+        # 找到共同的数值列（期间列）
+        budget_num = df_budget.select_dtypes(include=[_np_va.number]).columns.tolist()
+        actual_num = df_actual.select_dtypes(include=[_np_va.number]).columns.tolist()
+
+        # 对齐列
+        common_cols = [c for c in budget_num if c in actual_num]
+        if not common_cols:
+            # 尝试用列序号对齐
+            min_len = min(len(budget_num), len(actual_num))
+            if min_len > 0:
+                common_cols = list(range(min_len))
+                df_budget_num = df_budget[budget_num[:min_len]].copy()
+                df_actual_num = df_actual[actual_num[:min_len]].copy()
+                df_budget_num.columns = common_cols
+                df_actual_num.columns = common_cols
+            else:
+                result['summary']['error'] = '无法对齐预算表和实际表的列'
+                return result
+        else:
+            df_budget_num = df_budget[common_cols]
+            df_actual_num = df_actual[common_cols]
+
+        # 计算总差异
+        total_budget = df_budget_num.sum().sum()
+        total_actual = df_actual_num.sum().sum()
+        total_variance = total_actual - total_budget
+        variance_pct = (total_variance / total_budget * 100) if total_budget != 0 else 0
+
+        result['summary'] = {
+            'total_budget': round(float(total_budget), 2),
+            'total_actual': round(float(total_actual), 2),
+            'total_variance': round(float(total_variance), 2),
+            'variance_pct': round(float(variance_pct), 2),
+            'periods_analyzed': [str(c) for c in common_cols],
+            'overall_status': '超支' if total_variance > 0 else '节约' if total_variance < 0 else '持平',
+        }
+
+        # 逐行差异（如果两表行数和标签可以对应）
+        if len(df_budget) == len(df_actual):
+            label_col_b = [c for c in df_budget.columns if df_budget[c].dtype == object]
+            labels = df_budget[label_col_b[0]].tolist() if label_col_b else [f'行{i}' for i in range(len(df_budget))]
+
+            for i, label in enumerate(labels):
+                try:
+                    b_vals = _pd.to_numeric(df_budget_num.iloc[i], errors='coerce')
+                    a_vals = _pd.to_numeric(df_actual_num.iloc[i], errors='coerce')
+                    b_total = float(b_vals.sum())
+                    a_total = float(a_vals.sum())
+                    var = a_total - b_total
+                    var_pct = var / b_total * 100 if b_total != 0 else 0
+                    row = {
+                        'item': str(label),
+                        'budget': round(b_total, 2),
+                        'actual': round(a_total, 2),
+                        'variance': round(var, 2),
+                        'variance_pct': round(var_pct, 2),
+                        'flag': '🔴重大超支' if var > 0 and abs(var_pct) > 10 else '🟡轻微超支' if var > 0 else '🟢节约' if var < 0 else '',
+                    }
+                    result['variance_table'].append(row)
+                    if var > 0 and abs(var_pct) > 5:
+                        result['top_unfavorable'].append(row)
+                    elif var < 0:
+                        result['top_favorable'].append(row)
+                except Exception:
+                    pass
+
+        # 排序
+        result['top_unfavorable'] = sorted(result['top_unfavorable'], key=lambda x: -abs(x['variance']))[:5]
+        result['top_favorable'] = sorted(result['top_favorable'], key=lambda x: x['variance'])[:5]
+
+    except Exception as e:
+        result['summary']['error'] = str(e)
+
+    return result
+
+
+def _step2_rolling_forecast(df_actual, df_budget=None):
+    """
+    基于已实现数据做滚动预测（线性外推）。
+    Returns: dict with keys: forecast, full_year_estimate, achievement_rate, risk_flags
+    """
+    import numpy as _np_rf
+
+    result = {
+        'forecast': [],
+        'full_year_estimate': None,
+        'achievement_rate': None,
+        'risk_flags': [],
+    }
+
+    try:
+        num_cols = df_actual.select_dtypes(include=[_np_rf.number]).columns.tolist()
+        if not num_cols:
+            result['error'] = '实际数据中无数值列'
+            return result
+
+        actual_vals = _pd.to_numeric(df_actual[num_cols].sum(), errors='coerce').dropna()
+        n_actual = len(actual_vals)
+
+        if n_actual < 2:
+            result['error'] = '实际期间数据不足2期，无法预测'
+            return result
+
+        # 线性外推：用已有数据的斜率预测剩余期间
+        x = _np_rf.arange(n_actual)
+        y = actual_vals.values.astype(float)
+        slope = _np_rf.polyfit(x, y, 1)[0]
+        avg = float(y.mean())
+
+        # 假设全年12期
+        total_periods = 12
+        remaining = total_periods - n_actual
+        forecast_vals = []
+        for i in range(remaining):
+            # 加权：70% 线性趋势 + 30% 均值
+            predicted = float(y[-1] + slope * (i + 1)) * 0.7 + avg * 0.3
+            forecast_vals.append(round(predicted, 2))
+
+        result['forecast'] = [
+            {'period': f'第{n_actual + i + 1}期（预测）', 'value': v}
+            for i, v in enumerate(forecast_vals)
+        ]
+        result['full_year_estimate'] = round(float(y.sum()) + sum(forecast_vals), 2)
+        result['actual_to_date'] = round(float(y.sum()), 2)
+        result['periods_realized'] = n_actual
+
+        # 达成率（如果有预算）
+        if df_budget is not None:
+            budget_num = df_budget.select_dtypes(include=[_np_rf.number]).columns.tolist()
+            budget_total = float(_pd.to_numeric(df_budget[budget_num].sum().sum(), errors='coerce'))
+            if budget_total != 0:
+                result['achievement_rate'] = round(result['full_year_estimate'] / budget_total * 100, 2)
+                result['budget_total'] = round(budget_total, 2)
+                gap = result['full_year_estimate'] - budget_total
+                result['gap_vs_budget'] = round(gap, 2)
+                if result['achievement_rate'] < 90:
+                    result['risk_flags'].append(f'全年预测达成率 {result["achievement_rate"]}%，低于90%，存在较大缺口')
+                if result['achievement_rate'] > 110:
+                    result['risk_flags'].append(f'全年预测将超预算 {result["achievement_rate"]-100:.1f}%，注意成本管控')
+
+    except Exception as e:
+        result['error'] = str(e)
+
+    return result
 "###;
 
 #[cfg(test)]
