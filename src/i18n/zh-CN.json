@@ -190,7 +190,15 @@
       "installFailed": "安装失败",
       "noResults": "没有找到匹配的技能",
       "loginRequired": "登录云端账号后可浏览技能市场",
-      "loadFailed": "加载失败，请重试"
+      "loadFailed": "加载失败，请重试",
+      "retry": "重试",
+      "cat_all": "全部",
+      "cat_hr": "HR",
+      "cat_finance": "财务",
+      "cat_legal": "法务",
+      "cat_sales": "销售",
+      "cat_ops": "运营",
+      "cat_general": "通用"
     },
     "saving": "保存中...",
     "saveSettings": "保存设置",

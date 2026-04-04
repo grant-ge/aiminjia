@@ -5,25 +5,12 @@ import { listMarketplaceSkills, installMarketplaceSkill } from '@/lib/tauri'
 import type { MarketplaceSkillItem } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
 
-const CATEGORIES = [
-  { key: '', label: 'allCategories' },
-  { key: 'hr', label: 'HR' },
-  { key: 'finance', label: 'Finance' },
-  { key: 'legal', label: 'Legal' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'ops', label: 'Ops' },
-  { key: 'general', label: 'General' },
-] as const
-
-const CATEGORY_LABELS: Record<string, Record<string, string>> = {
-  'zh-CN': { '': '全部', hr: 'HR', finance: '财务', legal: '法务', sales: '销售', ops: '运营', general: '通用' },
-  'en-US': { '': 'All', hr: 'HR', finance: 'Finance', legal: 'Legal', sales: 'Sales', ops: 'Ops', general: 'General' },
-}
+const CATEGORY_KEYS = ['', 'hr', 'finance', 'legal', 'sales', 'ops', 'general'] as const
 
 const PAGE_SIZE = 20
 
 export function SkillMarketplace() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const pushNotification = useNotificationStore((s) => s.push)
 
   const [items, setItems] = useState<MarketplaceSkillItem[]>([])
@@ -92,8 +79,20 @@ export function SkillMarketplace() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const lang = i18n.language
-  const catLabels = CATEGORY_LABELS[lang] || CATEGORY_LABELS['en-US']
+
+  // Cleanup search timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [])
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+      loadSkills(1, category, search)
+    }
+  }
 
   return (
     <div>
@@ -104,18 +103,18 @@ export function SkillMarketplace() {
 
       {/* Category tabs + search */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {CATEGORIES.map((cat) => (
+        {CATEGORY_KEYS.map((key) => (
           <button
-            key={cat.key}
-            onClick={() => setCategory(cat.key)}
+            key={key}
+            onClick={() => setCategory(key)}
             className="rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer"
             style={{
-              background: category === cat.key ? 'var(--color-primary)' : 'var(--color-bg-card)',
-              color: category === cat.key ? 'var(--color-text-on-primary)' : 'var(--color-text-secondary)',
-              border: `1px solid ${category === cat.key ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              background: category === key ? 'var(--color-primary)' : 'var(--color-bg-card)',
+              color: category === key ? 'var(--color-text-on-primary)' : 'var(--color-text-secondary)',
+              border: `1px solid ${category === key ? 'var(--color-primary)' : 'var(--color-border)'}`,
             }}
           >
-            {catLabels[cat.key] || cat.label}
+            {t(`settings.skills.cat_${key || 'all'}`)}
           </button>
         ))}
         <div className="ml-auto">
@@ -123,6 +122,7 @@ export function SkillMarketplace() {
             type="text"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             placeholder={t('settings.skills.searchPlaceholder')}
             className="h-7 rounded-md border px-2 text-xs"
             style={{

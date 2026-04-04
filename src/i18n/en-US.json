@@ -190,7 +190,15 @@
       "installFailed": "Install failed",
       "noResults": "No matching skills found",
       "loginRequired": "Sign in to browse the skill marketplace",
-      "loadFailed": "Failed to load, please retry"
+      "loadFailed": "Failed to load, please retry",
+      "retry": "Retry",
+      "cat_all": "All",
+      "cat_hr": "HR",
+      "cat_finance": "Finance",
+      "cat_legal": "Legal",
+      "cat_sales": "Sales",
+      "cat_ops": "Ops",
+      "cat_general": "General"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",

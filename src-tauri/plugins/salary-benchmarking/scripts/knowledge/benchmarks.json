@@ -33,5 +33,8 @@
     "制造业": {"typical": 13, "range": [12, 15]},
     "金融": {"typical": 14, "range": [12, 24]},
     "零售": {"typical": 13, "range": [12, 14]}
+  },
+  "metadata": {
+    "note": "本数据按职能(function)细分统计，用于外部市场对标。与 comp-analysis-v2 插件的按职级带(seniority band)均值数据口径不同，不可直接对比"
   }
 }
