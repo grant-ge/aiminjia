@@ -1,0 +1,13 @@
+{
+  "competitiveness_rating": {
+    "> P75": {"label": "领先", "strategy": "高竞争力，可适当控制涨幅，关注内部公平性"},
+    "P50-P75": {"label": "中上", "strategy": "市场竞争力良好，保持现有策略"},
+    "P25-P50": {"label": "中下", "strategy": "低于市场中位，关注关键岗位流失风险"},
+    "< P25": {"label": "滞后", "strategy": "显著低于市场，需制定追赶计划"}
+  },
+  "benchmarking_methodology": {
+    "peer_selection": "选择同行业、同城市、相近规模（±50%营收/人数）的企业作为对标群",
+    "data_calibration": "注意口径差异：base salary vs total cash vs total compensation",
+    "aging_adjustment": "数据超过12个月需做年化增幅调整（通常5-8%）"
+  }
+}

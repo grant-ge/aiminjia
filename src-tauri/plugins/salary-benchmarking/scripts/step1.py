@@ -118,6 +118,9 @@ for sem, col in detected.items():
 
 has_market_data = any(k.startswith('market_') for k in detected)
 
+_benchmarks = _KNOWLEDGE.get('benchmarks', {}) if '_KNOWLEDGE' in dir() else {}
+_rules = _KNOWLEDGE.get('rules', {}) if '_KNOWLEDGE' in dir() else {}
+
 _precompute = {
     'field_mapping': field_mapping,
     'salary_column': salary_col,
@@ -128,6 +131,12 @@ _precompute = {
     'has_market_data': has_market_data,
     'total_employees': len(_df),
 }
+
+if _benchmarks.get('salary_percentiles'):
+    _precompute['market_data'] = _benchmarks['salary_percentiles']
+    _precompute['tc_multiplier'] = _benchmarks.get('total_compensation_multiplier', {})
+if _rules.get('competitiveness_rating'):
+    _precompute['rating_scale'] = _rules['competitiveness_rating']
 
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
