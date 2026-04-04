@@ -84,11 +84,7 @@ fn build_knowledge_preamble(knowledge_dir: &Path) -> String {
             log::warn!("Invalid JSON in knowledge file '{}', skipping", path.display());
             continue;
         }
-        // Escape backslashes and triple-quotes for safe embedding in r''' delimiters.
-        // Since r''' in Python does not interpret escape sequences, the only danger
-        // is a literal ''' sequence in the JSON content.
-        let safe_content = content.replace("'''", "' '' '");
-        entries.push((stem, safe_content));
+        entries.push((stem, content));
     }
 
     if entries.is_empty() {
@@ -100,9 +96,10 @@ fn build_knowledge_preamble(knowledge_dir: &Path) -> String {
 
     let mut code = String::from("_KNOWLEDGE = {}\n");
     for (key, json_str) in &entries {
+        let hex_encoded: String = json_str.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
         code.push_str(&format!(
-            "_KNOWLEDGE[\"{}\"] = __import__('json').loads(r'''{}''')\n",
-            key, json_str
+            "_KNOWLEDGE[\"{}\"] = __import__('json').loads(bytes.fromhex('{}').decode())\n",
+            key, hex_encoded
         ));
     }
     log::info!(
