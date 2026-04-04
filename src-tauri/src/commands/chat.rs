@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use futures::StreamExt;
@@ -47,6 +48,69 @@ const COMPRESS_THRESHOLD_CHARS: usize = 24_000;
 /// Number of recent messages to preserve (not compress) during compression.
 /// These are kept verbatim so the LLM has full context for the current exchange.
 const COMPRESS_KEEP_RECENT: usize = 10;
+
+/// Build a Python preamble that injects `_KNOWLEDGE` dict from JSON files
+/// found in the given knowledge directory. Each file becomes a key (filename
+/// without extension) mapped to its parsed JSON content.
+fn build_knowledge_preamble(knowledge_dir: &Path) -> String {
+    let mut entries: Vec<(String, String)> = Vec::new();
+
+    let read_dir = match std::fs::read_dir(knowledge_dir) {
+        Ok(rd) => rd,
+        Err(e) => {
+            log::warn!("Failed to read knowledge dir '{}': {}", knowledge_dir.display(), e);
+            return String::new();
+        }
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to read knowledge file '{}': {}", path.display(), e);
+                continue;
+            }
+        };
+        // Validate that it's valid JSON
+        if serde_json::from_str::<serde_json::Value>(&content).is_err() {
+            log::warn!("Invalid JSON in knowledge file '{}', skipping", path.display());
+            continue;
+        }
+        // Escape backslashes and triple-quotes for safe embedding in r''' delimiters.
+        // Since r''' in Python does not interpret escape sequences, the only danger
+        // is a literal ''' sequence in the JSON content.
+        let safe_content = content.replace("'''", "' '' '");
+        entries.push((stem, safe_content));
+    }
+
+    if entries.is_empty() {
+        return String::new();
+    }
+
+    // Sort for deterministic output
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut code = String::from("_KNOWLEDGE = {}\n");
+    for (key, json_str) in &entries {
+        code.push_str(&format!(
+            "_KNOWLEDGE[\"{}\"] = __import__('json').loads(r'''{}''')\n",
+            key, json_str
+        ));
+    }
+    log::info!(
+        "Knowledge preamble: injected {} entries into _KNOWLEDGE",
+        entries.len()
+    );
+    code
+}
 
 /// Compress tool result text in message history to save context tokens.
 /// Strips verbose headers from execute_python results while keeping the actual output.
@@ -1836,7 +1900,13 @@ async fn agent_loop(
             let analysis_preamble = crate::llm::tool_executor::file_load::build_analysis_preamble(
                 &conversation_id, config.step, &workspace_path,
             );
-            let full_code = format!("{}\n{}\n{}", file_preamble, analysis_preamble, precompute.python_code);
+            let knowledge_preamble = precompute.knowledge_dir.as_ref()
+                .map(|dir| build_knowledge_preamble(dir))
+                .unwrap_or_default();
+            let full_code = format!(
+                "{}\n{}\n{}\n{}",
+                file_preamble, analysis_preamble, knowledge_preamble, precompute.python_code
+            );
 
             // NOTE: No sandbox.validate_code() for precompute scripts.
             // The preamble uses exec() to load _analysis_utils.py, which would

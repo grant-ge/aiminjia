@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Skill runtime state (persisted per-conversation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +99,9 @@ pub struct StepPrecompute {
     pub python_code: String,
     /// Key under which the result JSON is cached (e.g., "step1_precompute").
     pub cache_key: String,
+    /// Optional path to a knowledge/ directory containing .json files
+    /// that will be injected as `_KNOWLEDGE` dict into the Python context.
+    pub knowledge_dir: Option<PathBuf>,
 }
 
 /// Feedback mode configuration for a workflow step.

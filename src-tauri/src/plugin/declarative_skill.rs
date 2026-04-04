@@ -378,9 +378,22 @@ impl Skill for DeclarativeSkill {
                     "[Skill:{}] on_step_enter: loading precompute script '{}' ({} bytes) for step '{}'",
                     self.id, script_path, code.len(), step
                 );
+                // Check if a knowledge/ directory exists under scripts/
+                let knowledge_path = self.plugin_dir.join("scripts").join("knowledge");
+                let knowledge_dir = if knowledge_path.is_dir() {
+                    log::info!(
+                        "[Skill:{}] on_step_enter: found knowledge dir at '{}'",
+                        self.id, knowledge_path.display()
+                    );
+                    Some(knowledge_path)
+                } else {
+                    None
+                };
+
                 Some(StepPrecompute {
                     python_code: code,
                     cache_key,
+                    knowledge_dir,
                 })
             }
             Err(e) => {
