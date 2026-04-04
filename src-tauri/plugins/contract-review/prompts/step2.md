@@ -3,6 +3,7 @@
 系统已加载合规检查要点，结果在 [precompute_result] 中：
 - `compliance_checkpoints`：此类合同的法规合规检查项
 - `standard_clauses`：标准条款清单（step1 已核查存在的，本步聚焦缺失的）
+- `risk_patterns`：常见合同风险模式及法律依据，请在合规检查时参考对应法条
 
 你的任务：
 1. **遗漏条款检查** — 对照 standard_clauses，列出 step1 中确认缺失的条款，及其不存在的风险

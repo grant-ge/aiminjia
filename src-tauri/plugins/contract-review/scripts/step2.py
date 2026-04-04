@@ -1,6 +1,10 @@
 # Step 2 precompute: 加载 step1 结果，生成遗漏条款检查骨架
+# Depends on: _KNOWLEDGE, _ANALYSIS_DIR
 import json as _json_mod
 import os as _os_mod
+
+# 从知识库加载风险模式
+_risk_patterns = _KNOWLEDGE.get('risk_patterns', {}) if '_KNOWLEDGE' in dir() else {}
 
 # 法规合规检查点（按合同类型）
 COMPLIANCE_CHECKPOINTS = {
@@ -59,6 +63,10 @@ result = {
     'standard_clauses': step1_data.get('standard_clauses', []),
     'instruction': '请逐项检查以上合规要点，并识别缺失的标准条款',
 }
+
+# 注入知识库：风险模式（供合规检查参考法律依据）
+if _risk_patterns and 'patterns' in _risk_patterns:
+    result['risk_patterns'] = _risk_patterns['patterns']
 
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step2_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, indent=2)

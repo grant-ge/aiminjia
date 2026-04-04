@@ -3,6 +3,8 @@
 系统已根据合同内容生成检查清单，结果在 [precompute_result] 中：
 - `detected_type`：识别到的合同类型
 - `standard_clauses`：此类合同应包含的标准条款清单
+- `clause_library`：知识库中该类合同的必备条款详情（含必备要素和常见缺陷），请作为检查依据
+- `risk_patterns`：常见合同风险模式及法律依据，请在识别风险条款时参考匹配
 
 你的任务：
 1. **基本要素检查** — 对照 standard_clauses，逐项检查合同中是否存在，标注"存在/缺失/不完整"

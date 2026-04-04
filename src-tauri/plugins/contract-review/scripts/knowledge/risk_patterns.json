@@ -1,0 +1,14 @@
+{
+  "patterns": [
+    {"id": "R001", "name": "违约金无上限", "severity": "🔴", "description": "违约金条款未设置上限，可能承担不成比例的赔偿", "suggestion": "建议约定违约金上限不超过合同总金额的30%", "law": "民法典第585条"},
+    {"id": "R002", "name": "不可抗力条款过窄", "severity": "🟡", "description": "仅列举自然灾害，未包含疫情、政策变化等", "suggestion": "扩大不可抗力范围，增加兜底条款", "law": "民法典第180条"},
+    {"id": "R003", "name": "管辖权不利", "severity": "🟡", "description": "约定对方所在地法院管辖", "suggestion": "争取约定己方所在地或合同履行地管辖", "law": "民诉法第35条"},
+    {"id": "R004", "name": "自动续期条款", "severity": "🟡", "description": "合同到期自动续期，未设终止通知期", "suggestion": "明确续期条件和提前N天书面通知终止", "law": ""},
+    {"id": "R005", "name": "知识产权归属不明", "severity": "🔴", "description": "委托开发/服务成果的知识产权归属未约定", "suggestion": "明确约定成果归属方及授权范围", "law": "著作权法第19条"},
+    {"id": "R006", "name": "单方变更权", "severity": "🔴", "description": "一方有权单方变更合同条款", "suggestion": "任何变更需双方书面同意", "law": "民法典第543条"},
+    {"id": "R007", "name": "无限连带责任", "severity": "🔴", "description": "约定一方承担无限连带责任", "suggestion": "限制责任范围，设置赔偿上限", "law": ""},
+    {"id": "R008", "name": "验收条款缺失", "severity": "🟡", "description": "无明确验收标准和流程", "suggestion": "约定验收标准、验收期限、异议处理方式", "law": ""},
+    {"id": "R009", "name": "保密义务单向", "severity": "🟡", "description": "仅约束一方保密义务", "suggestion": "双向保密义务对等", "law": ""},
+    {"id": "R010", "name": "解除条件不对等", "severity": "🔴", "description": "一方有任意解除权，另一方无此权利", "suggestion": "解除条件应对等，或补偿不对等一方", "law": "民法典第563条"}
+  ]
+}

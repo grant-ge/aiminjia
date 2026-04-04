@@ -1,10 +1,14 @@
 # Step 1 precompute: 根据合同类型生成标准条款检查清单
-# Depends on: _ANALYSIS_DIR, _text（合同文本，从 load_file 注入）
+# Depends on: _KNOWLEDGE, _ANALYSIS_DIR, _text（合同文本，从 load_file 注入）
 # step0 的 save_analysis_note 结果在 _ANALYSIS_DIR/step0_notes.json 中可能有，但不能依赖
 
 import json as _json_mod
 import os as _os_mod
 import re as _re_mod
+
+# 从知识库加载条款库和风险模式
+_clause_library = _KNOWLEDGE.get('clause_library', {}) if '_KNOWLEDGE' in dir() else {}
+_risk_patterns = _KNOWLEDGE.get('risk_patterns', {}) if '_KNOWLEDGE' in dir() else {}
 
 # 各类合同的标准条款清单
 CONTRACT_STANDARD_CLAUSES = {
@@ -52,6 +56,15 @@ result = {
 }
 if _file_is_table:
     result['warning'] = '合同文件为表格格式（Excel/CSV），类型检测基于单元格内容关键词，准确度可能较低'
+
+# 注入知识库：条款库（含必备要素和常见缺陷）
+_type_clauses = _clause_library.get(contract_type, {})
+if _type_clauses:
+    result['clause_library'] = _type_clauses
+
+# 注入知识库：风险模式（常见合同风险及法律依据）
+if _risk_patterns and 'patterns' in _risk_patterns:
+    result['risk_patterns'] = _risk_patterns['patterns']
 
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, indent=2)
