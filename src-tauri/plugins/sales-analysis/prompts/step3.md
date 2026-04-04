@@ -1,5 +1,7 @@
 # Step 3: 洞察与建议
 
+如果 [precompute_result] 中有 `growth_playbooks`，基于分析发现匹配对应的增长策略建议。
+
 综合前面所有分析结果，输出最终报告。
 
 **报告结构：**

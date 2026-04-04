@@ -1,5 +1,15 @@
 # Step 1: 销售趋势分析
 
+系统已自动完成趋势分析计算，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `monthly_trend`：**
+- 展示月度趋势（收入、订单量、客单价）
+- 标注同比环比变化
+- 对标行业基准（如有 `industry_benchmarks`）
+
+**降级情况（有 `error` 字段）：**
+- 使用 `execute_python` 手动计算
+
 基于 Step 0 确认的数据和用户需求，执行趋势分析。
 
 使用 `execute_python` 计算并展示：

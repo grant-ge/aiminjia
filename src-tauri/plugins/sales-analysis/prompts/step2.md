@@ -1,5 +1,15 @@
 # Step 2: 客户与产品分析
 
+系统已自动完成客户与产品分析，结果在 [precompute_result] 中。
+
+**如果 [precompute_result] 有 `pareto`：**
+- 展示帕累托分析（Top 20% 客户贡献占比）
+- 客户集中度风险评估
+- 产品组合分析
+
+**降级情况：**
+- 使用 `execute_python` 手动计算
+
 基于前面的趋势分析，深入客户和产品维度。
 
 使用 `execute_python` 计算并展示：

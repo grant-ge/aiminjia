@@ -1,0 +1,12 @@
+{
+  "conversion_benchmarks": {
+    "电商": {"访客→加购": 0.08, "加购→下单": 0.35, "下单→付款": 0.85},
+    "B2B": {"线索→商机": 0.15, "商机→报价": 0.40, "报价→赢单": 0.25},
+    "SaaS": {"注册→激活": 0.40, "激活→付费": 0.08, "月流失率": 0.03}
+  },
+  "industry_metrics": {
+    "电商": {"avg_order_value_range": [50, 500], "repeat_rate_healthy": 0.30},
+    "B2B": {"avg_deal_cycle_days": [30, 90], "win_rate_healthy": 0.25},
+    "SaaS": {"ltv_cac_ratio_healthy": 3.0, "nrr_healthy": 1.10}
+  }
+}
