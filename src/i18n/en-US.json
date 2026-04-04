@@ -153,7 +153,17 @@
       "models": "Models",
       "search": "Search",
       "general": "General",
-      "persona": "Persona"
+      "persona": "Persona",
+      "skills": "Skills"
+    },
+    "skills": {
+      "description": "Install and manage custom skill packs. Restart required after changes.",
+      "install": "Install Skill",
+      "uninstall": "Uninstall",
+      "selectFolder": "Select skill directory",
+      "confirmUninstall": "Uninstall skill \"{{name}}\"?",
+      "empty": "No custom skills installed",
+      "emptyHint": "Click \"Install Skill\" to add custom skill packs"
     },
     "saving": "Saving...",
     "saveSettings": "Save Settings",

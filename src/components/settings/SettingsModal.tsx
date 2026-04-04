@@ -27,6 +27,7 @@ import { PROVIDER_CAPABILITIES } from '@/types/settings'
 import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
+import { SkillsTab } from '@/components/settings/SkillsTab'
 import type { AppLanguage } from '@/i18n'
 
 interface SettingsModalProps {
@@ -34,7 +35,7 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills'
 
 const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
   { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
@@ -284,6 +285,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('persona')}
         >
           {t('settings.tabs.persona')}
+        </TabButton>
+        <TabButton
+          active={mainTab === 'skills'}
+          onClick={() => setMainTab('skills')}
+        >
+          {t('settings.tabs.skills')}
         </TabButton>
       </div>
 
@@ -709,6 +716,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         <PersonaTab />
       )}
 
+      {mainTab === 'skills' && (
+        <SkillsTab />
+      )}
 
     </Modal>
   )

@@ -881,3 +881,31 @@ export function onBrowserClosed(
 ): Promise<() => void> {
   return listen<BrowserClosedPayload>('browser:closed', (event) => handler(event.payload))
 }
+
+// ---------------------------------------------------------------------------
+// Skill Management Commands
+// ---------------------------------------------------------------------------
+
+/** Info about a custom (user-installed) skill. */
+export interface CustomSkillInfo {
+  id: string
+  name: string
+  description: string
+  path: string
+  enabled: boolean
+}
+
+/** List all custom skills installed by the user. */
+export function listCustomSkills(): Promise<CustomSkillInfo[]> {
+  return invoke<CustomSkillInfo[]>('list_custom_skills')
+}
+
+/** Install a custom skill from a local directory. */
+export function installCustomSkill(sourcePath: string): Promise<string> {
+  return invoke<string>('install_custom_skill', { sourcePath })
+}
+
+/** Uninstall a custom skill by ID. */
+export function uninstallCustomSkill(skillId: string): Promise<string> {
+  return invoke<string>('uninstall_custom_skill', { skillId })
+}
