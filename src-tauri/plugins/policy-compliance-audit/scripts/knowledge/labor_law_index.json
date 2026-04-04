@@ -1,0 +1,20 @@
+{
+  "考勤制度": [
+    {"topic": "工时制度", "law": "劳动法第36条", "requirement": "标准工时每日8小时每周44小时", "common_violation": "变相要求996/大小周"},
+    {"topic": "加班审批", "law": "劳动法第41条", "requirement": "加班需与工会和劳动者协商", "common_violation": "单方强制加班"},
+    {"topic": "迟到处罚", "law": "工资支付暂行规定第16条", "requirement": "经济处罚不得超过月工资20%且不低于最低工资", "common_violation": "迟到一次扣半天/一天工资"}
+  ],
+  "薪酬制度": [
+    {"topic": "工资支付", "law": "工资支付暂行规定第7条", "requirement": "每月至少支付一次，不得拖欠", "common_violation": "拖延发薪或变相克扣"},
+    {"topic": "加班费", "law": "劳动法第44条", "requirement": "工作日1.5倍/休息日2倍/法定假日3倍", "common_violation": "以调休替代所有加班费"},
+    {"topic": "试用期工资", "law": "劳动合同法第20条", "requirement": "不低于同岗位最低档或合同约定的80%", "common_violation": "试用期工资过低"}
+  ],
+  "奖惩制度": [
+    {"topic": "罚款", "law": "行政处罚法（企业无罚款权）", "requirement": "企业对员工无罚款权，只能扣减绩效", "common_violation": "规定罚款金额（如旷工罚500元）"},
+    {"topic": "解除条件", "law": "劳动合同法第39条", "requirement": "严重违纪解除需有合法有效的规章制度依据", "common_violation": "解除条件过于模糊宽泛"}
+  ],
+  "休假制度": [
+    {"topic": "年休假", "law": "职工带薪年休假条例", "requirement": "工龄满1年即有年假权利", "common_violation": "入职第一年不给年假"},
+    {"topic": "病假", "law": "企业职工患病或非因工负伤医疗期规定", "requirement": "医疗期内不得解除合同", "common_violation": "病假期间按旷工处理"}
+  ]
+}
