@@ -21,6 +21,12 @@ try:
 except Exception as e:
     result = {'error': str(e)}
 
+_variance_rules = _KNOWLEDGE.get('variance_rules', {}) if '_KNOWLEDGE' in dir() else {}
+if _variance_rules.get('variance_categories'):
+    result['attribution_guide'] = _variance_rules['variance_categories']
+if _variance_rules.get('severity_thresholds'):
+    result['severity_scale'] = _variance_rules['severity_thresholds']
+
 _cache_result('budget_step1', result)
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, default=str, indent=2)

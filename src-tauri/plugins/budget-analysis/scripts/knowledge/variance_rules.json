@@ -1,0 +1,14 @@
+{
+  "variance_categories": {
+    "人力成本": {"common_causes": ["编制变动", "薪酬调整", "加班/奖金超预算", "社保基数调整", "人员流动成本"], "attribution_method": "按人数×单价分解"},
+    "营销费用": {"common_causes": ["活动超支", "渠道投放调整", "季节性波动", "新渠道测试"], "attribution_method": "按渠道/活动分解"},
+    "差旅费": {"common_causes": ["出差频次增加", "机票酒店涨价", "新业务区域拓展"], "attribution_method": "按人次×单次成本分解"},
+    "IT费用": {"common_causes": ["新系统采购", "License续费涨价", "云服务用量增长"], "attribution_method": "按项目/服务分解"},
+    "租金物业": {"common_causes": ["新租办公场所", "租金递增条款", "装修改造"], "attribution_method": "通常固定，差异小则价格因素为主"}
+  },
+  "severity_thresholds": {
+    "critical": {"deviation_pct": 0.20, "label": "🔴 重大超支（>20%）"},
+    "warning": {"deviation_pct": 0.10, "label": "🟡 需关注（10-20%）"},
+    "normal": {"deviation_pct": 0.10, "label": "🟢 正常范围（<10%）"}
+  }
+}

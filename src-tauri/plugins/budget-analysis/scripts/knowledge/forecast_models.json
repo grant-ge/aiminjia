@@ -1,0 +1,6 @@
+{
+  "linear_extrapolation": {"name": "线性外推法", "formula": "全年预测 = YTD实际 / 已过月份 × 12", "applicable": "费用趋势平稳、无明显季节性", "accuracy": "±10-15%"},
+  "seasonal_adjustment": {"name": "季节性调整法", "formula": "全年预测 = YTD实际 / 去年同期占全年比", "applicable": "有明显季节波动", "accuracy": "±5-10%", "requires": "去年月度数据"},
+  "moving_average": {"name": "移动平均法", "formula": "预测月 = 最近N个月均值", "applicable": "短期预测，数据有随机波动", "accuracy": "±10-15%", "default_window": 3},
+  "ytd_annualization": {"name": "YTD年化法", "formula": "全年预测 = YTD实际 × (12/已过月份) × 季节系数", "applicable": "通用方法，需配合季节系数修正", "accuracy": "±8-12%"}
+}

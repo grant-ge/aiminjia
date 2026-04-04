@@ -1,0 +1,16 @@
+{
+  "measures": [
+    {"category": "人力成本", "measure": "冻结非核心岗位招聘", "savings": "5-10%", "difficulty": "低", "timeline": "立即"},
+    {"category": "人力成本", "measure": "优化加班审批流程", "savings": "3-5%", "difficulty": "低", "timeline": "1个月"},
+    {"category": "人力成本", "measure": "灵活用工替代正式编制", "savings": "10-20%", "difficulty": "中", "timeline": "3个月"},
+    {"category": "营销费用", "measure": "砍掉ROI<1的渠道", "savings": "15-25%", "difficulty": "低", "timeline": "立即"},
+    {"category": "营销费用", "measure": "从品牌投放转向效果投放", "savings": "10-20%", "difficulty": "中", "timeline": "1-2个月"},
+    {"category": "差旅费", "measure": "视频会议替代非必要出差", "savings": "20-30%", "difficulty": "低", "timeline": "立即"},
+    {"category": "差旅费", "measure": "提前预订政策+差旅平台集采", "savings": "10-15%", "difficulty": "低", "timeline": "1个月"},
+    {"category": "IT费用", "measure": "License使用率审计，释放闲置", "savings": "10-20%", "difficulty": "低", "timeline": "1个月"},
+    {"category": "IT费用", "measure": "云资源Right-Sizing", "savings": "15-25%", "difficulty": "中", "timeline": "2个月"},
+    {"category": "办公费", "measure": "集中采购+供应商年度议价", "savings": "5-10%", "difficulty": "低", "timeline": "季度"},
+    {"category": "通用", "measure": "设置月度预警线（达预算80%时自动提醒）", "savings": "预防性", "difficulty": "低", "timeline": "立即"},
+    {"category": "通用", "measure": "零基预算（ZBB）替代增量预算", "savings": "10-15%", "difficulty": "高", "timeline": "下一预算周期"}
+  ]
+}
