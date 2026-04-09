@@ -239,12 +239,31 @@ def main():
         print("\n✗ No files to upload!")
         sys.exit(1)
 
+    # Content-Type / Content-Disposition for latest download keys
+    LATEST_HEADERS = {
+        f"{OSS_PREFIX}/latest/macos-arm64": {
+            "Content-Type": "application/x-apple-diskimage",
+            "Content-Disposition": f'attachment; filename="AIjia_{version}_aarch64.dmg"',
+        },
+        f"{OSS_PREFIX}/latest/macos-x64": {
+            "Content-Type": "application/x-apple-diskimage",
+            "Content-Disposition": f'attachment; filename="AIjia_{version}_x64.dmg"',
+        },
+        f"{OSS_PREFIX}/latest/windows-x64": {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": f'attachment; filename="AIjia_{version}_x64-setup.exe"',
+        },
+    }
+
     print(f"\n── Uploading {len(uploads)} files ──")
     for label, local_path, oss_key, latest_key in uploads:
         print(f"\n[{label}]")
         upload_to_oss(bucket, str(local_path), oss_key)
         if latest_key:
-            bucket.copy_object(bucket.bucket_name, oss_key, latest_key)
+            headers = LATEST_HEADERS.get(latest_key, {})
+            copy_headers = {"x-oss-metadata-directive": "REPLACE"}
+            copy_headers.update(headers)
+            bucket.copy_object(bucket.bucket_name, oss_key, latest_key, headers=copy_headers)
             print(f"  → latest: {latest_key}")
 
     # ── Generate update.json ─────────────────────────────────────

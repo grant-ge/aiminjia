@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { ask } from '@tauri-apps/plugin-dialog'
+import { getVersion } from '@tauri-apps/api/app'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 
@@ -16,6 +17,13 @@ export function useUpdater() {
         const update = await check()
         if (cancelled || !update) return
 
+        // Skip if remote version is same as (or older than) current
+        const currentVersion = await getVersion()
+        if (update.version === currentVersion) {
+          console.info(`Update skipped: remote ${update.version} = current ${currentVersion}`)
+          return
+        }
+
         // User already declined this session — don't ask again
         if (userDeclinedRef.current) return
 
@@ -28,9 +36,7 @@ export function useUpdater() {
             cancelLabel: i18n.t('updater.updateLater'),
           }
         )
-        if (!yes) {
-          // Mark as declined so we don't prompt again this session.
-          // Do NOT call downloadAndInstall — just discard the update reference.
+        if (!yes || cancelled) {
           userDeclinedRef.current = true
           console.info('User declined update to', update.version)
           return

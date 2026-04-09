@@ -2710,11 +2710,20 @@ async fn agent_loop(
                         "[AGENT] Blocked tool '{}' — not in allowed set for current step (conversation={})",
                         tc.name, conversation_id
                     );
-                    let blocked_msg = format!(
-                        "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
-                        tc.name,
-                        allowed.iter().cloned().collect::<Vec<_>>().join(", ")
-                    );
+                    // For browser tools blocked in daily mode, guide LLM to use browse_data sub-agent
+                    let browser_tools = ["browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js", "extract_table_data", "extract_with_pagination"];
+                    let blocked_msg = if browser_tools.contains(&tc.name.as_str()) && allowed.contains("browse_data") {
+                        format!(
+                            "Error: Tool '{}' is not directly available. Use `browse_data(task, url?)` instead — it delegates to a browser sub-agent that handles navigation, reading, and extraction automatically.",
+                            tc.name
+                        )
+                    } else {
+                        format!(
+                            "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
+                            tc.name,
+                            allowed.iter().cloned().collect::<Vec<_>>().join(", ")
+                        )
+                    };
                     let _ = app.emit(
                         "tool:completed",
                         serde_json::json!({
