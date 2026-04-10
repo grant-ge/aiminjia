@@ -1,0 +1,126 @@
+use std::sync::Arc;
+
+use crate::llm::gateway::LlmGateway;
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::AppStorage;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeleteConversationOutcome {
+    pub conversation_id: String,
+    pub cancelled_active_agent: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenameConversationOutcome {
+    pub conversation_id: String,
+    pub new_title: String,
+}
+
+pub async fn stop_streaming(
+    gateway: Arc<LlmGateway>,
+    session_mgr: Arc<crate::python::session::PythonSessionManager>,
+    conversation_id: String,
+) -> Result<(), String> {
+    if let Some(run_id) = gateway.active_run_id(&conversation_id) {
+        let _ = session_mgr.interrupt_run(&run_id).await;
+    } else {
+        let _ = session_mgr.interrupt(&conversation_id).await;
+    }
+    gateway
+        .cancel_conversation(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn get_messages(
+    db: Arc<AppStorage>,
+    conversation_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    db.get_messages(&conversation_id).map_err(|e| e.to_string())
+}
+
+pub async fn create_conversation(db: Arc<AppStorage>) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    db.create_conversation(&id, "New Conversation")
+        .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+pub async fn delete_conversation(
+    db: Arc<AppStorage>,
+    gateway: Arc<LlmGateway>,
+    file_mgr: Arc<FileManager>,
+    session_mgr: Arc<crate::python::session::PythonSessionManager>,
+    conversation_id: String,
+) -> Result<DeleteConversationOutcome, String> {
+    session_mgr.destroy(&conversation_id).await;
+    if let Some(run_id) = gateway.active_run_id(&conversation_id) {
+        session_mgr.destroy_run(&run_id).await;
+    }
+
+    let was_busy = gateway.is_conversation_busy(&conversation_id);
+    if was_busy {
+        log::info!(
+            "delete_conversation: cancelling active agent for conversation {}",
+            conversation_id
+        );
+        gateway.cancel_conversation(&conversation_id).ok();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        gateway.clear_task(&conversation_id);
+        db.remove_active_task(&conversation_id).ok();
+    }
+
+    let file_paths = db
+        .get_file_paths_for_conversation(&conversation_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut deleted = 0usize;
+    let mut failed = 0usize;
+    for path in &file_paths {
+        let full_path = file_mgr.full_path(path);
+        match std::fs::remove_file(&full_path) {
+            Ok(()) => deleted += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                log::warn!("Failed to delete file {:?}: {}", full_path, e);
+                failed += 1;
+            }
+        }
+    }
+    if !file_paths.is_empty() {
+        log::info!(
+            "Conversation {} file cleanup: {} deleted, {} failed, {} already gone",
+            conversation_id,
+            deleted,
+            failed,
+            file_paths.len() - deleted - failed
+        );
+    }
+
+    let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
+    let _ = db.delete_memories_by_prefix(&format!("note:{}:", conversation_id));
+
+    db.delete_conversation(&conversation_id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(DeleteConversationOutcome {
+        conversation_id,
+        cancelled_active_agent: was_busy,
+    })
+}
+
+pub async fn rename_conversation(
+    db: Arc<AppStorage>,
+    conversation_id: String,
+    new_title: String,
+) -> Result<RenameConversationOutcome, String> {
+    db.update_conversation_title(&conversation_id, &new_title)
+        .map_err(|e| e.to_string())?;
+    Ok(RenameConversationOutcome {
+        conversation_id,
+        new_title,
+    })
+}
+
+pub async fn get_conversations(db: Arc<AppStorage>) -> Result<Vec<serde_json::Value>, String> {
+    db.get_conversations().map_err(|e| e.to_string())
+}
