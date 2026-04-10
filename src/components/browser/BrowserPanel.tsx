@@ -3,6 +3,7 @@
  * Displayed alongside ChatArea when a browser session is active.
  */
 import { useBrowserStore } from '@/stores/browserStore'
+import { showBrowseView } from '@/lib/tauri'
 
 export function BrowserPanel() {
   const { isOpen, isLoading, url, title } = useBrowserStore()
@@ -10,7 +11,11 @@ export function BrowserPanel() {
   if (!isOpen) return null
 
   const handleShowWindow = async () => {
-    // Browser window is managed by Playwright sidecar
+    try {
+      await showBrowseView()
+    } catch (e) {
+      console.warn('Failed to show browser window:', e)
+    }
   }
 
   const handleClose = () => {

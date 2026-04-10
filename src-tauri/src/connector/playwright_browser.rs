@@ -95,8 +95,16 @@ impl PlaywrightBrowser {
             url
         };
 
-        // Navigate (browser.js auto-detects iframe and redirects if needed)
-        let nav_result = self.send_command("navigate", serde_json::json!({ "url": actual_url })).await?;
+        // Navigate with auto-recovery: if browser was closed by user, restart and retry once
+        let nav_result = match self.send_command("navigate", serde_json::json!({ "url": actual_url })).await {
+            Ok(r) => r,
+            Err(e) if e.contains("closed") || e.contains("restart") => {
+                warn!("[Playwright] Browser was closed, restarting and retrying navigate");
+                self.ensure_running().await?;
+                self.send_command("navigate", serde_json::json!({ "url": actual_url })).await?
+            }
+            Err(e) => return Err(e),
+        };
         let title = nav_result["title"].as_str().unwrap_or("").to_string();
         let final_url = nav_result["url"].as_str().unwrap_or(url).to_string();
         let iframe_url = nav_result["iframeUrl"].as_str().map(String::from);

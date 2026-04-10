@@ -15,7 +15,7 @@ ENDPOINT = "https://oss-cn-beijing.aliyuncs.com"
 CDN_BASE = "https://lotus.renlijia.com"
 OSS_PREFIX = "aijia"
 KEYCHAIN_SERVICE = "aijia-oss"
-VERSION = "0.4.1"
+VERSION = "0.4.3"
 
 
 def get_oss_credentials():

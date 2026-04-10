@@ -235,6 +235,14 @@ async function handleNavigate(params) {
       timeout: 30000,
     });
   } catch (e) {
+    // Detect closed page/context/browser — user closed Chrome window or tab
+    if (e.message && (e.message.includes('has been closed') || e.message.includes('Target closed'))) {
+      log(`Browser/page was closed, cleaning up for restart: ${e.message}`);
+      browser = null;
+      context = null;
+      page = null;
+      return { error: 'Browser not launched' };
+    }
     log(`goto error (may be redirect): ${e.message}`);
   }
 

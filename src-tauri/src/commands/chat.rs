@@ -2056,8 +2056,6 @@ async fn agent_loop(
         // Daily mode: block analysis-only tools at runtime
         let daily_blocked: std::collections::HashSet<String> = [
             "hypothesis_test", "detect_anomalies", "save_analysis_note", "update_progress", "update_plan",
-            // Browser tools are handled by browse_data sub-agent, not directly by daily mode
-            "browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js", "extract_table_data", "extract_with_pagination",
         ].iter().map(|s| s.to_string()).collect();
         let daily_allowed: std::collections::HashSet<String> = tool_defs_override.as_ref()
             .map(|defs| defs.iter()
@@ -2710,20 +2708,11 @@ async fn agent_loop(
                         "[AGENT] Blocked tool '{}' — not in allowed set for current step (conversation={})",
                         tc.name, conversation_id
                     );
-                    // For browser tools blocked in daily mode, guide LLM to use browse_data sub-agent
-                    let browser_tools = ["browse_navigate", "browse_and_extract", "read_page_content", "page_execute_js", "extract_table_data", "extract_with_pagination"];
-                    let blocked_msg = if browser_tools.contains(&tc.name.as_str()) && allowed.contains("browse_data") {
-                        format!(
-                            "Error: Tool '{}' is not directly available. Use `browse_data(task, url?)` instead — it delegates to a browser sub-agent that handles navigation, reading, and extraction automatically.",
-                            tc.name
-                        )
-                    } else {
-                        format!(
-                            "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
-                            tc.name,
-                            allowed.iter().cloned().collect::<Vec<_>>().join(", ")
-                        )
-                    };
+                    let blocked_msg = format!(
+                        "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
+                        tc.name,
+                        allowed.iter().cloned().collect::<Vec<_>>().join(", ")
+                    );
                     let _ = app.emit(
                         "tool:completed",
                         serde_json::json!({
