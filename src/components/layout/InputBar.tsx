@@ -27,7 +27,7 @@ export function InputBar() {
   const [isSending, setIsSending] = useState(false)
   const isComposingRef = useRef(false)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isUploading, selectAndUploadFile } = useFileUpload()
+  const { isUploading, selectAndUploadFiles } = useFileUpload()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const accentColor = useBrandingStore((s) => s.accentColor)
@@ -103,9 +103,9 @@ export function InputBar() {
   }
 
   const handleUploadClick = async () => {
-    const result = await selectAndUploadFile()
-    if (result) {
-      setPendingFiles((prev) => [...prev, result])
+    const results = await selectAndUploadFiles(pendingFiles)
+    if (results.length > 0) {
+      setPendingFiles((prev) => [...prev, ...results])
     }
   }
 
