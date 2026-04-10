@@ -2,7 +2,7 @@
  * PPT export — converts conversation messages into a PPTX file.
  * Uses pptxgenjs to generate slides from structured message content.
  */
-import PptxGenJS from 'pptxgenjs'
+import type PptxGenJS from 'pptxgenjs'
 import type {
   MessageContent,
   DataTable,
@@ -367,7 +367,8 @@ export async function exportAsPptx(
   title: string,
   messages: MessageContent[],
   brandConfig?: BrandConfig,
-): Promise<Blob> {
+): Promise<ArrayBuffer> {
+  const PptxGenJS = (await import('pptxgenjs')).default
   const theme = resolveTheme(brandConfig?.accentColor)
 
   const pptx = new PptxGenJS()
@@ -426,7 +427,7 @@ export async function exportAsPptx(
     addTextSlide(pptx, 'Summary & Recommendations', lastText, theme)
   }
 
-  // Generate blob
-  const output = await pptx.write({ outputType: 'blob' })
-  return output as Blob
+  // Generate arraybuffer for Tauri fs write
+  const output = await pptx.write({ outputType: 'arraybuffer' })
+  return output as ArrayBuffer
 }

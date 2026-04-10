@@ -80,44 +80,56 @@ export function ExportMenu({ conversationId, disabled }: ExportMenuProps) {
         })
         await openGeneratedFile(result.fileId, conversationId)
       } else if (format === 'pptx') {
-        // Client-side PPT generation
+        // Client-side PPT generation — save via Tauri fs plugin
+        const { save } = await import('@tauri-apps/plugin-dialog')
+        const { writeFile } = await import('@tauri-apps/plugin-fs')
+
         const contents: MessageContent[] = messages
           .filter((m) => m.role === 'assistant')
           .map((m) => m.content)
 
-        const blob = await exportAsPptx(title, contents)
+        const buffer = await exportAsPptx(title, contents)
+        const filename = title.replace(/[<>:"/\\|?*]/g, '_') || 'export'
+        const path = await save({
+          defaultPath: `${filename}.pptx`,
+          filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+        })
+        if (!path) return
 
-        // Download via anchor
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${title.replace(/[<>:"/\\|?*]/g, '_')}.pptx`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        await writeFile(path, new Uint8Array(buffer))
 
         useNotificationStore.getState().push({
           level: 'success',
           title: t('topBar.exportSuccess'),
-          message: `${a.download} ${t('topBar.saved')}`,
+          message: `${filename}.pptx ${t('topBar.saved')}`,
           actions: [],
           dismissible: true,
           autoHide: 5,
           context: 'toast',
         })
       } else if (format === 'xlsx') {
-        // Client-side Excel generation
+        // Client-side Excel generation — save via Tauri fs plugin
+        const { save } = await import('@tauri-apps/plugin-dialog')
+        const { writeFile } = await import('@tauri-apps/plugin-fs')
+
         const allTables = messages
           .filter((m) => m.role === 'assistant')
           .flatMap((m) => m.content.tables ?? [])
 
-        exportAsExcel(title, allTables)
+        const buffer = await exportAsExcel(title, allTables)
+        const filename = title.replace(/[<>:"/\\|?*]/g, '_') || 'export'
+        const path = await save({
+          defaultPath: `${filename}.xlsx`,
+          filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+        })
+        if (!path) return
+
+        await writeFile(path, buffer)
 
         useNotificationStore.getState().push({
           level: 'success',
           title: t('topBar.exportSuccess'),
-          message: `${title}.xlsx ${t('topBar.saved')}`,
+          message: `${filename}.xlsx ${t('topBar.saved')}`,
           actions: [],
           dismissible: true,
           autoHide: 5,

@@ -2,19 +2,20 @@
  * Excel export — converts conversation data tables into an XLSX workbook.
  * Uses SheetJS (xlsx) to generate spreadsheets from DataTable structures.
  */
-import * as XLSX from 'xlsx'
 import type { DataTable } from '@/types/message'
 
 /**
- * Export data tables as an Excel file and trigger a download.
+ * Export data tables as an Excel workbook and return the binary data.
  *
  * Creates a workbook with one sheet per table. Each sheet uses the table
  * title as the sheet name, with headers in the first row and data rows below.
  *
  * @param title - File name (without extension) for the exported file
  * @param tables - Array of DataTable objects to include in the workbook
+ * @returns Uint8Array of the xlsx binary data
  */
-export function exportAsExcel(title: string, tables: DataTable[]): void {
+export async function exportAsExcel(_title: string, tables: DataTable[]): Promise<Uint8Array> {
+  const XLSX = await import('xlsx')
   const wb = XLSX.utils.book_new()
 
   if (tables.length === 0) {
@@ -61,7 +62,6 @@ export function exportAsExcel(title: string, tables: DataTable[]): void {
     }
   }
 
-  // Sanitize filename
-  const safeTitle = title.replace(/[<>:"/\\|?*]/g, '_') || 'export'
-  XLSX.writeFile(wb, `${safeTitle}.xlsx`)
+  // Return binary data as Uint8Array for Tauri fs write
+  return new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer)
 }

@@ -134,26 +134,31 @@ export function useFileUpload() {
       let totalSize = existingFiles.reduce((sum, f) => sum + f.fileSize, 0)
 
       for (const filePath of pathsToUpload) {
-        const result = await uploadFile(filePath, conversationId)
+        try {
+          const result = await uploadFile(filePath, conversationId)
 
-        // Check total size limit
-        totalSize += result.fileSize
-        if (totalSize > MAX_TOTAL_SIZE) {
-          notifications.push({
-            level: 'warning',
-            title: 'Size Limit Exceeded',
-            message: 'Total file size exceeds 50 MB. Some files were skipped.',
-            actions: [],
-            dismissible: true,
-            autoHide: 4,
-            context: 'toast',
-          })
-          break
+          // Check total size limit
+          totalSize += result.fileSize
+          if (totalSize > MAX_TOTAL_SIZE) {
+            notifications.push({
+              level: 'warning',
+              title: 'Size Limit Exceeded',
+              message: 'Total file size exceeds 50 MB. Some files were skipped.',
+              actions: [],
+              dismissible: true,
+              autoHide: 4,
+              context: 'toast',
+            })
+            break
+          }
+
+          const fileName = filePath.split('/').pop() ?? filePath
+          const fileType = detectFileType(filePath)
+          uploaded.push({ id: result.fileId, fileName, fileType, fileSize: result.fileSize })
+        } catch (err) {
+          console.error(`[useFileUpload] Failed to upload ${filePath}:`, err)
+          // Continue with remaining files
         }
-
-        const fileName = filePath.split('/').pop() ?? filePath
-        const fileType = detectFileType(filePath)
-        uploaded.push({ id: result.fileId, fileName, fileType, fileSize: result.fileSize })
       }
 
       return uploaded
