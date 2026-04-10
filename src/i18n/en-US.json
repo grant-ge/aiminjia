@@ -75,7 +75,9 @@
     "saved": "saved",
     "exportFailed": "Export failed",
     "exportAsPdf": "Export as PDF",
-    "exportAsHtml": "Export as HTML"
+    "exportAsHtml": "Export as HTML",
+    "exportAsPptx": "Export as PPT",
+    "exportAsXlsx": "Export as Excel"
   },
 
   "inputBar": {

@@ -75,7 +75,9 @@
     "saved": "已保存",
     "exportFailed": "导出失败",
     "exportAsPdf": "导出为 PDF",
-    "exportAsHtml": "导出为 HTML"
+    "exportAsHtml": "导出为 HTML",
+    "exportAsPptx": "导出为 PPT",
+    "exportAsXlsx": "导出为 Excel"
   },
 
   "inputBar": {
