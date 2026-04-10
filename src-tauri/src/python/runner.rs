@@ -4,11 +4,11 @@
 //! Output is captured from stdout/stderr.
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use anyhow::{anyhow, Context, Result};
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
@@ -55,7 +55,11 @@ impl PythonRunner {
     }
 
     /// Create a runner with custom sandbox config.
-    pub fn with_config(workspace_path: PathBuf, sandbox: SandboxConfig, app_handle: Option<&tauri::AppHandle>) -> Self {
+    pub fn with_config(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        app_handle: Option<&tauri::AppHandle>,
+    ) -> Self {
         let (python_binary, python_home) = resolve_python_path(app_handle);
         Self {
             workspace_path,
@@ -75,7 +79,9 @@ impl PythonRunner {
     /// 6. Cleans up temp file.
     pub async fn execute(&self, code: &str) -> Result<ExecutionResult> {
         // 1. Validate code
-        self.sandbox.validate_code(code).map_err(|e| anyhow!("Sandbox violation: {}", e))?;
+        self.sandbox
+            .validate_code(code)
+            .map_err(|e| anyhow!("Sandbox violation: {}", e))?;
 
         // 2. Execute without re-validation
         self.execute_raw(code).await
@@ -92,7 +98,11 @@ impl PythonRunner {
         let temp_file = temp_dir.join(format!("code_{}.py", file_id));
 
         // Prepend UTF-8 encoding declaration and sandbox preamble to code
-        let full_code = format!("# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}", self.sandbox.preamble(), code);
+        let full_code = format!(
+            "# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}",
+            self.sandbox.preamble(),
+            code
+        );
         std::fs::write(&temp_file, &full_code).context("Failed to write temp Python file")?;
 
         // Execute
@@ -131,9 +141,10 @@ impl PythonRunner {
             .stderr(Stdio::piped());
         super::configure_python_env(&mut cmd, self.python_home.as_deref());
 
-        let mut child = cmd
-            .spawn()
-            .context(format!("Failed to spawn Python process: {}", self.python_binary.display()))?;
+        let mut child = cmd.spawn().context(format!(
+            "Failed to spawn Python process: {}",
+            self.python_binary.display()
+        ))?;
 
         // Take stdout/stderr handles out of the child so they can be read concurrently.
         // This avoids pipe buffer deadlock: if stdout fills its OS buffer while we
@@ -219,7 +230,10 @@ impl PythonRunner {
             .arg("--version")
             .output()
             .await
-            .context(format!("Python not found: {}", self.python_binary.display()))?;
+            .context(format!(
+                "Python not found: {}",
+                self.python_binary.display()
+            ))?;
 
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if version.is_empty() {
@@ -239,7 +253,9 @@ impl PythonRunner {
 ///
 /// Returns `(python_binary, python_home)`. `python_home` is `Some` only when
 /// using the bundled runtime.
-pub(crate) fn resolve_python_path(app_handle: Option<&tauri::AppHandle>) -> (PathBuf, Option<PathBuf>) {
+pub(crate) fn resolve_python_path(
+    app_handle: Option<&tauri::AppHandle>,
+) -> (PathBuf, Option<PathBuf>) {
     use tauri::Manager;
 
     if let Some(handle) = app_handle {

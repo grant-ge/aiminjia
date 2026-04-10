@@ -3,6 +3,10 @@
 //! The LLM only provides a file_id; path resolution and data loading are
 //! fully system-managed.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -14,7 +18,9 @@ pub struct FileLoadTool;
 
 #[async_trait]
 impl ToolPlugin for FileLoadTool {
-    fn name(&self) -> &str { "load_file" }
+    fn name(&self) -> &str {
+        "load_file"
+    }
 
     fn description(&self) -> &str {
         "Load an uploaded file so it can be used in execute_python. \

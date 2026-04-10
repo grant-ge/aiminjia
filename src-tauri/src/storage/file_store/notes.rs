@@ -99,10 +99,7 @@ pub fn get_memories_by_prefix(
 ///
 /// Uses the JSONL last-writer-wins mechanism: appends entries with `deleted: true`.
 /// Returns the number of entries marked as deleted.
-pub fn delete_memories_by_prefix(
-    base_dir: &Path,
-    prefix: &str,
-) -> StorageResult<usize> {
+pub fn delete_memories_by_prefix(base_dir: &Path, prefix: &str) -> StorageResult<usize> {
     let entries = read_all_memory_entries(base_dir)?;
 
     // Build latest state: last-writer-wins per key

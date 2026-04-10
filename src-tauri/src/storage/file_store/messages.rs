@@ -88,11 +88,7 @@ fn read_shard_meta(base_dir: &Path, conversation_id: &str) -> ShardMeta {
     }
 }
 
-fn write_shard_meta(
-    base_dir: &Path,
-    conversation_id: &str,
-    meta: &ShardMeta,
-) -> io::Result<()> {
+fn write_shard_meta(base_dir: &Path, conversation_id: &str, meta: &ShardMeta) -> io::Result<()> {
     let path = current_path(base_dir, conversation_id);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -207,8 +203,7 @@ pub fn get_recent_messages(
         }
 
         // Count unique seqs to check if we have enough (avoid full dedup)
-        let unique_seqs: std::collections::HashSet<u64> =
-            all_msgs.iter().map(|m| m.seq).collect();
+        let unique_seqs: std::collections::HashSet<u64> = all_msgs.iter().map(|m| m.seq).collect();
         if unique_seqs.len() >= limit {
             break;
         }
@@ -217,10 +212,7 @@ pub fn get_recent_messages(
     let mut deduped = dedup_messages(all_msgs);
     // Take only the last `limit` messages
     let start = deduped.len().saturating_sub(limit);
-    let recent: Vec<serde_json::Value> = deduped
-        .drain(start..)
-        .map(message_to_json)
-        .collect();
+    let recent: Vec<serde_json::Value> = deduped.drain(start..).map(message_to_json).collect();
 
     Ok(recent)
 }

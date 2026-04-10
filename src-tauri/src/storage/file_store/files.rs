@@ -71,10 +71,7 @@ pub fn insert_uploaded_file(
 }
 
 /// Get a single uploaded file by ID.
-pub fn get_uploaded_file(
-    base_dir: &Path,
-    id: &str,
-) -> StorageResult<Option<serde_json::Value>> {
+pub fn get_uploaded_file(base_dir: &Path, id: &str) -> StorageResult<Option<serde_json::Value>> {
     // Need to scan all conversations since we don't know which one
     let conversations_dir = base_dir.join("conversations");
     if !conversations_dir.exists() {
@@ -86,7 +83,11 @@ pub fn get_uploaded_file(
         }
         let conv_id = entry.file_name().to_string_lossy().to_string();
         let index = read_file_index(base_dir, &conv_id)?;
-        if let Some(file) = index.files.iter().find(|f| f.id == id && f.source == "upload") {
+        if let Some(file) = index
+            .files
+            .iter()
+            .find(|f| f.id == id && f.source == "upload")
+        {
             return Ok(Some(upload_to_json(file)));
         }
     }
@@ -285,11 +286,7 @@ pub fn get_generated_file_for_conversation(
 }
 
 /// Mark an existing file as superseded by a newer version.
-pub fn mark_file_superseded(
-    base_dir: &Path,
-    old_id: &str,
-    new_id: &str,
-) -> StorageResult<()> {
+pub fn mark_file_superseded(base_dir: &Path, old_id: &str, new_id: &str) -> StorageResult<()> {
     // Scan all conversations to find the file
     let conversations_dir = base_dir.join("conversations");
     if !conversations_dir.exists() {
@@ -361,14 +358,12 @@ pub fn find_expired_temp_files(base_dir: &Path) -> StorageResult<Vec<serde_json:
 }
 
 /// Delete an uploaded file record from a specific conversation.
-pub fn delete_uploaded_file(
-    base_dir: &Path,
-    id: &str,
-    conversation_id: &str,
-) -> StorageResult<()> {
+pub fn delete_uploaded_file(base_dir: &Path, id: &str, conversation_id: &str) -> StorageResult<()> {
     let mut index = read_file_index(base_dir, conversation_id)?;
     let before = index.files.len();
-    index.files.retain(|f| !(f.id == id && f.source == "upload"));
+    index
+        .files
+        .retain(|f| !(f.id == id && f.source == "upload"));
     if index.files.len() < before {
         write_file_index(base_dir, conversation_id, &index)?;
     }
@@ -376,10 +371,7 @@ pub fn delete_uploaded_file(
 }
 
 /// Delete a generated file record.
-pub fn delete_generated_file(
-    base_dir: &Path,
-    id: &str,
-) -> StorageResult<()> {
+pub fn delete_generated_file(base_dir: &Path, id: &str) -> StorageResult<()> {
     let conversations_dir = base_dir.join("conversations");
     if !conversations_dir.exists() {
         return Ok(());
@@ -454,7 +446,13 @@ mod tests {
         let (base, _dir) = setup();
 
         insert_uploaded_file(
-            &base, "uf1", "c1", "data.csv", "/tmp/data.csv", "csv", 512,
+            &base,
+            "uf1",
+            "c1",
+            "data.csv",
+            "/tmp/data.csv",
+            "csv",
+            512,
             Some("100 rows"),
         )
         .unwrap();
@@ -469,8 +467,21 @@ mod tests {
         let (base, _dir) = setup();
 
         insert_generated_file(
-            &base, "gf1", "c1", None, "report.pdf", "/tmp/report.pdf", "pdf",
-            1024, "report", Some("Monthly report"), 1, true, None, Some(3), None,
+            &base,
+            "gf1",
+            "c1",
+            None,
+            "report.pdf",
+            "/tmp/report.pdf",
+            "pdf",
+            1024,
+            "report",
+            Some("Monthly report"),
+            1,
+            true,
+            None,
+            Some(3),
+            None,
         )
         .unwrap();
 
@@ -484,13 +495,39 @@ mod tests {
         let (base, _dir) = setup();
 
         insert_generated_file(
-            &base, "f1", "c1", None, "data.csv", "/tmp/v1.csv", "csv",
-            100, "data", None, 1, true, None, None, None,
+            &base,
+            "f1",
+            "c1",
+            None,
+            "data.csv",
+            "/tmp/v1.csv",
+            "csv",
+            100,
+            "data",
+            None,
+            1,
+            true,
+            None,
+            None,
+            None,
         )
         .unwrap();
         insert_generated_file(
-            &base, "f2", "c1", None, "data.csv", "/tmp/v2.csv", "csv",
-            200, "data", None, 2, true, None, None, None,
+            &base,
+            "f2",
+            "c1",
+            None,
+            "data.csv",
+            "/tmp/v2.csv",
+            "csv",
+            200,
+            "data",
+            None,
+            2,
+            true,
+            None,
+            None,
+            None,
         )
         .unwrap();
         mark_file_superseded(&base, "f1", "f2").unwrap();
@@ -506,11 +543,25 @@ mod tests {
         super::super::conversations::create_conversation(&base, "c2", "Test 2").unwrap();
 
         insert_uploaded_file(
-            &base, "uf1", "c1", "data1.csv", "/tmp/d1.csv", "csv", 100, None,
+            &base,
+            "uf1",
+            "c1",
+            "data1.csv",
+            "/tmp/d1.csv",
+            "csv",
+            100,
+            None,
         )
         .unwrap();
         insert_uploaded_file(
-            &base, "uf2", "c2", "data2.csv", "/tmp/d2.csv", "csv", 200, None,
+            &base,
+            "uf2",
+            "c2",
+            "data2.csv",
+            "/tmp/d2.csv",
+            "csv",
+            200,
+            None,
         )
         .unwrap();
 

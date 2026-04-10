@@ -129,11 +129,24 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
     // appear in everyday conversation (e.g. "分析下伊朗局势"). Use compound
     // domain-specific terms that reliably indicate a data analysis task.
     let analysis_keywords = [
-        "薪酬分析", "薪资分析", "薪酬诊断", "薪资诊断",
-        "公平性", "薪酬", "薪资", "回归分析", "标准差",
-        "salary analysis", "pay equity", "compensation",
-        "regression", "statistics", "standard deviation",
-        "相关性分析", "显著性", "偏差分析",
+        "薪酬分析",
+        "薪资分析",
+        "薪酬诊断",
+        "薪资诊断",
+        "公平性",
+        "薪酬",
+        "薪资",
+        "回归分析",
+        "标准差",
+        "salary analysis",
+        "pay equity",
+        "compensation",
+        "regression",
+        "statistics",
+        "standard deviation",
+        "相关性分析",
+        "显著性",
+        "偏差分析",
     ];
     if analysis_keywords.iter().any(|kw| text.contains(kw)) {
         return TaskType::Analysis;
@@ -141,8 +154,17 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 
     // Code generation keywords
     let code_keywords = [
-        "代码", "脚本", "python", "计算", "code", "script", "compute",
-        "函数", "function", "算法", "algorithm",
+        "代码",
+        "脚本",
+        "python",
+        "计算",
+        "code",
+        "script",
+        "compute",
+        "函数",
+        "function",
+        "算法",
+        "algorithm",
     ];
     if code_keywords.iter().any(|kw| text.contains(kw)) {
         return TaskType::CodeGen;
@@ -150,8 +172,16 @@ pub fn infer_task_type(messages: &[ChatMessage]) -> TaskType {
 
     // Search keywords
     let search_keywords = [
-        "搜索", "查找", "市场数据", "search", "lookup", "benchmark",
-        "行业数据", "薪酬报告", "market data", "salary survey",
+        "搜索",
+        "查找",
+        "市场数据",
+        "search",
+        "lookup",
+        "benchmark",
+        "行业数据",
+        "薪酬报告",
+        "market data",
+        "salary survey",
     ];
     if search_keywords.iter().any(|kw| text.contains(kw)) {
         return TaskType::Search;
@@ -203,9 +233,17 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         return RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
+            model_hint: if settings.primary_model == "custom" {
+                settings.custom_model_name.clone()
+            } else {
+                String::new()
+            },
             use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            endpoint_url: if settings.primary_model == "custom" {
+                settings.custom_model_endpoint.clone()
+            } else {
+                String::new()
+            },
             model_type: String::new(),
         };
     }
@@ -216,9 +254,17 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         TaskType::Analysis => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
+            model_hint: if settings.primary_model == "custom" {
+                settings.custom_model_name.clone()
+            } else {
+                String::new()
+            },
             use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            endpoint_url: if settings.primary_model == "custom" {
+                settings.custom_model_endpoint.clone()
+            } else {
+                String::new()
+            },
             model_type: String::new(),
         },
         // Reasoning tasks use the reasoning variant if available (same API key)
@@ -237,9 +283,17 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
                 RouteResult {
                     provider: settings.primary_model.clone(),
                     api_key: settings.primary_api_key.clone(),
-                    model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
+                    model_hint: if settings.primary_model == "custom" {
+                        settings.custom_model_name.clone()
+                    } else {
+                        String::new()
+                    },
                     use_tools: true,
-                    endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+                    endpoint_url: if settings.primary_model == "custom" {
+                        settings.custom_model_endpoint.clone()
+                    } else {
+                        String::new()
+                    },
                     model_type: String::new(),
                 }
             }
@@ -248,9 +302,17 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
         _ => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
-            model_hint: if settings.primary_model == "custom" { settings.custom_model_name.clone() } else { String::new() },
+            model_hint: if settings.primary_model == "custom" {
+                settings.custom_model_name.clone()
+            } else {
+                String::new()
+            },
             use_tools: true,
-            endpoint_url: if settings.primary_model == "custom" { settings.custom_model_endpoint.clone() } else { String::new() },
+            endpoint_url: if settings.primary_model == "custom" {
+                settings.custom_model_endpoint.clone()
+            } else {
+                String::new()
+            },
             model_type: String::new(),
         },
     }
@@ -285,7 +347,10 @@ mod tests {
 
     #[test]
     fn test_infer_analysis_english() {
-        let msgs = make_messages(&[("user", "Please analyze the salary regression data for pay equity")]);
+        let msgs = make_messages(&[(
+            "user",
+            "Please analyze the salary regression data for pay equity",
+        )]);
         assert_eq!(infer_task_type(&msgs), TaskType::Analysis);
     }
 
@@ -310,7 +375,10 @@ mod tests {
 
     #[test]
     fn test_infer_search() {
-        let msgs = make_messages(&[("user", "Search for market data on software engineer salaries")]);
+        let msgs = make_messages(&[(
+            "user",
+            "Search for market data on software engineer salaries",
+        )]);
         assert_eq!(infer_task_type(&msgs), TaskType::Search);
     }
 

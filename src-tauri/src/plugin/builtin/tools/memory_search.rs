@@ -1,5 +1,9 @@
 //! search_memory — search cognitive memories by keywords.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct MemorySearchTool;
 
 #[async_trait]
 impl ToolPlugin for MemorySearchTool {
-    fn name(&self) -> &str { "search_memory" }
+    fn name(&self) -> &str {
+        "search_memory"
+    }
 
     fn description(&self) -> &str {
         "Search cognitive memory for previously saved knowledge. Use when you need to recall \

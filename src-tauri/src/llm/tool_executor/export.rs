@@ -8,10 +8,10 @@ use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
-use super::FileGenResult;
 use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::require_str;
-use super::util::{py_escape, indent_python};
+use super::util::{indent_python, py_escape};
+use super::FileGenResult;
 
 /// 9. export_data — write data to CSV, Excel, or JSON.
 ///
@@ -55,7 +55,8 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
                  1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
                  2. 使用 source_file 参数指定已有文件路径进行格式转换\n\
                  3. 传入实际的 JSON 记录数组，如 [{{\"name\":\"A\",\"value\":1}}]",
-                filename, format
+                filename,
+                format
             ));
         }
 
@@ -65,7 +66,9 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
                 "参数 'data' 不能是字符串 '{}'。请改用以下方式之一：\n\
                  1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
                  2. 使用 source_file 参数指定已有文件路径（如 'exports/xxx.csv'）进行格式转换",
-                data_str, filename, format
+                data_str,
+                filename,
+                format
             ));
         }
 
@@ -78,7 +81,8 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
                      1. 在 execute_python 中使用 _export_detail(_df, '{}', format='{}') 直接导出\n\
                      2. 使用 source_file 参数指定已有文件路径进行格式转换\n\
                      3. 传入实际的 JSON 记录数组，如 [{{\"name\":\"A\",\"value\":1}}]",
-                    filename, format
+                    filename,
+                    format
                 ));
             }
         }
@@ -121,7 +125,10 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
     let stored_path = format!("exports/{}", filename);
     let full_path = ctx.workspace_path.join(&stored_path);
     if !full_path.exists() {
-        return Err(anyhow!("Export failed: file '{}' was not created", stored_path));
+        return Err(anyhow!(
+            "Export failed: file '{}' was not created",
+            stored_path
+        ));
     }
 
     // Unmask PII placeholders in text-based export formats (CSV, JSON)
@@ -139,9 +146,7 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
         }
     }
 
-    let file_size = std::fs::metadata(&full_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
 
     let file_id = Uuid::new_v4().to_string();
     if let Err(e) = ctx.storage.insert_generated_file(
@@ -191,7 +196,11 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
 }
 
 /// Build Python code to read from an existing source file and export to target format.
-fn build_export_python_from_file(source_path: &str, format: &str, filename: &str) -> Result<String> {
+fn build_export_python_from_file(
+    source_path: &str,
+    format: &str,
+    filename: &str,
+) -> Result<String> {
     let escaped_source = py_escape(source_path);
     let escaped_filename = py_escape(filename);
 
@@ -234,7 +243,11 @@ except Exception as e:
 }
 
 /// Build Python code to export JSON data records to target format.
-fn build_export_python_from_json(data_file_path: &str, format: &str, filename: &str) -> Result<String> {
+fn build_export_python_from_json(
+    data_file_path: &str,
+    format: &str,
+    filename: &str,
+) -> Result<String> {
     let escaped_data_path = py_escape(data_file_path);
     let escaped_filename = py_escape(filename);
 
@@ -306,17 +319,16 @@ except Exception as e:
 /// Build the format-specific write code block (shared between both input modes).
 fn build_write_code(format: &str) -> Result<String> {
     match format {
-        "csv" => Ok(
-            r#"df.to_csv(output_path, index=False, encoding='utf-8-sig')
-print(f"Exported {len(df)} rows to {output_path}")"#.to_string(),
-        ),
-        "excel" => Ok(
-            r#"df.to_excel(output_path, index=False, engine='openpyxl')
-print(f"Exported {len(df)} rows to {output_path}")"#.to_string(),
-        ),
+        "csv" => Ok(r#"df.to_csv(output_path, index=False, encoding='utf-8-sig')
+print(f"Exported {len(df)} rows to {output_path}")"#
+            .to_string()),
+        "excel" => Ok(r#"df.to_excel(output_path, index=False, engine='openpyxl')
+print(f"Exported {len(df)} rows to {output_path}")"#
+            .to_string()),
         "json" => Ok(
             r#"df.to_json(output_path, orient='records', force_ascii=False, indent=2)
-print(f"Exported {len(df)} rows to {output_path}")"#.to_string(),
+print(f"Exported {len(df)} rows to {output_path}")"#
+                .to_string(),
         ),
         other => Err(anyhow!(
             "Unsupported export format: {}. Supported: csv, excel, json",
@@ -377,14 +389,17 @@ mod tests {
             if trimmed.starts_with("df.to_csv") || trimmed.starts_with("print(f\"Exported") {
                 assert!(
                     line.starts_with("    "),
-                    "Line should be indented inside try block: '{}'", line
+                    "Line should be indented inside try block: '{}'",
+                    line
                 );
             }
         }
 
         // The except clause must exist at column 0
-        assert!(code.contains("\nexcept Exception as e:"),
-            "except clause should exist at column 0");
+        assert!(
+            code.contains("\nexcept Exception as e:"),
+            "except clause should exist at column 0"
+        );
     }
 
     #[test]
@@ -411,15 +426,22 @@ mod tests {
     fn test_build_export_python_json_validates_string_data() {
         let code = build_export_python_from_json("/tmp/data.json", "csv", "out.csv").unwrap();
         // Generated code should reject string data at runtime
-        assert!(code.contains("isinstance(data, str)"), "Should check for string data type");
-        assert!(code.contains("isinstance(data[0], str)"), "Should check for list of strings");
+        assert!(
+            code.contains("isinstance(data, str)"),
+            "Should check for string data type"
+        );
+        assert!(
+            code.contains("isinstance(data[0], str)"),
+            "Should check for list of strings"
+        );
     }
 
     // ── build_export_python_from_file tests ──────────────────
 
     #[test]
     fn test_build_export_from_file_csv() {
-        let code = build_export_python_from_file("exports/step1_data.xlsx", "csv", "output.csv").unwrap();
+        let code =
+            build_export_python_from_file("exports/step1_data.xlsx", "csv", "output.csv").unwrap();
         assert!(code.contains("_smart_read_data"));
         assert!(code.contains("exports/step1_data.xlsx"));
         assert!(code.contains("to_csv"));
@@ -451,13 +473,16 @@ mod tests {
             if trimmed.starts_with("df.to_csv") || trimmed.starts_with("print(f\"Exported") {
                 assert!(
                     line.starts_with("    "),
-                    "Line should be indented inside try block: '{}'", line
+                    "Line should be indented inside try block: '{}'",
+                    line
                 );
             }
         }
 
-        assert!(code.contains("\nexcept Exception as e:"),
-            "except clause should exist at column 0");
+        assert!(
+            code.contains("\nexcept Exception as e:"),
+            "except clause should exist at column 0"
+        );
     }
 
     #[test]
@@ -469,7 +494,10 @@ mod tests {
     #[test]
     fn test_build_export_from_file_checks_existence() {
         let code = build_export_python_from_file("data.xlsx", "csv", "out.csv").unwrap();
-        assert!(code.contains("os.path.exists"), "Should check if source file exists");
+        assert!(
+            code.contains("os.path.exists"),
+            "Should check if source file exists"
+        );
     }
 
     // ── build_write_code tests ──────────────────────────────

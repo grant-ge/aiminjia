@@ -216,7 +216,10 @@ advance_on = "confirm"
         assert_eq!(manifest.steps.len(), 1);
         let step = &manifest.steps[0];
         assert_eq!(step.precompute.as_deref(), Some("scripts/step1.py"));
-        assert_eq!(step.tools_on_feedback.as_ref().unwrap(), &["execute_python", "export_data"]);
+        assert_eq!(
+            step.tools_on_feedback.as_ref().unwrap(),
+            &["execute_python", "export_data"]
+        );
         assert_eq!(step.max_iterations_feedback, Some(3));
         assert_eq!(step.tools_only.as_ref().unwrap(), &["export_data"]);
         assert_eq!(step.max_iterations, Some(5));

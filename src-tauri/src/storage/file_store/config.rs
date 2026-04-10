@@ -79,7 +79,10 @@ mod tests {
         assert_eq!(get_setting(&base, "theme").unwrap(), None);
 
         set_setting(&base, "theme", "dark").unwrap();
-        assert_eq!(get_setting(&base, "theme").unwrap(), Some("dark".to_string()));
+        assert_eq!(
+            get_setting(&base, "theme").unwrap(),
+            Some("dark".to_string())
+        );
 
         set_setting(&base, "theme", "light").unwrap();
         assert_eq!(

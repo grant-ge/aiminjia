@@ -114,7 +114,10 @@ impl AnalysisContext {
                     return;
                 }
                 if let Err(e) = std::fs::rename(&tmp, &path) {
-                    warn!("[AnalysisContext] Failed to rename {:?} → {:?}: {}", tmp, path, e);
+                    warn!(
+                        "[AnalysisContext] Failed to rename {:?} → {:?}: {}",
+                        tmp, path, e
+                    );
                 }
             }
             Err(e) => warn!("[AnalysisContext] Failed to serialize: {}", e),
@@ -148,12 +151,18 @@ impl AnalysisContext {
         // Parse row count: "行数: N" or "Rows: N" or "Shape: (N, M)"
         for line in tool_output.lines() {
             let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix("行数:").or_else(|| trimmed.strip_prefix("Rows:")) {
+            if let Some(rest) = trimmed
+                .strip_prefix("行数:")
+                .or_else(|| trimmed.strip_prefix("Rows:"))
+            {
                 if let Ok(n) = rest.trim().replace(',', "").parse::<usize>() {
                     profile.row_count = n;
                 }
             }
-            if let Some(rest) = trimmed.strip_prefix("列数:").or_else(|| trimmed.strip_prefix("Columns:")) {
+            if let Some(rest) = trimmed
+                .strip_prefix("列数:")
+                .or_else(|| trimmed.strip_prefix("Columns:"))
+            {
                 if let Ok(n) = rest.trim().replace(',', "").parse::<usize>() {
                     profile.column_count = n;
                 }
@@ -164,7 +173,8 @@ impl AnalysisContext {
                     let parts: Vec<&str> = inner.split(',').collect();
                     if parts.len() == 2 {
                         profile.row_count = parts[0].trim().replace(',', "").parse().unwrap_or(0);
-                        profile.column_count = parts[1].trim().replace(',', "").parse().unwrap_or(0);
+                        profile.column_count =
+                            parts[1].trim().replace(',', "").parse().unwrap_or(0);
                     }
                 }
             }
@@ -190,13 +200,16 @@ impl AnalysisContext {
             let trimmed = line.trim();
 
             // Detect column section start
-            if trimmed.contains("列名") || trimmed.contains("Column") || trimmed.contains("dtypes") {
+            if trimmed.contains("列名") || trimmed.contains("Column") || trimmed.contains("dtypes")
+            {
                 in_columns = true;
                 continue;
             }
 
             // End of section: empty line or a different section header
-            if in_columns && (trimmed.is_empty() || trimmed.starts_with("---") || trimmed.starts_with("===")) {
+            if in_columns
+                && (trimmed.is_empty() || trimmed.starts_with("---") || trimmed.starts_with("==="))
+            {
                 if !profile.columns.is_empty() {
                     in_columns = false;
                     continue;
@@ -220,7 +233,11 @@ impl AnalysisContext {
                         continue;
                     }
 
-                    profile.columns.push(ColumnInfo { name, dtype, null_pct });
+                    profile.columns.push(ColumnInfo {
+                        name,
+                        dtype,
+                        null_pct,
+                    });
                 }
             }
         }
@@ -313,13 +330,18 @@ impl AnalysisContext {
 
                 if !f.columns.is_empty() {
                     out.push_str("列: ");
-                    let col_strs: Vec<String> = f.columns.iter().take(30).map(|c| {
-                        if c.null_pct > 0.0 {
-                            format!("{}({}, {:.1}% null)", c.name, c.dtype, c.null_pct)
-                        } else {
-                            format!("{}({})", c.name, c.dtype)
-                        }
-                    }).collect();
+                    let col_strs: Vec<String> = f
+                        .columns
+                        .iter()
+                        .take(30)
+                        .map(|c| {
+                            if c.null_pct > 0.0 {
+                                format!("{}({}, {:.1}% null)", c.name, c.dtype, c.null_pct)
+                            } else {
+                                format!("{}({})", c.name, c.dtype)
+                            }
+                        })
+                        .collect();
                     out.push_str(&col_strs.join(", "));
                     if f.columns.len() > 30 {
                         out.push_str(&format!(" ...+{} more", f.columns.len() - 30));
@@ -329,12 +351,17 @@ impl AnalysisContext {
 
                 if !f.numeric_stats.is_empty() {
                     out.push_str("数值统计: ");
-                    let stat_strs: Vec<String> = f.numeric_stats.iter().take(10).map(|s| {
-                        format!(
-                            "{}(min={:.0}, max={:.0}, mean={:.0}, median={:.0})",
-                            s.column, s.min, s.max, s.mean, s.median
-                        )
-                    }).collect();
+                    let stat_strs: Vec<String> = f
+                        .numeric_stats
+                        .iter()
+                        .take(10)
+                        .map(|s| {
+                            format!(
+                                "{}(min={:.0}, max={:.0}, mean={:.0}, median={:.0})",
+                                s.column, s.min, s.max, s.mean, s.median
+                            )
+                        })
+                        .collect();
                     out.push_str(&stat_strs.join(", "));
                     out.push('\n');
                 }
@@ -373,7 +400,10 @@ impl AnalysisContext {
         self.current_step = new_step;
         // Move step_findings to data_insights (persist as one-liners)
         for finding in self.step_findings.drain(..) {
-            let insight = format!("[step{}:{}] {}", old_step, finding.category, finding.summary);
+            let insight = format!(
+                "[step{}:{}] {}",
+                old_step, finding.category, finding.summary
+            );
             if !self.data_insights.contains(&insight) {
                 self.data_insights.push(insight);
             }
@@ -471,8 +501,16 @@ Done"#;
             row_count: 1000,
             column_count: 3,
             columns: vec![
-                ColumnInfo { name: "name".to_string(), dtype: "object".to_string(), null_pct: 0.0 },
-                ColumnInfo { name: "salary".to_string(), dtype: "float64".to_string(), null_pct: 2.5 },
+                ColumnInfo {
+                    name: "name".to_string(),
+                    dtype: "object".to_string(),
+                    null_pct: 0.0,
+                },
+                ColumnInfo {
+                    name: "salary".to_string(),
+                    dtype: "float64".to_string(),
+                    null_pct: 2.5,
+                },
             ],
             numeric_stats: vec![],
             variable_hint: "_df".to_string(),

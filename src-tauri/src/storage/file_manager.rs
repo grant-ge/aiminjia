@@ -50,7 +50,9 @@ impl FileManager {
                 joined.clone()
             }
         };
-        let workspace_canonical = self.workspace_path.canonicalize()
+        let workspace_canonical = self
+            .workspace_path
+            .canonicalize()
             .unwrap_or_else(|_| self.workspace_path.clone());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow!(
@@ -93,11 +95,7 @@ impl FileManager {
         // Add UUID prefix to avoid name collisions
         let stored_name = format!(
             "{}_{}",
-            uuid::Uuid::new_v4()
-                .to_string()
-                .split('-')
-                .next()
-                .unwrap(),
+            uuid::Uuid::new_v4().to_string().split('-').next().unwrap(),
             file_name
         );
         let dest_path = dest_dir.join(&stored_name);

@@ -111,11 +111,7 @@ impl BochaClient {
             })
             .unwrap_or_default();
 
-        info!(
-            "Bocha search for '{}': {} results",
-            query,
-            results.len()
-        );
+        info!("Bocha search for '{}': {} results", query, results.len());
 
         Ok(results)
     }

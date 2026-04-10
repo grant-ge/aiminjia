@@ -253,7 +253,8 @@ pub fn export_persona(base_dir: &Path, id: &str) -> Result<String> {
 /// Import a persona from JSON.
 /// Returns the new persona ID.
 pub fn import_persona(base_dir: &Path, json: &str) -> Result<String> {
-    let export: PersonaExport = serde_json::from_str(json).context("Invalid persona export format")?;
+    let export: PersonaExport =
+        serde_json::from_str(json).context("Invalid persona export format")?;
 
     if export.format != "aijia-persona" {
         anyhow::bail!("Invalid export format: {}", export.format);

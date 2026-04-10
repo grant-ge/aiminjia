@@ -1,6 +1,10 @@
 //! extract_with_pagination — extract ALL table data with LLM-provided pagination JS.
 //! The LLM figures out how to flip pages, this tool handles the loop.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -12,7 +16,9 @@ pub struct ExtractWithPaginationTool;
 
 #[async_trait]
 impl ToolPlugin for ExtractWithPaginationTool {
-    fn name(&self) -> &str { "extract_with_pagination" }
+    fn name(&self) -> &str {
+        "extract_with_pagination"
+    }
 
     fn description(&self) -> &str {
         "Extract ALL table data from the current page by automatically looping through pages. \

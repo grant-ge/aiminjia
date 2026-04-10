@@ -1,5 +1,9 @@
 //! generate_slides — create professional PPTX presentations using python-pptx.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct SlidesGenTool;
 
 #[async_trait]
 impl ToolPlugin for SlidesGenTool {
-    fn name(&self) -> &str { "generate_slides" }
+    fn name(&self) -> &str {
+        "generate_slides"
+    }
 
     fn description(&self) -> &str {
         "Generate a professional PPTX presentation file. \

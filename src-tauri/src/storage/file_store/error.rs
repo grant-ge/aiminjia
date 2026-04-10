@@ -15,16 +15,10 @@ pub enum StorageError {
     NotFound(String),
 
     #[error("Conversation locked by PID {pid}: {conversation_id}")]
-    ConversationLocked {
-        conversation_id: String,
-        pid: u32,
-    },
+    ConversationLocked { conversation_id: String, pid: u32 },
 
     #[error("Corrupted file: {path} — {reason}")]
-    Corrupted {
-        path: String,
-        reason: String,
-    },
+    Corrupted { path: String, reason: String },
 
     #[error("Invalid structure: {0}")]
     InvalidStructure(String),

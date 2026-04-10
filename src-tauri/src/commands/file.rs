@@ -1,18 +1,21 @@
-use std::sync::Arc;
-use std::path::Path;
-use tauri::State;
-use crate::storage::file_store::AppStorage;
 use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::RuntimeRepositoryFacade;
+use std::path::Path;
+use std::sync::Arc;
+use tauri::State;
 
 /// Look up a file's stored_path from both uploaded_files and generated_files tables.
 /// Returns the stored_path string if found.
 fn resolve_stored_path(
-    db: &AppStorage,
+    facade: &RuntimeRepositoryFacade,
     file_id: &str,
     conversation_id: &str,
 ) -> Result<String, String> {
+    let store = facade.file_record_store();
+
     // Try uploaded_files first
-    if let Some(record) = db.get_uploaded_file_for_conversation(file_id, conversation_id)
+    if let Some(record) = store
+        .get_uploaded_file_for_conversation(file_id, conversation_id)
         .map_err(|e| e.to_string())?
     {
         if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
@@ -21,7 +24,8 @@ fn resolve_stored_path(
     }
 
     // Fall back to generated_files
-    if let Some(record) = db.get_generated_file_for_conversation(file_id, conversation_id)
+    if let Some(record) = store
+        .get_generated_file_for_conversation(file_id, conversation_id)
         .map_err(|e| e.to_string())?
     {
         if let Some(path) = record.get("storedPath").and_then(|v| v.as_str()) {
@@ -40,7 +44,7 @@ const MAX_UPLOAD_SIZE: u64 = 200 * 1024 * 1024;
 /// Returns a JSON object with fileId and fileSize.
 #[tauri::command]
 pub async fn upload_file(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     file_path: String,
     conversation_id: String,
@@ -65,7 +69,7 @@ pub async fn upload_file(
     // Record in database with conversation ownership
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_size = info.file_size;
-    if let Err(e) = db.insert_uploaded_file(
+    if let Err(e) = facade.file_record_store().insert_uploaded_file(
         &file_id,
         &conversation_id,
         &info.file_name,
@@ -75,7 +79,10 @@ pub async fn upload_file(
         None,
     ) {
         // Rollback: delete the physical file if DB insert fails
-        log::error!("DB insert failed for uploaded file, rolling back physical file: {}", e);
+        log::error!(
+            "DB insert failed for uploaded file, rolling back physical file: {}",
+            e
+        );
         let _ = file_mgr.delete_file(&info.stored_path);
         return Err(e.to_string());
     }
@@ -90,21 +97,30 @@ pub async fn upload_file(
 /// Searches both uploaded_files and generated_files tables.
 #[tauri::command]
 pub async fn open_generated_file(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     file_id: String,
     conversation_id: String,
 ) -> Result<(), String> {
-    let stored_path = resolve_stored_path(&db, &file_id, &conversation_id)?;
+    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
     let full_path = file_mgr.full_path(&stored_path);
 
     // Open with system default application
     #[cfg(target_os = "macos")]
-    std::process::Command::new("open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("open")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("explorer")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("xdg-open")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -113,12 +129,12 @@ pub async fn open_generated_file(
 /// Searches both uploaded_files and generated_files tables.
 #[tauri::command]
 pub async fn reveal_file_in_folder(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     file_id: String,
     conversation_id: String,
 ) -> Result<(), String> {
-    let stored_path = resolve_stored_path(&db, &file_id, &conversation_id)?;
+    let stored_path = resolve_stored_path(&facade, &file_id, &conversation_id)?;
     let full_path = file_mgr.full_path(&stored_path);
 
     // Reveal in OS file manager
@@ -150,16 +166,19 @@ pub async fn reveal_file_in_folder(
 /// Preview a file (returns preview content as string).
 #[tauri::command]
 pub async fn preview_file(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     file_id: String,
     conversation_id: String,
 ) -> Result<String, String> {
-    let file_record = db.get_uploaded_file_for_conversation(&file_id, &conversation_id)
+    let file_record = facade
+        .file_record_store()
+        .get_uploaded_file_for_conversation(&file_id, &conversation_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "File not found or does not belong to this conversation".to_string())?;
 
-    let stored_path = file_record.get("storedPath")
+    let stored_path = file_record
+        .get("storedPath")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Invalid file record".to_string())?;
 
@@ -167,7 +186,8 @@ pub async fn preview_file(
 
     // For HTML files, return the file path for WebView preview
     // For other files, return basic info
-    let file_type = file_record.get("fileType")
+    let file_type = file_record
+        .get("fileType")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
@@ -189,11 +209,20 @@ pub async fn open_file_by_name(
     let full_path = find_file_in_workspace(&file_mgr, &file_name)?;
 
     #[cfg(target_os = "macos")]
-    std::process::Command::new("open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("open")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("explorer")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open").arg(&full_path).spawn().map_err(|e| e.to_string())?;
+    std::process::Command::new("xdg-open")
+        .arg(&full_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -238,7 +267,9 @@ fn find_file_in_workspace(
     file_name: &str,
 ) -> Result<std::path::PathBuf, String> {
     let ws = file_mgr.workspace_path();
-    let subdirs = ["reports", "analysis", "uploads", "scripts", "temp", "charts", "exports"];
+    let subdirs = [
+        "reports", "analysis", "uploads", "scripts", "temp", "charts", "exports",
+    ];
 
     // First: exact match in subdirectories
     for subdir in &subdirs {
@@ -257,7 +288,9 @@ fn find_file_in_workspace(
     // Third: substring match — file name on disk contains the search term
     for subdir in &subdirs {
         let dir = ws.join(subdir);
-        if !dir.exists() { continue; }
+        if !dir.exists() {
+            continue;
+        }
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -274,24 +307,29 @@ fn find_file_in_workspace(
 /// Delete a file.
 #[tauri::command]
 pub async fn delete_file(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     file_id: String,
     conversation_id: String,
 ) -> Result<(), String> {
+    let store = facade.file_record_store();
     // Get file info, verified against conversation
-    let file_record = db.get_uploaded_file_for_conversation(&file_id, &conversation_id)
+    let file_record = store
+        .get_uploaded_file_for_conversation(&file_id, &conversation_id)
         .map_err(|e| e.to_string())?;
 
     if let Some(record) = file_record {
         if let Some(stored_path) = record.get("storedPath").and_then(|v| v.as_str()) {
             // Delete from filesystem
-            file_mgr.delete_file(stored_path).map_err(|e| e.to_string())?;
+            file_mgr
+                .delete_file(stored_path)
+                .map_err(|e| e.to_string())?;
         }
     }
 
     // Delete from database
-    db.delete_uploaded_file(&file_id, &conversation_id)
+    store
+        .delete_uploaded_file(&file_id, &conversation_id)
         .map_err(|e| e.to_string())?;
     Ok(())
 }

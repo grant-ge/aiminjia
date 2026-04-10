@@ -107,7 +107,8 @@ pub fn apply_decay_with_policy(messages: &[ChatMessage], policy: &DecayPolicy) -
     let num_iterations = iterations.len();
 
     // Build a set of message indices that need truncation, with their limit
-    let mut truncation_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut truncation_map: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
     for (iter_idx, iteration) in iterations.iter().enumerate() {
         let age = num_iterations - 1 - iter_idx; // 0 = most recent
         let limit = match age {
@@ -300,7 +301,7 @@ mod tests {
         // tool results. This can happen if tool execution was cancelled or blocked.
         let messages = vec![
             make_user("hi"),
-            make_assistant_with_tools("phantom"),  // no tool results follow
+            make_assistant_with_tools("phantom"), // no tool results follow
             make_assistant_with_tools("real"),
             make_tool_result("r1"),
         ];

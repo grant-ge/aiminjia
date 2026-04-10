@@ -1,31 +1,38 @@
 //! Built-in tool plugins — thin wrappers delegating to llm/tool_executor/.
+//!
+//! All tools in this module implement the deprecated `ToolPlugin` trait and
+//! are bridged into the runtime via `LegacyToolAdapter`.  They should be
+//! migrated to `RuntimeTool` incrementally — see `echo_runtime.rs` for the
+//! reference implementation of the new pattern.
+#![allow(deprecated)]
 
-pub mod web_search;
-pub mod python_exec;
-pub mod file_load;
-pub mod report_gen;
-pub mod chart_gen;
-pub mod hypothesis_test;
-pub mod anomaly_detect;
 pub mod analysis_note;
-pub mod data_export;
-pub mod progress_update;
-pub mod plan_update;
-pub mod slides_gen;
-pub mod memory_save;
-pub mod memory_search;
-pub mod memory_core;
-pub mod memory_distill;
-pub mod browse_navigate;
-pub mod read_page_content;
-pub mod page_execute_js;
+pub mod anomaly_detect;
 pub mod browse_and_extract;
 pub mod browse_data;
+pub mod browse_navigate;
+pub mod chart_gen;
+pub mod data_export;
+pub mod echo_runtime;
 pub mod extract_table_data;
 pub mod extract_with_pagination;
+pub mod file_load;
+pub mod hypothesis_test;
+pub mod memory_core;
+pub mod memory_distill;
+pub mod memory_save;
+pub mod memory_search;
+pub mod page_execute_js;
+pub mod plan_update;
+pub mod progress_update;
+pub mod python_exec;
+pub mod read_page_content;
+pub mod report_gen;
+pub mod slides_gen;
+pub mod web_search;
 
-use std::sync::Arc;
 use crate::plugin::ToolRegistry;
+use std::sync::Arc;
 
 /// Register all built-in tools.
 pub async fn register_builtin_tools(registry: &ToolRegistry) {

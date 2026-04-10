@@ -100,10 +100,14 @@ impl AppSettings {
             map.get(key).map(|v| v == "true").unwrap_or(default)
         };
         let get_f64 = |key: &str, default: f64| -> f64 {
-            map.get(key).and_then(|v| v.parse::<f64>().ok()).unwrap_or(default)
+            map.get(key)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(default)
         };
         let get_u32 = |key: &str, default: u32| -> u32 {
-            map.get(key).and_then(|v| v.parse::<u32>().ok()).unwrap_or(default)
+            map.get(key)
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(default)
         };
 
         Self {
@@ -114,7 +118,10 @@ impl AppSettings {
             analysis_threshold: get_f64("analysisThreshold", defaults.analysis_threshold),
             data_masking_level: get_str("dataMaskingLevel", &defaults.data_masking_level),
             auto_cleanup_enabled: get_bool("autoCleanupEnabled", defaults.auto_cleanup_enabled),
-            temp_file_retention_days: get_u32("tempFileRetentionDays", defaults.temp_file_retention_days),
+            temp_file_retention_days: get_u32(
+                "tempFileRetentionDays",
+                defaults.temp_file_retention_days,
+            ),
             keep_old_versions: get_u32("keepOldVersions", defaults.keep_old_versions),
             tavily_api_key: get_str("tavilyApiKey", &defaults.tavily_api_key),
             bocha_api_key: get_str("bochaApiKey", &defaults.bocha_api_key),
@@ -124,7 +131,10 @@ impl AppSettings {
             use_cloud: get_bool("useCloud", defaults.use_cloud),
             cloud_model: get_str("cloudModel", &defaults.cloud_model),
             cloud_model_type: get_str("cloudModelType", &defaults.cloud_model_type),
-            persona_onboarding_done: get_bool("personaOnboardingDone", defaults.persona_onboarding_done),
+            persona_onboarding_done: get_bool(
+                "personaOnboardingDone",
+                defaults.persona_onboarding_done,
+            ),
         }
     }
 }

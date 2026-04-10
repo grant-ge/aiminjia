@@ -100,6 +100,46 @@ pub enum ToolError {
 }
 
 /// Tool plugin interface — MCP-style (JSON Schema input → execute → structured output).
+///
+/// # Deprecated — migrate to [`crate::runtime::tools::RuntimeTool`]
+///
+/// This trait is **legacy**.  It was the original plugin contract when all tools
+/// received a full [`PluginContext`] containing every system service.  As of
+/// Phase 2 of the runtime refactor, new tools should instead implement the
+/// narrower [`crate::runtime::tools::RuntimeTool`] trait, which:
+///
+/// - Accepts a [`crate::runtime::tools::ToolExecutionContext`] (identity +
+///   cancellation + event sink) and optionally a
+///   [`crate::runtime::tools::CapabilityContext`] (scoped services).
+/// - Does **not** receive `LlmGateway`, `AgentRuntime`, `AuthManager`, or other
+///   orchestration-layer services — those must be accessed through dedicated APIs.
+///
+/// ## Migration guide
+///
+/// 1. Replace `impl ToolPlugin for MyTool` with
+///    `impl RuntimeTool for MyTool` (from `crate::runtime::tools`).
+/// 2. Change the `execute` signature from
+///    `async fn execute(&self, ctx: &PluginContext, input: Value) -> Result<ToolOutput, ToolError>`
+///    to
+///    `async fn execute(&self, input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError>`.
+/// 3. Access services via `ctx.capability` (a
+///    [`crate::runtime::tools::CapabilityContext`]) instead of the full `PluginContext`.
+/// 4. Wrap any field that genuinely requires `PluginContext` (e.g. `gateway`)
+///    in its own orchestration helper rather than threading it through the tool.
+///
+/// ## Bridging during the migration window
+///
+/// Existing implementations do **not** need to be migrated all at once.
+/// [`crate::runtime::tools::LegacyToolAdapter::from_plugin`] wraps a
+/// `dyn ToolPlugin` as a `RuntimeTool`, so legacy tools continue to work
+/// through the dispatcher.  Only new tools should implement `RuntimeTool`
+/// directly.
+#[deprecated(
+    since = "0.4.0",
+    note = "Implement `crate::runtime::tools::RuntimeTool` instead. \
+            See doc-comment on this trait for the migration guide. \
+            Legacy impls are still supported via LegacyToolAdapter::from_plugin."
+)]
 #[async_trait]
 pub trait ToolPlugin: Send + Sync + 'static {
     /// Unique tool identifier (e.g., "web_search").

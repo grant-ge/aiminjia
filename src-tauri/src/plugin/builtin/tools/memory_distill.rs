@@ -1,5 +1,9 @@
 //! distill_memories — promote high-hit memories to core, apply decay.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct MemoryDistillTool;
 
 #[async_trait]
 impl ToolPlugin for MemoryDistillTool {
-    fn name(&self) -> &str { "distill_memories" }
+    fn name(&self) -> &str {
+        "distill_memories"
+    }
 
     fn description(&self) -> &str {
         "Distill daily memories: promote frequently-hit entries to core memory, apply decay \

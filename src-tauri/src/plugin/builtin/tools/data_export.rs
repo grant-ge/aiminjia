@@ -1,5 +1,9 @@
 //! export_data — export processed data to CSV/Excel/JSON.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct DataExportTool;
 
 #[async_trait]
 impl ToolPlugin for DataExportTool {
-    fn name(&self) -> &str { "export_data" }
+    fn name(&self) -> &str {
+        "export_data"
+    }
 
     fn description(&self) -> &str {
         "Export data to CSV/Excel/JSON. RECOMMENDED: use _export_detail(df, filename, format) inside execute_python for DataFrame export. \

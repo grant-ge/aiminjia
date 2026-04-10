@@ -8,16 +8,20 @@ use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
-use super::FileGenResult;
 use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::optional_str;
 use super::util::{py_escape, slugify};
+use super::FileGenResult;
 
 /// 4. generate_report — build a structured HTML/PDF/DOCX/Markdown report.
-pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
+pub(crate) async fn handle_generate_report(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<FileGenResult> {
     // Resolve sections: prefer `source` (file path) over inline `sections`.
     let sections_value: Vec<Value>;
-    let sections: &[Value] = if let Some(source_path) = args.get("source").and_then(|v| v.as_str()) {
+    let sections: &[Value] = if let Some(source_path) = args.get("source").and_then(|v| v.as_str())
+    {
         // Read sections from a JSON file written by execute_python.
         let full_path = if std::path::Path::new(source_path).is_absolute() {
             std::path::PathBuf::from(source_path)
@@ -28,7 +32,10 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
         let canonical = full_path.canonicalize().map_err(|e| {
             anyhow::anyhow!("Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.", source_path, e)
         })?;
-        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        let workspace_canonical = ctx
+            .workspace_path
+            .canonicalize()
+            .unwrap_or_else(|_| ctx.workspace_path.clone());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow::anyhow!(
                 "Source file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
@@ -42,9 +49,16 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
             anyhow::anyhow!("Failed to parse sections from '{}': {}. The file must contain a JSON array of section objects.", source_path, e)
         })?;
         if sections_value.is_empty() {
-            return Err(anyhow::anyhow!("Source file '{}' contains an empty sections array.", source_path));
+            return Err(anyhow::anyhow!(
+                "Source file '{}' contains an empty sections array.",
+                source_path
+            ));
         }
-        log::info!("[generate_report] Loaded {} sections from source file: {}", sections_value.len(), source_path);
+        log::info!(
+            "[generate_report] Loaded {} sections from source file: {}",
+            sections_value.len(),
+            source_path
+        );
         &sections_value
     } else {
         // Fallback: inline sections parameter (original behavior).
@@ -67,7 +81,9 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
             ));
         };
         if inline_sections.is_empty() {
-            return Err(anyhow::anyhow!("'sections' array is empty. At least one section is required."));
+            return Err(anyhow::anyhow!(
+                "'sections' array is empty. At least one section is required."
+            ));
         }
         sections_value = inline_sections;
         &sections_value
@@ -90,7 +106,10 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
     let html_content = build_html_report(title, sections);
     // Replace product name with custom branding if available
     let html_content = if let Some(ref auth_mgr) = ctx.auth_manager {
-        let product_name = auth_mgr.get_auth_info().await.tenant
+        let product_name = auth_mgr
+            .get_auth_info()
+            .await
+            .tenant
             .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
             .unwrap_or_else(|| "AI小家".to_string());
         html_content.replace("AI小家", &product_name)
@@ -111,7 +130,10 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
             match convert_sections_to_pdf(ctx, title, sections, &unmask_map).await {
                 Ok(pdf_bytes) => (pdf_bytes, "pdf", "pdf"),
                 Err(e) => {
-                    log::warn!("[generate_report] PDF conversion failed: {}. Falling back to HTML.", e);
+                    log::warn!(
+                        "[generate_report] PDF conversion failed: {}. Falling back to HTML.",
+                        e
+                    );
                     (html_content.into_bytes(), "html", "html_fallback_from_pdf")
                 }
             }
@@ -121,7 +143,10 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
             match convert_html_to_docx(ctx, &html_content).await {
                 Ok(docx_bytes) => (docx_bytes, "docx", "docx"),
                 Err(e) => {
-                    log::warn!("[generate_report] DOCX conversion failed: {}. Falling back to HTML.", e);
+                    log::warn!(
+                        "[generate_report] DOCX conversion failed: {}. Falling back to HTML.",
+                        e
+                    );
                     (html_content.into_bytes(), "html", "html_fallback_from_docx")
                 }
             }
@@ -148,18 +173,18 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
     if let Err(e) = ctx.storage.insert_generated_file(
         &file_id,
         &ctx.conversation_id,
-        None,         // message_id
+        None, // message_id
         &file_info.file_name,
         &file_info.stored_path,
         &file_info.file_type,
         file_info.file_size as i64,
-        "report",     // category
-        Some(title),  // description
-        1,            // version
-        true,         // is_latest
-        None,         // superseded_by
-        None,         // created_by_step
-        None,         // expires_at
+        "report",    // category
+        Some(title), // description
+        1,           // version
+        true,        // is_latest
+        None,        // superseded_by
+        None,        // created_by_step
+        None,        // expires_at
     ) {
         let _ = std::fs::remove_file(ctx.file_manager.full_path(&file_info.stored_path));
         return Err(e.into());
@@ -167,7 +192,11 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
 
     let is_degraded = actual_format.contains("fallback");
     let requested_format_label = format.to_string();
-    let actual_format_label = if is_degraded { "html".to_string() } else { format.to_string() };
+    let actual_format_label = if is_degraded {
+        "html".to_string()
+    } else {
+        format.to_string()
+    };
 
     let mut result = json!({
         "fileId": file_id,
@@ -178,7 +207,11 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
     });
 
     let (content_str, degradation_notice) = if is_degraded {
-        let requested = if actual_format.contains("pdf") { "PDF" } else { "DOCX" };
+        let requested = if actual_format.contains("pdf") {
+            "PDF"
+        } else {
+            "DOCX"
+        };
         let notice = format!(
             "⚠️ {} 转换失败，已保存为 HTML 格式（{}）。请告知用户实际生成的是 HTML 而非 {}，可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 {}。",
             requested, file_info.file_name, requested, requested
@@ -247,7 +280,8 @@ async fn convert_sections_to_pdf(
     let json_temp_str = py_escape(&json_temp.to_string_lossy());
     let output_path_str = py_escape(&output_path.to_string_lossy());
 
-    let python_code = format!(r#"
+    let python_code = format!(
+        r#"
 import sys, os, json
 
 json_path = '{json_temp_str}'
@@ -475,7 +509,8 @@ story.append(Paragraph(f'Report generated by AIjia — {{ts}}', style_footer))
 
 doc.build(story)
 print("OK:" + output_path)
-"#);
+"#
+    );
 
     let result = runner.execute(&python_code).await?;
 
@@ -486,7 +521,12 @@ print("OK:" + output_path)
         let err_msg = if result.stdout.contains("reportlab not installed") {
             "reportlab not installed".to_string()
         } else {
-            format!("exit_code={}, stdout={}, stderr={}", result.exit_code, result.stdout.trim(), result.stderr.trim())
+            format!(
+                "exit_code={}, stdout={}, stderr={}",
+                result.exit_code,
+                result.stdout.trim(),
+                result.stderr.trim()
+            )
         };
         anyhow::bail!("PDF conversion failed: {}", err_msg);
     }
@@ -522,7 +562,8 @@ async fn convert_html_to_docx(ctx: &PluginContext, html: &str) -> Result<Vec<u8>
     let html_temp_str = py_escape(&html_temp.to_string_lossy());
     let output_path_str = py_escape(&output_path.to_string_lossy());
 
-    let python_code = format!(r#"
+    let python_code = format!(
+        r#"
 import sys
 import os
 
@@ -548,7 +589,8 @@ except ImportError as exc:
 except Exception as exc:
     print("ERROR:" + str(exc))
     sys.exit(1)
-"#);
+"#
+    );
 
     let result = runner.execute(&python_code).await?;
 
@@ -556,7 +598,12 @@ except Exception as exc:
     let _ = std::fs::remove_file(&html_temp);
 
     if result.exit_code != 0 || result.stdout.trim().starts_with("ERROR:") {
-        let err_msg = format!("exit_code={}, stdout={}, stderr={}", result.exit_code, result.stdout.trim(), result.stderr.trim());
+        let err_msg = format!(
+            "exit_code={}, stdout={}, stderr={}",
+            result.exit_code,
+            result.stdout.trim(),
+            result.stderr.trim()
+        );
         anyhow::bail!("DOCX conversion failed: {}", err_msg);
     }
 
@@ -622,7 +669,10 @@ fn build_html_report(title: &str, sections: &[Value]) -> String {
             body.push_str("      <ul class=\"item-list\">\n");
             for item in items {
                 if let Some(text) = item.as_str() {
-                    body.push_str(&format!("        <li>{}</li>\n", report_inline_md(&html_escape(text))));
+                    body.push_str(&format!(
+                        "        <li>{}</li>\n",
+                        report_inline_md(&html_escape(text))
+                    ));
                 }
             }
             body.push_str("      </ul>\n");
@@ -800,7 +850,10 @@ fn build_html_report(title: &str, sections: &[Value]) -> String {
 fn render_report_table(html: &mut String, table: &Value) {
     let title = table.get("title").and_then(|v| v.as_str());
     if let Some(t) = title {
-        html.push_str(&format!("      <div style=\"font-weight:600;font-size:13px;margin:12px 0 6px\">{}</div>\n", html_escape(t)));
+        html.push_str(&format!(
+            "      <div style=\"font-weight:600;font-size:13px;margin:12px 0 6px\">{}</div>\n",
+            html_escape(t)
+        ));
     }
 
     // Support both { columns: [str], rows: [[str]] } and { columns: [{label, key}], rows: [{key: val}] }
@@ -816,15 +869,26 @@ fn render_report_table(html: &mut String, table: &Value) {
     html.push_str("      <table><thead><tr>\n");
 
     // Determine column labels and keys
-    let col_info: Vec<(String, String)> = columns.iter().map(|col| {
-        if let Some(label) = col.as_str() {
-            (label.to_string(), label.to_string())
-        } else {
-            let label = col.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let key = col.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            (label, key)
-        }
-    }).collect();
+    let col_info: Vec<(String, String)> = columns
+        .iter()
+        .map(|col| {
+            if let Some(label) = col.as_str() {
+                (label.to_string(), label.to_string())
+            } else {
+                let label = col
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let key = col
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                (label, key)
+            }
+        })
+        .collect();
 
     for (label, _) in &col_info {
         html.push_str(&format!("        <th>{}</th>\n", html_escape(label)));
@@ -836,16 +900,26 @@ fn render_report_table(html: &mut String, table: &Value) {
         if let Some(row_arr) = row.as_array() {
             // Row is an array of values
             for (i, _) in col_info.iter().enumerate() {
-                let cell = row_arr.get(i).map(|v| {
-                    v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string())
-                }).unwrap_or_default();
+                let cell = row_arr
+                    .get(i)
+                    .map(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| v.to_string())
+                    })
+                    .unwrap_or_default();
                 html.push_str(&format!("<td>{}</td>", html_escape(&cell)));
             }
         } else {
             // Row is an object with keys
             for (_, key) in &col_info {
-                let cell = row.get(key.as_str())
-                    .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string()))
+                let cell = row
+                    .get(key.as_str())
+                    .map(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| v.to_string())
+                    })
                     .unwrap_or_default();
                 html.push_str(&format!("<td>{}</td>", html_escape(&cell)));
             }
@@ -867,24 +941,36 @@ fn report_markdown_to_html(text: &str) -> String {
 
         // Table rows (| col | col |)
         if trimmed.starts_with('|') && trimmed.ends_with('|') {
-            if trimmed.chars().all(|c| c == '|' || c == '-' || c == ' ' || c == ':') {
+            if trimmed
+                .chars()
+                .all(|c| c == '|' || c == '-' || c == ' ' || c == ':')
+            {
                 // Separator line — skip but mark header done
                 table_header_done = true;
                 continue;
             }
             if !in_table {
-                if in_list { result.push_str("</ul>"); in_list = false; }
+                if in_list {
+                    result.push_str("</ul>");
+                    in_list = false;
+                }
                 result.push_str("<table>");
                 in_table = true;
                 table_header_done = false;
             }
-            let cells: Vec<&str> = trimmed.split('|')
+            let cells: Vec<&str> = trimmed
+                .split('|')
                 .filter(|s| !s.trim().is_empty())
                 .collect();
             let tag = if !table_header_done { "th" } else { "td" };
             result.push_str("<tr>");
             for cell in &cells {
-                result.push_str(&format!("<{}>{}</{}>", tag, report_inline_md(&html_escape(cell.trim())), tag));
+                result.push_str(&format!(
+                    "<{}>{}</{}>",
+                    tag,
+                    report_inline_md(&html_escape(cell.trim())),
+                    tag
+                ));
             }
             result.push_str("</tr>");
             continue;
@@ -899,15 +985,30 @@ fn report_markdown_to_html(text: &str) -> String {
 
         // Unordered list items
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-            if !in_list { result.push_str("<ul>"); in_list = true; }
-            result.push_str(&format!("<li>{}</li>", report_inline_md(&html_escape(&trimmed[2..]))));
+            if !in_list {
+                result.push_str("<ul>");
+                in_list = true;
+            }
+            result.push_str(&format!(
+                "<li>{}</li>",
+                report_inline_md(&html_escape(&trimmed[2..]))
+            ));
             continue;
         }
 
         // Ordered list items
-        if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()).and_then(|s| s.strip_prefix(". ")) {
-            if !in_list { result.push_str("<ol>"); in_list = true; }
-            result.push_str(&format!("<li>{}</li>", report_inline_md(&html_escape(rest))));
+        if let Some(rest) = trimmed
+            .strip_prefix(|c: char| c.is_ascii_digit())
+            .and_then(|s| s.strip_prefix(". "))
+        {
+            if !in_list {
+                result.push_str("<ol>");
+                in_list = true;
+            }
+            result.push_str(&format!(
+                "<li>{}</li>",
+                report_inline_md(&html_escape(rest))
+            ));
             continue;
         }
 
@@ -920,20 +1021,36 @@ fn report_markdown_to_html(text: &str) -> String {
 
         // Headers
         if trimmed.starts_with("### ") {
-            result.push_str(&format!("<h4>{}</h4>", report_inline_md(&html_escape(&trimmed[4..]))));
+            result.push_str(&format!(
+                "<h4>{}</h4>",
+                report_inline_md(&html_escape(&trimmed[4..]))
+            ));
         } else if trimmed.starts_with("## ") {
-            result.push_str(&format!("<h3>{}</h3>", report_inline_md(&html_escape(&trimmed[3..]))));
+            result.push_str(&format!(
+                "<h3>{}</h3>",
+                report_inline_md(&html_escape(&trimmed[3..]))
+            ));
         } else if trimmed.starts_with("# ") {
-            result.push_str(&format!("<h3>{}</h3>", report_inline_md(&html_escape(&trimmed[2..]))));
+            result.push_str(&format!(
+                "<h3>{}</h3>",
+                report_inline_md(&html_escape(&trimmed[2..]))
+            ));
         } else if trimmed.is_empty() {
             // Skip excessive blank lines
         } else {
-            result.push_str(&format!("<p>{}</p>", report_inline_md(&html_escape(trimmed))));
+            result.push_str(&format!(
+                "<p>{}</p>",
+                report_inline_md(&html_escape(trimmed))
+            ));
         }
     }
 
-    if in_list { result.push_str("</ul>"); }
-    if in_table { result.push_str("</table>"); }
+    if in_list {
+        result.push_str("</ul>");
+    }
+    if in_table {
+        result.push_str("</table>");
+    }
     result
 }
 
@@ -944,15 +1061,29 @@ fn report_inline_md(text: &str) -> String {
     while let Some(start) = result.find("**") {
         if let Some(end) = result[start + 2..].find("**") {
             let inner = result[start + 2..start + 2 + end].to_string();
-            result = format!("{}<strong>{}</strong>{}", &result[..start], inner, &result[start + 2 + end + 2..]);
-        } else { break; }
+            result = format!(
+                "{}<strong>{}</strong>{}",
+                &result[..start],
+                inner,
+                &result[start + 2 + end + 2..]
+            );
+        } else {
+            break;
+        }
     }
     // Inline code: `text`
     while let Some(start) = result.find('`') {
         if let Some(end) = result[start + 1..].find('`') {
             let inner = result[start + 1..start + 1 + end].to_string();
-            result = format!("{}<code>{}</code>{}", &result[..start], inner, &result[start + 1 + end + 1..]);
-        } else { break; }
+            result = format!(
+                "{}<code>{}</code>{}",
+                &result[..start],
+                inner,
+                &result[start + 1 + end + 1..]
+            );
+        } else {
+            break;
+        }
     }
     result
 }
@@ -1012,9 +1143,7 @@ mod tests {
 
     #[test]
     fn test_build_markdown_report() {
-        let sections = vec![
-            json!({"heading": "Intro", "content": "Hello"}),
-        ];
+        let sections = vec![json!({"heading": "Intro", "content": "Hello"})];
         let md = build_markdown_report("My Report", &sections);
         assert!(md.starts_with("# My Report\n"));
         assert!(md.contains("## Intro\n"));

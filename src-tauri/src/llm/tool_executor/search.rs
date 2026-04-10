@@ -19,15 +19,13 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     let max_results = super::optional_i64(args, "max_results", 5) as u32;
 
     // Auto-append recent year range if the query doesn't already mention any year
-    let has_year = raw_query.chars().collect::<Vec<_>>()
-        .windows(4)
-        .any(|w| {
-            if let Ok(n) = w.iter().collect::<String>().parse::<u32>() {
-                (2020..=2030).contains(&n)
-            } else {
-                false
-            }
-        });
+    let has_year = raw_query.chars().collect::<Vec<_>>().windows(4).any(|w| {
+        if let Ok(n) = w.iter().collect::<String>().parse::<u32>() {
+            (2020..=2030).contains(&n)
+        } else {
+            false
+        }
+    });
     let now = chrono::Local::now();
     let this_year = now.format("%Y");
     let last_year = now.year() - 1;
@@ -59,7 +57,10 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
                 for (i, result) in results.iter().enumerate() {
                     output.push_str(&format!(
                         "{}. **{}**\n   URL: {}\n   {}\n\n",
-                        i + 1, result.title, result.url, result.summary
+                        i + 1,
+                        result.title,
+                        result.url,
+                        result.summary
                     ));
                 }
                 return Ok(output);
@@ -81,7 +82,10 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
             for (i, result) in results.iter().enumerate() {
                 output.push_str(&format!(
                     "{}. **{}**\n   URL: {}\n   {}\n\n",
-                    i + 1, result.title, result.url, result.content
+                    i + 1,
+                    result.title,
+                    result.url,
+                    result.content
                 ));
             }
             return Ok(output);
@@ -106,7 +110,10 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
                 for (i, result) in response.results.iter().enumerate() {
                     output.push_str(&format!(
                         "{}. **{}**\n   URL: {}\n   {}\n\n",
-                        i + 1, result.title, result.url, result.content
+                        i + 1,
+                        result.title,
+                        result.url,
+                        result.content
                     ));
                 }
                 if output.is_empty() {
@@ -121,7 +128,9 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     }
 
     // All engines failed (or none configured)
-    Err(anyhow!("[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。"))
+    Err(anyhow!(
+        "[搜索不可用] 搜索引擎暂时无法访问。请基于已有知识回答，不要编造搜索结果。"
+    ))
 }
 
 /// Cloud search via Lotus /v1/search endpoint.
@@ -175,7 +184,10 @@ async fn cloud_search(
             let content = result["content"].as_str().unwrap_or("");
             output.push_str(&format!(
                 "{}. **{}**\n   URL: {}\n   {}\n\n",
-                i + 1, title, url, content
+                i + 1,
+                title,
+                url,
+                content
             ));
         }
     }

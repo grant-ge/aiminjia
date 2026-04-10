@@ -43,12 +43,8 @@ pub fn upsert_search_cache(
 }
 
 /// Get a search cache entry if it exists and hasn't expired.
-pub fn get_search_cache(
-    base_dir: &Path,
-    query_hash: &str,
-) -> StorageResult<Option<CacheEntry>> {
-    let entry: Option<CacheEntry> =
-        read_json_optional(&cache_file_path(base_dir, query_hash))?;
+pub fn get_search_cache(base_dir: &Path, query_hash: &str) -> StorageResult<Option<CacheEntry>> {
+    let entry: Option<CacheEntry> = read_json_optional(&cache_file_path(base_dir, query_hash))?;
 
     match entry {
         Some(e) => {
@@ -113,8 +109,7 @@ mod tests {
 
         // Future expiry
         let expires = "2099-12-31T23:59:59Z";
-        upsert_search_cache(&base, "abc123", "test query", r#"{"results":[]}"#, expires)
-            .unwrap();
+        upsert_search_cache(&base, "abc123", "test query", r#"{"results":[]}"#, expires).unwrap();
 
         let entry = get_search_cache(&base, "abc123").unwrap();
         assert!(entry.is_some());
@@ -127,8 +122,7 @@ mod tests {
 
         // Past expiry
         let expires = "2020-01-01T00:00:00Z";
-        upsert_search_cache(&base, "abc123", "old query", r#"{"results":[]}"#, expires)
-            .unwrap();
+        upsert_search_cache(&base, "abc123", "old query", r#"{"results":[]}"#, expires).unwrap();
 
         let entry = get_search_cache(&base, "abc123").unwrap();
         assert!(entry.is_none()); // Should be expired
@@ -139,22 +133,8 @@ mod tests {
         let (base, _dir) = setup();
 
         // One valid, one expired
-        upsert_search_cache(
-            &base,
-            "valid",
-            "valid query",
-            "{}",
-            "2099-12-31T23:59:59Z",
-        )
-        .unwrap();
-        upsert_search_cache(
-            &base,
-            "expired",
-            "old query",
-            "{}",
-            "2020-01-01T00:00:00Z",
-        )
-        .unwrap();
+        upsert_search_cache(&base, "valid", "valid query", "{}", "2099-12-31T23:59:59Z").unwrap();
+        upsert_search_cache(&base, "expired", "old query", "{}", "2020-01-01T00:00:00Z").unwrap();
 
         let cleaned = cleanup_expired_cache(&base).unwrap();
         assert_eq!(cleaned, 1);

@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::auth::AuthManager;
 use crate::auth::state::CloudAuthInfo;
 use crate::auth::state::CloudModelInfo;
+use crate::auth::AuthManager;
 
 /// Branding info returned to frontend for instant (no-network) brand application.
 #[derive(serde::Serialize)]
@@ -32,14 +32,14 @@ pub async fn cloud_login(
     if username.is_empty() || password.is_empty() {
         return Err("请输入用户名和密码".to_string());
     }
-    auth.login(username, &password).await.map_err(|e| e.to_string())
+    auth.login(username, &password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Logout from cloud mode.
 #[tauri::command]
-pub async fn cloud_logout(
-    auth: State<'_, Arc<AuthManager>>,
-) -> Result<(), String> {
+pub async fn cloud_logout(auth: State<'_, Arc<AuthManager>>) -> Result<(), String> {
     auth.logout().await;
     Ok(())
 }
@@ -48,9 +48,7 @@ pub async fn cloud_logout(
 /// If logged in, proactively refreshes auth/profile from server so tenant branding
 /// changes (product name/logo/colors) apply without requiring logout + re-login.
 #[tauri::command]
-pub async fn get_cloud_auth(
-    auth: State<'_, Arc<AuthManager>>,
-) -> Result<CloudAuthInfo, String> {
+pub async fn get_cloud_auth(auth: State<'_, Arc<AuthManager>>) -> Result<CloudAuthInfo, String> {
     Ok(auth.refresh_auth_info().await)
 }
 
@@ -76,15 +74,15 @@ pub async fn cloud_change_password(
     if new_password.len() < 8 {
         return Err("新密码长度至少 8 个字符".to_string());
     }
-    auth.change_password(&old_password, &new_password).await.map_err(|e| e.to_string())
+    auth.change_password(&old_password, &new_password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get branding info from persisted auth state (no network call).
 /// Returns instantly from in-memory state restored at app startup.
 #[tauri::command]
-pub async fn get_branding(
-    auth: State<'_, Arc<AuthManager>>,
-) -> Result<BrandingInfo, String> {
+pub async fn get_branding(auth: State<'_, Arc<AuthManager>>) -> Result<BrandingInfo, String> {
     let info = auth.get_auth_info().await;
     let branding = match info.tenant {
         Some(t) => BrandingInfo {

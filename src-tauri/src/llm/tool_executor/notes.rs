@@ -61,7 +61,10 @@ mod tests {
         // Verify the memory was actually stored with step-prefixed key.
         let full_key = format!("note:{}:step2_salary_distribution", ctx.conversation_id);
         let stored = ctx.storage.get_memory(&full_key).unwrap();
-        assert_eq!(stored, Some("Salary follows a log-normal distribution".to_string()));
+        assert_eq!(
+            stored,
+            Some("Salary follows a log-normal distribution".to_string())
+        );
     }
 
     #[tokio::test]

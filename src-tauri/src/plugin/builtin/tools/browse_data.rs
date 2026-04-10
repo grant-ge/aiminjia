@@ -4,6 +4,10 @@
 //! its own system prompt and browser tools handles the multi-step browsing,
 //! then returns file paths and a summary.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -15,7 +19,9 @@ pub struct BrowseDataTool;
 
 #[async_trait]
 impl ToolPlugin for BrowseDataTool {
-    fn name(&self) -> &str { "browse_data" }
+    fn name(&self) -> &str {
+        "browse_data"
+    }
 
     fn description(&self) -> &str {
         "Extract data from internal business systems (ERP/OA/CRM/HR). \

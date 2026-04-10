@@ -1,5 +1,9 @@
 //! generate_report — create professional reports in HTML/Markdown/PDF/DOCX.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct ReportGenTool;
 
 #[async_trait]
 impl ToolPlugin for ReportGenTool {
-    fn name(&self) -> &str { "generate_report" }
+    fn name(&self) -> &str {
+        "generate_report"
+    }
 
     fn description(&self) -> &str {
         "Generate a professional analysis report as a downloadable file. \

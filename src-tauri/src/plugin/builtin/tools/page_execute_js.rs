@@ -1,5 +1,9 @@
 //! page_execute_js — execute JavaScript on the active page in the CDP browser.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct PageExecuteJsTool;
 
 #[async_trait]
 impl ToolPlugin for PageExecuteJsTool {
-    fn name(&self) -> &str { "page_execute_js" }
+    fn name(&self) -> &str {
+        "page_execute_js"
+    }
 
     fn description(&self) -> &str {
         "Execute JavaScript on the active page. Use for: clicking buttons, filling forms, \

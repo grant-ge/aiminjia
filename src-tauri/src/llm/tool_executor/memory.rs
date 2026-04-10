@@ -12,7 +12,10 @@ use crate::plugin::context::PluginContext;
 pub(crate) async fn handle_save_memory(ctx: &PluginContext, args: &Value) -> Result<String> {
     let content = super::require_str(args, "content")?;
     let category = super::require_str(args, "category")?;
-    let to_core = args.get("to_core").and_then(|v| v.as_bool()).unwrap_or(false);
+    let to_core = args
+        .get("to_core")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let tags: Vec<String> = args
         .get("tags")
@@ -48,12 +51,9 @@ pub(crate) async fn handle_search_memory(ctx: &PluginContext, args: &Value) -> R
     let category = super::optional_str(args, "category");
     let days = super::optional_i64(args, "days", 30);
 
-    let results = ctx.storage.search_cognitive_memory(
-        query,
-        category,
-        days,
-        &ctx.conversation_id,
-    )?;
+    let results =
+        ctx.storage
+            .search_cognitive_memory(query, category, days, &ctx.conversation_id)?;
 
     Ok(json!({
         "status": "ok",
@@ -90,7 +90,10 @@ pub(crate) async fn handle_load_core_memory(ctx: &PluginContext, _args: &Value) 
 
 pub(crate) async fn handle_distill_memories(ctx: &PluginContext, args: &Value) -> Result<String> {
     let days = super::optional_i64(args, "days", 7);
-    let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+    let dry_run = args
+        .get("dry_run")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let report = ctx.storage.distill_cognitive_memories(days, dry_run)?;
 
@@ -210,7 +213,10 @@ mod tests {
         let result = handle_load_core_memory(&ctx, &json!({})).await.unwrap();
         let parsed: Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["status"], "ok");
-        assert!(parsed["content"].as_str().unwrap().contains("500 employees"));
+        assert!(parsed["content"]
+            .as_str()
+            .unwrap()
+            .contains("500 employees"));
     }
 
     #[tokio::test]

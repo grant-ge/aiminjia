@@ -130,9 +130,17 @@ pub fn detect_analysis_mode(messages: &[ChatMessage], has_files: bool) -> bool {
 
     // Explicit analysis request keywords
     let explicit_keywords = [
-        "薪酬分析", "薪酬诊断", "公平性分析", "薪酬公平",
-        "开始分析", "帮我分析", "做一次分析", "深度分析",
-        "compensation analysis", "pay equity", "salary analysis",
+        "薪酬分析",
+        "薪酬诊断",
+        "公平性分析",
+        "薪酬公平",
+        "开始分析",
+        "帮我分析",
+        "做一次分析",
+        "深度分析",
+        "compensation analysis",
+        "pay equity",
+        "salary analysis",
         "fairness analysis",
     ];
     if explicit_keywords.iter().any(|kw| text.contains(kw)) {
@@ -142,8 +150,15 @@ pub fn detect_analysis_mode(messages: &[ChatMessage], has_files: bool) -> bool {
     // File upload + salary-related keywords
     if has_files {
         let salary_keywords = [
-            "工资", "薪酬", "薪资", "工资表", "薪酬表",
-            "salary", "compensation", "payroll", "wage",
+            "工资",
+            "薪酬",
+            "薪资",
+            "工资表",
+            "薪酬表",
+            "salary",
+            "compensation",
+            "payroll",
+            "wage",
         ];
         if salary_keywords.iter().any(|kw| text.contains(kw)) {
             return true;
@@ -228,7 +243,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
             _ => 10,
         },
         requires_confirmation: true, // all steps need user confirmation
-        token_budget: 8192, // analysis steps need more output room
+        token_budget: 8192,          // analysis steps need more output room
         step_display_names: vec![
             (0, "分析方向确认".to_string()),
             (1, "数据清洗".to_string()),
@@ -329,9 +344,7 @@ fn route_analysis_step(state: &StepState, last_user_message: &str) -> AnalysisAc
         }
 
         // Paused step (crash recovery) → resume where we left off
-        (StepStatus::Paused, step) => {
-            AnalysisAction::ResumeStep(build_step_config(step))
-        }
+        (StepStatus::Paused, step) => AnalysisAction::ResumeStep(build_step_config(step)),
 
         // In-progress step (edge case: user sent message while step still running)
         (StepStatus::InProgress, step) => {
@@ -382,18 +395,50 @@ fn is_confirmation(text: &str) -> bool {
     // Exact-match confirmation phrases (must be the entire message after stripping)
     let exact_phrases = [
         // Chinese single-word
-        "确认", "继续", "好的", "可以", "没问题", "好", "行", "对",
-        "是的", "确定", "通过", "下一步", "继续吧", "没有问题", "同意", "认可",
+        "确认",
+        "继续",
+        "好的",
+        "可以",
+        "没问题",
+        "好",
+        "行",
+        "对",
+        "是的",
+        "确定",
+        "通过",
+        "下一步",
+        "继续吧",
+        "没有问题",
+        "同意",
+        "认可",
         // Chinese compound
-        "好的好的", "可以可以", "没问题的", "好的继续",
-        "可以的", "好的吧", "行吧",
+        "好的好的",
+        "可以可以",
+        "没问题的",
+        "好的继续",
+        "可以的",
+        "好的吧",
+        "行吧",
         // Chinese with internal punctuation
-        "好的，继续", "可以，下一步", "可以，继续",
+        "好的，继续",
+        "可以，下一步",
+        "可以，继续",
         // English
-        "ok", "okay", "yes", "proceed", "continue", "confirm", "next",
-        "lgtm", "looks good", "ok ok",
+        "ok",
+        "okay",
+        "yes",
+        "proceed",
+        "continue",
+        "confirm",
+        "next",
+        "lgtm",
+        "looks good",
+        "ok ok",
         // Start analysis (Step 0 → Step 1 transition)
-        "开始", "开始分析", "开始吧", "start",
+        "开始",
+        "开始分析",
+        "开始吧",
+        "start",
     ];
 
     exact_phrases.iter().any(|p| stripped == *p)
@@ -424,13 +469,39 @@ fn is_abort(text: &str) -> bool {
 
     let abort_phrases = [
         // Chinese
-        "算了", "不分析了", "取消", "取消分析", "退出", "退出分析",
-        "停止", "停止分析", "不做了", "不用了", "算了吧", "放弃",
-        "不做分析", "不要分析", "别分析", "别分析了", "不用分析",
-        "不用分析了", "不需要分析", "先不分析", "先不做分析",
+        "算了",
+        "不分析了",
+        "取消",
+        "取消分析",
+        "退出",
+        "退出分析",
+        "停止",
+        "停止分析",
+        "不做了",
+        "不用了",
+        "算了吧",
+        "放弃",
+        "不做分析",
+        "不要分析",
+        "别分析",
+        "别分析了",
+        "不用分析",
+        "不用分析了",
+        "不需要分析",
+        "先不分析",
+        "先不做分析",
         // English
-        "cancel", "abort", "stop", "exit", "quit", "nevermind",
-        "no", "no thanks", "don't analyze", "skip", "skip analysis",
+        "cancel",
+        "abort",
+        "stop",
+        "exit",
+        "quit",
+        "nevermind",
+        "no",
+        "no thanks",
+        "don't analyze",
+        "skip",
+        "skip analysis",
     ];
 
     abort_phrases.iter().any(|p| stripped == *p)
@@ -444,10 +515,7 @@ fn is_abort(text: &str) -> bool {
 ///
 /// The system prompt is inserted as the first message with role "system".
 /// This is used by the agent loop to inject step-specific guidance.
-pub fn build_step_messages(
-    base_messages: &[ChatMessage],
-    system_prompt: &str,
-) -> Vec<ChatMessage> {
+pub fn build_step_messages(base_messages: &[ChatMessage], system_prompt: &str) -> Vec<ChatMessage> {
     let mut messages = Vec::with_capacity(base_messages.len() + 1);
     messages.push(ChatMessage::text("system", system_prompt));
     messages.extend_from_slice(base_messages);
@@ -593,10 +661,7 @@ mod tests {
 
     #[test]
     fn test_build_step_messages_prepends_system() {
-        let base = make_messages(&[
-            ("user", "Hello"),
-            ("assistant", "Hi there"),
-        ]);
+        let base = make_messages(&[("user", "Hello"), ("assistant", "Hi there")]);
         let result = build_step_messages(&base, "You are a helpful assistant.");
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].role, "system");
@@ -706,42 +771,60 @@ mod tests {
 
     #[test]
     fn test_route_completed_step_with_confirmation() {
-        let state = StepState { step: 2, status: StepStatus::Completed };
+        let state = StepState {
+            step: 2,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "确认");
         assert!(matches!(action, AnalysisAction::AdvanceStep(config) if config.step == 3));
     }
 
     #[test]
     fn test_route_completed_step_with_feedback() {
-        let state = StepState { step: 2, status: StepStatus::Completed };
+        let state = StepState {
+            step: 2,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "把品质合并到生产里");
         assert!(matches!(action, AnalysisAction::RerunStep(config) if config.step == 2));
     }
 
     #[test]
     fn test_route_paused_step() {
-        let state = StepState { step: 3, status: StepStatus::Paused };
+        let state = StepState {
+            step: 3,
+            status: StepStatus::Paused,
+        };
         let action = route_analysis_step(&state, "anything");
         assert!(matches!(action, AnalysisAction::ResumeStep(config) if config.step == 3));
     }
 
     #[test]
     fn test_route_step5_completed_confirm() {
-        let state = StepState { step: 5, status: StepStatus::Completed };
+        let state = StepState {
+            step: 5,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "确认");
         assert!(matches!(action, AnalysisAction::FinishAnalysis));
     }
 
     #[test]
     fn test_route_step5_completed_feedback() {
-        let state = StepState { step: 5, status: StepStatus::Completed };
+        let state = StepState {
+            step: 5,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "再加一个图表");
         assert!(matches!(action, AnalysisAction::RerunStep(config) if config.step == 5));
     }
 
     #[test]
     fn test_route_in_progress_step() {
-        let state = StepState { step: 1, status: StepStatus::InProgress };
+        let state = StepState {
+            step: 1,
+            status: StepStatus::InProgress,
+        };
         let action = route_analysis_step(&state, "hello");
         assert!(matches!(action, AnalysisAction::RerunStep(config) if config.step == 1));
     }
@@ -886,21 +969,30 @@ mod tests {
 
     #[test]
     fn test_route_completed_step_with_abort() {
-        let state = StepState { step: 2, status: StepStatus::Completed };
+        let state = StepState {
+            step: 2,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "算了");
         assert!(matches!(action, AnalysisAction::AbortAnalysis));
     }
 
     #[test]
     fn test_route_step5_completed_abort() {
-        let state = StepState { step: 5, status: StepStatus::Completed };
+        let state = StepState {
+            step: 5,
+            status: StepStatus::Completed,
+        };
         let action = route_analysis_step(&state, "取消");
         assert!(matches!(action, AnalysisAction::AbortAnalysis));
     }
 
     #[test]
     fn test_route_in_progress_step_with_abort() {
-        let state = StepState { step: 3, status: StepStatus::InProgress };
+        let state = StepState {
+            step: 3,
+            status: StepStatus::InProgress,
+        };
         let action = route_analysis_step(&state, "退出分析");
         assert!(matches!(action, AnalysisAction::AbortAnalysis));
     }

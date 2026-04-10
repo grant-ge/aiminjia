@@ -18,47 +18,72 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
     let code = require_str(args, "code")?;
     let purpose = optional_str(args, "purpose").unwrap_or("code execution");
 
-    info!("[TOOL:execute_python] purpose='{}' code_len={} workspace={:?}",
-        purpose, code.len(), ctx.workspace_path);
+    info!(
+        "[TOOL:execute_python] purpose='{}' code_len={} workspace={:?}",
+        purpose,
+        code.len(),
+        ctx.workspace_path
+    );
     info!("[TOOL:execute_python] code:\n{}", code);
 
     // Validate user code early (before assembling system preamble/epilogue).
     // System-injected code bypasses validation via execute_raw().
     let sandbox = SandboxConfig::for_workspace(&ctx.workspace_path);
-    sandbox.validate_code(code).map_err(|e| anyhow::anyhow!("Sandbox violation: {}", e))?;
+    sandbox
+        .validate_code(code)
+        .map_err(|e| anyhow::anyhow!("Sandbox violation: {}", e))?;
 
     // Auto-load uploaded files that haven't been loaded via load_file yet.
     // This ensures _df/_text variables are available even if the LLM skips load_file.
     {
-        let uploaded_files = ctx.storage.get_uploaded_files_for_conversation(&ctx.conversation_id)
+        let uploaded_files = ctx
+            .storage
+            .get_uploaded_files_for_conversation(&ctx.conversation_id)
             .unwrap_or_default();
         for file in &uploaded_files {
             let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            if file_id.is_empty() { continue; }
-            let loaded_key = format!("loaded:{}:{}", ctx.conversation_id, file_id);
-            let failed_key = format!("load_failed:{}:{}", ctx.conversation_id, file_id);
+            if file_id.is_empty() {
+                continue;
+            }
+            let loaded_key = ctx.loaded_key(file_id);
+            let failed_key = ctx.load_failed_key(file_id);
             if ctx.storage.get_memory(&loaded_key).ok().flatten().is_none()
                 && ctx.storage.get_memory(&failed_key).ok().flatten().is_none()
             {
-                info!("[TOOL:execute_python] Auto-loading file '{}' for conversation {}",
-                    file_id, ctx.conversation_id);
+                info!(
+                    "[TOOL:execute_python] Auto-loading file '{}' for conversation {}",
+                    file_id, ctx.conversation_id
+                );
                 let load_args = json!({"file_id": file_id});
                 if let Err(e) = super::file_load::handle_load_file(ctx, &load_args).await {
-                    warn!("[TOOL:execute_python] Auto-load failed for '{}': {}", file_id, e);
+                    warn!(
+                        "[TOOL:execute_python] Auto-load failed for '{}': {}",
+                        file_id, e
+                    );
                     // Mark as failed so we don't retry on every iteration
-                    let _ = ctx.storage.set_memory(&failed_key, &e.to_string(), Some("auto_load_failed"));
+                    let _ = ctx.storage.set_memory(
+                        &failed_key,
+                        &e.to_string(),
+                        Some("auto_load_failed"),
+                    );
                 }
             }
         }
     }
 
     // Auto-inject loaded files preamble (from load_file tool)
-    let loaded_preamble = super::file_load::build_loaded_files_preamble(&ctx.storage, &ctx.conversation_id, &ctx.workspace_path);
+    let loaded_preamble = super::file_load::build_loaded_files_preamble_for_scope(
+        &ctx.storage,
+        ctx.loaded_scope_id(),
+        &ctx.workspace_path,
+    );
     let mut final_code = if loaded_preamble.is_empty() {
         code.to_string()
     } else {
-        info!("[TOOL:execute_python] Injecting loaded files preamble ({} bytes)",
-            loaded_preamble.len());
+        info!(
+            "[TOOL:execute_python] Injecting loaded files preamble ({} bytes)",
+            loaded_preamble.len()
+        );
         format!("{}\n{}", loaded_preamble, code)
     };
 
@@ -80,8 +105,13 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
             if let Some(parent) = utils_path.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
-            if let Err(e) = std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS) {
-                warn!("[TOOL:execute_python] Failed to write _analysis_utils.py: {}", e);
+            if let Err(e) =
+                std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS)
+            {
+                warn!(
+                    "[TOOL:execute_python] Failed to write _analysis_utils.py: {}",
+                    e
+                );
             }
         }
 
@@ -193,7 +223,10 @@ except Exception as _e:
 "#,
             snap_dir = py_escape(&snap_dir)
         );
-        info!("[TOOL:execute_python] Appending DataFrame auto-save epilogue (analysis mode, step={})", current_step);
+        info!(
+            "[TOOL:execute_python] Appending DataFrame auto-save epilogue (analysis mode, step={})",
+            current_step
+        );
         final_code.push_str(&epilogue);
     }
 
@@ -202,19 +235,30 @@ except Exception as _e:
         // The session reuses a long-running Python REPL, eliminating process spawn,
         // pandas/numpy import, and _analysis_utils.py compilation on every call.
         let timeout = std::time::Duration::from_secs(600);
-        let session_result = ctx.session_manager
-            .execute(&ctx.conversation_id, &final_code, timeout, &sandbox)
-            .await?;
+        let session_result = if let Some(run_id) = ctx.run_id.as_ref() {
+            ctx.session_manager
+                .execute_for_run(run_id, &final_code, timeout, &sandbox)
+                .await?
+        } else {
+            ctx.session_manager
+                .execute(&ctx.conversation_id, &final_code, timeout, &sandbox)
+                .await?
+        };
         session_result.result
     } else {
         // Daily mode: use one-shot PythonRunner (no persistent state needed)
-        let runner = PythonRunner::with_config(ctx.workspace_path.clone(), sandbox, ctx.app_handle.as_ref());
+        let runner =
+            PythonRunner::with_config(ctx.workspace_path.clone(), sandbox, ctx.app_handle.as_ref());
         runner.execute_raw(&final_code).await?
     };
 
-    info!("[TOOL:execute_python] exit_code={} time={}ms stdout_len={} stderr_len={}",
-        result.exit_code, result.execution_time_ms,
-        result.stdout.len(), result.stderr.len());
+    info!(
+        "[TOOL:execute_python] exit_code={} time={}ms stdout_len={} stderr_len={}",
+        result.exit_code,
+        result.execution_time_ms,
+        result.stdout.len(),
+        result.stderr.len()
+    );
 
     // Auto-register files created by _export_detail (detected via __GENERATED_FILE__ markers)
     let mut generated_files_info = Vec::new();
@@ -223,9 +267,18 @@ except Exception as _e:
         if let Some(json_str) = line.strip_prefix("__GENERATED_FILE__:") {
             if let Ok(file_meta) = serde_json::from_str::<Value>(json_str) {
                 let rel_path = file_meta.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                let filename = file_meta.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-                let title = file_meta.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                let fmt = file_meta.get("format").and_then(|v| v.as_str()).unwrap_or("excel");
+                let filename = file_meta
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let title = file_meta
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let fmt = file_meta
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("excel");
 
                 let full_path = ctx.workspace_path.join(rel_path);
                 // Path traversal guard: resolve symlinks/.. and reject paths outside workspace
@@ -241,12 +294,17 @@ except Exception as _e:
                         continue;
                     }
                 };
-                let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+                let workspace_canonical = ctx
+                    .workspace_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| ctx.workspace_path.clone());
                 if !canonical.starts_with(&workspace_canonical) {
                     error!("[TOOL:execute_python] Path traversal blocked in __GENERATED_FILE__: {:?} escapes workspace {:?}", canonical, workspace_canonical);
                     continue;
                 }
-                let file_size = std::fs::metadata(&canonical).map(|m| m.len() as i64).unwrap_or(0);
+                let file_size = std::fs::metadata(&canonical)
+                    .map(|m| m.len() as i64)
+                    .unwrap_or(0);
                 let file_id = Uuid::new_v4().to_string();
 
                 if let Err(e) = ctx.storage.insert_generated_file(
@@ -259,11 +317,18 @@ except Exception as _e:
                     file_size,
                     "data",
                     Some(title),
-                    1, true, None, None, None,
+                    1,
+                    true,
+                    None,
+                    None,
+                    None,
                 ) {
                     error!("Failed to register generated file '{}': {}", filename, e);
                 } else {
-                    info!("[TOOL:execute_python] auto-registered file: {} ({})", filename, file_id);
+                    info!(
+                        "[TOOL:execute_python] auto-registered file: {} ({})",
+                        filename, file_id
+                    );
                     generated_files_info.push(json!({
                         "fileId": file_id,
                         "fileName": filename,
@@ -290,10 +355,7 @@ except Exception as _e:
     let mut output = String::new();
     output.push_str(&format!("[Purpose: {}]\n", purpose));
     output.push_str(&format!("Exit code: {}\n", result.exit_code));
-    output.push_str(&format!(
-        "Execution time: {}ms\n",
-        result.execution_time_ms
-    ));
+    output.push_str(&format!("Execution time: {}ms\n", result.execution_time_ms));
 
     if !clean_stdout.is_empty() {
         output.push_str(&format!("\n--- stdout ---\n{}\n", clean_stdout.trim_end()));
@@ -329,17 +391,21 @@ except Exception as _e:
         clean_stdout.len(), result.stderr.len(), compact_saved,
         has_error, timed_out,
     );
-    crate::telemetry::record("python", &ctx.workspace_path, &[
-        ("conv", &ctx.conversation_id),
-        ("exit_code", &result.exit_code.to_string()),
-        ("duration_ms", &result.execution_time_ms.to_string()),
-        ("stdout_chars", &clean_stdout.len().to_string()),
-        ("stderr_chars", &result.stderr.len().to_string()),
-        ("compact_saved", &compact_saved.to_string()),
-        ("has_error", &has_error.to_string()),
-        ("timeout", &timed_out.to_string()),
-        ("model", &ctx.model),
-    ]);
+    crate::telemetry::record(
+        "python",
+        &ctx.workspace_path,
+        &[
+            ("conv", &ctx.conversation_id),
+            ("exit_code", &result.exit_code.to_string()),
+            ("duration_ms", &result.execution_time_ms.to_string()),
+            ("stdout_chars", &clean_stdout.len().to_string()),
+            ("stderr_chars", &result.stderr.len().to_string()),
+            ("compact_saved", &compact_saved.to_string()),
+            ("has_error", &has_error.to_string()),
+            ("timeout", &timed_out.to_string()),
+            ("model", &ctx.model),
+        ],
+    );
 
     Ok(output)
 }
@@ -425,10 +491,11 @@ fn try_compact_block(lines: &[&str], start: usize) -> Option<(String, usize)> {
 /// Pattern: header row + stat rows (count, mean, std, min, 25%, 50%, 75%, max).
 fn try_compact_describe(lines: &[&str], start: usize) -> Option<(String, usize)> {
     const DESCRIBE_STATS: &[&str] = &[
-        "count", "mean", "std", "min", "25%", "50%", "75%", "max",
-        "unique", "top", "freq",
+        "count", "mean", "std", "min", "25%", "50%", "75%", "max", "unique", "top", "freq",
     ];
-    const KEEP_STATS: &[&str] = &["count", "mean", "std", "min", "max", "unique", "top", "freq"];
+    const KEEP_STATS: &[&str] = &[
+        "count", "mean", "std", "min", "max", "unique", "top", "freq",
+    ];
     const FOLD_STATS: &[&str] = &["25%", "50%", "75%"];
 
     // Need at least header + a few stat lines
@@ -441,7 +508,9 @@ fn try_compact_describe(lines: &[&str], start: usize) -> Option<(String, usize)>
     let first_stat_line_idx = start + 1;
     let first_stat_line = lines[first_stat_line_idx].trim_start();
 
-    let is_describe = DESCRIBE_STATS.iter().any(|s| first_stat_line.starts_with(s));
+    let is_describe = DESCRIBE_STATS
+        .iter()
+        .any(|s| first_stat_line.starts_with(s));
     if !is_describe {
         return None;
     }
@@ -484,7 +553,10 @@ fn try_compact_describe(lines: &[&str], start: usize) -> Option<(String, usize)>
     }
 
     if !folded_parts.is_empty() {
-        out.push_str(&format!("[percentiles ({}) omitted]\n", folded_parts.join(",")));
+        out.push_str(&format!(
+            "[percentiles ({}) omitted]\n",
+            folded_parts.join(",")
+        ));
     }
 
     Some((out, consumed))
@@ -559,7 +631,15 @@ fn try_compact_value_counts(lines: &[&str], start: usize) -> Option<(String, usi
     }
     if has_name_footer {
         // Include the footer line
-        let footer_idx = footer_end - if lines.get(footer_end - 1).map_or(false, |l| l.trim().is_empty()) { 2 } else { 1 };
+        let footer_idx = footer_end
+            - if lines
+                .get(footer_end - 1)
+                .map_or(false, |l| l.trim().is_empty())
+            {
+                2
+            } else {
+                1
+            };
         if footer_idx < lines.len() {
             out.push_str(lines[footer_idx]);
             out.push('\n');
@@ -595,7 +675,11 @@ fn try_compact_dataframe(lines: &[&str], start: usize) -> Option<(String, usize)
     // Skip optional separator line (e.g., "---" or "===")
     if data_start < lines.len() {
         let sep = lines[data_start].trim();
-        if sep.chars().all(|c| c == '-' || c == '=' || c == ' ' || c == '+') && sep.len() > 3 {
+        if sep
+            .chars()
+            .all(|c| c == '-' || c == '=' || c == ' ' || c == '+')
+            && sep.len() > 3
+        {
             data_start += 1;
             data_end = data_start;
         }
@@ -638,7 +722,10 @@ fn try_compact_dataframe(lines: &[&str], start: usize) -> Option<(String, usize)
         out.push('\n');
     }
     // Omission marker
-    out.push_str(&format!("[...{} more rows hidden from display, full data still available in _df]\n", total_data_rows.saturating_sub(4)));
+    out.push_str(&format!(
+        "[...{} more rows hidden from display, full data still available in _df]\n",
+        total_data_rows.saturating_sub(4)
+    ));
     // Last data row
     if data_end > data_start {
         let last_data = data_end - 1;
@@ -664,8 +751,14 @@ fn try_compact_dataframe(lines: &[&str], start: usize) -> Option<(String, usize)
 /// Check if a Python error is a fixable code error that the LLM should silently retry.
 fn is_fixable_code_error(stderr: &str) -> bool {
     const FIXABLE_ERRORS: &[&str] = &[
-        "SyntaxError:", "IndentationError:", "NameError:", "TypeError:",
-        "AttributeError:", "KeyError:", "ValueError:", "UnboundLocalError:",
+        "SyntaxError:",
+        "IndentationError:",
+        "NameError:",
+        "TypeError:",
+        "AttributeError:",
+        "KeyError:",
+        "ValueError:",
+        "UnboundLocalError:",
     ];
     FIXABLE_ERRORS.iter().any(|p| stderr.contains(p))
 }
@@ -731,7 +824,10 @@ mod tests {
         let mut input = String::new();
         input.push_str("   name    salary  department  level\n");
         for i in 0..20 {
-            input.push_str(&format!("{}  Alice{}  50000      Engineering  L{}\n", i, i, i));
+            input.push_str(&format!(
+                "{}  Alice{}  50000      Engineering  L{}\n",
+                i, i, i
+            ));
         }
         // Pad to exceed threshold
         input.push_str(&"p".repeat(SUMMARY_THRESHOLD_CHARS));

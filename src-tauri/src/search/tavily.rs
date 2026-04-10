@@ -66,7 +66,8 @@ impl TavilyClient {
             "search_depth": "advanced",
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(TAVILY_API_URL)
             .header("Content-Type", "application/json")
             .bearer_auth(&self.api_key)
@@ -77,24 +78,34 @@ impl TavilyClient {
         let status = resp.status();
         if !status.is_success() {
             let error_text = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("Tavily API error ({}): {}", status.as_u16(), error_text));
+            return Err(anyhow!(
+                "Tavily API error ({}): {}",
+                status.as_u16(),
+                error_text
+            ));
         }
 
         let data: serde_json::Value = resp.json().await?;
 
-        let answer = data.get("answer").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let answer = data
+            .get("answer")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
-        let results = data.get("results")
+        let results = data
+            .get("results")
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|item| {
-                    Some(SearchResult {
-                        title: item.get("title")?.as_str()?.to_string(),
-                        url: item.get("url")?.as_str()?.to_string(),
-                        content: item.get("content")?.as_str()?.to_string(),
-                        score: item.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                arr.iter()
+                    .filter_map(|item| {
+                        Some(SearchResult {
+                            title: item.get("title")?.as_str()?.to_string(),
+                            url: item.get("url")?.as_str()?.to_string(),
+                            content: item.get("content")?.as_str()?.to_string(),
+                            score: item.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                        })
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -112,7 +123,8 @@ impl TavilyClient {
             "max_results": 1,
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(TAVILY_API_URL)
             .bearer_auth(&self.api_key)
             .json(&body)

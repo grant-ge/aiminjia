@@ -18,11 +18,7 @@ fn audit_path(base_dir: &Path) -> PathBuf {
 }
 
 /// Append an entry to the audit log.
-pub fn log_action(
-    base_dir: &Path,
-    action: &str,
-    detail: Option<&str>,
-) -> StorageResult<()> {
+pub fn log_action(base_dir: &Path, action: &str, detail: Option<&str>) -> StorageResult<()> {
     let entry = AuditEntry {
         action: action.to_string(),
         detail: detail.map(|s| s.to_string()),

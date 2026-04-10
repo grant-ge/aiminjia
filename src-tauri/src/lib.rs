@@ -1,21 +1,24 @@
-mod auth;
-mod commands;
-mod connector;
-mod models;
-mod llm;
-mod search;
-mod storage;
-mod python;
-mod plugin;
-mod telemetry;
+pub mod auth;
+pub mod commands;
+pub mod connector;
+pub mod llm;
+pub mod models;
+pub mod plugin;
+pub mod python;
+pub mod runtime;
+pub mod runtime_audit;
+pub mod search;
+pub mod storage;
+pub mod telemetry;
+pub mod transport;
 
-use std::sync::Arc;
-use tauri::Manager;
 use commands::chat;
 use commands::export;
 use commands::file;
 use commands::settings;
 use commands::workspace;
+use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,18 +33,21 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             // Initialize prompt store from external .md files
-            let resource_dir = app.path().resource_dir()
+            let resource_dir = app
+                .path()
+                .resource_dir()
                 .unwrap_or_else(|_| app_data_dir.clone());
             llm::prompts::init_prompts(&resource_dir, &app_data_dir);
 
             // Initialize file-based storage
             let db = Arc::new(
                 storage::file_store::AppStorage::new(&app_data_dir)
-                    .expect("Failed to initialize file storage")
+                    .expect("Failed to initialize file storage"),
             );
 
             // Initialize file manager
-            let workspace_path = db.get_setting("workspacePath")
+            let workspace_path = db
+                .get_setting("workspacePath")
                 .ok()
                 .flatten()
                 .unwrap_or_default();
@@ -70,7 +76,7 @@ pub fn run() {
                         tauri_plugin_log::TargetKind::Folder {
                             path: logs_dir.clone(),
                             file_name: Some("renlijia".into()),
-                        }
+                        },
                     ))
                     .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                     .max_file_size(5_000_000) // 5MB per file
@@ -91,18 +97,26 @@ pub fn run() {
                         Some(Arc::new(ss))
                     }
                     Err(e) => {
-                        log::warn!("SecureStorage unavailable (API keys stored as plaintext): {}", e);
+                        log::warn!(
+                            "SecureStorage unavailable (API keys stored as plaintext): {}",
+                            e
+                        );
                         None
                     }
                 };
 
+            // Initialize runtime orchestration state
+            let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
+            let agent_runtime = Arc::new(runtime::agent::AgentRuntime::for_test());
+
             // Initialize LLM gateway
-            let gateway = Arc::new(llm::gateway::LlmGateway::new(db.clone()));
+            let gateway = Arc::new(llm::gateway::LlmGateway::new_with_registry(
+                db.clone(),
+                run_registry.clone(),
+            ));
 
             // Initialize cloud auth manager
-            let auth_manager = Arc::new(
-                auth::AuthManager::new(db.clone(), secure_storage.clone())
-            );
+            let auth_manager = Arc::new(auth::AuthManager::new(db.clone(), secure_storage.clone()));
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
@@ -117,15 +131,15 @@ pub fn run() {
 
             // Initialize Playwright browser — primary browser automation
             let playwright_browser = Arc::new(
-                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone())
+                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone()),
             );
 
             // Initialize connector engine (browser automation only)
-            let connector_engine = Arc::new(
-                connector::ConnectorEngine::new()
-            );
+            let connector_engine = Arc::new(connector::ConnectorEngine::new());
             tauri::async_runtime::block_on(async {
-                connector_engine.set_playwright_browser(playwright_browser.clone()).await;
+                connector_engine
+                    .set_playwright_browser(playwright_browser.clone())
+                    .await;
             });
 
             // Initialize plugin registries
@@ -135,11 +149,20 @@ pub fn run() {
             // Register builtin tools and skills
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(&skill_registry, db.clone(), auth_manager.clone()).await;
+                plugin::builtin::skills::register_builtin_skills(
+                    &skill_registry,
+                    db.clone(),
+                    auth_manager.clone(),
+                )
+                .await;
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
-                log::info!("Scanning plugins from: {:?} (exists={})", plugins_dir, plugins_dir.exists());
+                log::info!(
+                    "Scanning plugins from: {:?} (exists={})",
+                    plugins_dir,
+                    plugins_dir.exists()
+                );
                 if plugins_dir.exists() {
                     scan_external_plugins(
                         &plugins_dir,
@@ -147,7 +170,8 @@ pub fn run() {
                         &skill_registry,
                         file_mgr.workspace_path(),
                         "builtin",
-                    ).await;
+                    )
+                    .await;
                 }
 
                 // Scan user-installed custom plugins
@@ -160,7 +184,8 @@ pub fn run() {
                         &skill_registry,
                         file_mgr.workspace_path(),
                         "custom",
-                    ).await;
+                    )
+                    .await;
                 }
             });
 
@@ -170,11 +195,17 @@ pub fn run() {
             match db.cleanup_orphaned_tasks() {
                 Ok(orphaned) => {
                     for conv_id in &orphaned {
-                        log::warn!("Cleaning up orphaned agent task for conversation: {}", conv_id);
+                        log::warn!(
+                            "Cleaning up orphaned agent task for conversation: {}",
+                            conv_id
+                        );
                         db.reset_stuck_analysis_state(conv_id).ok();
                     }
                     if !orphaned.is_empty() {
-                        log::info!("Cleaned up {} orphaned agent tasks from previous crash", orphaned.len());
+                        log::info!(
+                            "Cleaned up {} orphaned agent tasks from previous crash",
+                            orphaned.len()
+                        );
                     }
                 }
                 Err(e) => {
@@ -183,8 +214,23 @@ pub fn run() {
             }
 
             // Initialize Python session manager for persistent REPL sessions
-            let session_mgr = Arc::new(
-                python::session::PythonSessionManager::new(fm_path.clone(), Some(app.handle()))
+            let session_mgr = Arc::new(python::session::PythonSessionManager::new(
+                fm_path.clone(),
+                Some(app.handle()),
+            ));
+
+            let chat_adapter = Arc::new(
+                transport::tauri_commands::chat::TauriChatCommandAdapter::new(
+                    db.clone(),
+                    gateway.clone(),
+                    file_mgr.clone(),
+                    secure_storage.clone(),
+                    tool_registry.clone(),
+                    skill_registry.clone(),
+                    session_mgr.clone(),
+                    auth_manager.clone(),
+                    app.handle().clone(),
+                ),
             );
 
             // Start idle session reaper (every 5 minutes)
@@ -199,16 +245,26 @@ pub fn run() {
                 });
             }
 
+            // Initialize runtime repository facade (routes settings/persona/file/export
+            // commands through domain traits instead of direct AppStorage access)
+            let facade = Arc::new(
+                storage::file_store::RuntimeRepositoryFacade::from_storage(db.clone()),
+            );
+
             // Register managed state
             app.manage(db);
+            app.manage(facade);
             app.manage(file_mgr);
             app.manage(gateway);
+            app.manage(run_registry);
             app.manage(secure_storage);
             app.manage(auth_manager);
             app.manage(connector_engine);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
+            app.manage(agent_runtime);
+            app.manage(chat_adapter);
 
             Ok(())
         })
@@ -351,38 +407,49 @@ async fn scan_external_plugins(
         match manifest.plugin.plugin_type.as_str() {
             "tool" => {
                 if manifest.plugin.runtime.as_deref() == Some("python") {
-                    match plugin::python_bridge::PythonToolBridge::from_manifest(&manifest, path.clone()) {
+                    match plugin::python_bridge::PythonToolBridge::from_manifest(
+                        &manifest,
+                        path.clone(),
+                    ) {
                         Ok(mut bridge) => {
                             if let Err(e) = bridge.load_schema(workspace_path).await {
-                                log::warn!("Failed to load schema for plugin '{}': {}", manifest.plugin.id, e);
+                                log::warn!(
+                                    "Failed to load schema for plugin '{}': {}",
+                                    manifest.plugin.id,
+                                    e
+                                );
                                 continue;
                             }
-                            tool_registry.register(
-                                std::sync::Arc::new(bridge),
-                                source,
-                            ).await;
+                            tool_registry
+                                .register(std::sync::Arc::new(bridge), source)
+                                .await;
                             log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
                         }
                         Err(e) => {
-                            log::warn!("Failed to create Python tool bridge for '{}': {}", manifest.plugin.id, e);
+                            log::warn!(
+                                "Failed to create Python tool bridge for '{}': {}",
+                                manifest.plugin.id,
+                                e
+                            );
                         }
                     }
                 }
             }
-            "skill" => {
-                match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
-                    Ok(skill) => {
-                        skill_registry.register(
-                            std::sync::Arc::new(skill),
-                            "plugin",
-                        ).await;
-                        log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to load skill plugin '{}': {}", manifest.plugin.id, e);
-                    }
+            "skill" => match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
+                Ok(skill) => {
+                    skill_registry
+                        .register(std::sync::Arc::new(skill), "plugin")
+                        .await;
+                    log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
                 }
-            }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to load skill plugin '{}': {}",
+                        manifest.plugin.id,
+                        e
+                    );
+                }
+            },
             other => {
                 log::warn!("Unknown plugin type '{}' in {:?}", other, manifest_path);
             }

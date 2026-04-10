@@ -101,10 +101,7 @@ impl PromptStore {
     }
 
     fn get(&self, name: &str) -> &str {
-        self.prompts
-            .get(name)
-            .map(|s| s.as_str())
-            .unwrap_or("")
+        self.prompts.get(name).map(|s| s.as_str()).unwrap_or("")
     }
 
     /// Reload all prompts from disk.
@@ -147,14 +144,18 @@ static PROMPT_STORE: LazyLock<RwLock<PromptStore>> = LazyLock::new(|| {
 /// Initialize the prompt store. Must be called once at app startup.
 pub fn init_prompts(resource_dir: &Path, app_data_dir: &Path) {
     let store = PromptStore::new(resource_dir, app_data_dir);
-    let mut guard = PROMPT_STORE.write().expect("PromptStore write lock poisoned");
+    let mut guard = PROMPT_STORE
+        .write()
+        .expect("PromptStore write lock poisoned");
     *guard = store;
 }
 
 /// Reload all prompts from disk (for future hot-reload from settings UI).
 #[allow(dead_code)]
 pub fn reload_prompts() {
-    let mut guard = PROMPT_STORE.write().expect("PromptStore write lock poisoned");
+    let mut guard = PROMPT_STORE
+        .write()
+        .expect("PromptStore write lock poisoned");
     guard.reload();
 }
 
@@ -174,7 +175,11 @@ pub fn get_browser_agent_prompt() -> String {
 ///
 /// - `step = None` → daily consultation mode (BASE + date + persona + DAILY)
 /// - `step = Some(_)` → analysis mode (BASE + date only; step prompts are in the plugin)
-pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::file_store::persona::Persona>, product_name: Option<&str>) -> String {
+pub fn get_system_prompt(
+    step: Option<u32>,
+    persona: Option<&crate::storage::file_store::persona::Persona>,
+    product_name: Option<&str>,
+) -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
 
     let base_raw = guard.get("base");
@@ -199,7 +204,9 @@ pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::fil
     );
 
     // Inject persona identity and memory hints (daily mode only)
-    let has_persona_memory = persona.as_ref().map_or(false, |p| !p.memory_hints.is_empty());
+    let has_persona_memory = persona
+        .as_ref()
+        .map_or(false, |p| !p.memory_hints.is_empty());
     let persona_section = if step.is_none() {
         if let Some(p) = persona {
             let mut parts = Vec::new();
@@ -217,7 +224,9 @@ pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::fil
 
             // Memory hints (override daily.md memory section)
             if !p.memory_hints.is_empty() {
-                let hints = p.memory_hints.iter()
+                let hints = p
+                    .memory_hints
+                    .iter()
                     .map(|h| format!("- {}", h))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -243,7 +252,10 @@ pub fn get_system_prompt(step: Option<u32>, persona: Option<&crate::storage::fil
     if final_mode_prompt.is_empty() {
         format!("{}{}{}", base, date_line, persona_section)
     } else {
-        format!("{}{}{}\n\n{}", base, date_line, persona_section, final_mode_prompt)
+        format!(
+            "{}{}{}\n\n{}",
+            base, date_line, persona_section, final_mode_prompt
+        )
     }
 }
 
@@ -259,7 +271,7 @@ fn strip_memory_section(prompt: &str) -> String {
             skip = true;
             continue;
         }
-        
+
         if skip {
             // Stop skipping when we hit a non-list, non-blank line
             if !line.trim().is_empty() && !line.trim().starts_with("- ") {
@@ -268,7 +280,7 @@ fn strip_memory_section(prompt: &str) -> String {
                 continue;
             }
         }
-        
+
         result.push(line);
     }
 
@@ -279,6 +291,9 @@ fn strip_memory_section(prompt: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::{LazyLock, Mutex};
+
+    static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     /// Helper: create a temp prompt directory with given files.
     fn setup_prompts(dir: &Path, files: &[(&str, &str)]) {
@@ -291,16 +306,17 @@ mod tests {
 
     #[test]
     fn test_bundled_loading() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
         fs::create_dir_all(&bundled).unwrap();
         fs::create_dir_all(&user).unwrap();
 
-        setup_prompts(&bundled, &[
-            ("base", "Test base prompt"),
-            ("daily", "Test daily prompt"),
-        ]);
+        setup_prompts(
+            &bundled,
+            &[("base", "Test base prompt"), ("daily", "Test daily prompt")],
+        );
 
         init_prompts(&bundled, &user);
 
@@ -311,47 +327,53 @@ mod tests {
 
     #[test]
     fn test_user_override_priority() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[
-            ("base", "Bundled base"),
-            ("daily", "Bundled daily"),
-        ]);
-        setup_prompts(&user, &[
-            ("base", "Custom base"),
-        ]);
+        setup_prompts(
+            &bundled,
+            &[("base", "Bundled base"), ("daily", "Bundled daily")],
+        );
+        setup_prompts(&user, &[("base", "Custom base")]);
 
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
-        assert!(prompt.contains("Custom base"), "User override should take priority");
-        assert!(prompt.contains("Bundled daily"), "Non-overridden should use bundled");
+        assert!(
+            prompt.contains("Custom base"),
+            "User override should take priority"
+        );
+        assert!(
+            prompt.contains("Bundled daily"),
+            "Non-overridden should use bundled"
+        );
     }
 
     #[test]
     fn test_empty_file_falls_through() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[
-            ("base", "Bundled base"),
-        ]);
+        setup_prompts(&bundled, &[("base", "Bundled base")]);
         // Empty override file should be ignored
-        setup_prompts(&user, &[
-            ("base", "   "),
-        ]);
+        setup_prompts(&user, &[("base", "   ")]);
 
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
-        assert!(prompt.contains("Bundled base"), "Empty override should fall through to bundled");
+        assert!(
+            prompt.contains("Bundled base"),
+            "Empty override should fall through to bundled"
+        );
     }
 
     #[test]
     fn test_fallback_base() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let empty_bundled = tmp.path().join("empty_bundled");
         let empty_user = tmp.path().join("empty_user");
@@ -361,19 +383,23 @@ mod tests {
         init_prompts(&empty_bundled, &empty_user);
 
         let prompt = get_system_prompt(None, None, None);
-        assert!(prompt.contains("AI小家"), "Should fall back to hardcoded base");
+        assert!(
+            prompt.contains("AI小家"),
+            "Should fall back to hardcoded base"
+        );
     }
 
     #[test]
     fn test_api_unchanged() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[
-            ("base", "AI小家 base"),
-            ("daily", "日常工作助手"),
-        ]);
+        setup_prompts(
+            &bundled,
+            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+        );
         fs::create_dir_all(&user).unwrap();
 
         init_prompts(&bundled, &user);
@@ -403,13 +429,12 @@ mod tests {
 
     #[test]
     fn test_reload() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
 
-        setup_prompts(&bundled, &[
-            ("base", "Original base"),
-        ]);
+        setup_prompts(&bundled, &[("base", "Original base")]);
         fs::create_dir_all(&user).unwrap();
 
         // Test reload on a standalone PromptStore instance to avoid global state races
@@ -417,9 +442,7 @@ mod tests {
         assert!(store.get("base").contains("Original base"));
 
         // Write user override
-        setup_prompts(&user, &[
-            ("base", "Updated base"),
-        ]);
+        setup_prompts(&user, &[("base", "Updated base")]);
 
         store.reload();
         assert!(store.get("base").contains("Updated base"));

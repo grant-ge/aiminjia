@@ -5,8 +5,8 @@
 //! response into a [`StepCheckpoint`] and saves to enterprise memory.
 //! Falls back gracefully to `auto_capture_step_context` on any failure.
 
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
@@ -57,14 +57,18 @@ pub async fn checkpoint_extract(
             "[METRICS:checkpoint] conv={} step={} | status=empty_response | chars=0 extraction_ms=0",
             conversation_id, step_num,
         );
-        crate::telemetry::record("checkpoint", workspace, &[
-            ("conv", conversation_id),
-            ("step", &step_num.to_string()),
-            ("status", "empty_response"),
-            ("chars", "0"),
-            ("extraction_ms", "0"),
-            ("model", &settings.primary_model),
-        ]);
+        crate::telemetry::record(
+            "checkpoint",
+            workspace,
+            &[
+                ("conv", conversation_id),
+                ("step", &step_num.to_string()),
+                ("status", "empty_response"),
+                ("chars", "0"),
+                ("extraction_ms", "0"),
+                ("model", &settings.primary_model),
+            ],
+        );
         return None;
     }
 
@@ -72,7 +76,15 @@ pub async fn checkpoint_extract(
 
     match tokio::time::timeout(
         EXTRACT_TIMEOUT,
-        do_extract(gateway, settings, conversation_id, step_num, messages, db, extract_prompt),
+        do_extract(
+            gateway,
+            settings,
+            conversation_id,
+            step_num,
+            messages,
+            db,
+            extract_prompt,
+        ),
     )
     .await
     {
@@ -80,16 +92,26 @@ pub async fn checkpoint_extract(
             let chars = serde_json::to_string(&cp).map(|s| s.len()).unwrap_or(0);
             log::info!(
                 "[METRICS:checkpoint] conv={} step={} | status=success | chars={} extraction_ms={}",
-                conversation_id, step_num, chars, extract_start.elapsed().as_millis(),
+                conversation_id,
+                step_num,
+                chars,
+                extract_start.elapsed().as_millis(),
             );
-            crate::telemetry::record("checkpoint", workspace, &[
-                ("conv", conversation_id),
-                ("step", &step_num.to_string()),
-                ("status", "success"),
-                ("chars", &chars.to_string()),
-                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
-                ("model", &settings.primary_model),
-            ]);
+            crate::telemetry::record(
+                "checkpoint",
+                workspace,
+                &[
+                    ("conv", conversation_id),
+                    ("step", &step_num.to_string()),
+                    ("status", "success"),
+                    ("chars", &chars.to_string()),
+                    (
+                        "extraction_ms",
+                        &extract_start.elapsed().as_millis().to_string(),
+                    ),
+                    ("model", &settings.primary_model),
+                ],
+            );
             Some(cp)
         }
         Ok(None) => {
@@ -102,14 +124,21 @@ pub async fn checkpoint_extract(
                 "[METRICS:checkpoint] conv={} step={} | status=parse_fail | chars=0 extraction_ms={}",
                 conversation_id, step_num, extract_start.elapsed().as_millis(),
             );
-            crate::telemetry::record("checkpoint", workspace, &[
-                ("conv", conversation_id),
-                ("step", &step_num.to_string()),
-                ("status", "parse_fail"),
-                ("chars", "0"),
-                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
-                ("model", &settings.primary_model),
-            ]);
+            crate::telemetry::record(
+                "checkpoint",
+                workspace,
+                &[
+                    ("conv", conversation_id),
+                    ("step", &step_num.to_string()),
+                    ("status", "parse_fail"),
+                    ("chars", "0"),
+                    (
+                        "extraction_ms",
+                        &extract_start.elapsed().as_millis().to_string(),
+                    ),
+                    ("model", &settings.primary_model),
+                ],
+            );
             None
         }
         Err(_) => {
@@ -121,16 +150,25 @@ pub async fn checkpoint_extract(
             );
             log::info!(
                 "[METRICS:checkpoint] conv={} step={} | status=timeout | chars=0 extraction_ms={}",
-                conversation_id, step_num, extract_start.elapsed().as_millis(),
+                conversation_id,
+                step_num,
+                extract_start.elapsed().as_millis(),
             );
-            crate::telemetry::record("checkpoint", workspace, &[
-                ("conv", conversation_id),
-                ("step", &step_num.to_string()),
-                ("status", "timeout"),
-                ("chars", "0"),
-                ("extraction_ms", &extract_start.elapsed().as_millis().to_string()),
-                ("model", &settings.primary_model),
-            ]);
+            crate::telemetry::record(
+                "checkpoint",
+                workspace,
+                &[
+                    ("conv", conversation_id),
+                    ("step", &step_num.to_string()),
+                    ("status", "timeout"),
+                    ("chars", "0"),
+                    (
+                        "extraction_ms",
+                        &extract_start.elapsed().as_millis().to_string(),
+                    ),
+                    ("model", &settings.primary_model),
+                ],
+            );
             None
         }
     }
@@ -323,7 +361,12 @@ fn try_repair_and_parse(json_str: &str) -> Option<StepCheckpoint> {
             if bytes[i] == b',' {
                 // Look ahead past whitespace for ] or }
                 let mut j = i + 1;
-                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\n' || bytes[j] == b'\r' || bytes[j] == b'\t') {
+                while j < bytes.len()
+                    && (bytes[j] == b' '
+                        || bytes[j] == b'\n'
+                        || bytes[j] == b'\r'
+                        || bytes[j] == b'\t')
+                {
                     j += 1;
                 }
                 if j < bytes.len() && (bytes[j] == b']' || bytes[j] == b'}') {
@@ -394,7 +437,11 @@ pub fn format_checkpoint_for_injection(
     const OLD_ARTIFACTS_MAX: usize = 2000;
     if let Some(ref artifacts) = checkpoint.data_artifacts {
         if !artifacts.trim().is_empty() {
-            let max = if is_recent { RECENT_ARTIFACTS_MAX } else { OLD_ARTIFACTS_MAX };
+            let max = if is_recent {
+                RECENT_ARTIFACTS_MAX
+            } else {
+                OLD_ARTIFACTS_MAX
+            };
             let content = if artifacts.len() > max {
                 let end = truncate_at_char_boundary(artifacts, max);
                 format!("{}...(truncated)", &artifacts[..end])

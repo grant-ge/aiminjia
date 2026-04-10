@@ -8,11 +8,14 @@ use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
-use super::FileGenResult;
 use super::require_str;
+use super::FileGenResult;
 
 /// 5. generate_chart — create a Plotly interactive HTML chart.
-pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
+pub(crate) async fn handle_generate_chart(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<FileGenResult> {
     let chart_type = require_str(args, "chart_type")?;
     let title = require_str(args, "title")?;
 
@@ -28,7 +31,10 @@ pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> 
         let canonical = full_path.canonicalize().map_err(|e| {
             anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
         })?;
-        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        let workspace_canonical = ctx
+            .workspace_path
+            .canonicalize()
+            .unwrap_or_else(|_| ctx.workspace_path.clone());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow!(
                 "data_file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
@@ -39,7 +45,11 @@ pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> 
             anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
         })?;
         data = serde_json::from_str(&content).map_err(|e| {
-            anyhow!("Failed to parse chart data from '{}': {}", data_file_path, e)
+            anyhow!(
+                "Failed to parse chart data from '{}': {}",
+                data_file_path,
+                e
+            )
         })?;
         log::info!("[generate_chart] Loaded data from file: {}", data_file_path);
     } else if let Some(inline_data) = args.get("data") {
@@ -73,8 +83,14 @@ pub(crate) async fn handle_generate_chart(ctx: &PluginContext, args: &Value) -> 
         "chart_opts_{}.json",
         Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
     ));
-    std::fs::write(&data_temp, serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()))?;
-    std::fs::write(&options_temp, serde_json::to_string(&options).unwrap_or_else(|_| "{}".into()))?;
+    std::fs::write(
+        &data_temp,
+        serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()),
+    )?;
+    std::fs::write(
+        &options_temp,
+        serde_json::to_string(&options).unwrap_or_else(|_| "{}".into()),
+    )?;
 
     let python_code = build_chart_python(
         chart_type,
@@ -293,7 +309,13 @@ mod tests {
 
     #[test]
     fn test_build_chart_python_bar() {
-        let code = build_chart_python("bar", "My Chart", "/tmp/chart_data.json", "/tmp/chart_opts.json", "/tmp/chart.html");
+        let code = build_chart_python(
+            "bar",
+            "My Chart",
+            "/tmp/chart_data.json",
+            "/tmp/chart_opts.json",
+            "/tmp/chart.html",
+        );
         assert!(code.contains("plotly"));
         assert!(code.contains("chart_type = 'bar'"));
         assert!(code.contains("write_html"));

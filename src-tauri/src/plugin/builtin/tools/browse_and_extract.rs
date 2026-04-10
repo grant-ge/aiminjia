@@ -1,6 +1,10 @@
 //! browse_and_extract — navigate to a URL and extract all data in one operation.
 //! Supports both page mode (HTML pages) and API mode (REST endpoints).
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -12,7 +16,9 @@ pub struct BrowseAndExtractTool;
 
 #[async_trait]
 impl ToolPlugin for BrowseAndExtractTool {
-    fn name(&self) -> &str { "browse_and_extract" }
+    fn name(&self) -> &str {
+        "browse_and_extract"
+    }
 
     fn description(&self) -> &str {
         "Navigate to a URL and extract all data in one step. For pages: extracts tables, text, \

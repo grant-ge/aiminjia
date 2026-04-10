@@ -154,32 +154,39 @@ pub trait Skill: Send + Sync + 'static {
     // ── Display metadata ──
 
     /// Icon (emoji) for UI skill cards.
-    fn icon(&self) -> &str { "" }
+    fn icon(&self) -> &str {
+        ""
+    }
 
     /// Short description for UI skill cards.
-    fn short_description(&self) -> &str { "" }
+    fn short_description(&self) -> &str {
+        ""
+    }
 
     /// Trigger text sent when user clicks the skill card.
-    fn trigger_text(&self) -> &str { "" }
+    fn trigger_text(&self) -> &str {
+        ""
+    }
 
     /// Category for skill grouping in UI (e.g., "hr", "finance", "general").
-    fn category(&self) -> &str { "general" }
+    fn category(&self) -> &str {
+        "general"
+    }
 
     /// English display name for i18n.
-    fn display_name_en(&self) -> &str { "" }
+    fn display_name_en(&self) -> &str {
+        ""
+    }
 
     /// English short description for i18n.
-    fn short_description_en(&self) -> &str { "" }
+    fn short_description_en(&self) -> &str {
+        ""
+    }
 
     // ── Activation ──
 
     /// Should this Skill activate for the given message?
-    fn should_activate(
-        &self,
-        message: &str,
-        has_files: bool,
-        current_skill: &str,
-    ) -> bool;
+    fn should_activate(&self, message: &str, has_files: bool, current_skill: &str) -> bool;
 
     /// Priority when multiple Skills match (higher wins).
     fn priority(&self) -> u32 {
@@ -217,11 +224,7 @@ pub trait Skill: Send + Sync + 'static {
     }
 
     /// Called when a step completes to determine next action.
-    fn on_step_complete(
-        &self,
-        _state: &mut SkillState,
-        _user_message: &str,
-    ) -> StepAction {
+    fn on_step_complete(&self, _state: &mut SkillState, _user_message: &str) -> StepAction {
         StepAction::WaitForUser
     }
 
@@ -266,7 +269,10 @@ pub trait Skill: Send + Sync + 'static {
 fn normalize_for_keyword(text: &str) -> String {
     text.trim()
         .trim_end_matches(|c: char| {
-            matches!(c, '.' | '!' | '?' | '。' | '！' | '？' | '~' | '～' | '，' | ',' | '、')
+            matches!(
+                c,
+                '.' | '!' | '?' | '。' | '！' | '？' | '~' | '～' | '，' | ',' | '、'
+            )
         })
         .to_lowercase()
 }
@@ -278,26 +284,61 @@ pub fn is_confirm_keyword(text: &str) -> bool {
     }
     let stripped = normalize_for_keyword(text);
     const PHRASES: &[&str] = &[
-        "确认", "继续", "好的", "可以", "没问题", "好", "行", "对",
-        "是的", "确定", "通过", "下一步", "继续吧", "没有问题", "同意",
-        "好的好的", "可以可以", "好的继续",
-        "好的，继续", "可以，下一步", "可以，继续",
-        "没问题 继续", "没问题，继续", "没问题继续",
-        "ok", "okay", "yes", "proceed", "continue", "confirm", "next",
-        "lgtm", "looks good",
-        "开始", "开始分析", "开始吧", "start",
+        "确认",
+        "继续",
+        "好的",
+        "可以",
+        "没问题",
+        "好",
+        "行",
+        "对",
+        "是的",
+        "确定",
+        "通过",
+        "下一步",
+        "继续吧",
+        "没有问题",
+        "同意",
+        "好的好的",
+        "可以可以",
+        "好的继续",
+        "好的，继续",
+        "可以，下一步",
+        "可以，继续",
+        "没问题 继续",
+        "没问题，继续",
+        "没问题继续",
+        "ok",
+        "okay",
+        "yes",
+        "proceed",
+        "continue",
+        "confirm",
+        "next",
+        "lgtm",
+        "looks good",
+        "开始",
+        "开始分析",
+        "开始吧",
+        "start",
         // Step advancement phrases — user wants to move to the next step
-        "下一步吧", "进入下一步", "继续下一步",
-        "岗位归一化", "职级推断", "公平性诊断", "行动方案",
-        "数据清洗", "职级定级",
+        "下一步吧",
+        "进入下一步",
+        "继续下一步",
+        "岗位归一化",
+        "职级推断",
+        "公平性诊断",
+        "行动方案",
+        "数据清洗",
+        "职级定级",
     ];
     if PHRASES.iter().any(|p| stripped == *p) {
         return true;
     }
     // Pattern match: "第N步", "step N", "进入第N步" etc.
     // These indicate intent to advance to a specific step.
-    let has_step_pattern = stripped.contains("第") && stripped.contains("步")
-        || stripped.starts_with("step");
+    let has_step_pattern =
+        stripped.contains("第") && stripped.contains("步") || stripped.starts_with("step");
     if has_step_pattern {
         return true;
     }
@@ -306,9 +347,22 @@ pub fn is_confirm_keyword(text: &str) -> bool {
     // like "没问题 继续", "好的，没问题", "可以继续" etc.
     if stripped.chars().count() <= 10 {
         const CORE_CONFIRMS: &[&str] = &[
-            "确认", "继续", "没问题", "可以", "好的", "好", "行",
-            "没有问题", "确定", "同意", "通过", "下一步",
-            "ok", "yes", "next", "continue",
+            "确认",
+            "继续",
+            "没问题",
+            "可以",
+            "好的",
+            "好",
+            "行",
+            "没有问题",
+            "确定",
+            "同意",
+            "通过",
+            "下一步",
+            "ok",
+            "yes",
+            "next",
+            "continue",
         ];
         if CORE_CONFIRMS.iter().any(|kw| stripped.contains(kw)) {
             return true;
@@ -324,13 +378,40 @@ pub fn is_abort_keyword(text: &str) -> bool {
     }
     let stripped = normalize_for_keyword(text);
     const PHRASES: &[&str] = &[
-        "算了", "不分析了", "取消", "取消分析", "退出", "退出分析",
-        "停止", "停止分析", "不做了", "不用了", "算了吧", "放弃",
-        "不需要了", "不需要分析", "不要分析了", "不用分析",
-        "还是算了", "还是不用了", "先不分析了", "暂时不需要",
-        "cancel", "abort", "stop", "exit", "quit", "nevermind",
-        "no", "no thanks", "don't analyze", "skip", "not now",
-        "no need", "never mind", "skip analysis",
+        "算了",
+        "不分析了",
+        "取消",
+        "取消分析",
+        "退出",
+        "退出分析",
+        "停止",
+        "停止分析",
+        "不做了",
+        "不用了",
+        "算了吧",
+        "放弃",
+        "不需要了",
+        "不需要分析",
+        "不要分析了",
+        "不用分析",
+        "还是算了",
+        "还是不用了",
+        "先不分析了",
+        "暂时不需要",
+        "cancel",
+        "abort",
+        "stop",
+        "exit",
+        "quit",
+        "nevermind",
+        "no",
+        "no thanks",
+        "don't analyze",
+        "skip",
+        "not now",
+        "no need",
+        "never mind",
+        "skip analysis",
     ];
     PHRASES.iter().any(|p| stripped == *p)
 }

@@ -55,8 +55,7 @@ pub fn record(category: &str, workspace: &Path, fields: &[(&str, &str)]) {
 /// Returns `(json_content, entry_count)`.
 pub fn export_all(workspace: &Path) -> Result<(String, usize), String> {
     let path = metrics_path(workspace);
-    let entries: Vec<MetricsEntry> =
-        io::read_all_jsonl_shards(&path).map_err(|e| e.to_string())?;
+    let entries: Vec<MetricsEntry> = io::read_all_jsonl_shards(&path).map_err(|e| e.to_string())?;
     let count = entries.len();
     let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
     Ok((json, count))
@@ -67,8 +66,7 @@ pub fn get_info(workspace: &Path) -> Result<(usize, u64), String> {
     let path = metrics_path(workspace);
 
     // Count entries across all shards
-    let entries: Vec<MetricsEntry> =
-        io::read_all_jsonl_shards(&path).map_err(|e| e.to_string())?;
+    let entries: Vec<MetricsEntry> = io::read_all_jsonl_shards(&path).map_err(|e| e.to_string())?;
     let count = entries.len();
 
     // Sum file sizes across all shards + base file
@@ -108,10 +106,7 @@ pub fn clear_all(workspace: &Path) -> Result<usize, String> {
 /// List all shard files + the base file for the metrics path.
 fn list_all_shard_files(base_path: &Path) -> Vec<std::path::PathBuf> {
     let parent = base_path.parent().unwrap_or(Path::new("."));
-    let stem = base_path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
 
     let mut files = Vec::new();
 
@@ -163,7 +158,11 @@ mod tests {
         assert_eq!(count, 0);
         assert_eq!(bytes, 0);
 
-        record("step", workspace, &[("conv", "c1"), ("status", "completed")]);
+        record(
+            "step",
+            workspace,
+            &[("conv", "c1"), ("status", "completed")],
+        );
 
         let (count, bytes) = get_info(workspace).unwrap();
         assert_eq!(count, 1);

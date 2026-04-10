@@ -10,24 +10,25 @@
 //! 6. Retries retryable errors (429/5xx/timeout) with exponential backoff.
 #![allow(dead_code)]
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use anyhow::Result;
+use std::sync::Arc;
 
 use crate::llm::masking::{MaskingContext, MaskingLevel};
-use crate::llm::providers::LlmProviderTrait;
-use crate::llm::providers::lotus;
 use crate::llm::providers::claude;
 use crate::llm::providers::custom;
 use crate::llm::providers::deepseek_r1;
 use crate::llm::providers::deepseek_v3;
+use crate::llm::providers::lotus;
 use crate::llm::providers::openai;
 use crate::llm::providers::qwen;
 use crate::llm::providers::volcano;
+use crate::llm::providers::LlmProviderTrait;
 use crate::llm::router::{self, RouteResult};
 use crate::llm::streaming::*;
 use crate::llm::tools;
 use crate::models::settings::AppSettings;
+use crate::runtime::ids::RunId;
+use crate::runtime::run_registry::RuntimeRunRegistry;
 use crate::storage::file_store::AppStorage;
 
 /// Maximum number of concurrent agent loops.
@@ -92,20 +93,14 @@ fn backoff_with_jitter(attempt: u32) -> std::time::Duration {
 /// Simple pseudo-random jitter (0..max_ms) without pulling in the rand crate.
 /// Uses current time nanoseconds as entropy source — sufficient for backoff jitter.
 fn rand_jitter(max_ms: u64) -> u64 {
-    if max_ms == 0 { return 0; }
+    if max_ms == 0 {
+        return 0;
+    }
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos() as u64;
     nanos % max_ms
-}
-
-/// Active streaming task handle; dropping the sender cancels the stream.
-struct ActiveTask {
-    id: String,
-    conversation_id: String,
-    cancel: tokio::sync::watch::Sender<bool>,
-    started_at: std::time::Instant,
 }
 
 /// The central LLM gateway.
@@ -115,16 +110,17 @@ struct ActiveTask {
 pub struct LlmGateway {
     #[allow(dead_code)]
     db: Arc<AppStorage>,
-    active_tasks: Arc<Mutex<HashMap<String, ActiveTask>>>,
+    run_registry: Arc<RuntimeRunRegistry>,
 }
 
 impl LlmGateway {
     /// Create a new gateway backed by the given database.
     pub fn new(db: Arc<AppStorage>) -> Self {
-        Self {
-            db,
-            active_tasks: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self::new_with_registry(db, Arc::new(RuntimeRunRegistry::new()))
+    }
+
+    pub fn new_with_registry(db: Arc<AppStorage>, run_registry: Arc<RuntimeRunRegistry>) -> Self {
+        Self { db, run_registry }
     }
 
     /// Build an [`LlmRequest`] from messages, route, and settings.
@@ -147,10 +143,7 @@ impl LlmGateway {
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
-            masked_messages.insert(
-                0,
-                ChatMessage::text("system", prompt),
-            );
+            masked_messages.insert(0, ChatMessage::text("system", prompt));
         }
 
         // Insert dynamic context message after system prompt, before conversation messages.
@@ -158,10 +151,7 @@ impl LlmGateway {
         // don't support multiple system messages).
         if let Some(ctx) = context_message {
             let insert_pos = if system_prompt.is_some() { 1 } else { 0 };
-            masked_messages.insert(
-                insert_pos,
-                ChatMessage::text("user", ctx),
-            );
+            masked_messages.insert(insert_pos, ChatMessage::text("user", ctx));
         }
 
         let tool_defs = if route.use_tools {
@@ -211,7 +201,12 @@ impl LlmGateway {
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
         conversation_id: Option<&str>,
-    ) -> Result<(String, StreamBox, MaskingContext, tokio::sync::watch::Receiver<bool>)> {
+    ) -> Result<(
+        String,
+        StreamBox,
+        MaskingContext,
+        tokio::sync::watch::Receiver<bool>,
+    )> {
         let task_id = uuid::Uuid::new_v4().to_string();
         let conv_id = conversation_id.unwrap_or("").to_string();
 
@@ -231,7 +226,15 @@ impl LlmGateway {
         let masked_messages = mask_ctx.mask_messages(&messages);
 
         // 3. Build request
-        let request = Self::build_request(masked_messages, &route, true, system_prompt, context_message, tool_defs_override, max_tokens);
+        let request = Self::build_request(
+            masked_messages,
+            &route,
+            true,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            max_tokens,
+        );
 
         // Log request summary for debugging LLM quality
         log::info!(
@@ -248,38 +251,24 @@ impl LlmGateway {
             let tc_id = m.tool_call_id.as_deref().unwrap_or("-");
             log::debug!(
                 "[LLM-REQ] msg[{}] role={} tc_id={} tool_calls={} content='{}'…",
-                i, m.role, tc_id, has_tc, content_preview,
+                i,
+                m.role,
+                tc_id,
+                has_tc,
+                content_preview,
             );
         }
 
-        // 4. Create cancellation channel and update active task map.
-        // Check if the previous task (from set_busy()) was already cancelled
-        // during the pre-stream window (between set_busy and first stream_message).
-        // If so, bail out immediately instead of starting a new stream.
-        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
-
-        {
-            let mut tasks = self.active_tasks.lock().unwrap();
-            if let Some(existing) = tasks.get(&conv_id) {
-                if *existing.cancel.borrow() {
-                    log::info!(
-                        "stream_message: conversation {} was cancelled before stream started, aborting",
-                        conv_id
-                    );
-                    return Err(anyhow::anyhow!("Conversation cancelled before stream started"));
-                }
-            }
-            tasks.insert(conv_id.clone(), ActiveTask {
-                id: task_id.clone(),
-                conversation_id: conv_id,
-                cancel: cancel_tx,
-                started_at: std::time::Instant::now(),
-            });
-        }
+        // 4. Attach the provider stream to the runtime registry slot.
+        let cancel_rx = self.run_registry.attach_stream(&conv_id, task_id.clone())?;
 
         // 5. Get stream from provider with retry on transient errors
-        log::info!("dispatch_stream: provider={}, api_key_len={}, model_hint='{}'",
-            route.provider, route.api_key.len(), route.model_hint);
+        log::info!(
+            "dispatch_stream: provider={}, api_key_len={}, model_hint='{}'",
+            route.provider,
+            route.api_key.len(),
+            route.model_hint
+        );
         let stream = retry_dispatch_stream(&route, request).await?;
 
         // 6. Return raw stream + cancel_rx — caller uses tokio::select! for cancellation
@@ -291,11 +280,11 @@ impl LlmGateway {
     /// Sends the cancel signal but does NOT remove the task from the map.
     /// The AgentGuard is responsible for cleanup after the agent loop exits.
     pub fn cancel_conversation(&self, conversation_id: &str) -> Result<()> {
-        let tasks = self.active_tasks.lock().unwrap();
-        if let Some(task) = tasks.get(conversation_id) {
-            let _ = task.cancel.send(true);
-            log::info!("Cancelled streaming task for conversation: {} (task_id={})", conversation_id, task.id);
-        }
+        self.run_registry.cancel(conversation_id);
+        log::info!(
+            "Cancelled streaming task for conversation: {}",
+            conversation_id
+        );
         Ok(())
     }
 
@@ -326,7 +315,15 @@ impl LlmGateway {
         let masked_messages = mask_ctx.mask_messages(&messages);
 
         // 3. Build request
-        let request = Self::build_request(masked_messages, &route, false, system_prompt, context_message, tool_defs_override, 4096);
+        let request = Self::build_request(
+            masked_messages,
+            &route,
+            false,
+            system_prompt,
+            context_message,
+            tool_defs_override,
+            4096,
+        );
 
         // 4. Dispatch to provider with retry on transient errors
         let response = retry_dispatch_send(&route, request).await?;
@@ -341,28 +338,28 @@ impl LlmGateway {
 
     /// Returns true if there is at least one active task.
     pub fn is_busy(&self) -> bool {
-        let tasks = self.active_tasks.lock().unwrap();
-        !tasks.is_empty()
+        self.run_registry.is_busy()
     }
 
     /// Returns true if a specific conversation has an active task.
     pub fn is_conversation_busy(&self, conversation_id: &str) -> bool {
-        let tasks = self.active_tasks.lock().unwrap();
-        tasks.contains_key(conversation_id)
+        self.run_registry.is_session_busy(conversation_id)
     }
 
     /// Get all conversation IDs that currently have active tasks.
     pub fn get_busy_conversations(&self) -> Vec<String> {
-        let tasks = self.active_tasks.lock().unwrap();
-        tasks.keys().cloned().collect()
+        self.run_registry.busy_sessions()
     }
 
     /// Clear the active task for a specific conversation.
     /// Called when the agent loop finishes.
     pub fn clear_task(&self, conversation_id: &str) {
-        let mut tasks = self.active_tasks.lock().unwrap();
-        if let Some(task) = tasks.remove(conversation_id) {
-            log::info!("Cleared active task: id={}, conversation_id={}", task.id, task.conversation_id);
+        if let Some(run_id) = self.run_registry.clear(conversation_id) {
+            log::info!(
+                "Cleared active task: conversation_id={}, run_id={}",
+                conversation_id,
+                run_id.as_str()
+            );
         }
     }
 
@@ -370,22 +367,24 @@ impl LlmGateway {
     /// Used to reserve the agent before spawning the agent loop.
     /// Returns an error string if the conversation is already busy or max concurrency reached.
     pub fn set_busy(&self, conversation_id: &str) -> Result<(), String> {
-        let mut tasks = self.active_tasks.lock().unwrap();
-        if tasks.contains_key(conversation_id) {
-            return Err("This conversation is already processing.".to_string());
-        }
-        if tasks.len() >= MAX_CONCURRENT_AGENTS {
-            return Err(format!("Maximum concurrent conversations reached ({}). Please wait.", MAX_CONCURRENT_AGENTS));
-        }
-        let (cancel_tx, _) = tokio::sync::watch::channel(false);
-        tasks.insert(conversation_id.to_string(), ActiveTask {
-            id: format!("pre-{}", uuid::Uuid::new_v4()),
-            conversation_id: conversation_id.to_string(),
-            cancel: cancel_tx,
-            started_at: std::time::Instant::now(),
-        });
-        log::info!("Gateway marked busy for conversation {} (active={})", conversation_id, tasks.len());
+        self.set_busy_for_run(
+            conversation_id,
+            RunId::new(format!("pre-{}", uuid::Uuid::new_v4())),
+        )
+    }
+
+    pub fn set_busy_for_run(&self, conversation_id: &str, run_id: RunId) -> Result<(), String> {
+        self.run_registry.reserve(conversation_id, run_id)?;
+        log::info!(
+            "Gateway marked busy for conversation {} (active={})",
+            conversation_id,
+            self.run_registry.busy_sessions().len()
+        );
         Ok(())
+    }
+
+    pub fn active_run_id(&self, conversation_id: &str) -> Option<RunId> {
+        self.run_registry.run_id_for_session(conversation_id)
     }
 }
 
@@ -403,7 +402,8 @@ async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Resu
                 if attempt > 0 {
                     log::info!(
                         "[retry] dispatch_stream succeeded on attempt {} for provider '{}'",
-                        attempt + 1, route.provider
+                        attempt + 1,
+                        route.provider
                     );
                 }
                 return Ok(stream);
@@ -413,7 +413,10 @@ async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Resu
                     let delay = backoff_with_jitter(attempt);
                     log::warn!(
                         "[retry] dispatch_stream failed (attempt {}/{}, retrying in {:?}): {}",
-                        attempt + 1, MAX_RETRIES + 1, delay, e
+                        attempt + 1,
+                        MAX_RETRIES + 1,
+                        delay,
+                        e
                     );
                     tokio::time::sleep(delay).await;
                     last_err = Some(e);
@@ -421,7 +424,8 @@ async fn retry_dispatch_stream(route: &RouteResult, request: LlmRequest) -> Resu
                     if attempt > 0 {
                         log::error!(
                             "[retry] dispatch_stream failed after {} attempts: {}",
-                            attempt + 1, e
+                            attempt + 1,
+                            e
                         );
                     }
                     return Err(e);
@@ -446,7 +450,8 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
                 if attempt > 0 {
                     log::info!(
                         "[retry] dispatch_send succeeded on attempt {} for provider '{}'",
-                        attempt + 1, route.provider
+                        attempt + 1,
+                        route.provider
                     );
                 }
                 return Ok(response);
@@ -456,7 +461,10 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
                     let delay = backoff_with_jitter(attempt);
                     log::warn!(
                         "[retry] dispatch_send failed (attempt {}/{}, retrying in {:?}): {}",
-                        attempt + 1, MAX_RETRIES + 1, delay, e
+                        attempt + 1,
+                        MAX_RETRIES + 1,
+                        delay,
+                        e
                     );
                     tokio::time::sleep(delay).await;
                     last_err = Some(e);
@@ -464,7 +472,8 @@ async fn retry_dispatch_send(route: &RouteResult, request: LlmRequest) -> Result
                     if attempt > 0 {
                         log::error!(
                             "[retry] dispatch_send failed after {} attempts: {}",
-                            attempt + 1, e
+                            attempt + 1,
+                            e
                         );
                     }
                     return Err(e);
@@ -500,10 +509,7 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             p.stream(request).await
         }
         "volcano" => {
-            let p = volcano::VolcanoProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-            );
+            let p = volcano::VolcanoProvider::new(route.api_key.clone(), route.model_hint.clone());
             p.stream(request).await
         }
         "qwen-plus" => {
@@ -527,10 +533,7 @@ async fn dispatch_stream(route: &RouteResult, request: LlmRequest) -> Result<Str
             p.stream(request).await
         }
         other => {
-            log::warn!(
-                "Unknown provider '{}', falling back to deepseek-v3",
-                other
-            );
+            log::warn!("Unknown provider '{}', falling back to deepseek-v3", other);
             let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
             p.stream(request).await
         }
@@ -557,10 +560,7 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             p.send(request).await
         }
         "volcano" => {
-            let p = volcano::VolcanoProvider::new(
-                route.api_key.clone(),
-                route.model_hint.clone(),
-            );
+            let p = volcano::VolcanoProvider::new(route.api_key.clone(), route.model_hint.clone());
             p.send(request).await
         }
         "qwen-plus" => {
@@ -584,10 +584,7 @@ async fn dispatch_send(route: &RouteResult, request: LlmRequest) -> Result<LlmRe
             p.send(request).await
         }
         other => {
-            log::warn!(
-                "Unknown provider '{}', falling back to deepseek-v3",
-                other
-            );
+            log::warn!("Unknown provider '{}', falling back to deepseek-v3", other);
             let p = deepseek_v3::DeepSeekV3Provider::new(route.api_key.clone());
             p.send(request).await
         }
@@ -600,9 +597,18 @@ mod tests {
 
     #[test]
     fn test_extract_status_code_standard() {
-        assert_eq!(extract_status_code("API error (429): rate limited"), Some(429));
-        assert_eq!(extract_status_code("Streaming API error (503): service unavailable"), Some(503));
-        assert_eq!(extract_status_code("Anthropic API error (401): unauthorized"), Some(401));
+        assert_eq!(
+            extract_status_code("API error (429): rate limited"),
+            Some(429)
+        );
+        assert_eq!(
+            extract_status_code("Streaming API error (503): service unavailable"),
+            Some(503)
+        );
+        assert_eq!(
+            extract_status_code("Anthropic API error (401): unauthorized"),
+            Some(401)
+        );
     }
 
     #[test]
@@ -624,30 +630,48 @@ mod tests {
 
     #[test]
     fn test_retryable_5xx() {
-        assert!(is_retryable_error(&anyhow::anyhow!("API error (500): internal server error")));
-        assert!(is_retryable_error(&anyhow::anyhow!("Streaming API error (502): bad gateway")));
-        assert!(is_retryable_error(&anyhow::anyhow!("API error (503): service unavailable")));
-        assert!(is_retryable_error(&anyhow::anyhow!("API error (504): gateway timeout")));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "API error (500): internal server error"
+        )));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "Streaming API error (502): bad gateway"
+        )));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "API error (503): service unavailable"
+        )));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "API error (504): gateway timeout"
+        )));
     }
 
     #[test]
     fn test_not_retryable_4xx() {
-        assert!(!is_retryable_error(&anyhow::anyhow!("API error (401): unauthorized")));
-        assert!(!is_retryable_error(&anyhow::anyhow!("API error (400): bad request")));
-        assert!(!is_retryable_error(&anyhow::anyhow!("API error (403): forbidden")));
+        assert!(!is_retryable_error(&anyhow::anyhow!(
+            "API error (401): unauthorized"
+        )));
+        assert!(!is_retryable_error(&anyhow::anyhow!(
+            "API error (400): bad request"
+        )));
+        assert!(!is_retryable_error(&anyhow::anyhow!(
+            "API error (403): forbidden"
+        )));
     }
 
     #[test]
     fn test_retryable_network_errors() {
         assert!(is_retryable_error(&anyhow::anyhow!("request timed out")));
-        assert!(is_retryable_error(&anyhow::anyhow!("Connection reset by peer")));
+        assert!(is_retryable_error(&anyhow::anyhow!(
+            "Connection reset by peer"
+        )));
         assert!(is_retryable_error(&anyhow::anyhow!("connection refused")));
         assert!(is_retryable_error(&anyhow::anyhow!("Broken pipe")));
     }
 
     #[test]
     fn test_not_retryable_unknown_error() {
-        assert!(!is_retryable_error(&anyhow::anyhow!("invalid JSON in response")));
+        assert!(!is_retryable_error(&anyhow::anyhow!(
+            "invalid JSON in response"
+        )));
         assert!(!is_retryable_error(&anyhow::anyhow!("unknown error")));
     }
 

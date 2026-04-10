@@ -32,8 +32,7 @@ const FINGERPRINTS: &[&str] = &[
 const LEAK_THRESHOLD: usize = 2;
 
 /// Refusal message sent to the user when a leak is detected.
-pub const LEAK_REFUSAL: &str =
-    "抱歉，这是系统内部配置，无法展示。如果你有具体需求，请直接告诉我。";
+pub const LEAK_REFUSAL: &str = "抱歉，这是系统内部配置，无法展示。如果你有具体需求，请直接告诉我。";
 
 /// Result of a leak check.
 #[derive(Debug)]
@@ -113,7 +112,11 @@ mod tests {
                         execute_python 环境 中有 _load_data 和 _smart_read_csv。";
         match check_for_leak(content) {
             LeakCheckResult::Leaked { matched_count, .. } => {
-                assert!(matched_count >= 5, "Should match many fingerprints, got {}", matched_count);
+                assert!(
+                    matched_count >= 5,
+                    "Should match many fingerprints, got {}",
+                    matched_count
+                );
             }
             LeakCheckResult::Clean => panic!("Should have detected a leak"),
         }

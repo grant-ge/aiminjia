@@ -2,6 +2,8 @@
 //!
 //! Teams can create Skills without writing Rust by placing a plugin.toml,
 //! workflow.toml, and prompt .md files in a plugin directory.
+// Uses PluginContext as part of the legacy ToolPlugin execution path.
+#![allow(deprecated)]
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -63,17 +65,24 @@ impl DeclarativeSkill {
         let requires_files = trigger.map(|t| t.requires_files).unwrap_or(false);
 
         let priority_val = manifest.plugin.priority.unwrap_or(0);
-        let description = manifest.plugin.description.clone()
+        let description = manifest
+            .plugin
+            .description
+            .clone()
             .unwrap_or_else(|| format!("{} (plugin)", manifest.plugin.name));
 
-        let model_pref = manifest.model.as_ref()
+        let model_pref = manifest
+            .model
+            .as_ref()
             .and_then(|m| m.preference.as_deref())
             .map(|p| match p {
                 "deep_reasoning" => ModelPreference::Capability(ModelCapability::DeepReasoning),
                 "cost_efficient" => ModelPreference::Capability(ModelCapability::CostEfficient),
                 "long_context" => ModelPreference::Capability(ModelCapability::LongContext),
                 "code_generation" => ModelPreference::Capability(ModelCapability::CodeGeneration),
-                "instruction_following" => ModelPreference::Capability(ModelCapability::InstructionFollowing),
+                "instruction_following" => {
+                    ModelPreference::Capability(ModelCapability::InstructionFollowing)
+                }
                 other => ModelPreference::Provider(other.to_string()),
             });
 
@@ -81,7 +90,9 @@ impl DeclarativeSkill {
         let max_iter = defaults.and_then(|d| d.max_iterations).unwrap_or(10);
         let budget = defaults.and_then(|d| d.token_budget).unwrap_or(4096);
 
-        let include_app_base = manifest.prompts.as_ref()
+        let include_app_base = manifest
+            .prompts
+            .as_ref()
             .map(|p| p.include_app_base)
             .unwrap_or(true);
 
@@ -97,8 +108,12 @@ impl DeclarativeSkill {
                 for entry in entries.flatten() {
                     let fname = entry.file_name();
                     let fname = fname.to_string_lossy();
-                    if let Some(step_id) = fname.strip_prefix("extract_").and_then(|s| s.strip_suffix(".md")) {
-                        let content = Self::load_prompt(plugin_dir, &format!("prompts/extract/{}", fname));
+                    if let Some(step_id) = fname
+                        .strip_prefix("extract_")
+                        .and_then(|s| s.strip_suffix(".md"))
+                    {
+                        let content =
+                            Self::load_prompt(plugin_dir, &format!("prompts/extract/{}", fname));
                         if !content.is_empty() {
                             extract_steps.insert(step_id.to_string(), content);
                         }
@@ -110,11 +125,19 @@ impl DeclarativeSkill {
         // Load display metadata for UI skill cards
         let display = manifest.display.as_ref();
         let icon = display.and_then(|d| d.icon.clone()).unwrap_or_default();
-        let short_desc = display.and_then(|d| d.short_description.clone()).unwrap_or_default();
-        let trigger = display.and_then(|d| d.trigger_text.clone()).unwrap_or_default();
-        let category = display.and_then(|d| d.category.clone()).unwrap_or_else(|| "general".to_string());
+        let short_desc = display
+            .and_then(|d| d.short_description.clone())
+            .unwrap_or_default();
+        let trigger = display
+            .and_then(|d| d.trigger_text.clone())
+            .unwrap_or_default();
+        let category = display
+            .and_then(|d| d.category.clone())
+            .unwrap_or_else(|| "general".to_string());
         let name_en = display.and_then(|d| d.name_en.clone()).unwrap_or_default();
-        let short_desc_en = display.and_then(|d| d.short_description_en.clone()).unwrap_or_default();
+        let short_desc_en = display
+            .and_then(|d| d.short_description_en.clone())
+            .unwrap_or_default();
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
@@ -141,16 +164,19 @@ impl DeclarativeSkill {
                     _ => AdvanceMode::Confirm,
                 };
 
-                configs.insert(step.id.clone(), StepToolConfig {
-                    tools_only: step.tools_only.clone(),
-                    tools_exclude: step.tools_exclude.clone(),
-                    max_iterations: step.max_iterations,
-                    token_budget: step.token_budget,
-                    advance_on: advance_on.clone(),
-                    precompute: step.precompute.clone(),
-                    tools_on_feedback: step.tools_on_feedback.clone(),
-                    max_iterations_feedback: step.max_iterations_feedback,
-                });
+                configs.insert(
+                    step.id.clone(),
+                    StepToolConfig {
+                        tools_only: step.tools_only.clone(),
+                        tools_exclude: step.tools_exclude.clone(),
+                        max_iterations: step.max_iterations,
+                        token_budget: step.token_budget,
+                        advance_on: advance_on.clone(),
+                        precompute: step.precompute.clone(),
+                        tools_on_feedback: step.tools_on_feedback.clone(),
+                        max_iterations_feedback: step.max_iterations_feedback,
+                    },
+                );
                 steps.push(WorkflowStep {
                     id: step.id.clone(),
                     display_name: step.name.clone(),
@@ -160,7 +186,10 @@ impl DeclarativeSkill {
             }
 
             let initial = steps.first().map(|s| s.id.clone()).unwrap_or_default();
-            let wf = WorkflowDefinition { steps, initial_step: initial };
+            let wf = WorkflowDefinition {
+                steps,
+                initial_step: initial,
+            };
             (Some(wf), prompts, configs)
         } else {
             (None, HashMap::new(), HashMap::new())
@@ -215,7 +244,8 @@ impl DeclarativeSkill {
     }
 
     fn is_last_step(&self, step_id: &str) -> bool {
-        self.workflow.as_ref()
+        self.workflow
+            .as_ref()
             .and_then(|wf| wf.steps.last())
             .map(|s| s.id == step_id)
             .unwrap_or(false)
@@ -224,29 +254,66 @@ impl DeclarativeSkill {
 
 #[async_trait]
 impl Skill for DeclarativeSkill {
-    fn id(&self) -> &str { &self.id }
-    fn display_name(&self) -> &str { &self.name }
-    fn description(&self) -> &str { &self.description }
-    fn icon(&self) -> &str { &self.icon }
-    fn short_description(&self) -> &str { &self.short_desc }
-    fn trigger_text(&self) -> &str { &self.trigger }
-    fn category(&self) -> &str { &self.category }
-    fn display_name_en(&self) -> &str { &self.name_en }
-    fn short_description_en(&self) -> &str { &self.short_desc_en }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn display_name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn icon(&self) -> &str {
+        &self.icon
+    }
+    fn short_description(&self) -> &str {
+        &self.short_desc
+    }
+    fn trigger_text(&self) -> &str {
+        &self.trigger
+    }
+    fn category(&self) -> &str {
+        &self.category
+    }
+    fn display_name_en(&self) -> &str {
+        &self.name_en
+    }
+    fn short_description_en(&self) -> &str {
+        &self.short_desc_en
+    }
 
-    fn priority(&self) -> u32 { self.priority_val }
+    fn priority(&self) -> u32 {
+        self.priority_val
+    }
 
     fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
         if current_skill != "daily-assistant" {
             return false;
         }
         let lower = message.to_lowercase();
+        let keyword_match = self
+            .keywords
+            .iter()
+            .any(|kw| lower.contains(&kw.to_lowercase()));
+
+        if !keyword_match {
+            return false;
+        }
+
+        // Versioned workflows like `comp-analysis-v2` should not steal the
+        // generic trigger phrase from the base workflow unless the user
+        // explicitly asks for the versioned path.
+        if self.id.ends_with("-v2") {
+            return ["v2", "版本2", "2.0"]
+                .iter()
+                .any(|marker| lower.contains(marker));
+        }
 
         // Only primary keywords trigger activation (explicit analysis requests).
         // Secondary file_keywords path removed: when users upload files with
         // casual mentions of salary/compensation, daily mode should parse first,
         // show a summary, and let the user decide whether to start full analysis.
-        self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
+        true
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {
@@ -309,7 +376,9 @@ impl Skill for DeclarativeSkill {
 
     fn allowed_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
         // Read tools_only from workflow.toml step config for runtime guard
-        state.current_step.as_deref()
+        state
+            .current_step
+            .as_deref()
             .and_then(|step| self.step_configs.get(step))
             .and_then(|config| config.tools_only.clone())
     }
@@ -324,7 +393,9 @@ impl Skill for DeclarativeSkill {
                 if let Some(mi) = config.max_iterations {
                     log::info!(
                         "[Skill:{}] max_iterations for step '{}': {} (step-specific)",
-                        self.id, step, mi
+                        self.id,
+                        step,
+                        mi
                     );
                     return mi;
                 }
@@ -336,7 +407,8 @@ impl Skill for DeclarativeSkill {
         } else {
             log::info!(
                 "[Skill:{}] max_iterations: {} (no current_step)",
-                self.id, self.max_iter
+                self.id,
+                self.max_iter
             );
         }
         self.max_iter
@@ -383,7 +455,8 @@ impl Skill for DeclarativeSkill {
                 let knowledge_dir = if knowledge_path.is_dir() {
                     log::info!(
                         "[Skill:{}] on_step_enter: found knowledge dir at '{}'",
-                        self.id, knowledge_path.display()
+                        self.id,
+                        knowledge_path.display()
                     );
                     Some(knowledge_path)
                 } else {
@@ -399,7 +472,9 @@ impl Skill for DeclarativeSkill {
             Err(e) => {
                 log::warn!(
                     "[Skill:{}] on_step_enter: failed to read precompute script '{}': {}",
-                    self.id, full_path.display(), e
+                    self.id,
+                    full_path.display(),
+                    e
                 );
                 None
             }
@@ -428,7 +503,9 @@ impl Skill for DeclarativeSkill {
             Some(s) => s.to_string(),
             None => {
                 // No current step — advance to the initial step (matches old CompAnalysisSkill behavior)
-                let initial = self.workflow.as_ref()
+                let initial = self
+                    .workflow
+                    .as_ref()
                     .map(|wf| wf.initial_step.clone())
                     .unwrap_or_else(|| "step0".to_string());
                 return StepAction::AdvanceToStep(initial);
@@ -436,7 +513,9 @@ impl Skill for DeclarativeSkill {
         };
 
         // Get the advance mode for the current step
-        let advance_mode = self.step_configs.get(&current)
+        let advance_mode = self
+            .step_configs
+            .get(&current)
             .map(|c| &c.advance_on)
             .cloned()
             .unwrap_or_default();
@@ -478,8 +557,8 @@ mod tests {
     /// Load the comp-analysis-v2 plugin and verify all precompute fields are parsed.
     #[test]
     fn test_load_comp_analysis_v2() {
-        let plugin_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("plugins/comp-analysis-v2");
+        let plugin_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/comp-analysis-v2");
         if !plugin_dir.exists() {
             return;
         }
@@ -498,27 +577,56 @@ mod tests {
         assert_eq!(wf.initial_step, "step0");
 
         // Step 0: no precompute
-        let state0 = SkillState { current_step: Some("step0".into()), ..SkillState::new("comp-analysis-v2") };
-        assert!(skill.on_step_enter(&state0).is_none(), "step0 should have no precompute");
-        assert!(skill.feedback_config(&state0).is_none(), "step0 should have no feedback config");
+        let state0 = SkillState {
+            current_step: Some("step0".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
+        assert!(
+            skill.on_step_enter(&state0).is_none(),
+            "step0 should have no precompute"
+        );
+        assert!(
+            skill.feedback_config(&state0).is_none(),
+            "step0 should have no feedback config"
+        );
 
         // Step 1: has precompute + feedback config
-        let state1 = SkillState { current_step: Some("step1".into()), ..SkillState::new("comp-analysis-v2") };
-        let pc = skill.on_step_enter(&state1).expect("step1 should have precompute");
+        let state1 = SkillState {
+            current_step: Some("step1".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
+        let pc = skill
+            .on_step_enter(&state1)
+            .expect("step1 should have precompute");
         assert_eq!(pc.cache_key, "step1_precompute");
-        assert!(pc.python_code.contains("_step1_clean"), "step1 precompute should call _step1_clean");
+        assert!(
+            pc.python_code.contains("_step1_clean"),
+            "step1 precompute should call _step1_clean"
+        );
 
-        let fb = skill.feedback_config(&state1).expect("step1 should have feedback config");
+        let fb = skill
+            .feedback_config(&state1)
+            .expect("step1 should have feedback config");
         assert!(fb.tools.contains(&"execute_python".to_string()));
         assert!(fb.tools.contains(&"export_data".to_string()));
         assert_eq!(fb.max_iterations, 3);
 
         // Step 5: has precompute + generate_report in allowed tools
-        let state5 = SkillState { current_step: Some("step5".into()), ..SkillState::new("comp-analysis-v2") };
-        let pc5 = skill.on_step_enter(&state5).expect("step5 should have precompute");
-        assert!(pc5.python_code.contains("_step5_scenarios"), "step5 precompute should call _step5_scenarios");
+        let state5 = SkillState {
+            current_step: Some("step5".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
+        let pc5 = skill
+            .on_step_enter(&state5)
+            .expect("step5 should have precompute");
+        assert!(
+            pc5.python_code.contains("_step5_scenarios"),
+            "step5 precompute should call _step5_scenarios"
+        );
 
-        let allowed5 = skill.allowed_tool_names(&state5).expect("step5 should have tool whitelist");
+        let allowed5 = skill
+            .allowed_tool_names(&state5)
+            .expect("step5 should have tool whitelist");
         assert!(allowed5.contains(&"generate_report".to_string()));
         assert!(allowed5.contains(&"export_data".to_string()));
 
@@ -530,8 +638,8 @@ mod tests {
     /// Verify max_iterations per step.
     #[test]
     fn test_precompute_step_iterations() {
-        let plugin_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("plugins/comp-analysis-v2");
+        let plugin_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/comp-analysis-v2");
         if !plugin_dir.exists() {
             return;
         }
@@ -540,13 +648,22 @@ mod tests {
         let manifest = parse_plugin_manifest(&plugin_toml).unwrap();
         let skill = DeclarativeSkill::load(&manifest, &plugin_dir).unwrap();
 
-        let state1 = SkillState { current_step: Some("step1".into()), ..SkillState::new("comp-analysis-v2") };
+        let state1 = SkillState {
+            current_step: Some("step1".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
         assert_eq!(skill.max_iterations(&state1), 5);
 
-        let state5 = SkillState { current_step: Some("step5".into()), ..SkillState::new("comp-analysis-v2") };
+        let state5 = SkillState {
+            current_step: Some("step5".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
         assert_eq!(skill.max_iterations(&state5), 8);
 
-        let state0 = SkillState { current_step: Some("step0".into()), ..SkillState::new("comp-analysis-v2") };
+        let state0 = SkillState {
+            current_step: Some("step0".into()),
+            ..SkillState::new("comp-analysis-v2")
+        };
         assert_eq!(skill.max_iterations(&state0), 5);
     }
 }

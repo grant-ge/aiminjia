@@ -7,8 +7,8 @@ use log::{info, warn};
 use serde_json::Value;
 use tauri::Manager;
 
+use super::{optional_str, require_str};
 use crate::plugin::context::PluginContext;
-use super::{require_str, optional_str};
 
 /// Handle browse_navigate tool invocations (V4 — open browsing mode).
 ///
@@ -16,16 +16,20 @@ use super::{require_str, optional_str};
 pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) -> Result<String> {
     let url = require_str(args, "url")?;
 
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
     info!("[CONNECTOR] browse_navigate: url='{}'", url);
 
-    let result = engine.browser_navigate(url).await
-        .map_err(|e| {
-            warn!("[CONNECTOR] browse_navigate failed: url='{}', error={}", url, e);
-            anyhow!(e)
-        })?;
+    let result = engine.browser_navigate(url).await.map_err(|e| {
+        warn!(
+            "[CONNECTOR] browse_navigate failed: url='{}', error={}",
+            url, e
+        );
+        anyhow!(e)
+    })?;
 
     let mut output = format!(
         "Page ready: {} ({})\nThe browser window is now showing this page.",
@@ -34,7 +38,13 @@ pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) ->
 
     if result.redirected_to_login {
         let final_path = result.url.to_lowercase();
-        if final_path.contains("error") || final_path.contains("forbidden") || final_path.contains("no_resource") || final_path.contains("no_permission") || final_path.contains("/403") || final_path.contains("/404") {
+        if final_path.contains("error")
+            || final_path.contains("forbidden")
+            || final_path.contains("no_resource")
+            || final_path.contains("no_permission")
+            || final_path.contains("/403")
+            || final_path.contains("/404")
+        {
             return Err(anyhow!(
                 "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
                 result.url
@@ -48,7 +58,9 @@ pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) ->
             output.push_str("\n\n");
             output.push_str(&profile.format_detail());
         } else {
-            output.push_str("\nUse read_page_content to extract data, or page_execute_js to interact.");
+            output.push_str(
+                "\nUse read_page_content to extract data, or page_execute_js to interact.",
+            );
         }
     }
 
@@ -66,12 +78,16 @@ pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) ->
 pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) -> Result<String> {
     let extract_script = optional_str(args, "extract_script");
 
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
     info!("[CONNECTOR] read_page_content");
 
-    let result = engine.browser_read_content(extract_script).await
+    let result = engine
+        .browser_read_content(extract_script)
+        .await
         .map_err(|e| {
             warn!("[CONNECTOR] read_page_content failed: error={}", e);
             anyhow!(e)
@@ -79,7 +95,8 @@ pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) 
 
     info!(
         "[CONNECTOR] read_page_content complete: tables={}, text_len={}",
-        result.tables.len(), result.text.len()
+        result.tables.len(),
+        result.text.len()
     );
 
     // Format result for LLM
@@ -87,15 +104,21 @@ pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) 
 
     if !result.tables.is_empty() {
         for (i, table) in result.tables.iter().enumerate() {
-            output.push_str(&format!("### Table {} ({} rows)\n", i + 1, table.rows.len()));
+            output.push_str(&format!(
+                "### Table {} ({} rows)\n",
+                i + 1,
+                table.rows.len()
+            ));
             if !table.headers.is_empty() {
                 output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
             }
             for row in &table.rows {
                 let cells: Vec<String> = if !table.headers.is_empty() {
-                    table.headers.iter().map(|h| {
-                        row.get(h).cloned().unwrap_or_default()
-                    }).collect()
+                    table
+                        .headers
+                        .iter()
+                        .map(|h| row.get(h).cloned().unwrap_or_default())
+                        .collect()
                 } else {
                     row.values().cloned().collect()
                 };
@@ -119,7 +142,10 @@ pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) 
                     if !link.href.is_empty() {
                         output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
                     } else if !link.selector.is_empty() {
-                        output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                        output.push_str(&format!(
+                            "- [menu] {} (selector: {})\n",
+                            link.label, link.selector
+                        ));
                     } else {
                         output.push_str(&format!("- [menu] {}\n", link.label));
                     }
@@ -145,16 +171,17 @@ pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) 
 pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) -> Result<String> {
     let script = require_str(args, "script")?;
 
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
     info!("[CONNECTOR] page_execute_js: script_len={}", script.len());
 
-    let result = engine.browser_execute_js(script).await
-        .map_err(|e| {
-            warn!("[CONNECTOR] page_execute_js failed: error={}", e);
-            anyhow!(e)
-        })?;
+    let result = engine.browser_execute_js(script).await.map_err(|e| {
+        warn!("[CONNECTOR] page_execute_js failed: error={}", e);
+        anyhow!(e)
+    })?;
 
     // Format result for LLM
     let mut output = String::new();
@@ -186,25 +213,36 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     let task = require_str(args, "task")?;
     let url = optional_str(args, "url");
 
-    let gateway = ctx.gateway.as_ref()
+    let gateway = ctx
+        .gateway
+        .as_ref()
         .ok_or_else(|| anyhow!("LLM gateway not available for sub-agent"))?;
-    let tool_registry = ctx.tool_registry.as_ref()
+    let tool_registry = ctx
+        .tool_registry
+        .as_ref()
         .ok_or_else(|| anyhow!("Tool registry not available for sub-agent"))?;
-    let app_settings = ctx.app_settings.as_ref()
+    let app_settings = ctx
+        .app_settings
+        .as_ref()
         .ok_or_else(|| anyhow!("App settings not available for sub-agent"))?;
 
     info!("[CONNECTOR] browse_data: task='{}', url={:?}", task, url);
 
     // Load browser_agent prompt
     let loaded_prompt = crate::llm::prompts::get_browser_agent_prompt();
-    info!("[CONNECTOR] browser_agent prompt: {} chars, starts_with='{}'",
+    info!(
+        "[CONNECTOR] browser_agent prompt: {} chars, starts_with='{}'",
         loaded_prompt.len(),
-        loaded_prompt.chars().take(60).collect::<String>());
+        loaded_prompt.chars().take(60).collect::<String>()
+    );
     let system_prompt = if loaded_prompt.len() > 50 {
         loaded_prompt
     } else {
         // Fallback: inline prompt (in case file loading fails)
-        warn!("[CONNECTOR] browser_agent prompt NOT loaded (got {} chars), using inline fallback", loaded_prompt.len());
+        warn!(
+            "[CONNECTOR] browser_agent prompt NOT loaded (got {} chars), using inline fallback",
+            loaded_prompt.len()
+        );
         r#"你是数据提取专家。从内部业务系统中提取用户需要的数据。
 
 ## 严格规则（必须遵守）
@@ -225,7 +263,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
 ## 禁止事项
 - 禁止用 page_execute_js 提取表格数据
 - 禁止用 page_execute_js 遍历 DOM 获取行数据
-- 禁止用 browse_navigate 翻页"#.to_string()
+- 禁止用 browse_navigate 翻页"#
+            .to_string()
     };
 
     // Build dynamic context: site map from connector engine
@@ -242,27 +281,44 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
                 dynamic_context = ctx_str;
             }
             if let Some(target_url) = url {
-                let url_path = url::Url::parse(target_url).ok()
+                let url_path = url::Url::parse(target_url)
+                    .ok()
                     .map(|u| u.path().to_string())
                     .unwrap_or_default();
-                let origin = url::Url::parse(target_url).ok()
+                let origin = url::Url::parse(target_url)
+                    .ok()
                     .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                     .unwrap_or_default();
                 if let Some(profile) = pw.get_cached_page_profile(&origin, &url_path).await {
                     has_known_apis = !profile.api_endpoints.is_empty();
                     has_known_tables = !profile.table_schemas.is_empty();
                     if has_known_tables {
-                        let table_info: Vec<String> = profile.table_schemas.iter()
-                            .map(|t| format!("{} ({} rows, cols: {})",
-                                if t.name.is_empty() { "table" } else { &t.name },
-                                t.row_count, t.headers.join(", ")))
+                        let table_info: Vec<String> = profile
+                            .table_schemas
+                            .iter()
+                            .map(|t| {
+                                format!(
+                                    "{} ({} rows, cols: {})",
+                                    if t.name.is_empty() { "table" } else { &t.name },
+                                    t.row_count,
+                                    t.headers.join(", ")
+                                )
+                            })
                             .collect();
                         target_page_hint = format!(
                             "\n\n[已知页面信息: {}]\n表格: {}\nAPI端点: {}\n表单: {}",
                             url_path,
                             table_info.join("; "),
-                            if has_known_apis { "有" } else { "无（该系统可能是传统SSR架构，数据直接嵌在HTML中）" },
-                            if profile.forms.is_empty() { "无" } else { "有" },
+                            if has_known_apis {
+                                "有"
+                            } else {
+                                "无（该系统可能是传统SSR架构，数据直接嵌在HTML中）"
+                            },
+                            if profile.forms.is_empty() {
+                                "无"
+                            } else {
+                                "有"
+                            },
                         );
                     }
                 }
@@ -273,7 +329,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     // Check if site map has multiple pages with tables — ask user to choose
     if let Some(ref engine) = ctx.connector_engine {
         if let Some(target_url) = url {
-            let origin = url::Url::parse(target_url).ok()
+            let origin = url::Url::parse(target_url)
+                .ok()
                 .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                 .unwrap_or_default();
             if !origin.is_empty() {
@@ -282,14 +339,31 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
                     let pages_with_tables = pw.get_pages_with_tables(&origin).await;
                     if pages_with_tables.len() > 1 {
                         // Multiple data pages found — return list for user to choose
-                        let mut output = format!("Found {} pages with data tables on {}:\n\n", pages_with_tables.len(), origin);
+                        let mut output = format!(
+                            "Found {} pages with data tables on {}:\n\n",
+                            pages_with_tables.len(),
+                            origin
+                        );
                         for (i, p) in pages_with_tables.iter().enumerate() {
-                            let tables_desc: Vec<String> = p.table_schemas.iter()
-                                .map(|t| format!("{} ({} rows)", if t.name.is_empty() { "table" } else { &t.name }, t.row_count))
+                            let tables_desc: Vec<String> = p
+                                .table_schemas
+                                .iter()
+                                .map(|t| {
+                                    format!(
+                                        "{} ({} rows)",
+                                        if t.name.is_empty() { "table" } else { &t.name },
+                                        t.row_count
+                                    )
+                                })
                                 .collect();
-                            output.push_str(&format!("{}. **{}** — {}{}\n   Tables: {}\n\n",
-                                i + 1, p.title, origin, p.url_path,
-                                tables_desc.join(", ")));
+                            output.push_str(&format!(
+                                "{}. **{}** — {}{}\n   Tables: {}\n\n",
+                                i + 1,
+                                p.title,
+                                origin,
+                                p.url_path,
+                                tables_desc.join(", ")
+                            ));
                         }
                         output.push_str("Please ask the user which page to extract data from, then call browse_data again with the specific URL.");
                         return Ok(output);
@@ -309,7 +383,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     // If site map has a cached page with tables, give SubAgent a shortcut to skip exploration
     if let Some(ref engine) = ctx.connector_engine {
         if let Some(target_url) = url {
-            let origin = url::Url::parse(target_url).ok()
+            let origin = url::Url::parse(target_url)
+                .ok()
                 .map(|u| format!("{}://{}", u.scheme(), u.host_str().unwrap_or("")))
                 .unwrap_or_default();
             if !origin.is_empty() {
@@ -338,10 +413,14 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
 
     // Add strategy based on what we know
     if has_known_tables && !has_known_apis {
-        task_msg.push_str("\n\n**策略**: 该系统是传统 SSR，没有 JSON API。\
-            用 `extract_table_data` 提取表格，用 `page_execute_js` 翻页。");
+        task_msg.push_str(
+            "\n\n**策略**: 该系统是传统 SSR，没有 JSON API。\
+            用 `extract_table_data` 提取表格，用 `page_execute_js` 翻页。",
+        );
     } else if has_known_apis {
-        task_msg.push_str("\n\n**策略**: 该页面有已知的 API 端点。直接用 browse_and_extract 的 API 模式调用。");
+        task_msg.push_str(
+            "\n\n**策略**: 该页面有已知的 API 端点。直接用 browse_and_extract 的 API 模式调用。",
+        );
     }
 
     let config = crate::llm::sub_agent::SubAgentConfig {
@@ -358,25 +437,30 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         max_iterations: 30,
         dynamic_context,
         conversation_id: ctx.conversation_id.clone(),
+        parent_run_id: ctx.run_id.clone(),
         app_handle: ctx.app_handle.clone(),
     };
 
-    let result = crate::llm::sub_agent::run_sub_agent(
-        gateway,
-        tool_registry,
-        ctx,
-        config,
-        app_settings,
-    ).await.map_err(|e| {
-        warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
-        anyhow!("Browser agent failed: {}", e)
-    })?;
+    let result =
+        crate::llm::sub_agent::run_sub_agent(gateway, tool_registry, ctx, config, app_settings)
+            .await
+            .map_err(|e| {
+                warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
+                anyhow!("Browser agent failed: {}", e)
+            })?;
 
-    info!("[CONNECTOR] browse_data complete: iterations={}, files={}, output_len={}",
-        result.iterations_used, result.files.len(), result.output.len());
+    info!(
+        "[CONNECTOR] browse_data complete: iterations={}, files={}, output_len={}",
+        result.iterations_used,
+        result.files.len(),
+        result.output.len()
+    );
 
     // Format result for main agent
-    let mut output = format!("Browser agent completed in {} iterations.\n\n", result.iterations_used);
+    let mut output = format!(
+        "Browser agent completed in {} iterations.\n\n",
+        result.iterations_used
+    );
 
     if !result.files.is_empty() {
         output.push_str("### Extracted Data Files\n");
@@ -384,11 +468,15 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
             // Try to register each file into the conversation
             let src = std::path::Path::new(f);
             if src.exists() {
-                let file_name = src.file_name()
+                let file_name = src
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "data.json".to_string());
                 if let Ok(content) = std::fs::read(src) {
-                    match ctx.file_manager.write_file("generated", &file_name, &content) {
+                    match ctx
+                        .file_manager
+                        .write_file("generated", &file_name, &content)
+                    {
                         Ok(file_info) => {
                             let file_id = uuid::Uuid::new_v4().to_string();
                             let _ = ctx.storage.insert_generated_file(
@@ -401,7 +489,11 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
                                 file_info.file_size as i64,
                                 "data",
                                 Some("Browser agent extracted data"),
-                                1, true, None, None, None,
+                                1,
+                                true,
+                                None,
+                                None,
+                                None,
                             );
                             let full = ctx.file_manager.full_path(&file_info.stored_path);
                             output.push_str(&format!("- {}\n", full.display()));
@@ -420,7 +512,9 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         output.push_str("### Agent Summary\n");
         // Truncate if too long (safe UTF-8 boundary)
         if result.output.len() > 2000 {
-            let end = result.output.char_indices()
+            let end = result
+                .output
+                .char_indices()
                 .take_while(|(i, _)| *i < 2000)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
@@ -438,25 +532,39 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
 /// Handle extract_table_data — extract current page table data + pagination info.
 /// Does NOT auto-paginate. LLM decides how to flip pages.
 pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
     // Build save path in conversation's generated dir (for incremental append)
-    let filename = format!("table_data_{}.json", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
-    let file_info = ctx.file_manager.write_file("generated", &filename, b"{}")
+    let filename = format!(
+        "table_data_{}.json",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+    );
+    let file_info = ctx
+        .file_manager
+        .write_file("generated", &filename, b"{}")
         .map_err(|e| anyhow!("Failed to create output file: {}", e))?;
     let save_path = ctx.file_manager.full_path(&file_info.stored_path);
 
     info!("[CONNECTOR] extract_table_data: save_path={:?}", save_path);
 
-    let result = engine.browser_extract_table_data(
-        &save_path.to_string_lossy(), None, None,
-    ).await.map_err(|e| anyhow!("extract_table_data failed: {}", e))?;
+    let result = engine
+        .browser_extract_table_data(&save_path.to_string_lossy(), None, None)
+        .await
+        .map_err(|e| anyhow!("extract_table_data failed: {}", e))?;
 
     let rows_count = result["rows"].as_u64().unwrap_or(0);
     let total_saved = result["totalSaved"].as_u64().unwrap_or(0);
-    let headers = result["headers"].as_array()
-        .map(|arr| arr.iter().filter_map(|h| h.as_str()).collect::<Vec<_>>().join(", "))
+    let headers = result["headers"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|h| h.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
         .unwrap_or_default();
     let pagination = &result["pagination"];
     let has_next = pagination["hasNext"].as_bool().unwrap_or(false);
@@ -464,13 +572,26 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
     let current_page = pagination["currentPage"].as_u64().unwrap_or(0);
 
     // Register file in conversation
-    let file_size = std::fs::metadata(&save_path).map(|m| m.len() as i64).unwrap_or(0);
+    let file_size = std::fs::metadata(&save_path)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
     if file_size > 10 {
         let file_id = uuid::Uuid::new_v4().to_string();
         let _ = ctx.storage.insert_generated_file(
-            &file_id, &ctx.conversation_id, None,
-            &filename, &file_info.stored_path, "json", file_size,
-            "data", Some("Extracted table data"), 1, true, None, None, None,
+            &file_id,
+            &ctx.conversation_id,
+            None,
+            &filename,
+            &file_info.stored_path,
+            "json",
+            file_size,
+            "data",
+            Some("Extracted table data"),
+            1,
+            true,
+            None,
+            None,
+            None,
         );
     }
 
@@ -480,7 +601,10 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
          - **Columns**: {}\n\
          - **File**: {}\n\
          - **Total saved so far**: {} rows\n",
-        rows_count, headers, save_path.display(), total_saved,
+        rows_count,
+        headers,
+        save_path.display(),
+        total_saved,
     );
 
     // Pagination info for LLM to decide next steps
@@ -489,8 +613,16 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
          - Total records: {}\n\
          - Current page: {}\n\
          - Has next page: {}\n",
-        if total > 0 { total.to_string() } else { "unknown".to_string() },
-        if current_page > 0 { current_page.to_string() } else { "unknown".to_string() },
+        if total > 0 {
+            total.to_string()
+        } else {
+            "unknown".to_string()
+        },
+        if current_page > 0 {
+            current_page.to_string()
+        } else {
+            "unknown".to_string()
+        },
         has_next,
     ));
 
@@ -513,7 +645,8 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
             let sample_str = serde_json::to_string_pretty(sample).unwrap_or_default();
             if sample_str.len() > 2000 {
                 // Safe UTF-8 truncation
-                let end = sample_str.char_indices()
+                let end = sample_str
+                    .char_indices()
                     .take_while(|(i, _)| *i < 2000)
                     .last()
                     .map(|(i, c)| i + c.len_utf8())
@@ -531,30 +664,61 @@ pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value)
 }
 
 /// Handle extract_with_pagination.
-pub(crate) async fn handle_extract_with_pagination(ctx: &PluginContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_extract_with_pagination(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<String> {
     let pagination_js = optional_str(args, "pagination_js").unwrap_or("");
     let max_pages = args["max_pages"].as_u64().map(|v| v as u32);
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
-    let filename = format!("table_data_{}.json", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
-    let file_info = ctx.file_manager.write_file("generated", &filename, b"{}")
+    let filename = format!(
+        "table_data_{}.json",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+    );
+    let file_info = ctx
+        .file_manager
+        .write_file("generated", &filename, b"{}")
         .map_err(|e| anyhow!("Failed to create output file: {}", e))?;
     let save_path = ctx.file_manager.full_path(&file_info.stored_path);
-    info!("[CONNECTOR] extract_with_pagination: save_path={:?}", save_path);
-    let result = engine.browser_extract_with_pagination(
-        &save_path.to_string_lossy(), pagination_js, max_pages,
-    ).await.map_err(|e| anyhow!("extract_with_pagination failed: {}", e))?;
+    info!(
+        "[CONNECTOR] extract_with_pagination: save_path={:?}",
+        save_path
+    );
+    let result = engine
+        .browser_extract_with_pagination(&save_path.to_string_lossy(), pagination_js, max_pages)
+        .await
+        .map_err(|e| anyhow!("extract_with_pagination failed: {}", e))?;
     let total_rows = result["totalRows"].as_u64().unwrap_or(0);
     let total_pages = result["totalPages"].as_u64().unwrap_or(0);
     let file_size = result["fileSize"].as_u64().unwrap_or(0);
-    let headers = result["headers"].as_array()
-        .map(|arr| arr.iter().filter_map(|h| h.as_str()).collect::<Vec<_>>().join(", "))
+    let headers = result["headers"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|h| h.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
         .unwrap_or_default();
     let file_id = uuid::Uuid::new_v4().to_string();
     let _ = ctx.storage.insert_generated_file(
-        &file_id, &ctx.conversation_id, None, &filename, &file_info.stored_path,
-        "json", file_size as i64, "data", Some("Extracted table data (all pages)"),
-        1, true, None, None, None,
+        &file_id,
+        &ctx.conversation_id,
+        None,
+        &filename,
+        &file_info.stored_path,
+        "json",
+        file_size as i64,
+        "data",
+        Some("Extracted table data (all pages)"),
+        1,
+        true,
+        None,
+        None,
+        None,
     );
     let mut output = format!(
         "### Data extracted successfully\n- **Total rows**: {}\n- **Total pages**: {}\n- **Columns**: {}\n- **File**: {}\n- **Size**: {:.1} KB\n\nUse `execute_python` with `pd.read_json('{}')` to load.",
@@ -563,8 +727,12 @@ pub(crate) async fn handle_extract_with_pagination(ctx: &PluginContext, args: &V
     if let Some(sample) = result.get("sampleRows").and_then(|s| s.as_array()) {
         if !sample.is_empty() {
             let s = serde_json::to_string_pretty(sample).unwrap_or_default();
-            let end = s.char_indices().take_while(|(i, _)| *i < 1500).last()
-                .map(|(i, c)| i + c.len_utf8()).unwrap_or(s.len().min(1500));
+            let end = s
+                .char_indices()
+                .take_while(|(i, _)| *i < 1500)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(s.len().min(1500));
             output.push_str("\n\n### Sample\n```json\n");
             output.push_str(&s[..end]);
             output.push_str("\n```");
@@ -583,7 +751,9 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
     let body = optional_str(args, "body");
     let headers = optional_str(args, "headers");
 
-    let engine = ctx.connector_engine.as_ref()
+    let engine = ctx
+        .connector_engine
+        .as_ref()
         .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
 
     // Smart routing: non-GET or has body → API mode
@@ -591,26 +761,37 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
 
     if is_api_mode {
         // ── API Mode ──
-        info!("[CONNECTOR] browse_and_extract API mode: {} '{}'", method, url);
+        info!(
+            "[CONNECTOR] browse_and_extract API mode: {} '{}'",
+            method, url
+        );
 
-        let result = engine.browser_api_fetch(url, &method, body, headers).await
+        let result = engine
+            .browser_api_fetch(url, &method, body, headers)
+            .await
             .map_err(|e| {
                 warn!("[CONNECTOR] browse_and_extract API failed: {}", e);
                 anyhow!(e)
             })?;
 
-        let mut output = format!("API Response: {} {}\nStatus: {}, Content-Type: {}\n\n",
-            method, url, result.status, result.content_type);
+        let mut output = format!(
+            "API Response: {} {}\nStatus: {}, Content-Type: {}\n\n",
+            method, url, result.status, result.content_type
+        );
 
         if let Some(ref path) = result.saved_file_path {
             // Copy to workspace and register in conversation file_index
-            let file_name = path.file_name()
+            let file_name = path
+                .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| "api_data.json".to_string());
 
             let registered_path = if let Ok(content) = std::fs::read(path) {
                 // Write to conversation's generated dir via file_manager
-                match ctx.file_manager.write_file("generated", &file_name, &content) {
+                match ctx
+                    .file_manager
+                    .write_file("generated", &file_name, &content)
+                {
                     Ok(file_info) => {
                         let file_id = uuid::Uuid::new_v4().to_string();
                         let _ = ctx.storage.insert_generated_file(
@@ -623,11 +804,21 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
                             file_info.file_size as i64,
                             "data",
                             Some(&format!("API data: {} {}", method, url)),
-                            1, true, None, None, None,
+                            1,
+                            true,
+                            None,
+                            None,
+                            None,
                         );
-                        info!("[CONNECTOR] Registered API data file: {} ({})", file_info.stored_path, file_info.file_size);
+                        info!(
+                            "[CONNECTOR] Registered API data file: {} ({})",
+                            file_info.stored_path, file_info.file_size
+                        );
                         // Use the workspace path for LLM
-                        ctx.file_manager.full_path(&file_info.stored_path).display().to_string()
+                        ctx.file_manager
+                            .full_path(&file_info.stored_path)
+                            .display()
+                            .to_string()
                     }
                     Err(e) => {
                         warn!("[CONNECTOR] Failed to copy API data to workspace: {}", e);
@@ -639,7 +830,10 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
             };
 
             // Large data saved to file — tell LLM to use Python to process it
-            let total = result.total_rows.map(|t| format!("{} rows", t)).unwrap_or("unknown size".to_string());
+            let total = result
+                .total_rows
+                .map(|t| format!("{} rows", t))
+                .unwrap_or("unknown size".to_string());
             output.push_str(&format!("### Data saved to file ({}) \n", total));
             output.push_str(&format!("File: {}\n\n", registered_path));
             output.push_str("The full JSON data has been saved to the file above. ");
@@ -654,7 +848,8 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
         let data_str = serde_json::to_string_pretty(&result.data)
             .unwrap_or_else(|_| format!("{}", result.data));
         if data_str.len() > 8000 {
-            let end = data_str.char_indices()
+            let end = data_str
+                .char_indices()
                 .take_while(|(i, _)| *i < 8000)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
@@ -671,17 +866,28 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
         // ── Page Mode ──
         info!("[CONNECTOR] browse_and_extract page mode: '{}'", url);
 
-        let result = engine.browser_navigate_and_extract(url, extract_script).await
+        let result = engine
+            .browser_navigate_and_extract(url, extract_script)
+            .await
             .map_err(|e| {
                 warn!("[CONNECTOR] browse_and_extract page failed: {}", e);
                 anyhow!(e)
             })?;
 
-        let mut output = format!("Page: {} ({})\n", result.navigate.title, result.navigate.url);
+        let mut output = format!(
+            "Page: {} ({})\n",
+            result.navigate.title, result.navigate.url
+        );
 
         if result.navigate.redirected_to_login {
             let final_path = result.navigate.url.to_lowercase();
-            if final_path.contains("error") || final_path.contains("forbidden") || final_path.contains("no_resource") || final_path.contains("no_permission") || final_path.contains("/403") || final_path.contains("/404") {
+            if final_path.contains("error")
+                || final_path.contains("forbidden")
+                || final_path.contains("no_resource")
+                || final_path.contains("no_permission")
+                || final_path.contains("/403")
+                || final_path.contains("/404")
+            {
                 return Err(anyhow!(
                     "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
                     result.navigate.url
@@ -695,13 +901,21 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
         // Tables
         if !result.content.tables.is_empty() {
             for (i, table) in result.content.tables.iter().enumerate() {
-                output.push_str(&format!("\n### Table {} ({} rows)\n", i + 1, table.rows.len()));
+                output.push_str(&format!(
+                    "\n### Table {} ({} rows)\n",
+                    i + 1,
+                    table.rows.len()
+                ));
                 if !table.headers.is_empty() {
                     output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
                 }
                 for row in &table.rows {
                     let cells: Vec<String> = if !table.headers.is_empty() {
-                        table.headers.iter().map(|h| row.get(h).cloned().unwrap_or_default()).collect()
+                        table
+                            .headers
+                            .iter()
+                            .map(|h| row.get(h).cloned().unwrap_or_default())
+                            .collect()
                     } else {
                         row.values().cloned().collect()
                     };
@@ -719,7 +933,10 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
                         if !link.href.is_empty() {
                             output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
                         } else if !link.selector.is_empty() {
-                            output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                            output.push_str(&format!(
+                                "- [menu] {} (selector: {})\n",
+                                link.label, link.selector
+                            ));
                         } else {
                             output.push_str(&format!("- [menu] {}\n", link.label));
                         }
@@ -745,24 +962,41 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
                 } else {
                     format!("{}B", api.size_bytes)
                 };
-                let ct_short = if api.content_type.contains("json") { "JSON" }
-                    else if api.content_type.contains("html") { "HTML" }
-                    else { &api.content_type };
-                output.push_str(&format!("- {} {} → {} ({} {})\n",
-                    api.method, api.url, api.status, size, ct_short));
+                let ct_short = if api.content_type.contains("json") {
+                    "JSON"
+                } else if api.content_type.contains("html") {
+                    "HTML"
+                } else {
+                    &api.content_type
+                };
+                output.push_str(&format!(
+                    "- {} {} → {} ({} {})\n",
+                    api.method, api.url, api.status, size, ct_short
+                ));
             }
-            output.push_str("Tip: Use browse_and_extract with these API URLs to fetch data directly.\n");
+            output.push_str(
+                "Tip: Use browse_and_extract with these API URLs to fetch data directly.\n",
+            );
         }
 
         // Forms
         if !result.forms.is_empty() {
             output.push_str("\n### Forms\n");
             for form in &result.forms {
-                output.push_str(&format!("- Form#{}: {} {}\n", form.id, form.method, form.action));
+                output.push_str(&format!(
+                    "- Form#{}: {} {}\n",
+                    form.id, form.method, form.action
+                ));
                 for field in &form.fields {
-                    let val = if field.value.is_empty() { String::new() }
-                        else { format!("={}", field.value) };
-                    output.push_str(&format!("  - {} ({}{})\n", field.name, field.field_type, val));
+                    let val = if field.value.is_empty() {
+                        String::new()
+                    } else {
+                        format!("={}", field.value)
+                    };
+                    output.push_str(&format!(
+                        "  - {} ({}{})\n",
+                        field.name, field.field_type, val
+                    ));
                 }
             }
         }

@@ -1,5 +1,9 @@
 //! save_analysis_note — store intermediate analysis findings.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct AnalysisNoteTool;
 
 #[async_trait]
 impl ToolPlugin for AnalysisNoteTool {
-    fn name(&self) -> &str { "save_analysis_note" }
+    fn name(&self) -> &str {
+        "save_analysis_note"
+    }
 
     fn description(&self) -> &str {
         "Save an intermediate analysis finding or decision to the conversation \

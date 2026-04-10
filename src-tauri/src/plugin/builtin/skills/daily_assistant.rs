@@ -6,10 +6,10 @@ use async_trait::async_trait;
 
 use std::sync::Arc;
 
+use crate::auth::AuthManager;
 use crate::llm::prompts;
 use crate::plugin::skill_trait::*;
 use crate::storage::file_store::AppStorage;
-use crate::auth::AuthManager;
 
 pub struct DailyAssistantSkill {
     pub db: Arc<AppStorage>,
@@ -18,16 +18,17 @@ pub struct DailyAssistantSkill {
 
 #[async_trait]
 impl Skill for DailyAssistantSkill {
-    fn id(&self) -> &str { "daily-assistant" }
-    fn display_name(&self) -> &str { "日常助手" }
-    fn description(&self) -> &str { "Daily work assistance" }
+    fn id(&self) -> &str {
+        "daily-assistant"
+    }
+    fn display_name(&self) -> &str {
+        "日常助手"
+    }
+    fn description(&self) -> &str {
+        "Daily work assistance"
+    }
 
-    fn should_activate(
-        &self,
-        _message: &str,
-        _has_files: bool,
-        _current_skill: &str,
-    ) -> bool {
+    fn should_activate(&self, _message: &str, _has_files: bool, _current_skill: &str) -> bool {
         // Default skill — never self-activates.
         // Active when no other skill matches, or after another skill finishes.
         false

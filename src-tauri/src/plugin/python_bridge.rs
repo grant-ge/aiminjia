@@ -2,6 +2,11 @@
 //!
 //! Python tools live in `{resource_dir}/plugins/{id}/` and expose
 //! `schema()` and `handle(args, context)` functions.
+//!
+//! This module intentionally implements the deprecated `ToolPlugin` trait to
+//! bridge Python scripts into the runtime until they can be migrated to
+//! `RuntimeTool`.
+#![allow(deprecated)]
 
 use std::path::PathBuf;
 
@@ -27,7 +32,10 @@ pub struct PythonToolBridge {
 impl PythonToolBridge {
     /// Create from a parsed plugin manifest and its directory.
     pub fn from_manifest(manifest: &PluginManifest, plugin_dir: PathBuf) -> Result<Self, String> {
-        let handler = manifest.plugin.handler.as_deref()
+        let handler = manifest
+            .plugin
+            .handler
+            .as_deref()
             .ok_or("Python tool plugin must specify 'handler' in plugin.toml")?;
 
         let handler_path = plugin_dir.join(handler);
@@ -62,7 +70,8 @@ impl PythonToolBridge {
             "spec.loader.exec_module(mod)",
             "result = mod.schema()",
             "print(json.dumps(result))",
-        ].join("\n");
+        ]
+        .join("\n");
 
         // Write env vars into temp files that the runner can pick up
         let temp_dir = workspace_path.join("temp");
@@ -86,7 +95,10 @@ impl PythonToolBridge {
         let full_code = format!("{}\n{}", bootstrap, code);
 
         let runner = PythonRunner::new(workspace_path.to_path_buf(), None);
-        let result = runner.execute(&full_code).await.map_err(|e| e.to_string())?;
+        let result = runner
+            .execute(&full_code)
+            .await
+            .map_err(|e| e.to_string())?;
 
         // Clean up env file in case Python didn't delete it
         let _ = std::fs::remove_file(&env_file);
@@ -101,7 +113,8 @@ impl PythonToolBridge {
         let schema: Value = serde_json::from_str(result.stdout.trim())
             .map_err(|e| format!("Invalid schema JSON: {}", e))?;
 
-        self.description = schema.get("description")
+        self.description = schema
+            .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -134,13 +147,14 @@ impl ToolPlugin for PythonToolBridge {
 
     async fn execute(&self, ctx: &PluginContext, input: Value) -> Result<ToolOutput, ToolError> {
         let handler_path = self.plugin_dir.join(&self.handler_file);
-        let args_json = serde_json::to_string(&input)
-            .map_err(|e| ToolError::InvalidArgument(e.to_string()))?;
+        let args_json =
+            serde_json::to_string(&input).map_err(|e| ToolError::InvalidArgument(e.to_string()))?;
 
         let context_json = serde_json::to_string(&serde_json::json!({
             "workspace_path": ctx.workspace_path.to_string_lossy(),
             "conversation_id": ctx.conversation_id,
-        })).unwrap_or_default();
+        }))
+        .unwrap_or_default();
 
         // Pass all data via a temp JSON file to avoid code injection
         let temp_dir = ctx.workspace_path.join("temp");
@@ -172,11 +186,10 @@ impl ToolPlugin for PythonToolBridge {
             data_file = data_file.to_string_lossy(),
         );
 
-        let runner = PythonRunner::new(
-            ctx.workspace_path.clone(),
-            ctx.app_handle.as_ref(),
-        );
-        let result = runner.execute(&code).await
+        let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+        let result = runner
+            .execute(&code)
+            .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         // Clean up data file in case Python didn't delete it
@@ -185,18 +198,24 @@ impl ToolPlugin for PythonToolBridge {
         if result.exit_code != 0 {
             return Ok(ToolOutput::error(format!(
                 "Python tool error: {}",
-                if result.stderr.is_empty() { &result.stdout } else { &result.stderr }
+                if result.stderr.is_empty() {
+                    &result.stdout
+                } else {
+                    &result.stderr
+                }
             )));
         }
 
         // Parse the JSON result from the handler
         match serde_json::from_str::<Value>(result.stdout.trim()) {
             Ok(parsed) => {
-                let content = parsed.get("content")
+                let content = parsed
+                    .get("content")
                     .and_then(|v| v.as_str())
                     .unwrap_or(&result.stdout)
                     .to_string();
-                let is_error = parsed.get("is_error")
+                let is_error = parsed
+                    .get("is_error")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 Ok(ToolOutput {

@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use std::pin::Pin;
 
 use crate::llm::streaming::{
-    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent,
-    TokenUsage, ToolCall,
+    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent, TokenUsage,
+    ToolCall,
 };
 
 use super::LlmProviderTrait;
@@ -132,14 +132,8 @@ impl ClaudeProvider {
                     }
                 }
                 Some("tool_use") => {
-                    let id = block["id"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    let name = block["name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
+                    let id = block["id"].as_str().unwrap_or_default().to_string();
+                    let name = block["name"].as_str().unwrap_or_default().to_string();
                     let arguments = block["input"].clone();
                     tool_calls.push(ToolCall {
                         id,
@@ -299,10 +293,7 @@ impl LlmProviderTrait for ClaudeProvider {
                             if state.current_tool_id.is_some() {
                                 let events = finalize_tool_call(&mut state);
                                 if !events.is_empty() {
-                                    return Some((
-                                        stream::iter(events),
-                                        (byte_stream, state),
-                                    ));
+                                    return Some((stream::iter(events), (byte_stream, state)));
                                 }
                             }
                             return None;
@@ -429,8 +420,7 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                 .as_str()
                 .unwrap_or("end_turn");
             let stop_reason = ClaudeProvider::parse_stop_reason(stop_reason_str);
-            let output_tokens =
-                parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+            let output_tokens = parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
 
             Some(vec![StreamEvent::Done {
                 stop_reason,
@@ -601,8 +591,10 @@ mod tests {
 
     #[test]
     fn test_build_request_body_with_tools_and_stream() {
-        let provider =
-            ClaudeProvider::new("key".to_string(), Some("claude-opus-4-20250514".to_string()));
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-opus-4-20250514".to_string()),
+        );
         let request = LlmRequest {
             messages: vec![ChatMessage::text("user", "Search")],
             tools: vec![ToolDefinition {
@@ -690,16 +682,12 @@ mod tests {
         let mut state = SseState::new();
         state.input_tokens = 100;
 
-        let data =
-            r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":50}}"#;
+        let data = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":50}}"#;
         let result = process_sse_data(data, &mut state);
         assert!(result.is_some());
         let events = result.unwrap();
         match &events[0] {
-            StreamEvent::Done {
-                stop_reason,
-                usage,
-            } => {
+            StreamEvent::Done { stop_reason, usage } => {
                 assert_eq!(*stop_reason, StopReason::EndTurn);
                 assert_eq!(usage.input_tokens, 100);
                 assert_eq!(usage.output_tokens, 50);

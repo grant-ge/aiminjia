@@ -1,5 +1,9 @@
 //! execute_python — run Python code in sandboxed environment.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct PythonExecTool;
 
 #[async_trait]
 impl ToolPlugin for PythonExecTool {
-    fn name(&self) -> &str { "execute_python" }
+    fn name(&self) -> &str {
+        "execute_python"
+    }
 
     fn description(&self) -> &str {
         "Execute Python code for data analysis, statistical computation, \

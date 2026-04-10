@@ -10,9 +10,9 @@
 //! rebuilding the `Vec<ToolDefinition>` on every LLM request.
 #![allow(dead_code)]
 
-use std::sync::LazyLock;
-use serde_json::json;
 use crate::llm::streaming::ToolDefinition;
+use serde_json::json;
+use std::sync::LazyLock;
 
 /// Cached tool definitions — built once, reused on every call.
 static ALL_TOOLS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(build_tool_definitions);
@@ -362,10 +362,7 @@ pub fn get_tool_by_name(name: &str) -> Option<ToolDefinition> {
 pub fn get_tools_for_step(step: u32) -> Vec<String> {
     match step {
         // Step 0: Analysis direction confirmation
-        0 => vec![
-            "load_file".to_string(),
-            "save_analysis_note".to_string(),
-        ],
+        0 => vec!["load_file".to_string(), "save_analysis_note".to_string()],
         // Step 1: Data cleaning and understanding
         1 => vec![
             "load_file".to_string(),

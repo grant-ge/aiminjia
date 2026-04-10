@@ -8,13 +8,16 @@ use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
 
-use super::FileGenResult;
 use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::optional_str;
 use super::util::{py_escape, slugify};
+use super::FileGenResult;
 
 /// Generate a PPTX presentation using python-pptx.
-pub(crate) async fn handle_generate_slides(ctx: &PluginContext, args: &Value) -> Result<FileGenResult> {
+pub(crate) async fn handle_generate_slides(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<FileGenResult> {
     // LLM sometimes sends slides as a JSON string instead of an array — auto-parse it.
     let slides_owned: Vec<Value>;
     let slides = match args.get("slides") {
@@ -67,7 +70,8 @@ pub(crate) async fn handle_generate_slides(ctx: &PluginContext, args: &Value) ->
     let title_escaped = py_escape(&title_unmasked);
     let theme_escaped = py_escape(theme);
 
-    let python_code = format!(r#"
+    let python_code = format!(
+        r#"
 import json
 import sys
 import os
@@ -210,7 +214,8 @@ except ImportError as exc:
 except Exception as exc:
     print("ERROR:" + str(exc))
     sys.exit(1)
-"#);
+"#
+    );
 
     let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
     let result = runner.execute(&python_code).await?;
@@ -251,18 +256,18 @@ except Exception as exc:
     if let Err(e) = ctx.storage.insert_generated_file(
         &file_id,
         &ctx.conversation_id,
-        None,                     // message_id
+        None, // message_id
         &file_info.file_name,
         &file_info.stored_path,
         &file_info.file_type,
         file_info.file_size as i64,
-        "presentation",           // category
-        Some(&title_unmasked),    // description
-        1,                        // version
-        true,                     // is_latest
-        None,                     // superseded_by
-        None,                     // created_by_step
-        None,                     // expires_at
+        "presentation",        // category
+        Some(&title_unmasked), // description
+        1,                     // version
+        true,                  // is_latest
+        None,                  // superseded_by
+        None,                  // created_by_step
+        None,                  // expires_at
     ) {
         let _ = std::fs::remove_file(ctx.file_manager.full_path(&file_info.stored_path));
         return Err(e.into());

@@ -217,7 +217,8 @@ fn daily_file(base_dir: &Path, date: &str) -> PathBuf {
     // Validate date format to prevent path traversal (e.g. "../../etc")
     debug_assert!(
         date.len() == 10 && date.chars().all(|c| c.is_ascii_digit() || c == '-'),
-        "daily_file called with invalid date: {}", date
+        "daily_file called with invalid date: {}",
+        date
     );
     daily_dir(base_dir).join(format!("{}.jsonl", date))
 }
@@ -274,8 +275,8 @@ fn load_index(base_dir: &Path) -> Result<MemoryIndex> {
     }
     let data = fs::read_to_string(&path)
         .with_context(|| format!("Failed to read cognitive index: {:?}", path))?;
-    let index: MemoryIndex = serde_json::from_str(&data)
-        .with_context(|| "Failed to parse cognitive index.json")?;
+    let index: MemoryIndex =
+        serde_json::from_str(&data).with_context(|| "Failed to parse cognitive index.json")?;
     Ok(index)
 }
 
@@ -293,8 +294,8 @@ fn load_meta(base_dir: &Path) -> Result<CoreMemoryMeta> {
     }
     let data = fs::read_to_string(&path)
         .with_context(|| format!("Failed to read cognitive meta: {:?}", path))?;
-    let meta: CoreMemoryMeta = serde_json::from_str(&data)
-        .with_context(|| "Failed to parse cognitive meta.json")?;
+    let meta: CoreMemoryMeta =
+        serde_json::from_str(&data).with_context(|| "Failed to parse cognitive meta.json")?;
     Ok(meta)
 }
 
@@ -384,7 +385,12 @@ fn write_core_memory(base_dir: &Path, content: &str) -> Result<()> {
 }
 
 /// Append an entry directly to the correct section in mem.md.
-fn append_to_core(base_dir: &Path, category: &MemoryCategory, content: &str, memory_id: &str) -> Result<()> {
+fn append_to_core(
+    base_dir: &Path,
+    category: &MemoryCategory,
+    content: &str,
+    memory_id: &str,
+) -> Result<()> {
     let heading = category.section_heading();
     let mut text = load_core_memory(base_dir);
 
@@ -393,7 +399,9 @@ fn append_to_core(base_dir: &Path, category: &MemoryCategory, content: &str, mem
     if let Some(pos) = text.find(heading) {
         // Find the end of this section (next ## heading or EOF)
         let section_start = pos + heading.len();
-        let next_section = text[section_start..].find("\n## ").map(|p| section_start + p);
+        let next_section = text[section_start..]
+            .find("\n## ")
+            .map(|p| section_start + p);
         let insert_at = next_section.unwrap_or(text.len());
 
         // Insert before next section (with a newline)
@@ -455,10 +463,16 @@ pub fn save_memory(
     // Validate
     let trimmed = content.trim();
     if trimmed.len() < CONTENT_MIN_LEN {
-        bail!("Memory content too short (min {} characters)", CONTENT_MIN_LEN);
+        bail!(
+            "Memory content too short (min {} characters)",
+            CONTENT_MIN_LEN
+        );
     }
     if trimmed.len() > CONTENT_MAX_LEN {
-        bail!("Memory content too long (max {} characters)", CONTENT_MAX_LEN);
+        bail!(
+            "Memory content too long (max {} characters)",
+            CONTENT_MAX_LEN
+        );
     }
     let cat = MemoryCategory::from_str(category)?;
 
@@ -556,15 +570,19 @@ pub fn search_memory_readonly(
 
         let score = score_entry(&entry.content, &entry.tags, &keywords);
         if score > 0.0 {
-            scored.push((score, serde_json::json!({
-                "id": entry.id,
-                "content": entry.content,
-                "category": entry.category,
-                "tags": entry.tags,
-                "source": "daily",
-                "created_at": entry.created_at,
-                "promoted": entry.promoted,
-            }), entry.id.clone()));
+            scored.push((
+                score,
+                serde_json::json!({
+                    "id": entry.id,
+                    "content": entry.content,
+                    "category": entry.category,
+                    "tags": entry.tags,
+                    "source": "daily",
+                    "created_at": entry.created_at,
+                    "promoted": entry.promoted,
+                }),
+                entry.id.clone(),
+            ));
         }
     }
 
@@ -579,10 +597,14 @@ pub fn search_memory_readonly(
             let content = line.strip_prefix("- ").unwrap_or(line);
             let score = score_text(content, &keywords);
             if score > 0.0 {
-                scored.push((score + 5.0, serde_json::json!({
-                    "content": content,
-                    "source": "core",
-                }), String::new())); // core lines don't have individual IDs in index
+                scored.push((
+                    score + 5.0,
+                    serde_json::json!({
+                        "content": content,
+                        "source": "core",
+                    }),
+                    String::new(),
+                )); // core lines don't have individual IDs in index
             }
         }
     }
@@ -591,10 +613,15 @@ pub fn search_memory_readonly(
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(10);
 
-    Ok(scored.into_iter().map(|(score, mut val, _)| {
-        val.as_object_mut().unwrap().insert("score".to_string(), serde_json::json!(score));
-        val
-    }).collect())
+    Ok(scored
+        .into_iter()
+        .map(|(score, mut val, _)| {
+            val.as_object_mut()
+                .unwrap()
+                .insert("score".to_string(), serde_json::json!(score));
+            val
+        })
+        .collect())
 }
 
 /// Record hit counts for search results (write operation).
@@ -606,7 +633,8 @@ pub fn record_search_hits(
     query: &str,
     conversation_id: &str,
 ) -> Result<()> {
-    let hit_ids: Vec<String> = results.iter()
+    let hit_ids: Vec<String> = results
+        .iter()
         .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(String::from))
         .collect();
 
@@ -615,12 +643,11 @@ pub fn record_search_hits(
     }
 
     // Update core section hit counts for core matches
-    let has_core = results.iter()
+    let has_core = results
+        .iter()
         .any(|v| v.get("source").and_then(|s| s.as_str()) == Some("core"));
     if has_core {
-        let keywords: Vec<String> = query.split_whitespace()
-            .map(|w| w.to_lowercase())
-            .collect();
+        let keywords: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
         update_core_section_hits(base_dir, &keywords)?;
     }
 
@@ -666,7 +693,10 @@ fn update_hit_counts(base_dir: &Path, ids: &[String], conversation_id: &str) -> 
         if id_set.contains(meta.memory_id.as_str()) {
             meta.hit_count += 1;
             meta.last_hit_at = Some(now.clone());
-            if !meta.hit_conversations.contains(&conversation_id.to_string()) {
+            if !meta
+                .hit_conversations
+                .contains(&conversation_id.to_string())
+            {
                 meta.hit_conversations.push(conversation_id.to_string());
             }
         }
@@ -717,17 +747,20 @@ pub fn distill_memories(base_dir: &Path, days: i64, dry_run: bool) -> Result<Dis
     };
 
     // Build a lookup from memory_id to CognitiveEntry
-    let entry_map: HashMap<String, &CognitiveEntry> = daily_entries.iter()
-        .map(|e| (e.id.clone(), e))
-        .collect();
+    let entry_map: HashMap<String, &CognitiveEntry> =
+        daily_entries.iter().map(|e| (e.id.clone(), e)).collect();
 
     // 1. Find promotion candidates
-    let existing_hashes: HashSet<u64> = index.entries.iter()
+    let existing_hashes: HashSet<u64> = index
+        .entries
+        .iter()
         .filter(|m| m.promoted)
         .map(|m| m.content_hash)
         .collect();
 
-    let candidates: Vec<&MemoryMeta> = index.entries.iter()
+    let candidates: Vec<&MemoryMeta> = index
+        .entries
+        .iter()
         .filter(|m| {
             !m.promoted
                 && m.hit_count >= PROMOTE_HIT_THRESHOLD
@@ -747,7 +780,9 @@ pub fn distill_memories(base_dir: &Path, days: i64, dry_run: bool) -> Result<Dis
         // Find the actual entry
         if let Some(entry) = entry_map.get(&candidate.memory_id) {
             // Tag overlap check — merge if similar entry already promoted
-            let should_skip = index.entries.iter()
+            let should_skip = index
+                .entries
+                .iter()
                 .filter(|m| m.promoted && m.memory_id != candidate.memory_id)
                 .any(|m| {
                     if let Some(other_entry) = entry_map.get(&m.memory_id) {
@@ -771,7 +806,8 @@ pub fn distill_memories(base_dir: &Path, days: i64, dry_run: bool) -> Result<Dis
 
     // Mark promoted entries in index
     if !dry_run {
-        let promoted_ids: HashSet<String> = candidates.iter()
+        let promoted_ids: HashSet<String> = candidates
+            .iter()
             .filter(|c| !existing_hashes.contains(&c.content_hash))
             .map(|c| c.memory_id.clone())
             .collect();
@@ -832,13 +868,13 @@ fn apply_decay(base_dir: &Path) -> Result<usize> {
             continue;
         }
 
-        let last_hit = section.last_hit_at.as_ref()
+        let last_hit = section
+            .last_hit_at
+            .as_ref()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
-        let days_since_hit = last_hit
-            .map(|lh| (now - lh).num_days())
-            .unwrap_or(999); // Never hit → treat as very old
+        let days_since_hit = last_hit.map(|lh| (now - lh).num_days()).unwrap_or(999); // Never hit → treat as very old
 
         // Hard decay: 60 days without any hit
         if days_since_hit >= DECAY_HARD_DAYS {
@@ -909,7 +945,9 @@ fn enforce_capacity(base_dir: &Path) -> Result<usize> {
     let mut evicted = 0;
 
     // Score each section
-    let mut section_scores: Vec<(&CoreSection, f64)> = meta.sections.iter()
+    let mut section_scores: Vec<(&CoreSection, f64)> = meta
+        .sections
+        .iter()
         .map(|s| {
             let score = compute_section_score(s, &now);
             (s, score)
@@ -932,11 +970,13 @@ fn enforce_capacity(base_dir: &Path) -> Result<usize> {
     if evicted > 0 {
         write_core_memory(base_dir, &current_text)?;
         let mut meta = load_meta(base_dir)?;
-        let removed_headings: Vec<String> = section_scores.iter()
+        let removed_headings: Vec<String> = section_scores
+            .iter()
             .take(evicted)
             .map(|(s, _)| s.heading.clone())
             .collect();
-        meta.sections.retain(|s| !removed_headings.contains(&s.heading));
+        meta.sections
+            .retain(|s| !removed_headings.contains(&s.heading));
         meta.line_count = current_text.lines().count() as u32;
         meta.updated_at = Utc::now().to_rfc3339();
         save_meta(base_dir, &meta)?;
@@ -948,13 +988,13 @@ fn enforce_capacity(base_dir: &Path) -> Result<usize> {
 
 /// Compute section score = hit_count × recency_weight.
 fn compute_section_score(section: &CoreSection, now: &chrono::DateTime<Utc>) -> f64 {
-    let last_hit = section.last_hit_at.as_ref()
+    let last_hit = section
+        .last_hit_at
+        .as_ref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc));
 
-    let days_since = last_hit
-        .map(|lh| (*now - lh).num_days())
-        .unwrap_or(999);
+    let days_since = last_hit.map(|lh| (*now - lh).num_days()).unwrap_or(999);
 
     let recency_weight = if days_since <= 7 {
         10.0
@@ -1039,10 +1079,14 @@ mod tests {
     fn test_save_memory_basic() {
         let (base, _dir) = test_base();
         let (id, to_core) = save_memory(
-            &base, "User prefers box plots for salary distribution",
-            "preference", &["boxplot".to_string(), "salary".to_string()],
-            "conv1", false,
-        ).unwrap();
+            &base,
+            "User prefers box plots for salary distribution",
+            "preference",
+            &["boxplot".to_string(), "salary".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
         assert!(!id.is_empty());
         assert!(!to_core);
 
@@ -1057,10 +1101,14 @@ mod tests {
     fn test_save_memory_to_core() {
         let (base, _dir) = test_base();
         let (id, to_core) = save_memory(
-            &base, "Company has 500 employees",
-            "fact", &["company".to_string(), "headcount".to_string()],
-            "conv1", true,
-        ).unwrap();
+            &base,
+            "Company has 500 employees",
+            "fact",
+            &["company".to_string(), "headcount".to_string()],
+            "conv1",
+            true,
+        )
+        .unwrap();
         assert!(to_core);
 
         // Verify it's in mem.md
@@ -1087,7 +1135,14 @@ mod tests {
         assert!(result.is_err());
 
         // to_core with wrong category
-        let result = save_memory(&base, "some learning content", "learning", &[], "conv1", true);
+        let result = save_memory(
+            &base,
+            "some learning content",
+            "learning",
+            &[],
+            "conv1",
+            true,
+        );
         assert!(result.is_err());
     }
 
@@ -1095,8 +1150,23 @@ mod tests {
     fn test_save_memory_dedup() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "User prefers box plots", "preference", &[], "conv1", false).unwrap();
-        let result = save_memory(&base, "User prefers box plots", "preference", &[], "conv1", false);
+        save_memory(
+            &base,
+            "User prefers box plots",
+            "preference",
+            &[],
+            "conv1",
+            false,
+        )
+        .unwrap();
+        let result = save_memory(
+            &base,
+            "User prefers box plots",
+            "preference",
+            &[],
+            "conv1",
+            false,
+        );
         assert!(result.is_err()); // Duplicate
     }
 
@@ -1104,24 +1174,55 @@ mod tests {
     fn test_search_memory_basic() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "User prefers box plots for distribution", "preference",
-            &["boxplot".to_string()], "conv1", false).unwrap();
-        save_memory(&base, "Company fiscal year is January to December", "fact",
-            &["fiscal".to_string(), "year".to_string()], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "User prefers box plots for distribution",
+            "preference",
+            &["boxplot".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
+        save_memory(
+            &base,
+            "Company fiscal year is January to December",
+            "fact",
+            &["fiscal".to_string(), "year".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
 
         let results = search_memory_readonly(&base, "box plot", None, 30).unwrap();
         assert!(!results.is_empty());
-        assert!(results[0]["content"].as_str().unwrap().contains("box plots"));
+        assert!(results[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("box plots"));
     }
 
     #[test]
     fn test_search_memory_with_category() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "User prefers box plots for distribution", "preference",
-            &[], "conv1", false).unwrap();
-        save_memory(&base, "Company uses box plots extensively", "fact",
-            &[], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "User prefers box plots for distribution",
+            "preference",
+            &[],
+            "conv1",
+            false,
+        )
+        .unwrap();
+        save_memory(
+            &base,
+            "Company uses box plots extensively",
+            "fact",
+            &[],
+            "conv1",
+            false,
+        )
+        .unwrap();
 
         let results = search_memory_readonly(&base, "box plots", Some("preference"), 30).unwrap();
         assert_eq!(results.len(), 1);
@@ -1131,8 +1232,15 @@ mod tests {
     fn test_search_memory_hit_counting() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "User prefers box plots for distribution", "preference",
-            &["boxplot".to_string()], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "User prefers box plots for distribution",
+            "preference",
+            &["boxplot".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
 
         // Search then record hits
         let results = search_memory_readonly(&base, "box plots", None, 30).unwrap();
@@ -1140,7 +1248,9 @@ mod tests {
 
         let index = load_index(&base).unwrap();
         assert_eq!(index.entries[0].hit_count, 1);
-        assert!(index.entries[0].hit_conversations.contains(&"conv2".to_string()));
+        assert!(index.entries[0]
+            .hit_conversations
+            .contains(&"conv2".to_string()));
     }
 
     #[test]
@@ -1151,8 +1261,15 @@ mod tests {
         assert!(load_core_memory(&base).is_empty());
 
         // After saving to core
-        save_memory(&base, "Company has 500 employees", "fact",
-            &["headcount".to_string()], "conv1", true).unwrap();
+        save_memory(
+            &base,
+            "Company has 500 employees",
+            "fact",
+            &["headcount".to_string()],
+            "conv1",
+            true,
+        )
+        .unwrap();
         let core = load_core_memory(&base);
         assert!(!core.is_empty());
         assert!(core.contains("500 employees"));
@@ -1163,13 +1280,24 @@ mod tests {
         let (base, _dir) = test_base();
 
         // Save a memory
-        save_memory(&base, "P50 is the default benchmark percentile", "pattern",
-            &["p50".to_string(), "benchmark".to_string()], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "P50 is the default benchmark percentile",
+            "pattern",
+            &["p50".to_string(), "benchmark".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
 
         // Manually set hit counts to meet promotion threshold
         let mut index = load_index(&base).unwrap();
         index.entries[0].hit_count = 4;
-        index.entries[0].hit_conversations = vec!["conv1".to_string(), "conv2".to_string(), "conv3".to_string()];
+        index.entries[0].hit_conversations = vec![
+            "conv1".to_string(),
+            "conv2".to_string(),
+            "conv3".to_string(),
+        ];
         save_index(&base, &index).unwrap();
 
         let report = distill_memories(&base, 7, false).unwrap();
@@ -1184,8 +1312,15 @@ mod tests {
     fn test_distill_dry_run() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "P50 is the default benchmark percentile", "pattern",
-            &["p50".to_string()], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "P50 is the default benchmark percentile",
+            "pattern",
+            &["p50".to_string()],
+            "conv1",
+            false,
+        )
+        .unwrap();
 
         let mut index = load_index(&base).unwrap();
         index.entries[0].hit_count = 4;
@@ -1210,7 +1345,11 @@ mod tests {
     #[test]
     fn test_tag_jaccard() {
         let a = vec!["salary".to_string(), "boxplot".to_string()];
-        let b = vec!["salary".to_string(), "boxplot".to_string(), "chart".to_string()];
+        let b = vec![
+            "salary".to_string(),
+            "boxplot".to_string(),
+            "chart".to_string(),
+        ];
         let j = tag_jaccard(&a, &b);
         assert!(j > 0.6); // 2/3 = 0.667
 
@@ -1238,7 +1377,15 @@ mod tests {
     #[test]
     fn test_needs_auto_distill_with_entries() {
         let (base, _dir) = test_base();
-        save_memory(&base, "Some important fact here", "fact", &[], "conv1", false).unwrap();
+        save_memory(
+            &base,
+            "Some important fact here",
+            "fact",
+            &[],
+            "conv1",
+            false,
+        )
+        .unwrap();
         // Has entries but never distilled → needs distill
         assert!(needs_auto_distill(&base));
     }
@@ -1247,10 +1394,24 @@ mod tests {
     fn test_multiple_sections_core() {
         let (base, _dir) = test_base();
 
-        save_memory(&base, "User prefers Excel exports", "preference",
-            &[], "conv1", true).unwrap();
-        save_memory(&base, "Company has 500 employees", "fact",
-            &[], "conv1", true).unwrap();
+        save_memory(
+            &base,
+            "User prefers Excel exports",
+            "preference",
+            &[],
+            "conv1",
+            true,
+        )
+        .unwrap();
+        save_memory(
+            &base,
+            "Company has 500 employees",
+            "fact",
+            &[],
+            "conv1",
+            true,
+        )
+        .unwrap();
 
         let core = load_core_memory(&base);
         assert!(core.contains("## User Preferences"));

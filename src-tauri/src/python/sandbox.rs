@@ -3,8 +3,8 @@
 //! Controls what Python code is allowed to do. Prevents dangerous operations
 //! like running subprocesses or writing files outside the workspace.
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Sandbox configuration for Python execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,9 +129,15 @@ impl SandboxConfig {
             ("os.fork", "os.fork() is not allowed"),
             ("os.spawn", "os.spawn*() is not allowed"),
             ("os.posix_spawn", "os.posix_spawn() is not allowed"),
-            ("builtins.__import__", "builtins.__import__() is not allowed"),
+            (
+                "builtins.__import__",
+                "builtins.__import__() is not allowed",
+            ),
             ("_real_import", "accessing _real_import is not allowed"),
-            ("_safe_import._real", "accessing _safe_import._real is not allowed"),
+            (
+                "_safe_import._real",
+                "accessing _safe_import._real is not allowed",
+            ),
             ("import ctypes", "ctypes is not allowed"),
             ("from ctypes", "ctypes is not allowed"),
             ("_original_open", "accessing _original_open is not allowed"),
@@ -258,7 +264,10 @@ builtins.open = _safe_open
         // Part 4: Utility functions (static — no Rust format! needed)
         let utilities = UTILITY_FUNCTIONS;
 
-        format!("{}\n{}\n{}\n{}", basic_setup, trusted_imports, file_write_hook, utilities)
+        format!(
+            "{}\n{}\n{}\n{}",
+            basic_setup, trusted_imports, file_write_hook, utilities
+        )
     }
 }
 
@@ -654,7 +663,9 @@ mod tests {
         assert_eq!(config.memory_limit_mb, 512);
         assert!(config.forbidden_modules.contains(&"subprocess".to_string()));
         assert!(config.forbidden_modules.contains(&"importlib".to_string()));
-        assert!(config.forbidden_modules.contains(&"multiprocessing".to_string()));
+        assert!(config
+            .forbidden_modules
+            .contains(&"multiprocessing".to_string()));
         // Relaxed for local desktop use — no longer forbidden
         assert!(!config.forbidden_modules.contains(&"shutil".to_string()));
         assert!(!config.forbidden_modules.contains(&"requests".to_string()));
@@ -668,7 +679,9 @@ mod tests {
     #[test]
     fn test_validate_code_ok() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import pandas as pd\nprint('hello')").is_ok());
+        assert!(config
+            .validate_code("import pandas as pd\nprint('hello')")
+            .is_ok());
     }
 
     #[test]
@@ -720,21 +733,29 @@ mod tests {
     #[test]
     fn test_validate_code_builtins_import_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("builtins.__import__('subprocess')").is_err());
+        assert!(config
+            .validate_code("builtins.__import__('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_real_import_blocked() {
         let config = SandboxConfig::default();
         assert!(config.validate_code("_real_import('subprocess')").is_err());
-        assert!(config.validate_code("_safe_import._real('subprocess')").is_err());
+        assert!(config
+            .validate_code("_safe_import._real('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_original_open_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("_original_open('/etc/passwd', 'w')").is_err());
-        assert!(config.validate_code("f = _original_open('/tmp/x')").is_err());
+        assert!(config
+            .validate_code("_original_open('/etc/passwd', 'w')")
+            .is_err());
+        assert!(config
+            .validate_code("f = _original_open('/tmp/x')")
+            .is_err());
     }
 
     #[test]
@@ -743,10 +764,14 @@ mod tests {
         // Verify the hook is NOT present (it caused repeated breakage with library dependencies).
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(!preamble.contains("builtins.__import__ = _safe_import"),
-            "Runtime import hook should NOT be in preamble (removed for stability)");
-        assert!(!preamble.contains("_FORBIDDEN_MODULES"),
-            "Runtime _FORBIDDEN_MODULES should NOT be in preamble");
+        assert!(
+            !preamble.contains("builtins.__import__ = _safe_import"),
+            "Runtime import hook should NOT be in preamble (removed for stability)"
+        );
+        assert!(
+            !preamble.contains("_FORBIDDEN_MODULES"),
+            "Runtime _FORBIDDEN_MODULES should NOT be in preamble"
+        );
     }
 
     #[test]
@@ -777,7 +802,9 @@ mod tests {
     #[test]
     fn test_validate_code_compile_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("code = compile('print(1)', '<string>', 'exec')").is_err());
+        assert!(config
+            .validate_code("code = compile('print(1)', '<string>', 'exec')")
+            .is_err());
     }
 
     // -- os.system and os.popen blocking ---------------------------------------
@@ -805,13 +832,17 @@ mod tests {
     #[test]
     fn test_validate_code_dunder_import_single_quotes() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("mod = __import__('subprocess')").is_err());
+        assert!(config
+            .validate_code("mod = __import__('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_dunder_import_double_quotes() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("mod = __import__(\"subprocess\")").is_err());
+        assert!(config
+            .validate_code("mod = __import__(\"subprocess\")")
+            .is_err());
     }
 
     // -- All forbidden modules are blocked -------------------------------------
@@ -902,16 +933,28 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_contains_utf8_setup() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("utf-8"), "Preamble should configure UTF-8 encoding");
-        assert!(preamble.contains("reconfigure"), "Preamble should reconfigure stdout");
+        assert!(
+            preamble.contains("utf-8"),
+            "Preamble should configure UTF-8 encoding"
+        );
+        assert!(
+            preamble.contains("reconfigure"),
+            "Preamble should reconfigure stdout"
+        );
     }
 
     #[test]
     fn test_preamble_contains_smart_read_functions() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("_smart_read_csv"), "Preamble should define _smart_read_csv");
-        assert!(preamble.contains("_smart_read_data"), "Preamble should define _smart_read_data");
+        assert!(
+            preamble.contains("_smart_read_csv"),
+            "Preamble should define _smart_read_csv"
+        );
+        assert!(
+            preamble.contains("_smart_read_data"),
+            "Preamble should define _smart_read_data"
+        );
     }
 
     #[test]
@@ -941,9 +984,18 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_preloads_packages() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("import pandas as pd"), "Preamble should pre-load pandas");
-        assert!(preamble.contains("import numpy as np"), "Preamble should pre-load numpy");
-        assert!(preamble.contains("import openpyxl"), "Preamble should pre-load openpyxl");
+        assert!(
+            preamble.contains("import pandas as pd"),
+            "Preamble should pre-load pandas"
+        );
+        assert!(
+            preamble.contains("import numpy as np"),
+            "Preamble should pre-load numpy"
+        );
+        assert!(
+            preamble.contains("import openpyxl"),
+            "Preamble should pre-load openpyxl"
+        );
     }
 
     // -- Standalone call detection (no false positives) -------------------------
@@ -961,7 +1013,9 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_validate_code_re_compile_allowed() {
         let config = SandboxConfig::default();
         // re.compile() is a method call, not bare compile()
-        assert!(config.validate_code("pattern = re.compile(r'\\d+')").is_ok());
+        assert!(config
+            .validate_code("pattern = re.compile(r'\\d+')")
+            .is_ok());
         assert!(config.validate_code("regex.compile('test')").is_ok());
     }
 
@@ -980,8 +1034,12 @@ print(f"Mean: {mean}, Std: {std}")
     #[test]
     fn test_validate_code_bare_compile_still_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("compile('code', '<string>', 'exec')").is_err());
-        assert!(config.validate_code("x = compile('c', '', 'eval')").is_err());
+        assert!(config
+            .validate_code("compile('code', '<string>', 'exec')")
+            .is_err());
+        assert!(config
+            .validate_code("x = compile('c', '', 'eval')")
+            .is_err());
     }
 
     #[test]
@@ -996,13 +1054,17 @@ print(f"Mean: {mean}, Std: {std}")
     #[test]
     fn test_validate_code_shutil_allowed() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import shutil\nshutil.copy('a', 'b')").is_ok());
+        assert!(config
+            .validate_code("import shutil\nshutil.copy('a', 'b')")
+            .is_ok());
     }
 
     #[test]
     fn test_validate_code_requests_allowed() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import requests\nr = requests.get('https://api.example.com')").is_ok());
+        assert!(config
+            .validate_code("import requests\nr = requests.get('https://api.example.com')")
+            .is_ok());
     }
 
     #[test]
@@ -1015,8 +1077,12 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_validate_code_http_urllib_allowed() {
         let config = SandboxConfig::default();
         assert!(config.validate_code("import http\nimport urllib").is_ok());
-        assert!(config.validate_code("from urllib.request import urlopen").is_ok());
-        assert!(config.validate_code("from http.client import HTTPConnection").is_ok());
+        assert!(config
+            .validate_code("from urllib.request import urlopen")
+            .is_ok());
+        assert!(config
+            .validate_code("from http.client import HTTPConnection")
+            .is_ok());
     }
 
     // -- contains_standalone unit tests ----------------------------------------

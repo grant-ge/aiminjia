@@ -3,13 +3,15 @@
 //! Manages PlaywrightBrowser for open browsing mode: navigate any URL,
 //! extract data, execute JS, auto-paginate. No pre-configuration needed.
 
-use std::sync::Arc;
 use log::info;
 use serde_json::Value;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::playwright_browser::PlaywrightBrowser;
-use super::types::{ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FullPageResult};
+use super::types::{
+    ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FullPageResult,
+};
 
 /// Max browser requests per LLM turn.
 const MAX_BROWSER_REQUESTS_PER_TURN: u32 = 50;
@@ -31,7 +33,9 @@ impl ConnectorEngine {
     }
 
     /// Get a read reference to the Playwright browser (for sub-agent context building).
-    pub async fn playwright_browser_ref(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<PlaywrightBrowser>>> {
+    pub async fn playwright_browser_ref(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<PlaywrightBrowser>>> {
         self.playwright_browser.read().await
     }
 
@@ -53,7 +57,10 @@ impl ConnectorEngine {
         pw.navigate(url).await
     }
 
-    pub async fn browser_read_content(&self, extract_script: Option<&str>) -> Result<BrowseResult, String> {
+    pub async fn browser_read_content(
+        &self,
+        extract_script: Option<&str>,
+    ) -> Result<BrowseResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -75,7 +82,11 @@ impl ConnectorEngine {
         pw.show_active_page().await
     }
 
-    pub async fn browser_navigate_and_extract(&self, url: &str, extract_script: Option<&str>) -> Result<FullPageResult, String> {
+    pub async fn browser_navigate_and_extract(
+        &self,
+        url: &str,
+        extract_script: Option<&str>,
+    ) -> Result<FullPageResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -83,7 +94,13 @@ impl ConnectorEngine {
         pw.navigate_and_extract(url, extract_script).await
     }
 
-    pub async fn browser_api_fetch(&self, url: &str, method: &str, body: Option<&str>, headers: Option<&str>) -> Result<ApiFetchResult, String> {
+    pub async fn browser_api_fetch(
+        &self,
+        url: &str,
+        method: &str,
+        body: Option<&str>,
+        headers: Option<&str>,
+    ) -> Result<ApiFetchResult, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
@@ -91,18 +108,29 @@ impl ConnectorEngine {
         pw.api_fetch(url, method, body, headers).await
     }
 
-    pub async fn browser_extract_table_data(&self, save_path: &str, max_pages: Option<u32>, page_size: Option<u32>) -> Result<Value, String> {
+    pub async fn browser_extract_table_data(
+        &self,
+        save_path: &str,
+        max_pages: Option<u32>,
+        page_size: Option<u32>,
+    ) -> Result<Value, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         info!("[CONNECTOR] browser_extract_table_data");
         pw.extract_table_data(save_path, max_pages, page_size).await
     }
 
-    pub async fn browser_extract_with_pagination(&self, save_path: &str, pagination_js: &str, max_pages: Option<u32>) -> Result<Value, String> {
+    pub async fn browser_extract_with_pagination(
+        &self,
+        save_path: &str,
+        pagination_js: &str,
+        max_pages: Option<u32>,
+    ) -> Result<Value, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
         info!("[CONNECTOR] browser_extract_with_pagination");
-        pw.extract_with_pagination(save_path, pagination_js, max_pages).await
+        pw.extract_with_pagination(save_path, pagination_js, max_pages)
+            .await
     }
 
     pub async fn browser_screenshot(&self) -> Option<std::path::PathBuf> {

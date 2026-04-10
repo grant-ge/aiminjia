@@ -2,20 +2,30 @@
 //!
 //! Each tool has a dedicated `handle_*` async function called by its
 //! corresponding `ToolPlugin` wrapper in `plugin/builtin/tools/`.
+//!
+//! # Legacy zone
+//!
+//! All handler functions in this module accept `&PluginContext`, which is the
+//! deprecated full-service-locator context.  The suppression below is
+//! intentional — these are existing (legacy) tools bridged via
+//! `LegacyToolAdapter`.  Migrate individual handlers to `RuntimeTool` +
+//! `CapabilityContext` when touching them; do not add new handlers here.
+// Legacy tool handlers: PluginContext is intentionally used here.
+#![allow(deprecated)]
 
-mod util;
-mod search;
-mod python;
-pub(crate) mod file_load;
-mod report;
 mod chart;
-mod stats;
-mod notes;
 mod export;
-mod progress;
-mod slides;
-mod memory;
+pub(crate) mod file_load;
 mod internal_system;
+mod memory;
+mod notes;
+mod progress;
+mod python;
+mod report;
+mod search;
+mod slides;
+mod stats;
+mod util;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -38,28 +48,28 @@ pub struct FileGenResult {
 // Re-exports — preserve external import paths
 // ─────────────────────────────────────────────────
 
-pub(crate) use search::handle_web_search;
-pub(crate) use python::handle_execute_python;
-pub(crate) use file_load::handle_load_file;
-pub(crate) use report::handle_generate_report;
 pub(crate) use chart::handle_generate_chart;
-pub(crate) use stats::handle_hypothesis_test;
-pub(crate) use stats::handle_detect_anomalies;
-pub(crate) use notes::handle_save_analysis_note;
 pub(crate) use export::handle_export_data;
-pub(crate) use progress::handle_update_progress;
-pub(crate) use slides::handle_generate_slides;
-pub(crate) use memory::handle_save_memory;
-pub(crate) use memory::handle_search_memory;
-pub(crate) use memory::handle_load_core_memory;
-pub(crate) use memory::handle_distill_memories;
-pub(crate) use internal_system::handle_browse_navigate;
-pub(crate) use internal_system::handle_read_page_content;
-pub(crate) use internal_system::handle_page_execute_js;
+pub(crate) use file_load::handle_load_file;
 pub(crate) use internal_system::handle_browse_and_extract;
 pub(crate) use internal_system::handle_browse_data;
+pub(crate) use internal_system::handle_browse_navigate;
 pub(crate) use internal_system::handle_extract_table_data;
 pub(crate) use internal_system::handle_extract_with_pagination;
+pub(crate) use internal_system::handle_page_execute_js;
+pub(crate) use internal_system::handle_read_page_content;
+pub(crate) use memory::handle_distill_memories;
+pub(crate) use memory::handle_load_core_memory;
+pub(crate) use memory::handle_save_memory;
+pub(crate) use memory::handle_search_memory;
+pub(crate) use notes::handle_save_analysis_note;
+pub(crate) use progress::handle_update_progress;
+pub(crate) use python::handle_execute_python;
+pub(crate) use report::handle_generate_report;
+pub(crate) use search::handle_web_search;
+pub(crate) use slides::handle_generate_slides;
+pub(crate) use stats::handle_detect_anomalies;
+pub(crate) use stats::handle_hypothesis_test;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────
@@ -95,11 +105,11 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::sync::Arc;
-    use crate::storage::file_store::AppStorage;
-    use crate::storage::file_manager::FileManager;
     use crate::plugin::context::PluginContext;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
     use serde_json::json;
+    use std::sync::Arc;
 
     // ── Test helpers ─────────────────────────────
 
@@ -120,10 +130,15 @@ pub(crate) mod tests {
             file_manager: Arc::new(FileManager::new(&workspace)),
             workspace_path: workspace.clone(),
             conversation_id: "test_conv_1".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("test_conv_1"),
+            run_id: Some(crate::runtime::ids::RunId::new("run-test-1")),
+            agent_id: None,
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
-            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
+            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(
+                workspace, None,
+            )),
             auth_manager: None,
             connector_engine: None,
             use_cloud: false,
@@ -131,6 +146,8 @@ pub(crate) mod tests {
             gateway: None,
             tool_registry: None,
             app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
         }
     }
 

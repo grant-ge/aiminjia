@@ -3,13 +3,11 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::plugin::{ToolRegistry, SkillRegistry, ToolInfo, SkillInfo};
+use crate::plugin::{SkillInfo, SkillRegistry, ToolInfo, ToolRegistry};
 
 /// List all registered tools.
 #[tauri::command]
-pub async fn list_tools(
-    registry: State<'_, Arc<ToolRegistry>>,
-) -> Result<Vec<ToolInfo>, String> {
+pub async fn list_tools(registry: State<'_, Arc<ToolRegistry>>) -> Result<Vec<ToolInfo>, String> {
     Ok(registry.list().await)
 }
 

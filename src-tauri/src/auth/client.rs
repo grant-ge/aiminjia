@@ -67,17 +67,26 @@ pub struct AuthTenantInfo {
 
 impl From<AuthUserInfo> for UserInfo {
     fn from(u: AuthUserInfo) -> Self {
-        Self { id: u.id, name: u.name, username: u.username.unwrap_or_default() }
+        Self {
+            id: u.id,
+            name: u.name,
+            username: u.username.unwrap_or_default(),
+        }
     }
 }
 
 impl From<AuthTenantInfo> for TenantInfo {
     fn from(t: AuthTenantInfo) -> Self {
         Self {
-            id: t.id, name: t.name, balance: t.balance,
-            product_name: t.product_name, logo_url: t.logo_url,
-            accent_color: t.accent_color, primary_color: t.primary_color,
-            bg_color: t.bg_color, sidebar_bg_color: t.sidebar_bg_color,
+            id: t.id,
+            name: t.name,
+            balance: t.balance,
+            product_name: t.product_name,
+            logo_url: t.logo_url,
+            accent_color: t.accent_color,
+            primary_color: t.primary_color,
+            bg_color: t.bg_color,
+            sidebar_bg_color: t.sidebar_bg_color,
             font_family: t.font_family,
         }
     }
@@ -205,7 +214,12 @@ impl AuthClient {
     }
 
     /// Change password on the server.
-    pub async fn change_password(&self, access_token: &str, old_password: &str, new_password: &str) -> Result<()> {
+    pub async fn change_password(
+        &self,
+        access_token: &str,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<()> {
         let url = format!("{}/auth/password", BASE_URL);
         let resp = self
             .client
@@ -273,7 +287,10 @@ impl AuthClient {
 fn parse_api_error(status: u16, body: &str) -> anyhow::Error {
     // Try to parse as JSON { "code": int, "message": "..." }
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(msg) = json["error"]["message"].as_str().or(json["message"].as_str()) {
+        if let Some(msg) = json["error"]["message"]
+            .as_str()
+            .or(json["message"].as_str())
+        {
             return anyhow!("{}", localize_error(msg));
         }
     }

@@ -1,5 +1,9 @@
 //! load_core_memory — read the always-loaded core memory.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct CoreMemoryTool;
 
 #[async_trait]
 impl ToolPlugin for CoreMemoryTool {
-    fn name(&self) -> &str { "load_core_memory" }
+    fn name(&self) -> &str {
+        "load_core_memory"
+    }
 
     fn description(&self) -> &str {
         "Load the full core memory (mem.md). Core memory is automatically injected into context, \

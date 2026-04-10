@@ -8,10 +8,10 @@
 use anyhow::Result;
 use reqwest::Client;
 
-use crate::llm::providers::LlmProviderTrait;
 use crate::llm::providers::openai::{
     send_openai_compat, stream_openai_compat, validate_key_openai_compat,
 };
+use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{LlmRequest, LlmResponse, StreamBox};
 
 const CHAT_URL: &str = "https://ai-tenant.renlijia.com/v1/chat/completions";
@@ -78,6 +78,7 @@ impl LlmProviderTrait for LotusProvider {
     }
 
     async fn validate_key(&self) -> Result<bool> {
-        validate_key_openai_compat(&self.client, &self.session_key, &self.api_url, &self.model).await
+        validate_key_openai_compat(&self.client, &self.session_key, &self.api_url, &self.model)
+            .await
     }
 }

@@ -1,15 +1,20 @@
 //! Plugin registries — runtime registration and lookup for Tools and Skills.
 #![allow(dead_code)]
+// This registry intentionally bridges the deprecated ToolPlugin trait into
+// the new RuntimeTool dispatcher.  Suppress the deprecation lint here since
+// the warning would be noise — the suppression is on the whole legacy zone.
+#![allow(deprecated)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
+use crate::runtime::tools::{LegacyToolAdapter, ToolDispatcher};
 
 use super::context::PluginContext;
-use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 use super::skill_trait::{Skill, ToolFilter};
+use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
 /// Info about a registered tool (for management UI).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -73,10 +78,13 @@ impl ToolRegistry {
             }
         }
         log::info!("Registering tool: {} (source: {})", name, source);
-        tools.insert(name, RegisteredTool {
-            plugin: tool,
-            source: source.to_string(),
-        });
+        tools.insert(
+            name,
+            RegisteredTool {
+                plugin: tool,
+                source: source.to_string(),
+            },
+        );
     }
 
     /// Unregister a tool by name.
@@ -90,17 +98,21 @@ impl ToolRegistry {
     /// Get all tool definitions (for LLM context).
     pub async fn get_all_schemas(&self) -> Vec<ToolDefinition> {
         let tools = self.tools.read().await;
-        tools.values().map(|rt| ToolDefinition {
-            name: rt.plugin.name().to_string(),
-            description: rt.plugin.description().to_string(),
-            parameters: rt.plugin.input_schema(),
-        }).collect()
+        tools
+            .values()
+            .map(|rt| ToolDefinition {
+                name: rt.plugin.name().to_string(),
+                description: rt.plugin.description().to_string(),
+                parameters: rt.plugin.input_schema(),
+            })
+            .collect()
     }
 
     /// Get tool definitions filtered by a ToolFilter.
     pub async fn get_schemas_filtered(&self, filter: &ToolFilter) -> Vec<ToolDefinition> {
         let tools = self.tools.read().await;
-        tools.values()
+        tools
+            .values()
             .filter(|rt| match filter {
                 ToolFilter::All => true,
                 ToolFilter::Only(names) => names.iter().any(|n| n == rt.plugin.name()),
@@ -127,22 +139,60 @@ impl ToolRegistry {
     ) -> Result<ToolOutput, ToolError> {
         let plugin = {
             let tools = self.tools.read().await;
-            let rt = tools.get(name).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("Unknown tool: {}", name))
-            })?;
+            let rt = tools
+                .get(name)
+                .ok_or_else(|| ToolError::ExecutionFailed(format!("Unknown tool: {}", name)))?;
             rt.plugin.clone() // Arc::clone is cheap — release lock before executing
         };
-        plugin.execute(ctx, input).await
+        let dispatcher = ToolDispatcher::allow_all();
+        dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
+            plugin,
+            ctx.clone(),
+        )));
+        let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
+            ctx.session_id.clone(),
+            ctx.run_id.clone().unwrap_or_else(|| {
+                crate::runtime::ids::RunId::new(format!("run-{}", ctx.conversation_id))
+            }),
+            ctx.agent_id.clone(),
+            format!("tool-{}", name),
+            crate::runtime::cancellation::CancellationToken::new(),
+        );
+        let outcome = dispatcher
+            .dispatch(name, input, runtime_ctx)
+            .await
+            .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+        let mut output = ToolOutput::success(outcome.result.content);
+        output.data = outcome.result.data;
+        Ok(output)
     }
 
     /// List all registered tools (for management UI).
     pub async fn list(&self) -> Vec<ToolInfo> {
         let tools = self.tools.read().await;
-        tools.values().map(|rt| ToolInfo {
-            name: rt.plugin.name().to_string(),
-            description: rt.plugin.description().to_string(),
-            source: rt.source.clone(),
-        }).collect()
+        tools
+            .values()
+            .map(|rt| ToolInfo {
+                name: rt.plugin.name().to_string(),
+                description: rt.plugin.description().to_string(),
+                source: rt.source.clone(),
+            })
+            .collect()
+    }
+
+    /// Build a runtime-first dispatcher while keeping legacy tool implementations
+    /// behind an adapter. This is the bridge point for incrementally moving the
+    /// production query path onto the new runtime contract.
+    pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
+        let dispatcher = Arc::new(ToolDispatcher::allow_all());
+        let tools = self.tools.read().await;
+        for rt in tools.values() {
+            dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
+                rt.plugin.clone(),
+                plugin_ctx.clone(),
+            )));
+        }
+        dispatcher
     }
 }
 
@@ -172,12 +222,20 @@ impl SkillRegistry {
     /// Register a skill plugin.
     pub async fn register(&self, skill: Arc<dyn Skill>, source: &str) {
         let id = skill.id().to_string();
-        log::info!("Registering skill: {} '{}' (source: {})", id, skill.display_name(), source);
+        log::info!(
+            "Registering skill: {} '{}' (source: {})",
+            id,
+            skill.display_name(),
+            source
+        );
         let mut skills = self.skills.write().await;
-        skills.insert(id, RegisteredSkill {
-            skill,
-            source: source.to_string(),
-        });
+        skills.insert(
+            id,
+            RegisteredSkill {
+                skill,
+                source: source.to_string(),
+            },
+        );
     }
 
     /// Detect which Skill should activate for a message.
@@ -194,7 +252,10 @@ impl SkillRegistry {
         let mut best: Option<(u32, String)> = None;
 
         for rs in skills.values() {
-            if rs.skill.should_activate(message, has_files, current_skill_id) {
+            if rs
+                .skill
+                .should_activate(message, has_files, current_skill_id)
+            {
                 let priority = rs.skill.priority();
                 let id = rs.skill.id().to_string();
                 match &best {
@@ -234,18 +295,21 @@ impl SkillRegistry {
     /// List all registered skills (for management UI).
     pub async fn list(&self) -> Vec<SkillInfo> {
         let skills = self.skills.read().await;
-        skills.values().map(|rs| SkillInfo {
-            id: rs.skill.id().to_string(),
-            display_name: rs.skill.display_name().to_string(),
-            description: rs.skill.description().to_string(),
-            source: rs.source.clone(),
-            has_workflow: rs.skill.workflow().is_some(),
-            icon: rs.skill.icon().to_string(),
-            short_description: rs.skill.short_description().to_string(),
-            trigger_text: rs.skill.trigger_text().to_string(),
-            category: rs.skill.category().to_string(),
-            display_name_en: rs.skill.display_name_en().to_string(),
-            short_description_en: rs.skill.short_description_en().to_string(),
-        }).collect()
+        skills
+            .values()
+            .map(|rs| SkillInfo {
+                id: rs.skill.id().to_string(),
+                display_name: rs.skill.display_name().to_string(),
+                description: rs.skill.description().to_string(),
+                source: rs.source.clone(),
+                has_workflow: rs.skill.workflow().is_some(),
+                icon: rs.skill.icon().to_string(),
+                short_description: rs.skill.short_description().to_string(),
+                trigger_text: rs.skill.trigger_text().to_string(),
+                category: rs.skill.category().to_string(),
+                display_name_en: rs.skill.display_name_en().to_string(),
+                short_description_en: rs.skill.short_description_en().to_string(),
+            })
+            .collect()
     }
 }

@@ -1,14 +1,14 @@
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::RuntimeRepositoryFacade;
+use crate::storage::workspace::WorkspaceManager;
 use std::sync::Arc;
 use tauri::State;
-use crate::storage::file_store::AppStorage;
-use crate::storage::file_manager::FileManager;
-use crate::storage::workspace::WorkspaceManager;
 
 /// Select workspace directory.
 /// Validates the path, ensures directory structure, and saves to settings.
 #[tauri::command]
 pub async fn select_workspace(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     path: String,
 ) -> Result<(), String> {
     let manager = WorkspaceManager::new(&path);
@@ -17,7 +17,10 @@ pub async fn select_workspace(
     manager.ensure_structure().map_err(|e| e.to_string())?;
 
     // Save to settings
-    db.set_setting("workspacePath", &path).map_err(|e| e.to_string())?;
+    facade
+        .settings_store()
+        .set("workspacePath", &path)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -25,9 +28,11 @@ pub async fn select_workspace(
 /// Get workspace information (sizes, directory structure).
 #[tauri::command]
 pub async fn get_workspace_info(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
 ) -> Result<String, String> {
-    let path = db.get_setting("workspacePath")
+    let path = facade
+        .settings_store()
+        .get("workspacePath")
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
 
@@ -38,7 +43,8 @@ pub async fn get_workspace_info(
             "totalSize": 0,
             "fileCount": 0,
             "subdirectories": []
-        }).to_string());
+        })
+        .to_string());
     }
 
     let manager = WorkspaceManager::new(&path);
@@ -48,9 +54,7 @@ pub async fn get_workspace_info(
 
 /// Open the logs directory in the system file manager.
 #[tauri::command]
-pub async fn open_logs_directory(
-    file_mgr: State<'_, Arc<FileManager>>,
-) -> Result<(), String> {
+pub async fn open_logs_directory(file_mgr: State<'_, Arc<FileManager>>) -> Result<(), String> {
     let logs_dir = file_mgr.workspace_path().join("logs");
     std::fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
 
@@ -89,9 +93,7 @@ pub async fn export_metrics(
     let (json_content, entry_count) = crate::telemetry::export_all(&workspace)?;
 
     std::fs::write(&dest_path, json_content.as_bytes()).map_err(|e| e.to_string())?;
-    let file_size = std::fs::metadata(&dest_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
 
     Ok(serde_json::json!({
         "path": dest_path,

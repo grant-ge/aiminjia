@@ -34,11 +34,7 @@ fn index_path(base_dir: &Path) -> PathBuf {
 /// 1. Creates the conversation directory + subdirs (uploads/, generated/, notes/)
 /// 2. Writes `conv.json`
 /// 3. Adds an entry to `index.json`
-pub fn create_conversation(
-    base_dir: &Path,
-    id: &str,
-    title: &str,
-) -> StorageResult<()> {
+pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageResult<()> {
     let dir = conv_dir(base_dir, id);
     let now = Utc::now().to_rfc3339();
 
@@ -74,11 +70,7 @@ pub fn create_conversation(
 }
 
 /// Update a conversation's title.
-pub fn update_conversation_title(
-    base_dir: &Path,
-    id: &str,
-    title: &str,
-) -> StorageResult<()> {
+pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     let now = Utc::now().to_rfc3339();
@@ -105,11 +97,7 @@ pub fn get_conversation_mode(base_dir: &Path, id: &str) -> StorageResult<String>
 }
 
 /// Set the mode of a conversation.
-pub fn set_conversation_mode(
-    base_dir: &Path,
-    id: &str,
-    mode: &str,
-) -> StorageResult<()> {
+pub fn set_conversation_mode(base_dir: &Path, id: &str, mode: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     let now = Utc::now().to_rfc3339();
@@ -233,7 +221,10 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
             } else {
-                warn!("Reconciled: directory {} has no valid conv.json, skipping", dir_id);
+                warn!(
+                    "Reconciled: directory {} has no valid conv.json, skipping",
+                    dir_id
+                );
             }
         }
     }

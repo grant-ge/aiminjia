@@ -1,10 +1,10 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use notify::{Watcher, RecursiveMode, RecommendedWatcher};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 /// Global storage for the dev-mode file watcher.
 /// Only one skill can be watched at a time.
@@ -60,11 +60,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
                                 .unwrap_or("")
                                 .to_string(),
                             path: path.to_string_lossy().to_string(),
-                            enabled: !path
-                                .file_name()
-                                .unwrap()
-                                .to_string_lossy()
-                                .starts_with('_'),
+                            enabled: !path.file_name().unwrap().to_string_lossy().starts_with('_'),
                         });
                     }
                 }
@@ -76,10 +72,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
 
 /// Install a skill from a directory path (copy to custom_plugins/).
 #[tauri::command]
-pub async fn install_custom_skill(
-    app: AppHandle,
-    source_path: String,
-) -> Result<String, String> {
+pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
     let source = PathBuf::from(&source_path);
     if !source.is_dir() {
         return Err("Source path is not a directory".to_string());
@@ -120,10 +113,7 @@ pub async fn install_custom_skill(
 
 /// Uninstall a custom skill by ID.
 #[tauri::command]
-pub async fn uninstall_custom_skill(
-    app: AppHandle,
-    skill_id: String,
-) -> Result<String, String> {
+pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<String, String> {
     let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let skill_dir = app_data.join("custom_plugins").join(&skill_id);
 
@@ -140,7 +130,11 @@ pub async fn uninstall_custom_skill(
 
 /// Create a new skill template directory with scaffolding files.
 #[tauri::command]
-pub async fn init_skill_template(target_dir: String, skill_id: String, skill_name: String) -> Result<String, String> {
+pub async fn init_skill_template(
+    target_dir: String,
+    skill_id: String,
+    skill_name: String,
+) -> Result<String, String> {
     let dir = PathBuf::from(&target_dir).join(&skill_id);
     if dir.exists() {
         return Err(format!("Directory '{}' already exists", dir.display()));
@@ -151,7 +145,8 @@ pub async fn init_skill_template(target_dir: String, skill_id: String, skill_nam
     std::fs::create_dir_all(dir.join("scripts/knowledge")).map_err(|e| e.to_string())?;
 
     // plugin.toml
-    let plugin_toml = format!(r#"[plugin]
+    let plugin_toml = format!(
+        r#"[plugin]
 id = "{skill_id}"
 name = "{skill_name}"
 type = "skill"
@@ -177,7 +172,8 @@ category = "general"
 icon = "🔧"
 short_description = ""
 trigger_text = ""
-"#);
+"#
+    );
     std::fs::write(dir.join("plugin.toml"), plugin_toml).map_err(|e| e.to_string())?;
 
     // workflow.toml
@@ -216,10 +212,16 @@ advance_on = "confirm"
     std::fs::write(dir.join("workflow.toml"), workflow_toml).map_err(|e| e.to_string())?;
 
     // prompts/base.md
-    std::fs::write(dir.join("prompts/base.md"), format!("# {skill_name}\n\n你是{skill_name}专家。\n")).map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("prompts/base.md"),
+        format!("# {skill_name}\n\n你是{skill_name}专家。\n"),
+    )
+    .map_err(|e| e.to_string())?;
 
     // prompts/step0.md
-    std::fs::write(dir.join("prompts/step0.md"), r#"# Step 0: 信息采集
+    std::fs::write(
+        dir.join("prompts/step0.md"),
+        r#"# Step 0: 信息采集
 
 系统已自动加载知识库，结果在 [precompute_result] 中。
 
@@ -230,7 +232,9 @@ advance_on = "confirm"
 - 向用户收集必要信息
 
 确认后进入下一步。
-"#).map_err(|e| e.to_string())?;
+"#,
+    )
+    .map_err(|e| e.to_string())?;
 
     // prompts/step1.md
     std::fs::write(dir.join("prompts/step1.md"), "# Step 1: 分析处理\n\n基于 Step 0 确认的信息，执行分析。\n\n展示分析结果后等待用户确认。\n").map_err(|e| e.to_string())?;
@@ -239,7 +243,9 @@ advance_on = "confirm"
     std::fs::write(dir.join("prompts/step2.md"), "# Step 2: 报告生成\n\n综合所有分析结果，生成最终报告。\n\n使用 `generate_report` 生成 HTML 报告。\n使用 `export_data` 导出数据明细。\n").map_err(|e| e.to_string())?;
 
     // scripts/step0.py
-    std::fs::write(dir.join("scripts/step0.py"), r#"import json as _json_mod
+    std::fs::write(
+        dir.join("scripts/step0.py"),
+        r#"import json as _json_mod
 import os as _os_mod
 
 result = {}
@@ -257,13 +263,20 @@ except Exception as e:
 with open(_os_mod.path.join(_ANALYSIS_DIR, 'step0_precompute.json'), 'w', encoding='utf-8') as f:
     _json_mod.dump(result, f, ensure_ascii=False, indent=2)
 print(_json_mod.dumps(result, ensure_ascii=False, indent=2))
-"#).map_err(|e| e.to_string())?;
+"#,
+    )
+    .map_err(|e| e.to_string())?;
 
     // scripts/knowledge/templates.json (example)
-    std::fs::write(dir.join("scripts/knowledge/templates.json"), "{\n  \"example_key\": \"Replace with your domain knowledge\"\n}\n").map_err(|e| e.to_string())?;
+    std::fs::write(
+        dir.join("scripts/knowledge/templates.json"),
+        "{\n  \"example_key\": \"Replace with your domain knowledge\"\n}\n",
+    )
+    .map_err(|e| e.to_string())?;
 
     // README.md
-    let readme = format!(r#"# {skill_name}
+    let readme = format!(
+        r#"# {skill_name}
 
 ## 目录结构
 
@@ -299,7 +312,8 @@ print(_json_mod.dumps(result, ensure_ascii=False, indent=2))
 ```python
 _data = _KNOWLEDGE.get('templates', {{}}) if '_KNOWLEDGE' in dir() else {{}}
 ```
-"#);
+"#
+    );
     std::fs::write(dir.join("README.md"), readme).map_err(|e| e.to_string())?;
 
     Ok(dir.to_string_lossy().to_string())
@@ -317,7 +331,8 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
     }
 
     // Read plugin ID for output filename
-    let manifest_content = std::fs::read_to_string(dir.join("plugin.toml")).map_err(|e| e.to_string())?;
+    let manifest_content =
+        std::fs::read_to_string(dir.join("plugin.toml")).map_err(|e| e.to_string())?;
     let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
     let plugin_id = manifest
         .get("plugin")
@@ -325,7 +340,8 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let output_path = dir.parent()
+    let output_path = dir
+        .parent()
         .unwrap_or(&dir)
         .join(format!("{}.aijia-skill", plugin_id));
 
@@ -347,7 +363,8 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
             let name = relative.to_string_lossy().to_string();
 
             if path.is_dir() {
-                zip.add_directory(&format!("{}/", name), options).map_err(|e| e.to_string())?;
+                zip.add_directory(&format!("{}/", name), options)
+                    .map_err(|e| e.to_string())?;
                 add_dir_to_zip(zip, &path, base, options)?;
             } else {
                 zip.start_file(&name, options).map_err(|e| e.to_string())?;
@@ -367,18 +384,15 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
 /// Reload a custom skill from disk (hot-reload for dev mode).
 /// Re-reads plugin.toml, unregisters the old version, and registers the new one.
 #[tauri::command]
-pub async fn reload_skill(
-    app: AppHandle,
-    skill_path: String,
-) -> Result<String, String> {
+pub async fn reload_skill(app: AppHandle, skill_path: String) -> Result<String, String> {
     let path = PathBuf::from(&skill_path);
     if !path.join("plugin.toml").exists() {
         return Err("No plugin.toml found".to_string());
     }
 
     // Parse manifest
-    let manifest_content = std::fs::read_to_string(path.join("plugin.toml"))
-        .map_err(|e| e.to_string())?;
+    let manifest_content =
+        std::fs::read_to_string(path.join("plugin.toml")).map_err(|e| e.to_string())?;
     let manifest = crate::plugin::manifest::parse_plugin_manifest(&manifest_content)
         .map_err(|e| e.to_string())?;
 
@@ -402,10 +416,7 @@ pub async fn reload_skill(
 /// Start watching a skill directory for file changes (dev mode).
 /// Emits `skill-file-changed` Tauri event when files are modified.
 #[tauri::command]
-pub async fn start_skill_watch(
-    app: AppHandle,
-    skill_path: String,
-) -> Result<String, String> {
+pub async fn start_skill_watch(app: AppHandle, skill_path: String) -> Result<String, String> {
     let path = PathBuf::from(&skill_path);
     if !path.is_dir() {
         return Err("Not a valid directory".to_string());
@@ -414,16 +425,20 @@ pub async fn start_skill_watch(
     let app_clone = app.clone();
     let path_str = skill_path.clone();
 
-    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-        if let Ok(event) = res {
-            // Only emit on content changes (modify/create), not on access or removal
-            if event.kind.is_modify() || event.kind.is_create() {
-                let _ = app_clone.emit("skill-file-changed", &path_str);
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            if let Ok(event) = res {
+                // Only emit on content changes (modify/create), not on access or removal
+                if event.kind.is_modify() || event.kind.is_create() {
+                    let _ = app_clone.emit("skill-file-changed", &path_str);
+                }
             }
-        }
-    }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
 
-    watcher.watch(&path, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    watcher
+        .watch(&path, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
 
     // Store the watcher (drops any previous watcher, stopping its watch)
     *DEV_WATCHER.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
@@ -498,15 +513,21 @@ pub async fn list_marketplace_skills(
     if let Some(q) = &search {
         if !q.is_empty() {
             // Simple percent-encode for CJK search terms
-            let encoded: String = q.chars().map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
-                    c.to_string()
-                } else {
-                    let mut buf = [0u8; 4];
-                    c.encode_utf8(&mut buf);
-                    buf[..c.len_utf8()].iter().map(|b| format!("%{:02X}", b)).collect()
-                }
-            }).collect();
+            let encoded: String = q
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
+                        c.to_string()
+                    } else {
+                        let mut buf = [0u8; 4];
+                        c.encode_utf8(&mut buf);
+                        buf[..c.len_utf8()]
+                            .iter()
+                            .map(|b| format!("%{:02X}", b))
+                            .collect()
+                    }
+                })
+                .collect();
             url.push_str(&format!("&search={}", encoded));
         }
     }
@@ -529,9 +550,8 @@ pub async fn list_marketplace_skills(
 
     // Parse { code: 0, data: { items, total, page, size } }
     let data = &body["data"];
-    let items: Vec<MarketplaceSkillItem> = serde_json::from_value(
-        data["items"].clone()
-    ).unwrap_or_default();
+    let items: Vec<MarketplaceSkillItem> =
+        serde_json::from_value(data["items"].clone()).unwrap_or_default();
 
     Ok(MarketplaceResponse {
         items,
@@ -588,10 +608,16 @@ pub async fn install_marketplace_skill(
         .map_err(|e| format!("Download error: {}", e))?;
 
     if !zip_resp.status().is_success() {
-        return Err(format!("Failed to download package: HTTP {}", zip_resp.status()));
+        return Err(format!(
+            "Failed to download package: HTTP {}",
+            zip_resp.status()
+        ));
     }
 
-    let zip_bytes = zip_resp.bytes().await.map_err(|e| format!("Download error: {}", e))?;
+    let zip_bytes = zip_resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Download error: {}", e))?;
 
     // Step 3: Extract to custom_plugins/{plugin_id}/
     let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -633,7 +659,10 @@ pub async fn install_marketplace_skill(
     }
 
     log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
-    Ok(format!("Installed '{}' — restart app to activate", plugin_id))
+    Ok(format!(
+        "Installed '{}' — restart app to activate",
+        plugin_id
+    ))
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {

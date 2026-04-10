@@ -1,5 +1,9 @@
 //! save_memory — persist a cognitive memory entry.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct MemorySaveTool;
 
 #[async_trait]
 impl ToolPlugin for MemorySaveTool {
-    fn name(&self) -> &str { "save_memory" }
+    fn name(&self) -> &str {
+        "save_memory"
+    }
 
     fn description(&self) -> &str {
         "Save high-value knowledge to persistent memory. WHITELIST ONLY — only these 5 types: \

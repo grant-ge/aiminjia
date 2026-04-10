@@ -1,9 +1,9 @@
 //! Conversation export — generates styled HTML and optionally converts to PDF via Python.
 
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::RuntimeRepositoryFacade;
 use std::sync::Arc;
 use tauri::State;
-use crate::storage::file_store::AppStorage;
-use crate::storage::file_manager::FileManager;
 
 /// Export a conversation as HTML or PDF.
 ///
@@ -16,23 +16,37 @@ use crate::storage::file_manager::FileManager;
 /// 5. Return file info
 #[tauri::command]
 pub async fn export_conversation(
-    db: State<'_, Arc<AppStorage>>,
+    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     file_mgr: State<'_, Arc<FileManager>>,
     conversation_id: String,
     format: String,
 ) -> Result<serde_json::Value, String> {
-    log::info!("export_conversation: conversation_id={}, format={}", conversation_id, format);
+    log::info!(
+        "export_conversation: conversation_id={}, format={}",
+        conversation_id,
+        format
+    );
 
     // 1. Get conversation title
-    let conversations = db.get_conversations().map_err(|e| e.to_string())?;
-    let conv = conversations.iter()
+    let conversations = facade
+        .conversation_store()
+        .get_conversations()
+        .map_err(|e| e.to_string())?;
+    let conv = conversations
+        .iter()
         .find(|c| c.get("id").and_then(|v| v.as_str()) == Some(&conversation_id))
         .ok_or_else(|| format!("Conversation {} not found", conversation_id))?;
-    let title = conv.get("title").and_then(|v| v.as_str()).unwrap_or("Conversation Export");
+    let title = conv
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Conversation Export");
     let created_at = conv.get("createdAt").and_then(|v| v.as_str()).unwrap_or("");
 
     // 2. Get all messages
-    let messages = db.get_messages(&conversation_id).map_err(|e| e.to_string())?;
+    let messages = facade
+        .conversation_store()
+        .get_messages(&conversation_id)
+        .map_err(|e| e.to_string())?;
     if messages.is_empty() {
         return Err("No messages to export".to_string());
     }
@@ -45,14 +59,20 @@ pub async fn export_conversation(
     let temp_dir = workspace.join("temp");
     let exports_dir = workspace.join("exports");
     std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
-    std::fs::create_dir_all(&exports_dir).map_err(|e| format!("Failed to create exports dir: {}", e))?;
+    std::fs::create_dir_all(&exports_dir)
+        .map_err(|e| format!("Failed to create exports dir: {}", e))?;
 
     let file_id = uuid::Uuid::new_v4().to_string();
-    let safe_title: String = title.chars()
+    let safe_title: String = title
+        .chars()
         .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
         .take(30)
         .collect();
-    let safe_title = if safe_title.is_empty() { "export".to_string() } else { safe_title };
+    let safe_title = if safe_title.is_empty() {
+        "export".to_string()
+    } else {
+        safe_title
+    };
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
 
     let html_temp_path = temp_dir.join(format!("export_{}.html", file_id));
@@ -78,24 +98,31 @@ pub async fn export_conversation(
             .map(|m| m.len() as i64)
             .unwrap_or(0);
 
-        db.insert_generated_file(
-            &file_id,
-            &conversation_id,
-            None,
-            &output_filename,
-            &stored_path,
-            "html",
-            file_size,
-            "report",
-            Some(&format!("Conversation export ({})", format)),
-            1,
-            true,
-            None,
-            None,
-            None,
-        ).map_err(|e| format!("Failed to record export file: {}", e))?;
+        facade
+            .file_record_store()
+            .insert_generated_file(
+                &file_id,
+                &conversation_id,
+                None,
+                &output_filename,
+                &stored_path,
+                "html",
+                file_size,
+                "report",
+                Some(&format!("Conversation export ({})", format)),
+                1,
+                true,
+                None,
+                None,
+                None,
+            )
+            .map_err(|e| format!("Failed to record export file: {}", e))?;
 
-        log::info!("export_conversation OK (HTML direct): file_id={}, path={}", file_id, stored_path);
+        log::info!(
+            "export_conversation OK (HTML direct): file_id={}, path={}",
+            file_id,
+            stored_path
+        );
 
         return Ok(serde_json::json!({
             "fileId": file_id,
@@ -107,7 +134,7 @@ pub async fn export_conversation(
 
     // For PDF: write HTML to temp and run Python conversion
     let python_code = format!(
-            r#"
+        r#"
 import json, sys
 
 html_path = {html_path}
@@ -126,9 +153,9 @@ except ImportError:
 except Exception as e:
     print(json.dumps({{"status": "error", "error": str(e)}}))
 "#,
-            html_path = serde_json::to_string(&html_temp_path.to_string_lossy().to_string()).unwrap(),
-            pdf_path = serde_json::to_string(&output_path.to_string_lossy().to_string()).unwrap(),
-        );
+        html_path = serde_json::to_string(&html_temp_path.to_string_lossy().to_string()).unwrap(),
+        pdf_path = serde_json::to_string(&output_path.to_string_lossy().to_string()).unwrap(),
+    );
 
     // Write the script to a temp file and run via python3 directly
     let script_path = temp_dir.join(format!("export_script_{}.py", file_id));
@@ -151,18 +178,31 @@ except Exception as e:
 
     if !py_output.status.success() && stdout.trim().is_empty() {
         let _ = std::fs::remove_file(&html_temp_path);
-        return Err(format!("Python export failed: {}", if stderr.is_empty() { "unknown error" } else { &stderr }));
+        return Err(format!(
+            "Python export failed: {}",
+            if stderr.is_empty() {
+                "unknown error"
+            } else {
+                &stderr
+            }
+        ));
     }
 
     // Parse Python output
     let python_output: serde_json::Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|_| serde_json::json!({"status": "error", "error": stdout}));
 
-    let status = python_output.get("status").and_then(|v| v.as_str()).unwrap_or("error");
+    let status = python_output
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("error");
 
     if status == "error" {
         let _ = std::fs::remove_file(&html_temp_path);
-        let err_msg = python_output.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        let err_msg = python_output
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
         return Err(format!("Export failed: {}", err_msg));
     }
 
@@ -170,12 +210,19 @@ except Exception as e:
     let (final_path, final_stored_path, final_filename, final_ext) = if status == "fallback_html" {
         let html_filename = output_filename.replace(".pdf", ".html");
         let html_stored = format!("exports/{}", html_filename);
-        let html_out = python_output.get("path").and_then(|v| v.as_str())
+        let html_out = python_output
+            .get("path")
+            .and_then(|v| v.as_str())
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| exports_dir.join(&html_filename));
         (html_out, html_stored, html_filename, "html")
     } else {
-        (output_path.clone(), stored_path.clone(), output_filename.clone(), output_ext)
+        (
+            output_path.clone(),
+            stored_path.clone(),
+            output_filename.clone(),
+            output_ext,
+        )
     };
 
     // Get file size
@@ -184,27 +231,34 @@ except Exception as e:
         .unwrap_or(0);
 
     // 6. Record in generated_files table
-    db.insert_generated_file(
-        &file_id,
-        &conversation_id,
-        None,           // message_id
-        &final_filename,
-        &final_stored_path,
-        final_ext,
-        file_size,
-        "report",       // category
-        Some(&format!("Conversation export ({})", format)),
-        1,              // version
-        true,           // is_latest
-        None,           // superseded_by
-        None,           // created_by_step
-        None,           // expires_at
-    ).map_err(|e| format!("Failed to record export file: {}", e))?;
+    facade
+        .file_record_store()
+        .insert_generated_file(
+            &file_id,
+            &conversation_id,
+            None, // message_id
+            &final_filename,
+            &final_stored_path,
+            final_ext,
+            file_size,
+            "report", // category
+            Some(&format!("Conversation export ({})", format)),
+            1,    // version
+            true, // is_latest
+            None, // superseded_by
+            None, // created_by_step
+            None, // expires_at
+        )
+        .map_err(|e| format!("Failed to record export file: {}", e))?;
 
     // Cleanup temp HTML
     let _ = std::fs::remove_file(&html_temp_path);
 
-    log::info!("export_conversation OK: file_id={}, path={}", file_id, final_stored_path);
+    log::info!(
+        "export_conversation OK: file_id={}, path={}",
+        file_id,
+        final_stored_path
+    );
 
     Ok(serde_json::json!({
         "fileId": file_id,
@@ -218,7 +272,7 @@ except Exception as e:
 ///
 /// The HTML uses inline styles (no external CSS) so it renders correctly
 /// both standalone in a browser and when converted to PDF/Word.
-fn render_conversation_html(
+pub fn render_conversation_html(
     title: &str,
     messages: &[serde_json::Value],
     created_at: &str,
@@ -447,7 +501,10 @@ fn render_conversation_html(
 
     // Messages
     for msg in messages {
-        let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let role = msg
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         let empty_content = serde_json::json!({});
         let content = msg.get("content").unwrap_or(&empty_content);
         let role_label = match role {
@@ -523,7 +580,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
             let code = block.get("code").and_then(|v| v.as_str()).unwrap_or("");
             let purpose = block.get("purpose").and_then(|v| v.as_str());
             if let Some(p) = purpose {
-                html.push_str(&format!(r#"<div style="font-size:12px;color:#8e8ea0;margin-top:8px">📝 {}</div>"#, html_escape(p)));
+                html.push_str(&format!(
+                    r#"<div style="font-size:12px;color:#8e8ea0;margin-top:8px">📝 {}</div>"#,
+                    html_escape(p)
+                ));
             }
             html.push_str(&format!("<pre><code data-lang=\"{}\">", html_escape(lang)));
             html.push_str(&html_escape(code));
@@ -536,9 +596,17 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
         for r in results {
             let output = r.get("output").and_then(|v| v.as_str()).unwrap_or("");
             let is_error = r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
-            let class = if is_error { "code-result error" } else { "code-result" };
-            html.push_str(&format!(r#"<div class="{}">📋 Output:
-{}</div>"#, class, html_escape(output)));
+            let class = if is_error {
+                "code-result error"
+            } else {
+                "code-result"
+            };
+            html.push_str(&format!(
+                r#"<div class="{}">📋 Output:
+{}</div>"#,
+                class,
+                html_escape(output)
+            ));
         }
     }
 
@@ -575,10 +643,15 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     if let Some(option_groups) = content.get("options").and_then(|v| v.as_array()) {
         for group in option_groups {
             if let Some(options) = group.get("options").and_then(|v| v.as_array()) {
-                html.push_str(r#"<div style="display:flex;flex-wrap:wrap;gap:10px;margin:12px 0">"#);
+                html.push_str(
+                    r#"<div style="display:flex;flex-wrap:wrap;gap:10px;margin:12px 0">"#,
+                );
                 for opt in options {
                     let title = opt.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                    let desc = opt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                    let desc = opt
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     html.push_str(&format!(
                         r#"<div style="flex:1;min-width:160px;padding:10px;border:1px solid #e0e0e8;border-radius:6px"><div style="font-weight:600;font-size:13px">{}</div><div style="font-size:12px;color:#8e8ea0;margin-top:4px">{}</div></div>"#,
                         html_escape(title), html_escape(desc)
@@ -614,7 +687,8 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
             let content_text = i.get("content").and_then(|v| v.as_str()).unwrap_or("");
             html.push_str(&format!(
                 r#"<div class="insight"><div class="insight-title">💡 {}</div><div>{}</div></div>"#,
-                html_escape(title), html_escape(content_text)
+                html_escape(title),
+                html_escape(content_text)
             ));
         }
     }
@@ -629,7 +703,11 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
                 for item in items {
                     let label = item.get("label").and_then(|v| v.as_str()).unwrap_or("");
                     let detail = item.get("detail").and_then(|v| v.as_str()).unwrap_or("");
-                    html.push_str(&format!("<li><strong>{}</strong>: {}</li>", html_escape(label), html_escape(detail)));
+                    html.push_str(&format!(
+                        "<li><strong>{}</strong>: {}</li>",
+                        html_escape(label),
+                        html_escape(detail)
+                    ));
                 }
                 html.push_str("</ul>");
             }
@@ -640,7 +718,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     // Generated files
     if let Some(gen_files) = content.get("generatedFiles").and_then(|v| v.as_array()) {
         for gf in gen_files {
-            let name = gf.get("fileName").and_then(|v| v.as_str()).unwrap_or("file");
+            let name = gf
+                .get("fileName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("file");
             let desc = gf.get("description").and_then(|v| v.as_str()).unwrap_or("");
             html.push_str(&format!(
                 r#"<div class="file-ref">📄 {} <span style="color:#8e8ea0;font-size:11px">— {}</span></div>"#,
@@ -653,7 +734,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     if let Some(reports) = content.get("reports").and_then(|v| v.as_array()) {
         for rpt in reports {
             let title = rpt.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let desc = rpt.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let desc = rpt
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             html.push_str(&format!(
                 r#"<div class="file-ref">📊 {} <span style="color:#8e8ea0;font-size:11px">— {}</span></div>"#,
                 html_escape(title), html_escape(desc)
@@ -664,7 +748,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     // Search sources
     if let Some(search_sources) = content.get("searchSources").and_then(|v| v.as_array()) {
         for ss in search_sources {
-            let title = ss.get("title").and_then(|v| v.as_str()).unwrap_or("References");
+            let title = ss
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("References");
             html.push_str(&format!(r#"<div class="search-sources"><div style="font-weight:600;margin-bottom:6px">🔗 {}</div>"#, html_escape(title)));
             if let Some(items) = ss.get("items").and_then(|v| v.as_array()) {
                 for item in items {
@@ -690,7 +777,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
 
     // Exec summary
     if let Some(exec) = content.get("execSummary") {
-        let title = exec.get("title").and_then(|v| v.as_str()).unwrap_or("Summary");
+        let title = exec
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Summary");
         html.push_str(&format!(r#"<div style="margin:12px 0"><div style="font-weight:600;margin-bottom:8px">📋 {}</div>"#, html_escape(title)));
         if let Some(boxes) = exec.get("boxes").and_then(|v| v.as_array()) {
             html.push_str("<div class=\"exec-summary\">");
@@ -712,7 +802,10 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     if let Some(confirmations) = content.get("confirmations").and_then(|v| v.as_array()) {
         for c in confirmations {
             let title = c.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let status = c.get("status").and_then(|v| v.as_str()).unwrap_or("pending");
+            let status = c
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pending");
             let status_icon = match status {
                 "confirmed" => "✅",
                 "rejected" => "❌",
@@ -774,7 +867,10 @@ fn render_table(html: &mut String, table: &serde_json::Value) {
 
 /// Render progress indicator.
 fn render_progress(html: &mut String, progress: &serde_json::Value) {
-    let title = progress.get("title").and_then(|v| v.as_str()).unwrap_or("Progress");
+    let title = progress
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Progress");
     html.push_str(&format!(r#"<div style="margin:12px 0"><div style="font-weight:600;font-size:13px;margin-bottom:6px">{}</div>"#, html_escape(title)));
 
     if let Some(steps) = progress.get("steps").and_then(|v| v.as_array()) {
@@ -784,13 +880,20 @@ fn render_progress(html: &mut String, progress: &serde_json::Value) {
                 html.push_str("<span class=\"progress-arrow\">→</span>");
             }
             let label = step.get("label").and_then(|v| v.as_str()).unwrap_or("");
-            let status = step.get("status").and_then(|v| v.as_str()).unwrap_or("pending");
+            let status = step
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pending");
             let class = match status {
                 "done" => "step-done",
                 "active" => "step-active",
                 _ => "step-pending",
             };
-            html.push_str(&format!(r#"<span class="progress-step {}">{}</span>"#, class, html_escape(label)));
+            html.push_str(&format!(
+                r#"<span class="progress-step {}">{}</span>"#,
+                class,
+                html_escape(label)
+            ));
         }
         html.push_str("</div>");
     }
@@ -819,7 +922,10 @@ fn simple_markdown_to_html(text: &str) -> String {
         }
 
         // Numbered lists
-        if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()).and_then(|s| s.strip_prefix(". ")) {
+        if let Some(rest) = trimmed
+            .strip_prefix(|c: char| c.is_ascii_digit())
+            .and_then(|s| s.strip_prefix(". "))
+        {
             if !in_list {
                 result.push_str("<ol>");
                 in_list = true;
@@ -840,11 +946,20 @@ fn simple_markdown_to_html(text: &str) -> String {
 
         // Headers
         if trimmed.starts_with("### ") {
-            result.push_str(&format!("<h4>{}</h4>", inline_markdown(&html_escape(&trimmed[4..]))));
+            result.push_str(&format!(
+                "<h4>{}</h4>",
+                inline_markdown(&html_escape(&trimmed[4..]))
+            ));
         } else if trimmed.starts_with("## ") {
-            result.push_str(&format!("<h3>{}</h3>", inline_markdown(&html_escape(&trimmed[3..]))));
+            result.push_str(&format!(
+                "<h3>{}</h3>",
+                inline_markdown(&html_escape(&trimmed[3..]))
+            ));
         } else if trimmed.starts_with("# ") {
-            result.push_str(&format!("<h2>{}</h2>", inline_markdown(&html_escape(&trimmed[2..]))));
+            result.push_str(&format!(
+                "<h2>{}</h2>",
+                inline_markdown(&html_escape(&trimmed[2..]))
+            ));
         } else if trimmed.is_empty() {
             result.push_str("<br>");
         } else {
@@ -868,7 +983,12 @@ fn inline_markdown(text: &str) -> String {
     while let Some(start) = result.find("**") {
         if let Some(end) = result[start + 2..].find("**") {
             let inner = &result[start + 2..start + 2 + end].to_string();
-            result = format!("{}<strong>{}</strong>{}", &result[..start], inner, &result[start + 2 + end + 2..]);
+            result = format!(
+                "{}<strong>{}</strong>{}",
+                &result[..start],
+                inner,
+                &result[start + 2 + end + 2..]
+            );
         } else {
             break;
         }
@@ -877,7 +997,12 @@ fn inline_markdown(text: &str) -> String {
     while let Some(start) = result.find('`') {
         if let Some(end) = result[start + 1..].find('`') {
             let inner = &result[start + 1..start + 1 + end].to_string();
-            result = format!("{}<code>{}</code>{}", &result[..start], inner, &result[start + 1 + end + 1..]);
+            result = format!(
+                "{}<code>{}</code>{}",
+                &result[..start],
+                inner,
+                &result[start + 1 + end + 1..]
+            );
         } else {
             break;
         }
@@ -888,7 +1013,7 @@ fn inline_markdown(text: &str) -> String {
 /// HTML-escape a string.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
