@@ -17,3 +17,5 @@ pub use permission::{AllowAllPermissionPipeline, PermissionPipeline};
 
 pub mod catalog;
 pub use catalog::{CatalogEntry, ToolCatalog, TOOL_CATALOG};
+
+pub mod builtin;
