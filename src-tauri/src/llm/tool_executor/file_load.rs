@@ -1061,3 +1061,28 @@ if os.path.exists(_au_path):
         step = step,
     )
 }
+
+/// 生成授权目录 preamble：注入 _WORKSPACE_ROOT 变量和 _find_workspace_file 工具函数。
+/// 在 execute_python handler 中，当 authorized_workspace 存在时追加到 sandbox preamble。
+pub(crate) fn build_local_workspace_preamble(root_path: &std::path::Path) -> String {
+    use super::util::py_escape;
+    let root_str = root_path.to_string_lossy();
+    format!(
+        r#"
+# ── 授权工作目录（workspace-first 注入）──
+_WORKSPACE_ROOT = '{root}'
+
+def _find_workspace_file(pattern='*', recursive=True):
+    """在授权工作目录中搜索匹配模式的文件。"""
+    import glob as _g
+    if recursive:
+        matches = _g.glob(os.path.join(_WORKSPACE_ROOT, '**', pattern), recursive=True)
+    else:
+        matches = _g.glob(os.path.join(_WORKSPACE_ROOT, pattern))
+    data_exts = ('.xlsx', '.xls', '.csv', '.tsv', '.json', '.jsonl', '.parquet', '.txt')
+    data_files = [f for f in matches if any(f.lower().endswith(e) for e in data_exts)]
+    return data_files[0] if data_files else (matches[0] if matches else None)
+"#,
+        root = py_escape(&root_str),
+    )
+}

@@ -28,6 +28,21 @@ pub(crate) async fn build_visible_tool_defs(
     }
 }
 
+/// 根据是否有授权目录，构建 analysis precompute 阶段使用的 SandboxConfig。
+/// 独立为 helper 以便测试验证分支逻辑。
+pub(crate) fn build_precompute_sandbox(
+    workspace_path: &std::path::PathBuf,
+    authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
+) -> crate::python::sandbox::SandboxConfig {
+    match authorized_workspace {
+        Some(aw) => crate::python::sandbox::SandboxConfig::for_workspace_with_authorized(
+            workspace_path,
+            vec![aw.root_path.clone()],
+        ),
+        None => crate::python::sandbox::SandboxConfig::for_workspace(workspace_path),
+    }
+}
+
 pub(crate) async fn legacy_send_message_impl(
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
@@ -1684,7 +1699,7 @@ async fn agent_loop(
                 config.step, precompute.cache_key, precompute.python_code.len(), conversation_id
             );
             let timeout = std::time::Duration::from_secs(120);
-            let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path);
+            let sandbox = build_precompute_sandbox(&workspace_path, authorized_workspace.as_ref());
 
             // Auto-load uploaded files that haven't been loaded yet.
             // This handles the case where step0 was entered without files (user uploaded later),
@@ -3918,4 +3933,32 @@ fn strip_thinking_markers(text: &str) -> String {
         .replace("<｜begin▁of▁thinking｜>", "")
         .replace("<|end▁of▁thinking|>", "")
         .replace("<|begin▁of▁thinking|>", "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::store::AuthorizedWorkspaceRef;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_build_precompute_sandbox_with_authorized_workspace() {
+        let workspace = PathBuf::from("/tmp/lotus");
+        let aw = AuthorizedWorkspaceRef {
+            id: "test".to_string(),
+            root_path: PathBuf::from("/tmp/test_data"),
+            display_name: "test".to_string(),
+        };
+        let config = build_precompute_sandbox(&workspace, Some(&aw));
+        assert!(config.allowed_read_paths.contains(&PathBuf::from("/tmp/test_data")));
+        assert!(!config.allowed_write_paths.contains(&PathBuf::from("/tmp/test_data")));
+    }
+
+    #[test]
+    fn test_build_precompute_sandbox_without_authorized_workspace() {
+        let workspace = PathBuf::from("/tmp/lotus");
+        let config = build_precompute_sandbox(&workspace, None);
+        assert_eq!(config.allowed_read_paths.len(), 7);
+        assert!(!config.allowed_read_paths.iter().any(|p| p == &PathBuf::from("/tmp/test_data")));
+    }
 }

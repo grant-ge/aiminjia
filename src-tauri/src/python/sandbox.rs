@@ -16,8 +16,10 @@ pub struct SandboxConfig {
     pub timeout_seconds: u32,
     /// Maximum memory usage in MB (advisory — enforced via Python resource module).
     pub memory_limit_mb: u32,
-    /// Directories the Python script is allowed to access.
-    pub allowed_paths: Vec<PathBuf>,
+    /// 可读路径（含授权目录）
+    pub allowed_read_paths: Vec<PathBuf>,
+    /// 可写路径（只含 Lotus workspace 子目录，不含授权目录）
+    pub allowed_write_paths: Vec<PathBuf>,
     /// Maximum output size in bytes before truncation.
     pub max_output_bytes: usize,
     /// Python modules that are forbidden from being imported.
@@ -29,7 +31,8 @@ impl Default for SandboxConfig {
         Self {
             timeout_seconds: 300,
             memory_limit_mb: 512,
-            allowed_paths: Vec::new(),
+            allowed_read_paths: Vec::new(),
+            allowed_write_paths: Vec::new(),
             max_output_bytes: 1_000_000, // 1 MB
             forbidden_modules: vec![
                 "subprocess".to_string(),
@@ -69,7 +72,7 @@ impl SandboxConfig {
     /// The script will be allowed to access uploads/ and analysis/ subdirs.
     pub fn for_workspace(workspace: &PathBuf) -> Self {
         let mut config = Self::default();
-        config.allowed_paths = vec![
+        let workspace_paths = vec![
             workspace.clone(),
             workspace.join("uploads"),
             workspace.join("exports"),
@@ -78,6 +81,17 @@ impl SandboxConfig {
             workspace.join("analysis"),
             workspace.join("temp"),
         ];
+        config.allowed_read_paths = workspace_paths.clone();
+        config.allowed_write_paths = workspace_paths;
+        config
+    }
+
+    /// 创建支持授权工作目录读取的 sandbox 配置。
+    /// allowed_read_paths = 旧 7 个路径 + extra_read_paths（授权目录）
+    /// allowed_write_paths = 旧 7 个路径（不变）
+    pub fn for_workspace_with_authorized(workspace: &PathBuf, extra_read_paths: Vec<PathBuf>) -> Self {
+        let mut config = Self::for_workspace(workspace);
+        config.allowed_read_paths.extend(extra_read_paths);
         config
     }
 
@@ -170,7 +184,27 @@ impl SandboxConfig {
     ///   and the hook caused repeated breakage with legitimate library dependencies
     ///   (openpyxl→shutil, urllib.parse, etc.)
     pub fn preamble(&self) -> String {
-        // Part 1: Basic setup (dynamic — uses Rust format! for allowed_paths)
+        // Helper: format a Vec<PathBuf> as a Python list literal
+        fn fmt_path_list(paths: &[PathBuf]) -> String {
+            format!(
+                "[{}]",
+                paths
+                    .iter()
+                    .map(|p| {
+                        let s = p.display().to_string();
+                        // Escape backslashes and single quotes to prevent Python injection
+                        let escaped = s.replace('\\', "\\\\")
+                               .replace('\'', "\\'")
+                               .replace('\n', "\\n")
+                               .replace('\r', "\\r");
+                        format!("'{}'", escaped)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+
+        // Part 1: Basic setup (dynamic — uses Rust format! for path lists)
         let basic_setup = format!(
             r#"import sys
 import os
@@ -185,7 +219,8 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # Restrict file access to allowed directories
-_ALLOWED_PATHS = {allowed_paths}
+_ALLOWED_READ_PATHS = {allowed_read_paths}
+_ALLOWED_WRITE_PATHS = {allowed_write_paths}
 
 # Set recursion limit
 sys.setrecursionlimit(2000)
@@ -199,26 +234,15 @@ try:
 except (ImportError, ValueError, OSError):
     pass  # Windows or unsupported platform
 
-# Working directory (workspace root — first element of _ALLOWED_PATHS)
-if _ALLOWED_PATHS:
+# Working directory (workspace root — first element of _ALLOWED_WRITE_PATHS)
+if _ALLOWED_WRITE_PATHS:
     try:
-        os.chdir(_ALLOWED_PATHS[0])
+        os.chdir(_ALLOWED_WRITE_PATHS[0])
     except OSError:
         pass
 "#,
-            allowed_paths = format!(
-                "[{}]",
-                self.allowed_paths
-                    .iter()
-                    .map(|p| {
-                        let s = p.display().to_string();
-                        // Escape backslashes and single quotes to prevent Python injection
-                        let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
-                        format!("'{}'", escaped)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            allowed_read_paths = fmt_path_list(&self.allowed_read_paths),
+            allowed_write_paths = fmt_path_list(&self.allowed_write_paths),
             memory_limit_mb = self.memory_limit_mb,
         );
 
@@ -228,7 +252,7 @@ if _ALLOWED_PATHS:
         // Part 3: File write restriction (no runtime import hook — static validation is enough)
         let file_write_hook = r#"
 # ── File write restriction (path enforcement layer) ──
-# Wraps builtins.open to block writes outside _ALLOWED_PATHS.
+# Wraps builtins.open to block writes outside _ALLOWED_WRITE_PATHS.
 # Read operations are unrestricted (pandas/numpy read from site-packages, /tmp, etc.).
 # Also tracks all write paths in _written_files for file lifecycle management.
 if '_written_files' not in dir():
@@ -244,12 +268,12 @@ def _safe_open(file, mode='r', *args, **kwargs):
                 abs_path = os.path.realpath(os.path.abspath(file_str))
                 allowed = any(
                     abs_path.startswith(os.path.realpath(p))
-                    for p in _ALLOWED_PATHS
-                ) if _ALLOWED_PATHS else False
+                    for p in _ALLOWED_WRITE_PATHS
+                ) if _ALLOWED_WRITE_PATHS else False
                 if not allowed:
                     raise PermissionError(
                         f"Writing to '{file_str}' is blocked (outside workspace). "
-                        f"Allowed directories: {', '.join(_ALLOWED_PATHS)}"
+                        f"Allowed directories: {', '.join(_ALLOWED_WRITE_PATHS)}"
                     )
                 # Track write path for file lifecycle management
                 _wf = globals().get('_written_files') or (getattr(builtins, '_written_files', None))
@@ -778,15 +802,18 @@ mod tests {
     fn test_for_workspace() {
         let workspace = PathBuf::from("/tmp/workspace");
         let config = SandboxConfig::for_workspace(&workspace);
-        assert_eq!(config.allowed_paths.len(), 7);
-        assert_eq!(config.allowed_paths[0], workspace);
-        assert!(config.allowed_paths[1].ends_with("uploads"));
+        assert_eq!(config.allowed_read_paths.len(), 7);
+        assert_eq!(config.allowed_write_paths.len(), 7);
+        assert_eq!(config.allowed_read_paths[0], workspace);
+        assert!(config.allowed_read_paths[1].ends_with("uploads"));
+        assert_eq!(config.allowed_write_paths[0], workspace);
     }
 
     #[test]
     fn test_preamble_contains_paths() {
         let mut config = SandboxConfig::default();
-        config.allowed_paths = vec![PathBuf::from("/tmp/test")];
+        config.allowed_read_paths = vec![PathBuf::from("/tmp/test")];
+        config.allowed_write_paths = vec![PathBuf::from("/tmp/test")];
         let preamble = config.preamble();
         assert!(preamble.contains("/tmp/test"));
     }
@@ -960,7 +987,12 @@ print(f"Mean: {mean}, Std: {std}")
     #[test]
     fn test_preamble_multiple_allowed_paths() {
         let mut config = SandboxConfig::default();
-        config.allowed_paths = vec![
+        config.allowed_read_paths = vec![
+            PathBuf::from("/workspace/uploads"),
+            PathBuf::from("/workspace/analysis"),
+            PathBuf::from("/workspace/temp"),
+        ];
+        config.allowed_write_paths = vec![
             PathBuf::from("/workspace/uploads"),
             PathBuf::from("/workspace/analysis"),
             PathBuf::from("/workspace/temp"),
@@ -975,7 +1007,8 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_empty_allowed_paths() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("_ALLOWED_PATHS = []"));
+        assert!(preamble.contains("_ALLOWED_READ_PATHS = []"));
+        assert!(preamble.contains("_ALLOWED_WRITE_PATHS = []"));
     }
 
     // -- Pre-loaded imports ----------------------------------------------------

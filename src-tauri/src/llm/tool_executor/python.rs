@@ -28,7 +28,17 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
 
     // Validate user code early (before assembling system preamble/epilogue).
     // System-injected code bypasses validation via execute_raw().
-    let sandbox = SandboxConfig::for_workspace(&ctx.workspace_path);
+    let (sandbox, workspace_root_preamble) = match &ctx.authorized_workspace {
+        Some(aw) => {
+            let s = SandboxConfig::for_workspace_with_authorized(
+                &ctx.workspace_path,
+                vec![aw.root_path.clone()],
+            );
+            let p = crate::llm::tool_executor::file_load::build_local_workspace_preamble(&aw.root_path);
+            (s, p)
+        }
+        None => (SandboxConfig::for_workspace(&ctx.workspace_path), String::new()),
+    };
     sandbox
         .validate_code(code)
         .map_err(|e| anyhow::anyhow!("Sandbox violation: {}", e))?;
@@ -86,6 +96,16 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
         );
         format!("{}\n{}", loaded_preamble, code)
     };
+
+    // Inject workspace_root_preamble (_WORKSPACE_ROOT + _find_workspace_file) when
+    // an authorized workspace is present. Prepend so it's available to user code.
+    if !workspace_root_preamble.is_empty() {
+        info!(
+            "[TOOL:execute_python] Injecting workspace_root_preamble ({} bytes) for authorized_workspace",
+            workspace_root_preamble.len()
+        );
+        final_code = format!("{}\n{}", workspace_root_preamble, final_code);
+    }
 
     // In analysis mode:
     // 1. Inject three-layer snapshot system + _df_raw + _CURRENT_STEP
