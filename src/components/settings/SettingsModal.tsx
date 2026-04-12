@@ -28,6 +28,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
 import { SkillsTab } from '@/components/settings/SkillsTab'
+import { WorkspaceAuthPanel } from '@/components/settings/WorkspaceAuthPanel'
+import { useChatStore } from '@/stores/chatStore'
 import type { AppLanguage } from '@/i18n'
 
 interface SettingsModalProps {
@@ -59,6 +61,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const settings = useSettingsStore()
   const notifications = useNotificationStore()
   const { t } = useTranslation()
+  const activeConversationId = useChatStore((s) => s.activeConversationId)
 
   const [mainTab, setMainTab] = useState<MainTab>('account')
   const [activeProvider, setActiveProvider] = useState<LlmProvider>('deepseek-v3')
@@ -708,6 +711,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </div>
             </div>
           </div>
+
+          {/* Authorized local workspace */}
+          {activeConversationId && (
+            <div
+              className="mt-6 border-t pt-4"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <WorkspaceAuthPanel sessionId={activeConversationId} />
+            </div>
+          )}
         </div>
       )}
 

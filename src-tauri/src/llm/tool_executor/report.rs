@@ -36,9 +36,15 @@ pub(crate) async fn handle_generate_report(
             .workspace_path
             .canonicalize()
             .unwrap_or_else(|_| ctx.workspace_path.clone());
-        if !canonical.starts_with(&workspace_canonical) {
+        let in_workspace = canonical.starts_with(&workspace_canonical);
+        let in_authorized = ctx.authorized_workspace
+            .as_ref()
+            .map(|aw| canonical.starts_with(&aw.root_path))
+            .unwrap_or(false);
+        if !in_workspace && !in_authorized {
             return Err(anyhow::anyhow!(
-                "Source file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
+                "Source file path '{}' is outside the workspace directory and outside the authorized workspace. \
+                 Only files within the workspace or the authorized local directory are allowed.",
                 source_path
             ));
         }
