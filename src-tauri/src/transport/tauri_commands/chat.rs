@@ -30,6 +30,8 @@ use crate::runtime::ids::{RunId, SessionId};
 use crate::runtime::{
     ChatTurnRequest, QueryEngine, RuntimeEventBus, RuntimeTurnExecutor, SessionRuntime,
 };
+use crate::transport::tauri_event_adapter::TauriEventAdapter;
+use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
@@ -141,9 +143,13 @@ impl TauriChatCommandAdapter {
             auth_manager,
             app,
         };
+        let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
+        let adapter = Arc::new(TauriEventAdapter::new(host));
+        let bus = RuntimeEventBus::new();
+        bus.subscribe(adapter);
         let runtime = SessionRuntime::with_executor(
             QueryEngine::new(),
-            RuntimeEventBus::new(),
+            bus,
             Arc::new(TauriLegacyTurnExecutor {
                 services: services.clone(),
             }),

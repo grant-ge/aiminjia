@@ -65,10 +65,11 @@ impl ToolDispatcher {
         let definition = tool.definition();
         self.permission_pipeline
             .authorize(&definition, &input, &ctx)
-            .map_err(ToolError::Other)?;
+            .map_err(|err| ToolError::PermissionDenied(err.to_string()))?;
         ctx.event_sink.emit("tool:executing");
-        let result = tool.execute(input, ctx.clone()).await?;
+        let result = tool.execute(input, ctx.clone()).await;
         ctx.event_sink.emit("tool:completed");
+        let result = result?;
         Ok(ToolDispatchOutcome {
             result,
             event_names: ctx.event_sink.snapshot(),

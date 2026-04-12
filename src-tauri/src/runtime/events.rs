@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::ids::{AgentId, RunId, SessionId, TaskId, ToolCallId};
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AgentIdleScope {
+    Primary,
+    Child,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RuntimeEventKind {
@@ -20,9 +26,16 @@ pub enum RuntimeEventKind {
     },
     AgentIdle {
         agent_id: AgentId,
+        scope: AgentIdleScope,
+    },
+    TaskStatusChanged {
+        task_id: TaskId,
+        status: String,
     },
     MessagePersisted {
         message_id: String,
+        role: String,
+        content: serde_json::Value,
     },
     RunCancelled,
     RunCompleted,
@@ -47,7 +60,7 @@ impl RuntimeEvent {
             _ => None,
         };
         let agent_id = match &kind {
-            RuntimeEventKind::AgentIdle { agent_id } => Some(agent_id.clone()),
+            RuntimeEventKind::AgentIdle { agent_id, .. } => Some(agent_id.clone()),
             _ => None,
         };
         Self {
@@ -71,12 +84,16 @@ impl RuntimeEvent {
         session_id: SessionId,
         run_id: RunId,
         message_id: impl Into<String>,
+        role: impl Into<String>,
+        content: serde_json::Value,
     ) -> Self {
         Self::new(
             session_id,
             run_id,
             RuntimeEventKind::MessagePersisted {
                 message_id: message_id.into(),
+                role: role.into(),
+                content,
             },
         )
     }

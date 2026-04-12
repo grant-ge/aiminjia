@@ -51,9 +51,11 @@ impl RunStore for InMemoryRunStore {
     }
 
     fn update_run_status(&self, run_id: &RunId, status: RunStatus) -> Result<()> {
-        if let Some(record) = self.runs.lock().unwrap().get_mut(run_id.as_str()) {
-            record.status = status;
-        }
+        let mut runs = self.runs.lock().unwrap();
+        let record = runs
+            .get_mut(run_id.as_str())
+            .ok_or_else(|| anyhow::anyhow!("run not found: {}", run_id.as_str()))?;
+        record.status = status;
         Ok(())
     }
 }

@@ -423,6 +423,10 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         );
     }
 
+    // Browser sub-agents currently run in foreground by default.
+    // When the caller provides a background flag, this should be derived from it.
+    let sub_agent_background = ctx.run_id.is_some();
+
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
         system_prompt,
@@ -438,6 +442,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         dynamic_context,
         conversation_id: ctx.conversation_id.clone(),
         parent_run_id: ctx.run_id.clone(),
+        background: sub_agent_background,
         app_handle: ctx.app_handle.clone(),
     };
 

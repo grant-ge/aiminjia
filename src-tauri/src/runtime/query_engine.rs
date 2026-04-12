@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::json;
 
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -29,18 +29,30 @@ impl QueryEngine {
     }
 
     pub async fn run(&self, turn: &mut TurnState, bus: &RuntimeEventBus) -> Result<()> {
+        if turn.cancellation().is_cancelled() {
+            bus.emit(RuntimeEvent::new(
+                turn.session_id().clone(),
+                turn.run_id().clone(),
+                RuntimeEventKind::RunCancelled,
+            ))
+            .await?;
+            return Err(anyhow!("turn already cancelled"));
+        }
+
         let content = format!("runtime:{}", turn.user_input());
         turn.append_output(&content);
         bus.emit(RuntimeEvent::stream_delta(
             turn.session_id().clone(),
             turn.run_id().clone(),
-            content,
+            content.clone(),
         ))
         .await?;
         bus.emit(RuntimeEvent::message_persisted(
             turn.session_id().clone(),
             turn.run_id().clone(),
             format!("msg-{}", turn.run_id().as_str()),
+            "assistant",
+            json!({"text": content}),
         ))
         .await?;
         bus.emit(RuntimeEvent::stream_done(

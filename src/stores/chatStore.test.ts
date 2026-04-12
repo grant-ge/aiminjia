@@ -10,6 +10,7 @@ beforeEach(() => {
     messages: [],
     busyConversations: new Set(),
     streamStates: {},
+    taskStates: {},
     isStreaming: false,
     streamingContent: '',
     toolExecutions: [],
@@ -178,7 +179,8 @@ describe('chatStore — per-conversation streaming', () => {
     store.clearConversationStreamState('c1')
 
     const s = useChatStore.getState()
-    expect(s.streamStates['c1']).toBeUndefined()
+    expect(s.streamStates['c1']?.isStreaming).toBe(false)
+    expect(s.streamStates['c1']?.streamingContent).toBe('')
     expect(s.streamStates['c2']?.isStreaming).toBe(true)
     expect(s.streamStates['c2']?.streamingContent).toBe('B')
   })
@@ -227,6 +229,53 @@ describe('chatStore — busy conversations', () => {
     const s = useChatStore.getState()
     expect(s.busyConversations.size).toBe(3)
     expect(s.busyConversations.has('old')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task states
+// ---------------------------------------------------------------------------
+
+describe('chatStore — task states', () => {
+  it('records task terminal state per conversation', () => {
+    const store = useChatStore.getState()
+
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'completed',
+      runId: 'run-1',
+    })
+
+    expect(useChatStore.getState().taskStates['c1']).toEqual([
+      {
+        taskId: 'task-1',
+        status: 'completed',
+        runId: 'run-1',
+      },
+    ])
+  })
+
+  it('updates an existing task state in place', () => {
+    const store = useChatStore.getState()
+
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'running',
+      runId: 'run-1',
+    })
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'failed',
+      runId: 'run-1',
+    })
+
+    expect(useChatStore.getState().taskStates['c1']).toEqual([
+      {
+        taskId: 'task-1',
+        status: 'failed',
+        runId: 'run-1',
+      },
+    ])
   })
 })
 

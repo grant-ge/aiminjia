@@ -65,14 +65,11 @@ impl ToolCallStore for InMemoryToolCallStore {
         tool_call_id: &ToolCallId,
         status: ToolCallStatus,
     ) -> Result<()> {
-        if let Some(record) = self
-            .tool_calls
-            .lock()
-            .unwrap()
+        let mut tool_calls = self.tool_calls.lock().unwrap();
+        let record = tool_calls
             .get_mut(tool_call_id.as_str())
-        {
-            record.status = status;
-        }
+            .ok_or_else(|| anyhow::anyhow!("tool call not found: {}", tool_call_id.as_str()))?;
+        record.status = status;
         Ok(())
     }
 }

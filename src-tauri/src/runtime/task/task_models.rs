@@ -5,6 +5,7 @@ pub enum TaskStatus {
     Pending,
     Running,
     Completed,
+    Failed,
     Cancelled,
 }
 

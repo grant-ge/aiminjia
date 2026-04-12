@@ -81,6 +81,18 @@ impl SessionRuntime {
         request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
         if let Some(executor) = &self.turn_executor {
+            // When a legacy executor is present, it owns the full chat lifecycle
+            // including all event emission. We only record a runtime-level marker
+            // so that runtime-layer observers can see the turn existed.
+            let mapping =
+                IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
+            let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
+            let event = crate::runtime::events::RuntimeEvent::new(
+                mapping.session_id.clone(),
+                run_id,
+                crate::runtime::events::RuntimeEventKind::RunStarted,
+            );
+            let _ = self.event_bus.emit(event).await;
             return executor.run_chat_turn(request).await;
         }
 

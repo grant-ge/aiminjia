@@ -47,6 +47,7 @@ import {
   onAgentPhase,
   onStreamingStepReset,
   onFileGenerated,
+  onTaskStatusChanged,
 } from '@/lib/tauri'
 import type {
   StreamingDeltaPayload,
@@ -58,6 +59,7 @@ import type {
   ToolCompletedPayload,
   StreamingStepResetPayload,
   FileGeneratedPayload,
+  TaskStatusChangedPayload,
 } from '@/lib/tauri'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
@@ -302,8 +304,18 @@ export function useStreaming() {
 
   // --- agent:idle --------------------------------------------------------
   useTauriEvent(() =>
-    onAgentIdle(({ conversationId }: AgentIdlePayload) => {
-      console.log('[agent:idle] conversationId:', conversationId, 'Agent finished, clearing busy state')
+    onAgentIdle(({ conversationId, scope, agentId }: AgentIdlePayload) => {
+      // Determine effective scope: explicit scope wins; if absent but agentId
+      // is present, this is a child/background agent (legacy compat).
+      const effectiveScope = scope ?? (agentId ? 'child' : 'primary')
+
+      // Child/background agent idle should not clear parent conversation state
+      if (effectiveScope === 'child') {
+        console.log('[agent:idle] child agent idle for conversationId:', conversationId, '— skipping parent state clear')
+        return
+      }
+
+      console.log('[agent:idle] conversationId:', conversationId, 'scope:', effectiveScope, 'Agent finished, clearing busy state')
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
       const store = useChatStore.getState()
@@ -311,6 +323,18 @@ export function useStreaming() {
       // Safety net: also clear streaming state in case streaming:done was missed
       // (e.g. agent panicked before finish_agent could emit it)
       store.clearConversationStreamState(conversationId)
+    }),
+  )
+
+  // --- task:status-changed ------------------------------------------------
+  useTauriEvent(() =>
+    onTaskStatusChanged(({ conversationId, taskId, status, runId }: TaskStatusChangedPayload) => {
+      console.log('[task:status-changed]', conversationId, taskId, status, runId)
+      useChatStore.getState().upsertConversationTaskState(conversationId, {
+        taskId,
+        status,
+        runId,
+      })
     }),
   )
 

@@ -67,7 +67,7 @@ async fn complete_background_run_stores_summary_and_emits_agent_idle() {
     let events = bus.recorded();
     let idle_event = events
         .iter()
-        .find(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { agent_id: aid } if aid == &agent_id));
+        .find(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { agent_id: aid, .. } if aid == &agent_id));
     assert!(
         idle_event.is_some(),
         "AgentIdle event not emitted for agent {agent_id:?}"

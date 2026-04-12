@@ -103,7 +103,7 @@ async fn background_run_complete_background_run_wires_summary_and_idle_event() {
     let events = bus.recorded();
     let idle = events
         .iter()
-        .find(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { agent_id: aid } if aid == &agent_id));
+        .find(|e| matches!(&e.kind, RuntimeEventKind::AgentIdle { agent_id: aid, .. } if aid == &agent_id));
     assert!(
         idle.is_some(),
         "AgentIdle event must be emitted on bus for agent {agent_id:?}"

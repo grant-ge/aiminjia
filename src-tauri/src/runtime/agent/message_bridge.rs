@@ -1,10 +1,13 @@
-use crate::runtime::events::RuntimeEventKind;
+use crate::runtime::events::{AgentIdleScope, RuntimeEventKind};
 use crate::runtime::ids::AgentId;
 
 /// Build the `AgentIdle` event kind for a completed sub-agent.
 /// This event signals the UI that the background sub-agent has finished.
 pub fn bridge_agent_summary(agent_id: AgentId) -> RuntimeEventKind {
-    RuntimeEventKind::AgentIdle { agent_id }
+    RuntimeEventKind::AgentIdle {
+        agent_id,
+        scope: AgentIdleScope::Child,
+    }
 }
 
 /// Summarise a sub-agent result for storage/transport.
@@ -39,7 +42,7 @@ mod tests {
         let id = AgentId::new("agent-42");
         let kind = bridge_agent_summary(id.clone());
         assert!(
-            matches!(kind, RuntimeEventKind::AgentIdle { agent_id } if agent_id == id),
+            matches!(kind, RuntimeEventKind::AgentIdle { agent_id, .. } if agent_id == id),
             "expected AgentIdle for {id:?}"
         );
     }

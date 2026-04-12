@@ -18,6 +18,12 @@ export interface ToolExecution {
 
 export type AgentPhase = 'think' | 'act' | 'observe'
 
+export interface ConversationTaskState {
+  taskId: string
+  status: string
+  runId: string
+}
+
 export interface ConversationStreamState {
   isStreaming: boolean
   streamingContent: string
@@ -36,6 +42,7 @@ interface ChatState {
   // Multi-conversation concurrency state
   busyConversations: Set<string>
   streamStates: Record<string, ConversationStreamState>
+  taskStates: Record<string, ConversationTaskState[]>
 
   // --- Legacy compatibility getters (derived from per-conversation state) ---
   // These are computed from activeConversationId + streamStates for
@@ -65,6 +72,7 @@ interface ChatState {
   addConversationToolExecution: (convId: string, exec: ToolExecution) => void
   updateConversationToolExecution: (convId: string, toolId: string, update: Partial<ToolExecution>) => void
   setConversationAgentPhase: (convId: string, phase: AgentPhase | undefined) => void
+  upsertConversationTaskState: (convId: string, task: ConversationTaskState) => void
 
   // Legacy actions (delegate to per-conversation with activeConversationId)
   setStreaming: (isStreaming: boolean) => void
@@ -100,6 +108,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   busyConversations: new Set(),
   streamStates: {},
+  taskStates: {},
 
   // Legacy derived fields (initial values)
   isStreaming: false,
@@ -248,6 +257,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [convId]: { ...prev, agentPhase: phase },
       }
       return { streamStates }
+    }),
+
+  upsertConversationTaskState: (convId, task) =>
+    set((state) => {
+      const existing = state.taskStates[convId] ?? []
+      const idx = existing.findIndex((t) => t.taskId === task.taskId)
+      const updated = idx >= 0
+        ? existing.map((t, i) => (i === idx ? { ...t, ...task } : t))
+        : [...existing, task]
+      return { taskStates: { ...state.taskStates, [convId]: updated } }
     }),
 
   // --- Legacy actions (delegate to per-conversation) ---

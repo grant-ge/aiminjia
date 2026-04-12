@@ -50,6 +50,8 @@ pub struct SubAgentConfig {
     pub conversation_id: String,
     /// Parent run identity for child-run isolation.
     pub parent_run_id: Option<RunId>,
+    /// Whether this sub-agent should run in background mode.
+    pub background: bool,
     /// App handle for emitting Tauri events.
     pub app_handle: Option<tauri::AppHandle>,
 }
@@ -115,7 +117,7 @@ pub async fn run_sub_agent(
             agent_runtime
                 .spawn_child_run(SpawnChildRunRequest {
                     parent_run_id,
-                    background: false,
+                    background: config.background,
                     allowed_tools: config.allowed_tools.clone(),
                 })
                 .await?,

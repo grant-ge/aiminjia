@@ -37,9 +37,11 @@ impl TaskStore for InMemoryTaskStore {
     }
 
     fn update_task_status(&self, task_id: &TaskId, status: TaskStatus) -> Result<()> {
-        if let Some(record) = self.tasks.lock().unwrap().get_mut(task_id.as_str()) {
-            record.status = status;
-        }
+        let mut tasks = self.tasks.lock().unwrap();
+        let record = tasks
+            .get_mut(task_id.as_str())
+            .ok_or_else(|| anyhow::anyhow!("task not found: {}", task_id.as_str()))?;
+        record.status = status;
         Ok(())
     }
 }

@@ -2,6 +2,24 @@
 
 这组文档用于把 lotus-app 后端逐步改造成更接近 `claude-code-best` 的 runtime-first 架构。
 
+## 当前建议优先看（2026-04-12）
+
+1. [2026-04-12-runtime-first-final-acceptance-summary.md](./2026-04-12-runtime-first-final-acceptance-summary.md)
+   - 当前最权威的总体验收摘要
+   - 汇总运行结果、关键通过点、非阻塞遗留项
+
+2. [2026-04-12-review-plan-status-matrix.md](./2026-04-12-review-plan-status-matrix.md)
+   - 当前所有 blueprint / plans / reviews 的状态总表
+   - 区分哪些已冻结、哪些已关闭、哪些仍是有效入口
+
+3. [reviews/2026-04-12-front-end-event-integration-review.md](./reviews/2026-04-12-front-end-event-integration-review.md)
+   - 前后端事件联调 review
+   - `task:status-changed` 与 `agent:idle scope` 验收记录
+
+4. [reviews/2026-04-10-runtime-first-strict-tdd-review.md](./reviews/2026-04-10-runtime-first-strict-tdd-review.md)
+   - runtime-first 核心严格 TDD review 历史记录
+   - 适合回看当时的问题来源与关闭背景
+
 ## 阅读顺序
 
 1. [architecture-blueprint.md](./architecture-blueprint.md)

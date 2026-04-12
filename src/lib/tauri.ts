@@ -34,6 +34,7 @@ export const TAURI_EVENTS = {
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
   AGENT_PHASE: 'agent:phase',
+  TASK_STATUS_CHANGED: 'task:status-changed',
   STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
@@ -66,6 +67,9 @@ export interface StreamingErrorPayload {
 
 export interface AgentIdlePayload {
   conversationId: string
+  runId?: string
+  agentId?: string
+  scope?: 'primary' | 'child'
 }
 
 export interface AgentPhasePayload {
@@ -108,6 +112,13 @@ export interface FileGeneratedPayload {
   category: string
   isDegraded: boolean
   degradationNotice: string | null
+}
+
+export interface TaskStatusChangedPayload {
+  conversationId: string
+  taskId: string
+  status: string
+  runId: string
 }
 
 // ---------------------------------------------------------------------------
@@ -817,6 +828,20 @@ export function onFileGenerated(
   handler: (payload: FileGeneratedPayload) => void,
 ): Promise<() => void> {
   return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, (event) => {
+    handler(event.payload)
+  })
+}
+
+/**
+ * Listen for task status change events (emitted by the runtime task system).
+ *
+ * @param handler - Callback receiving the task status change payload
+ * @returns A function to unlisten (unsubscribe) from the event
+ */
+export function onTaskStatusChanged(
+  handler: (payload: TaskStatusChangedPayload) => void,
+): Promise<() => void> {
+  return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
     handler(event.payload)
   })
 }

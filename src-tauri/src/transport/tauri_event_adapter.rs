@@ -57,19 +57,39 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "success": true,
             }),
         }),
-        RuntimeEventKind::MessagePersisted { message_id } => Some(LegacyEvent {
+        RuntimeEventKind::MessagePersisted {
+            message_id,
+            role,
+            content,
+        } => Some(LegacyEvent {
             name: "message:updated".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,
+                "id": message_id,
+                "role": role,
+                "content": content,
                 "runId": event.run_id.as_str(),
             }),
         }),
-        RuntimeEventKind::AgentIdle { agent_id } => Some(LegacyEvent {
+        RuntimeEventKind::AgentIdle { agent_id, scope } => Some(LegacyEvent {
             name: "agent:idle".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "agentId": agent_id.as_str(),
+                "runId": event.run_id.as_str(),
+                "scope": match scope {
+                    crate::runtime::events::AgentIdleScope::Primary => "primary",
+                    crate::runtime::events::AgentIdleScope::Child => "child",
+                },
+            }),
+        }),
+        RuntimeEventKind::TaskStatusChanged { task_id, status } => Some(LegacyEvent {
+            name: "task:status-changed".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "taskId": task_id.as_str(),
+                "status": status,
                 "runId": event.run_id.as_str(),
             }),
         }),
