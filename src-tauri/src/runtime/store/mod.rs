@@ -1,4 +1,5 @@
 pub mod agent_invocation_store;
+pub mod authorized_workspace_store;
 pub mod audit_store;
 pub mod conversation_store;
 pub mod file_record_store;
@@ -14,6 +15,10 @@ use std::sync::Arc;
 
 pub use agent_invocation_store::{
     AgentInvocationRecord, AgentInvocationStore, InMemoryAgentInvocationStore,
+};
+pub use authorized_workspace_store::{
+    AuthorizedWorkspace, AuthorizedWorkspaceRef, AuthorizedWorkspaceStore,
+    FileAuthorizedWorkspaceStore, InMemoryAuthorizedWorkspaceStore,
 };
 pub use audit_store::{AuditRecord, AuditStore, InMemoryAuditStore};
 pub use conversation_store::{ConversationStore, InMemoryConversationStore};

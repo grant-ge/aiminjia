@@ -302,6 +302,9 @@ pub fn run() {
             workspace::export_metrics,
             workspace::clear_metrics,
             workspace::get_metrics_info,
+            workspace::authorize_local_directory,
+            workspace::get_authorized_workspace,
+            workspace::revoke_authorized_workspace,
             // Export commands
             export::export_conversation,
             // Plugin commands

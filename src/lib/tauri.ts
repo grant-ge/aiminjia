@@ -416,6 +416,53 @@ export function getWorkspaceInfo(): Promise<string> {
   return invoke<string>('get_workspace_info')
 }
 
+// ---------------------------------------------------------------------------
+// Authorized Workspace Commands (Phase W1)
+// ---------------------------------------------------------------------------
+
+/** Lightweight reference to an authorized local directory. */
+export interface AuthorizedWorkspaceRef {
+  id: string
+  rootPath: string
+  displayName: string
+}
+
+/**
+ * Authorize a local directory for tool access within a session.
+ * Replaces any previously authorized directory for the same session.
+ *
+ * @param path - Absolute path to the directory to authorize
+ * @param sessionId - The session that will own this authorization
+ * @returns A reference to the newly authorized workspace
+ */
+export function authorizeLocalDirectory(
+  path: string,
+  sessionId: string,
+): Promise<AuthorizedWorkspaceRef> {
+  return invoke<AuthorizedWorkspaceRef>('authorize_local_directory', { path, sessionId })
+}
+
+/**
+ * Get the currently authorized workspace for a session.
+ *
+ * @param sessionId - The session to query
+ * @returns The authorized workspace ref, or null if none is set
+ */
+export function getAuthorizedWorkspace(
+  sessionId: string,
+): Promise<AuthorizedWorkspaceRef | null> {
+  return invoke<AuthorizedWorkspaceRef | null>('get_authorized_workspace', { sessionId })
+}
+
+/**
+ * Revoke the authorized workspace for a session.
+ *
+ * @param sessionId - The session whose authorization should be cleared
+ */
+export function revokeAuthorizedWorkspace(sessionId: string): Promise<void> {
+  return invoke<void>('revoke_authorized_workspace', { sessionId })
+}
+
 /**
  * Open the logs directory in the system file manager.
  */

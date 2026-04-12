@@ -24,6 +24,8 @@ use std::sync::Arc;
 pub struct StorageCapability {
     /// Absolute path to the active workspace directory.
     pub workspace_path: PathBuf,
+    /// Authorized local directory for this session (if any).
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
 }
 
 /// Capability-scoped context attached optionally to a [`crate::runtime::tools::ToolExecutionContext`].
@@ -51,7 +53,10 @@ impl CapabilityContext {
     /// Create a minimal capability context with just a workspace path.
     pub fn with_workspace(workspace_path: PathBuf, workspace_id: impl Into<String>) -> Self {
         Self {
-            storage: Some(StorageCapability { workspace_path }),
+            storage: Some(StorageCapability {
+                workspace_path,
+                authorized_workspace: None,
+            }),
             workspace_id: Some(workspace_id.into()),
         }
     }

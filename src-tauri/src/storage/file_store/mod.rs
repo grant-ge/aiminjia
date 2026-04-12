@@ -721,6 +721,8 @@ pub struct RuntimeRepositoryFacade {
     conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
     persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
     file_record_store: std::sync::Arc<dyn crate::runtime::store::FileRecordStore>,
+    authorized_workspace_store:
+        std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
 }
 
 impl RuntimeRepositoryFacade {
@@ -739,6 +741,9 @@ impl RuntimeRepositoryFacade {
             ),
             persona_store: std::sync::Arc::new(InMemoryPersonaStore::default()),
             file_record_store: std::sync::Arc::new(InMemoryFileRecordStore::default()),
+            authorized_workspace_store: std::sync::Arc::new(
+                crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default(),
+            ),
         }
     }
 
@@ -763,8 +768,13 @@ impl RuntimeRepositoryFacade {
                 storage: storage.clone(),
             }),
             file_record_store: std::sync::Arc::new(FileFileRecordStore {
-                storage,
+                storage: storage.clone(),
             }),
+            authorized_workspace_store: std::sync::Arc::new(
+                crate::runtime::store::FileAuthorizedWorkspaceStore {
+                    storage: storage.clone(),
+                },
+            ),
         }
     }
 
@@ -794,6 +804,12 @@ impl RuntimeRepositoryFacade {
 
     pub fn file_record_store(&self) -> &dyn crate::runtime::store::FileRecordStore {
         self.file_record_store.as_ref()
+    }
+
+    pub fn authorized_workspace_store(
+        &self,
+    ) -> &dyn crate::runtime::store::AuthorizedWorkspaceStore {
+        self.authorized_workspace_store.as_ref()
     }
 }
 
