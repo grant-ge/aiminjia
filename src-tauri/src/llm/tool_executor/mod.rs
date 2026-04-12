@@ -148,6 +148,7 @@ pub(crate) mod tests {
             app_settings: None,
             agent_runtime: None,
             event_bus: None,
+            authorized_workspace: None,
         }
     }
 

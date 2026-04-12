@@ -30,6 +30,7 @@ pub mod read_page_content;
 pub mod report_gen;
 pub mod slides_gen;
 pub mod web_search;
+pub mod workspace_tools;
 
 use crate::plugin::ToolRegistry;
 use std::sync::Arc;
@@ -60,6 +61,10 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(browse_data::BrowseDataTool),
         Arc::new(extract_table_data::ExtractTableDataTool),
         Arc::new(extract_with_pagination::ExtractWithPaginationTool),
+        Arc::new(workspace_tools::ListDirectoryTool),
+        Arc::new(workspace_tools::ReadWorkspaceFileTool),
+        Arc::new(workspace_tools::SearchFilesTool),
+        Arc::new(workspace_tools::GetFileInfoTool),
     ];
 
     for tool in tools {

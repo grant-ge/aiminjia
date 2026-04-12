@@ -1,5 +1,32 @@
 use super::chat_support::AgentGuard;
 use super::*;
+use crate::storage::file_store::RuntimeRepositoryFacade;
+
+/// 根据当前 session 是否有授权目录，决定暴露给 LLM 的工具 schema 列表。
+/// 有授权目录：暴露所有工具（含 workspace 工具）。
+/// 无授权目录：排除 workspace 工具，避免 LLM 看到不可用工具。
+const WORKSPACE_TOOL_NAMES: &[&str] = &[
+    "list_directory",
+    "read_workspace_file",
+    "search_files",
+    "get_file_info",
+];
+
+pub(crate) async fn build_visible_tool_defs(
+    registry: &crate::plugin::registry::ToolRegistry,
+    has_authorized_workspace: bool,
+) -> Vec<crate::llm::streaming::ToolDefinition> {
+    use crate::plugin::skill_trait::ToolFilter;
+    if has_authorized_workspace {
+        registry.get_schemas_filtered(&ToolFilter::All).await
+    } else {
+        registry.get_schemas_filtered(
+            &ToolFilter::Exclude(
+                WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect()
+            )
+        ).await
+    }
+}
 
 pub(crate) async fn legacy_send_message_impl(
     db: Arc<AppStorage>,
@@ -1571,7 +1598,25 @@ async fn agent_loop(
     // Determine system prompt, tool filter, and token budget based on mode
     // Both modes now use all tool schemas for KV cache prefix stability.
     // Runtime guard blocks analysis-only tools in daily mode.
-    let all_tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
+
+    // 查当前 session 的授权目录（通过 managed state 取 facade）
+    let authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef> = app
+        .try_state::<std::sync::Arc<RuntimeRepositoryFacade>>()
+        .and_then(|facade| {
+            facade
+                .authorized_workspace_store()
+                .get_current_for_session(&SessionId::new(conversation_id.clone()))
+                .ok()
+                .flatten()
+        })
+        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
+            id: aw.id,
+            root_path: aw.root_path,
+            display_name: aw.display_name,
+        });
+    let authorized_workspace_present = authorized_workspace.is_some();
+
+    let all_tool_defs = build_visible_tool_defs(&tool_registry, authorized_workspace_present).await;
     let (system_prompt, tool_defs_override, mut max_iterations, token_budget, chunk_timeout_secs) =
         match &current_step_config {
             Some(config) => {
@@ -1669,6 +1714,7 @@ async fn agent_loop(
                     app_settings: None,
                     agent_runtime: None,
                     event_bus: None,
+                    authorized_workspace: authorized_workspace.clone(),
                 };
                 for file in &uploaded_files {
                     let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -2618,6 +2664,7 @@ async fn agent_loop(
                 .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
                 .map(|s| s.inner().clone()),
             event_bus: None,
+            authorized_workspace: authorized_workspace.clone(),
         };
 
         // --- Phase 1: Pre-filter blocked tools and emit executing events ---

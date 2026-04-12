@@ -97,6 +97,8 @@ pub struct PluginContext {
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     /// Event bus for emitting runtime events (e.g. AgentIdle on background completion).
     pub event_bus: Option<RuntimeEventBus>,
+    /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
 }
 
 impl PluginContext {

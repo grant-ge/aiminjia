@@ -162,8 +162,15 @@ impl FileManager {
     /// Get full absolute path for a stored_path.
     /// Validates that the path stays within the workspace.
     pub fn full_path(&self, stored_path: &str) -> PathBuf {
-        self.safe_resolve(stored_path)
-            .unwrap_or_else(|_| self.workspace_path.join(stored_path))
+        match self.safe_resolve(stored_path) {
+            Ok(p) => p,
+            Err(_) => {
+                // Log the rejection but return workspace root join (not the raw stored_path join)
+                // This is a defensive fallback: callers should use safe_resolve directly for security-critical paths
+                log::warn!("[FileManager::full_path] path traversal rejected for '{}', returning workspace root", stored_path);
+                self.workspace_path.clone()
+            }
+        }
     }
 
     /// Clean up expired temp files older than `retention_days`.
@@ -202,5 +209,56 @@ impl FileManager {
         self.safe_resolve(stored_path)
             .map(|p| p.exists())
             .unwrap_or(false)
+    }
+}
+
+/// 通过 containment 校验解析相对路径到授权根目录下的绝对路径
+pub fn resolve_local_reference(root_path: &std::path::Path, rel_path: &str) -> anyhow::Result<std::path::PathBuf> {
+    use anyhow::anyhow;
+    let joined = root_path.join(rel_path);
+    // 如果路径存在则 canonicalize，否则 canonicalize parent
+    let canonical = if joined.exists() {
+        joined.canonicalize()?
+    } else {
+        let parent = joined.parent().unwrap_or(&joined);
+        if parent.exists() {
+            let canon_parent = parent.canonicalize()?;
+            let file_name = joined.file_name().unwrap_or_default();
+            canon_parent.join(file_name)
+        } else {
+            joined.clone()
+        }
+    };
+    let root_canonical = root_path.canonicalize().unwrap_or_else(|_| root_path.to_path_buf());
+    if !canonical.starts_with(&root_canonical) {
+        return Err(anyhow!("Path traversal rejected: '{}' escapes authorized workspace", rel_path));
+    }
+    Ok(canonical)
+}
+
+/// 检查路径是否在授权目录内（containment check）
+pub fn is_within_authorized_workspace(path: &std::path::Path, root: &std::path::Path) -> bool {
+    let path_canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    path_canonical.starts_with(&root_canonical)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_escape_rejected() {
+        let root = std::env::temp_dir().join("lotus_ws_symlink_test");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = std::env::temp_dir().join("lotus_ws_outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let link = root.join("escape_link");
+        // 清理旧 link（测试可能重复跑）
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let result = super::resolve_local_reference(&root, "escape_link");
+        assert!(result.is_err(), "Symlink to outside root should be rejected");
+        // 清理
+        let _ = std::fs::remove_file(&link);
     }
 }
