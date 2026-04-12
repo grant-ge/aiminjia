@@ -347,7 +347,7 @@ fn build_default_catalog() -> ToolCatalog {
     ] {
         c.insert(CatalogEntry::new(
             ToolDefinition::new(*id, *desc).with_kind(ToolKind::Support),
-            json!({ "type": "object", "properties": {} }),
+            json!({ "type": "object", "properties": {}, "required": [] }),
         ));
     }
 
