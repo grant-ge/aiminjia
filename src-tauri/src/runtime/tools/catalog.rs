@@ -33,10 +33,7 @@ pub struct ToolCatalog {
 impl ToolCatalog {
     /// 返回默认内置工具目录（全量）。
     pub fn default_catalog() -> Self {
-        static CATALOG: LazyLock<ToolCatalog> = LazyLock::new(build_default_catalog);
-        Self {
-            entries: CATALOG.entries.clone(),
-        }
+        build_default_catalog()
     }
 
     /// 按 ID 查找工具定义。
@@ -347,8 +344,6 @@ fn build_default_catalog() -> ToolCatalog {
         ("search_memory", "搜索记忆"),
         ("core_memory", "读写核心记忆"),
         ("distill_memory", "蒸馏精简记忆"),
-        ("hypothesis_test", "统计假设检验"),
-        ("detect_anomalies", "异常值检测"),
     ] {
         c.insert(CatalogEntry::new(
             ToolDefinition::new(*id, *desc).with_kind(ToolKind::Support),
@@ -356,8 +351,40 @@ fn build_default_catalog() -> ToolCatalog {
         ));
     }
 
+    // ── Power: statistical analysis ───────────────────────────────
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new("hypothesis_test", "统计假设检验（t-test/ANOVA/chi-square/Mann-Whitney/regression）")
+            .with_kind(ToolKind::Power)
+            .with_capability_scope(["python:exec"]),
+        json!({
+            "type": "object",
+            "required": ["test_type", "groups"],
+            "properties": {
+                "test_type": { "type": "string", "enum": ["t_test", "anova", "chi_square", "regression", "mann_whitney"] },
+                "groups": { "type": "array", "items": { "type": "string" }, "description": "要比较的列名" },
+                "significance_level": { "type": "number", "default": 0.05 }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new("detect_anomalies", "检测数据中的异常值（Z-score/IQR/Grubbs）")
+            .with_kind(ToolKind::Power)
+            .with_capability_scope(["python:exec"]),
+        json!({
+            "type": "object",
+            "required": ["column"],
+            "properties": {
+                "column": { "type": "string", "description": "要分析的列名" },
+                "method": { "type": "string", "enum": ["zscore", "iqr", "grubbs"], "default": "zscore" },
+                "threshold": { "type": "number" },
+                "group_by": { "type": "string" }
+            }
+        }),
+    ));
+
     c
 }
 
 /// 全局默认 catalog（延迟初始化）。
-pub static TOOL_CATALOG: LazyLock<ToolCatalog> = LazyLock::new(ToolCatalog::default_catalog);
+pub static TOOL_CATALOG: LazyLock<ToolCatalog> = LazyLock::new(build_default_catalog);
