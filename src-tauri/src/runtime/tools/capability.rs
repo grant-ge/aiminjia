@@ -60,6 +60,14 @@ impl CapabilityContext {
             workspace_id: Some(workspace_id.into()),
         }
     }
+
+    /// Returns true if a browser connector capability is active.
+    ///
+    /// Currently always returns `false`; will return `true` once a
+    /// browser-capability field is added to `CapabilityContext`.
+    pub fn has_browser_capability(&self) -> bool {
+        false
+    }
 }
 
 /// Type alias for the Arc-wrapped capability context threaded through

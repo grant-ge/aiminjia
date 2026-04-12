@@ -13,7 +13,7 @@ pub use definition::ToolDefinition;
 pub use dispatcher::{RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
 pub use executor::{ToolError, ToolResult};
 pub use legacy_adapter::LegacyToolAdapter;
-pub use permission::{AllowAllPermissionPipeline, PermissionPipeline};
+pub use permission::{AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionPipeline};
 
 pub mod catalog;
 pub use catalog::{CatalogEntry, ToolCatalog, TOOL_CATALOG};
