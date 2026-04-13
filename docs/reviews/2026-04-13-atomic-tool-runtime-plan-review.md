@@ -1,6 +1,6 @@
 # 2026-04-13 Atomic Tool Runtime Review
 
-状态：**已关闭（2026-04-13）**  
+状态：**进行中 / 未关闭（Finding 11-13 新增，当前阻塞专项关闭）**  
 评审对象：`/Users/a20250311/IdeaProjects/lotus-app/docs/superpowers/plans/2026-04-13-atomic-tool-runtime-plan.md` 以及其后续代码实现  
 对照代码：`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/runtime/tools/`、`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/plugin/`、`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/llm/tool_executor/`
 
@@ -17,9 +17,19 @@
 - Finding 9：✅ 已关闭
 - Finding 10：✅ 已关闭（`ab8b44a`）
 
-## 关闭条件
+### 第三阶段：深度链路复审 findings（Finding 11-13）
 
-所有条件已满足，专项已关闭。
+- Finding 11：❌ 未关闭 — 真实聊天主链路仍由 legacy executor 驱动，`query_engine.run()` 未被到达
+- Finding 12：❌ 未关闭 — `to_runtime_dispatcher()` 不包含 7 个请求级工具，该 dispatcher 路径无法执行它们
+- Finding 13：❌ 未关闭 — 7 个请求级工具的 schema 仍来自 legacy `plugin.input_schema()`，不是 catalog
+
+## 关闭条件（当前未满足）
+
+以下 3 件事全部完成后可关闭：
+
+1. Finding 11：真实聊天主链路改走 `query_engine.run()` 或 legacy executor 被正式替代
+2. Finding 12：`to_runtime_dispatcher()` 也覆盖请求级工具（需要 PluginContext 参数或 factory 接入）
+3. Finding 13：`get_all_schemas()` / `get_schemas_filtered()` 对请求级工具也从 catalog 取 schema
 
 ---
 
@@ -314,12 +324,59 @@ Atomic Tool 专项全部 10 个 findings 已关闭，生产链路已完全切换
 
 ### 当前测试结论
 
-471 lib 单测 + 全部 integration tests，0 失败。
+471 lib 单测 + 全部 integration tests，0 失败。测试全绿不等于生产链路完整 runtime-first。
 
-### 关闭条件核对
+### 第二阶段关闭条件核对（Finding 7-10）
 
-1. ✅ 启动时真实注册 runtime-native builtin tools（4 个无状态工具 + 7 个请求级工厂）
-2. ✅ 聊天主链路和 sub-agent 主链路真正执行 runtime tools（`ToolRegistry::execute()` ���步路由）
-3. ✅ 生产 dispatcher 启用 `CapabilityPermissionPipeline`（`to_runtime_dispatcher()` 已切换）
-4. ✅ 真实生产链路集成测试（`builtin_runtime_registration_test.rs` 4 个测试驱动真实链路）
-5. ✅ `QueryEngine` 携带 workspace_path，capability 在生产 query-engine 路径中正确注入
+1. ✅ 启动时真实注册 4 个无状态 workspace RuntimeTool，7 个有状态工具走请求级工厂
+2. ✅ `ToolRegistry::execute()` 三步路由（全局 → 工厂 → legacy fallback），聊天主链路命中 RuntimeTool
+3. ✅ 生产 dispatcher（`to_runtime_dispatcher()`）切换到 `CapabilityPermissionPipeline`
+4. ✅ 真实启动链路集成测试（`builtin_runtime_registration_test.rs`）
+5. ✅ `QueryEngine` 携带 workspace_path，capability 在 query-engine 路径注入（`ab8b44a`）
+
+---
+
+## 第三阶段：深度链路复审 findings（Finding 11-13）
+
+### Finding 11
+
+- 标题：`[P1] 真实聊天主链路仍由 legacy executor 驱动，query_engine.run() 未被到达`
+- 严重级别：P1
+- 状态：❌ 未关闭
+- 真实使用路径：`send_message -> run_chat_request() -> turn_executor.run_chat_turn() -> legacy_send_message_impl`
+- 问题描述：
+  - `SessionRuntime::run_chat_request()` 在 `turn_executor` 存在时，line 96 直接返回 `executor.run_chat_turn(request)`，完全绕过 `query_engine.run()`。
+  - `TauriChatCommandAdapter::new()` 传入的正是 `TauriLegacyTurnExecutor`，因此生产聊天主链路永远走 `legacy_send_message_impl`，不走 `QueryEngine`。
+  - 即便 `QueryEngine` 现在携带了 workspace_path 和 capability 注入逻辑，在当前生产路径下也永远不会被执行。
+- 代码证据：
+  - `src-tauri/src/runtime/session_runtime.rs:83-96` — `turn_executor` 存在时直接 return
+  - `src-tauri/src/transport/tauri_commands/chat.rs:150-155` — 生产路径传入 `TauriLegacyTurnExecutor`
+- 修复方向：
+  - 这是整个 runtime-first 路径尚未完成的根本问题。需要 `QueryEngine` 接管工具调用循环，或在 legacy executor 内部主动调用 `registry.execute()` 走三步路由。当前 `ToolRegistry::execute()` 的三步路由事实上已经生效（legacy executor 调用 `registry.execute()`），所以工具执行层是 runtime-first 的，但 `QueryEngine` 自身的 turn 驱动链路仍未接通。
+
+### Finding 12
+
+- 标题：`[P2] to_runtime_dispatcher() 只包含 4 个全局注册工具，7 个请求级工具不在其中`
+- 严重级别：P2
+- 状态：❌ 未关闭
+- 真实使用路径：`to_runtime_dispatcher(plugin_ctx)` → 只遍历 `self.runtime_tools`（4 个） + legacy fallback
+- 问题描述：
+  - `to_runtime_dispatcher()` 构建的 `ToolDispatcher` 只包含全局注册的 4 个 workspace RuntimeTool 和剩余 legacy ToolPlugin。
+  - `try_build_request_scoped_tool()` 工厂逻辑只存在于 `execute()` 方法中，`to_runtime_dispatcher()` 不调用它。
+  - 这意味着通过 `to_runtime_dispatcher()` 路径（未来 QueryEngine 主链路会走这里）执行 web_search / browse_* / load_file 时，这些工具会退化为 LegacyToolAdapter，而不是 RuntimeTool。
+- 代码证据：
+  - `src-tauri/src/plugin/registry.rs:316-338` — `to_runtime_dispatcher()` 只看 `self.runtime_tools`
+
+### Finding 13
+
+- 标题：`[P2] 7 个请求级工具的 schema 仍来自 legacy plugin.input_schema()，不是 catalog 单一真相源`
+- 严重级别：P2
+- 状态：❌ 未关闭
+- 真实使用路径：`get_all_schemas() / get_schemas_filtered()` → runtime_tools（4 个走 catalog）+ legacy tools（其余走 plugin.input_schema()）
+- 问题描述：
+  - `get_all_schemas()` 和 `get_schemas_filtered()` 对于不在 `self.runtime_tools` 中的工具（包括 web_search、5 个浏览器工具、load_file）仍从 legacy `ToolPlugin::input_schema()` 取 schema。
+  - 这 7 个工具在 `ToolCatalog` 中都有准确的 entry（含 ToolKind、capability_scope、json_schema），但当前 schema 暴露路径不读 catalog，而是读 legacy plugin 的 hardcoded JSON。
+  - 专项 AC-1 验收标准"llm/tools.rs 不再作为 LLM schema 主来源"对于这 7 个工具仍未成立。
+- 代码证据：
+  - `src-tauri/src/plugin/registry.rs:133-143` — legacy tools 走 `rt.plugin.input_schema()`
+  - `src-tauri/src/runtime/tools/catalog.rs` — 7 个工具的 catalog entry 存在但未被 schema 暴露路径使用

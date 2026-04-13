@@ -5,6 +5,7 @@
 - 状态：**方案评审已关闭，可进入代码实现（v4 文档所有 P1/P2 已关闭）**
 - 结论：14 个 findings（第一轮 8 个 + 第二轮 6 个）全部已修复，方案文档 v4 已收敛
 - 修订文档：`docs/superpowers/plans/2026-04-12-workspace-first-file-runtime-plan.md` v4
+- 注意：代码实现阶段的回归 review 需单独建立 review 文档，本文档只覆盖方案评审
 
 ## 文档更新要求
 
