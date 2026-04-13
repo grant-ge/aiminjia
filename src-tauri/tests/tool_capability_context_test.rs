@@ -61,6 +61,7 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
     let cap_ctx = CapabilityContext {
         storage: Some(storage_cap),
         workspace_id: Some("ws-42".to_string()),
+        browser_available: false,
     };
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_capability(Arc::new(cap_ctx));
@@ -79,6 +80,7 @@ fn capability_context_does_not_expose_full_plugin_context() {
     let cap = CapabilityContext {
         storage: None,
         workspace_id: Some("ws-1".to_string()),
+        browser_available: false,
     };
     // Verify we can ONLY access the declared fields: storage, workspace_id.
     // If PluginContext fields (e.g. gateway, auth_manager) were leaked, this

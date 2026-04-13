@@ -33,10 +33,11 @@ pub struct StorageCapability {
 /// New `RuntimeTool` implementations should access services through this struct
 /// rather than through `PluginContext`.  Fields are intentionally limited:
 ///
-/// | Field           | Purpose                                          |
-/// |-----------------|--------------------------------------------------|
-/// | `storage`       | Workspace path and scoped file-I/O helpers       |
-/// | `workspace_id`  | Logical workspace identifier for key-scoping     |
+/// | Field               | Purpose                                          |
+/// |---------------------|--------------------------------------------------|
+/// | `storage`           | Workspace path and scoped file-I/O helpers       |
+/// | `workspace_id`      | Logical workspace identifier for key-scoping     |
+/// | `browser_available` | Whether a browser connector is active            |
 ///
 /// Fields that are *not* present here (e.g. `gateway`, `auth_manager`,
 /// `agent_runtime`) must be accessed via dedicated orchestration APIs, not
@@ -47,6 +48,10 @@ pub struct CapabilityContext {
     pub storage: Option<StorageCapability>,
     /// Logical workspace / conversation scope identifier.
     pub workspace_id: Option<String>,
+    /// Whether a browser connector is available for this session.
+    /// Set to true when a ConnectorEngine is active and ready.
+    /// Kept as a plain bool to avoid importing ConnectorEngine into runtime/.
+    pub browser_available: bool,
 }
 
 impl CapabilityContext {
@@ -58,15 +63,19 @@ impl CapabilityContext {
                 authorized_workspace: None,
             }),
             workspace_id: Some(workspace_id.into()),
+            browser_available: false,
         }
     }
 
+    /// Mark this context as having an active browser connector.
+    pub fn with_browser(mut self) -> Self {
+        self.browser_available = true;
+        self
+    }
+
     /// Returns true if a browser connector capability is active.
-    ///
-    /// Currently always returns `false`; will return `true` once a
-    /// browser-capability field is added to `CapabilityContext`.
     pub fn has_browser_capability(&self) -> bool {
-        false
+        self.browser_available
     }
 }
 
