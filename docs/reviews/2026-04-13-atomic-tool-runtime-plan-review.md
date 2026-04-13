@@ -1,41 +1,28 @@
 # 2026-04-13 Atomic Tool Runtime Review
 
-状态：**已关闭（2026-04-13）**  
+状态：**进行中（Finding 10 部分修复，生产路径接线尚未完成）**  
 评审对象：`/Users/a20250311/IdeaProjects/lotus-app/docs/superpowers/plans/2026-04-13-atomic-tool-runtime-plan.md` 以及其后续代码实现  
 对照代码：`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/runtime/tools/`、`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/plugin/`、`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/llm/tool_executor/`
-
-## 最终结论
-
-所有 10 个 findings（方案评审 1-6 + 代码落地复审 7-10）全部关闭。Atomic Tool 专项可进入下一专项。
-
-已完成的关键改造：
-- `ToolKind` / `ToolCatalog` / 单一 schema 真相源
-- `llm/tools.rs` 降级为 catalog 兼容层
-- 11 个 primitive 工具全部实现为 `RuntimeTool`（4 个无状态全局注册 + 7 个请求级工厂）
-- `CapabilityPermissionPipeline` 替换 `AllowAllPermissionPipeline` 进入生产 dispatcher
-- `ToolRegistry::execute()` 三步路由（全局 → 工厂 → legacy fallback）
-- `register_builtin_tools()` 启动时注册 4 个无状态 workspace RuntimeTool
-- `CapabilityContext.browser_available` 支持运行时注入
-- `QueryEngine` 加 `with_workspace_path()` 注入 capability
-- `execute_web_search_core()` seam 拆分，消除重复代码
-- `load_file` 正确分类为 `Power` + `python:exec`/`workspace:write` scope
-- `tauri::AppHandle` 从 `runtime/` 模块中清除
 
 ## 当前总状态
 
 ### 第一阶段：方案评审 findings（Finding 1-6）
 
 - 状态：已关闭
-- 含义：Atomic Tool 方案文档本身已经补齐关键架构约束
 
 ### 第二阶段：代码落地复审 findings（Finding 7-10）
 
-- 状态：已关闭（2026-04-13）
-- 提交记录：
-  - `e74bc6a` feat(atomic-tool): ToolRegistry.register_runtime() — RuntimeTool enters production dispatch path
-  - `d93c4bd` feat(atomic-tool): F2+F3+F4 — workspace RuntimeTools in startup registry, execute() runtime-first, CapabilityPermissionPipeline in dispatcher
-  - `402c6ef` fix(atomic-tool): F9 clarify workspace fallback semantics, F10 inject capability in QueryEngine
-  - `2fb2dbf` feat(atomic-tool): F7+F8 request-scoped factory for 7 session-deps runtime tools
+- Finding 7：✅ 已关闭
+- Finding 8：✅ 已关闭
+- Finding 9：✅ 已关闭
+- Finding 10：⚠️ **部分修复** — `QueryEngine` 加了 `with_workspace_path()` builder，但生产路径 `session_runtime.rs:72` 调用的仍是 `QueryEngine::new()`，workspace_path 未传入，capability 在真实 query-engine 路径里仍为 None
+
+## 关闭条件
+
+Finding 10 的生产接线完成后可关闭：
+- `SessionRuntime::with_workspace_path()` 或等价路径需要把 workspace_path 传到 QueryEngine
+- 生产路径 `session_runtime.rs:72` 处的 `QueryEngine::new()` 改为携带 workspace_path 的构造方式
+- 相关文件：`src-tauri/src/runtime/session_runtime.rs:72`、`src-tauri/src/runtime/query_engine.rs`
 
 ---
 
@@ -323,21 +310,19 @@ Atomic Tool 专项全部 10 个 findings 已关闭，生产链路已完全切换
 
 - 标题：`[P2] QueryEngine 仍然不会给 runtime tool 注入 capability`
 - 严重级别：P2
-- 状态：**已关闭**
-- 修复方式：
-  - `QueryEngine` 加 `workspace_path: Option<PathBuf>` 字段和 `with_workspace_path()` builder（`402c6ef`）
-  - `run_tool_with_bus()` 中若有 `workspace_path`，构建 `CapabilityContext` 并注入 `ToolExecutionContext`
-  - 新增 `query_engine_injects_capability_context_for_workspace_tool` 集成测试验证
+- 状态：**部分修复 — 生产接线未完成**
+- 已做（`402c6ef`）：
+  - `QueryEngine` 加 `workspace_path: Option<PathBuf>` 字段和 `with_workspace_path()` builder
+  - `run_tool_with_bus()` 中若有 `workspace_path`，构建 `CapabilityContext` 并注入
+  - 新增 `query_engine_injects_capability_context_for_workspace_tool` 集成测试验证 builder 路径
+- **剩余**：
+  - `session_runtime.rs:72` 仍是 `QueryEngine::new()`，未调用 `with_workspace_path()`
+  - 生产路径里 capability 仍为 None，builder 只在测试里被直接调用
+- 关闭条件：`session_runtime.rs:72` 改为 `QueryEngine::new().with_workspace_path(workspace_path)`，workspace_path 来自 `SessionRuntime` 的构造者
 
 ### 当前测试结论
 
-最终执行：
-
-```bash
-cargo test --manifest-path /Users/a20250311/IdeaProjects/lotus-app/src-tauri/Cargo.toml --tests --no-fail-fast
-```
-
-结果：471 lib 单测 + 全部 integration tests，0 失败。
+471 lib 单测 + 全部 integration tests，0 失败。测试绿不代表 F10 生产链路已接通。
 
 ### 关闭条件核对
 
@@ -345,3 +330,4 @@ cargo test --manifest-path /Users/a20250311/IdeaProjects/lotus-app/src-tauri/Car
 2. ✅ 聊天主链路和 sub-agent 主链路真正执行 runtime tools（`ToolRegistry::execute()` 三步路由）
 3. ✅ 生产 dispatcher 启用 `CapabilityPermissionPipeline`（`to_runtime_dispatcher()` 已切换）
 4. ✅ 真实生产链路集成测试（`builtin_runtime_registration_test.rs` 4 个测试驱动真实链路）
+5. ❌ F10：`session_runtime.rs:72` 的 `QueryEngine` 需携带 workspace_path
