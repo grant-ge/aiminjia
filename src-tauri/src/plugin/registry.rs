@@ -54,13 +54,25 @@ struct RegisteredTool {
 /// Runtime registry for tool plugins.
 pub struct ToolRegistry {
     tools: RwLock<HashMap<String, RegisteredTool>>,
+    /// Runtime-native tools — take precedence over legacy ToolPlugin in dispatcher.
+    runtime_tools: RwLock<HashMap<String, Arc<dyn crate::runtime::tools::RuntimeTool>>>,
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: RwLock::new(HashMap::new()),
+            runtime_tools: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Register a native RuntimeTool.
+    /// When `to_runtime_dispatcher()` builds the dispatcher, registered RuntimeTools
+    /// take priority over legacy ToolPlugin adapters for the same tool name.
+    pub async fn register_runtime(&self, tool: Arc<dyn crate::runtime::tools::RuntimeTool>) {
+        let id = tool.definition().id.clone();
+        log::info!("Registering runtime tool: {}", id);
+        self.runtime_tools.write().await.insert(id, tool);
     }
 
     /// Register a tool plugin.
@@ -96,34 +108,87 @@ impl ToolRegistry {
     }
 
     /// Get all tool definitions (for LLM context).
+    /// Runtime tools take precedence: their schema comes from the catalog.
+    /// Legacy tools not yet migrated fall back to plugin.input_schema().
     pub async fn get_all_schemas(&self) -> Vec<ToolDefinition> {
-        let tools = self.tools.read().await;
-        tools
-            .values()
-            .map(|rt| ToolDefinition {
-                name: rt.plugin.name().to_string(),
-                description: rt.plugin.description().to_string(),
-                parameters: rt.plugin.input_schema(),
-            })
-            .collect()
+        use crate::runtime::tools::catalog::TOOL_CATALOG;
+        let runtime_tools = self.runtime_tools.read().await;
+        let legacy_tools = self.tools.read().await;
+        let mut schemas = Vec::new();
+
+        // Runtime tools: get schema from catalog (single source of truth)
+        for (id, _) in runtime_tools.iter() {
+            if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                schemas.push(ToolDefinition {
+                    name: entry.definition.id.clone(),
+                    description: entry.definition.description.clone(),
+                    parameters: entry.json_schema.clone(),
+                });
+            }
+        }
+
+        // Legacy tools not yet migrated: get schema from plugin
+        for rt in legacy_tools.values() {
+            let name = rt.plugin.name();
+            if !runtime_tools.contains_key(name) {
+                schemas.push(ToolDefinition {
+                    name: name.to_string(),
+                    description: rt.plugin.description().to_string(),
+                    parameters: rt.plugin.input_schema(),
+                });
+            }
+        }
+
+        schemas
     }
 
     /// Get tool definitions filtered by a ToolFilter.
+    /// Runtime tools take precedence over legacy tools with the same name.
     pub async fn get_schemas_filtered(&self, filter: &ToolFilter) -> Vec<ToolDefinition> {
-        let tools = self.tools.read().await;
-        tools
-            .values()
-            .filter(|rt| match filter {
+        use crate::runtime::tools::catalog::TOOL_CATALOG;
+        let runtime_tools = self.runtime_tools.read().await;
+        let legacy_tools = self.tools.read().await;
+        let mut schemas = Vec::new();
+
+        // Runtime tools: filter and get schema from catalog
+        for (id, _) in runtime_tools.iter() {
+            let matches = match filter {
                 ToolFilter::All => true,
-                ToolFilter::Only(names) => names.iter().any(|n| n == rt.plugin.name()),
-                ToolFilter::Exclude(names) => names.iter().all(|n| n != rt.plugin.name()),
-            })
-            .map(|rt| ToolDefinition {
-                name: rt.plugin.name().to_string(),
-                description: rt.plugin.description().to_string(),
-                parameters: rt.plugin.input_schema(),
-            })
-            .collect()
+                ToolFilter::Only(names) => names.iter().any(|n| n == id),
+                ToolFilter::Exclude(names) => names.iter().all(|n| n != id),
+            };
+            if matches {
+                if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                    schemas.push(ToolDefinition {
+                        name: entry.definition.id.clone(),
+                        description: entry.definition.description.clone(),
+                        parameters: entry.json_schema.clone(),
+                    });
+                }
+            }
+        }
+
+        // Legacy tools not yet migrated
+        for rt in legacy_tools.values() {
+            let name = rt.plugin.name();
+            if runtime_tools.contains_key(name) {
+                continue;
+            }
+            let matches = match filter {
+                ToolFilter::All => true,
+                ToolFilter::Only(names) => names.iter().any(|n| n == name),
+                ToolFilter::Exclude(names) => names.iter().all(|n| n != name),
+            };
+            if matches {
+                schemas.push(ToolDefinition {
+                    name: name.to_string(),
+                    description: rt.plugin.description().to_string(),
+                    parameters: rt.plugin.input_schema(),
+                });
+            }
+        }
+
+        schemas
     }
 
     /// Execute a tool by name.
@@ -185,13 +250,26 @@ impl ToolRegistry {
     /// production query path onto the new runtime contract.
     pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
         let dispatcher = Arc::new(ToolDispatcher::allow_all());
-        let tools = self.tools.read().await;
-        for rt in tools.values() {
-            dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
-                rt.plugin.clone(),
-                plugin_ctx.clone(),
-            )));
+        let runtime_tools = self.runtime_tools.read().await;
+        let legacy_tools = self.tools.read().await;
+
+        // 1. Register native RuntimeTools first (they take priority)
+        for (_, tool) in runtime_tools.iter() {
+            dispatcher.register(tool.clone());
         }
+
+        // 2. Register legacy ToolPlugin tools that have NOT been migrated
+        //    (i.e., not already covered by a RuntimeTool with the same name)
+        for rt in legacy_tools.values() {
+            let name = rt.plugin.name();
+            if !runtime_tools.contains_key(name) {
+                dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
+                    rt.plugin.clone(),
+                    plugin_ctx.clone(),
+                )));
+            }
+        }
+
         dispatcher
     }
 }
