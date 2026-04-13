@@ -40,6 +40,15 @@ impl RuntimeEventBus {
         Ok(())
     }
 
+    /// Record a runtime event locally without notifying subscribers.
+    ///
+    /// This is used during transitional migrations where the runtime must retain
+    /// ownership markers in `recorded_events()` while avoiding duplicate legacy
+    /// frontend events from existing executor-owned transport paths.
+    pub fn record_only(&self, event: RuntimeEvent) {
+        self.recorded.lock().unwrap().push(event);
+    }
+
     pub fn recorded(&self) -> Vec<RuntimeEvent> {
         self.recorded.lock().unwrap().clone()
     }

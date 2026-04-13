@@ -1,47 +1,33 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 
+// Import and re-export from chat module.  Types were previously defined here;
+// they now live in `runtime::chat` to avoid circular imports.
+pub use crate::runtime::chat::{ChatTurnRequest, RuntimeTurnExecutor};
+use crate::runtime::chat::RuntimeChatTurnDriver;
 use crate::runtime::event_bus::RuntimeEventBus;
+use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
 use crate::runtime::ids::RunId;
 use crate::runtime::query_engine::QueryEngine;
+use crate::runtime::store::{AuthorizedWorkspaceRef, AuthorizedWorkspaceStore};
 use crate::runtime::state::TurnState;
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChatTurnRequest {
-    pub conversation_id: String,
-    pub content: String,
-    pub file_ids: Vec<String>,
-}
-
-impl ChatTurnRequest {
-    pub fn new(
-        conversation_id: impl Into<String>,
-        content: impl Into<String>,
-        file_ids: Vec<String>,
-    ) -> Self {
-        Self {
-            conversation_id: conversation_id.into(),
-            content: content.into(),
-            file_ids,
-        }
-    }
-}
-
-#[async_trait]
-pub trait RuntimeTurnExecutor: Send + Sync {
-    async fn run_chat_turn(&self, request: ChatTurnRequest) -> std::result::Result<(), String>;
-}
 
 #[derive(Clone)]
 pub struct SessionRuntime {
     query_engine: QueryEngine,
     event_bus: RuntimeEventBus,
-    turn_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
+    /// Legacy executor retained as a runtime-controlled helper during the
+    /// chat-runtime-first migration.
+    ///
+    /// `SessionRuntime` no longer directly delegates full chat turns to this
+    /// executor. Instead, `RuntimeChatTurnDriver` remains the single turn entry
+    /// point and decides when the helper is invoked.
+    legacy_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
+    authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
 }
 
 impl SessionRuntime {
@@ -49,10 +35,17 @@ impl SessionRuntime {
         Self {
             query_engine,
             event_bus,
-            turn_executor: None,
+            legacy_executor: None,
+            authorized_workspace_store: None,
         }
     }
 
+    /// Construct a `SessionRuntime` with a legacy executor helper.
+    ///
+    /// The executor is no longer the direct owner of the full chat turn.
+    /// `RuntimeChatTurnDriver` remains the single runtime entry and may invoke
+    /// this helper on executor-backed production paths to preserve current LLM /
+    /// transport behavior while ownership migrates into the runtime.
     pub fn with_executor(
         query_engine: QueryEngine,
         event_bus: RuntimeEventBus,
@@ -61,8 +54,17 @@ impl SessionRuntime {
         Self {
             query_engine,
             event_bus,
-            turn_executor: Some(turn_executor),
+            legacy_executor: Some(turn_executor),
+            authorized_workspace_store: None,
         }
+    }
+
+    pub fn with_authorized_workspace_store(
+        mut self,
+        authorized_workspace_store: Arc<dyn AuthorizedWorkspaceStore>,
+    ) -> Self {
+        self.authorized_workspace_store = Some(authorized_workspace_store);
+        self
     }
 
     pub fn for_test(host: Arc<dyn RuntimeHost>) -> Self {
@@ -73,38 +75,36 @@ impl SessionRuntime {
     }
 
     pub async fn run_turn(&self, turn: &mut TurnState) -> Result<()> {
-        self.query_engine.run(turn, &self.event_bus).await
+        let query_engine = self.query_engine_for_session(turn.session_id());
+        query_engine.run(turn, &self.event_bus).await
     }
 
     pub async fn run_chat_request(
         &self,
         request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
-        if let Some(executor) = &self.turn_executor {
-            // When a legacy executor is present, it owns the full chat lifecycle
-            // including all event emission. We only record a runtime-level marker
-            // so that runtime-layer observers can see the turn existed.
-            let mapping =
-                IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
-            let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
-            let event = crate::runtime::events::RuntimeEvent::new(
-                mapping.session_id.clone(),
-                run_id,
-                crate::runtime::events::RuntimeEventKind::RunStarted,
-            );
-            let _ = self.event_bus.emit(event).await;
-            return executor.run_chat_turn(request).await;
-        }
+        let mapping =
+            IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
+        let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
 
-        let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id);
-        let mut turn = TurnState::new(
-            mapping,
-            RunId::new(uuid::Uuid::new_v4().to_string()),
-            request.content,
+        // Emit RunStarted before handing off to the driver.
+        let run_started = RuntimeEvent::new(
+            mapping.session_id.clone(),
+            run_id.clone(),
+            RuntimeEventKind::RunStarted,
         );
-        self.run_turn(&mut turn)
+        let _ = self.event_bus.emit(run_started).await;
+
+        let mut turn = TurnState::new(mapping, run_id, request.content.clone());
+
+        // Build a driver for this session and drive the full turn lifecycle.
+        // The driver remains the only chat-turn entry and may invoke the legacy
+        // executor helper internally on production paths.
+        let driver = self.build_driver_for_turn(&turn);
+        driver
+            .run_chat_turn(&mut turn, &request)
             .await
-            .map_err(|err| err.to_string())
+            .map_err(|e| e.to_string())
     }
 
     pub async fn run_for_test(
@@ -124,5 +124,130 @@ impl SessionRuntime {
 
     pub fn recorded_events(&self) -> Vec<crate::runtime::events::RuntimeEvent> {
         self.event_bus.recorded()
+    }
+
+    fn query_engine_for_session(
+        &self,
+        session_id: &crate::runtime::ids::SessionId,
+    ) -> QueryEngine {
+        let authorized_workspace = self
+            .authorized_workspace_store
+            .as_ref()
+            .and_then(|store| store.get_current_for_session(session_id).ok().flatten())
+            .map(|aw| AuthorizedWorkspaceRef {
+                id: aw.id,
+                root_path: aw.root_path,
+                display_name: aw.display_name,
+            });
+        self.query_engine
+            .clone()
+            .with_authorized_workspace(authorized_workspace)
+    }
+
+    /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
+    fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
+        let query_engine = self.query_engine_for_session(turn.session_id());
+        match &self.legacy_executor {
+            Some(executor) => RuntimeChatTurnDriver::with_legacy_executor(
+                query_engine,
+                self.event_bus.clone(),
+                executor.clone(),
+            ),
+            None => RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher,
+        ToolError, ToolExecutionContext, ToolResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::Value;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
+
+    struct CaptureAuthorizedWorkspaceTool {
+        seen_root: Arc<Mutex<Option<PathBuf>>>,
+    }
+
+    #[async_trait]
+    impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("capture_authorized_workspace", "Capture authorized workspace")
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            ctx: ToolExecutionContext,
+        ) -> std::result::Result<ToolResult, ToolError> {
+            let seen = ctx
+                .capability
+                .as_ref()
+                .and_then(|cap| cap.storage.as_ref())
+                .and_then(|storage| storage.authorized_workspace.as_ref())
+                .map(|aw| aw.root_path.clone());
+            *self.seen_root.lock().unwrap() = seen;
+            Ok(ToolResult {
+                tool_name: "capture_authorized_workspace".to_string(),
+                content: "ok".to_string(),
+                data: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn run_turn_resolves_authorized_workspace_from_store() {
+        let internal_workspace = TempDir::new().unwrap();
+        let external_workspace = TempDir::new().unwrap();
+        let seen_root = Arc::new(Mutex::new(None));
+        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
+        dispatcher.register(Arc::new(CaptureAuthorizedWorkspaceTool {
+            seen_root: seen_root.clone(),
+        }));
+
+        let store = Arc::new(crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default());
+        let session_id = crate::runtime::ids::SessionId::new("conv-authorized");
+        store
+            .replace_for_session(&crate::runtime::store::AuthorizedWorkspace {
+                id: "aw-session".to_string(),
+                session_id: session_id.clone(),
+                root_path: external_workspace.path().to_path_buf(),
+                display_name: "external".to_string(),
+                authorized_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .unwrap();
+
+        let runtime = SessionRuntime::new(
+            QueryEngine::with_dispatcher(dispatcher)
+                .with_workspace_path(internal_workspace.path().to_path_buf()),
+            RuntimeEventBus::new(),
+        )
+        .with_authorized_workspace_store(store);
+
+        let mapping =
+            IdentityMapping::from_legacy_conversation_id(session_id.as_str().to_string());
+        let turn = TurnState::new(
+            mapping,
+            RunId::new("run-authorized"),
+            "capture authorized workspace".to_string(),
+        );
+        let bus = RuntimeEventBus::new();
+
+        runtime
+            .query_engine_for_session(&session_id)
+            .run_tool_with_bus(&turn, &bus, "capture_authorized_workspace")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            seen_root.lock().unwrap().clone(),
+            Some(external_workspace.path().to_path_buf())
+        );
     }
 }
