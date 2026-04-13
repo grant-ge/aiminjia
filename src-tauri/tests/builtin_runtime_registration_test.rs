@@ -141,6 +141,104 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     );
 }
 
+// ─── Test 5: web_search routes to RuntimeTool via factory (not legacy) ──────
+
+/// F7+F8: web_search is NOT in global runtime_tools (session-scoped deps),
+/// but the request-scoped factory should build it from PluginContext so it
+/// never falls through to "Unknown tool".
+#[tokio::test]
+async fn web_search_routes_to_runtime_tool_via_factory() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    // web_search is NOT globally registered, but factory should build it.
+    // With empty/fake credentials it will fail with a search error — that's fine.
+    // The critical assertion is that it does NOT return "Unknown tool: web_search".
+    let result = registry
+        .execute("web_search", &ctx, serde_json::json!({"query": "test"}))
+        .await;
+    if let Err(e) = &result {
+        assert!(
+            !e.to_string().contains("Unknown tool"),
+            "web_search should not be 'Unknown tool' — factory should route to RuntimeTool. Got: {}",
+            e
+        );
+    }
+}
+
+// ─── Test 6: load_file routes to RuntimeTool via factory (not legacy) ───────
+
+/// F7+F8: load_file is NOT in global runtime_tools, but the factory should
+/// build it from PluginContext. A missing file_id will error at the handler
+/// level, not at the routing level.
+#[tokio::test]
+async fn load_file_routes_to_runtime_tool_via_factory() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    // load_file with a nonexistent file_id should fail at the handler level
+    // (file not found), NOT at routing level ("Unknown tool").
+    let result = registry
+        .execute(
+            "load_file",
+            &ctx,
+            serde_json::json!({"file_id": "nonexistent-file-id"}),
+        )
+        .await;
+    if let Err(e) = &result {
+        assert!(
+            !e.to_string().contains("Unknown tool"),
+            "load_file should not be 'Unknown tool' — factory should route to RuntimeTool. Got: {}",
+            e
+        );
+    }
+}
+
+// ─── Test 7: browser tools without connector_engine fall back to legacy ──────
+
+/// F8: when connector_engine is None, the factory returns None for browser tools.
+/// Execution correctly falls through to the legacy ToolPlugin (not "Unknown tool").
+/// The legacy tool then fails at the executor level ("not initialized"), which is
+/// acceptable — the routing contract is that we reach the legacy path, not "Unknown tool".
+#[tokio::test]
+async fn browser_tool_without_connector_engine_falls_back() {
+    let registry = ToolRegistry::new();
+    // register_builtin_tools registers legacy browse_navigate among others
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    // ctx has connector_engine = None (default in build_test_plugin_ctx)
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    // browse_navigate: factory returns None (no connector_engine),
+    // so it falls through to the legacy ToolPlugin which fails at executor level.
+    // The error must NOT be "Unknown tool" — the tool IS known, it's just not executable
+    // without the connector.
+    let result = registry
+        .execute(
+            "browse_navigate",
+            &ctx,
+            serde_json::json!({"url": "https://example.com"}),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "browse_navigate without connector_engine should fail"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        !err_msg.contains("Unknown tool"),
+        "browse_navigate should not be 'Unknown tool' — it has a legacy fallback. Got: {}",
+        err_msg
+    );
+}
+
 // ─── Test 4: to_runtime_dispatcher uses CapabilityPermissionPipeline ─────────
 
 /// Verify that to_runtime_dispatcher() wraps tools with CapabilityPermissionPipeline.
