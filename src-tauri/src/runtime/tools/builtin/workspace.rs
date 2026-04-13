@@ -15,6 +15,17 @@ use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 use crate::storage::file_manager;
 
+/// Returns the root path for workspace file operations.
+///
+/// Priority: `authorized_workspace.root_path` > `workspace_path` (Lotus internal workspace).
+///
+/// Fallback to `workspace_path` is intentional: these tools operate on the Lotus
+/// internal workspace by default and switch to the user-authorized external directory
+/// when one is set for the session. This is distinct from requiring explicit authorization —
+/// these tools are always available, but scope to the authorized directory when present.
+///
+/// Returns `PermissionDenied` only when no capability context is present at all
+/// (i.e., the tool was invoked outside a proper session context).
 fn require_workspace_root(ctx: &ToolExecutionContext) -> Result<std::path::PathBuf, ToolError> {
     ctx.capability
         .as_ref()

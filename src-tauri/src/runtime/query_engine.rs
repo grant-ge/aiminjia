@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -6,11 +7,15 @@ use serde_json::json;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::state::TurnState;
-use crate::runtime::tools::{ToolDispatcher, ToolExecutionContext};
+use crate::runtime::tools::{CapabilityContext, StorageCapability, ToolDispatcher, ToolExecutionContext};
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
     tool_dispatcher: Option<Arc<ToolDispatcher>>,
+    /// Workspace path injected at construction time so that workspace-scoped
+    /// runtime tools receive a `CapabilityContext` when executing via this engine.
+    /// `None` in test/legacy paths that do not need capability context.
+    workspace_path: Option<PathBuf>,
 }
 
 impl QueryEngine {
@@ -21,7 +26,15 @@ impl QueryEngine {
     pub fn with_dispatcher(tool_dispatcher: Arc<ToolDispatcher>) -> Self {
         Self {
             tool_dispatcher: Some(tool_dispatcher),
+            workspace_path: None,
         }
+    }
+
+    /// Attach a workspace path so that workspace-scoped tools executed through
+    /// this engine receive a properly populated `CapabilityContext`.
+    pub fn with_workspace_path(mut self, workspace_path: PathBuf) -> Self {
+        self.workspace_path = Some(workspace_path);
+        self
     }
 
     pub fn for_test(tool_dispatcher: Arc<ToolDispatcher>) -> Self {
@@ -102,6 +115,24 @@ impl QueryEngine {
             format!("tool-call-{tool_name}"),
             turn.cancellation(),
         );
+        // Inject capability context when workspace_path is available so that
+        // workspace-scoped runtime tools (list_directory, read_workspace_file, etc.)
+        // can resolve their root path correctly.  When no workspace_path is set
+        // (legacy/test paths), capability remains None and tools that require it
+        // will return PermissionDenied as expected.
+        let ctx = if let Some(ref wp) = self.workspace_path {
+            let capability = Arc::new(CapabilityContext {
+                storage: Some(StorageCapability {
+                    workspace_path: wp.clone(),
+                    authorized_workspace: None,
+                }),
+                workspace_id: Some(turn.session_id().as_str().to_string()),
+                browser_available: false,
+            });
+            ctx.with_capability(capability)
+        } else {
+            ctx
+        };
         let outcome = dispatcher
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
