@@ -66,6 +66,7 @@ pub(crate) use notes::handle_save_analysis_note;
 pub(crate) use progress::handle_update_progress;
 pub(crate) use python::handle_execute_python;
 pub(crate) use report::handle_generate_report;
+pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
 pub(crate) use slides::handle_generate_slides;
 pub(crate) use stats::handle_detect_anomalies;

@@ -43,7 +43,6 @@ pub struct LoadFileDeps {
     pub file_manager: Arc<FileManager>,
     pub workspace_path: PathBuf,
     pub session_manager: Arc<PythonSessionManager>,
-    pub app_handle: Option<tauri::AppHandle>,
     pub conversation_id: String,
     pub run_id: Option<RunId>,
 }
@@ -98,9 +97,10 @@ impl RuntimeTool for LoadFileRuntimeTool {
 ///
 /// Only the fields consumed by `handle_load_file` are populated:
 ///   `storage`, `file_manager`, `workspace_path`, `conversation_id`,
-///   `session_id`, `run_id`, `app_handle`.
+///   `session_id`, `run_id`.
 ///
 /// All other fields are set to harmless defaults / None.
+/// `app_handle` is always None — runtime/ must not import tauri::.
 ///
 /// TRANSITIONAL: Delete this function when `handle_load_file` is refactored
 /// to accept `LoadFileDeps` (or equivalent parameters) directly.
@@ -121,7 +121,11 @@ fn build_plugin_ctx(
         agent_id: ctx.agent_id.clone(),
         tavily_api_key: None,
         bocha_api_key: None,
-        app_handle: deps.app_handle.clone(),
+        // TRANSITIONAL: app_handle is None here because runtime/ must not import tauri::.
+        // PythonRunner::with_config(path, config, None) falls back to default signal handling.
+        // When handle_load_file is refactored to accept LoadFileDeps directly, this restriction
+        // can be addressed via RuntimeHost trait injection instead.
+        app_handle: None,
         // session_manager is used indirectly through PythonRunner in handle_load_file
         session_manager: deps.session_manager.clone(),
         auth_manager: None,

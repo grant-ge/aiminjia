@@ -17,7 +17,27 @@ use super::require_str;
 pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Result<String> {
     let raw_query = require_str(args, "query")?;
     let max_results = super::optional_i64(args, "max_results", 5) as u32;
+    execute_web_search_core(
+        raw_query,
+        max_results,
+        ctx.use_cloud,
+        ctx.auth_manager.as_ref(),
+        ctx.bocha_api_key.as_deref(),
+        ctx.tavily_api_key.as_deref(),
+    )
+    .await
+}
 
+/// Core web search implementation — does not require PluginContext.
+/// Called by both the legacy handler and the new RuntimeTool path.
+pub(crate) async fn execute_web_search_core(
+    raw_query: &str,
+    max_results: u32,
+    use_cloud: bool,
+    auth_manager: Option<&std::sync::Arc<crate::auth::AuthManager>>,
+    bocha_api_key: Option<&str>,
+    tavily_api_key: Option<&str>,
+) -> Result<String> {
     // Auto-append recent year range if the query doesn't already mention any year
     let has_year = raw_query.chars().collect::<Vec<_>>().windows(4).any(|w| {
         if let Ok(n) = w.iter().collect::<String>().parse::<u32>() {
@@ -36,8 +56,8 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     };
 
     // 0. Cloud search (if use_cloud enabled and logged in via Lotus)
-    if ctx.use_cloud {
-        if let Some(ref auth_mgr) = ctx.auth_manager {
+    if use_cloud {
+        if let Some(auth_mgr) = auth_manager {
             if auth_mgr.is_logged_in().await {
                 match cloud_search(auth_mgr, &query, max_results).await {
                     Ok(output) if !output.is_empty() => return Ok(output),
@@ -49,7 +69,7 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     }
 
     // 1. Try Bocha first (if API key is configured)
-    if let Some(api_key) = ctx.bocha_api_key.as_deref() {
+    if let Some(api_key) = bocha_api_key {
         let bocha = BochaClient::new(api_key.to_string());
         match bocha.search(&query, max_results).await {
             Ok(results) if !results.is_empty() => {
@@ -99,7 +119,7 @@ pub(crate) async fn handle_web_search(ctx: &PluginContext, args: &Value) -> Resu
     }
 
     // 3. Fallback: use Tavily if an API key is available
-    if let Some(api_key) = ctx.tavily_api_key.as_deref() {
+    if let Some(api_key) = tavily_api_key {
         let tavily = TavilyClient::new(api_key.to_string());
         match tavily.search(&query, true, max_results).await {
             Ok(response) => {
