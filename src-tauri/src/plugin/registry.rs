@@ -10,7 +10,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
-use crate::runtime::tools::{LegacyToolAdapter, ToolDispatcher};
+use crate::runtime::tools::{
+    CapabilityPermissionPipeline, LegacyToolAdapter, PermissionPipeline, ToolDispatcher,
+};
+use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
 
 use super::context::PluginContext;
 use super::skill_trait::{Skill, ToolFilter};
@@ -193,6 +196,11 @@ impl ToolRegistry {
 
     /// Execute a tool by name.
     ///
+    /// Runtime-first: if the tool is registered as a `RuntimeTool`, it is
+    /// executed via `CapabilityPermissionPipeline` using a `ToolExecutionContext`
+    /// built from `PluginContext`.  Falls back to legacy `ToolPlugin` if no
+    /// runtime tool is found.
+    ///
     /// The read lock is released before calling `execute()` so that
     /// long-running tools (Python subprocess, web search) do not block
     /// concurrent `register()`/`unregister()` calls.
@@ -202,6 +210,58 @@ impl ToolRegistry {
         ctx: &PluginContext,
         input: serde_json::Value,
     ) -> Result<ToolOutput, ToolError> {
+        // 1. Prefer RuntimeTool if registered
+        let runtime_tool = {
+            let rt = self.runtime_tools.read().await;
+            rt.get(name).cloned()
+        };
+
+        if let Some(tool) = runtime_tool {
+            // Build CapabilityContext from PluginContext fields
+            let capability = {
+                let storage = StorageCapability {
+                    workspace_path: ctx.workspace_path.clone(),
+                    authorized_workspace: ctx.authorized_workspace.clone(),
+                };
+                let browser_available = ctx.connector_engine.is_some();
+                let cap = CapabilityContext {
+                    storage: Some(storage),
+                    workspace_id: Some(ctx.conversation_id.clone()),
+                    browser_available,
+                };
+                std::sync::Arc::new(cap)
+            };
+
+            let run_id = ctx.run_id.clone().unwrap_or_else(|| {
+                crate::runtime::ids::RunId::new(format!("run-{}", ctx.conversation_id))
+            });
+            let exec_ctx = crate::runtime::tools::ToolExecutionContext::new(
+                ctx.session_id.clone(),
+                run_id,
+                ctx.agent_id.clone(),
+                format!("tool-{}", name),
+                crate::runtime::cancellation::CancellationToken::new(),
+            )
+            .with_capability(capability);
+
+            // Permission check via CapabilityPermissionPipeline
+            let pipeline = CapabilityPermissionPipeline;
+            let def = tool.definition();
+            pipeline
+                .authorize(&def, &input, &exec_ctx)
+                .map_err(|e| ToolError::ExecutionFailed(format!("Permission denied: {}", e)))?;
+
+            let result = tool
+                .execute(input, exec_ctx)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+            let mut output = ToolOutput::success(result.content);
+            output.data = result.data;
+            return Ok(output);
+        }
+
+        // 2. Fallback: legacy ToolPlugin path
         let plugin = {
             let tools = self.tools.read().await;
             let rt = tools
@@ -249,7 +309,7 @@ impl ToolRegistry {
     /// behind an adapter. This is the bridge point for incrementally moving the
     /// production query path onto the new runtime contract.
     pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
-        let dispatcher = Arc::new(ToolDispatcher::allow_all());
+        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(CapabilityPermissionPipeline)));
         let runtime_tools = self.runtime_tools.read().await;
         let legacy_tools = self.tools.read().await;
 

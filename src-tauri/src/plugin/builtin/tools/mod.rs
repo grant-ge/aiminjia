@@ -70,4 +70,23 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     for tool in tools {
         registry.register(tool, "builtin").await;
     }
+
+    // Register runtime-native workspace tools (take precedence over legacy ToolPlugin).
+    // These four tools have no constructor deps and can be registered unconditionally.
+    use crate::runtime::tools::builtin::workspace::{
+        GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
+        SearchFilesRuntimeTool,
+    };
+    registry
+        .register_runtime(Arc::new(ListDirectoryRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(SearchFilesRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(GetFileInfoRuntimeTool))
+        .await;
 }
