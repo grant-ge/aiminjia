@@ -11,7 +11,7 @@
 use app_lib::runtime::tools::catalog::ToolCatalog;
 use app_lib::runtime::tools::definition::ToolKind;
 
-/// All 11 primitive tools must be in catalog as Primitive kind.
+/// All 10 primitive tools must be in catalog as Primitive kind.
 #[test]
 fn all_primitive_tools_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
@@ -26,7 +26,6 @@ fn all_primitive_tools_in_catalog() {
         "page_execute_js",
         "extract_table_data",
         "extract_with_pagination",
-        "load_file",
     ];
     for id in &primitives {
         let def = catalog
@@ -82,17 +81,25 @@ fn web_search_is_primitive_with_network_scope() {
     );
 }
 
-/// `load_file` must be Primitive with `workspace:read` scope.
+/// `load_file` must be Power with `workspace:read`, `workspace:write`, `python:exec` scope.
 #[test]
-fn load_file_is_primitive_with_workspace_read_scope() {
+fn load_file_is_power_with_correct_scopes() {
     let catalog = ToolCatalog::default_catalog();
     let def = catalog
         .get("load_file")
         .expect("load_file must be in catalog");
-    assert!(matches!(def.kind, ToolKind::Primitive));
+    assert!(matches!(def.kind, ToolKind::Power));
     assert!(
         def.capability_scope.contains(&"workspace:read".to_string()),
         "load_file must have workspace:read scope"
+    );
+    assert!(
+        def.capability_scope.contains(&"workspace:write".to_string()),
+        "load_file must have workspace:write scope"
+    );
+    assert!(
+        def.capability_scope.contains(&"python:exec".to_string()),
+        "load_file must have python:exec scope"
     );
 }
 

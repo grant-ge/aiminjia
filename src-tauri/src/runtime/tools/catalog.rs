@@ -124,9 +124,12 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("load_file", "加载已上传文件，使数据可在 execute_python 中以 _df/_text 变量使用")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["workspace:read"]),
+        ToolDefinition::new("load_file",
+            "加载已上传文件，使数据可在 execute_python 中以 _df/_text 变量使用。\
+            注意：这是 Power 工具，会执行 Python 解析、PII 脱敏、session 缓存写入等副作用。\
+            调用后数据以变量形式注入 execute_python 会话。")
+            .with_kind(ToolKind::Power)
+            .with_capability_scope(["workspace:read", "workspace:write", "python:exec"]),
         json!({
             "type": "object",
             "required": ["file_id"],
