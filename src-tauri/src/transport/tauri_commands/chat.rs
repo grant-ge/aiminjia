@@ -148,7 +148,7 @@ impl TauriChatCommandAdapter {
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
         let runtime = SessionRuntime::with_executor(
-            QueryEngine::new(),
+            QueryEngine::new().with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             Arc::new(TauriLegacyTurnExecutor {
                 services: services.clone(),
