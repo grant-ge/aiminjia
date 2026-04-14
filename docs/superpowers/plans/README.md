@@ -56,7 +56,7 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 | [2026-04-14-p1-a-chat-tool-dispatch-runtime-plan.md](./2026-04-14-p1-a-chat-tool-dispatch-runtime-plan.md) | T2 工具回合 runtime dispatcher 收口（P1-A） | ✅ 已执行 |
 
 > **评审文档**：`docs/reviews/2026-04-14-chat-runtime-first-closure-review.md`
-> 当前状态：❌ 未关闭（B1-B4 仍未收口）
+> 当前状态：✅ 已关闭（P1 全部 commits 已合并，B1-B4 已收口）
 
 ---
 
