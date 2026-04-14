@@ -88,7 +88,7 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 
 | 目标 | 计划文件 | 状态 |
 |------|---------|------|
-| PluginContext 退出主路径 + CancellationToken 级联 | [p4a-plugin-context-cancellation-plan.md](./2026-04-14-p4a-plugin-context-cancellation-plan.md) | 🟡 计划已写，待执行 |
+| PluginContext 退出主路径 + CancellationToken 级联 | [p4a-plugin-context-cancellation-plan.md](./2026-04-14-p4a-plugin-context-cancellation-plan.md) | ✅ 已关闭（2026-04-14，precompute key helper 已提取，legacy spawn 注释化说明取消边界） |
 | AppStorage → ConversationStore facade 迁移 | [p4b-storage-facade-plan.md](./2026-04-14-p4b-storage-facade-plan.md) | ✅ 已关闭（2026-04-14，conversation_service.rs 完成，delete_conversation 待后续）|
 | PolicyEngine（allow/deny/ask + 持久化）+ Python 安全收口 | [p4c-policy-engine-python-sandbox-plan.md](./2026-04-14-p4c-policy-engine-python-sandbox-plan.md) | 🟡 计划已写，待执行 |
 | AgentRuntime 持久化（FileAgentInvocationStore） | — | ✅ 评估确认已实现 |
