@@ -121,7 +121,10 @@ mod tests {
         store.create_conversation("c1", "Old Title").unwrap();
         store.rename_conversation("c1", "New Title").unwrap();
         let convs = store.get_conversations().unwrap();
-        assert!(!convs.is_empty());
+        assert_eq!(convs.len(), 1);
+        // 验证 title 确实变为 "New Title"
+        let title = convs[0].get("title").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(title, "New Title");
     }
 
     #[test]
