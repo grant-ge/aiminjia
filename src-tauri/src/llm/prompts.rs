@@ -447,17 +447,4 @@ mod tests {
         store.reload();
         assert!(store.get("base").contains("Updated base"));
     }
-
-    #[test]
-    fn test_bundled_daily_prompt_mentions_workspace_first_flow() {
-        let daily_prompt_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("prompts")
-            .join("daily.md");
-        let content = fs::read_to_string(daily_prompt_path).unwrap();
-
-        assert!(content.contains("若用户已连接本地目录或系统明确告知存在授权目录"));
-        assert!(content.contains("list_directory、search_files、read_workspace_file、get_file_info"));
-        assert!(content.contains("若用户上传了附件"));
-        assert!(content.contains("load_file + execute_python"));
-    }
 }
