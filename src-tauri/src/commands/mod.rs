@@ -8,3 +8,4 @@ pub mod settings;
 pub mod workspace;
 pub mod persona;
 pub mod skill_management;
+pub mod skill_smith;

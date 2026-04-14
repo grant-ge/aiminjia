@@ -211,6 +211,17 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(session_mgr);
 
+            // Skill-smith: cleanup expired drafts on startup (non-blocking).
+            // Draft files older than 7 days are removed to keep _drafts/ tidy.
+            let cleanup_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match commands::skill_smith::cleanup_expired_drafts(cleanup_handle).await {
+                    Ok(n) if n > 0 => log::info!("skill-smith: cleaned up {} expired draft(s)", n),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("skill-smith: draft cleanup failed: {}", e),
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -281,6 +292,14 @@ pub fn run() {
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,
             commands::skill_management::install_marketplace_skill,
+            // Skill-smith (conversational skill creation) — draft file system (T2)
+            commands::skill_smith::create_skill_draft,
+            commands::skill_smith::write_skill_draft_file,
+            commands::skill_smith::read_skill_draft_file,
+            commands::skill_smith::list_skill_draft_files,
+            commands::skill_smith::list_skill_drafts,
+            commands::skill_smith::discard_skill_draft,
+            commands::skill_smith::cleanup_expired_drafts,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

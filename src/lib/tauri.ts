@@ -936,6 +936,69 @@ export function stopSkillWatch(): Promise<string> {
   return invoke<string>('stop_skill_watch')
 }
 
+// ---------------------------------------------------------------------------
+// Skill-Smith — conversational skill creation draft file system (T2)
+// ---------------------------------------------------------------------------
+
+/** A file inside a skill-smith draft. Paths are forward-slash normalized. */
+export interface DraftFile {
+  relativePath: string
+  size: number
+  modifiedTs: number
+}
+
+/** Summary of a skill-smith draft (for resume banner, list UI, etc). */
+export interface DraftSummary {
+  draftId: string
+  createdAt: number
+  lastModified: number
+  /** One of: "intent" | "manifest" | "workflow" | "prompts" */
+  stage: string
+  skillName: string | null
+}
+
+/** Create a new empty draft. Returns the 12-char hex draft_id. */
+export function createSkillDraft(): Promise<string> {
+  return invoke<string>('create_skill_draft')
+}
+
+/** Write `content` to `{draft}/{relativePath}`, creating parent dirs. */
+export function writeSkillDraftFile(
+  draftId: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  return invoke('write_skill_draft_file', { draftId, relativePath, content })
+}
+
+/** Read a file from a draft. Throws if not found. */
+export function readSkillDraftFile(
+  draftId: string,
+  relativePath: string,
+): Promise<string> {
+  return invoke<string>('read_skill_draft_file', { draftId, relativePath })
+}
+
+/** List all files in a draft (recursive). */
+export function listSkillDraftFiles(draftId: string): Promise<DraftFile[]> {
+  return invoke<DraftFile[]>('list_skill_draft_files', { draftId })
+}
+
+/** List all drafts (for the "resume your draft" banner). */
+export function listSkillDrafts(): Promise<DraftSummary[]> {
+  return invoke<DraftSummary[]>('list_skill_drafts')
+}
+
+/** Delete a draft entirely. */
+export function discardSkillDraft(draftId: string): Promise<void> {
+  return invoke('discard_skill_draft', { draftId })
+}
+
+/** Remove drafts untouched for >7 days. Returns count removed. */
+export function cleanupExpiredDrafts(): Promise<number> {
+  return invoke<number>('cleanup_expired_drafts')
+}
+
 /**
  * Listen for skill file change events (dev mode hot-reload).
  * The payload is the skill directory path that changed.
