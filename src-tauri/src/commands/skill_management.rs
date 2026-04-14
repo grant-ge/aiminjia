@@ -305,63 +305,14 @@ _data = _KNOWLEDGE.get('templates', {{}}) if '_KNOWLEDGE' in dir() else {{}}
     Ok(dir.to_string_lossy().to_string())
 }
 
-/// Pack a skill directory into a .aijia-skill zip file.
+/// Pack a skill directory into a .aijia-skill zip file in its parent dir.
+/// Thin wrapper over `pack_skill_to_dir`.
 #[tauri::command]
 pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
     let dir = PathBuf::from(&skill_dir);
-    if !dir.is_dir() {
-        return Err("Not a valid directory".to_string());
-    }
-    if !dir.join("plugin.toml").exists() {
-        return Err("No plugin.toml found — not a valid skill directory".to_string());
-    }
-
-    // Read plugin ID for output filename
-    let manifest_content = std::fs::read_to_string(dir.join("plugin.toml")).map_err(|e| e.to_string())?;
-    let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
-    let plugin_id = manifest
-        .get("plugin")
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    let output_path = dir.parent()
-        .unwrap_or(&dir)
-        .join(format!("{}.aijia-skill", plugin_id));
-
-    let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    fn add_dir_to_zip(
-        zip: &mut zip::ZipWriter<std::fs::File>,
-        dir: &std::path::Path,
-        base: &std::path::Path,
-        options: zip::write::SimpleFileOptions,
-    ) -> Result<(), String> {
-        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
-            let name = relative.to_string_lossy().to_string();
-
-            if path.is_dir() {
-                zip.add_directory(&format!("{}/", name), options).map_err(|e| e.to_string())?;
-                add_dir_to_zip(zip, &path, base, options)?;
-            } else {
-                zip.start_file(&name, options).map_err(|e| e.to_string())?;
-                let content = std::fs::read(&path).map_err(|e| e.to_string())?;
-                std::io::Write::write_all(zip, &content).map_err(|e| e.to_string())?;
-            }
-        }
-        Ok(())
-    }
-
-    add_dir_to_zip(&mut zip, &dir, &dir, options)?;
-    zip.finish().map_err(|e| e.to_string())?;
-
-    Ok(output_path.to_string_lossy().to_string())
+    let parent = dir.parent().unwrap_or(&dir).to_path_buf();
+    let output = pack_skill_to_dir(&dir, &parent)?;
+    Ok(output.to_string_lossy().to_string())
 }
 
 /// Reload a custom skill from disk (hot-reload for dev mode).
@@ -636,7 +587,9 @@ pub async fn install_marketplace_skill(
     Ok(format!("Installed '{}' — restart app to activate", plugin_id))
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+/// Copy a directory recursively. Symlinks are skipped (path-traversal defense).
+/// `pub(crate)` so `skill_smith::commit` can reuse without duplicating logic.
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -654,4 +607,66 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Package a skill directory into `{output_dir}/{plugin_id}.aijia-skill` zip.
+/// Shared between `pack_skill` (tauri command) and `skill_smith::commit::export_skill_draft`.
+pub(crate) fn pack_skill_to_dir(
+    skill_dir: &Path,
+    output_dir: &Path,
+) -> Result<PathBuf, String> {
+    if !skill_dir.is_dir() {
+        return Err("Skill directory does not exist".to_string());
+    }
+    if !skill_dir.join("plugin.toml").exists() {
+        return Err("No plugin.toml found — not a valid skill directory".to_string());
+    }
+
+    // Read plugin ID for output filename
+    let manifest_content = std::fs::read_to_string(skill_dir.join("plugin.toml"))
+        .map_err(|e| e.to_string())?;
+    let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
+    let plugin_id = manifest
+        .get("plugin")
+        .and_then(|p| p.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
+    let output_path = output_dir.join(format!("{}.aijia-skill", plugin_id));
+
+    let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    fn add_dir_to_zip(
+        zip: &mut zip::ZipWriter<std::fs::File>,
+        dir: &std::path::Path,
+        base: &std::path::Path,
+        options: zip::write::SimpleFileOptions,
+    ) -> Result<(), String> {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
+            let name = relative.to_string_lossy().to_string();
+
+            if path.is_dir() {
+                zip.add_directory(format!("{}/", name), options)
+                    .map_err(|e| e.to_string())?;
+                add_dir_to_zip(zip, &path, base, options)?;
+            } else {
+                zip.start_file(&name, options).map_err(|e| e.to_string())?;
+                let content = std::fs::read(&path).map_err(|e| e.to_string())?;
+                std::io::Write::write_all(zip, &content).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    add_dir_to_zip(&mut zip, skill_dir, skill_dir, options)?;
+    zip.finish().map_err(|e| e.to_string())?;
+
+    Ok(output_path)
 }

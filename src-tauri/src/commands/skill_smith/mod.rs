@@ -19,11 +19,12 @@
 //! traversal without relying on canonicalize (which requires the file to
 //! already exist).
 
+pub mod commit;
 pub mod validation;
-// `validate_skill_draft` is registered via its full path
-// `commands::skill_smith::validation::validate_skill_draft` in `lib.rs`
-// (Tauri's `generate_handler!` macro needs the `__cmd__` helper in the
-// same module as the `#[tauri::command]` attribute).
+// Command functions are registered via their full path
+// (e.g. `commands::skill_smith::validation::validate_skill_draft`) in `lib.rs`
+// because Tauri's `generate_handler!` macro needs the `__cmd__` helper to live
+// in the same module as the `#[tauri::command]` attribute.
 
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;

@@ -1028,6 +1028,38 @@ export function validateSkillDraft(draftId: string): Promise<DraftValidationRepo
   return invoke<DraftValidationReport>('validate_skill_draft', { draftId })
 }
 
+/** Outcome of a skill-smith commit attempt. */
+export interface SkillCommitResult {
+  skillId: string
+  installedPath: string
+  /** `true` iff a skill with the same id already exists AND we did NOT overwrite.
+   *  Caller should prompt the user to rename, force-overwrite, or cancel. */
+  conflict: boolean
+}
+
+/**
+ * Commit a validated draft to `custom_plugins/`. Returns `{ conflict: true }`
+ * without making changes if a skill with the same `plugin.id` already exists —
+ * caller should then invoke `commitSkillDraftForce` or prompt the user to
+ * rename the skill. Errors if validation fails.
+ */
+export function commitSkillDraft(draftId: string): Promise<SkillCommitResult> {
+  return invoke<SkillCommitResult>('commit_skill_draft', { draftId })
+}
+
+/** Same as `commitSkillDraft` but overwrites any existing skill with the same id. */
+export function commitSkillDraftForce(draftId: string): Promise<SkillCommitResult> {
+  return invoke<SkillCommitResult>('commit_skill_draft_force', { draftId })
+}
+
+/**
+ * Package a validated draft as a `.aijia-skill` zip and place it in `outputDir`.
+ * The draft is preserved (unlike commit). Returns the full path to the zip.
+ */
+export function exportSkillDraft(draftId: string, outputDir: string): Promise<string> {
+  return invoke<string>('export_skill_draft', { draftId, outputDir })
+}
+
 /**
  * Listen for skill file change events (dev mode hot-reload).
  * The payload is the skill directory path that changed.
