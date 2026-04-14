@@ -44,6 +44,18 @@ pub(crate) fn build_precompute_sandbox(
     }
 }
 
+/// 生成"已加载"的内存 key，用于 precompute 路径判断文件是否已加载。
+/// 格式与 `PluginContext::loaded_key` 在 run_id 存在时一致，但此处固定使用 conversation_id
+/// 作为 scope，因为 precompute 的 auto-load 检测属于会话级 sentinel。
+fn file_loaded_key(conversation_id: &str, file_id: &str) -> String {
+    format!("loaded:{}:{}", conversation_id, file_id)
+}
+
+/// 生成"加载失败"的内存 key，用于 precompute 路径判断文件是否已失败。
+fn file_load_failed_key(conversation_id: &str, file_id: &str) -> String {
+    format!("load_failed:{}:{}", conversation_id, file_id)
+}
+
 fn load_authorized_workspace(
     app: &AppHandle,
     conversation_id: &str,
@@ -1796,8 +1808,8 @@ async fn agent_loop(
                     if file_id.is_empty() {
                         continue;
                     }
-                    let loaded_key = auto_load_ctx.loaded_key(file_id);
-                    let failed_key = auto_load_ctx.load_failed_key(file_id);
+                    let loaded_key = file_loaded_key(&conversation_id, file_id);
+                    let failed_key = file_load_failed_key(&conversation_id, file_id);
                     if db.get_memory(&loaded_key).ok().flatten().is_none()
                         && db.get_memory(&failed_key).ok().flatten().is_none()
                     {
