@@ -286,7 +286,10 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("generate_report",
             "【Composite 工具】生成专业分析报告（HTML/Markdown/PDF/DOCX）。\
-            内部包含：渲染 → 写文件 → 按需格式转换，多阶段操作。\
+            \n\n【数据传递规则】sections 参数禁止直接写入大段文本数据。\
+            正确做法：先用 execute_python 从 _df 生成报告 sections 数据并写入 JSON 文件，\
+            再调用 generate_report(source=\"文件路径\")。\
+            \n\n内部包含：渲染 → 写文件 → 按需格式转换，多阶段操作。\
             用于分析末尾生成最终报告，不适合中间步骤。")
             .with_kind(ToolKind::Composite)
             .with_capability_scope(["workspace:write"]),
@@ -303,7 +306,9 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new("generate_chart",
-            "【Composite 工具】生成交互式数据可视化图表（计算 + 渲染 + 写文件）。")
+            "【Composite 工具】生成交互式数据可视化图表（计算 + 渲染 + 写文件）。\
+            \n\n【数据传递规则】数据点超过 50 个时必须使用 data_file 参数（先用 execute_python 准备数据并写入 JSON 文件，再传入文件路径），\
+            不得在 data 参数中直接内联大量数据点。")
             .with_kind(ToolKind::Composite)
             .with_capability_scope(["workspace:write"]),
         json!({
@@ -319,7 +324,9 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new("export_data",
-            "【Composite 工具】将数据导出为文件（数据转换 + 写文件）。")
+            "【Composite 工具】将数据导出为文件（数据转换 + 写文件）。\
+            \n\n【使用方式】在 execute_python 中用 _export_detail(_df, filename, format) 直接导出，\
+            禁止在 data 参数中传入原始数据数组（会超出 token 限制）。")
             .with_kind(ToolKind::Composite)
             .with_capability_scope(["workspace:write"]),
         json!({
