@@ -28,6 +28,8 @@ pub mod skill_smith_create_draft;
 pub mod skill_smith_write_file;
 pub mod skill_smith_validate;
 pub mod skill_smith_dry_run;
+pub mod skill_smith_install;
+pub mod skill_smith_export;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -63,6 +65,8 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(skill_smith_write_file::SkillSmithWriteFileTool),
         Arc::new(skill_smith_validate::SkillSmithValidateTool),
         Arc::new(skill_smith_dry_run::SkillSmithDryRunTool),
+        Arc::new(skill_smith_install::SkillSmithInstallTool),
+        Arc::new(skill_smith_export::SkillSmithExportTool),
     ];
 
     for tool in tools {

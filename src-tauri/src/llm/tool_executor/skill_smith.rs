@@ -42,8 +42,15 @@ fn draft_key(conversation_id: &str) -> String {
 }
 
 /// Look up the draft_id bound to this conversation, if any.
+///
+/// Empty string is treated as "no binding" — this is how install clears
+/// the binding after a successful commit (see `handle_skill_smith_install`)
+/// without requiring a new `delete_memory` API on AppStorage.
 pub(crate) fn lookup_bound_draft(ctx: &PluginContext) -> Result<Option<String>> {
-    ctx.storage.get_memory(&draft_key(&ctx.conversation_id))
+    Ok(ctx
+        .storage
+        .get_memory(&draft_key(&ctx.conversation_id))?
+        .filter(|s| !s.is_empty()))
 }
 
 /// Bind a draft_id to the current conversation (overwrites any prior binding).
@@ -210,6 +217,122 @@ pub(crate) async fn handle_skill_smith_dry_run(
     .to_string())
 }
 
+/// Install the active draft into `custom_plugins/{skill_id}/` and trigger
+/// hot-reload. On conflict (skill with same id already installed) and
+/// `force=false`, returns `status: "conflict"` without changes — the LLM
+/// should then ask the user whether to rename or force-overwrite.
+///
+/// On success, the underlying draft is cleaned up (see T4). Any subsequent
+/// write/validate/dry_run against the old draft_id will fail with
+/// "Draft not found"; if the user wants to create another skill in the same
+/// conversation, call `skill_smith_create_draft` with `force_new=true`.
+pub(crate) async fn handle_skill_smith_install(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<String> {
+    let draft_id = resolve_draft_id(ctx, args)?;
+    let force = args
+        .get("force")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let app = ctx
+        .app_handle
+        .as_ref()
+        .ok_or_else(|| anyhow!("skill_smith tools require AppHandle"))?;
+
+    let result = if force {
+        crate::commands::skill_smith::commit::commit_skill_draft_force(
+            app.clone(),
+            draft_id.clone(),
+        )
+        .await
+    } else {
+        crate::commands::skill_smith::commit::commit_skill_draft(app.clone(), draft_id.clone())
+            .await
+    }
+    .map_err(|e| anyhow!("commit_skill_draft failed: {}", e))?;
+
+    if result.conflict {
+        // No changes made; LLM asks user, then may re-invoke with force=true.
+        return Ok(json!({
+            "status": "conflict",
+            "skill_id": result.skill_id,
+            "installed_path": result.installed_path,
+            "message": format!(
+                "A skill with id '{}' is already installed. Ask the user whether to overwrite (re-call with force=true) or rename (write a new plugin.toml with a different plugin.id and retry).",
+                result.skill_id
+            ),
+        })
+        .to_string());
+    }
+
+    // Success — clear session binding so subsequent calls don't point at
+    // the now-removed draft. `set_memory` with "" is the cheapest way to
+    // invalidate without adding a new delete API; resolve_draft_id's
+    // empty-string guard treats it as no binding.
+    let _ = ctx.storage.set_memory(
+        &draft_key(&ctx.conversation_id),
+        "",
+        Some("skill_smith_session"),
+    );
+
+    Ok(json!({
+        "status": "installed",
+        "skill_id": result.skill_id,
+        "installed_path": result.installed_path,
+        "message": format!(
+            "Skill '{}' installed to {}. It's live immediately (no restart). The draft has been cleaned up.",
+            result.skill_id, result.installed_path
+        ),
+    })
+    .to_string())
+}
+
+/// Package the active draft as a `.aijia-skill` zip at `output_dir`.
+/// Unlike install, the draft is preserved. If `output_dir` is not provided,
+/// defaults to `{workspace}/exports/`.
+pub(crate) async fn handle_skill_smith_export(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<String> {
+    let draft_id = resolve_draft_id(ctx, args)?;
+    let app = ctx
+        .app_handle
+        .as_ref()
+        .ok_or_else(|| anyhow!("skill_smith tools require AppHandle"))?;
+
+    // Resolve output dir: explicit arg wins, else default to workspace/exports/.
+    let output_dir = match args.get("output_dir").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => {
+            let exports = ctx.workspace_path.join("exports");
+            std::fs::create_dir_all(&exports)
+                .map_err(|e| anyhow!("Failed to create default exports dir: {}", e))?;
+            exports.to_string_lossy().to_string()
+        }
+    };
+
+    let path = crate::commands::skill_smith::commit::export_skill_draft(
+        app.clone(),
+        draft_id.clone(),
+        output_dir.clone(),
+    )
+    .await
+    .map_err(|e| anyhow!("export_skill_draft failed: {}", e))?;
+
+    Ok(json!({
+        "status": "exported",
+        "draft_id": draft_id,
+        "output_path": path,
+        "message": format!(
+            "Skill packed to {}. Share this .aijia-skill file — recipients can install it via Settings → Skills → Install from folder.",
+            path
+        ),
+    })
+    .to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Tests (session state + arg resolution logic — AppHandle-dependent paths
 // are covered by T2/T3/T7's own tests; we don't re-exercise them here.)
@@ -319,6 +442,72 @@ mod tests {
         bind_draft(&ctx, "preexisting01").unwrap();
 
         let err = handle_skill_smith_create_draft(&ctx, &json!({"force_new": true}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("AppHandle"));
+    }
+
+    // ---- Empty-string binding sentinel (install post-success cleanup) ----
+
+    #[tokio::test]
+    async fn empty_string_binding_is_treated_as_no_binding() {
+        // Simulate install's post-success cleanup: it writes "" to the
+        // session key, and lookup_bound_draft should return None.
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+        bind_draft(&ctx, "").unwrap();
+
+        assert!(lookup_bound_draft(&ctx).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn create_draft_creates_new_after_install_cleared_binding() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+        // First bind a draft, then simulate install clearing it.
+        bind_draft(&ctx, "pre-install-d").unwrap();
+        bind_draft(&ctx, "").unwrap();
+
+        // Without AppHandle, create_draft now hits the "no binding" path and
+        // errors on AppHandle (correct — it would try to actually create).
+        let err = handle_skill_smith_create_draft(&ctx, &json!({}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("AppHandle"));
+    }
+
+    // ---- install / export handlers ----
+
+    #[tokio::test]
+    async fn install_without_app_handle_errors() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+        bind_draft(&ctx, "any-draft-id").unwrap();
+
+        let err = handle_skill_smith_install(&ctx, &json!({}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("AppHandle"));
+    }
+
+    #[tokio::test]
+    async fn install_errors_when_no_draft_bound_or_explicit() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+
+        let err = handle_skill_smith_install(&ctx, &json!({}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("No draft_id provided"));
+    }
+
+    #[tokio::test]
+    async fn export_without_app_handle_errors() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+        bind_draft(&ctx, "any-draft-id").unwrap();
+
+        let err = handle_skill_smith_export(&ctx, &json!({}))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("AppHandle"));
