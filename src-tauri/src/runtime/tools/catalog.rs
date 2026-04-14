@@ -389,5 +389,39 @@ fn build_default_catalog() -> ToolCatalog {
     c
 }
 
+/// daily 模式允许 LLM 直接调用的工具集。
+///
+/// 包含所有 Primitive + Power 工具，以及少数 daily 场景常用的 Composite 工具
+/// （browse_data、generate_report、generate_chart、export_data）。
+/// 不包含 browse_and_extract / generate_slides 等纯分析流程专属的 Composite 工具。
+///
+/// 需与 `tests/skill_tool_contract_test.rs` 中的 DAILY_ALLOWED_TOOLS 保持同步。
+pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
+    // Primitive: workspace
+    "list_directory",
+    "read_workspace_file",
+    "search_files",
+    "get_file_info",
+    // Primitive: network
+    "web_search",
+    // Primitive: browser
+    "browse_navigate",
+    "read_page_content",
+    // Power
+    "load_file",
+    "execute_python",
+    // Composite（daily 常用）
+    "browse_data",
+    "generate_report",
+    "generate_chart",
+    "export_data",
+    // Support
+    "plan_update",
+    "progress_update",
+    "save_analysis_note",
+    "save_memory",
+    "search_memory",
+];
+
 /// 全局默认 catalog（延迟初始化）。
 pub static TOOL_CATALOG: LazyLock<ToolCatalog> = LazyLock::new(build_default_catalog);

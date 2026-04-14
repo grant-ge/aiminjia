@@ -1,5 +1,6 @@
 use super::chat_support::AgentGuard;
 use super::*;
+use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 
 /// 根据当前 session 是否有授权目录，决定暴露给 LLM 的工具 schema 列表。
@@ -1667,9 +1668,11 @@ async fn agent_loop(
         messages = compress_context_if_needed(messages, &gateway, &settings).await;
     }
 
-    // Determine system prompt, tool filter, and token budget based on mode
-    // Both modes now use all tool schemas for KV cache prefix stability.
-    // Runtime guard blocks analysis-only tools in daily mode.
+    // Determine system prompt, tool filter, and token budget based on mode.
+    // Daily mode: only DAILY_ALLOWED_TOOLS are visible to the LLM (Primitive + Power +
+    // selected Composite tools). Composite tools not in DAILY_ALLOWED_TOOLS are hidden.
+    // Analysis mode: uses all tool schemas for KV cache prefix stability;
+    // runtime guard enforces per-step allowed_tool_names at execution time.
 
     let authorized_workspace_present = authorized_workspace.is_some();
 
@@ -1695,9 +1698,19 @@ async fn agent_loop(
                 )
             }
             None => {
+                // Apply DAILY_ALLOWED_TOOLS filter: only expose Primitive + Power tools
+                // (and a subset of Composite tools) to the LLM in daily mode.
+                // Composite tools not in DAILY_ALLOWED_TOOLS (browse_and_extract,
+                // generate_slides, etc.) are hidden from the default tool surface.
+                let daily_allowed_set: std::collections::HashSet<&str> =
+                    DAILY_ALLOWED_TOOLS.iter().copied().collect();
+                let daily_tool_defs: Vec<_> = all_tool_defs
+                    .into_iter()
+                    .filter(|td| daily_allowed_set.contains(td.name.as_str()))
+                    .collect();
                 log::info!(
-                    "Agent loop in DAILY CONSULTATION mode ({} tools)",
-                    all_tool_defs.len()
+                    "Agent loop in DAILY CONSULTATION mode ({} tools after DAILY_ALLOWED_TOOLS filter)",
+                    daily_tool_defs.len()
                 );
                 let persona = db.get_active_persona().ok();
                 let product_name: Option<String> = auth_manager
@@ -1707,7 +1720,7 @@ async fn agent_loop(
                     .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
                 (
                     prompts::get_system_prompt(None, persona.as_ref(), product_name.as_deref()),
-                    Some(all_tool_defs), // all schemas for KV cache stability
+                    Some(daily_tool_defs), // filtered by DAILY_ALLOWED_TOOLS
                     MAX_TOOL_ITERATIONS,
                     8192u32, // daily consultation: needs headroom for generate_report JSON
                     CHUNK_TIMEOUT_SECS, // daily mode: 90s

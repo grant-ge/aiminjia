@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::auth::AuthManager;
 use crate::llm::prompts;
 use crate::plugin::skill_trait::*;
+use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use crate::storage::file_store::AppStorage;
 
 pub struct DailyAssistantSkill {
@@ -43,7 +44,7 @@ impl Skill for DailyAssistantSkill {
     }
 
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
-        ToolFilter::All
+        ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect())
     }
 
     fn max_iterations(&self, _state: &SkillState) -> usize {
