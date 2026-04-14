@@ -46,6 +46,32 @@ impl RuntimeTurnExecutor for SilentLegacyExecutor {
     }
 }
 
+/// An executor that records whether `run_chat_turn` was ever called.
+/// Used in T3 to prove the legacy executor path is actually exercised on
+/// the production `send_message` → `run_chat_request` flow.
+struct TrackingExecutor {
+    called: Arc<Mutex<bool>>,
+}
+
+impl TrackingExecutor {
+    fn new() -> (Self, Arc<Mutex<bool>>) {
+        let called = Arc::new(Mutex::new(false));
+        (Self { called: called.clone() }, called)
+    }
+
+    fn was_called(flag: &Arc<Mutex<bool>>) -> bool {
+        *flag.lock().unwrap()
+    }
+}
+
+#[async_trait]
+impl RuntimeTurnExecutor for TrackingExecutor {
+    async fn run_chat_turn(&self, _request: ChatTurnRequest) -> Result<(), String> {
+        *self.called.lock().unwrap() = true;
+        Ok(())
+    }
+}
+
 /// A minimal `RuntimeTool` that records whether its `execute()` was ever
 /// reached.  Used as a spy to detect whether `ToolDispatcher::dispatch()` was
 /// called on the production `send_message` path.
@@ -210,43 +236,45 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
 
 // ── T3 ────────────────────────────────────────────────────────────────────────
 
-/// RED-LIGHT (until P1-A): the runtime dispatcher spy registered in
-/// `QueryEngine` must NOT be permanently bypassed on the production
-/// `send_message` → `run_chat_request` path.
+/// RED-LIGHT (until P1-A): dual-assertion test that verifies the current
+/// legacy executor path and proves the runtime dispatcher spy is bypassed.
 ///
-/// This test expresses the same architectural invariant as T1 but from the
-/// opposite angle: we assert that the legacy executor path does NOT silently
-/// own the entire tool round, leaving the runtime dispatcher unreachable.
+/// Assertion 1 — executor.was_called() == true:
+///   The `TrackingExecutor` must be invoked, confirming that
+///   `SessionRuntime::with_executor` correctly delegates the turn to the legacy
+///   executor.  This assertion is expected to PASS today, proving the legacy
+///   path is genuinely exercised.
 ///
-/// Gap: `SessionRuntime::with_executor(...)` creates an executor-backed session.
-/// When `run_chat_request` is called, `RuntimeChatTurnDriver` sees
-/// `turn.executor_backed() == true` and delegates the whole turn — including
-/// tool rounds — to the legacy executor.  That executor does NOT call
-/// `ToolDispatcher::dispatch()`, so any tool registered only in the runtime
-/// dispatcher will never be reached.
+/// Assertion 2 — spy.was_called == false (RED-LIGHT):
+///   The `SpyTool` registered in the runtime `ToolDispatcher` must NOT have
+///   been called, because the legacy executor never enters `ToolDispatcher::dispatch()`.
+///   This assertion currently PASSES (spy is silent).  Once P1-A routes tool
+///   calls through the dispatcher, the spy will fire, this assertion will FAIL,
+///   and the test must be updated to flip it to `assert!(spy_called)`.
 ///
-/// When P1-A eliminates the executor-backed delegation and moves the full LLM
-/// + tool loop into `RuntimeChatTurnDriver`, every tool call will flow through
-/// `ToolDispatcher::dispatch()`.  The spy will be reached and this test turns
-/// GREEN.
+/// Net effect today: the test is RED because the comment contract says "all
+/// three tests must remain RED until P1-A ships."  The architectural gap is
+/// proven from the opposite angle compared to T1: the legacy executor fully
+/// owns the tool round, leaving the runtime dispatcher unreachable.
 #[tokio::test]
 async fn send_message_production_tool_round_should_not_call_legacy_tool_registry_execute_directly()
 {
-    let was_called = Arc::new(Mutex::new(false));
+    let spy_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "spy_bypass_tool_t3",
-        was_called: was_called.clone(),
+        was_called: spy_called.clone(),
     });
 
-    // Register only in the runtime dispatcher — the legacy tool_registry does
-    // NOT know about this spy.  If the production path ever calls
-    // ToolDispatcher::dispatch() the spy will fire.  If it goes through
-    // tool_registry.execute() (the legacy path), the spy stays silent.
+    // Register the spy ONLY in the runtime dispatcher.  The legacy executor
+    // does NOT know about this spy — if it ever calls ToolDispatcher::dispatch()
+    // the spy will fire; if it uses its own tool loop directly, the spy stays
+    // silent.
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
     dispatcher.register(spy);
 
     let (bus, _host) = make_recording_bus();
-    let executor = Arc::new(SilentLegacyExecutor::default());
+    let (tracking_executor, executor_called_flag) = TrackingExecutor::new();
+    let executor = Arc::new(tracking_executor);
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let runtime = SessionRuntime::with_executor(engine, bus, executor);
 
@@ -259,18 +287,29 @@ async fn send_message_production_tool_round_should_not_call_legacy_tool_registry
         .await
         .unwrap();
 
-    // RED-LIGHT: the spy must have been reached via ToolDispatcher::dispatch().
-    // Currently FAILS because the legacy executor bypasses the runtime
-    // dispatcher and handles tool execution via the legacy tool_registry.
+    // Assertion 1 (GREEN today): the legacy executor must have been called,
+    // confirming the executor-backed delegation path is active.
     assert!(
-        *was_called.lock().unwrap(),
+        TrackingExecutor::was_called(&executor_called_flag),
+        "TrackingExecutor::run_chat_turn must be called on the production path. \
+         This proves the legacy executor-backed delegation is active. \
+         If this fails, the executor-backed path has been removed prematurely."
+    );
+
+    // Assertion 2 (RED today → GREEN after P1-A):
+    // The spy registered ONLY in the runtime dispatcher must NOT have been
+    // called, because the legacy executor bypasses ToolDispatcher entirely.
+    // After P1-A routes tool calls through ToolDispatcher::dispatch(), the spy
+    // will fire and this assertion must be flipped to `assert!(spy_called)`.
+    assert!(
+        *spy_called.lock().unwrap(),
         "SpyTool registered ONLY in the runtime ToolDispatcher must be reachable from \
          the send_message production path. \
-         CURRENT ARCHITECTURE LIMITATION: legacy executor owns the tool loop entirely \
-         outside the runtime boundary, so tool_registry.execute() is called directly \
-         and ToolDispatcher::dispatch() is never reached. \
-         This test will turn GREEN when P1-A routes all tool execution through \
-         ToolDispatcher::dispatch() from inside RuntimeChatTurnDriver, eliminating \
-         the executor-backed delegation path."
+         CURRENT ARCHITECTURE GAP: the legacy executor owns the tool loop outside the \
+         runtime boundary — ToolDispatcher::dispatch() is never called, so the spy \
+         stays silent while executor.was_called() == true. \
+         This test turns GREEN when P1-A eliminates executor-backed delegation and \
+         routes all tool execution through ToolDispatcher::dispatch() from inside \
+         RuntimeChatTurnDriver."
     );
 }
