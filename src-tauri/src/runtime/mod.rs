@@ -14,6 +14,7 @@ pub mod store;
 pub mod task;
 pub mod tools;
 
+pub use chat::{ToolRoundDriver, ToolRoundResult};
 pub use event_bus::{RuntimeEventBus, RuntimeEventSubscriber};
 pub use events::{RuntimeEvent, RuntimeEventKind};
 pub use identity::{IdentityMapping, RuntimeIdentity};
