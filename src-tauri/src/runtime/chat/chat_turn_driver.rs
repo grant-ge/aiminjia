@@ -3,6 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::runtime::chat::tool_round_driver::ToolRoundDriver;
+use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId};
@@ -45,12 +47,39 @@ impl ChatTurnRequest {
 /// executor is invoked by the driver — not by `SessionRuntime` directly — to
 /// preserve current LLM / transport behaviour while the migration is in progress.
 /// Will be removed once Tasks 3/4 complete the migration.
+///
+/// ## Tool call routing
+///
+/// `run_chat_turn` preserves backward compatibility (returns `Result<(), String>`).
+/// Executors that produce LLM-driven tool calls for the runtime to dispatch should
+/// override `run_chat_turn_with_calls` instead — its default implementation calls
+/// `run_chat_turn` and returns an empty Vec, so existing implementations compile
+/// without change.
+///
+/// `RuntimeChatTurnDriver` calls `run_chat_turn_with_calls` and routes the returned
+/// tool calls through `ToolRoundDriver` → `QueryEngine::run_tool_call_with_bus`.
+/// When the Vec is empty no dispatch happens (legacy executor path).
 #[async_trait]
 pub trait RuntimeTurnExecutor: Send + Sync {
+    /// Execute the chat turn.  Backward-compatible signature; override this
+    /// **or** `run_chat_turn_with_calls` (not both).
     async fn run_chat_turn(
         &self,
         request: ChatTurnRequest,
     ) -> std::result::Result<(), String>;
+
+    /// Execute the chat turn and return any tool calls the LLM issued so the
+    /// driver can dispatch them via `ToolRoundDriver`.
+    ///
+    /// Default: calls `run_chat_turn` and returns an empty Vec.  Executors that
+    /// need to surface tool calls for runtime dispatch override this method.
+    async fn run_chat_turn_with_calls(
+        &self,
+        request: ChatTurnRequest,
+    ) -> std::result::Result<Vec<RuntimeToolCallRequest>, String> {
+        self.run_chat_turn(request).await?;
+        Ok(vec![])
+    }
 }
 
 /// Runtime-owned chat turn driver.
@@ -123,10 +152,21 @@ impl RuntimeChatTurnDriver {
             // Executor-backed mode: the legacy helper owns real LLM / tool work
             // and fires frontend legacy events directly via the Tauri app handle.
             // We invoke it as a runtime-controlled helper (not a full delegate).
-            executor
-                .run_chat_turn(request.clone())
+            // `run_chat_turn_with_calls` returns any tool calls the executor produced;
+            // these are routed through `ToolRoundDriver` so the runtime dispatcher
+            // owns tool execution.  When the executor returns an empty Vec (legacy
+            // path) no dispatch happens and behaviour is unchanged.
+            let tool_calls = executor
+                .run_chat_turn_with_calls(request.clone())
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
+
+            if !tool_calls.is_empty() {
+                let round_driver = ToolRoundDriver::new(self.query_engine.clone());
+                round_driver
+                    .execute_round(turn, &self.event_bus, tool_calls)
+                    .await;
+            }
 
             // Emit runtime events through the bus so TauriEventAdapter can
             // deliver the corresponding legacy frontend events (message:updated,
