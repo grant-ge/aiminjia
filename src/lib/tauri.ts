@@ -999,6 +999,35 @@ export function cleanupExpiredDrafts(): Promise<number> {
   return invoke<number>('cleanup_expired_drafts')
 }
 
+/** A structured schema error or warning from validateSkillDraft. */
+export interface DraftValidationIssue {
+  /** e.g. `"plugin.toml"` / `"prompts/step0.md"` */
+  file: string
+  /** e.g. `"trigger.keywords[0]"` */
+  path: string
+  /** e.g. `"length: 2-30"` / `"enum"` / `"reserved"` */
+  rule: string
+  /** What we actually saw (stringified). */
+  actual: string
+  /** Chinese primary message, may include English in parentheses. */
+  message: string
+  /** Optional hint a downstream LLM can use to fix the field. */
+  fixHint: string | null
+}
+
+/** Validation report returned by `validateSkillDraft`. */
+export interface DraftValidationReport {
+  valid: boolean
+  errors: DraftValidationIssue[]
+  warnings: DraftValidationIssue[]
+  summary: string
+}
+
+/** Validate a draft against the skill schema. Errors block commit; warnings don't. */
+export function validateSkillDraft(draftId: string): Promise<DraftValidationReport> {
+  return invoke<DraftValidationReport>('validate_skill_draft', { draftId })
+}
+
 /**
  * Listen for skill file change events (dev mode hot-reload).
  * The payload is the skill directory path that changed.

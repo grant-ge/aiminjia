@@ -300,6 +300,8 @@ pub fn run() {
             commands::skill_smith::list_skill_drafts,
             commands::skill_smith::discard_skill_draft,
             commands::skill_smith::cleanup_expired_drafts,
+            // Skill-smith schema validation (T3)
+            commands::skill_smith::validation::validate_skill_draft,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

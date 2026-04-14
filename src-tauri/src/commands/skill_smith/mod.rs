@@ -1,15 +1,29 @@
-//! Skill-Smith draft file system.
+//! Skill-Smith — conversational skill creation infrastructure.
 //!
-//! Manages the isolated scratchpad under `{app_data}/_drafts/{draft_id}/` where
-//! the skill-smith conversational creation flow writes WIP `plugin.toml`,
-//! `workflow.toml`, prompts, and (later) scripts/knowledge before committing to
-//! `custom_plugins/`. See `docs/plans/2026-04-14-skill-smith-m2-tasks.md` (T2).
+//! Submodules:
+//! - (this file) **draft file system** (T2): manages the isolated scratchpad
+//!   under `{app_data}/_drafts/{draft_id}/` where the creation flow writes WIP
+//!   `plugin.toml`, `workflow.toml`, prompts, and (later) scripts/knowledge
+//!   before committing to `custom_plugins/`.
+//! - [`validation`] (T3): parses draft TOML files against the skill schema and
+//!   returns a structured report that can be fed back to the LLM for
+//!   automatic repair.
 //!
-//! Security: all write paths go through `resolve_draft_file` which performs
+//! See `docs/plans/2026-04-14-skill-smith-m2-tasks.md`.
+//!
+//! ## Path safety
+//!
+//! All write paths go through `resolve_draft_file` which performs
 //! component-level validation (no `..`, no absolute paths, no leading-dot
 //! components, depth/size caps) before joining. Defense-in-depth vs. path
 //! traversal without relying on canonicalize (which requires the file to
 //! already exist).
+
+pub mod validation;
+// `validate_skill_draft` is registered via its full path
+// `commands::skill_smith::validation::validate_skill_draft` in `lib.rs`
+// (Tauri's `generate_handler!` macro needs the `__cmd__` helper in the
+// same module as the `#[tauri::command]` attribute).
 
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -109,7 +123,7 @@ fn drafts_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn draft_dir(app: &AppHandle, draft_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn draft_dir(app: &AppHandle, draft_id: &str) -> Result<PathBuf, String> {
     validate_draft_id(draft_id)?;
     Ok(drafts_root(app)?.join(draft_id))
 }
