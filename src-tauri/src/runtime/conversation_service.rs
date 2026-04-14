@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::llm::gateway::LlmGateway;
+use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
 
@@ -32,13 +33,13 @@ pub async fn stop_streaming(
 }
 
 pub async fn get_messages(
-    db: Arc<AppStorage>,
+    db: Arc<dyn ConversationStore>,
     conversation_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
     db.get_messages(&conversation_id).map_err(|e| e.to_string())
 }
 
-pub async fn create_conversation(db: Arc<AppStorage>) -> Result<String, String> {
+pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
     db.create_conversation(&id, "New Conversation")
         .map_err(|e| e.to_string())?;
@@ -109,11 +110,11 @@ pub async fn delete_conversation(
 }
 
 pub async fn rename_conversation(
-    db: Arc<AppStorage>,
+    db: Arc<dyn ConversationStore>,
     conversation_id: String,
     new_title: String,
 ) -> Result<RenameConversationOutcome, String> {
-    db.update_conversation_title(&conversation_id, &new_title)
+    db.rename_conversation(&conversation_id, &new_title)
         .map_err(|e| e.to_string())?;
     Ok(RenameConversationOutcome {
         conversation_id,
@@ -121,6 +122,6 @@ pub async fn rename_conversation(
     })
 }
 
-pub async fn get_conversations(db: Arc<AppStorage>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn get_conversations(db: Arc<dyn ConversationStore>) -> Result<Vec<serde_json::Value>, String> {
     db.get_conversations().map_err(|e| e.to_string())
 }
