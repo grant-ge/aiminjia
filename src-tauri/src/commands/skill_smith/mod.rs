@@ -576,4 +576,74 @@ name = "Test Skill"
         assert_eq!(summary.stage, "manifest");
         assert!(summary.skill_name.is_none());
     }
+
+    // ---- Built-in skill-smith self-test (T1) ----
+    //
+    // Guard against future edits breaking our own bundled skill. Runs the
+    // real plugin-loader code path that startup uses.
+
+    #[test]
+    fn bundled_skill_smith_manifest_parses_and_loads() {
+        let plugins_dir: std::path::PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "plugins", "skill-smith"]
+                .iter()
+                .collect();
+        assert!(
+            plugins_dir.is_dir(),
+            "built-in skill-smith not found at {:?}",
+            plugins_dir
+        );
+
+        let plugin_toml = std::fs::read_to_string(plugins_dir.join("plugin.toml"))
+            .expect("plugin.toml readable");
+        let manifest = crate::plugin::manifest::parse_plugin_manifest(&plugin_toml)
+            .expect("plugin.toml should parse");
+        assert_eq!(manifest.plugin.id, "skill-smith");
+
+        let workflow_toml = std::fs::read_to_string(plugins_dir.join("workflow.toml"))
+            .expect("workflow.toml readable");
+        let _wf = crate::plugin::manifest::parse_workflow_manifest(&workflow_toml)
+            .expect("workflow.toml should parse");
+
+        crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &plugins_dir)
+            .expect("DeclarativeSkill::load should succeed on built-in skill-smith");
+    }
+
+    /// All prompt files referenced by workflow.toml must exist and be
+    /// long enough to not trigger the T3 "prompt too short" warning.
+    #[test]
+    fn bundled_skill_smith_prompts_are_complete() {
+        let plugins_dir: std::path::PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "plugins", "skill-smith"]
+                .iter()
+                .collect();
+
+        let workflow_toml = std::fs::read_to_string(plugins_dir.join("workflow.toml")).unwrap();
+        let value: toml::Value = toml::from_str(&workflow_toml).unwrap();
+        let steps = value
+            .get("steps")
+            .and_then(|s| s.as_array())
+            .expect("workflow.toml should have [[steps]]");
+
+        for (i, step) in steps.iter().enumerate() {
+            let prompt_rel = step
+                .get("prompt")
+                .and_then(|p| p.as_str())
+                .unwrap_or_else(|| panic!("step {} has no prompt", i));
+            let prompt_path = plugins_dir.join(prompt_rel);
+            assert!(
+                prompt_path.is_file(),
+                "prompt file missing for step {}: {}",
+                i,
+                prompt_rel
+            );
+            let content = std::fs::read_to_string(&prompt_path).unwrap();
+            assert!(
+                content.len() >= 50,
+                "prompt {} is too short ({}B); M3 needs real content but M2 placeholders should still be ≥50B",
+                prompt_rel,
+                content.len()
+            );
+        }
+    }
 }
