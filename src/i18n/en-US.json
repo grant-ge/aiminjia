@@ -102,6 +102,22 @@
     "hello": "Hello"
   },
 
+  "skillSmith": {
+    "banner": {
+      "title": "You have {{count}} unfinished skill drafts",
+      "title_one": "You have 1 unfinished skill draft",
+      "unnamed": "Unnamed",
+      "resume": "Resume",
+      "discard": "Discard",
+      "discardTitle": "Discard skill draft",
+      "discardConfirm": "Discard the draft \"{{name}}\"? This cannot be undone.",
+      "justNow": "just now",
+      "minutesAgo": "{{n}} min ago",
+      "hoursAgo": "{{n}} h ago",
+      "daysAgo": "{{n}} d ago"
+    }
+  },
+
   "aiBubble": {
     "sendFailed": "Send failed",
     "sendFailedDesc": "Failed to send reply. Please try again.",
