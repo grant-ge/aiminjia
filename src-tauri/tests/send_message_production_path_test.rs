@@ -42,6 +42,23 @@ impl RuntimeTurnExecutor for CapturingExecutor {
         self.requests.lock().unwrap().push(request);
         Ok(())
     }
+
+    // Override to return a mock tool call so ToolRoundDriver can dispatch
+    // it to the SpyTool registered in QueryEngine's ToolDispatcher.
+    async fn run_chat_turn_with_calls(
+        &self,
+        request: ChatTurnRequest,
+    ) -> Result<Vec<app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest>, String> {
+        self.requests.lock().unwrap().push(request.clone());
+        Ok(vec![
+            app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                tool_call_id: "mock-tc-spy-1".to_string(),
+                tool_name: "spy_dispatch_tool".to_string(),
+                args: serde_json::json!({}),
+                purpose: None,
+            },
+        ])
+    }
 }
 
 impl CapturingExecutor {
