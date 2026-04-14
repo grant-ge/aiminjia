@@ -4,8 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::runtime::event_bus::RuntimeEventBus;
-use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
-use crate::runtime::ids::RunId;
+use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
+use crate::runtime::ids::{AgentId, RunId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 
@@ -64,16 +64,17 @@ pub trait RuntimeTurnExecutor: Send + Sync {
 ///
 /// **Executor-backed mode** (current production, until Tasks 3/4 complete):
 ///   `run_chat_turn` emits `StreamStarted` on the bus, invokes the legacy executor
-///   as a runtime-controlled helper (it performs the real LLM / tool loop and fires
-///   legacy frontend events via the Tauri app handle), then records `MessagePersisted`
-///   and `StreamDone` as bus-only ownership markers using `record_only` — so they
-///   appear in `runtime.recorded_events()` without causing a second round of
-///   frontend events through `TauriEventAdapter`.
+///   as a runtime-controlled helper (it performs the real LLM / tool loop), then
+///   emits `MessagePersisted`, `StreamDone`, and `AgentIdle` through the bus so
+///   `TauriEventAdapter` can deliver the corresponding legacy frontend events
+///   (`message:updated`, `streaming:done`, `agent:idle`).
 ///
 /// This design satisfies three constraints simultaneously:
 ///   1. `SessionRuntime` never full-delegates; the driver is the only turn owner.
 ///   2. `MessagePersisted` and `StreamDone` appear in `recorded_events()`.
-///   3. No duplicate legacy frontend events when the executor fires its own.
+///   3. `TauriEventAdapter` is notified so frontend receives `streaming:done`,
+///      `message:updated`, and `agent:idle`.  `AgentGuard::clear()` and `Drop` must
+///      NOT re-emit these events to avoid duplicates.
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
@@ -127,23 +128,33 @@ impl RuntimeChatTurnDriver {
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
 
-            // Record runtime ownership markers without re-emitting them through
-            // TauriEventAdapter (which would duplicate the executor's frontend
-            // events).  `record_only` writes to the bus's internal log so these
-            // appear in `runtime.recorded_events()` but no subscriber is notified.
+            // Emit runtime events through the bus so TauriEventAdapter can
+            // deliver the corresponding legacy frontend events (message:updated,
+            // streaming:done, agent:idle).
             let session_id = turn.session_id().clone();
             let run_id = turn.run_id().clone();
-            self.event_bus.record_only(RuntimeEvent::message_persisted(
-                session_id.clone(),
-                run_id.clone(),
-                format!("exec-msg-{}", run_id.as_str()),
-                "assistant",
-                serde_json::json!({"executor_owned": true}),
-            ));
-            self.event_bus.record_only(RuntimeEvent::stream_done(
-                session_id,
-                run_id,
-            ));
+            self.event_bus
+                .emit(RuntimeEvent::message_persisted(
+                    session_id.clone(),
+                    run_id.clone(),
+                    format!("exec-msg-{}", run_id.as_str()),
+                    "assistant",
+                    serde_json::json!({"executor_owned": true}),
+                ))
+                .await?;
+            self.event_bus
+                .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
+                .await?;
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    session_id,
+                    run_id.clone(),
+                    RuntimeEventKind::AgentIdle {
+                        agent_id: AgentId::new(format!("agent-{}", run_id.as_str())),
+                        scope: AgentIdleScope::Primary,
+                    },
+                ))
+                .await?;
         } else {
             // Pure runtime mode: QueryEngine drives the full turn and emits
             // StreamDelta → MessagePersisted → StreamDone through the bus.

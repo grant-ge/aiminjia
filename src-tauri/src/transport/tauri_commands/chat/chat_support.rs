@@ -532,46 +532,22 @@ impl AgentGuard {
         }
     }
 
-    /// Explicitly clear the active task and emit cleanup events.
-    /// Always emits both `streaming:done` (so frontend clears streaming UI)
-    /// and `agent:idle` (so frontend clears busy state).
+    /// Explicitly clear the active task.
+    /// streaming:done, message:updated, and agent:idle are now emitted by
+    /// RuntimeChatTurnDriver via the runtime bus -> TauriEventAdapter.
     pub(crate) async fn clear(&mut self) {
         if !self.cleared {
             self.cleared = true;
             self.gateway.clear_task(&self.conversation_id);
             self.session_mgr.destroy_run(&self.run_id).await;
             self.remove_lock_with_retry();
-            // streaming:done MUST fire so frontend clears isStreaming state.
-            // finish_agent() also emits this, but if the agent panicked before
-            // reaching finish_agent(), this is the only safety net.
-            if let Err(e) = self.app.emit(
-                "streaming:done",
-                serde_json::json!({
-                    "conversationId": self.conversation_id,
-                    "messageId": "",
-                    "runId": self.run_id.as_str(),
-                }),
-            ) {
-                log::warn!(
-                    "[AgentGuard] Failed to emit streaming:done for {}: {}",
-                    self.conversation_id,
-                    e
-                );
-            }
-            if let Err(e) = self.app.emit(
-                "agent:idle",
-                serde_json::json!({
-                    "conversationId": self.conversation_id,
-                    "runId": self.run_id.as_str(),
-                }),
-            ) {
-                log::warn!(
-                    "[AgentGuard] Failed to emit agent:idle for {}: {}",
-                    self.conversation_id,
-                    e
-                );
-            }
-            log::info!("[AgentGuard] Cleared active task for conversation {} and emitted streaming:done + agent:idle", self.conversation_id);
+            // streaming:done and agent:idle are now emitted by RuntimeChatTurnDriver
+            // via the runtime bus -> TauriEventAdapter. Do not emit here to avoid
+            // duplicate frontend events.
+            log::info!(
+                "[AgentGuard] Cleared active task for conversation {} (events delegated to runtime bus)",
+                self.conversation_id
+            );
         }
     }
 }
@@ -588,23 +564,12 @@ impl Drop for AgentGuard {
                 session_mgr.destroy_run(&run_id).await;
             });
 
-            // Event emission is also sync (Tauri emit is sync)
-            let _ = self.app.emit(
-                "streaming:done",
-                serde_json::json!({
-                    "conversationId": self.conversation_id,
-                    "messageId": "",
-                    "runId": self.run_id.as_str(),
-                }),
+            // streaming:done is emitted by RuntimeChatTurnDriver via the runtime bus.
+            // Drop is a panic-safety net for resource cleanup only.
+            log::warn!(
+                "[AgentGuard::drop] Forcibly cleared active task for {} without emitting events (panic path).",
+                self.conversation_id
             );
-            let _ = self.app.emit(
-                "agent:idle",
-                serde_json::json!({
-                    "conversationId": self.conversation_id,
-                    "runId": self.run_id.as_str(),
-                }),
-            );
-            log::info!("[AgentGuard] Drop fallback: cleared active task for conversation {} and emitted streaming:done + agent:idle", self.conversation_id);
         }
     }
 }
