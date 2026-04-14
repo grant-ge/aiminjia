@@ -73,19 +73,76 @@ impl ClaudeProvider {
         let messages: Vec<Value> = request
             .messages
             .iter()
-            .map(|msg| {
-                json!({
-                    "role": msg.role,
-                    "content": msg.content,
-                })
+            .filter_map(|msg| {
+                match msg.role.as_str() {
+                    // assistant turn with tool_calls → content blocks
+                    "assistant" if msg.tool_calls.is_some() => {
+                        let mut blocks: Vec<Value> = Vec::new();
+                        // Optional text block
+                        if !msg.content.is_empty() {
+                            blocks.push(json!({
+                                "type": "text",
+                                "text": msg.content,
+                            }));
+                        }
+                        // tool_use blocks
+                        if let Some(ref tcs) = msg.tool_calls {
+                            for tc in tcs {
+                                blocks.push(json!({
+                                    "type": "tool_use",
+                                    "id": tc.id,
+                                    "name": tc.name,
+                                    "input": tc.arguments,
+                                }));
+                            }
+                        }
+                        Some(json!({
+                            "role": "assistant",
+                            "content": blocks,
+                        }))
+                    }
+                    // tool result → user turn with tool_result block
+                    "tool" => {
+                        let tool_call_id = msg.tool_call_id.as_deref().unwrap_or_default();
+                        Some(json!({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_call_id,
+                                "content": msg.content,
+                            }],
+                        }))
+                    }
+                    // system messages are handled via top-level "system" field;
+                    // skip them here (Anthropic Messages API separates system)
+                    "system" => None,
+                    // plain user / assistant text
+                    _ => Some(json!({
+                        "role": msg.role,
+                        "content": msg.content,
+                    })),
+                }
             })
             .collect();
+
+        // Extract system prompt (Anthropic requires it at top-level, not in messages)
+        let system_content: Option<String> = request
+            .messages
+            .iter()
+            .find(|m| m.role == "system")
+            .map(|m| m.content.clone());
 
         let mut body = json!({
             "model": self.model,
             "max_tokens": request.max_tokens,
             "messages": messages,
         });
+
+        if let Some(system) = system_content {
+            if !system.is_empty() {
+                body["system"] = json!(system);
+            }
+        }
 
         // Only include temperature if non-default (Anthropic default is 1.0)
         if (request.temperature - 1.0).abs() > f32::EPSILON {
