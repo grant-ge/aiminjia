@@ -298,10 +298,12 @@ async fn send_message_production_tool_round_should_not_call_legacy_tool_registry
     );
 
     // Assertion 2 (RED today → GREEN after P1-A):
-    // The spy registered ONLY in the runtime dispatcher must NOT have been
-    // called, because the legacy executor bypasses ToolDispatcher entirely.
-    // After P1-A routes tool calls through ToolDispatcher::dispatch(), the spy
-    // will fire and this assertion must be flipped to `assert!(spy_called)`.
+    // The spy registered ONLY in the runtime dispatcher MUST be called on the
+    // production path.  Today this FAILS (spy_called == false) because the
+    // legacy executor never enters ToolDispatcher::dispatch().
+    // After P1-A routes tool calls through ToolDispatcher::dispatch() the spy
+    // will fire, spy_called becomes true, and this assertion turns GREEN without
+    // any code change.
     assert!(
         *spy_called.lock().unwrap(),
         "SpyTool registered ONLY in the runtime ToolDispatcher must be reachable from \
