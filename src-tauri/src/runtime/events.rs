@@ -23,6 +23,9 @@ pub enum RuntimeEventKind {
     ToolCallCompleted {
         tool_call_id: ToolCallId,
         tool_name: String,
+        /// Whether the tool execution ended in an error.
+        /// Carried through to the frontend `success` field in `tool:completed`.
+        is_error: bool,
     },
     AgentIdle {
         agent_id: AgentId,

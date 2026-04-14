@@ -47,6 +47,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
         RuntimeEventKind::ToolCallCompleted {
             tool_call_id,
             tool_name,
+            is_error,
         } => Some(LegacyEvent {
             name: "tool:completed".to_string(),
             payload: json!({
@@ -54,7 +55,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "toolId": tool_call_id.as_str(),
                 "toolName": tool_name,
                 "runId": event.run_id.as_str(),
-                "success": true,
+                "success": !is_error,
             }),
         }),
         RuntimeEventKind::MessagePersisted {

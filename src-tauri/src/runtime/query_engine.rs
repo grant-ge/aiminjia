@@ -226,6 +226,7 @@ impl QueryEngine {
                             call.tool_call_id.clone(),
                         ),
                         tool_name: call.tool_name.clone(),
+                        is_error: false,
                     },
                 ))
                 .await?;
@@ -246,6 +247,7 @@ impl QueryEngine {
                             call.tool_call_id.clone(),
                         ),
                         tool_name: call.tool_name.clone(),
+                        is_error: true,
                     },
                 ))
                 .await?;
@@ -326,6 +328,9 @@ impl QueryEngine {
                                 "tool-call-{tool_name}"
                             )),
                             tool_name: tool_name.to_string(),
+                            // Legacy run_tool_with_bus path: no error info available,
+                            // default to success=true to preserve prior behaviour.
+                            is_error: false,
                         },
                     ))
                     .await?;
