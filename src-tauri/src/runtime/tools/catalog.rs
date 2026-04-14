@@ -254,8 +254,12 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("browse_data",
             "【Composite 工具】从内部业务系统抽取数据。\
-            内部会启动子代理，依次执行多步 browse_navigate/read_page_content/extract_table_data 操作，最终写出 JSON 文件。\
-            返回文件路径，请用 execute_python 进一步处理。")
+            \n\n内部固定三步流程：\
+            1. browse_and_extract(url) — 打开数据页面，查看表格和菜单；\
+            2. extract_with_pagination() — 自动翻页提取全量数据并保存为 JSON；\
+            3. 报告文件路径、总行数、列名。\
+            \n\n返回文件路径，请用 execute_python 进一步处理。\
+            ACCESS DENIED 时立即停止。一次只提取一个数据表。")
             .with_kind(ToolKind::Composite)
             .with_capability_scope(["browser", "network", "workspace:write"]),
         json!({
@@ -270,7 +274,10 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new("browse_and_extract",
-            "【Composite 工具】导航到 URL 并抽取结构化数据（navigate + read + extract 三步合一）。")
+            "【Composite 工具】导航到 URL 并抽取结构化数据（navigate + read + extract 三步合一）。\
+            \n\n用于一次性提取页面数据。\
+            如需分页全量抽取，改用 extract_with_pagination()，它自动处理分页且无需手动翻页参数。\
+            禁止用 page_execute_js 提取表格数据——用本工具或 extract_table_data 替代。")
             .with_kind(ToolKind::Composite)
             .with_capability_scope(["browser"]),
         json!({
