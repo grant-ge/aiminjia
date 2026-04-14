@@ -1060,6 +1060,34 @@ export function exportSkillDraft(draftId: string, outputDir: string): Promise<st
   return invoke<string>('export_skill_draft', { draftId, outputDir })
 }
 
+/** Status of an individual dry-run check. */
+export type DryRunCheckStatus = 'pass' | 'fail' | 'skip' | 'warn'
+
+/** One of the six dry-run checks (schema / prompts-reference / prompts-content / python-scripts / knowledge / loadable). */
+export interface DryRunCheck {
+  /** Stable machine id — safe to match on. */
+  name: string
+  status: DryRunCheckStatus
+  detail: string
+}
+
+/** Full dry-run report returned by `dryRunSkillDraft`. */
+export interface DryRunReport {
+  /** `true` iff no check has status "fail". Warnings and skips don't block. */
+  pass: boolean
+  checks: DryRunCheck[]
+  summary: string
+}
+
+/**
+ * Static dry-run — verifies the draft's plumbing (schema, prompts, JSON syntax,
+ * loadability) without invoking any LLM or running Python. Safe to call as
+ * often as needed; no side effects.
+ */
+export function dryRunSkillDraft(draftId: string): Promise<DryRunReport> {
+  return invoke<DryRunReport>('dry_run_skill_draft', { draftId })
+}
+
 /**
  * Listen for skill file change events (dev mode hot-reload).
  * The payload is the skill directory path that changed.

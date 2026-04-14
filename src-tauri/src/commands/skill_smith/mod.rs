@@ -20,6 +20,7 @@
 //! already exist).
 
 pub mod commit;
+pub mod dry_run;
 pub mod validation;
 // Command functions are registered via their full path
 // (e.g. `commands::skill_smith::validation::validate_skill_draft`) in `lib.rs`

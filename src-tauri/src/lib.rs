@@ -306,6 +306,8 @@ pub fn run() {
             commands::skill_smith::commit::commit_skill_draft,
             commands::skill_smith::commit::commit_skill_draft_force,
             commands::skill_smith::commit::export_skill_draft,
+            // Skill-smith dry-run (T7)
+            commands::skill_smith::dry_run::dry_run_skill_draft,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
