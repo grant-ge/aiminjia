@@ -78,10 +78,13 @@ impl ConversationStore for InMemoryConversationStore {
     }
 
     fn rename_conversation(&self, id: &str, new_title: &str) -> Result<()> {
-        if let Some(entry) = self.conversations.lock().unwrap().get_mut(id) {
+        let mut convs = self.conversations.lock().unwrap();
+        if let Some(entry) = convs.get_mut(id) {
             *entry = new_title.to_string();
+            Ok(())
+        } else {
+            anyhow::bail!("conversation '{}' not found", id)
         }
-        Ok(())
     }
 
     fn insert_active_task(&self, conversation_id: &str) -> Result<()> {
@@ -105,5 +108,26 @@ impl ConversationStore for InMemoryConversationStore {
             .get(conversation_id)
             .cloned()
             .unwrap_or_default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_inmemory_rename_conversation() {
+        let store = InMemoryConversationStore::new();
+        store.create_conversation("c1", "Old Title").unwrap();
+        store.rename_conversation("c1", "New Title").unwrap();
+        let convs = store.get_conversations().unwrap();
+        assert!(!convs.is_empty());
+    }
+
+    #[test]
+    fn test_inmemory_rename_nonexistent_fails() {
+        let store = InMemoryConversationStore::new();
+        let result = store.rename_conversation("nonexistent", "Title");
+        assert!(result.is_err());
     }
 }
