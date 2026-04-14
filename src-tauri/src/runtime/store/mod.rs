@@ -1,4 +1,5 @@
 pub mod agent_invocation_store;
+pub mod permission_store;
 pub mod authorized_workspace_store;
 pub mod audit_store;
 pub mod conversation_store;
@@ -25,6 +26,7 @@ pub use conversation_store::{ConversationStore, InMemoryConversationStore};
 pub use file_record_store::FileRecordStore;
 pub use memory_store::{InMemoryMemoryStore, MemoryEntry, MemoryStore};
 pub use persona_store::{PersonaRecord, PersonaStore, PersonaSummary};
+pub use permission_store::{PolicyDecision, PermissionStore};
 pub use run_store::{InMemoryRunStore, RunRecord, RunStatus, RunStore};
 pub use session_store::{InMemorySessionStore, SessionRecord, SessionStore};
 pub use settings_store::{InMemorySettingsStore, SettingsStore};
