@@ -66,8 +66,8 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 
 | 计划文件 | 专项 | 状态 |
 |---------|------|------|
-| [2026-04-12-workspace-first-file-runtime-plan.md](./2026-04-12-workspace-first-file-runtime-plan.md) | WF：Workspace-First 文件能力模型 | 🟡 有旧计划，需结合 gap-assessment 更新 |
-| [2026-04-13-atomic-tool-runtime-plan.md](./2026-04-13-atomic-tool-runtime-plan.md) | AT：Atomic Tool 工具体系 | 🟡 有旧计划，需结合 gap-assessment 更新 |
+| [2026-04-12-workspace-first-file-runtime-plan.md](./2026-04-12-workspace-first-file-runtime-plan.md) | WF：Workspace-First 文件能力模型 | ✅ 已关闭（评估确认已实现：4 个原子工具 + 沙箱授权目录 + workspace-first 主链路）|
+| [2026-04-13-atomic-tool-runtime-plan.md](./2026-04-13-atomic-tool-runtime-plan.md) | AT：Atomic Tool 工具体系 | ✅ 已关闭（评估确认已实现：ToolCatalog + DAILY_ALLOWED_TOOLS 18 个 + CapabilityPermissionPipeline）|
 
 ---
 
