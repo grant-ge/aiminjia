@@ -125,9 +125,12 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new("load_file",
-            "加载已上传文件，使数据可在 execute_python 中以 _df/_text 变量使用。\
-            注意：这是 Power 工具，会执行 Python 解析、PII 脱敏、session 缓存写入等副作用。\
-            调用后数据以变量形式注入 execute_python 会话。")
+            "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
+            \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\
+            多文件场景下所有数据在 _dfs 字典（按 file_id 索引）或 _texts 字典中，_df/_text 指向最后加载的文件。\
+            在 execute_python 中直接使用这些变量即可，禁止猜测文件路径。\
+            \n\n_df 包含完整数据（非 sampleData 样本），分析时先用 len(_df) 确认规模，基于全量数据统计。\
+            \n\n注意：Power 工具，执行 Python 解析、PII 脱敏、session 缓存写入等副作用。")
             .with_kind(ToolKind::Power)
             .with_capability_scope(["workspace:read", "workspace:write", "python:exec"]),
         json!({
@@ -226,8 +229,15 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("execute_python",
             "执行 Python 代码进行数据分析和文件处理。\
-            注意：这是 Power 工具，有 session 状态和文件写出副作用。\
-            建议先准备数据：已上传文件先用 load_file，已连接本地目录先用 list_directory / search_files / read_workspace_file。")
+            \n\n【Python 环境】pandas(pd)、numpy(np)、scipy.stats 已预导入。\
+            辅助函数：_print_table(headers, rows, title) 输出 Markdown 表格；\
+            _export_detail(df, filename, title) 导出 Excel 并预览前 15 行；\
+            _smart_read_csv(path) 自动检测编码。\
+            工作目录为工作区根目录，各子目录：uploads/（上传文件）、exports/（导出数据）、reports/（报告）、charts/（图表）。\
+            \n\n【数据来源】已上传文件先调用 load_file 加载，数据以 _df（单文件 DataFrame）/ _dfs（多文件 dict）/ _text / _texts 变量形式注入。\
+            已连接本地目录先用 list_directory / search_files / read_workspace_file 读取后再传入本工具处理。\
+            \n\n【文件管理函数】_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件。\
+            \n\n注意：Power 工具，有 session 状态和文件写出副作用。代码执行出错时直接修正重试。")
             .with_kind(ToolKind::Power)
             .with_capability_scope(["python:exec", "workspace:write"]),
         json!({
