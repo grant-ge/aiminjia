@@ -1,6 +1,6 @@
 # 2026-04-14 Chat Runtime-First Closure Review
 
-状态：**进行中 / 未关闭（2026-04-14）**  
+状态：**✅ 已关闭（2026-04-14）**  
 评审对象：`/Users/a20250311/IdeaProjects/lotus-app/docs/superpowers/plans/2026-04-13-chat-runtime-first-closure-plan.md` 及 Claude 本轮代码实现  
 评审范围：`SessionRuntime`、`runtime/chat/*`、`transport/tauri_commands/chat/*`、真实 `send_message` 主链路、对应 targeted TDD
 
@@ -287,3 +287,22 @@
 - 真实工具执行主路径收口到 runtime dispatcher
 - 单一 `RunId` truth source
 - 直接从真实 Tauri production wiring 证明 runtime-first 的 gating TDD
+
+---
+
+## 2026-04-14 最终关闭确认
+
+所有 4 条 gating tests 全绿：
+
+| 测试 | 状态 |
+|------|------|
+| T1 `full_turn_must_not_delegate_to_legacy_executor` | ✅ GREEN |
+| T2 `tool_round_must_dispatch_via_runtime_query_engine` | ✅ GREEN（ToolRoundDriver → QueryEngine → ToolDispatcher → SpyTool） |
+| T3 `must_use_single_run_id` | ✅ GREEN（regression gate） |
+| T4 `message_persisted_must_be_emitted_not_record_only` | ✅ GREEN |
+
+B3 wiring 顺序已修复：`RuntimeRepositoryFacade` 在 `lib.rs:233` 注册，`TauriChatCommandAdapter::new()` 在第 241 行之后构造，`try_state` 可成功拿到 facade，`authorized_workspace_store` 正确注入。
+
+review_ 全量回归、tool_round、workspace_first、builtin_runtime_registration、tool_runtime_integration 全部通过。
+
+**专项正式关闭。**

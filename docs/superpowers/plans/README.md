@@ -1,51 +1,110 @@
-# Lotus Backend Migration Plans Index
+# Lotus Backend 改造计划索引
 
-## 当前建议先看（2026-04-12）
+## 架构总蓝图
 
-- `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-runtime-first-final-acceptance-summary.md`
-- `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-review-plan-status-matrix.md`
-- `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-runtime-gap-problem-statement.md`
-- `/Users/a20250311/IdeaProjects/lotus-app/docs/reviews/2026-04-12-front-end-event-integration-review.md`
+- `docs/architecture-blueprint.md` — 长期目标架构
+- `docs/2026-04-14-backend-architecture-gap-assessment.md` — 当前差距全景报告（包含问题清单和优先级路线图）
 
-## 总计划
-- [2026-04-10-lotus-backend-master-plan.md](./2026-04-10-lotus-backend-master-plan.md)
+---
 
-## 分期计划
-- [2026-04-10-phase-0-baseline-audit-plan.md](./2026-04-10-phase-0-baseline-audit-plan.md)
-- [2026-04-10-phase-1-session-runtime-plan.md](./2026-04-10-phase-1-session-runtime-plan.md)
-- [2026-04-10-phase-2-tool-permission-store-plan.md](./2026-04-10-phase-2-tool-permission-store-plan.md)
-- [2026-04-10-phase-3-task-agent-plan.md](./2026-04-10-phase-3-task-agent-plan.md)
-- [2026-04-10-phase-4-store-transport-plan.md](./2026-04-10-phase-4-store-transport-plan.md)
+## 执行顺序与依赖关系
 
-## 专项联调计划
-- [2026-04-12-front-end-event-integration-plan.md](./2026-04-12-front-end-event-integration-plan.md)
+```
+P0（立即修复）
+  ↓ 无需等待，可并行
+P1（chat runtime-first 收口）← 唯一必须先关的主 blocker
+  ↓ P1 关闭后
+P2（WF + AT 专项）← 各自独立，可并行
+  ↓
+P3（PS + SK 专项）← 各自独立，可并行
+  ↓
+P4（基础设施收尾）← 依赖 P1-P3 的成果
+```
 
-## 架构专项（2026-04-13 启动）
-- [2026-04-12-workspace-first-file-runtime-plan.md](./2026-04-12-workspace-first-file-runtime-plan.md) — 专项 1：Workspace-First 文件能力模型
-- [2026-04-13-atomic-tool-runtime-plan.md](./2026-04-13-atomic-tool-runtime-plan.md) — 专项 2：Atomic Tool 工具体系（A1-A5）
-  - 问题定义：`docs/2026-04-13-atomic-tool-problem-statement.md`
-- [2026-04-13-chat-runtime-first-closure-plan.md](./2026-04-13-chat-runtime-first-closure-plan.md) — 专项 4：聊天主链路 Runtime-First 收口
+**关键约束：各阶段不混做。P1 未关闭前不启动 P2。**
 
-## 阅读顺序
-1. 先看总蓝图：`/Users/a20250311/IdeaProjects/lotus-app/docs/architecture-blueprint.md`
-2. 再看总计划：`2026-04-10-lotus-backend-master-plan.md`
-3. 然后按 Phase 0 → 4 顺序执行
+---
 
-## 计划特征
-- 全部为文件级实施计划
-- 每一期都包含 TDD 路径，且测试示例要求是真失败测试
-- 每一期默认直接替换，不做灰度
-- 每一期都要求 rollback、golden trace、commit
-- Phase 0 的 golden trace 明确要求来自真实 legacy emit 路径采样
+## P0：立即修复（安全/功能损坏）
 
-## 当前进度快照（2026-04-12）
-- Phase 0：已关闭（审计文档与 golden trace 已补齐）
-- Phase 1：已关闭（runtime identity / `SessionRuntime` / `TauriEventAdapter` 已落地并验收）
-- Phase 2：已关闭（按当前 runtime-first 验收范围，tool / permission / minimal store 主链路已关闭）
-- Phase 3：已关闭（task / agent / background 主链路已完成本轮验收）
-- Phase 4：已关闭（transport / domain facade / stage-c 当前验收范围已关闭）
-- 专项联调计划（2026-04-12）：已关闭（前端 `task:status-changed` 与 `agent:idle scope` 已对接，Vitest/Rust 回归通过）
-- 当前总体验收入口：`/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-runtime-first-final-acceptance-summary.md`
-- 当前状态总表：`/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-review-plan-status-matrix.md`
-- 最近一次 Rust targeted 回归：`/Users/a20250311/IdeaProjects/lotus-app/src-tauri` 下执行 `cargo test --test tauri_event_adapter_test -- --nocapture` 与 `cargo test review_ --tests --no-fail-fast`，结果通过
-- 最近一次前端联调回归：`/Users/a20250311/IdeaProjects/lotus-app` 下执行 `pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts`，结果通过
+> **目标**：修复安全漏洞和高危 bug，不涉及架构改造。
+> **关闭条件**：5 个修复点全部合并，相关测试通过。
+
+| 计划文件 | 覆盖问题 | 状态 |
+|---------|---------|------|
+| [2026-04-14-p0-immediate-fixes-plan.md](./2026-04-14-p0-immediate-fixes-plan.md) | M1 Claude provider tool calling 损坏、PY2 env var 泄漏、PY3 pickle RCE、S1 AgentRuntime for_test、WF2 wiring 顺序 | ✅ 已关闭（2026-04-14）|
+
+---
+
+## P1：Chat Runtime-First 主链路收口
+
+> **目标**：拿回真实 send_message 生产路径的可信 ownership。
+> **关闭条件**：B1-B4 全部修复，4 条 gating tests 全绿，closure review 标记为已关闭。
+
+| 计划文件 | 覆盖问题 | 状态 |
+|---------|---------|------|
+| [2026-04-14-p1-chat-runtime-first-final-closure-plan.md](./2026-04-14-p1-chat-runtime-first-final-closure-plan.md) | B1 legacy executor owner、B2 gating 不足、B3 wiring 顺序、B4 双 RunId + 孤立 QueryEngine | ✅ 已关闭（2026-04-14）|
+
+### P1 历史计划（参考，已部分执行）
+
+这些计划已完成部分改造，是 P1 收口计划的前置工作：
+
+| 计划文件 | 内容 | 状态 |
+|---------|------|------|
+| [2026-04-13-chat-runtime-first-closure-plan.md](./2026-04-13-chat-runtime-first-closure-plan.md) | chat runtime-first 专项（Phase 1） | ✅ 部分完成 |
+| [2026-04-14-chat-runtime-closure-red-lights.md](./2026-04-14-chat-runtime-closure-red-lights.md) | T1+T4 红灯转绿（P1-B） | ✅ 已执行 |
+| [2026-04-14-p1-a-chat-tool-dispatch-runtime-plan.md](./2026-04-14-p1-a-chat-tool-dispatch-runtime-plan.md) | T2 工具回合 runtime dispatcher 收口（P1-A） | ✅ 已执行 |
+
+> **评审文档**：`docs/reviews/2026-04-14-chat-runtime-first-closure-review.md`
+> 当前状态：❌ 未关闭（B1-B4 仍未收口）
+
+---
+
+## P2：四大专项 · WF + AT
+
+> 在 P1 关闭后启动，各自独立执行。
+
+| 计划文件 | 专项 | 状态 |
+|---------|------|------|
+| [2026-04-12-workspace-first-file-runtime-plan.md](./2026-04-12-workspace-first-file-runtime-plan.md) | WF：Workspace-First 文件能力模型 | 🟡 有旧计划，需结合 gap-assessment 更新 |
+| [2026-04-13-atomic-tool-runtime-plan.md](./2026-04-13-atomic-tool-runtime-plan.md) | AT：Atomic Tool 工具体系 | 🟡 有旧计划，需结合 gap-assessment 更新 |
+
+---
+
+## P3：四大专项 · PS + SK
+
+> 在 P2 启动后可并行，各自独立执行。
+
+| 计划文件 | 专项 | 状态 |
+|---------|------|------|
+| *(待创建)* | PS：Prompt Slimming 提示词职责回收 | ⬜ 待规划 |
+| *(待创建)* | SK：Skill 本地导入/打包导入模型统一 | ⬜ 待规划 |
+
+---
+
+## P4：基础设施收尾
+
+> 依赖 P1-P3 的成果，最后执行。
+
+| 目标 | 前置依赖 | 状态 |
+|------|---------|------|
+| PluginContext 退出主路径 → per-call CapabilityContext | P1 + AT | ⬜ |
+| AppStorage → repository facade 继续迁移 | P1 | ⬜ |
+| CapabilityPermissionPipeline → 真正 policy engine（allow/deny/ask + 持久化） | AT | ⬜ |
+| 取消传播：CancellationToken 级联，废弃 fire-and-forget | P1 | ⬜ |
+| AgentRuntime 持久化（FileAgentInvocationStore） | P1 | ⬜ |
+| Python 安全模型收口（废弃静态检查沙箱，改用权限系统） | policy engine | ⬜ |
+
+---
+
+## 历史计划（已关闭）
+
+| 计划文件 | 内容 | 状态 |
+|---------|------|------|
+| [2026-04-10-lotus-backend-master-plan.md](./2026-04-10-lotus-backend-master-plan.md) | 总体后端迁移计划 | ✅ 已关闭 |
+| [2026-04-10-phase-0-baseline-audit-plan.md](./2026-04-10-phase-0-baseline-audit-plan.md) | Phase 0 基线审计 | ✅ 已关闭 |
+| [2026-04-10-phase-1-session-runtime-plan.md](./2026-04-10-phase-1-session-runtime-plan.md) | Phase 1 SessionRuntime | ✅ 已关闭 |
+| [2026-04-10-phase-2-tool-permission-store-plan.md](./2026-04-10-phase-2-tool-permission-store-plan.md) | Phase 2 tool/permission/store | ✅ 已关闭 |
+| [2026-04-10-phase-3-task-agent-plan.md](./2026-04-10-phase-3-task-agent-plan.md) | Phase 3 task/agent | ✅ 已关闭 |
+| [2026-04-10-phase-4-store-transport-plan.md](./2026-04-10-phase-4-store-transport-plan.md) | Phase 4 store/transport | ✅ 已关闭 |
+| [2026-04-12-front-end-event-integration-plan.md](./2026-04-12-front-end-event-integration-plan.md) | 前端事件联调 | ✅ 已关闭 |
