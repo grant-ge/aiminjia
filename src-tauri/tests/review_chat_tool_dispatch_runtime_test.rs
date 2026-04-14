@@ -245,12 +245,13 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
 ///   executor.  This assertion is expected to PASS today, proving the legacy
 ///   path is genuinely exercised.
 ///
-/// Assertion 2 — spy.was_called == false (RED-LIGHT):
-///   The `SpyTool` registered in the runtime `ToolDispatcher` must NOT have
-///   been called, because the legacy executor never enters `ToolDispatcher::dispatch()`.
-///   This assertion currently PASSES (spy is silent).  Once P1-A routes tool
-///   calls through the dispatcher, the spy will fire, this assertion will FAIL,
-///   and the test must be updated to flip it to `assert!(spy_called)`.
+/// Assertion 2 — spy.was_called == true (RED-LIGHT):
+///   The `SpyTool` registered in the runtime `ToolDispatcher` MUST have been
+///   called, proving that `ToolDispatcher::dispatch()` was reached on the
+///   production path.  This assertion currently FAILS (spy_called == false)
+///   because the legacy executor never enters `ToolDispatcher::dispatch()`.
+///   Once P1-A routes tool calls through the dispatcher the spy will fire and
+///   this test will turn GREEN.
 ///
 /// Net effect today: the test is RED because the comment contract says "all
 /// three tests must remain RED until P1-A ships."  The architectural gap is
