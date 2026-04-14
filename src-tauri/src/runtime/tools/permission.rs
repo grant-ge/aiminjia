@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde_json::Value;
+use std::sync::Arc;
 
+use crate::runtime::store::permission_store::{PermissionStore, PolicyDecision};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 
@@ -92,14 +94,85 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
                         );
                     }
                 }
-                "network" => {
-                    // Network access allowed at this layer.
-                }
+                "network" => {}
                 other => {
                     log::debug!(
                         "Unknown capability scope '{}' for tool '{}' — allowing.",
                         other,
                         definition.id
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct StorePolicyPipeline {
+    store: Arc<PermissionStore>,
+}
+
+impl StorePolicyPipeline {
+    pub fn new(store: Arc<PermissionStore>) -> Self {
+        Self { store }
+    }
+}
+
+impl PermissionPipeline for StorePolicyPipeline {
+    fn authorize(
+        &self,
+        definition: &ToolDefinition,
+        _input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Result<()> {
+        if definition.capability_scope.is_empty() {
+            return Ok(());
+        }
+        for scope in &definition.capability_scope {
+            let key = format!("{}:{}", definition.id, scope);
+            match self.store.get(&key) {
+                Some(d) if d.is_allow() => continue,
+                Some(_) => {
+                    anyhow::bail!(
+                        "Tool '{}' scope '{}' is denied by stored policy.",
+                        definition.id,
+                        scope
+                    )
+                }
+                None => {}
+            }
+            match scope.as_str() {
+                "workspace:read" | "workspace:write" | "python:exec" => {
+                    if ctx
+                        .capability
+                        .as_ref()
+                        .and_then(|c| c.storage.as_ref())
+                        .is_none()
+                    {
+                        anyhow::bail!(
+                            "Tool '{}' requires workspace capability (scope: {}).",
+                            definition.id,
+                            scope
+                        );
+                    }
+                }
+                "browser" => {
+                    let has = ctx
+                        .capability
+                        .as_ref()
+                        .map(|c| c.has_browser_capability())
+                        .unwrap_or(false);
+                    if !has {
+                        anyhow::bail!("Tool '{}' requires browser capability.", definition.id);
+                    }
+                }
+                "network" => {}
+                other => {
+                    anyhow::bail!(
+                        "Tool '{}' requests unknown capability scope '{}'. Deny by default.",
+                        definition.id,
+                        other
                     );
                 }
             }
