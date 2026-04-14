@@ -5,6 +5,7 @@ use async_trait::async_trait;
 
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+use crate::runtime::ids::RunId;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 
@@ -15,6 +16,11 @@ pub struct ChatTurnRequest {
     pub conversation_id: String,
     pub content: String,
     pub file_ids: Vec<String>,
+    /// The run_id assigned by `SessionRuntime` for this turn.
+    /// Callers should use `ChatTurnRequest::new` for ad-hoc creation (generates a
+    /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
+    /// with the single authoritative id generated for this turn.
+    pub run_id: RunId,
 }
 
 impl ChatTurnRequest {
@@ -27,6 +33,7 @@ impl ChatTurnRequest {
             conversation_id: conversation_id.into(),
             content: content.into(),
             file_ids,
+            run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
         }
     }
 }

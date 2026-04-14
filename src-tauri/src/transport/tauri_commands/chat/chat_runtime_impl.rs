@@ -43,6 +43,72 @@ pub(crate) fn build_precompute_sandbox(
     }
 }
 
+fn load_authorized_workspace(
+    app: &AppHandle,
+    conversation_id: &str,
+) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
+    app.try_state::<std::sync::Arc<RuntimeRepositoryFacade>>()
+        .and_then(|facade| {
+            facade
+                .authorized_workspace_store()
+                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .ok()
+                .flatten()
+        })
+        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
+            id: aw.id,
+            root_path: aw.root_path,
+            display_name: aw.display_name,
+        })
+}
+
+fn build_workspace_context(
+    authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
+) -> String {
+    let Some(authorized_workspace) = authorized_workspace else {
+        return String::new();
+    };
+
+    format!(
+        "\n\n[已连接本地目录]\n- 名称: {}\n- 根目录: {}\n- 当前会话可以直接读取这个目录，不需要先上传或复制文件。\n- 处理本地目录时，优先使用 list_directory / read_workspace_file / search_files / get_file_info。\n- 只有处理用户上传的附件时，才使用 load_file(file_id)。\n- 如果需要进一步计算或生成产物，再结合 execute_python。",
+        authorized_workspace.display_name,
+        authorized_workspace.root_path.display()
+    )
+}
+
+fn build_llm_content(
+    content: &str,
+    file_attachments: &[serde_json::Value],
+    has_authorized_workspace: bool,
+) -> String {
+    if file_attachments.is_empty() {
+        return content.to_string();
+    }
+
+    let file_refs: Vec<String> = file_attachments
+        .iter()
+        .map(|f| {
+            let name = f["originalName"].as_str().unwrap_or("unknown");
+            let ftype = f["fileType"].as_str().unwrap_or("unknown");
+            let fid = f["id"].as_str().unwrap_or("");
+            format!("- {} (file_id: \"{}\", 类型: {})", name, fid, ftype)
+        })
+        .collect();
+
+    let hint = if has_authorized_workspace {
+        "提示：对这些已上传文件请调用 load_file(file_id) 加载数据；对已连接本地目录请优先使用 list_directory / read_workspace_file / search_files / get_file_info，需要计算或生成文件时再结合 execute_python。"
+    } else {
+        "提示：对这些已上传文件请先调用 load_file(file_id) 加载文件数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本）变量。"
+    };
+
+    format!(
+        "{}\n\n[已上传文件]\n{}\n\n{}",
+        content,
+        file_refs.join("\n"),
+        hint
+    )
+}
+
 pub(crate) async fn legacy_send_message_impl(
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
@@ -56,8 +122,8 @@ pub(crate) async fn legacy_send_message_impl(
     conversation_id: String,
     content: String,
     file_ids: Vec<String>,
+    run_id: RunId,
 ) -> Result<(), String> {
-    let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
     log::info!(
         "=== send_message START === conversation_id={}, content_len={}, file_ids={:?}",
         conversation_id,
@@ -171,24 +237,11 @@ pub(crate) async fn legacy_send_message_impl(
     // The frontend already adds an optimistic user message to the store
     // before calling this IPC command. Emitting here would cause duplicates.
 
+    let authorized_workspace = load_authorized_workspace(&app, &conversation_id);
+    let authorized_workspace_present = authorized_workspace.is_some();
+
     // 3. Build LLM content with file references
-    let llm_content = if file_attachments.is_empty() {
-        content.clone()
-    } else {
-        let file_refs: Vec<String> = file_attachments
-            .iter()
-            .map(|f| {
-                let name = f["originalName"].as_str().unwrap_or("unknown");
-                let ftype = f["fileType"].as_str().unwrap_or("unknown");
-                let fid = f["id"].as_str().unwrap_or("");
-                format!("- {} (file_id: \"{}\", 类型: {})", name, fid, ftype)
-            })
-            .collect();
-        format!(
-            "{}\n\n[已上传文件]\n{}\n\n提示：先调用 load_file(file_id) 加载文件数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本）变量。",
-            content, file_refs.join("\n")
-        )
-    };
+    let llm_content = build_llm_content(&content, &file_attachments, authorized_workspace_present);
 
     // 4. Load settings
     let settings_map = match db.get_all_settings() {
@@ -1022,6 +1075,7 @@ pub(crate) async fn legacy_send_message_impl(
         workspace_path,
         conversation_id: conversation_id.clone(),
         run_id: run_id.clone(),
+        authorized_workspace,
         assistant_id: assistant_id.clone(),
         masking_level,
     };
@@ -1259,6 +1313,7 @@ struct AgentContext {
     workspace_path: std::path::PathBuf,
     conversation_id: String,
     run_id: RunId,
+    authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     assistant_id: String,
     masking_level: MaskingLevel,
 }
@@ -1328,7 +1383,7 @@ fn build_file_context(db: &AppStorage, conversation_id: &str, loaded_scope_id: &
                 ));
             } else {
                 ctx.push_str(&format!(
-                    "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载，必须先调用 load_file(file_id=\"{}\") 才能分析",
+                    "\n- {} (file_id: \"{}\", 类型: {}) ⏳未加载；若要分析这个上传文件，必须先调用 load_file(file_id=\"{}\")",
                     name, fid, ftype, fid
                 ));
             }
@@ -1561,6 +1616,7 @@ async fn agent_loop(
         workspace_path,
         conversation_id,
         run_id,
+        authorized_workspace,
         assistant_id,
         masking_level,
     } = ctx;
@@ -1576,7 +1632,8 @@ async fn agent_loop(
         Some(settings.bocha_api_key.clone())
     };
 
-    // Build file context and analysis notes for the system prompt
+    // Build workspace/file context and analysis notes for the system prompt
+    let workspace_context = build_workspace_context(authorized_workspace.as_ref());
     let file_context = build_file_context(&db, &conversation_id, run_id.as_str());
 
     let current_step_config = step_config;
@@ -1614,21 +1671,6 @@ async fn agent_loop(
     // Both modes now use all tool schemas for KV cache prefix stability.
     // Runtime guard blocks analysis-only tools in daily mode.
 
-    // 查当前 session 的授权目录（通过 managed state 取 facade）
-    let authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef> = app
-        .try_state::<std::sync::Arc<RuntimeRepositoryFacade>>()
-        .and_then(|facade| {
-            facade
-                .authorized_workspace_store()
-                .get_current_for_session(&SessionId::new(conversation_id.clone()))
-                .ok()
-                .flatten()
-        })
-        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
-            id: aw.id,
-            root_path: aw.root_path,
-            display_name: aw.display_name,
-        });
     let authorized_workspace_present = authorized_workspace.is_some();
 
     let all_tool_defs = build_visible_tool_defs(&tool_registry, authorized_workspace_present).await;
@@ -2139,6 +2181,9 @@ async fn agent_loop(
                 ctx.push_str("\n");
             }
 
+            if !workspace_context.is_empty() {
+                ctx.push_str(&workspace_context);
+            }
             if !file_context.is_empty() {
                 ctx.push_str(&file_context);
             }
@@ -3938,7 +3983,10 @@ fn strip_thinking_markers(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::builtin::tools::register_builtin_tools;
+    use crate::plugin::registry::ToolRegistry;
     use crate::runtime::store::AuthorizedWorkspaceRef;
+    use serde_json::json;
     use std::path::PathBuf;
 
     #[test]
@@ -3960,5 +4008,84 @@ mod tests {
         let config = build_precompute_sandbox(&workspace, None);
         assert_eq!(config.allowed_read_paths.len(), 7);
         assert!(!config.allowed_read_paths.iter().any(|p| p == &PathBuf::from("/tmp/test_data")));
+    }
+
+    #[tokio::test]
+    async fn test_build_visible_tool_defs_with_authorized_workspace() {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+
+        let defs = build_visible_tool_defs(&registry, true).await;
+        let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+        for tool_name in WORKSPACE_TOOL_NAMES {
+            assert!(
+                names.contains(tool_name),
+                "workspace tool '{}' should be visible when authorized, got {:?}",
+                tool_name,
+                names
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_visible_tool_defs_without_authorized_workspace() {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+
+        let defs = build_visible_tool_defs(&registry, false).await;
+        let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+        for tool_name in WORKSPACE_TOOL_NAMES {
+            assert!(
+                !names.contains(tool_name),
+                "workspace tool '{}' should be hidden without authorization, got {:?}",
+                tool_name,
+                names
+            );
+        }
+
+        assert!(
+            names.contains(&"execute_python"),
+            "non-workspace tools should remain visible without authorization"
+        );
+    }
+
+    #[test]
+    fn test_build_workspace_context_with_authorized_workspace_prefers_workspace_tools() {
+        let authorized = AuthorizedWorkspaceRef {
+            id: "aw-1".to_string(),
+            root_path: PathBuf::from("/tmp/customer-data"),
+            display_name: "customer-data".to_string(),
+        };
+
+        let ctx = build_workspace_context(Some(&authorized));
+
+        assert!(ctx.contains("[已连接本地目录]"));
+        assert!(ctx.contains("customer-data"));
+        assert!(ctx.contains("list_directory / read_workspace_file / search_files / get_file_info"));
+        assert!(ctx.contains("不需要先上传或复制文件"));
+        assert!(ctx.contains("只有处理用户上传的附件时，才使用 load_file"));
+    }
+
+    #[test]
+    fn test_build_workspace_context_without_authorization_is_empty() {
+        assert!(build_workspace_context(None).is_empty());
+    }
+
+    #[test]
+    fn test_build_llm_content_with_authorized_workspace_scopes_load_file_to_uploads() {
+        let attachments = vec![json!({
+            "id": "file-1",
+            "originalName": "sales.xlsx",
+            "fileType": "xlsx"
+        })];
+
+        let content = build_llm_content("请分析这个目录里的销售数据", &attachments, true);
+
+        assert!(content.contains("[已上传文件]"));
+        assert!(content.contains("对这些已上传文件请调用 load_file(file_id)"));
+        assert!(content.contains("对已连接本地目录请优先使用 list_directory / read_workspace_file / search_files / get_file_info"));
+        assert!(!content.contains("提示：先调用 load_file(file_id) 加载文件数据"));
     }
 }

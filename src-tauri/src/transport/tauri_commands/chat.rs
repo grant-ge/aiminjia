@@ -39,7 +39,7 @@ use crate::storage::file_store::AppStorage;
 mod chat_runtime_impl;
 mod chat_support;
 
-pub(crate) use chat_runtime_impl::legacy_send_message_impl;
+pub(crate) use chat_runtime_impl::{build_visible_tool_defs, legacy_send_message_impl};
 
 /// Maximum agent loop iterations for daily consultation mode.
 /// 30 iterations allows multi-step browser workflows: navigate → login check →
@@ -108,6 +108,7 @@ impl RuntimeTurnExecutor for TauriLegacyTurnExecutor {
             request.conversation_id,
             request.content,
             request.file_ids,
+            request.run_id,
         )
         .await
     }
@@ -147,13 +148,21 @@ impl TauriChatCommandAdapter {
         let adapter = Arc::new(TauriEventAdapter::new(host));
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
-        let runtime = SessionRuntime::with_executor(
+        let mut runtime = SessionRuntime::with_executor(
             QueryEngine::new().with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             Arc::new(TauriLegacyTurnExecutor {
                 services: services.clone(),
             }),
         );
+        if let Some(facade) = services
+            .app
+            .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
+        {
+            runtime = runtime.with_authorized_workspace_store(
+                facade.inner().clone_authorized_workspace_store(),
+            );
+        }
         Self { runtime, services }
     }
 
