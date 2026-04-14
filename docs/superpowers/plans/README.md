@@ -86,14 +86,12 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 
 > 依赖 P1-P3 的成果，最后执行。
 
-| 目标 | 前置依赖 | 状态 |
+| 目标 | 计划文件 | 状态 |
 |------|---------|------|
-| PluginContext 退出主路径 → per-call CapabilityContext | P1 + AT | ⬜ |
-| AppStorage → repository facade 继续迁移 | P1 | ⬜ |
-| CapabilityPermissionPipeline → 真正 policy engine（allow/deny/ask + 持久化） | AT | ⬜ |
-| 取消传播：CancellationToken 级联，废弃 fire-and-forget | P1 | ⬜ |
-| AgentRuntime 持久化（FileAgentInvocationStore） | P1 | ⬜ |
-| Python 安全模型收口（废弃静态检查沙箱，改用权限系统） | policy engine | ⬜ |
+| PluginContext 退出主路径 + CancellationToken 级联 | [p4a-plugin-context-cancellation-plan.md](./2026-04-14-p4a-plugin-context-cancellation-plan.md) | 🟡 计划已写，待执行 |
+| AppStorage → ConversationStore facade 迁移 | [p4b-storage-facade-plan.md](./2026-04-14-p4b-storage-facade-plan.md) | 🟡 计划已写，待执行 |
+| PolicyEngine（allow/deny/ask + 持久化）+ Python 安全收口 | [p4c-policy-engine-python-sandbox-plan.md](./2026-04-14-p4c-policy-engine-python-sandbox-plan.md) | 🟡 计划已写，待执行 |
+| AgentRuntime 持久化（FileAgentInvocationStore） | — | ✅ 评估确认已实现 |
 
 ---
 
