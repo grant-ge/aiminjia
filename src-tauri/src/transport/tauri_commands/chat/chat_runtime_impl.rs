@@ -2731,9 +2731,13 @@ async fn agent_loop(
         // Build runtime dispatcher from the legacy tool registry so all tools
         // (RuntimeTool and LegacyToolAdapter) are available through the runtime path.
         let dispatcher = tool_registry.to_runtime_dispatcher(plugin_ctx).await;
+        let browser_available = app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .is_some();
         let query_engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(workspace_path.clone())
-            .with_authorized_workspace(authorized_workspace.clone());
+            .with_authorized_workspace(authorized_workspace.clone())
+            .with_browser_available(browser_available);
 
         // Create a per-round event bus with TauriEventAdapter so tool:executing /
         // tool:completed events reach the frontend via RuntimeEventBus → TauriEventAdapter

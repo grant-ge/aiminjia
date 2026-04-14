@@ -20,6 +20,10 @@ pub struct QueryEngine {
     /// Session-scoped authorized workspace injected before a turn runs.
     /// When present, runtime tools resolve against this path first.
     authorized_workspace: Option<AuthorizedWorkspaceRef>,
+    /// Whether a browser connector is available for this session.
+    /// Injected from `connector_engine.is_some()` on the production path so that
+    /// browser-scope tools pass `CapabilityPermissionPipeline` checks.
+    browser_available: bool,
 }
 
 impl QueryEngine {
@@ -32,6 +36,7 @@ impl QueryEngine {
             tool_dispatcher: Some(tool_dispatcher),
             workspace_path: None,
             authorized_workspace: None,
+            browser_available: false,
         }
     }
 
@@ -49,6 +54,15 @@ impl QueryEngine {
         authorized_workspace: Option<AuthorizedWorkspaceRef>,
     ) -> Self {
         self.authorized_workspace = authorized_workspace;
+        self
+    }
+
+    /// Set whether a browser connector is available for this session.
+    ///
+    /// When `true`, browser-scope tools pass the `CapabilityPermissionPipeline`
+    /// check.  On the production path, pass `connector_engine.is_some()`.
+    pub fn with_browser_available(mut self, browser_available: bool) -> Self {
+        self.browser_available = browser_available;
         self
     }
 
@@ -178,7 +192,7 @@ impl QueryEngine {
                     authorized_workspace: self.authorized_workspace.clone(),
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
-                browser_available: false,
+                browser_available: self.browser_available,
             });
             ctx.with_capability(capability)
         } else {
@@ -279,7 +293,7 @@ impl QueryEngine {
                     authorized_workspace: self.authorized_workspace.clone(),
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
-                browser_available: false,
+                browser_available: self.browser_available,
             });
             ctx.with_capability(capability)
         } else {
