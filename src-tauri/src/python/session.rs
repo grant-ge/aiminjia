@@ -637,7 +637,12 @@ impl PythonSessionManager {
                 if let Some(key) = lru_key {
                     if let Some(evicted) = sessions.remove(&key) {
                         info!("[SESSION] Evicting LRU session for conversation {}", key);
-                        // Write checkpoint in background (don't block)
+                        // Note: LRU eviction runs in background without a CancellationToken.
+                        // Threading a token through get_or_create() would require changing all
+                        // call-sites and is deferred to a future refactor. kill() is always
+                        // executed to prevent process leak even if the upstream turn was
+                        // cancelled; write_checkpoint() may be skipped in that refactor if
+                        // a token is available and already cancelled.
                         tokio::spawn(async move {
                             let _ = evicted.write_checkpoint().await;
                             let _ = evicted.kill().await;
