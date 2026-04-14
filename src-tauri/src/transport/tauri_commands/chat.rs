@@ -27,6 +27,7 @@ use crate::plugin::tool_trait::FileMeta;
 use crate::plugin::{PluginContext, SkillRegistry, ToolRegistry};
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{RunId, SessionId};
+use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::{
     ChatTurnRequest, QueryEngine, RuntimeEventBus, RuntimeTurnExecutor, SessionRuntime,
 };
@@ -201,11 +202,18 @@ impl TauriChatCommandAdapter {
         &self,
         conversation_id: String,
     ) -> Result<Vec<serde_json::Value>, String> {
-        conversation_service::get_messages(self.services.db.clone(), conversation_id).await
+        conversation_service::get_messages(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+        )
+        .await
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {
-        conversation_service::create_conversation(self.services.db.clone()).await
+        conversation_service::create_conversation(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+        )
+        .await
     }
 
     pub async fn delete_conversation(&self, conversation_id: String) -> Result<(), String> {
@@ -243,7 +251,7 @@ impl TauriChatCommandAdapter {
         new_title: String,
     ) -> Result<(), String> {
         let outcome = conversation_service::rename_conversation(
-            self.services.db.clone(),
+            self.services.db.clone() as Arc<dyn ConversationStore>,
             conversation_id,
             new_title,
         )
@@ -259,6 +267,9 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
-        conversation_service::get_conversations(self.services.db.clone()).await
+        conversation_service::get_conversations(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+        )
+        .await
     }
 }

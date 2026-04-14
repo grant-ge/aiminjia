@@ -953,6 +953,44 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
     }
 }
 
+impl crate::runtime::store::ConversationStore for AppStorage {
+    fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
+        self.create_conversation(id, title)
+    }
+
+    fn list_conversation_ids(&self) -> Result<Vec<String>> {
+        let convs = self.get_conversations()?;
+        Ok(convs
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_owned))
+            .collect())
+    }
+
+    fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        self.get_conversations()
+    }
+
+    fn delete_conversation(&self, id: &str) -> Result<()> {
+        self.delete_conversation(id)
+    }
+
+    fn rename_conversation(&self, id: &str, new_title: &str) -> Result<()> {
+        self.update_conversation_title(id, new_title)
+    }
+
+    fn insert_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.insert_active_task(conversation_id)
+    }
+
+    fn remove_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.remove_active_task(conversation_id)
+    }
+
+    fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
+        self.get_messages(conversation_id)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FilePersonaStore
 // ─────────────────────────────────────────────────────────────────────────────
