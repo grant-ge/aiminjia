@@ -185,13 +185,8 @@ impl QueryEngine {
             ctx
         };
 
-        // Dispatch using the real args from the LLM (not a synthetic placeholder).
-        let dispatch_result = dispatcher
-            .dispatch(&call.tool_name, call.args.clone(), ctx)
-            .await;
-
-        // Emit ToolCallExecuting / ToolCallCompleted through the runtime bus so
-        // downstream adapters (TauriEventAdapter, etc.) forward them to the UI.
+        // Emit ToolCallExecuting before dispatching so the UI knows the tool
+        // has started before any latency from the actual execution.
         bus.emit(RuntimeEvent::new(
             turn.session_id().clone(),
             turn.run_id().clone(),
@@ -201,6 +196,11 @@ impl QueryEngine {
             },
         ))
         .await?;
+
+        // Dispatch using the real args from the LLM (not a synthetic placeholder).
+        let dispatch_result = dispatcher
+            .dispatch(&call.tool_name, call.args.clone(), ctx)
+            .await;
 
         match dispatch_result {
             Ok(outcome) => {
