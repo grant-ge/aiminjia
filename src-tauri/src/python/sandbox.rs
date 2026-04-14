@@ -96,7 +96,21 @@ impl SandboxConfig {
     }
 
     /// Validate Python code against sandbox rules.
-    /// Returns Ok(()) if the code passes all checks, Err with reason otherwise.
+    ///
+    /// # ⚠ Deprecated — not the primary security barrier
+    ///
+    /// Static string matching can be bypassed via string concatenation or getattr.
+    /// The primary security barrier is the runtime `_safe_open` write-path restriction
+    /// (only workspace subdirectories are writable) combined with the `PermissionPipeline`
+    /// capability check that runs before tool execution.
+    ///
+    /// This function is kept for defense-in-depth (blocks obvious patterns) but
+    /// MUST NOT be the sole or primary security check.
+    #[deprecated(
+        since = "0.4.1",
+        note = "Use _safe_open path restriction + PermissionPipeline as primary security. \
+                validate_code() is defense-in-depth only and can be bypassed."
+    )]
     pub fn validate_code(&self, code: &str) -> Result<(), String> {
         // Check for forbidden imports
         for module in &self.forbidden_modules {

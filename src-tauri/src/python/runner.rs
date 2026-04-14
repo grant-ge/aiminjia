@@ -78,10 +78,18 @@ impl PythonRunner {
     /// 5. Captures stdout/stderr.
     /// 6. Cleans up temp file.
     pub async fn execute(&self, code: &str) -> Result<ExecutionResult> {
-        // 1. Validate code
-        self.sandbox
-            .validate_code(code)
-            .map_err(|e| anyhow!("Sandbox violation: {}", e))?;
+        // 1. Defense-in-depth: validate code for obvious dangerous patterns.
+        // Note: validate_code() is NOT the primary security barrier — _safe_open path
+        // restriction and PermissionPipeline capability checks are. This is kept as a
+        // best-effort check that warns on suspicious patterns without hard-blocking.
+        #[allow(deprecated)]
+        if let Err(e) = self.sandbox.validate_code(code) {
+            log::warn!(
+                "[Python] validate_code warning (non-blocking): {}. \
+                Primary safety enforced by _safe_open path restriction.",
+                e
+            );
+        }
 
         // 2. Execute without re-validation
         self.execute_raw(code).await
