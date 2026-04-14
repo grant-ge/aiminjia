@@ -2727,260 +2727,111 @@ async fn agent_loop(
             authorized_workspace: authorized_workspace.clone(),
         };
 
-        // --- Phase 1: Pre-filter blocked tools and emit executing events ---
-        struct ToolExecInput {
-            idx: usize,
-            name: String,
-            id: String,
-            args: serde_json::Value,
-        }
-        let mut permitted: Vec<ToolExecInput> = Vec::new();
+        // --- Runtime-owned tool dispatch (Phase 1+2+3) ---
+        // Build runtime dispatcher from the legacy tool registry so all tools
+        // (RuntimeTool and LegacyToolAdapter) are available through the runtime path.
+        let dispatcher = tool_registry.to_runtime_dispatcher(plugin_ctx).await;
+        let query_engine = QueryEngine::with_dispatcher(dispatcher)
+            .with_workspace_path(workspace_path.clone())
+            .with_authorized_workspace(authorized_workspace.clone());
 
-        for (idx, tc) in tool_calls.iter().enumerate() {
-            log::info!(
-                "[AGENT] Executing tool '{}' (id={}) with args: {}",
-                tc.name,
-                tc.id,
-                serde_json::to_string(&tc.arguments).unwrap_or_else(|_| "??".into())
-            );
+        // Create a per-round event bus with TauriEventAdapter so tool:executing /
+        // tool:completed events reach the frontend via RuntimeEventBus → TauriEventAdapter
+        // instead of direct app.emit() calls.
+        let round_host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+            Arc::new(crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.clone()));
+        let round_bus = RuntimeEventBus::new();
+        round_bus.subscribe(Arc::new(TauriEventAdapter::new(round_host)));
 
-            let _ = app.emit(
-                "tool:executing",
-                serde_json::json!({
-                    "conversationId": conversation_id,
-                    "toolName": tc.name,
-                    "toolId": tc.id,
-                    "purpose": tc.arguments.get("purpose").and_then(|v| v.as_str()),
-                }),
-            );
+        // Build a TurnState for this tool round (identity from conversation_id + run_id).
+        let round_mapping = crate::runtime::identity::IdentityMapping::from_legacy_conversation_id(
+            conversation_id.clone(),
+        );
+        let round_turn = crate::runtime::state::TurnState::new(
+            round_mapping,
+            run_id.clone(),
+            String::new(), // user_input not relevant for tool round
+        );
 
-            // Execution-time tool filter: block tools not in the current step's allowed set.
-            if let Some(ref allowed) = allowed_tools {
-                if !allowed.contains(&tc.name) {
-                    log::warn!(
-                        "[AGENT] Blocked tool '{}' — not in allowed set for current step (conversation={})",
-                        tc.name, conversation_id
-                    );
-                    // For browser tools blocked in daily mode, guide LLM to use browse_data sub-agent
-                    let browser_tools = [
-                        "browse_navigate",
-                        "browse_and_extract",
-                        "read_page_content",
-                        "page_execute_js",
-                        "extract_table_data",
-                        "extract_with_pagination",
-                    ];
-                    let blocked_msg = if browser_tools.contains(&tc.name.as_str())
-                        && allowed.contains("browse_data")
-                    {
-                        format!(
-                            "Error: Tool '{}' is not directly available. Use `browse_data(task, url?)` instead — it delegates to a browser sub-agent that handles navigation, reading, and extraction automatically.",
-                            tc.name
-                        )
-                    } else {
-                        format!(
-                            "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
-                            tc.name,
-                            allowed.iter().cloned().collect::<Vec<_>>().join(", ")
-                        )
-                    };
-                    let _ = app.emit(
-                        "tool:completed",
-                        serde_json::json!({
-                            "conversationId": conversation_id,
-                            "toolName": tc.name,
-                            "toolId": tc.id,
-                            "success": false,
-                            "summary": &blocked_msg,
-                        }),
-                    );
-                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, blocked_msg));
-                    continue;
-                }
-            }
-
-            permitted.push(ToolExecInput {
-                idx,
-                name: tc.name.clone(),
-                id: tc.id.clone(),
-                args: tc.arguments.clone(),
-            });
-        }
-
-        // --- Phase 2: Execute tools (parallel when multiple, sequential when single) ---
-        struct ToolExecOutput {
-            idx: usize,
-            name: String,
-            id: String,
-            content: String,
-            is_error: bool,
-            file_meta: Option<FileMeta>,
-            is_degraded: bool,
-            notice: Option<String>,
-            elapsed: std::time::Duration,
-        }
-
-        let tool_results: Vec<ToolExecOutput> = if permitted.len() <= 1 {
-            // Single tool — execute directly (no async overhead)
-            let mut results = Vec::new();
-            for input in &permitted {
-                let start = std::time::Instant::now();
-                let result = tool_registry
-                    .execute(&input.name, &plugin_ctx, input.args.clone())
-                    .await;
-                let elapsed = start.elapsed();
-                let (content, is_error, file_meta, is_degraded, notice) = match result {
-                    Ok(output) => {
-                        let meta = output.file_meta.clone();
-                        let degraded = output.is_degraded;
-                        let notice = output.degradation_notice.clone();
-                        (output.content, output.is_error, meta, degraded, notice)
-                    }
-                    Err(e) => {
-                        log::error!("Tool '{}' failed: {}", input.name, e);
-                        (format!("Error: {}", e), true, None, false, None)
-                    }
-                };
-                results.push(ToolExecOutput {
-                    idx: input.idx,
-                    name: input.name.clone(),
-                    id: input.id.clone(),
-                    content,
-                    is_error,
-                    file_meta,
-                    is_degraded,
-                    notice,
-                    elapsed,
-                });
-            }
-            results
-        } else {
-            // Multiple tools — execute concurrently
-            log::info!(
-                "[AGENT] Executing {} tools in parallel for conversation {}",
-                permitted.len(),
-                conversation_id
-            );
-            let batch_start = std::time::Instant::now();
-
-            let futures: Vec<_> = permitted
+        // Convert LLM tool_calls to RuntimeToolCallRequest.
+        let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
+            tool_calls
                 .iter()
-                .map(|input| {
-                    let reg = tool_registry.clone();
-                    let ctx = plugin_ctx.clone();
-                    let args = input.args.clone();
-                    let name = input.name.clone();
-                    let id = input.id.clone();
-                    let idx = input.idx;
-                    async move {
-                        let start = std::time::Instant::now();
-                        let result = reg.execute(&name, &ctx, args).await;
-                        let elapsed = start.elapsed();
-                        let (content, is_error, file_meta, is_degraded, notice) = match result {
-                            Ok(output) => {
-                                let meta = output.file_meta.clone();
-                                let degraded = output.is_degraded;
-                                let notice = output.degradation_notice.clone();
-                                (output.content, output.is_error, meta, degraded, notice)
-                            }
-                            Err(e) => {
-                                log::error!("Tool '{}' failed: {}", name, e);
-                                (format!("Error: {}", e), true, None, false, None)
-                            }
-                        };
-                        ToolExecOutput {
-                            idx,
-                            name,
-                            id,
-                            content,
-                            is_error,
-                            file_meta,
-                            is_degraded,
-                            notice,
-                            elapsed,
-                        }
+                .map(|tc| {
+                    log::info!(
+                        "[AGENT] Executing tool '{}' (id={}) with args: {}",
+                        tc.name,
+                        tc.id,
+                        serde_json::to_string(&tc.arguments).unwrap_or_else(|_| "??".into())
+                    );
+                    crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        args: tc.arguments.clone(),
+                        purpose: tc.arguments
+                            .get("purpose")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     }
                 })
                 .collect();
 
-            let mut results = futures::future::join_all(futures).await;
-            // Sort by original index to preserve tool call ordering in messages
-            results.sort_by_key(|r| r.idx);
+        // Execute through ToolRoundDriver (handles allowed_tools filtering,
+        // single/concurrent dispatch, and runtime event emission).
+        let round_start = std::time::Instant::now();
+        let driver = crate::runtime::chat::tool_round_driver::ToolRoundDriver::new(query_engine)
+            .with_allowed_tools_opt(allowed_tools.as_ref().map(|s| s.iter().cloned().collect()));
+        let round_results = driver.execute_round(&round_turn, &round_bus, requests).await;
+        let round_elapsed = round_start.elapsed();
 
-            let batch_elapsed = batch_start.elapsed();
-            let individual_total: std::time::Duration = results.iter().map(|r| r.elapsed).sum();
-            log::info!(
-                "[AGENT] Parallel batch done: {} tools in {:?} (sequential would take {:?}, saved {:?})",
-                results.len(), batch_elapsed, individual_total,
-                individual_total.saturating_sub(batch_elapsed)
-            );
-
-            results
-        };
-
-        // --- Phase 3: Process results sequentially (events, masking, messages) ---
-        let tool_result_count = tool_results.len();
+        // --- Phase 3: Process results sequentially (masking, messages) ---
+        // tool:executing and tool:completed events have already been emitted by the
+        // runtime bus (for permitted tools) or skipped (for blocked tools).
+        let tool_result_count = round_results.len();
         let mut tool_success_count = 0usize;
         let mut tool_error_count = 0usize;
         let mut tool_names: Vec<String> = Vec::new();
-        let mut tool_total_elapsed = std::time::Duration::ZERO;
-        for tr in tool_results {
-            // Collect file metadata for post-stream verification
-            if let Some(ref fm) = tr.file_meta {
-                all_file_metas.push(fm.clone());
-                let _ = app.emit(
-                    "file:generated",
-                    serde_json::json!({
-                        "conversationId": conversation_id,
-                        "fileId": fm.file_id,
-                        "fileName": fm.file_name,
-                        "requestedFormat": fm.requested_format,
-                        "actualFormat": fm.actual_format,
-                        "fileSize": fm.file_size,
-                        "storedPath": fm.stored_path,
-                        "category": fm.category,
-                        "isDegraded": tr.is_degraded,
-                        "degradationNotice": &tr.notice,
-                    }),
-                );
-            }
+        let tool_total_elapsed = round_elapsed;
+        for round_result in &round_results {
+            // Unpack the result into common fields for downstream processing.
+            let (tr_id, tr_name, tr_content, tr_is_error) = match round_result {
+                crate::runtime::ToolRoundResult::Ok(outcome) => (
+                    &outcome.tool_call_id,
+                    &outcome.tool_name,
+                    &outcome.content,
+                    outcome.is_error,
+                ),
+                crate::runtime::ToolRoundResult::Blocked(blocked) => (
+                    &blocked.tool_call_id,
+                    &blocked.tool_name,
+                    &blocked.reason,
+                    true, // blocked tools are treated as errors for stats
+                ),
+            };
 
             log::info!(
-                "[AGENT] Tool '{}' result: is_error={}, content_len={}, elapsed={:?}, preview='{}'",
-                tr.name,
-                tr.is_error,
-                tr.content.len(),
-                tr.elapsed,
-                truncate_for_ui(&tr.content, 300),
+                "[AGENT] Tool '{}' result: is_error={}, content_len={}, preview='{}'",
+                tr_name,
+                tr_is_error,
+                tr_content.len(),
+                truncate_for_ui(tr_content, 300),
             );
 
             // M1: accumulate per-tool stats
-            if tr.is_error {
+            if tr_is_error {
                 tool_error_count += 1;
             } else {
                 tool_success_count += 1;
             }
-            tool_names.push(tr.name.clone());
-            tool_total_elapsed += tr.elapsed;
-
-            let _ = app.emit(
-                "tool:completed",
-                serde_json::json!({
-                    "conversationId": conversation_id,
-                    "toolName": tr.name,
-                    "toolId": tr.id,
-                    "success": !tr.is_error,
-                    "summary": truncate_for_ui(&tr.content, 200),
-                }),
-            );
+            tool_names.push(tr_name.clone());
 
             // Collect fileId from tool results
-            if !tr.is_error {
-                let parsed_json = serde_json::from_str::<serde_json::Value>(&tr.content)
+            if !tr_is_error {
+                let parsed_json = serde_json::from_str::<serde_json::Value>(tr_content)
                     .ok()
                     .or_else(|| {
-                        tr.content.find('{').and_then(|pos| {
-                            serde_json::from_str::<serde_json::Value>(&tr.content[pos..]).ok()
+                        tr_content.find('{').and_then(|pos| {
+                            serde_json::from_str::<serde_json::Value>(&tr_content[pos..]).ok()
                         })
                     });
                 if let Some(parsed) = parsed_json {
@@ -2988,7 +2839,7 @@ async fn agent_loop(
                         generated_file_ids.push(file_id.to_string());
                     }
                 }
-                for line in tr.content.lines() {
+                for line in tr_content.lines() {
                     if let Some(pos) = line.find("fileId:") {
                         let after = &line[pos + 7..].trim_start();
                         let id: String = after
@@ -3002,23 +2853,16 @@ async fn agent_loop(
                 }
             }
 
-            // Apply structured tag for file-generating tools (Layer 3)
-            let tagged_result = if let Some(ref fm) = tr.file_meta {
-                tag_file_tool_result(&tr.content, fm, tr.is_degraded, tr.notice.as_deref())
-            } else {
-                tr.content.clone()
-            };
-
             let masked_result = match combined_mask_ctx.as_mut() {
-                Some(ctx) => ctx.mask_text(&tagged_result),
-                None => tagged_result,
+                Some(ctx) => ctx.mask_text(tr_content),
+                None => tr_content.clone(),
             };
             const MAX_TOOL_RESULT_CHARS: usize = 8000;
             let truncated_result = if masked_result.len() > MAX_TOOL_RESULT_CHARS {
                 let end = truncate_at_char_boundary(&masked_result, MAX_TOOL_RESULT_CHARS);
                 log::info!(
                     "[CTX_METRICS] tool='{}' truncated: {}→{}chars",
-                    tr.name,
+                    tr_name,
                     masked_result.len(),
                     end
                 );
@@ -3030,20 +2874,20 @@ async fn agent_loop(
             } else {
                 masked_result
             };
-            messages.push(ChatMessage::tool_result(&tr.id, &tr.name, truncated_result));
+            messages.push(ChatMessage::tool_result(tr_id, tr_name, truncated_result));
 
             // P2: Update analysis context from tool results (analysis mode only)
             if is_analysis {
-                match tr.name.as_str() {
+                match tr_name.as_str() {
                     "load_file" => {
                         // Extract file info from tool result for AnalysisContext.
                         // load_file returns JSON: {"status":"loaded","fileId":"...","originalName":"...","columns":[...],...}
-                        let parsed = serde_json::from_str::<serde_json::Value>(&tr.content)
+                        let parsed = serde_json::from_str::<serde_json::Value>(tr_content)
                             .ok()
                             .or_else(|| {
                                 // Fallback: try to find JSON object in the content
-                                tr.content.find('{').and_then(|pos| {
-                                    serde_json::from_str::<serde_json::Value>(&tr.content[pos..])
+                                tr_content.find('{').and_then(|pos| {
+                                    serde_json::from_str::<serde_json::Value>(&tr_content[pos..])
                                         .ok()
                                 })
                             });
@@ -3056,7 +2900,7 @@ async fn agent_loop(
                                 .get("originalName")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or_default();
-                            let var_hint = if tr.content.contains("_dfs[") {
+                            let var_hint = if tr_content.contains("_dfs[") {
                                 format!("_dfs['{}']", file_id)
                             } else {
                                 "_df".to_string()
@@ -3066,7 +2910,7 @@ async fn agent_loop(
                                     file_id,
                                     original_name,
                                     &var_hint,
-                                    &tr.content,
+                                    tr_content,
                                 );
                             } else {
                                 log::warn!(
@@ -3081,12 +2925,12 @@ async fn agent_loop(
                                 "[P2] Could not parse load_file result as JSON for conversation {} — \
                                  AnalysisContext file profile will not be created. Preview: '{}'",
                                 conversation_id,
-                                truncate_for_ui(&tr.content, 200),
+                                truncate_for_ui(tr_content, 200),
                             );
                         }
                     }
                     "execute_python" => {
-                        analysis_ctx.update_from_python_output(&tr.content);
+                        analysis_ctx.update_from_python_output(tr_content);
                     }
                     _ => {}
                 }
@@ -3852,6 +3696,10 @@ fn verify_file_claims(
 
 /// Tag a tool result with structured metadata so the LLM can correctly report
 /// the actual file format (especially when degraded from the requested format).
+/// NOTE: Currently unused after the runtime dispatcher migration removed the
+/// file_meta code path. Will be re-enabled when RuntimeToolCallOutcome carries
+/// file_meta through the runtime dispatcher.
+#[allow(dead_code)]
 fn tag_file_tool_result(
     original_content: &str,
     file_meta: &FileMeta,
