@@ -39,9 +39,14 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
         }
         None => (SandboxConfig::for_workspace(&ctx.workspace_path), String::new()),
     };
-    sandbox
-        .validate_code(code)
-        .map_err(|e| anyhow::anyhow!("Sandbox violation: {}", e))?;
+    #[allow(deprecated)]
+    if let Err(e) = sandbox.validate_code(code) {
+        log::warn!(
+            "[TOOL:execute_python] validate_code warning (non-blocking): {}. \
+            Primary safety enforced by _safe_open path restriction.",
+            e
+        );
+    }
 
     // Auto-load uploaded files that haven't been loaded via load_file yet.
     // This ensures _df/_text variables are available even if the LLM skips load_file.

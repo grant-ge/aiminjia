@@ -92,7 +92,13 @@ impl PermissionStore {
         if let Some(path) = &self.file_path {
             let map = self.persistent.read().unwrap();
             if let Ok(json) = serde_json::to_string_pretty(&*map) {
-                let _ = std::fs::write(path, json);
+                if let Err(e) = std::fs::write(path, json) {
+                    log::warn!(
+                        "[PermissionStore] Failed to flush persistent decisions to {:?}: {}",
+                        path,
+                        e
+                    );
+                }
             }
         }
     }

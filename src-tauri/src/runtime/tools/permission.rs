@@ -108,6 +108,20 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
     }
 }
 
+/// 基于 PermissionStore 的策略感知权限管线。
+///
+/// 决策优先级：
+/// 1. 已持久化 AlwaysAllow / AlwaysDeny → 直接放行或拒绝，不再做 capability 检查
+/// 2. 未记录决策 → 执行与 CapabilityPermissionPipeline 相同的 capability 检查
+/// 3. Unknown scope → fail-closed（不同于 CapabilityPermissionPipeline 的 fail-open）
+///
+/// **注意：** AlwaysAllow 绕过 capability 检查是设计意图，不是漏洞。
+/// 用户显式持久化授权后，运行时 capability 存在性检查是多余的——
+/// 若不绕过，持久化授权将对缺少 capability 的会话永远无效。
+///
+/// **当前状态：** 此管线已实现并通过测试，但尚未接入生产 dispatcher。
+/// 生产路径（ToolRegistry::to_runtime_dispatcher 等）仍使用 CapabilityPermissionPipeline。
+/// 接入生产 dispatcher 作为 P4 后续步骤处理。
 #[derive(Clone)]
 pub struct StorePolicyPipeline {
     store: Arc<PermissionStore>,
@@ -132,6 +146,9 @@ impl PermissionPipeline for StorePolicyPipeline {
         for scope in &definition.capability_scope {
             let key = format!("{}:{}", definition.id, scope);
             match self.store.get(&key) {
+                // An explicit Allow/AlwaysAllow decision supersedes capability checks.
+                // The user has already granted this permission; re-checking capability
+                // would defeat persistent grants for sessions without a live connector.
                 Some(d) if d.is_allow() => continue,
                 Some(_) => {
                     anyhow::bail!(

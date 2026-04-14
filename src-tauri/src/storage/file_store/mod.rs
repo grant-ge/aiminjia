@@ -911,6 +911,12 @@ impl crate::runtime::store::AuditStore for FileAuditStore {
     }
 }
 
+// FileConversationStore wraps an Arc<AppStorage> and is used by RuntimeRepositoryFacade
+// (which holds an Arc<dyn ConversationStore>). It coexists with the direct
+// `impl ConversationStore for AppStorage` because the facade requires an Arc<dyn> — it
+// cannot hold an Arc<AppStorage> and cast it to Arc<dyn ConversationStore> without
+// explicit trait impl. Both impls delegate to the same AppStorage methods; they are
+// behaviorally identical.
 struct FileConversationStore {
     storage: std::sync::Arc<AppStorage>,
 }
