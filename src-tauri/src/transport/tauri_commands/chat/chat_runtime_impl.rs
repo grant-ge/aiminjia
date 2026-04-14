@@ -1112,6 +1112,11 @@ pub(crate) async fn legacy_send_message_impl(
         }
     }
 
+    // Note: This spawn does not receive a CancellationToken because
+    // `legacy_send_message_impl` predates the runtime cancellation model.
+    // External cancellation is handled via `gateway.cancel_conversation()` at the
+    // LLM-gateway layer. A proper CancellationToken would require threading it
+    // through the legacy call chain, deferred to P4 full refactor.
     tokio::spawn(async move {
         let conversation_id_clone = agent_ctx.conversation_id.clone();
         let app_clone = agent_ctx.app.clone();
