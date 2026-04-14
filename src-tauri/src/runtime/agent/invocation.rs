@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::runtime::ids::{AgentId, RunId};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
     Pending,
     Running,

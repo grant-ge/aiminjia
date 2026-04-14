@@ -1,6 +1,7 @@
 pub mod agent_runtime;
 pub mod background;
 pub mod child_run;
+pub mod file_agent_invocation_store;
 pub mod invocation;
 pub mod message_bridge;
 pub mod python_recovery;

@@ -2,11 +2,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 use crate::runtime::agent::invocation::{AgentInvocation, AgentStatus};
 use crate::runtime::ids::AgentId;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentInvocationRecord {
     pub agent_id: AgentId,
     pub parent_run_id: crate::runtime::ids::RunId,

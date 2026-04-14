@@ -30,6 +30,14 @@ impl AgentRuntime {
         Self::new(Arc::new(store))
     }
 
+    pub fn from_storage(store_path: std::path::PathBuf) -> anyhow::Result<Self> {
+        let store =
+            super::file_agent_invocation_store::FileAgentInvocationStore::new(store_path)?;
+        Ok(Self {
+            store: Arc::new(store),
+        })
+    }
+
     pub async fn spawn_child_run(&self, request: SpawnChildRunRequest) -> Result<ChildRunHandle> {
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
         let child_run_id = RunId::new(format!("child-{}", uuid::Uuid::new_v4()));

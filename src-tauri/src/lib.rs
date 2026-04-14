@@ -107,7 +107,16 @@ pub fn run() {
 
             // Initialize runtime orchestration state
             let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
-            let agent_runtime = Arc::new(runtime::agent::AgentRuntime::for_test());
+            let agent_store_path = app_data_dir.join("agent_invocations.json");
+            let agent_runtime = Arc::new(
+                runtime::agent::AgentRuntime::from_storage(agent_store_path)
+                    .unwrap_or_else(|e| {
+                        log::warn!(
+                            "Failed to create FileAgentInvocationStore: {e}, falling back to in-memory"
+                        );
+                        runtime::agent::AgentRuntime::for_test()
+                    }),
+            );
 
             // Initialize LLM gateway
             let gateway = Arc::new(llm::gateway::LlmGateway::new_with_registry(
@@ -213,6 +222,16 @@ pub fn run() {
                 }
             }
 
+            // Initialize runtime repository facade (routes settings/persona/file/export
+            // commands through domain traits instead of direct AppStorage access).
+            // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
+            // called, because new() calls try_state::<RuntimeRepositoryFacade>() to wire
+            // authorized_workspace_store. Registering it here ensures try_state succeeds.
+            let facade = Arc::new(
+                storage::file_store::RuntimeRepositoryFacade::from_storage(db.clone()),
+            );
+            app.manage(facade);
+
             // Initialize Python session manager for persistent REPL sessions
             let session_mgr = Arc::new(python::session::PythonSessionManager::new(
                 fm_path.clone(),
@@ -245,15 +264,8 @@ pub fn run() {
                 });
             }
 
-            // Initialize runtime repository facade (routes settings/persona/file/export
-            // commands through domain traits instead of direct AppStorage access)
-            let facade = Arc::new(
-                storage::file_store::RuntimeRepositoryFacade::from_storage(db.clone()),
-            );
-
             // Register managed state
             app.manage(db);
-            app.manage(facade);
             app.manage(file_mgr);
             app.manage(gateway);
             app.manage(run_registry);
