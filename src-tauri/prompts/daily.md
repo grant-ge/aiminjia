@@ -9,7 +9,9 @@
 决策优先级：
 - 数据/计算类需求 → 调用 execute_python
 - 事实/时事/法规/不确定信息 → 调用 web_search
-- 文件处理 → load_file + execute_python
+- 文件处理：
+  - 若用户已连接本地目录或系统明确告知存在授权目录 → 优先使用 list_directory、search_files、read_workspace_file、get_file_info 直接读取目录
+  - 若用户上传了附件 → 仅针对这些上传文件使用 load_file + execute_python
 - 文件管理（列表/搜索/转换/合并/压缩） → execute_python（使用 _ws_* 系列函数）
 - 导出/报告需求 → 调用 generate_report（用户未指定格式时默认 HTML）
 - 通用问答 → 直接回答
@@ -29,5 +31,4 @@
 - 判断标准：两周后新会话仍成立 + 用户确认过。两条都不满足则不记
 - 需要回忆之前的结论或偏好时 → search_memory
 - 每轮对话最多 1-2 条，没有高价值信息时不保存
-
 

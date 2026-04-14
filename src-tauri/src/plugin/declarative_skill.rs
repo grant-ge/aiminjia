@@ -100,7 +100,8 @@ impl DeclarativeSkill {
         let base_prompt = Self::load_prompt(plugin_dir, "prompts/base.md");
 
         // Load extract prompts (for checkpoint extraction at step boundaries)
-        let extract_base = Self::load_prompt(plugin_dir, "prompts/extract/base_extract.md");
+        // base_extract.md is OPTIONAL — absence is silent (returns empty string).
+        let extract_base = Self::load_optional_prompt(plugin_dir, "prompts/extract/base_extract.md");
         let mut extract_steps = HashMap::new();
         let extract_dir = plugin_dir.join("prompts/extract");
         if extract_dir.exists() {
@@ -235,6 +236,13 @@ impl DeclarativeSkill {
                 String::new()
             }
         }
+    }
+
+    /// Load an optional prompt file — silently returns empty string if absent.
+    /// Use for files that are legitimately optional (e.g. prompts/extract/base_extract.md).
+    fn load_optional_prompt(plugin_dir: &Path, rel_path: &str) -> String {
+        let path = plugin_dir.join(rel_path);
+        std::fs::read_to_string(&path).unwrap_or_default()
     }
 
     fn next_step_id(&self, current: &str) -> Option<String> {

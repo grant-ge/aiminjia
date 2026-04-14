@@ -141,6 +141,42 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     );
 }
 
+// ─── Test 3b: authorized workspace wins over internal workspace ──────────────
+
+#[tokio::test]
+async fn workspace_runtime_tool_uses_authorized_workspace_when_present() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let internal = TempDir::new().unwrap();
+    let external = TempDir::new().unwrap();
+    std::fs::write(internal.path().join("internal-only.txt"), b"internal").unwrap();
+    std::fs::write(external.path().join("external-only.txt"), b"external").unwrap();
+
+    let mut ctx = build_test_plugin_ctx(internal.path().to_path_buf());
+    ctx.authorized_workspace = Some(app_lib::runtime::store::AuthorizedWorkspaceRef {
+        id: "aw-test".to_string(),
+        root_path: external.path().to_path_buf(),
+        display_name: "external".to_string(),
+    });
+
+    let result = registry
+        .execute("list_directory", &ctx, serde_json::json!({"path": "."}))
+        .await
+        .expect("list_directory should succeed with authorized workspace");
+
+    assert!(
+        result.content.contains("external-only.txt"),
+        "result should read authorized workspace contents: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("internal-only.txt"),
+        "authorized workspace should take precedence over internal workspace: {}",
+        result.content
+    );
+}
+
 // ─── Test 5: web_search routes to RuntimeTool via factory (not legacy) ──────
 
 /// F7+F8: web_search is NOT in global runtime_tools (session-scoped deps),
@@ -200,26 +236,19 @@ async fn load_file_routes_to_runtime_tool_via_factory() {
     }
 }
 
-// ─── Test 7: browser tools without connector_engine fall back to legacy ──────
+// ─── Test 7: browser tools without connector_engine are denied by capability ─
 
-/// F8: when connector_engine is None, the factory returns None for browser tools.
-/// Execution correctly falls through to the legacy ToolPlugin (not "Unknown tool").
-/// The legacy tool then fails at the executor level ("not initialized"), which is
-/// acceptable — the routing contract is that we reach the legacy path, not "Unknown tool".
+/// F8+F12: browser tools are now request-scoped RuntimeTools even when no
+/// connector is present. The capability layer should reject them before the
+/// legacy executor path is reached.
 #[tokio::test]
-async fn browser_tool_without_connector_engine_falls_back() {
+async fn browser_tool_without_connector_engine_is_permission_denied() {
     let registry = ToolRegistry::new();
-    // register_builtin_tools registers legacy browse_navigate among others
     register_builtin_tools(&registry).await;
 
     let tmp = TempDir::new().unwrap();
-    // ctx has connector_engine = None (default in build_test_plugin_ctx)
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
 
-    // browse_navigate: factory returns None (no connector_engine),
-    // so it falls through to the legacy ToolPlugin which fails at executor level.
-    // The error must NOT be "Unknown tool" — the tool IS known, it's just not executable
-    // without the connector.
     let result = registry
         .execute(
             "browse_navigate",
@@ -233,8 +262,8 @@ async fn browser_tool_without_connector_engine_falls_back() {
     );
     let err_msg = result.unwrap_err().to_string();
     assert!(
-        !err_msg.contains("Unknown tool"),
-        "browse_navigate should not be 'Unknown tool' — it has a legacy fallback. Got: {}",
+        err_msg.contains("Permission denied") || err_msg.contains("browser capability"),
+        "browse_navigate without connector_engine should fail in capability layer. Got: {}",
         err_msg
     );
 }

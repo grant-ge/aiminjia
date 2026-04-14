@@ -79,6 +79,7 @@
   },
 
   "inputBar": {
+    "attachData": "添加文件或本地目录",
     "uploadFile": "上传文件（Excel/Word/PDF）",
     "placeholderWithFile": "添加说明（可选），然后按回车发送...",
     "placeholder": "随时提问，或上传文件让我分析...",
@@ -248,10 +249,12 @@
     "general": {
       "language": "界面语言",
       "languageDesc": "选择应用界面的显示语言",
-      "workspace": "工作目录",
-      "workspaceDesc": "Agent 会在此目录下存放分析文件、报告和临时文件",
-      "selectDir": "选择目录",
-      "openDir": "打开目录",
+      "workspace": "内部沙箱目录",
+      "workspaceDesc": "Lotus 在此目录下存放分析产物、生成报告和临时文件；这不是连接你本地目录的主入口",
+      "workspacePickerTitle": "选择内部沙箱目录",
+      "workspaceHint": "如需让 AI 直接读取你的本地文件夹，请在聊天框左下角点回形针，选择“连接本地目录（不复制）”。",
+      "selectDir": "选择沙箱目录",
+      "openDir": "打开沙箱目录",
       "systemInfo": "系统信息",
       "logs": "运行日志：",
       "openLogs": "打开日志目录",

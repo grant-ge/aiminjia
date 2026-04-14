@@ -39,7 +39,7 @@ use crate::storage::file_store::AppStorage;
 /// `extract_with_pagination` (which write JSON files to the workspace).
 /// `workspace_path` and `conversation_id` are needed for file registration.
 pub struct BrowserDeps {
-    pub connector_engine: Arc<ConnectorEngine>,
+    pub connector_engine: Option<Arc<ConnectorEngine>>,
     /// Required by `ExtractTableDataRuntimeTool` and `ExtractWithPaginationRuntimeTool`.
     pub file_manager: Arc<FileManager>,
     /// Required by `ExtractTableDataRuntimeTool` and `ExtractWithPaginationRuntimeTool`.
@@ -56,6 +56,12 @@ fn tool_result(tool_name: &str, content: String) -> ToolResult {
         content: content.clone(),
         data: Some(Value::String(content)),
     }
+}
+
+fn connector_engine(deps: &BrowserDeps) -> Result<&Arc<ConnectorEngine>, ToolError> {
+    deps.connector_engine
+        .as_ref()
+        .ok_or_else(|| ToolError::ExecutionFailed("Internal app connector not initialized".into()))
 }
 
 // ── BrowseNavigateRuntimeTool ─────────────────────────────────────────────────
@@ -87,9 +93,7 @@ impl RuntimeTool for BrowseNavigateRuntimeTool {
 
         info!("[BROWSER] browse_navigate: url='{}'", url);
 
-        let result = self
-            .deps
-            .connector_engine
+        let result = connector_engine(&self.deps)?
             .browser_navigate(url)
             .await
             .map_err(|e| {
@@ -166,9 +170,7 @@ impl RuntimeTool for ReadPageContentRuntimeTool {
 
         info!("[BROWSER] read_page_content");
 
-        let result = self
-            .deps
-            .connector_engine
+        let result = connector_engine(&self.deps)?
             .browser_read_content(extract_script)
             .await
             .map_err(|e| {
@@ -273,9 +275,7 @@ impl RuntimeTool for PageExecuteJsRuntimeTool {
 
         info!("[BROWSER] page_execute_js: script_len={}", script.len());
 
-        let result = self
-            .deps
-            .connector_engine
+        let result = connector_engine(&self.deps)?
             .browser_execute_js(script)
             .await
             .map_err(|e| {
@@ -339,9 +339,7 @@ impl RuntimeTool for ExtractTableDataRuntimeTool {
 
         info!("[BROWSER] extract_table_data: save_path={:?}", save_path);
 
-        let result = self
-            .deps
-            .connector_engine
+        let result = connector_engine(&self.deps)?
             .browser_extract_table_data(&save_path.to_string_lossy(), None, None)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("extract_table_data failed: {}", e)))?;
@@ -482,9 +480,7 @@ impl RuntimeTool for ExtractWithPaginationRuntimeTool {
 
         info!("[BROWSER] extract_with_pagination: save_path={:?}", save_path);
 
-        let result = self
-            .deps
-            .connector_engine
+        let result = connector_engine(&self.deps)?
             .browser_extract_with_pagination(&save_path.to_string_lossy(), pagination_js, max_pages)
             .await
             .map_err(|e| {

@@ -19,6 +19,16 @@ use super::context::PluginContext;
 use super::skill_trait::{Skill, ToolFilter};
 use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
+const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
+    "web_search",
+    "browse_navigate",
+    "read_page_content",
+    "page_execute_js",
+    "extract_table_data",
+    "extract_with_pagination",
+    "load_file",
+];
+
 /// Info about a registered tool (for management UI).
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +77,16 @@ impl ToolRegistry {
             tools: RwLock::new(HashMap::new()),
             runtime_tools: RwLock::new(HashMap::new()),
         }
+    }
+
+    fn has_runtime_schema_source(
+        runtime_tools: &HashMap<String, Arc<dyn crate::runtime::tools::RuntimeTool>>,
+        name: &str,
+    ) -> bool {
+        runtime_tools.contains_key(name)
+            || REQUEST_SCOPED_RUNTIME_TOOL_NAMES
+                .iter()
+                .any(|runtime_name| runtime_name == &name)
     }
 
     /// Register a native RuntimeTool.
@@ -129,11 +149,23 @@ impl ToolRegistry {
                 });
             }
         }
+        for id in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
+            if runtime_tools.contains_key(*id) {
+                continue;
+            }
+            if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                schemas.push(ToolDefinition {
+                    name: entry.definition.id.clone(),
+                    description: entry.definition.description.clone(),
+                    parameters: entry.json_schema.clone(),
+                });
+            }
+        }
 
         // Legacy tools not yet migrated: get schema from plugin
         for rt in legacy_tools.values() {
             let name = rt.plugin.name();
-            if !runtime_tools.contains_key(name) {
+            if !Self::has_runtime_schema_source(&runtime_tools, name) {
                 schemas.push(ToolDefinition {
                     name: name.to_string(),
                     description: rt.plugin.description().to_string(),
@@ -170,11 +202,30 @@ impl ToolRegistry {
                 }
             }
         }
+        for id in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
+            if runtime_tools.contains_key(*id) {
+                continue;
+            }
+            let matches = match filter {
+                ToolFilter::All => true,
+                ToolFilter::Only(names) => names.iter().any(|n| n == id),
+                ToolFilter::Exclude(names) => names.iter().all(|n| n != id),
+            };
+            if matches {
+                if let Some(entry) = TOOL_CATALOG.get_entry(id) {
+                    schemas.push(ToolDefinition {
+                        name: entry.definition.id.clone(),
+                        description: entry.definition.description.clone(),
+                        parameters: entry.json_schema.clone(),
+                    });
+                }
+            }
+        }
 
         // Legacy tools not yet migrated
         for rt in legacy_tools.values() {
             let name = rt.plugin.name();
-            if runtime_tools.contains_key(name) {
+            if Self::has_runtime_schema_source(&runtime_tools, name) {
                 continue;
             }
             let matches = match filter {
@@ -317,17 +368,29 @@ impl ToolRegistry {
         let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(CapabilityPermissionPipeline)));
         let runtime_tools = self.runtime_tools.read().await;
         let legacy_tools = self.tools.read().await;
+        let mut request_scoped_registered = std::collections::HashSet::new();
 
         // 1. Register native RuntimeTools first (they take priority)
         for (_, tool) in runtime_tools.iter() {
             dispatcher.register(tool.clone());
         }
 
-        // 2. Register legacy ToolPlugin tools that have NOT been migrated
+        // 2. Register request-scoped RuntimeTools built from PluginContext.
+        for tool_name in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
+            if runtime_tools.contains_key(*tool_name) {
+                continue;
+            }
+            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &plugin_ctx) {
+                dispatcher.register(tool);
+                request_scoped_registered.insert((*tool_name).to_string());
+            }
+        }
+
+        // 3. Register legacy ToolPlugin tools that have NOT been migrated
         //    (i.e., not already covered by a RuntimeTool with the same name)
         for rt in legacy_tools.values() {
             let name = rt.plugin.name();
-            if !runtime_tools.contains_key(name) {
+            if !runtime_tools.contains_key(name) && !request_scoped_registered.contains(name) {
                 dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
                     rt.plugin.clone(),
                     plugin_ctx.clone(),
@@ -365,69 +428,59 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::network::WebSearchRuntimeTool::new(deps)))
             }
             "browse_navigate" => {
-                ctx.connector_engine.as_ref().map(|engine| {
-                    let deps = builtin::browser::BrowserDeps {
-                        connector_engine: engine.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        storage: ctx.storage.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                    };
-                    Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>
-                })
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "read_page_content" => {
-                ctx.connector_engine.as_ref().map(|engine| {
-                    let deps = builtin::browser::BrowserDeps {
-                        connector_engine: engine.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        storage: ctx.storage.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                    };
-                    Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>
-                })
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "page_execute_js" => {
-                ctx.connector_engine.as_ref().map(|engine| {
-                    let deps = builtin::browser::BrowserDeps {
-                        connector_engine: engine.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        storage: ctx.storage.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                    };
-                    Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>
-                })
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "extract_table_data" => {
-                ctx.connector_engine.as_ref().map(|engine| {
-                    let deps = builtin::browser::BrowserDeps {
-                        connector_engine: engine.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        storage: ctx.storage.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                    };
-                    Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>
-                })
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "extract_with_pagination" => {
-                ctx.connector_engine.as_ref().map(|engine| {
-                    let deps = builtin::browser::BrowserDeps {
-                        connector_engine: engine.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        storage: ctx.storage.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                    };
-                    Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>
-                })
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(deps))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "load_file" => {
                 let deps = builtin::file::LoadFileDeps {

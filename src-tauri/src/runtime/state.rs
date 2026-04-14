@@ -11,6 +11,7 @@ pub struct TurnState {
     pending_assistant_output: String,
     active_tool_call: Option<ToolCallId>,
     cancellation: CancellationToken,
+    executor_backed: bool,
 }
 
 impl TurnState {
@@ -24,6 +25,7 @@ impl TurnState {
             pending_assistant_output: String::new(),
             active_tool_call: None,
             cancellation: CancellationToken::new(),
+            executor_backed: false,
         }
     }
 
@@ -69,5 +71,13 @@ impl TurnState {
 
     pub fn cancellation(&self) -> CancellationToken {
         self.cancellation.clone()
+    }
+
+    pub fn mark_executor_backed(&mut self) {
+        self.executor_backed = true;
+    }
+
+    pub fn executor_backed(&self) -> bool {
+        self.executor_backed
     }
 }

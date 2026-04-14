@@ -811,6 +811,12 @@ impl RuntimeRepositoryFacade {
     ) -> &dyn crate::runtime::store::AuthorizedWorkspaceStore {
         self.authorized_workspace_store.as_ref()
     }
+
+    pub fn clone_authorized_workspace_store(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore> {
+        self.authorized_workspace_store.clone()
+    }
 }
 
 struct FileSessionStore {

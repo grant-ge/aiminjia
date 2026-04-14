@@ -1,0 +1,42 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic: AI小家 — 你的智能工作助手
+  - generic [ref=e5]:
+    - complementary [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - img "AI小家" [ref=e9]
+          - generic [ref=e10]: AI小家
+        - button "👤 选择角色 ▾" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: 👤
+          - generic [ref=e14]: 选择角色
+          - generic [ref=e15]: ▾
+        - button "新对话" [ref=e16] [cursor=pointer]:
+          - img [ref=e17]
+          - text: 新对话
+      - navigation [ref=e19]:
+        - paragraph [ref=e20]: 暂无对话记录
+      - generic [ref=e22]:
+        - generic [ref=e23]: AI小家 v0.0.0
+        - button "设置" [ref=e24] [cursor=pointer]:
+          - img [ref=e25]
+          - text: 设置
+    - main [ref=e27]:
+      - generic [ref=e29]:
+        - generic [ref=e32]:
+          - generic [ref=e33]: 家
+          - heading "你好！我是 AI小家" [level=2] [ref=e34]
+          - paragraph [ref=e35]: 你的智能工作助手
+          - button "💬 通用模式 直接对话，不使用专业技能 →" [ref=e37] [cursor=pointer]:
+            - generic [ref=e38]: 💬
+            - generic [ref=e39]:
+              - text: 通用模式
+              - paragraph [ref=e40]: 直接对话，不使用专业技能
+            - generic [ref=e41]: →
+          - paragraph [ref=e42]: 也可以直接问我任何工作相关问题
+        - generic [ref=e45]:
+          - button "添加文件或本地目录" [ref=e47] [cursor=pointer]:
+            - img [ref=e48]
+          - textbox "随时提问，或上传文件让我分析..." [active] [ref=e50]
+          - button [disabled] [ref=e51]:
+            - img [ref=e52]

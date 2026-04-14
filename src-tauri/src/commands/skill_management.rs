@@ -128,6 +128,41 @@ pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<
     ))
 }
 
+/// Scaffold workflow.toml template written by `init_skill_template`.
+///
+/// Exposed as `pub const` so the audit test can reference the live template
+/// directly — no manual copy-paste to keep in sync.
+pub const SCAFFOLD_WORKFLOW_TOML: &str = r#"[[steps]]
+id = "step0"
+name = "信息采集"
+prompt = "prompts/step0.md"
+precompute = "scripts/step0.py"
+tools_only = ["save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "any"
+
+[[steps]]
+id = "step1"
+name = "分析处理"
+prompt = "prompts/step1.md"
+tools_only = ["execute_python", "export_data"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+tools_on_feedback = ["execute_python", "export_data"]
+max_iterations_feedback = 3
+
+[[steps]]
+id = "step2"
+name = "报告生成"
+prompt = "prompts/step2.md"
+tools_only = ["generate_report", "export_data"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+"#;
+
 /// Create a new skill template directory with scaffolding files.
 #[tauri::command]
 pub async fn init_skill_template(
@@ -177,39 +212,7 @@ trigger_text = ""
     std::fs::write(dir.join("plugin.toml"), plugin_toml).map_err(|e| e.to_string())?;
 
     // workflow.toml
-    let workflow_toml = r#"[[steps]]
-id = "step0"
-name = "信息采集"
-prompt = "prompts/step0.md"
-precompute = "scripts/step0.py"
-tools_only = ["save_analysis_note"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "any"
-
-[[steps]]
-id = "step1"
-name = "分析处理"
-prompt = "prompts/step1.md"
-tools_only = ["execute_python", "export_data"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "confirm"
-
-[steps.tools_on_feedback]
-tools = ["execute_python", "export_data"]
-max_iterations = 15
-
-[[steps]]
-id = "step2"
-name = "报告生成"
-prompt = "prompts/step2.md"
-tools_only = ["generate_report", "export_data"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "confirm"
-"#;
-    std::fs::write(dir.join("workflow.toml"), workflow_toml).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("workflow.toml"), SCAFFOLD_WORKFLOW_TOML).map_err(|e| e.to_string())?;
 
     // prompts/base.md
     std::fs::write(

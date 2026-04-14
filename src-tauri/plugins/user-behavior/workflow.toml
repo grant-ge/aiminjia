@@ -18,10 +18,7 @@ max_iterations = 5
 max_iterations_feedback = 3
 token_budget = 8192
 advance_on = "confirm"
-
-[steps.tools_on_feedback]
-tools = ["execute_python", "export_data"]
-max_iterations = 15
+tools_on_feedback = ["execute_python", "export_data"]
 
 [[steps]]
 id = "step2"
@@ -33,10 +30,7 @@ max_iterations = 5
 max_iterations_feedback = 3
 token_budget = 8192
 advance_on = "confirm"
-
-[steps.tools_on_feedback]
-tools = ["execute_python", "export_data"]
-max_iterations = 15
+tools_on_feedback = ["execute_python", "export_data"]
 
 [[steps]]
 id = "step3"

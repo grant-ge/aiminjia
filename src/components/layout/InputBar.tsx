@@ -8,7 +8,9 @@ import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useChat } from '@/hooks/useChat'
+import { useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
+import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
 import type { PendingFileInfo } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
 
@@ -28,9 +30,13 @@ export function InputBar() {
   const isComposingRef = useRef(false)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFile } = useFileUpload()
+  const { isAuthorizingDirectory, selectAndAuthorizeDirectory } = useWorkspaceAuthorization()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const accentColor = useBrandingStore((s) => s.accentColor)
+  const { workspace: authorizedWorkspace } = useAuthorizedWorkspace(activeConversationId)
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false)
 
   // Auto-focus textarea when switching conversations or when streaming completes
   useEffect(() => {
@@ -49,6 +55,19 @@ export function InputBar() {
       el.style.height = `${Math.min(el.scrollHeight, 160)}px`
     }
   }, [input])
+
+  useEffect(() => {
+    if (!showAttachmentMenu) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!attachmentMenuRef.current?.contains(event.target as Node)) {
+        setShowAttachmentMenu(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handlePointerDown)
+    return () => window.removeEventListener('mousedown', handlePointerDown)
+  }, [showAttachmentMenu])
 
   const handleSend = async () => {
     const trimmed = input.trim()
@@ -102,11 +121,19 @@ export function InputBar() {
     }
   }
 
-  const handleUploadClick = async () => {
+  const handleUploadFileClick = async () => {
+    setShowAttachmentMenu(false)
     const result = await selectAndUploadFile()
     if (result) {
       setPendingFiles((prev) => [...prev, result])
     }
+  }
+
+  const handleConnectDirectoryClick = async () => {
+    setShowAttachmentMenu(false)
+    await selectAndAuthorizeDirectory(
+      authorizedWorkspace?.rootPath,
+    )
   }
 
   const removeFile = (id: string) => {
@@ -115,6 +142,7 @@ export function InputBar() {
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
+  const attachmentBusy = isUploading || isAuthorizingDirectory
 
   return (
     <div
@@ -123,6 +151,39 @@ export function InputBar() {
         background: `linear-gradient(transparent, var(--color-bg-main) 30%)`,
       }}
     >
+      {authorizedWorkspace && (
+        <div className="mx-auto mb-3 flex max-w-[860px] items-center justify-between gap-3 rounded-xl px-4 py-2"
+          style={{
+            background: 'var(--color-primary-subtle)',
+            border: '1px solid var(--color-primary-muted)',
+          }}
+        >
+          <div className="min-w-0">
+            <div
+              className="truncate text-sm font-medium"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
+              已连接本地目录：{authorizedWorkspace.displayName}
+            </div>
+            <div
+              className="truncate text-xs"
+              style={{ color: 'var(--color-text-muted)' }}
+              title={authorizedWorkspace.rootPath}
+            >
+              AI 当前可直接读取该目录，无需先上传文件
+            </div>
+          </div>
+          <div
+            className="shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]"
+            style={{
+              color: 'var(--color-primary)',
+              background: 'var(--color-bg-input)',
+            }}
+          >
+            workspace on
+          </div>
+        </div>
+      )}
       <div
         className="mx-auto max-w-[860px] rounded-xl"
         style={{
@@ -182,34 +243,79 @@ export function InputBar() {
         {/* Input row */}
         <div className="flex items-end gap-2 px-4 py-3">
           {/* Upload button */}
-          <button
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-none outline-none transition-all duration-150"
-            style={{
-              color: isUploading ? 'var(--color-text-secondary)' : 'var(--color-text-muted)',
-              background: 'transparent',
-            }}
-            title={t('inputBar.uploadFile')}
-            disabled={isUploading}
-            onClick={handleUploadClick}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--color-bg-card-hover)'
-              e.currentTarget.style.color = 'var(--color-text-secondary)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = isUploading ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'
-            }}
-          >
-            {isUploading ? (
-              <svg className="h-[18px] w-[18px] animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10" strokeDasharray="50" strokeDashoffset="20" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z" />
-              </svg>
+          <div className="relative shrink-0" ref={attachmentMenuRef}>
+            <button
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-none outline-none transition-all duration-150"
+              style={{
+                color: attachmentBusy ? 'var(--color-text-secondary)' : 'var(--color-text-muted)',
+                background: showAttachmentMenu ? 'var(--color-bg-card-hover)' : 'transparent',
+              }}
+              title={t('inputBar.attachData')}
+              aria-label={t('inputBar.attachData')}
+              disabled={attachmentBusy}
+              onClick={() => setShowAttachmentMenu((prev) => !prev)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--color-bg-card-hover)'
+                e.currentTarget.style.color = 'var(--color-text-secondary)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = showAttachmentMenu ? 'var(--color-bg-card-hover)' : 'transparent'
+                e.currentTarget.style.color = attachmentBusy ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'
+              }}
+            >
+              {attachmentBusy ? (
+                <svg className="h-[18px] w-[18px] animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" strokeDasharray="50" strokeDashoffset="20" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z" />
+                </svg>
+              )}
+            </button>
+
+            {showAttachmentMenu && (
+              <div
+                className="absolute bottom-11 left-0 z-20 min-w-[220px] rounded-xl border p-2 shadow-lg"
+                style={{
+                  borderColor: 'var(--color-border-secondary)',
+                  background: 'var(--color-bg-input)',
+                  boxShadow: 'var(--shadow-card)',
+                }}
+              >
+                <button
+                  className="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--color-text-primary)',
+                  }}
+                  onClick={handleUploadFileClick}
+                >
+                  <span className="text-sm font-medium">{t('inputBar.uploadFile')}</span>
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    继续使用复制上传模式
+                  </span>
+                </button>
+                <button
+                  className="mt-1 flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors"
+                  style={{
+                    background: 'var(--color-primary-subtle)',
+                    border: '1px solid var(--color-primary-muted)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                  onClick={handleConnectDirectoryClick}
+                >
+                  <span className="text-sm font-medium">
+                    {authorizedWorkspace ? '更换本地目录（不复制）' : '连接本地目录（不复制）'}
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    像 Claude Code 一样直接授权目录访问，不先复制到工作目录
+                  </span>
+                </button>
+              </div>
             )}
-          </button>
+          </div>
 
           {/* Multi-line text input */}
           <textarea

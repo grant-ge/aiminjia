@@ -3,6 +3,55 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::workspace::WorkspaceManager;
 use std::sync::Arc;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
+
+#[tauri::command]
+pub async fn pick_local_directory(
+    app: tauri::AppHandle,
+    default_path: Option<String>,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    log::info!(
+        "[workspace-auth] pick_local_directory requested: default_path={:?} title={:?}",
+        default_path,
+        title
+    );
+
+    let app_handle = app.clone();
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app_handle
+            .dialog()
+            .file()
+            .set_title(title.unwrap_or_else(|| "选择本地工作目录".to_string()))
+            .set_can_create_directories(true);
+
+        if let Some(path) = default_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            dialog = dialog.set_directory(path);
+        } else if let Some(home) = dirs::home_dir() {
+            dialog = dialog.set_directory(home);
+        }
+
+        dialog.blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let selected = selected
+        .map(|path| path.into_path().map_err(|e| e.to_string()))
+        .transpose()?
+        .map(|path| path.to_string_lossy().to_string());
+
+    log::info!(
+        "[workspace-auth] pick_local_directory result: selected={:?}",
+        selected
+    );
+
+    Ok(selected)
+}
 
 /// Select workspace directory.
 /// Validates the path, ensures directory structure, and saves to settings.
@@ -140,6 +189,11 @@ pub async fn authorize_local_directory(
     path: String,
     session_id: String,
 ) -> Result<serde_json::Value, String> {
+    log::info!(
+        "[workspace-auth] authorize_local_directory requested: session_id={} path={}",
+        session_id,
+        path
+    );
     // canonicalize：解析符号链接、消除 ..，得到真实绝对路径
     let root = std::path::PathBuf::from(&path)
         .canonicalize()
@@ -164,6 +218,11 @@ pub async fn authorize_local_directory(
         .authorized_workspace_store()
         .replace_for_session(&ws)
         .map_err(|e| e.to_string())?;
+    log::info!(
+        "[workspace-auth] authorize_local_directory succeeded: session_id={} root={}",
+        ws.session_id.as_str(),
+        ws.root_path.display()
+    );
     Ok(serde_json::json!({
         "id": ws.id,
         "rootPath": root.to_string_lossy(),
@@ -178,11 +237,16 @@ pub async fn get_authorized_workspace(
     session_id: String,
 ) -> Result<Option<serde_json::Value>, String> {
     let sid = crate::runtime::ids::SessionId::new(session_id);
-    match facade
+    let current = facade
         .authorized_workspace_store()
         .get_current_for_session(&sid)
-        .map_err(|e| e.to_string())?
-    {
+        .map_err(|e| e.to_string())?;
+    log::info!(
+        "[workspace-auth] get_authorized_workspace: session_id={} present={}",
+        sid.as_str(),
+        current.is_some()
+    );
+    match current {
         Some(ws) => Ok(Some(serde_json::json!({
             "id": ws.id,
             "rootPath": ws.root_path.to_string_lossy(),
@@ -199,10 +263,19 @@ pub async fn revoke_authorized_workspace(
     session_id: String,
 ) -> Result<(), String> {
     let sid = crate::runtime::ids::SessionId::new(session_id);
+    log::info!(
+        "[workspace-auth] revoke_authorized_workspace requested: session_id={}",
+        sid.as_str()
+    );
     facade
         .authorized_workspace_store()
         .clear_for_session(&sid)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log::info!(
+        "[workspace-auth] revoke_authorized_workspace succeeded: session_id={}",
+        sid.as_str()
+    );
+    Ok(())
 }
 
 /// Open the workspace root directory in the system file manager.

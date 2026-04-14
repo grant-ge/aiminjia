@@ -810,6 +810,28 @@ mod tests {
     }
 
     #[test]
+    fn test_for_workspace_with_authorized_adds_read_only_path() {
+        let workspace = PathBuf::from("/tmp/workspace");
+        let authorized = PathBuf::from("/tmp/external-data");
+        let config =
+            SandboxConfig::for_workspace_with_authorized(&workspace, vec![authorized.clone()]);
+
+        assert!(
+            config.allowed_read_paths.contains(&authorized),
+            "authorized workspace should be readable"
+        );
+        assert!(
+            !config.allowed_write_paths.contains(&authorized),
+            "authorized workspace must not become writable"
+        );
+        assert_eq!(
+            config.allowed_write_paths.len(),
+            7,
+            "authorized workspace should not expand write scope"
+        );
+    }
+
+    #[test]
     fn test_preamble_contains_paths() {
         let mut config = SandboxConfig::default();
         config.allowed_read_paths = vec![PathBuf::from("/tmp/test")];

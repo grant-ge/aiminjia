@@ -12,11 +12,15 @@
    - 当前所有 blueprint / plans / reviews 的状态总表
    - 区分哪些已冻结、哪些已关闭、哪些仍是有效入口
 
-3. [reviews/2026-04-12-front-end-event-integration-review.md](./reviews/2026-04-12-front-end-event-integration-review.md)
+3. [2026-04-12-runtime-gap-problem-statement.md](./2026-04-12-runtime-gap-problem-statement.md)
+   - 当前新收敛出的 4 个专项问题定义
+   - 包含问题、目标、验收标准，供后续 Claude 出专项计划使用
+
+4. [reviews/2026-04-12-front-end-event-integration-review.md](./reviews/2026-04-12-front-end-event-integration-review.md)
    - 前后端事件联调 review
    - `task:status-changed` 与 `agent:idle scope` 验收记录
 
-4. [reviews/2026-04-10-runtime-first-strict-tdd-review.md](./reviews/2026-04-10-runtime-first-strict-tdd-review.md)
+5. [reviews/2026-04-10-runtime-first-strict-tdd-review.md](./reviews/2026-04-10-runtime-first-strict-tdd-review.md)
    - runtime-first 核心严格 TDD review 历史记录
    - 适合回看当时的问题来源与关闭背景
 

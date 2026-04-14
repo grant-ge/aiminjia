@@ -12,6 +12,7 @@ import {
   updateSettings,
   validateApiKey,
   selectWorkspace,
+  pickLocalDirectory,
   getAllProviderKeys,
   updateAllProviderKeys,
   getConfiguredProviders,
@@ -596,9 +597,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 className="shrink-0"
                 onClick={async () => {
                   try {
-                    const { open } = await import('@tauri-apps/plugin-dialog')
-                    const selected = await open({ directory: true, multiple: false })
-                    if (selected && typeof selected === 'string') {
+                    const selected = await pickLocalDirectory({
+                      defaultPath: settings.workspacePath || undefined,
+                      title: t('settings.general.workspacePickerTitle'),
+                    })
+                    if (selected) {
                       settings.setWorkspacePath(selected)
                       await selectWorkspace(selected)
                     }
@@ -624,6 +627,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 {t('settings.general.openDir')}
               </Button>
             </div>
+            <p
+              className="mt-2 text-xs"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {t('settings.general.workspaceHint')}
+            </p>
           </FormGroup>
 
           {/* System Info */}
@@ -713,14 +722,29 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </div>
 
           {/* Authorized local workspace */}
-          {activeConversationId && (
-            <div
-              className="mt-6 border-t pt-4"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
+          <div
+            className="mt-6 border-t pt-4"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            {activeConversationId ? (
               <WorkspaceAuthPanel sessionId={activeConversationId} />
-            </div>
-          )}
+            ) : (
+              <div className="space-y-2">
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  本地工作目录
+                </div>
+                <p
+                  className="text-xs"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  先创建或选中一个会话，再为该会话授权本地目录。授权会绑定到当前会话，随后 AI 才会在聊天中暴露本地目录读取能力。
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

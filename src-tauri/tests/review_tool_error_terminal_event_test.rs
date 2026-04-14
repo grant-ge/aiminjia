@@ -1,8 +1,16 @@
 use std::sync::Arc;
 
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use app_lib::runtime::event_bus::RuntimeEventBus;
+use app_lib::runtime::identity::IdentityMapping;
+use app_lib::runtime::ids::RunId;
+use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
 };
+use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
+use app_lib::transport::testing::RecordingRuntimeHost;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -41,5 +49,49 @@ async fn review_failing_tool_should_still_emit_terminal_completed_event() {
         events,
         vec!["tool:executing".to_string(), "tool:completed".to_string()],
         "tool error path must still emit a terminal completion event so UI/runtime can clear in-flight state"
+    );
+}
+
+#[tokio::test]
+async fn review_runtime_tool_failure_maps_tool_completed_success_false() {
+    let dispatcher = Arc::new(ToolDispatcher::allow_all());
+    dispatcher.register(Arc::new(FailingRuntimeTool));
+
+    let engine = QueryEngine::with_dispatcher(dispatcher);
+    let host = RecordingRuntimeHost::new();
+    let bus = RuntimeEventBus::new();
+    bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
+
+    let mapping = IdentityMapping::from_legacy_conversation_id("conv-tool-error".to_string());
+    let turn = TurnState::new(mapping, RunId::new("run-tool-error"), "fail".to_string());
+
+    let outcome = engine
+        .run_tool_call_with_bus(
+            &turn,
+            &bus,
+            RuntimeToolCallRequest {
+                tool_call_id: "tool-call-1".to_string(),
+                tool_name: "failing_runtime_tool".to_string(),
+                args: json!({"input": "x"}),
+                purpose: Some("review error payload".to_string()),
+            },
+        )
+        .await
+        .expect("runtime tool round should convert tool failure into typed outcome");
+
+    assert!(outcome.is_error, "failing tool must surface is_error=true");
+
+    let trace = host.trace();
+    let completed = trace
+        .events
+        .iter()
+        .find(|event| event.name == "tool:completed")
+        .expect("runtime bus should emit tool:completed to host");
+
+    assert_eq!(
+        completed.payload.get("success").and_then(|v| v.as_bool()),
+        Some(false),
+        "tool:completed.success must be false when runtime tool execution fails; payload={}",
+        completed.payload
     );
 }

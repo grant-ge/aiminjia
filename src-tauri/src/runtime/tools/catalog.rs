@@ -227,7 +227,7 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new("execute_python",
             "执行 Python 代码进行数据分析和文件处理。\
             注意：这是 Power 工具，有 session 状态和文件写出副作用。\
-            建议先用 load_file 或 list_directory 准备数据再调用。")
+            建议先准备数据：已上传文件先用 load_file，已连接本地目录先用 list_directory / search_files / read_workspace_file。")
             .with_kind(ToolKind::Power)
             .with_capability_scope(["python:exec", "workspace:write"]),
         json!({

@@ -427,6 +427,26 @@ export interface AuthorizedWorkspaceRef {
   displayName: string
 }
 
+interface PickLocalDirectoryOptions {
+  defaultPath?: string
+  title?: string
+}
+
+/**
+ * Open the native folder picker and return the selected directory path.
+ *
+ * @param options - Optional initial directory and custom title
+ * @returns Absolute path string, or null when the user cancels
+ */
+export function pickLocalDirectory(
+  options?: PickLocalDirectoryOptions,
+): Promise<string | null> {
+  return invoke<string | null>('pick_local_directory', {
+    defaultPath: options?.defaultPath ?? null,
+    title: options?.title ?? null,
+  })
+}
+
 /**
  * Authorize a local directory for tool access within a session.
  * Replaces any previously authorized directory for the same session.

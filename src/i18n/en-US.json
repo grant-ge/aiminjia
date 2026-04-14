@@ -79,6 +79,7 @@
   },
 
   "inputBar": {
+    "attachData": "Add file or local directory",
     "uploadFile": "Upload file (Excel/Word/PDF)",
     "placeholderWithFile": "Add a note (optional), then press Enter to send...",
     "placeholder": "Ask anything, or upload a file for analysis...",
@@ -248,10 +249,12 @@
     "general": {
       "language": "Language",
       "languageDesc": "Select the display language for the interface",
-      "workspace": "Workspace",
-      "workspaceDesc": "Agent stores analysis files, reports, and temp files in this directory",
-      "selectDir": "Browse",
-      "openDir": "Open",
+      "workspace": "Internal Sandbox Directory",
+      "workspaceDesc": "Lotus stores generated reports, analysis artifacts, and temp files here; this is not the main entry for connecting your local folders",
+      "workspacePickerTitle": "Select Internal Sandbox Directory",
+      "workspaceHint": "If you want AI to read a local folder directly, use the paperclip in the chat input and choose \"Connect local directory (no copy)\".",
+      "selectDir": "Choose Sandbox Dir",
+      "openDir": "Open Sandbox Dir",
       "systemInfo": "System Info",
       "logs": "Logs:",
       "openLogs": "Open Logs Folder",

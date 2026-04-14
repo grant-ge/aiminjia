@@ -4,6 +4,7 @@
 
 - `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-runtime-first-final-acceptance-summary.md`
 - `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-review-plan-status-matrix.md`
+- `/Users/a20250311/IdeaProjects/lotus-app/docs/2026-04-12-runtime-gap-problem-statement.md`
 - `/Users/a20250311/IdeaProjects/lotus-app/docs/reviews/2026-04-12-front-end-event-integration-review.md`
 
 ## 总计划
@@ -18,6 +19,12 @@
 
 ## 专项联调计划
 - [2026-04-12-front-end-event-integration-plan.md](./2026-04-12-front-end-event-integration-plan.md)
+
+## 架构专项（2026-04-13 启动）
+- [2026-04-12-workspace-first-file-runtime-plan.md](./2026-04-12-workspace-first-file-runtime-plan.md) — 专项 1：Workspace-First 文件能力模型
+- [2026-04-13-atomic-tool-runtime-plan.md](./2026-04-13-atomic-tool-runtime-plan.md) — 专项 2：Atomic Tool 工具体系（A1-A5）
+  - 问题定义：`docs/2026-04-13-atomic-tool-problem-statement.md`
+- [2026-04-13-chat-runtime-first-closure-plan.md](./2026-04-13-chat-runtime-first-closure-plan.md) — 专项 4：聊天主链路 Runtime-First 收口
 
 ## 阅读顺序
 1. 先看总蓝图：`/Users/a20250311/IdeaProjects/lotus-app/docs/architecture-blueprint.md`

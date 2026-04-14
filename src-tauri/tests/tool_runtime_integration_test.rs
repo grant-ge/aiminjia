@@ -64,3 +64,89 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     );
 }
 
+// ── Workspace-First: authorized workspace injection ──────────────────────────
+
+#[tokio::test]
+async fn query_engine_injects_authorized_workspace_into_capability_context() {
+    use app_lib::runtime::event_bus::RuntimeEventBus;
+    use app_lib::runtime::identity::IdentityMapping;
+    use app_lib::runtime::ids::RunId;
+    use app_lib::runtime::state::TurnState;
+    use app_lib::runtime::store::AuthorizedWorkspaceRef;
+    use app_lib::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher,
+        ToolError, ToolExecutionContext, ToolResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::Value;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
+
+    struct CaptureAuthorizedWorkspaceTool {
+        seen_root: Arc<Mutex<Option<PathBuf>>>,
+    }
+
+    #[async_trait]
+    impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("capture_authorized_workspace", "Capture capability context")
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            let seen = ctx
+                .capability
+                .as_ref()
+                .and_then(|cap| cap.storage.as_ref())
+                .and_then(|storage| storage.authorized_workspace.as_ref())
+                .map(|aw| aw.root_path.clone());
+            *self.seen_root.lock().unwrap() = seen;
+            Ok(ToolResult {
+                tool_name: "capture_authorized_workspace".to_string(),
+                content: "ok".to_string(),
+                data: None,
+            })
+        }
+    }
+
+    let internal_workspace = TempDir::new().unwrap();
+    let authorized_workspace = TempDir::new().unwrap();
+    let seen_root = Arc::new(Mutex::new(None));
+
+    let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
+    dispatcher.register(Arc::new(CaptureAuthorizedWorkspaceTool {
+        seen_root: seen_root.clone(),
+    }));
+
+    let engine = QueryEngine::with_dispatcher(dispatcher)
+        .with_workspace_path(internal_workspace.path().to_path_buf())
+        .with_authorized_workspace(Some(AuthorizedWorkspaceRef {
+            id: "aw-1".to_string(),
+            root_path: authorized_workspace.path().to_path_buf(),
+            display_name: "authorized".to_string(),
+        }));
+
+    let mapping = IdentityMapping::from_legacy_conversation_id("conv-authorized".to_string());
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("run-authorized"),
+        "capture authorized workspace".to_string(),
+    );
+    let bus = RuntimeEventBus::new();
+
+    engine
+        .run_tool_with_bus(&turn, &bus, "capture_authorized_workspace")
+        .await
+        .unwrap();
+
+    let captured = seen_root.lock().unwrap().clone();
+    assert_eq!(
+        captured,
+        Some(authorized_workspace.path().to_path_buf()),
+        "QueryEngine should inject authorized_workspace into capability context"
+    );
+}
