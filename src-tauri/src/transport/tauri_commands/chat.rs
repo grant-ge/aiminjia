@@ -162,6 +162,13 @@ impl TauriChatCommandAdapter {
             runtime = runtime.with_authorized_workspace_store(
                 facade.inner().clone_authorized_workspace_store(),
             );
+        } else {
+            log::warn!(
+                "[TauriChatCommandAdapter] RuntimeRepositoryFacade not registered when \
+                 chat adapter was constructed. authorized_workspace_store = None. \
+                 Check initialization order in lib.rs — facade must be managed before \
+                 TauriChatCommandAdapter::new() is called."
+            );
         }
         Self { runtime, services }
     }
