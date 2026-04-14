@@ -149,31 +149,50 @@ _orig_path = os.path.join(_ANALYSIS_DIR, '_original.pkl')
 if '_df' in dir() and isinstance(_df, pd.DataFrame) and not os.path.exists(_orig_path):
     _pkl.dump(_df.copy(), open(_orig_path + '.tmp', 'wb'))
     os.replace(_orig_path + '.tmp', _orig_path)
+    _ckpt_sign(_orig_path)
 
 # Layer 3: Restore working snapshot (overrides file-loaded _df)
+# HMAC-verified before loading to prevent pickle RCE from tampered checkpoint files.
 _snap_path = os.path.join(_ANALYSIS_DIR, '_step_df.pkl')
 if os.path.exists(_snap_path):
-    _df = _pkl.load(open(_snap_path, 'rb'))
+    if _ckpt_verify(_snap_path):
+        _df = _pkl.load(open(_snap_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_path}} — skipped', file=_sys.stderr)
 
 # Restore _dfs snapshot if exists
 _snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
 if os.path.exists(_snap_dfs_path):
-    _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    if _ckpt_verify(_snap_dfs_path):
+        _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_dfs_path}} — skipped', file=_sys.stderr)
 
 # Restore user-created variables from previous execute_python calls
 # (e.g. col_map, results, _df_final — anything except _df/_dfs which have dedicated snapshots)
 _uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
 if os.path.exists(_uv_path):
-    try:
-        for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
-            globals()[_k] = _v
-        del _k, _v
-    except Exception:
-        pass
+    if _ckpt_verify(_uv_path):
+        try:
+            for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
+                globals()[_k] = _v
+            del _k, _v
+        except Exception:
+            pass
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_uv_path}} — skipped', file=_sys.stderr)
 
 # _df_raw: read-only reference to original data (always available)
 if os.path.exists(_orig_path):
-    _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    if _ckpt_verify(_orig_path):
+        _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_orig_path}} — skipped', file=_sys.stderr)
+        _df_raw = None
 else:
     _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
 
@@ -207,14 +226,17 @@ try:
         _pkl.dump(_df, open(os.path.join(_snap_dir, '_step_df.pkl.tmp'), 'wb'))
         os.replace(os.path.join(_snap_dir, '_step_df.pkl.tmp'),
                    os.path.join(_snap_dir, '_step_df.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_step_df.pkl'))
         # Layer 2: Step snapshot (for per-step rollback)
         _step_snap = os.path.join(_snap_dir, f'_step{{_CURRENT_STEP}}_df.pkl')
         _pkl.dump(_df, open(_step_snap + '.tmp', 'wb'))
         os.replace(_step_snap + '.tmp', _step_snap)
+        _ckpt_sign(_step_snap)
     if '_dfs' in dir() and isinstance(_dfs, dict):
         _pkl.dump(_dfs, open(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
         os.replace(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
                    os.path.join(_snap_dir, '_step_dfs.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_step_dfs.pkl'))
     # Auto-save user-created variables (DataFrame, dict, list, etc.)
     # so they persist across execute_python calls in the same conversation.
     # Uses runtime snapshot taken before user code ran — no manual list to maintain.
@@ -237,6 +259,7 @@ try:
         _pkl.dump(_user_vars, open(os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
         os.replace(os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
                    os.path.join(_snap_dir, '_user_vars.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_user_vars.pkl'))
 except Exception as _e:
     import sys as _sys
     print(f"[WARN] DataFrame snapshot save failed: {{_e}}", file=_sys.stderr)

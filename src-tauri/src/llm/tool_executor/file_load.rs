@@ -1024,30 +1024,49 @@ _orig_path = os.path.join(_ANALYSIS_DIR, '_original.pkl')
 if '_df' in dir() and isinstance(_df, pd.DataFrame) and not os.path.exists(_orig_path):
     _pkl.dump(_df.copy(), open(_orig_path + '.tmp', 'wb'))
     os.replace(_orig_path + '.tmp', _orig_path)
+    _ckpt_sign(_orig_path)
 
 # Layer 3: Restore working snapshot (overrides file-loaded _df)
+# HMAC-verified before loading to prevent pickle RCE from tampered checkpoint files.
 _snap_path = os.path.join(_ANALYSIS_DIR, '_step_df.pkl')
 if os.path.exists(_snap_path):
-    _df = _pkl.load(open(_snap_path, 'rb'))
+    if _ckpt_verify(_snap_path):
+        _df = _pkl.load(open(_snap_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_path}} — skipped', file=_sys.stderr)
 
 # Restore _dfs snapshot if exists
 _snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
 if os.path.exists(_snap_dfs_path):
-    _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    if _ckpt_verify(_snap_dfs_path):
+        _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_dfs_path}} — skipped', file=_sys.stderr)
 
 # Restore user-created variables from previous execute_python calls
 _uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
 if os.path.exists(_uv_path):
-    try:
-        for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
-            globals()[_k] = _v
-        del _k, _v
-    except Exception:
-        pass
+    if _ckpt_verify(_uv_path):
+        try:
+            for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
+                globals()[_k] = _v
+            del _k, _v
+        except Exception:
+            pass
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_uv_path}} — skipped', file=_sys.stderr)
 
 # _df_raw: read-only reference to original data (always available)
 if os.path.exists(_orig_path):
-    _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    if _ckpt_verify(_orig_path):
+        _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_orig_path}} — skipped', file=_sys.stderr)
+        _df_raw = None
 else:
     _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
 

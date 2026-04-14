@@ -285,15 +285,90 @@ def _safe_open(file, mode='r', *args, **kwargs):
 builtins.open = _safe_open
 "#;
 
-        // Part 4: Utility functions (static — no Rust format! needed)
+        // Part 4: Checkpoint HMAC helpers (static — no Rust format! needed)
+        let checkpoint_hmac = CHECKPOINT_HMAC_HELPERS;
+
+        // Part 5: Utility functions (static — no Rust format! needed)
         let utilities = UTILITY_FUNCTIONS;
 
         format!(
-            "{}\n{}\n{}\n{}",
-            basic_setup, trusted_imports, file_write_hook, utilities
+            "{}\n{}\n{}\n{}\n{}",
+            basic_setup, trusted_imports, file_write_hook, checkpoint_hmac, utilities
         )
     }
 }
+
+/// Checkpoint HMAC helpers — injected into every sandbox execution.
+///
+/// Provides `_ckpt_sign(pkl_path)` and `_ckpt_verify(pkl_path)` so that
+/// checkpoint pickle files are protected by an HMAC-SHA256 signature.
+/// The per-workspace secret is auto-generated on first use and stored in
+/// `temp/_checkpoint.secret` (outside the user-writable `uploads/` dir).
+///
+/// Static string (not processed by `format!`) so Python f-strings work.
+const CHECKPOINT_HMAC_HELPERS: &str = r###"
+# ============================================================
+# Checkpoint HMAC helpers (P0/PY3 — pickle RCE mitigation)
+# ============================================================
+import hmac as _hmac_mod
+import hashlib as _hashlib_mod
+
+def _ckpt_secret() -> bytes:
+    """Load (or generate) the per-workspace HMAC secret from temp/_checkpoint.secret."""
+    _secret_path = os.path.join(os.getcwd(), 'temp', '_checkpoint.secret')
+    if os.path.exists(_secret_path):
+        try:
+            with _original_open(_secret_path, 'rb') as _sf:
+                _s = _sf.read().strip()
+            if len(_s) >= 32:
+                return _s
+        except Exception:
+            pass
+    # Generate a new 32-byte random secret and persist it
+    import binascii as _binascii
+    _new_secret = _binascii.hexlify(os.urandom(32))
+    try:
+        os.makedirs(os.path.join(os.getcwd(), 'temp'), exist_ok=True)
+        with _original_open(_secret_path, 'wb') as _sf:
+            _sf.write(_new_secret)
+    except Exception:
+        pass
+    return _new_secret
+
+def _ckpt_sign(pkl_path: str) -> None:
+    """Write an HMAC-SHA256 signature file alongside the given .pkl file."""
+    try:
+        _secret = _ckpt_secret()
+        with _original_open(pkl_path, 'rb') as _f:
+            _data = _f.read()
+        _sig = _hmac_mod.new(_secret, _data, _hashlib_mod.sha256).hexdigest()
+        _sig_path = pkl_path + '.sig'
+        with _original_open(_sig_path + '.tmp', 'w') as _sf:
+            _sf.write(_sig)
+        os.replace(_sig_path + '.tmp', _sig_path)
+    except Exception as _e:
+        import sys as _sys
+        print(f'[WARN] _ckpt_sign failed for {pkl_path}: {_e}', file=_sys.stderr)
+
+def _ckpt_verify(pkl_path: str) -> bool:
+    """
+    Verify the HMAC-SHA256 signature for the given .pkl file.
+    Returns True if valid, False if missing or tampered.
+    """
+    _sig_path = pkl_path + '.sig'
+    if not os.path.exists(_sig_path):
+        return False
+    try:
+        _secret = _ckpt_secret()
+        with _original_open(pkl_path, 'rb') as _f:
+            _data = _f.read()
+        with _original_open(_sig_path, 'r') as _sf:
+            _expected = _sf.read().strip()
+        _actual = _hmac_mod.new(_secret, _data, _hashlib_mod.sha256).hexdigest()
+        return _hmac_mod.compare_digest(_actual, _expected)
+    except Exception:
+        return False
+"###;
 
 /// Pre-loaded package imports (saves ~2-3s cold start per execution).
 ///

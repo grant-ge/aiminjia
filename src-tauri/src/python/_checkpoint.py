@@ -10,12 +10,14 @@ if '_df' in dir() and hasattr(_df, 'to_pickle'):
     _pkl.dump(_df, open(_os.path.join(_snap_dir, '_step_df.pkl.tmp'), 'wb'))
     _os.replace(_os.path.join(_snap_dir, '_step_df.pkl.tmp'),
                 _os.path.join(_snap_dir, '_step_df.pkl'))
+    _ckpt_sign(_os.path.join(_snap_dir, '_step_df.pkl'))
 
 # Save _dfs dict
 if '_dfs' in dir() and isinstance(_dfs, dict):
     _pkl.dump(_dfs, open(_os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
     _os.replace(_os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
                 _os.path.join(_snap_dir, '_step_dfs.pkl'))
+    _ckpt_sign(_os.path.join(_snap_dir, '_step_dfs.pkl'))
 
 # Save user variables
 _SYS_VARS = {
@@ -41,3 +43,4 @@ if _user_vars:
     _pkl.dump(_user_vars, open(_os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
     _os.replace(_os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
                 _os.path.join(_snap_dir, '_user_vars.pkl'))
+    _ckpt_sign(_os.path.join(_snap_dir, '_user_vars.pkl'))
