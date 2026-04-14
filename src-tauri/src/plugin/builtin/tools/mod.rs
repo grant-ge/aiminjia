@@ -23,6 +23,11 @@ pub mod browse_and_extract;
 pub mod browse_data;
 pub mod extract_table_data;
 pub mod extract_with_pagination;
+// Skill-smith — conversational skill creation (Phase 11 M3.1)
+pub mod skill_smith_create_draft;
+pub mod skill_smith_write_file;
+pub mod skill_smith_validate;
+pub mod skill_smith_dry_run;
 
 use std::sync::Arc;
 use crate::plugin::ToolRegistry;
@@ -53,6 +58,11 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(browse_data::BrowseDataTool),
         Arc::new(extract_table_data::ExtractTableDataTool),
         Arc::new(extract_with_pagination::ExtractWithPaginationTool),
+        // Skill-smith (Phase 11 M3.1)
+        Arc::new(skill_smith_create_draft::SkillSmithCreateDraftTool),
+        Arc::new(skill_smith_write_file::SkillSmithWriteFileTool),
+        Arc::new(skill_smith_validate::SkillSmithValidateTool),
+        Arc::new(skill_smith_dry_run::SkillSmithDryRunTool),
     ];
 
     for tool in tools {

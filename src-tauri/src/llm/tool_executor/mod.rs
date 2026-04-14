@@ -16,6 +16,7 @@ mod progress;
 mod slides;
 mod memory;
 mod internal_system;
+pub(crate) mod skill_smith;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
