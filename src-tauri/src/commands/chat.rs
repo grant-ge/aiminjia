@@ -210,7 +210,10 @@ pub mod testsupport {
             authorized_workspace,
         };
 
-        let output = tool_registry.execute(tool_name, &plugin_ctx, input).await?;
+        let output = tool_registry.execute(tool_name, &plugin_ctx, input).await
+            // FIXME(S6): AskRequired from permission pipeline is treated as an error
+            // in the test-support path. Wire up permission-request UI flow in S6.
+            ?;
         let trace = WorkspaceFirstToolTrace {
             visible_tool_names: visible_tool_defs.into_iter().map(|def| def.name).collect(),
             tool_output: output.content,

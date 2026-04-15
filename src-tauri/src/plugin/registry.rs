@@ -324,11 +324,8 @@ impl ToolRegistry {
                         message
                     )));
                 }
-                PermissionDecision::Ask { message, .. } => {
-                    return Err(ToolError::ExecutionFailed(format!(
-                        "Permission denied: {}",
-                        message
-                    )));
+                decision @ PermissionDecision::Ask { .. } => {
+                    return Err(ToolError::AskRequired(decision));
                 }
             }
 
@@ -350,7 +347,11 @@ impl ToolRegistry {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("Unknown tool: {}", name)))?;
             rt.plugin.clone() // Arc::clone is cheap — release lock before executing
         };
-        let dispatcher = ToolDispatcher::new(Arc::new(crate::runtime::tools::AllowAllPermissionPipeline));
+        let pipeline: Arc<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
+            Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
+            None => Arc::new(CapabilityPermissionPipeline),
+        };
+        let dispatcher = ToolDispatcher::new(pipeline);
         dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
             plugin,
             ctx.clone(),
@@ -372,10 +373,10 @@ impl ToolRegistry {
             crate::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => {
                 (result.content, result.data)
             }
-            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
-                // AllowAllPermissionPipeline never returns Ask, so this is unreachable.
-                // Guard defensively so the match is exhaustive.
-                unreachable!("AllowAllPermissionPipeline should never return Ask")
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
+                // Legacy path: surface Ask semantics to the caller.
+                // Callers that cannot show a UI prompt should treat this as deny.
+                return Err(ToolError::AskRequired(decision));
             }
         };
         let mut output = ToolOutput::success(content);

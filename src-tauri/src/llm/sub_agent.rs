@@ -328,6 +328,24 @@ pub async fn run_sub_agent(
 
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, content));
                 }
+                Err(crate::plugin::tool_trait::ToolError::AskRequired(ref decision)) => {
+                    // FIXME(S6): sub-agent cannot surface a UI prompt; treat Ask as deny
+                    // until the permission-request flow is wired up end-to-end.
+                    let err_msg = format!("Tool '{}' requires user confirmation: {}", tc.name, decision);
+                    warn!("[SubAgent] Tool '{}' returned AskRequired (treated as deny): {}", tc.name, decision);
+                    if let Some(ref app) = config.app_handle {
+                        let _ = app.emit(
+                            "tool:completed",
+                            serde_json::json!({
+                                "conversationId": config.conversation_id,
+                                "toolId": tc.id,
+                                "success": false,
+                                "summary": err_msg.clone(),
+                            }),
+                        );
+                    }
+                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
+                }
                 Err(e) => {
                     let err_msg = format!("Tool error: {}", e);
                     warn!("[SubAgent] Tool '{}' failed: {}", tc.name, err_msg);

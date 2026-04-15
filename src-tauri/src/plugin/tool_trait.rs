@@ -95,6 +95,12 @@ pub enum ToolError {
     #[error("Execution failed: {0}")]
     ExecutionFailed(String),
 
+    /// The permission pipeline returned Ask — user confirmation is required
+    /// before this tool can run. Callers that cannot surface a UI prompt
+    /// should treat this as a deny and log appropriately.
+    #[error("Permission Ask required: {0}")]
+    AskRequired(crate::runtime::tools::permission::PermissionDecision),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }

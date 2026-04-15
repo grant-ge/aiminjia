@@ -23,6 +23,16 @@ pub enum PermissionDecision {
     },
 }
 
+impl std::fmt::Display for PermissionDecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PermissionDecision::Allow { .. } => write!(f, "allowed"),
+            PermissionDecision::Deny { message, .. } => write!(f, "denied: {}", message),
+            PermissionDecision::Ask { message, .. } => write!(f, "ask required: {}", message),
+        }
+    }
+}
+
 /// Why the permission decision was made.
 #[derive(Debug, Clone)]
 pub enum PermissionReason {
