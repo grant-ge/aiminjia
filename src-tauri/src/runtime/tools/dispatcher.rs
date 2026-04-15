@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::permission::{AllowAllPermissionPipeline, PermissionPipeline};
+use crate::runtime::tools::permission::{AllowAllPermissionPipeline, PermissionDecision, PermissionPipeline};
 
 #[async_trait]
 pub trait RuntimeTool: Send + Sync {
@@ -63,9 +63,18 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
-        self.permission_pipeline
-            .authorize(&definition, &input, &ctx)
-            .map_err(|err| ToolError::PermissionDenied(err.to_string()))?;
+        // Map PermissionDecision to ToolError.
+        // Task 2 will properly thread Ask semantics; for now Deny and Ask both
+        // surface as PermissionDenied so callers retain existing behaviour.
+        match self.permission_pipeline.authorize(&definition, &input, &ctx) {
+            PermissionDecision::Allow { .. } => {}
+            PermissionDecision::Deny { message, .. } => {
+                return Err(ToolError::PermissionDenied(message));
+            }
+            PermissionDecision::Ask { message, .. } => {
+                return Err(ToolError::PermissionDenied(message));
+            }
+        }
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;
         ctx.event_sink.emit("tool:completed");

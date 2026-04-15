@@ -1,11 +1,11 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
 };
+use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -17,8 +17,11 @@ impl PermissionPipeline for DenyAllPermissionPipeline {
         _definition: &ToolDefinition,
         _input: &Value,
         _ctx: &ToolExecutionContext,
-    ) -> anyhow::Result<()> {
-        Err(anyhow!("approval required"))
+    ) -> PermissionDecision {
+        PermissionDecision::Deny {
+            message: "approval required".into(),
+            reason: PermissionReason::Other("deny_all".into()),
+        }
     }
 }
 
@@ -38,11 +41,7 @@ impl RuntimeTool for RecordingTool {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         self.executions.fetch_add(1, Ordering::SeqCst);
-        Ok(ToolResult {
-            tool_name: "permission_probe_tool".to_string(),
-            content: "ok".to_string(),
-            data: None,
-        })
+        Ok(ToolResult::new("permission_probe_tool", "ok", None))
     }
 }
 

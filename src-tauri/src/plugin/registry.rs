@@ -10,10 +10,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
+use crate::runtime::store::permission_store::PermissionStore;
 use crate::runtime::tools::{
     CapabilityPermissionPipeline, LegacyToolAdapter, PermissionPipeline, ToolDispatcher,
 };
+use crate::runtime::tools::permission::PermissionDecision;
 use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
+use crate::runtime::tools::permission::StorePolicyPipeline;
 
 use super::context::PluginContext;
 use super::skill_trait::{Skill, ToolFilter};
@@ -69,6 +72,8 @@ pub struct ToolRegistry {
     tools: RwLock<HashMap<String, RegisteredTool>>,
     /// Runtime-native tools — take precedence over legacy ToolPlugin in dispatcher.
     runtime_tools: RwLock<HashMap<String, Arc<dyn crate::runtime::tools::RuntimeTool>>>,
+    /// Persistent/session-scoped authorization decisions for capability scopes.
+    permission_store: RwLock<Option<Arc<PermissionStore>>>,
 }
 
 impl ToolRegistry {
@@ -76,7 +81,12 @@ impl ToolRegistry {
         Self {
             tools: RwLock::new(HashMap::new()),
             runtime_tools: RwLock::new(HashMap::new()),
+            permission_store: RwLock::new(None),
         }
+    }
+
+    pub async fn set_permission_store(&self, store: Arc<PermissionStore>) {
+        *self.permission_store.write().await = Some(store);
     }
 
     fn has_runtime_schema_source(
@@ -300,12 +310,27 @@ impl ToolRegistry {
             )
             .with_capability(capability);
 
-            // Permission check via CapabilityPermissionPipeline
-            let pipeline = CapabilityPermissionPipeline;
+            // Permission check: prefer StorePolicyPipeline if permission_store is available
+            let pipeline: Box<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
+                Some(store) => Box::new(StorePolicyPipeline::new(store.clone())),
+                None => Box::new(CapabilityPermissionPipeline),
+            };
             let def = tool.definition();
-            pipeline
-                .authorize(&def, &input, &exec_ctx)
-                .map_err(|e| ToolError::ExecutionFailed(format!("Permission denied: {}", e)))?;
+            match pipeline.authorize(&def, &input, &exec_ctx) {
+                PermissionDecision::Allow { .. } => {}
+                PermissionDecision::Deny { message, .. } => {
+                    return Err(ToolError::ExecutionFailed(format!(
+                        "Permission denied: {}",
+                        message
+                    )));
+                }
+                PermissionDecision::Ask { message, .. } => {
+                    return Err(ToolError::ExecutionFailed(format!(
+                        "Permission denied: {}",
+                        message
+                    )));
+                }
+            }
 
             let result = tool
                 .execute(input, exec_ctx)
@@ -365,7 +390,11 @@ impl ToolRegistry {
     /// behind an adapter. This is the bridge point for incrementally moving the
     /// production query path onto the new runtime contract.
     pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
-        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(CapabilityPermissionPipeline)));
+        let pipeline: Arc<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
+            Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
+            None => Arc::new(CapabilityPermissionPipeline),
+        };
+        let dispatcher = Arc::new(ToolDispatcher::new(pipeline));
         let runtime_tools = self.runtime_tools.read().await;
         let legacy_tools = self.tools.read().await;
         let mut request_scoped_registered = std::collections::HashSet::new();

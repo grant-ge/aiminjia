@@ -1,10 +1,37 @@
-use anyhow::Result;
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::runtime::store::permission_store::{PermissionStore, PolicyDecision};
+use crate::runtime::store::permission_store::PermissionStore;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
+
+/// The three-state outcome of a permission check.
+#[derive(Debug, Clone)]
+pub enum PermissionDecision {
+    Allow {
+        updated_input: Option<serde_json::Value>,
+        reason: PermissionReason,
+    },
+    Deny {
+        message: String,
+        reason: PermissionReason,
+    },
+    Ask {
+        message: String,
+        suggestions: Vec<String>,
+        reason: PermissionReason,
+    },
+}
+
+/// Why the permission decision was made.
+#[derive(Debug, Clone)]
+pub enum PermissionReason {
+    StoredPolicy,
+    Capability,
+    UnknownScope,
+    Mode(String),
+    Other(String),
+}
 
 pub trait PermissionPipeline: Send + Sync {
     fn authorize(
@@ -12,7 +39,7 @@ pub trait PermissionPipeline: Send + Sync {
         definition: &ToolDefinition,
         input: &Value,
         ctx: &ToolExecutionContext,
-    ) -> Result<()>;
+    ) -> PermissionDecision;
 }
 
 #[derive(Clone, Default)]
@@ -24,8 +51,11 @@ impl PermissionPipeline for AllowAllPermissionPipeline {
         _definition: &ToolDefinition,
         _input: &Value,
         _ctx: &ToolExecutionContext,
-    ) -> Result<()> {
-        Ok(())
+    ) -> PermissionDecision {
+        PermissionDecision::Allow {
+            updated_input: None,
+            reason: PermissionReason::Other("allow_all".into()),
+        }
     }
 }
 
@@ -37,6 +67,7 @@ impl PermissionPipeline for AllowAllPermissionPipeline {
 /// - 含 `browser` → 需要 `ctx.capability.has_browser_capability()` = true（目前默认 false）
 /// - 含 `python:exec` → 需要 `ctx.capability.storage` 存在
 /// - 含 `network` → 始终允许（网络访问不在本地 capability 层校验）
+/// - unknown scope → Deny（fail-closed）
 #[derive(Clone, Default)]
 pub struct CapabilityPermissionPipeline;
 
@@ -46,9 +77,12 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
         definition: &ToolDefinition,
         _input: &Value,
         ctx: &ToolExecutionContext,
-    ) -> Result<()> {
+    ) -> PermissionDecision {
         if definition.capability_scope.is_empty() {
-            return Ok(());
+            return PermissionDecision::Allow {
+                updated_input: None,
+                reason: PermissionReason::Capability,
+            };
         }
         for scope in &definition.capability_scope {
             match scope.as_str() {
@@ -59,12 +93,14 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
                         .and_then(|c| c.storage.as_ref())
                         .is_none()
                     {
-                        anyhow::bail!(
-                            "Tool '{}' requires workspace capability (scope: {}). \
-                            Authorize a workspace directory first.",
-                            definition.id,
-                            scope
-                        );
+                        return PermissionDecision::Deny {
+                            message: format!(
+                                "Tool '{}' requires workspace capability (scope: {}). \
+                                Authorize a workspace directory first.",
+                                definition.id, scope
+                            ),
+                            reason: PermissionReason::Capability,
+                        };
                     }
                 }
                 "browser" => {
@@ -74,11 +110,14 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
                         .map(|c| c.has_browser_capability())
                         .unwrap_or(false);
                     if !has_browser {
-                        anyhow::bail!(
-                            "Tool '{}' requires browser capability. \
-                            A browser connector must be active.",
-                            definition.id
-                        );
+                        return PermissionDecision::Deny {
+                            message: format!(
+                                "Tool '{}' requires browser capability. \
+                                A browser connector must be active.",
+                                definition.id
+                            ),
+                            reason: PermissionReason::Capability,
+                        };
                     }
                 }
                 "python:exec" => {
@@ -88,23 +127,36 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
                         .and_then(|c| c.storage.as_ref())
                         .is_none()
                     {
-                        anyhow::bail!(
-                            "Tool '{}' requires a workspace context for Python execution.",
-                            definition.id
-                        );
+                        return PermissionDecision::Deny {
+                            message: format!(
+                                "Tool '{}' requires a workspace context for Python execution.",
+                                definition.id
+                            ),
+                            reason: PermissionReason::Capability,
+                        };
                     }
                 }
                 "network" => {}
                 other => {
                     log::debug!(
-                        "Unknown capability scope '{}' for tool '{}' — allowing.",
+                        "Unknown capability scope '{}' for tool '{}' — denying.",
                         other,
                         definition.id
                     );
+                    return PermissionDecision::Deny {
+                        message: format!(
+                            "Tool '{}' requests unknown capability scope '{}'. Deny by default.",
+                            definition.id, other
+                        ),
+                        reason: PermissionReason::UnknownScope,
+                    };
                 }
             }
         }
-        Ok(())
+        PermissionDecision::Allow {
+            updated_input: None,
+            reason: PermissionReason::Capability,
+        }
     }
 }
 
@@ -112,16 +164,13 @@ impl PermissionPipeline for CapabilityPermissionPipeline {
 ///
 /// 决策优先级：
 /// 1. 已持久化 AlwaysAllow / AlwaysDeny → 直接放行或拒绝，不再做 capability 检查
-/// 2. 未记录决策 → 执行与 CapabilityPermissionPipeline 相同的 capability 检查
-/// 3. Unknown scope → fail-closed（不同于 CapabilityPermissionPipeline 的 fail-open）
+/// 2. 未记录决策 + unknown scope → Ask（请求用户确认）
+/// 3. 未记录决策 + 已知 scope + 有 capability → Allow
+/// 4. 未记录决策 + 已知 scope + 无 capability → Deny
 ///
 /// **注意：** AlwaysAllow 绕过 capability 检查是设计意图，不是漏洞。
 /// 用户显式持久化授权后，运行时 capability 存在性检查是多余的——
 /// 若不绕过，持久化授权将对缺少 capability 的会话永远无效。
-///
-/// **当前状态：** 此管线已实现并通过测试，但尚未接入生产 dispatcher。
-/// 生产路径（ToolRegistry::to_runtime_dispatcher 等）仍使用 CapabilityPermissionPipeline。
-/// 接入生产 dispatcher 作为 P4 后续步骤处理。
 #[derive(Clone)]
 pub struct StorePolicyPipeline {
     store: Arc<PermissionStore>,
@@ -139,9 +188,12 @@ impl PermissionPipeline for StorePolicyPipeline {
         definition: &ToolDefinition,
         _input: &Value,
         ctx: &ToolExecutionContext,
-    ) -> Result<()> {
+    ) -> PermissionDecision {
         if definition.capability_scope.is_empty() {
-            return Ok(());
+            return PermissionDecision::Allow {
+                updated_input: None,
+                reason: PermissionReason::StoredPolicy,
+            };
         }
         for scope in &definition.capability_scope {
             let key = format!("{}:{}", definition.id, scope);
@@ -151,11 +203,13 @@ impl PermissionPipeline for StorePolicyPipeline {
                 // would defeat persistent grants for sessions without a live connector.
                 Some(d) if d.is_allow() => continue,
                 Some(_) => {
-                    anyhow::bail!(
-                        "Tool '{}' scope '{}' is denied by stored policy.",
-                        definition.id,
-                        scope
-                    )
+                    return PermissionDecision::Deny {
+                        message: format!(
+                            "Tool '{}' scope '{}' is denied by stored policy.",
+                            definition.id, scope
+                        ),
+                        reason: PermissionReason::StoredPolicy,
+                    };
                 }
                 None => {}
             }
@@ -167,11 +221,13 @@ impl PermissionPipeline for StorePolicyPipeline {
                         .and_then(|c| c.storage.as_ref())
                         .is_none()
                     {
-                        anyhow::bail!(
-                            "Tool '{}' requires workspace capability (scope: {}).",
-                            definition.id,
-                            scope
-                        );
+                        return PermissionDecision::Deny {
+                            message: format!(
+                                "Tool '{}' requires workspace capability (scope: {}).",
+                                definition.id, scope
+                            ),
+                            reason: PermissionReason::Capability,
+                        };
                     }
                 }
                 "browser" => {
@@ -181,19 +237,40 @@ impl PermissionPipeline for StorePolicyPipeline {
                         .map(|c| c.has_browser_capability())
                         .unwrap_or(false);
                     if !has {
-                        anyhow::bail!("Tool '{}' requires browser capability.", definition.id);
+                        return PermissionDecision::Deny {
+                            message: format!(
+                                "Tool '{}' requires browser capability.",
+                                definition.id
+                            ),
+                            reason: PermissionReason::Capability,
+                        };
                     }
                 }
                 "network" => {}
                 other => {
-                    anyhow::bail!(
-                        "Tool '{}' requests unknown capability scope '{}'. Deny by default.",
-                        definition.id,
-                        other
-                    );
+                    // Unknown scope with no stored policy → Ask the user.
+                    // This is the key difference from CapabilityPermissionPipeline which
+                    // uses fail-closed Deny. StorePolicyPipeline escalates to Ask so the
+                    // user gets a chance to grant or deny persistently.
+                    return PermissionDecision::Ask {
+                        message: format!(
+                            "Tool '{}' requests capability scope '{}' which is not recognized. \
+                            Do you want to allow it?",
+                            definition.id, other
+                        ),
+                        suggestions: vec![
+                            "Allow once".into(),
+                            "Always allow".into(),
+                            "Deny".into(),
+                        ],
+                        reason: PermissionReason::UnknownScope,
+                    };
                 }
             }
         }
-        Ok(())
+        PermissionDecision::Allow {
+            updated_input: None,
+            reason: PermissionReason::StoredPolicy,
+        }
     }
 }
