@@ -38,6 +38,8 @@
 | `src-tauri/src/runtime/tools/builtin/file.rs` |  |  | ✅ | load_file 迁到 ExecutionContext |
 | `src-tauri/src/runtime/tools/capability.rs` |  |  | ✅ | FileOperations trait + CapabilityContext 扩展 |
 | `src-tauri/src/runtime/tools/context.rs` |  |  | ✅ | ExecutionContext 精简（移除原始 state 暴露）|
+| `src-tauri/src/runtime/chat/tool_round_types.rs` |  |  | ✅ | RuntimeToolCallOutcome 确认携带 file_meta/degradation |
+| `src-tauri/src/runtime/tools/executor.rs` |  |  | ✅ | ToolResult 确认携带 generatedFiles 聚合字段 |
 | `src-tauri/tests/` | ✅ | ✅ | ✅ | 各期 regression tests |
 
 ---
@@ -163,8 +165,9 @@
 - Create: `src-tauri/tests/permission_three_state_test.rs`
 
 - [ ] 测试 1：StorePolicyPipeline 对未存储 + unknown scope 返回 `Ask`（不是直接 Deny）
-- [ ] 测试 2：ToolDispatcher.dispatch() 收到 Ask 时返回 PermissionDenied 且消息包含 "ask"
-- [ ] 测试 3：legacy tool 经 registry.execute() 时也经过统一 pipeline（unknown scope 不被放行）
+- [ ] 测试 2：ToolDispatcher.dispatch() 收到 Ask 时返回 `Ok(ToolDispatchOutcome::AskRequired(...))`（不是 `Err(PermissionDenied)`）
+- [ ] 测试 3：TurnDriver/QueryEngine 收到 `AskRequired` 后暂转 Deny（验证 Ask→Deny 发生在 TurnDriver 层，不在 Dispatcher 层）
+- [ ] 测试 4：legacy tool 经 registry.execute() 时也经过统一 pipeline（unknown scope 不被放行）
 - [ ] 全量回归：`cargo test review_ --tests --no-fail-fast`
 
 **完成标准**
@@ -244,15 +247,17 @@
           if self.inner.cancelled.swap(true, Ordering::SeqCst) {
               return; // 已经 cancelled，避免重复传播
           }
-          // 传播到所有 children
+          // 递归传播到所有 children（不要先 store 再调 cancel，否则 swap 短路会跳过 grandchildren）
+          self.propagate_to_children();
+      }
+
+      fn propagate_to_children(&self) {
           let children = self.inner.children.lock().unwrap();
           for weak_child in children.iter() {
-              if let Some(child) = weak_child.upgrade() {
-                  child.cancelled.store(true, Ordering::SeqCst);
-                  // 递归传播（child 可能也有 children）
-                  // 这里用 CancellationToken 包装来复用 cancel() 的递归逻辑
-                  let token = CancellationToken { inner: child };
-                  token.cancel(); // 会处理 child 的 children
+              if let Some(child_inner) = weak_child.upgrade() {
+                  // 统一走 cancel()——swap 会标记 cancelled，然后递归传播到 grandchildren
+                  let child_token = CancellationToken { inner: child_inner };
+                  child_token.cancel();
               }
           }
       }
@@ -361,10 +366,11 @@
 
 ## S2 验收
 
-- [ ] CancellationToken 支持 child_token() cascade
-- [ ] cancel 形成 session → turn → tool_call 三级层级
+- [ ] CancellationToken 支持 child_token() cascade（事件驱动树形传播，零线程）
+- [ ] **runtime-native tool 路径**（经 ToolDispatcher → RuntimeTool 的）形成 session → turn → tool_call 三级层级
 - [ ] `CancellationToken::new()` 只允许出现在上述白名单位置；每个白名单位置必须有注释说明为什么尚未闭合
-- [ ] cascade regression tests 通过
+- [ ] cascade regression tests 通过（包含 grandchild 传播测试）
+- [ ] **已知例外**：`execute_python` 仍走 legacy `ToolPlugin` 路径，S2 不要求它接入 cancel cascade；其 cancel 接入留到 S3/S4 迁移为 RuntimeTool 时解决
 - [ ] `cargo test` 全绿
 
 ---
@@ -477,7 +483,7 @@
 - [ ] precompute auto-load 不再构造 full PluginContext
 - [ ] **运行时语义 gate**：
   - loaded/load_failed key 语义保持
-  - file_meta/generatedFiles 透传到 TurnDriver
+  - file_meta/generatedFiles/degradation 透传到 TurnDriver（注意：需确认 `RuntimeToolCallOutcome` 和 `ToolResult` 已携带 `file_meta`、`is_degraded`、`degradation_notice` 字段——如果当前结果模型缺失 `generated_files` 聚合，需在 Task 9 中一并补齐，涉及 `src-tauri/src/runtime/chat/tool_round_types.rs` 和 `src-tauri/src/runtime/tools/executor.rs`）
   - cancellation 来自 turn cascade
   - 经过统一 permission pipeline
 - [ ] execute_python 只完成迁移边界定义（dependency inventory + boundary doc），不计作 runtime-native 迁移完成

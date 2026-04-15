@@ -125,7 +125,7 @@
 
 ### 目标
 
-在**当前 ownership 结构不大改**的前提下，把仍留在 legacy / non-chat 路径里的取消传播断点补齐，让所有下游执行至少共享**同一份 turn-scoped cancel token**。
+在**当前 ownership 结构不大改**的前提下，把取消传播从"各处自建孤立 token"改为**层级 cascade**：session root → turn child → tool-call child。每一层只能通过 `child_token()` 派生下一层，不允许 clone / default 伪装。
 
 ### 需要解决的现状问题
 
