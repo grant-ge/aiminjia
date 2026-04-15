@@ -7,7 +7,8 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::{
-    RuntimeTool, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
+    AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
+    ToolExecutionContext, ToolResult,
 };
 use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
 use app_lib::transport::testing::RecordingRuntimeHost;
@@ -33,7 +34,7 @@ impl RuntimeTool for FailingRuntimeTool {
 
 #[tokio::test]
 async fn review_failing_tool_should_still_emit_terminal_completed_event() {
-    let dispatcher = ToolDispatcher::allow_all();
+    let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
     dispatcher.register(Arc::new(FailingRuntimeTool));
 
     let ctx = ToolExecutionContext::for_test("conv-tool-error", "run-tool-error", "tool-call-1");
@@ -54,7 +55,7 @@ async fn review_failing_tool_should_still_emit_terminal_completed_event() {
 
 #[tokio::test]
 async fn review_runtime_tool_failure_maps_tool_completed_success_false() {
-    let dispatcher = Arc::new(ToolDispatcher::allow_all());
+    let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
     dispatcher.register(Arc::new(FailingRuntimeTool));
 
     let engine = QueryEngine::with_dispatcher(dispatcher);

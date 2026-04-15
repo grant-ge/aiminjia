@@ -8,7 +8,9 @@ use serde_json::Value;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::permission::{AllowAllPermissionPipeline, PermissionDecision, PermissionPipeline};
+use crate::runtime::tools::permission::{PermissionDecision, PermissionPipeline};
+#[cfg(test)]
+use crate::runtime::tools::permission::AllowAllPermissionPipeline;
 
 #[async_trait]
 pub trait RuntimeTool: Send + Sync {
@@ -20,9 +22,15 @@ pub trait RuntimeTool: Send + Sync {
     ) -> Result<ToolResult, ToolError>;
 }
 
-pub struct ToolDispatchOutcome {
-    pub result: ToolResult,
-    pub event_names: Vec<String>,
+pub enum ToolDispatchOutcome {
+    /// The tool completed execution (success or tool-level error encoded in the result).
+    Completed {
+        result: ToolResult,
+        event_names: Vec<String>,
+    },
+    /// The permission pipeline returned `Ask` — user confirmation is required.
+    /// The decision is returned as-is so the TurnDriver can handle it.
+    AskRequired(PermissionDecision),
 }
 
 pub struct ToolDispatcher {
@@ -38,6 +46,7 @@ impl ToolDispatcher {
         }
     }
 
+    #[cfg(test)]
     pub fn allow_all() -> Self {
         Self::new(Arc::new(AllowAllPermissionPipeline))
     }
@@ -63,23 +72,23 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
-        // Map PermissionDecision to ToolError.
-        // Task 2 will properly thread Ask semantics; for now Deny and Ask both
-        // surface as PermissionDenied so callers retain existing behaviour.
+        // Map PermissionDecision to ToolError / AskRequired.
+        // Deny → Err(PermissionDenied)
+        // Ask  → Ok(AskRequired) so the TurnDriver can handle user confirmation
         match self.permission_pipeline.authorize(&definition, &input, &ctx) {
             PermissionDecision::Allow { .. } => {}
             PermissionDecision::Deny { message, .. } => {
                 return Err(ToolError::PermissionDenied(message));
             }
-            PermissionDecision::Ask { message, .. } => {
-                return Err(ToolError::PermissionDenied(message));
+            decision @ PermissionDecision::Ask { .. } => {
+                return Ok(ToolDispatchOutcome::AskRequired(decision));
             }
         }
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;
         ctx.event_sink.emit("tool:completed");
         let result = result?;
-        Ok(ToolDispatchOutcome {
+        Ok(ToolDispatchOutcome::Completed {
             result,
             event_names: ctx.event_sink.snapshot(),
         })

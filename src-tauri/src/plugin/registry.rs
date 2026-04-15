@@ -350,7 +350,7 @@ impl ToolRegistry {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("Unknown tool: {}", name)))?;
             rt.plugin.clone() // Arc::clone is cheap — release lock before executing
         };
-        let dispatcher = ToolDispatcher::allow_all();
+        let dispatcher = ToolDispatcher::new(Arc::new(crate::runtime::tools::AllowAllPermissionPipeline));
         dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
             plugin,
             ctx.clone(),
@@ -368,8 +368,18 @@ impl ToolRegistry {
             .dispatch(name, input, runtime_ctx)
             .await
             .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
-        let mut output = ToolOutput::success(outcome.result.content);
-        output.data = outcome.result.data;
+        let (content, data) = match outcome {
+            crate::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => {
+                (result.content, result.data)
+            }
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
+                // AllowAllPermissionPipeline never returns Ask, so this is unreachable.
+                // Guard defensively so the match is exhaustive.
+                unreachable!("AllowAllPermissionPipeline should never return Ask")
+            }
+        };
+        let mut output = ToolOutput::success(content);
+        output.data = data;
         Ok(output)
     }
 

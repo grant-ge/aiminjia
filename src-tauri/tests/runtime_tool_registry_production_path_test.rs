@@ -27,11 +27,7 @@ impl RuntimeTool for FakeRuntimeTool {
         _input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult {
-            tool_name: self.id.to_string(),
-            content: format!("runtime:{}", self.id),
-            data: None,
-        })
+        Ok(ToolResult::new(self.id, format!("runtime:{}", self.id), None))
     }
 }
 
@@ -95,7 +91,13 @@ async fn register_runtime_adds_to_registry() {
         .dispatch("test_tool", json!({}), exec_ctx)
         .await;
     assert!(outcome.is_ok(), "Runtime tool should be dispatchable");
-    assert_eq!(outcome.unwrap().result.content, "runtime:test_tool");
+    let content = match outcome.unwrap() {
+        app_lib::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => result.content,
+        app_lib::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
+            panic!("unexpected AskRequired for test_tool")
+        }
+    };
+    assert_eq!(content, "runtime:test_tool");
 }
 
 // ─── Test 2: RuntimeTool wins over legacy ToolPlugin for same name ────────────
@@ -141,8 +143,14 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
         .dispatch("dual_tool", json!({}), exec_ctx)
         .await
         .expect("dispatch should succeed");
+    let content = match outcome {
+        app_lib::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => result.content,
+        app_lib::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
+            panic!("unexpected AskRequired for dual_tool")
+        }
+    };
     assert_eq!(
-        outcome.result.content,
+        content,
         "runtime:dual_tool",
         "RuntimeTool should take precedence over legacy ToolPlugin"
     );

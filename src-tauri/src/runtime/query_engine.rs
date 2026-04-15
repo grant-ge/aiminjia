@@ -130,11 +130,26 @@ impl QueryEngine {
             run_id,
             format!("tool-call-{tool_name}"),
         );
-        let mut result = dispatcher
+        let outcome = dispatcher
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
-        result.event_names.push("streaming:done".to_string());
-        Ok(result.event_names)
+        let mut event_names = match outcome {
+            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision) => {
+                // S1 transition: Ask is not yet wired through the UI — treat as denied.
+                log::warn!(
+                    "run_single_tool_turn: tool '{}' requires user confirmation (Ask) \
+                     — denying for now (S1 transition)",
+                    tool_name
+                );
+                return Err(anyhow::anyhow!(
+                    "Tool '{}' requires user confirmation before it can run.",
+                    tool_name
+                ));
+            }
+        };
+        event_names.push("streaming:done".to_string());
+        Ok(event_names)
     }
 
     /// Execute a single LLM-issued tool call and report progress through the event bus.
@@ -217,7 +232,10 @@ impl QueryEngine {
             .await;
 
         match dispatch_result {
-            Ok(outcome) => {
+            Ok(crate::runtime::tools::ToolDispatchOutcome::Completed {
+                result: tool_result,
+                ..
+            }) => {
                 bus.emit(RuntimeEvent::new(
                     turn.session_id().clone(),
                     turn.run_id().clone(),
@@ -234,8 +252,42 @@ impl QueryEngine {
                 Ok(RuntimeToolCallOutcome {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
-                    content: outcome.result.content,
+                    content: tool_result.content,
                     is_error: false,
+                    file_meta: tool_result.file_meta,
+                    is_degraded: tool_result.is_degraded,
+                    degradation_notice: tool_result.degradation_notice,
+                })
+            }
+            Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision)) => {
+                // S1 transition: Ask is not yet wired through the UI — surface as a
+                // permission-denied error so the LLM loop sees a tool failure.
+                log::warn!(
+                    "run_tool_call_with_bus: tool '{}' requires user confirmation (Ask) \
+                     — denying for now (S1 transition)",
+                    call.tool_name
+                );
+                bus.emit(RuntimeEvent::new(
+                    turn.session_id().clone(),
+                    turn.run_id().clone(),
+                    RuntimeEventKind::ToolCallCompleted {
+                        tool_call_id: crate::runtime::ids::ToolCallId::new(
+                            call.tool_call_id.clone(),
+                        ),
+                        tool_name: call.tool_name.clone(),
+                        is_error: true,
+                    },
+                ))
+                .await?;
+
+                Ok(RuntimeToolCallOutcome {
+                    tool_call_id: call.tool_call_id,
+                    tool_name: call.tool_name,
+                    content: "Tool requires user confirmation before it can run.".to_string(),
+                    is_error: true,
+                    file_meta: None,
+                    is_degraded: false,
+                    degradation_notice: None,
                 })
             }
             Err(err) => {
@@ -257,6 +309,9 @@ impl QueryEngine {
                     tool_name: call.tool_name,
                     content: err.to_string(),
                     is_error: true,
+                    file_meta: None,
+                    is_degraded: false,
+                    degradation_notice: None,
                 })
             }
         }
@@ -304,7 +359,22 @@ impl QueryEngine {
         let outcome = dispatcher
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
-        for event_name in outcome.event_names {
+        let event_names = match outcome {
+            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision) => {
+                // S1 transition: Ask is not yet wired through the UI — treat as denied.
+                log::warn!(
+                    "run_tool_with_bus: tool '{}' requires user confirmation (Ask) \
+                     — denying for now (S1 transition)",
+                    tool_name
+                );
+                return Err(anyhow::anyhow!(
+                    "Tool '{}' requires user confirmation before it can run.",
+                    tool_name
+                ));
+            }
+        };
+        for event_name in event_names {
             match event_name.as_str() {
                 "tool:executing" => {
                     bus.emit(RuntimeEvent::new(
