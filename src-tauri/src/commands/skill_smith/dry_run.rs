@@ -20,7 +20,7 @@
 //! Failing checks don't short-circuit — all 6 run so the report is complete
 //! on a single invocation.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 use tauri::AppHandle;
@@ -450,11 +450,6 @@ fn build_summary(pass: bool, checks: &[CheckResult]) -> String {
         format!("Dry-run 失败（{} 项错误）: {}", n_fail, first_fail)
     }
 }
-
-// Unused suppressor — helps the dead_code warning quiet when Phase 2 lands
-// and adds scripts dir handling. Keep this stub; it compiles away.
-#[allow(dead_code)]
-fn _phase2_scripts_dir_is_reserved(_p: PathBuf) {}
 
 // ---------------------------------------------------------------------------
 // Tests

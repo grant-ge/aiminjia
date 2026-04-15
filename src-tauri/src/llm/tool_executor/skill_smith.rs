@@ -270,12 +270,20 @@ pub(crate) async fn handle_skill_smith_install(
     // Success — clear session binding so subsequent calls don't point at
     // the now-removed draft. `set_memory` with "" is the cheapest way to
     // invalidate without adding a new delete API; resolve_draft_id's
-    // empty-string guard treats it as no binding.
-    let _ = ctx.storage.set_memory(
+    // empty-string guard treats it as no binding. If clear fails (rare —
+    // disk full?), warn so operators see it but don't fail the install
+    // (the skill is already on disk).
+    if let Err(e) = ctx.storage.set_memory(
         &draft_key(&ctx.conversation_id),
         "",
         Some("skill_smith_session"),
-    );
+    ) {
+        log::warn!(
+            "skill_smith_install: skill committed but failed to clear session binding for conversation {}: {}. Future tool calls in this conversation will fail with 'Draft not found' until force_new=true on create_draft.",
+            ctx.conversation_id,
+            e
+        );
+    }
 
     Ok(json!({
         "status": "installed",

@@ -87,6 +87,14 @@ fn validate_relative_path(rel: &str) -> Result<PathBuf, String> {
                         name_str
                     ));
                 }
+                // Reject NUL and ASCII control characters: NUL would panic in
+                // some libc-interop paths, controls indicate malformed input.
+                if name_str.chars().any(|c| (c as u32) < 0x20 || c == '\u{7f}') {
+                    return Err(format!(
+                        "Path component contains control / NUL character: {:?}",
+                        name_str
+                    ));
+                }
                 depth += 1;
             }
             Component::ParentDir => {
@@ -341,13 +349,16 @@ fn compute_last_modified(dir: &Path) -> i64 {
     if let Some(max) = files.iter().map(|f| f.modified_ts).max() {
         return max;
     }
-    // Fallback to the directory's own mtime (empty draft just created)
+    // Fallback to the directory's own mtime (empty draft just created).
+    // If even that fails, treat the draft as "fresh now" — better to keep
+    // a draft than to GC one whose mtime we can't read (otherwise
+    // cleanup_expired_drafts would delete it on next startup).
     std::fs::metadata(dir)
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .unwrap_or_else(|| Utc::now().timestamp())
 }
 
 fn summarize_draft(path: &Path, draft_id: &str) -> Result<DraftSummary, String> {
@@ -484,6 +495,14 @@ mod tests {
     fn validate_relative_path_rejects_too_long() {
         let long = "a/".repeat(MAX_RELATIVE_PATH_LEN) + "file.md";
         assert!(validate_relative_path(&long).is_err());
+    }
+
+    #[test]
+    fn validate_relative_path_rejects_nul_and_control_chars() {
+        assert!(validate_relative_path("foo\0bar").is_err());
+        assert!(validate_relative_path("prompts/with\0nul.md").is_err());
+        assert!(validate_relative_path("foo\nbar").is_err()); // newline = control
+        assert!(validate_relative_path("foo\tbar").is_err()); // tab = control
     }
 
     #[test]
