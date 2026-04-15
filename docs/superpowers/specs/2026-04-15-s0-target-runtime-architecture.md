@@ -74,11 +74,36 @@ pub struct SessionState {
 pub struct TurnState {
     identity: RuntimeIdentity,
     messages: Vec<Message>,              // snapshot from session + this turn
-    tool_use_context: ExecutionContext,   // per-turn 构建
     turn_count: u32,
     transition: Option<Transition>,      // 上一 iteration 的 continue 原因
     cancellation: CancellationToken,     // child of session abort_controller
     pending_tool_calls: Vec<ToolCallState>,
+}
+```
+
+TurnState 持有的是 **turn-scoped** 的信息。per-call 的 `ExecutionContext` 由 ToolDispatcher 在 dispatch 时按需构造（见第五节），不存储在 TurnState 上。
+
+TurnState 提供 context builder 以便 ToolDispatcher 构造 per-call context：
+
+```rust
+impl TurnState {
+    /// 为单次工具调用构造 ExecutionContext
+    /// tool_call_id 和 call-scoped child_token 由调用方提供
+    pub fn build_execution_context(
+        &self,
+        tool_call_id: ToolCallId,
+        capability: CapabilityContext,
+    ) -> ExecutionContext {
+        ExecutionContext {
+            session_id: self.identity.session_id().clone(),
+            run_id: self.identity.run_id().clone(),
+            agent_id: None,
+            tool_call_id,
+            cancellation: self.cancellation.child_token(),
+            capability,
+            event_sink: EventSink::default(),
+        }
+    }
 }
 ```
 
@@ -229,21 +254,25 @@ pub struct ExecutionContext {
     pub agent_id: Option<AgentId>,
     pub tool_call_id: ToolCallId,
 
-    // Cancellation（from parent turn/session）
+    // Cancellation（call-scoped child token，由 TurnState 派生）
     pub cancellation: CancellationToken,
 
-    // Capability（narrow service access）
+    // Capability（narrow service access——工具只能通过这里访问系统能力）
     pub capability: CapabilityContext,
 
-    // State access（read-only snapshot + controlled write）
-    pub app_state: Arc<RwLock<AppState>>,
-    pub messages: Arc<Vec<Message>>,
-    pub read_file_cache: Arc<FileStateCache>,
-
-    // Event sink
+    // Event sink（per-call 事件收集）
     pub event_sink: EventSink,
 }
 ```
+
+**关键约束**：
+
+- ExecutionContext **不暴露** `Arc<RwLock<AppState>>`、`Arc<Vec<Message>>` 或 `Arc<FileStateCache>>`
+- 工具如需读取 messages 或 file cache，通过 `CapabilityContext` 上的受控 accessor：
+  - `capability.read_file(path)` — 不是直接拿到整个 cache
+  - `capability.workspace_path()` — 不是直接拿到 storage 对象
+- 工具如需写状态（如生成文件），通过 `ToolResult` 返回值声明（`file_meta`、`generated_files`），由 TurnDriver 统一处理
+- 这确保工具无法随手读写全局状态，消除 service locator 的核心问题
 
 ### CapabilityContext（已有，保持精简）
 

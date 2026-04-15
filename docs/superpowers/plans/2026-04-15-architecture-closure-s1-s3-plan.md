@@ -1,31 +1,25 @@
-# 2026-04-15 架构闭环 S1-S3 实施计划
+# 2026-04-15 架构闭环 S1-S3 实施计划（v3 — rebased to S0）
 
-> 设计文档：`docs/superpowers/specs/2026-04-15-architecture-closure-phased-design.md`
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Goal：按窄切面分三期推进架构闭环：
+**Goal:** 按 S0 目标架构定义，分三期让权限模型、取消模型、工具上下文向 canonical runtime path 靠拢。每期可独立编译、测试、合并。
 
-- `S1` 权限边界统一
-- `S2` 取消传播统一
-- `S3` 高价值 legacy bridge 收缩
+**Architecture:** S1 把权限契约升级为三态（Allow/Deny/Ask）并统一入口；S2 把 CancellationToken 改为 child_token cascade；S3 把高价值工具迁到 per-call ExecutionContext。每一步都是缩小现实与 S0 目标的差距，不是在修补 side path。
 
-本计划刻意**不**把完整 LLM streaming ownership 回收塞进来；那是后续 `S4` / Tasks 3/4 级别的大重构。
+**Tech Stack:** Rust, Tauri v2, tokio, async_trait
+
+**Design Spec:**
+- S0 目标架构：`docs/superpowers/specs/2026-04-15-s0-target-runtime-architecture.md`
+- 分期设计：`docs/superpowers/specs/2026-04-15-architecture-closure-phased-design.md`
 
 ---
 
 ## 总体原则
 
-1. **每期都能独立合并**
-   - 可单独编译
-   - 有明确测试
-   - 不依赖“下一期做完才成立”
-
-2. **先收边界，再收 ownership**
-   - S1 先把权限边界统一
-   - S2 再把取消传播断点补齐
-   - S3 再缩减 hot path legacy bridge
-
-3. **不假装关闭 P1**
-   - 即使 S1-S3 全做完，也仍然**不直接关闭**“完整 streaming ownership”那条 P1 open finding
+1. **S0 驱动**：每个 Task 的目标是"让某个维度向 S0 定义的 canonical model 靠拢"
+2. **每期可独立合并**：可单独编译、有明确测试、不依赖下一期
+3. **验收 = 运行时语义 gate**：不只看代码形状，要验证 runtime 行为不回退
+4. **不假装关闭 P1**：S1-S3 不关闭完整 streaming ownership
 
 ---
 
@@ -33,318 +27,356 @@ Goal：按窄切面分三期推进架构闭环：
 
 | 文件 | S1 | S2 | S3 | 说明 |
 |---|---|---|---|---|
-| `src-tauri/src/plugin/registry.rs` | ✅ | ✅ |  | 统一权限边界、透传 cancel token |
-| `src-tauri/src/plugin/context.rs` |  | ✅ |  | 过渡性新增 `cancel_token` |
-| `src-tauri/src/commands/chat.rs` | 观察 |  |  | 复核非 chat 入口是否还存在额外 bypass |
-| `src-tauri/src/llm/tool_executor/python.rs` |  | ✅ | 部分 | 改为 cancel-aware 路径；后续继续去桥 |
-| `src-tauri/src/llm/sub_agent.rs` |  | ✅ |  | sub-agent 透传 cancel token |
-| `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` |  | ✅ | ✅ | hot path 传 token、减少 precompute bridge |
-| `src-tauri/src/runtime/tools/dispatcher.rs` | ✅ |  |  | `allow_all()` 约束为 test-only |
-| `src-tauri/src/runtime/tools/builtin/file.rs` |  |  | ✅ | 移除 `load_file` 的 PluginContext 回桥 |
-| `src-tauri/src/llm/tool_executor/file_load.rs` |  |  | ✅ | 提取 runtime-friendly helper |
-| `src-tauri/tests/` | ✅ | ✅ | ✅ | 各期补 regression tests |
+| `src-tauri/src/runtime/tools/permission.rs` | ✅ |  |  | PermissionDecision 三态 + PermissionPipeline trait 升级 |
+| `src-tauri/src/runtime/store/permission_store.rs` | ✅ |  |  | StorePolicyPipeline.authorize() 返回三态 |
+| `src-tauri/src/runtime/tools/dispatcher.rs` | ✅ |  |  | dispatch() 处理三态 + allow_all 收缩 |
+| `src-tauri/src/plugin/registry.rs` | ✅ |  |  | execute() legacy 回退走统一 pipeline |
+| `src-tauri/src/runtime/cancellation.rs` |  | ✅ |  | child_token() cascade |
+| `src-tauri/src/runtime/state.rs` |  | ✅ |  | TurnState.with_cancellation() + build_execution_context() |
+| `src-tauri/src/runtime/query_engine.rs` |  | ✅ |  | 使用 turn.cancellation.child_token() |
+| `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` |  | ✅ | ✅ | round_turn 注入 session cancel child; precompute 去桥 |
+| `src-tauri/src/runtime/tools/builtin/file.rs` |  |  | ✅ | load_file 迁到 ExecutionContext |
+| `src-tauri/src/runtime/tools/context.rs` |  |  | ✅ | ExecutionContext 精简（移除原始 state 暴露）|
+| `src-tauri/tests/` | ✅ | ✅ | ✅ | 各期 regression tests |
 
 ---
 
-# S1：权限边界统一
+# S1：权限模型升级到三态 + 单一入口
 
 ## 目标
 
-让当前仍在使用的所有工具入口都遵守同一条 permission boundary，消除 legacy fallback / non-chat 路径上的 bypass。
+把后端权限契约从二态（allow/deny + `Result<()>`）升级为三态（Allow/Deny/Ask + `PermissionDecision`），从第一天起预留 Ask 路径。同时消除 `allow_all()` bypass，统一所有入口到同一个 pipeline。
 
 ## 非目标
 
-- 不在 S1 引入 ask UI
-- 不在 S1 调整 `PolicyDecision` 类型
-- 不在 S1 重构完整工具系统
+- 不在 S1 实现前端 Ask UI（Ask 暂时转为 Deny）
+- 不在 S1 改动 LLM streaming ownership
 
 ---
 
-## Task 1：统一 `ToolRegistry.execute()` 的 legacy fallback 权限裁决
+## Task 1：定义三态 PermissionDecision 类型
 
 **文件**
+- Modify: `src-tauri/src/runtime/tools/permission.rs`
 
-- `src-tauri/src/plugin/registry.rs`
-
-- [ ] 把 `execute()` 中 legacy fallback 路径的 `ToolDispatcher::allow_all()` 替换为与 runtime path 同级别的 permission pipeline
-- [ ] 优先复用当前文件中已存在的模式：
-  - 有 `permission_store` 时用 `StorePolicyPipeline`
-  - 没有 `permission_store` 时退回 `CapabilityPermissionPipeline`
-- [ ] 确保 runtime path 与 legacy fallback path 在 unknown-scope 行为上保持一致（deny by default）
-- [ ] 确认 fallback 路径的报错语义仍会被归一化成当前调用方可接受的 `ToolError`
+- [ ] 新增 `PermissionDecision` 枚举（S0 定义的三态）：
+  ```rust
+  pub enum PermissionDecision {
+      Allow { reason: PermissionReason },
+      Deny { message: String, reason: PermissionReason },
+      Ask { message: String, reason: PermissionReason },
+  }
+  ```
+- [ ] 新增 `PermissionReason` 枚举：
+  ```rust
+  pub enum PermissionReason {
+      StoredPolicy,
+      Capability,
+      UnknownScope,
+      Mode(String),
+      Other(String),
+  }
+  ```
+- [ ] 修改 `PermissionPipeline` trait 的 `authorize()` 返回类型从 `Result<()>` 改为 `PermissionDecision`
+- [ ] 更新 `AllowAllPermissionPipeline`：返回 `PermissionDecision::Allow`
+- [ ] 更新 `CapabilityPermissionPipeline`：已知 scope 返回 Allow/Deny，unknown scope 返回 Deny（保持 fail-closed）
+- [ ] 更新 `StorePolicyPipeline`：已知 stored allow → Allow，stored deny → Deny，未存储 + unknown scope → Ask（而非直接 Deny）
+- [ ] 编译验证
 
 **完成标准**
-
-- `execute()` 不再存在 `allow_all()` bypass
+- `PermissionPipeline::authorize()` 返回三态 `PermissionDecision`
+- 所有现有 pipeline 实现已适配
 
 ---
 
-## Task 2：把 `allow_all()` 收缩为 test-only helper
+## Task 2：ToolDispatcher.dispatch() 处理三态
 
 **文件**
+- Modify: `src-tauri/src/runtime/tools/dispatcher.rs`
 
-- `src-tauri/src/runtime/tools/dispatcher.rs`
-- `src-tauri/src/runtime/tools/testing.rs`
-- 相关 tests
-
-- [ ] 将 `ToolDispatcher::allow_all()` 明确约束为测试辅助能力
-- [ ] 若生产代码仍依赖它，先补替代路径，再收缩
-- [ ] 保证测试辅助代码（如 `runtime/tools/testing.rs`）仍可正常构造 allow-all dispatcher
+- [ ] `dispatch()` 中的权限检查从 `pipeline.authorize().map_err(...)` 改为 match `PermissionDecision`：
+  ```rust
+  match self.permission_pipeline.authorize(&definition, &input, &ctx) {
+      PermissionDecision::Allow { .. } => { /* proceed */ },
+      PermissionDecision::Deny { message, .. } => {
+          return Err(ToolError::PermissionDenied(message));
+      },
+      PermissionDecision::Ask { message, .. } => {
+          // S1 过渡：Ask 转为 Deny（后端契约已就位，Ask UI 在 S6 实现）
+          // 当 Ask UI 就位后，此处改为发送 RuntimeEvent::PermissionAsk 并等待响应
+          return Err(ToolError::PermissionDenied(
+              format!("Permission requires user confirmation (ask): {}", message)
+          ));
+      },
+  }
+  ```
+- [ ] 将 `allow_all()` 标记为 `#[cfg(test)]`
+- [ ] 编译验证
 
 **完成标准**
-
-- 生产代码中不再依赖 `allow_all()`
-- allow-all 仅作为测试辅助存在
+- dispatch() 能区分 Allow/Deny/Ask 三种情况
+- Ask 暂转 Deny 但有明确标记（不是静默 deny）
+- 生产代码中 `allow_all()` 不可用
 
 ---
 
-## Task 3：补一条“非 chat / legacy fallback 权限一致性”回归测试
+## Task 3：统一 registry.execute() 的权限入口
 
-**建议测试目标**
+**文件**
+- Modify: `src-tauri/src/plugin/registry.rs`
 
-- 一个 legacy tool 通过 `ToolRegistry.execute()` 调用时：
-  - 若声明 unknown scope，应 fail-closed
-  - 若 permission store 中已有 persisted allow/deny，应遵守 persisted decision
-
-**优先实现方式**
-
-- 优先写在 `src-tauri/tests/` 的 integration test
-- 如果构造完整 `PluginContext` 成本过高，可在 `plugin/registry.rs` 写模块内单元测试
+- [ ] `execute()` 中 legacy fallback（line 340）从 `ToolDispatcher::allow_all()` 改为与 runtime path 同级别的 pipeline（复用已有 `permission_store` 模式）
+- [ ] 确保 runtime path（line 308-320）和 legacy fallback path 使用同一个 `PermissionPipeline` trait 返回三态
+- [ ] 编译验证
 
 **完成标准**
+- `execute()` 中不再存在 `allow_all()` bypass
+- runtime path 和 legacy path 经过同一个 pipeline
 
-- 能直接证明 `ToolRegistry.execute()` 不再绕开统一权限边界
+---
+
+## Task 4：S1 regression tests
+
+**文件**
+- Create: `src-tauri/tests/permission_three_state_test.rs`
+
+- [ ] 测试 1：StorePolicyPipeline 对未存储 + unknown scope 返回 `Ask`（不是直接 Deny）
+- [ ] 测试 2：ToolDispatcher.dispatch() 收到 Ask 时返回 PermissionDenied 且消息包含 "ask"
+- [ ] 测试 3：legacy tool 经 registry.execute() 时也经过统一 pipeline（unknown scope 不被放行）
+- [ ] 全量回归：`cargo test review_ --tests --no-fail-fast`
+
+**完成标准**
+- 三条测试直接证明权限契约是三态的
 
 ---
 
 ## S1 验收
 
+- [ ] `PermissionPipeline::authorize()` 返回 `PermissionDecision`（三态），不是 `Result<()>`
 - [ ] `rg "allow_all\\(" src-tauri/src` 的生产路径调用归零
-- [ ] legacy fallback 的 unknown-scope regression test 通过
-- [ ] `cargo test --manifest-path src-tauri/Cargo.toml review_ --tests --no-fail-fast` 通过
+- [ ] StorePolicyPipeline 对 unknown scope 返回 Ask（不是 Deny）
+- [ ] legacy fallback 与 runtime path 使用同一个 pipeline
+- [ ] `cargo test` 全绿
 
 ---
 
-# S2：取消传播统一
+# S2：Cancel model 改为 child_token cascade
 
 ## 目标
 
-在当前 ownership 结构不大改的前提下，把 legacy / non-chat / Python 热路径的 cancel 传播断点补齐，让下游消费同一份 turn-scoped token。
+把 CancellationToken 从"各处自建"改为"层级 cascade"：session root → turn child → tool_call child。对标 claude-code-best 的 `createChildAbortController` 模式。
 
 ## 非目标
 
-- 不要求 S2 直接把 `TurnState` 变成系统唯一 cancel root
-- 不要求 S2 完整移除 `PluginContext`
-- 不把 background / child-run / sub-agent 全部 runtime-native 化
+- 不在 S2 改动 PluginContext（不加字段、不透传）
+- 不在 S2 要求所有 legacy tool 都支持 cancel
 
 ---
 
-## Task 4：在 `PluginContext` 上增加过渡性 `cancel_token`
+## Task 5：CancellationToken 新增 child_token()
 
 **文件**
+- Modify: `src-tauri/src/runtime/cancellation.rs`
 
-- `src-tauri/src/plugin/context.rs`
-
-- [ ] 在 `PluginContext` 中新增：
-  - `cancel_token: Option<CancellationToken>`
-- [ ] 在注释里明确说明：
-  - 这是 legacy bridge 的**过渡字段**
-  - 目的仅是把 cancel 传到底层旧路径
-  - 不是鼓励继续扩张 `PluginContext`
-- [ ] 补齐所有 `PluginContext` 构造点的默认值
-  - 大多数填 `None`
-  - 只有当前真正持有 turn token 的 hot path 填 `Some(...)`
+- [ ] 新增 `child_token()` 方法——parent cancel 传播到 child，child cancel 不影响 parent：
+  ```rust
+  impl CancellationToken {
+      pub fn child_token(&self) -> CancellationToken {
+          let child = CancellationToken::new();
+          if self.is_cancelled() {
+              child.cancel();
+              return child;
+          }
+          let parent_cancelled = self.cancelled.clone();
+          let child_cancelled = child.cancelled.clone();
+          std::thread::spawn(move || {
+              // 轮询 parent 状态（简单实现；后续可改为 notify）
+              while !parent_cancelled.load(Ordering::SeqCst) {
+                  std::thread::sleep(std::time::Duration::from_millis(50));
+              }
+              child_cancelled.store(true, Ordering::SeqCst);
+          });
+          child
+      }
+  }
+  ```
+  注意：这是一个最小可用实现。后续可以用 `tokio::sync::watch` 或 `Arc<Notify>` 替代轮询。在 S2 范围内，正确性优先于效率。
+- [ ] 写单元测试：parent cancel 传播到 child
+- [ ] 写单元测试：child cancel 不传播到 parent
+- [ ] 写单元测试：parent 已 cancelled 时 child_token() 立即 cancelled
+- [ ] 编译验证
 
 **完成标准**
-
-- 所有 `PluginContext` 构造点可编译
+- `child_token()` cascade 语义正确
 
 ---
 
-## Task 5：chat hot path / sub-agent 把真实 token 填进 `PluginContext`
+## Task 6：TurnState 使用 session cancel 的 child_token
 
 **文件**
+- Modify: `src-tauri/src/runtime/state.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
 
-- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
-- `src-tauri/src/llm/sub_agent.rs`
-
-- [ ] 在 precompute auto-load 路径构造 `PluginContext` 时填入当前 turn token
-- [ ] 在 tool round 构造 `PluginContext` 时填入当前 turn token
-- [ ] 在 sub-agent 派生的 `PluginContext` 上 clone 父 token
-- [ ] 保持没有上游 token 的路径仍可安全为 `None`
+- [ ] `TurnState` 新增 `with_cancellation(token)` builder（如果尚未存在）
+- [ ] `TurnState` 新增 `build_execution_context()` 方法（S0 定义），内部使用 `self.cancellation.child_token()` 为每次 tool call 创建 call-scoped token
+- [ ] `chat_runtime_impl.rs` 中构造 `round_turn` 时使用 `.with_cancellation(cancel_token.clone())`——将 AgentContext 的 cancel_token 注入 TurnState
+- [ ] `query_engine.rs` 中构造 `ToolExecutionContext` 时使用 `turn.cancellation().child_token()` 替代 `turn.cancellation()`（tool-call-scoped 而非 turn-scoped）
+- [ ] 编译验证
 
 **完成标准**
-
-- chat / sub-agent 热路径不再默默丢失 cancel token
+- cancel token 形成 session → turn → tool_call 三级 cascade
 
 ---
 
-## Task 6：`ToolRegistry.execute()` 与 Python 旧路径透传 token
+## Task 7：禁止生产路径 CancellationToken::new()
 
 **文件**
+- Modify: `src-tauri/src/plugin/registry.rs`（line 308, 352 的 `new()` 改为接收外部 token 或使用 default）
 
-- `src-tauri/src/plugin/registry.rs`
-- `src-tauri/src/llm/tool_executor/python.rs`
-
-- [ ] `registry.execute()` 中 runtime path 构造 `ToolExecutionContext` 时，不再 `CancellationToken::new()`
-- [ ] `registry.execute()` 中 legacy fallback 构造 `ToolExecutionContext` 时，也消费 `ctx.cancel_token`
-- [ ] `python.rs` 的 run-scoped 执行切换到 `execute_for_run_with_cancel(...)`
-- [ ] 若仍有非 run-scoped 路径暂时没有 cancel-aware 变体，明确写 TODO 注释，不要静默制造新的断点
+- [ ] `registry.execute()` 的两处 `CancellationToken::new()` 改为 `CancellationToken::default()`（语义不变但代码可 grep 区分）
+  - 或者更好：给 execute() 加 `cancel_token: CancellationToken` 参数，调用方传入 turn-scoped token
+  - 但 S2 不碰 PluginContext，所以如果调用方无法提供真实 token，用 default 并添加 `// TODO(S3/S4): wire from turn state once PluginContext is removed`
+- [ ] grep 验证：`CancellationToken::new()` 在生产路径中只剩 `cancellation.rs` 定义本身和 `TurnState::new()` 的默认值
 
 **完成标准**
-
-- registry / python 旧路径不再自己造 ad-hoc token
+- 生产热路径不再随手 `CancellationToken::new()`
 
 ---
 
-## Task 7：补一条 cancel propagation regression test
+## Task 8：S2 regression tests
 
-**建议测试目标**
+**文件**
+- Create: `src-tauri/tests/cancel_cascade_test.rs`
 
-- 给 `ToolRegistry.execute()` 一个带 `cancelled` token 的 `PluginContext`
-- 由一个 spy `RuntimeTool` 或 legacy-adapted tool 断言：
-  - `ToolExecutionContext.cancellation.is_cancelled()` 为 true
-
-**实现建议**
-
-- 优先做一个最小 spy `RuntimeTool`
-- 不依赖复杂 storage/file manager helper；dummy 依赖只保证能构造上下文即可
+- [ ] 测试 1：TurnState.with_cancellation(parent) 后，parent.cancel() 导致 turn.cancellation().is_cancelled()
+- [ ] 测试 2：TurnState.build_execution_context() 返回的 ctx.cancellation 是 turn cancellation 的 child（parent cancel 传播到 ctx，ctx cancel 不传播到 parent）
+- [ ] 测试 3：RuntimeTool 经 ToolDispatcher 调用时，收到的 ctx.cancellation 是 turn 的 child_token
+- [ ] 全量回归
 
 **完成标准**
-
-- 有一条直接证明“token 从 PluginContext 传到 ToolExecutionContext”的测试
+- cascade 传播链有直接测试覆盖
 
 ---
 
 ## S2 验收
 
-- [ ] 生产热路径里不再出现新的 ad-hoc `CancellationToken::new()`
-- [ ] registry / python / sub-agent 至少已经消费上传下来的 token
-- [ ] cancel propagation regression test 通过
-- [ ] `cargo check --manifest-path src-tauri/Cargo.toml` 通过
+- [ ] CancellationToken 支持 child_token() cascade
+- [ ] cancel 形成 session → turn → tool_call 三级层级
+- [ ] `CancellationToken::new()` 在生产热路径归零（合法位置除外）
+- [ ] cascade regression tests 通过
+- [ ] `cargo test` 全绿
 
 ---
 
-# S3：高价值 legacy bridge 收缩
+# S3：高价值工具迁到 ExecutionContext
 
 ## 目标
 
-优先移除当前最热、最影响 runtime-first 纯度的 `PluginContext` 回桥点，为后续 ownership 大迁移减负。
+把 `load_file` 和 precompute auto-load 从 PluginContext 回桥改为直接消费 per-call ExecutionContext。验收不仅看代码形状，还验运行时语义。
 
 ## 非目标
 
-- 不在 S3 里回收完整 LLM streaming ownership
-- 不要求一次性迁完所有 legacy tools
-- 不在 S3 里解决 synthetic `message_persisted`
+- 不在 S3 回收完整 streaming ownership
+- 不在 S3 一次性迁完所有 legacy tools
+- 不在 S3 解决 synthetic message_persisted
 
 ---
 
-## Task 8：重构 `load_file`，移除 runtime -> PluginContext 回桥
+## Task 9：重构 LoadFileRuntimeTool 使用 ExecutionContext
 
 **文件**
+- Modify: `src-tauri/src/runtime/tools/builtin/file.rs`
+- Modify: `src-tauri/src/llm/tool_executor/file_load.rs`（如需拆出 runtime-friendly helper）
 
-- `src-tauri/src/runtime/tools/builtin/file.rs`
-- `src-tauri/src/llm/tool_executor/file_load.rs`
-
-- [ ] 把 `handle_load_file(ctx: &PluginContext, ...)` 依赖拆成 runtime-friendly helper
-- [ ] 目标是让 `LoadFileRuntimeTool` 直接消费 `LoadFileDeps + ToolExecutionContext`
-- [ ] 删除 `build_plugin_ctx()` 这类仅为过渡桥接存在的 helper
-- [ ] 保持 `load_file` 的现有行为不回退：
-  - loaded cache
-  - uploaded file resolve
-  - parser / masking
-  - memory key 语义
+- [ ] 把 `handle_load_file(ctx: &PluginContext, ...)` 的核心逻辑拆为 runtime-friendly helper，接收明确的 deps：
+  - `workspace_path: &Path`
+  - `conversation_id: &str`
+  - `run_id: Option<&RunId>`
+  - `storage: &AppStorage`（或更窄的 trait）
+  - `file_manager: &FileManager`
+- [ ] `LoadFileRuntimeTool::execute()` 从 `ExecutionContext.capability` 获取所需 deps，直接调用 helper
+- [ ] 删除 `build_plugin_ctx()` 桥接函数
+- [ ] 编译验证
 
 **完成标准**
-
-- `src-tauri/src/runtime/tools/builtin/file.rs` 不再为 `load_file` 构造 `PluginContext`
+- LoadFileRuntimeTool 不再构造 PluginContext
 
 ---
 
-## Task 9：precompute auto-load 改为 runtime-friendly helper，不再构造 full `PluginContext`
+## Task 10：precompute auto-load 去桥
 
 **文件**
+- Modify: `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
 
-- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
-- 如有需要，配套 `src-tauri/src/llm/tool_executor/file_load.rs`
-
-- [ ] 把 precompute auto-load 依赖的“file key / loaded key / load failed key / load file”逻辑抽成更窄的 helper
-- [ ] 在 chat hot path 里只传：
-  - request-scoped deps
-  - conversation/run identity
-  - cancel token / workspace context
-- [ ] 避免在 precompute 阶段重新构造 full `PluginContext`
+- [ ] precompute auto-load 阶段（约 line 1812）改为使用 Task 9 拆出的 runtime-friendly helper
+- [ ] 不再构造 full PluginContext——只传入所需的窄 deps
+- [ ] 编译验证
 
 **完成标准**
-
-- precompute auto-load 路径不再依赖 full `PluginContext`
+- precompute auto-load 路径不再依赖 full PluginContext
 
 ---
 
-## Task 10：评估并收口 `execute_python` 的下一步迁移边界
+## Task 11：S3 运行时语义 gate
 
 **文件**
+- Create or extend: `src-tauri/tests/load_file_runtime_semantics_test.rs`
 
+验收不仅看"是否去掉了 PluginContext 构造"，还要锁住运行时语义不回退：
+
+- [ ] 测试 1：load_file 经 runtime path 调用后，`loaded:` key 仍然按原语义设置（`loaded:{scope_id}:{file_id}`）
+- [ ] 测试 2：load_file 返回的 ToolResult 的 file_meta 仍然被 TurnDriver 正确收集（`all_file_metas` 不为空）
+- [ ] 测试 3：load_file 的 cancellation token 来自 turn cascade（parent cancel 时 load_file 可观察到 cancelled）
+- [ ] 测试 4：load_file 经过统一 permission pipeline（不是 allow_all）
+- [ ] 全量回归
+
+**完成标准**
+- runtime 语义 gate 通过，不是假绿
+
+---
+
+## Task 12：评估 execute_python 迁移边界
+
+**文件**
 - `src-tauri/src/llm/tool_executor/python.rs`
-- 如有需要，相关 builtin tool file
 
-- [ ] 先不强求本期把 `execute_python` 全量 runtime-native 化
-- [ ] 本期至少做两件事：
-  - 让 cancel-aware 执行路径成为默认路径
-  - 梳理它还依赖 `PluginContext` 的最小字段集
+- [ ] 梳理 execute_python 当前依赖 PluginContext 的最小字段集
 - [ ] 产出明确结论：
-  - 哪些字段可下期迁成 request-scoped deps
-  - 哪些仍需暂时保留
+  - 哪些字段可在 S4 迁成 ExecutionContext + CapabilityContext
+  - 哪些仍需暂时保留（如 session_manager 需要特殊处理）
+- [ ] 将结论写入 `docs/2026-04-15-execute-python-migration-boundary.md`
 
 **完成标准**
-
-- `execute_python` 后续迁移边界被显式定义，而不是继续隐含在 `PluginContext` 里
-
----
-
-## Task 11：补一条 load_file / precompute bridge reduction regression test
-
-**建议测试目标**
-
-- 证明 runtime `load_file` 路径已经不再依赖 `PluginContext` bridge
-- 或证明 precompute auto-load 在不构造 full `PluginContext` 的情况下仍能工作
-
-**完成标准**
-
-- S3 至少有一条测试能直接证明“高价值 bridge 确实被去掉了”
+- execute_python 的迁移边界被显式定义
 
 ---
 
 ## S3 验收
 
-- [ ] `LoadFileRuntimeTool` 不再回桥到 `PluginContext`
-- [ ] precompute auto-load 不再构造 full `PluginContext`
-- [ ] `execute_python` 的下一步迁移边界已明确
-- [ ] `cargo test --manifest-path src-tauri/Cargo.toml review_ --tests --no-fail-fast` 通过
+- [ ] LoadFileRuntimeTool 不再回桥到 PluginContext
+- [ ] precompute auto-load 不再构造 full PluginContext
+- [ ] **运行时语义 gate**：
+  - loaded/load_failed key 语义保持
+  - file_meta/generatedFiles 透传到 TurnDriver
+  - cancellation 来自 turn cascade
+  - 经过统一 permission pipeline
+- [ ] execute_python 迁移边界已明确
+- [ ] `cargo test` 全绿
 
 ---
 
 ## 最终文档回写
 
-在 S1-S3 任一期完成后，按实际完成情况更新：
-
-- `docs/2026-04-15-current-architecture-improvement-needs.md`
-- `docs/reviews/2026-04-15-plan-implementation-review.md`
+S1-S3 任一期完成后，更新：
 - `docs/superpowers/plans/README.md`
+- `docs/2026-04-15-current-architecture-improvement-needs.md`
 
-注意：
-
-- S1 / S2 / S3 完成后，仍然**不要**直接把 P1/P1-A 记为 fully closed
-- 只有后续完整 ownership 回收做完，才讨论关闭那条 P1 open
+注意：S1-S3 完成后**不关闭 P1**。只有完整 ownership 回收（S4）做完才讨论。
 
 ---
 
 ## 一句话执行顺序
 
-按顺序执行：
-
-1. **S1 先堵住权限 bypass**
-2. **S2 再打通 cancel 传播**
-3. **S3 再缩减高价值 legacy bridge**
-
-等这三条线收紧以后，再进入完整 ownership 回收的大阶段。
+1. **S1**：三态权限契约 + bypass 消除 + 单一入口
+2. **S2**：child_token cascade + 禁止 new()
+3. **S3**：load_file / precompute 迁到 ExecutionContext + 运行时语义 gate
