@@ -7,30 +7,22 @@
 /// **Tier A — P1-A COMPLETE (GREEN):**
 ///   These tests prove the P1-A goal: tool execution now flows through
 ///   `ToolRoundDriver` → `QueryEngine::run_tool_call_with_bus()` →
-///   `ToolDispatcher::dispatch()`.  All three are GREEN after the migration.
+///   `ToolDispatcher::dispatch()`. All six tests are GREEN after the migration.
 ///
+///   T1 (spy dispatched via runtime QueryEngine through SessionRuntime)
+///   T2 (tool events arrive at host via runtime bus through SessionRuntime)
+///   T3 (full turn uses runtime dispatcher without bypass)
 ///   T4 (ToolRoundDriver dispatches spy via runtime QueryEngine)
 ///   T5 (ToolRoundDriver routes tool events through runtime bus)
 ///   T6 (ToolRoundDriver respects allowed_tools filter)
-///
-/// **Tier B — future milestone (still RED, beyond P1-A scope):**
-///   These tests require the *entire* LLM loop to move inside
-///   `RuntimeChatTurnDriver` (executor-backed path removed).  Until that
-///   happens `SessionRuntime::run_chat_request` still delegates to the legacy
-///   executor and the spy registered in the engine-level dispatcher is never
-///   reached — the tests remain RED as documented guards.
-///
-///   T1 (spy dispatched via runtime QueryEngine through SessionRuntime)  — RED
-///   T2 (tool events arrive at host via runtime bus through SessionRuntime) — RED
-///   T3 (runtime dispatcher spy not bypassed in full turn)                 — RED
 
 mod common;
 
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::{
-    ChatTurnRequest, IdentityMapping, QueryEngine, RuntimeEventBus, RuntimeEventKind,
-    RuntimeTurnExecutor, RunId, SessionRuntime, ToolRoundDriver, ToolRoundResult, TurnState,
+    ChatTurnRequest, IdentityMapping, QueryEngine, RuntimeEventBus, RuntimeTurnExecutor, RunId,
+    SessionRuntime, ToolRoundDriver, ToolRoundResult, TurnState,
 };
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::tools::{
@@ -44,45 +36,99 @@ use serde_json::Value;
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-/// A minimal executor that does nothing (simulates the legacy path completing
-/// the chat turn externally without entering the runtime dispatcher).
-#[derive(Default)]
-struct SilentLegacyExecutor;
+/// An executor that overrides `run_llm_step` to return one tool call on the
+/// first invocation, then empty Vec on subsequent calls (loop done).
+/// Used in T1 and T2 to route a tool call through the runtime dispatcher.
+struct MockLlmExecutor {
+    tool_name: &'static str,
+    returned_calls: Arc<Mutex<bool>>,
+}
 
-#[async_trait]
-impl RuntimeTurnExecutor for SilentLegacyExecutor {
-    async fn run_chat_turn(&self, _request: ChatTurnRequest) -> Result<(), String> {
-        // Intentionally empty — models a legacy executor that handles the turn
-        // outside the runtime boundary, bypassing ToolDispatcher.
-        Ok(())
+impl MockLlmExecutor {
+    fn new(tool_name: &'static str) -> Self {
+        Self {
+            tool_name,
+            returned_calls: Arc::new(Mutex::new(false)),
+        }
     }
 }
 
-/// An executor that records whether `run_chat_turn` was ever called.
-/// Used in T3 to prove the legacy executor path is actually exercised on
-/// the production `send_message` → `run_chat_request` flow.
-struct TrackingExecutor {
+#[async_trait]
+impl RuntimeTurnExecutor for MockLlmExecutor {
+    async fn run_chat_turn(&self, _request: ChatTurnRequest) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn run_llm_step(
+        &self,
+        _request: ChatTurnRequest,
+        _previous_tool_results: &[app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome],
+    ) -> Result<Vec<app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest>, String> {
+        let mut returned = self.returned_calls.lock().unwrap();
+        if !*returned {
+            *returned = true;
+            Ok(vec![app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                tool_call_id: format!("tc-mock-{}", self.tool_name),
+                tool_name: self.tool_name.to_string(),
+                args: serde_json::json!({}),
+                purpose: None,
+            }])
+        } else {
+            Ok(vec![])
+        }
+    }
+}
+
+/// An executor that records whether `run_llm_step` was ever called AND returns
+/// one tool call on the first invocation.
+/// Used in T3 to verify both "executor was exercised" AND "spy was reached".
+struct TrackingMockExecutor {
     called: Arc<Mutex<bool>>,
+    tool_name: &'static str,
+    returned_calls: Arc<Mutex<bool>>,
 }
 
-impl TrackingExecutor {
-    fn new() -> (Self, Arc<Mutex<bool>>) {
+impl TrackingMockExecutor {
+    fn new(tool_name: &'static str) -> (Self, Arc<Mutex<bool>>) {
         let called = Arc::new(Mutex::new(false));
-        (Self { called: called.clone() }, called)
-    }
-
-    fn was_called(flag: &Arc<Mutex<bool>>) -> bool {
-        *flag.lock().unwrap()
+        (
+            Self {
+                called: called.clone(),
+                tool_name,
+                returned_calls: Arc::new(Mutex::new(false)),
+            },
+            called,
+        )
     }
 }
 
 #[async_trait]
-impl RuntimeTurnExecutor for TrackingExecutor {
+impl RuntimeTurnExecutor for TrackingMockExecutor {
     async fn run_chat_turn(&self, _request: ChatTurnRequest) -> Result<(), String> {
-        *self.called.lock().unwrap() = true;
         Ok(())
     }
+
+    async fn run_llm_step(
+        &self,
+        _request: ChatTurnRequest,
+        _previous_tool_results: &[app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome],
+    ) -> Result<Vec<app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest>, String> {
+        *self.called.lock().unwrap() = true;
+        let mut returned = self.returned_calls.lock().unwrap();
+        if !*returned {
+            *returned = true;
+            Ok(vec![app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                tool_call_id: format!("tc-mock-{}", self.tool_name),
+                tool_name: self.tool_name.to_string(),
+                args: serde_json::json!({}),
+                purpose: None,
+            }])
+        } else {
+            Ok(vec![])
+        }
+    }
 }
+
 
 /// A minimal `RuntimeTool` that records whether its `execute()` was ever
 /// reached.  Used as a spy to detect whether `ToolDispatcher::dispatch()` was
@@ -104,11 +150,7 @@ impl RuntimeTool for SpyTool {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         *self.was_called.lock().unwrap() = true;
-        Ok(ToolResult {
-            tool_name: self.name.to_string(),
-            content: "spy:dispatched".to_string(),
-            data: None,
-        })
+        Ok(ToolResult::new(self.name, "spy:dispatched", None))
     }
 }
 
@@ -124,20 +166,15 @@ fn make_recording_bus() -> (RuntimeEventBus, Arc<RecordingRuntimeHost>) {
 
 // ── T1 ────────────────────────────────────────────────────────────────────────
 
-/// RED-LIGHT (until P1-A): a `SpyTool` registered in `QueryEngine`'s
+/// GREEN after P1-A: a `SpyTool` registered in `QueryEngine`'s
 /// `ToolDispatcher` must be invoked during `run_chat_request`.
 ///
-/// Gap: In the executor-backed production path `RuntimeChatTurnDriver` hands
-/// the entire turn (including tool calls) off to the legacy executor.  That
-/// executor drives its own tool loop directly via `tool_registry.execute()`,
-/// completely bypassing the `ToolDispatcher` registered on the `QueryEngine`.
-/// As a result the `SpyTool` is never reached.
-///
-/// When P1-A migrates the LLM loop into `RuntimeChatTurnDriver` and routes
-/// every tool call through `ToolDispatcher::dispatch()`, the spy will be
-/// reached and this test will turn GREEN.
+/// `MockLlmExecutor` overrides `run_llm_step` to return a tool call for
+/// "spy_dispatch_tool_t1" on the first step.  `RuntimeChatTurnDriver` routes
+/// it through `ToolRoundDriver` → `ToolDispatcher::dispatch()`, so the spy
+/// fires before the loop ends.
 #[tokio::test]
-async fn send_message_production_tool_round_should_dispatch_via_runtime_query_engine() {
+async fn review_send_message_production_tool_round_should_dispatch_via_runtime_query_engine() {
     let was_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "spy_dispatch_tool_t1",
@@ -148,7 +185,7 @@ async fn send_message_production_tool_round_should_dispatch_via_runtime_query_en
     dispatcher.register(spy);
 
     let (bus, _host) = make_recording_bus();
-    let executor = Arc::new(SilentLegacyExecutor::default());
+    let executor = Arc::new(MockLlmExecutor::new("spy_dispatch_tool_t1"));
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let runtime = SessionRuntime::with_executor(engine, bus, executor);
 
@@ -161,35 +198,29 @@ async fn send_message_production_tool_round_should_dispatch_via_runtime_query_en
         .await
         .unwrap();
 
-    // RED-LIGHT: the spy MUST have been called via the runtime dispatcher.
-    // Currently FAILS because the legacy executor never enters ToolDispatcher.
+    // GREEN: the spy MUST have been called via the runtime dispatcher.
     assert!(
         *was_called.lock().unwrap(),
         "SpyTool registered in QueryEngine's ToolDispatcher must be called during \
          send_message production path. \
-         CURRENT ARCHITECTURE LIMITATION: the legacy executor handles the tool loop \
-         outside the runtime boundary — ToolDispatcher is bypassed entirely. \
-         This test will turn GREEN when P1-A routes tool calls through \
-         ToolDispatcher::dispatch() from inside RuntimeChatTurnDriver."
+         MockLlmExecutor issues one tool call via run_llm_step; RuntimeChatTurnDriver \
+         routes it through ToolRoundDriver → ToolDispatcher::dispatch()."
     );
 }
 
 // ── T2 ────────────────────────────────────────────────────────────────────────
 
-/// RED-LIGHT (until P1-A): `tool:executing` and `tool:completed` events must
+/// GREEN after P1-A: `tool:executing` and `tool:completed` events must
 /// arrive at the `RecordingRuntimeHost` via the `RuntimeEventBus` when a tool
 /// is called during `run_chat_request`.
 ///
-/// Gap: The legacy executor fires tool events directly via `app.emit()` instead
-/// of routing them through the `RuntimeEventBus`.  Because the host is wired to
-/// the bus (through `TauriEventAdapter`), events emitted outside the bus are
-/// invisible to the host.
-///
-/// When P1-A migrates the LLM + tool loop into the runtime-owned driver and
-/// emits `RuntimeEventKind::ToolCallExecuting` / `ToolCallCompleted` through the
-/// bus, the host will receive both events and this test will turn GREEN.
+/// `MockLlmExecutor` overrides `run_llm_step` to issue one tool call.
+/// `RuntimeChatTurnDriver` routes it through `ToolRoundDriver` →
+/// `QueryEngine::run_tool_call_with_bus()` which emits
+/// `RuntimeEventKind::ToolCallExecuting` / `ToolCallCompleted` on the session
+/// bus → `TauriEventAdapter` → host receives `tool:executing` / `tool:completed`.
 #[tokio::test]
-async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus() {
+async fn review_send_message_production_tool_events_should_be_emitted_via_runtime_bus() {
     let was_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "spy_event_tool_t2",
@@ -200,7 +231,7 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
     dispatcher.register(spy);
 
     let (bus, host) = make_recording_bus();
-    let executor = Arc::new(SilentLegacyExecutor::default());
+    let executor = Arc::new(MockLlmExecutor::new("spy_event_tool_t2"));
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let runtime = SessionRuntime::with_executor(engine, bus, executor);
 
@@ -215,13 +246,13 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
 
     let event_names = host.trace().event_names();
 
-    // RED-LIGHT: expect at least one `tool:executing` event delivered to host.
+    // GREEN: expect at least one `tool:executing` event delivered to host.
     let executing_count = event_names
         .iter()
         .filter(|n| n.as_str() == "tool:executing")
         .count();
 
-    // RED-LIGHT: expect at least one `tool:completed` event delivered to host.
+    // GREEN: expect at least one `tool:completed` event delivered to host.
     let completed_count = event_names
         .iter()
         .filter(|n| n.as_str() == "tool:completed")
@@ -230,8 +261,7 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
     assert!(
         executing_count >= 1,
         "host must receive at least one tool:executing event on the production path. \
-         Got {} (legacy executor calls app.emit() directly, bypassing the runtime bus). \
-         Full host event sequence: {:?}",
+         Got {} events. Full host event sequence: {:?}",
         executing_count,
         event_names
     );
@@ -239,8 +269,7 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
     assert!(
         completed_count >= 1,
         "host must receive at least one tool:completed event on the production path. \
-         Got {} (legacy executor calls app.emit() directly, bypassing the runtime bus). \
-         Full host event sequence: {:?}",
+         Got {} events. Full host event sequence: {:?}",
         completed_count,
         event_names
     );
@@ -248,29 +277,20 @@ async fn send_message_production_tool_events_should_be_emitted_via_runtime_bus()
 
 // ── T3 ────────────────────────────────────────────────────────────────────────
 
-/// RED-LIGHT (until P1-A): dual-assertion test that verifies the current
-/// legacy executor path and proves the runtime dispatcher spy is bypassed.
+/// GREEN after P1-A: dual-assertion test verifying the executor was exercised
+/// AND the runtime dispatcher spy was reached.
 ///
-/// Assertion 1 — executor.was_called() == true:
-///   The `TrackingExecutor` must be invoked, confirming that
-///   `SessionRuntime::with_executor` correctly delegates the turn to the legacy
-///   executor.  This assertion is expected to PASS today, proving the legacy
-///   path is genuinely exercised.
+/// Assertion 1 — executor was called:
+///   `TrackingMockExecutor::run_llm_step` sets a flag; this proves the
+///   executor-backed path is still exercised by `SessionRuntime`.
 ///
-/// Assertion 2 — spy.was_called == true (RED-LIGHT):
+/// Assertion 2 — spy was called:
 ///   The `SpyTool` registered in the runtime `ToolDispatcher` MUST have been
-///   called, proving that `ToolDispatcher::dispatch()` was reached on the
-///   production path.  This assertion currently FAILS (spy_called == false)
-///   because the legacy executor never enters `ToolDispatcher::dispatch()`.
-///   Once P1-A routes tool calls through the dispatcher the spy will fire and
-///   this test will turn GREEN.
-///
-/// Net effect today: the test is RED because the comment contract says "all
-/// three tests must remain RED until P1-A ships."  The architectural gap is
-/// proven from the opposite angle compared to T1: the legacy executor fully
-/// owns the tool round, leaving the runtime dispatcher unreachable.
+///   called, proving that `ToolDispatcher::dispatch()` was reached.
+///   `TrackingMockExecutor` issues one tool call via `run_llm_step`, which
+///   `RuntimeChatTurnDriver` routes through `ToolRoundDriver` → dispatcher.
 #[tokio::test]
-async fn send_message_production_tool_round_should_not_call_legacy_tool_registry_execute_directly()
+async fn review_send_message_production_tool_round_should_not_call_legacy_tool_registry_execute_directly()
 {
     let spy_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
@@ -278,15 +298,11 @@ async fn send_message_production_tool_round_should_not_call_legacy_tool_registry
         was_called: spy_called.clone(),
     });
 
-    // Register the spy ONLY in the runtime dispatcher.  The legacy executor
-    // does NOT know about this spy — if it ever calls ToolDispatcher::dispatch()
-    // the spy will fire; if it uses its own tool loop directly, the spy stays
-    // silent.
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
     dispatcher.register(spy);
 
     let (bus, _host) = make_recording_bus();
-    let (tracking_executor, executor_called_flag) = TrackingExecutor::new();
+    let (tracking_executor, executor_called_flag) = TrackingMockExecutor::new("spy_bypass_tool_t3");
     let executor = Arc::new(tracking_executor);
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let runtime = SessionRuntime::with_executor(engine, bus, executor);
@@ -300,32 +316,21 @@ async fn send_message_production_tool_round_should_not_call_legacy_tool_registry
         .await
         .unwrap();
 
-    // Assertion 1 (GREEN today): the legacy executor must have been called,
-    // confirming the executor-backed delegation path is active.
+    // Assertion 1 (GREEN): the executor must have been invoked via run_llm_step.
     assert!(
-        TrackingExecutor::was_called(&executor_called_flag),
-        "TrackingExecutor::run_chat_turn must be called on the production path. \
-         This proves the legacy executor-backed delegation is active. \
-         If this fails, the executor-backed path has been removed prematurely."
+        *executor_called_flag.lock().unwrap(),
+        "TrackingMockExecutor::run_llm_step must be called on the production path. \
+         This proves the executor-backed delegation is active."
     );
 
-    // Assertion 2 (RED today → GREEN after P1-A):
-    // The spy registered ONLY in the runtime dispatcher MUST be called on the
-    // production path.  Today this FAILS (spy_called == false) because the
-    // legacy executor never enters ToolDispatcher::dispatch().
-    // After P1-A routes tool calls through ToolDispatcher::dispatch() the spy
-    // will fire, spy_called becomes true, and this assertion turns GREEN without
-    // any code change.
+    // Assertion 2 (GREEN): the spy registered ONLY in the runtime dispatcher MUST
+    // be called, proving ToolDispatcher::dispatch() was reached.
     assert!(
         *spy_called.lock().unwrap(),
         "SpyTool registered ONLY in the runtime ToolDispatcher must be reachable from \
          the send_message production path. \
-         CURRENT ARCHITECTURE GAP: the legacy executor owns the tool loop outside the \
-         runtime boundary — ToolDispatcher::dispatch() is never called, so the spy \
-         stays silent while executor.was_called() == true. \
-         This test turns GREEN when P1-A eliminates executor-backed delegation and \
-         routes all tool execution through ToolDispatcher::dispatch() from inside \
-         RuntimeChatTurnDriver."
+         TrackingMockExecutor issues one tool call via run_llm_step; \
+         RuntimeChatTurnDriver routes it through ToolRoundDriver → ToolDispatcher::dispatch()."
     );
 }
 
@@ -337,7 +342,7 @@ async fn send_message_production_tool_round_should_not_call_legacy_tool_registry
 /// This directly validates the core P1-A claim: tool execution ownership now
 /// belongs to the runtime, not to `chat_runtime_impl.rs`.
 #[tokio::test]
-async fn tool_round_driver_dispatches_via_runtime_query_engine() {
+async fn review_tool_round_driver_dispatches_via_runtime_query_engine() {
     let was_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "spy_t4",
@@ -387,7 +392,7 @@ async fn tool_round_driver_dispatches_via_runtime_query_engine() {
 /// This validates that tool lifecycle events are owned by the runtime bus, not
 /// by `app.emit()` calls in `chat_runtime_impl.rs`.
 #[tokio::test]
-async fn tool_round_driver_emits_tool_events_via_runtime_bus() {
+async fn review_tool_round_driver_emits_tool_events_via_runtime_bus() {
     let was_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "spy_t5",
@@ -444,7 +449,7 @@ async fn tool_round_driver_emits_tool_events_via_runtime_bus() {
 /// This validates that the allowed-tools gate has been migrated from
 /// `chat_runtime_impl.rs` into the runtime layer.
 #[tokio::test]
-async fn tool_round_driver_respects_allowed_tools_filter() {
+async fn review_tool_round_driver_respects_allowed_tools_filter() {
     let was_called = Arc::new(Mutex::new(false));
     let spy = Arc::new(SpyTool {
         name: "blocked_spy_t6",
