@@ -73,6 +73,7 @@ pub struct SessionState {
 ```rust
 pub struct TurnState {
     identity: RuntimeIdentity,
+    agent_id: Option<AgentId>,           // sub-agent identity（一等运行时对象）
     messages: Vec<Message>,              // snapshot from session + this turn
     turn_count: u32,
     transition: Option<Transition>,      // 上一 iteration 的 continue 原因
@@ -88,7 +89,6 @@ TurnState 提供 context builder 以便 ToolDispatcher 构造 per-call context�
 ```rust
 impl TurnState {
     /// 为单次工具调用构造 ExecutionContext
-    /// tool_call_id 和 call-scoped child_token 由调用方提供
     pub fn build_execution_context(
         &self,
         tool_call_id: ToolCallId,
@@ -97,7 +97,7 @@ impl TurnState {
         ExecutionContext {
             session_id: self.identity.session_id().clone(),
             run_id: self.identity.run_id().clone(),
-            agent_id: None,
+            agent_id: self.agent_id.clone(),  // 透传 agent identity
             tool_call_id,
             cancellation: self.cancellation.child_token(),
             capability,
@@ -274,16 +274,57 @@ pub struct ExecutionContext {
 - 工具如需写状态（如生成文件），通过 `ToolResult` 返回值声明（`file_meta`、`generated_files`），由 TurnDriver 统一处理
 - 这确保工具无法随手读写全局状态，消除 service locator 的核心问题
 
-### CapabilityContext（已有，保持精简）
+### CapabilityContext（受控能力访问，不是原始依赖暴露）
 
 ```rust
+/// 工具通过 CapabilityContext 访问系统能力。
+/// 每个 accessor 暴露的是受控操作，不是底层对象。
+/// 新增 accessor 必须论证为什么工具需要这个能力。
 pub struct CapabilityContext {
+    // Workspace / storage
     pub storage: Option<StorageCapability>,
     pub workspace_id: Option<String>,
-    pub browser_available: bool,
+
+    // File operations（受控 accessor，不是 Arc<FileManager>）
+    pub file_ops: Option<Arc<dyn FileOperations>>,
+
+    // Python session
     pub python_available: bool,
+    pub python_session: Option<Arc<dyn PythonExecution>>,
+
+    // Browser
+    pub browser_available: bool,
+}
+
+/// 受控文件操作 trait——工具只能通过这个接口访问文件系统
+#[async_trait]
+pub trait FileOperations: Send + Sync {
+    /// 加载文件内容（负责 loaded key 管理、parser、masking）
+    async fn load_file(&self, file_id: &str, scope_id: &str) -> Result<LoadedFile>;
+    /// 检查文件是否已加载
+    fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool;
+    /// 获取 workspace 路径
+    fn workspace_path(&self) -> &Path;
+}
+
+/// 受控 Python 执行 trait
+#[async_trait]
+pub trait PythonExecution: Send + Sync {
+    async fn execute_code(
+        &self,
+        code: &str,
+        run_id: &RunId,
+        timeout: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<String>;
 }
 ```
+
+**关键约束**：
+- CapabilityContext 暴露的是 **trait object accessor**，不是底层 `Arc<AppStorage>` 或 `Arc<FileManager>`
+- 工具不能绕过 accessor 直接操作文件系统或全局状态
+- 新增 accessor 必须有明确的 capability scope 对应关系
+- `FileOperations` 和 `PythonExecution` 的具体实现放在 infra 层，不在 runtime 层
 
 ### RuntimeTool trait（已有，确认接口）
 

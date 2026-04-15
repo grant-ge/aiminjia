@@ -36,6 +36,7 @@
 | `src-tauri/src/runtime/query_engine.rs` |  | ✅ |  | 使用 turn.cancellation.child_token() |
 | `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` |  | ✅ | ✅ | round_turn 注入 session cancel child; precompute 去桥 |
 | `src-tauri/src/runtime/tools/builtin/file.rs` |  |  | ✅ | load_file 迁到 ExecutionContext |
+| `src-tauri/src/runtime/tools/capability.rs` |  |  | ✅ | FileOperations trait + CapabilityContext 扩展 |
 | `src-tauri/src/runtime/tools/context.rs` |  |  | ✅ | ExecutionContext 精简（移除原始 state 暴露）|
 | `src-tauri/tests/` | ✅ | ✅ | ✅ | 各期 regression tests |
 
@@ -96,20 +97,30 @@
 
 - [ ] `dispatch()` 中的权限检查从 `pipeline.authorize().map_err(...)` 改为 match `PermissionDecision`：
   ```rust
-  match self.permission_pipeline.authorize(&definition, &input, &ctx) {
-      PermissionDecision::Allow { .. } => { /* proceed */ },
+  let decision = self.permission_pipeline.authorize(&definition, &input, &ctx);
+  match decision {
+      PermissionDecision::Allow { .. } => { /* proceed to execute */ },
       PermissionDecision::Deny { message, .. } => {
           return Err(ToolError::PermissionDenied(message));
       },
-      PermissionDecision::Ask { message, .. } => {
-          // S1 过渡：Ask 转为 Deny（后端契约已就位，Ask UI 在 S6 实现）
-          // 当 Ask UI 就位后，此处改为发送 RuntimeEvent::PermissionAsk 并等待响应
-          return Err(ToolError::PermissionDenied(
-              format!("Permission requires user confirmation (ask): {}", message)
-          ));
+      PermissionDecision::Ask { .. } => {
+          // Ask 不在 dispatcher 层处理——返回给调用方（TurnDriver）
+          // TurnDriver 按 mode 决定：auto-deny / 发 PermissionAsk event / 等待用户响应
+          return Ok(ToolDispatchOutcome::AskRequired(decision));
       },
   }
   ```
+- [ ] 扩展 `ToolDispatchOutcome` 枚举以携带 Ask 决策：
+  ```rust
+  pub enum ToolDispatchOutcome {
+      Completed { result: ToolResult, event_names: Vec<String> },
+      AskRequired(PermissionDecision),  // 三态真正保住——Ask 上浮到 TurnDriver
+  }
+  ```
+- [ ] 在 TurnDriver / QueryEngine 的调用侧处理 `AskRequired`：
+  - S1 过渡实现：遇到 `AskRequired` 时记录 log + 转为 PermissionDenied 错误返回
+  - 但关键是：**转换发生在 TurnDriver 层，不是 Dispatcher 层**
+  - 当 S6 实现 Ask UI 时，TurnDriver 只需在 `AskRequired` 分支改为发 `RuntimeEvent::PermissionAsk` 并等待响应，不需要改 Dispatcher
 - [ ] 将 `allow_all()` 标记为 `#[cfg(test)]`
 - [ ] 编译验证
 
@@ -178,29 +189,74 @@
 **文件**
 - Modify: `src-tauri/src/runtime/cancellation.rs`
 
-- [ ] 新增 `child_token()` 方法——parent cancel 传播到 child，child cancel 不影响 parent：
+- [ ] 新增 `child_token()` 方法——parent cancel 传播到 child，child cancel 不影响 parent。
+
+  **实现方案**：基于共享 parent 引用 + cancel 时遍历 children，不用线程轮询：
+
   ```rust
+  use std::sync::{Arc, Mutex, Weak};
+
+  #[derive(Clone, Debug)]
+  pub struct CancellationToken {
+      inner: Arc<TokenInner>,
+  }
+
+  #[derive(Debug)]
+  struct TokenInner {
+      cancelled: AtomicBool,
+      children: Mutex<Vec<Weak<TokenInner>>>,
+  }
+
   impl CancellationToken {
+      pub fn new() -> Self {
+          Self {
+              inner: Arc::new(TokenInner {
+                  cancelled: AtomicBool::new(false),
+                  children: Mutex::new(Vec::new()),
+              }),
+          }
+      }
+
       pub fn child_token(&self) -> CancellationToken {
           let child = CancellationToken::new();
+          // 如果 parent 已 cancelled，child 立即 cancelled
           if self.is_cancelled() {
               child.cancel();
               return child;
           }
-          let parent_cancelled = self.cancelled.clone();
-          let child_cancelled = child.cancelled.clone();
-          std::thread::spawn(move || {
-              // 轮询 parent 状态（简单实现；后续可改为 notify）
-              while !parent_cancelled.load(Ordering::SeqCst) {
-                  std::thread::sleep(std::time::Duration::from_millis(50));
-              }
-              child_cancelled.store(true, Ordering::SeqCst);
-          });
+          // 注册 child 的 weak ref 到 parent
+          self.inner.children.lock().unwrap().push(Arc::downgrade(&child.inner));
           child
       }
+
+      pub fn cancel(&self) {
+          if self.inner.cancelled.swap(true, Ordering::SeqCst) {
+              return; // 已经 cancelled，避免重复传播
+          }
+          // 传播到所有 children
+          let children = self.inner.children.lock().unwrap();
+          for weak_child in children.iter() {
+              if let Some(child) = weak_child.upgrade() {
+                  child.cancelled.store(true, Ordering::SeqCst);
+                  // 递归传播（child 可能也有 children）
+                  // 这里用 CancellationToken 包装来复用 cancel() 的递归逻辑
+                  let token = CancellationToken { inner: child };
+                  token.cancel(); // 会处理 child 的 children
+              }
+          }
+      }
+
+      pub fn is_cancelled(&self) -> bool {
+          self.inner.cancelled.load(Ordering::SeqCst)
+      }
+  }
+
+  impl Default for CancellationToken {
+      fn default() -> Self { Self::new() }
   }
   ```
-  注意：这是一个最小可用实现。后续可以用 `tokio::sync::watch` 或 `Arc<Notify>` 替代轮询。在 S2 范围内，正确性优先于效率。
+
+  **为什么不用线程轮询**：对标 claude-code-best 的 `createChildAbortController`，cancel 传播是事件驱动的（parent abort → 同步传播到 children）。每个 child 起一条 OS 线程做轮询会把 tool-heavy session 变成资源泄漏点。上述方案用 `Weak<TokenInner>` + cancel 时遍历，零额外线程，abandoned children 被 GC。
 - [ ] 写单元测试：parent cancel 传播到 child
 - [ ] 写单元测试：child cancel 不传播到 parent
 - [ ] 写单元测试：parent 已 cancelled 时 child_token() 立即 cancelled
@@ -219,8 +275,16 @@
 
 - [ ] `TurnState` 新增 `with_cancellation(token)` builder（如果尚未存在）
 - [ ] `TurnState` 新增 `build_execution_context()` 方法（S0 定义），内部使用 `self.cancellation.child_token()` 为每次 tool call 创建 call-scoped token
-- [ ] `chat_runtime_impl.rs` 中构造 `round_turn` 时使用 `.with_cancellation(cancel_token.clone())`——将 AgentContext 的 cancel_token 注入 TurnState
-- [ ] `query_engine.rs` 中构造 `ToolExecutionContext` 时使用 `turn.cancellation().child_token()` 替代 `turn.cancellation()`（tool-call-scoped 而非 turn-scoped）
+- [ ] `chat_runtime_impl.rs` 中构造 `round_turn` 时，**显式创建 turn-scoped child token**：
+  ```rust
+  // cancel_token 是 session/agent 级别的 root token
+  // turn 需要的是它的 child——turn cancel 不影响 session，session cancel 传播到 turn
+  let turn_cancel = cancel_token.child_token();
+  let round_turn = TurnState::new(round_mapping, run_id.clone(), String::new())
+      .with_cancellation(turn_cancel);
+  ```
+  注意：**不是 `.clone()`，是 `.child_token()`**——这样才能建立 session → turn → tool_call 三级 cascade。如果用 clone 只是同一个 root token 的引用，不是真正的层级关系。
+- [ ] `query_engine.rs` 中构造 `ToolExecutionContext` 时使用 `turn.build_execution_context(tool_call_id, capability)`——内部会自动调用 `self.cancellation.child_token()` 生成 tool-call-scoped token
 - [ ] 编译验证
 
 **完成标准**
@@ -228,18 +292,44 @@
 
 ---
 
-## Task 7：禁止生产路径 CancellationToken::new()
+## Task 7：消除生产路径 CancellationToken::new() — 接入真实 parent 或标记为未闭合
 
 **文件**
-- Modify: `src-tauri/src/plugin/registry.rs`（line 308, 352 的 `new()` 改为接收外部 token 或使用 default）
+- Modify: `src-tauri/src/plugin/registry.rs`（line 308, 352）
 
-- [ ] `registry.execute()` 的两处 `CancellationToken::new()` 改为 `CancellationToken::default()`（语义不变但代码可 grep 区分）
-  - 或者更好：给 execute() 加 `cancel_token: CancellationToken` 参数，调用方传入 turn-scoped token
-  - 但 S2 不碰 PluginContext，所以如果调用方无法提供真实 token，用 default 并添加 `// TODO(S3/S4): wire from turn state once PluginContext is removed`
-- [ ] grep 验证：`CancellationToken::new()` 在生产路径中只剩 `cancellation.rs` 定义本身和 `TurnState::new()` 的默认值
+- [ ] `registry.execute()` 新增 `cancel_token: CancellationToken` 参数，调用方必须显式传入：
+  ```rust
+  pub async fn execute(
+      &self,
+      name: &str,
+      ctx: &PluginContext,
+      input: serde_json::Value,
+      cancel_token: CancellationToken,  // 新增
+  ) -> Result<ToolOutput, ToolError>
+  ```
+- [ ] 内部两处 `CancellationToken::new()` 改为使用传入的 `cancel_token`
+- [ ] 修复所有调用方编译错误：
+  - `sub_agent.rs`：需要从 sub-agent run context 传入 cancel token。如果当前无法获取真实 parent token，**保留 `CancellationToken::new()` 并在旁边加编译期标记**：
+    ```rust
+    // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()
+    // 当前是孤立 root token，cancel cascade 不生效
+    let sub_cancel = CancellationToken::new();
+    ```
+    **不用 `default()` 做 cosmetic pass**——保持 `new()` 让 grep gate 能发现这个未闭合点。
+  - `commands/chat.rs`（test support）：同样保留 `CancellationToken::new()` + FIXME 注释
+- [ ] 更新 grep gate 的期望值：
+  ```
+  # 期望的 CancellationToken::new() 位置：
+  # 1. cancellation.rs:定义本身
+  # 2. state.rs:TurnState::new() 默认值
+  # 3. sub_agent.rs:FIXME 标记（已知未闭合）
+  # 4. commands/chat.rs:test support（已知未闭合）
+  # 其他位置 = 回退，需要修复
+  ```
 
 **完成标准**
-- 生产热路径不再随手 `CancellationToken::new()`
+- 生产热路径（chat 主链路的 tool round）已接入真实 parent token
+- 未闭合点有 FIXME 标记且在 grep gate 期望列表中，不是假绿
 
 ---
 
@@ -282,24 +372,42 @@
 
 ---
 
-## Task 9：重构 LoadFileRuntimeTool 使用 ExecutionContext
+## Task 9：扩展 CapabilityContext + 重构 LoadFileRuntimeTool
 
 **文件**
-- Modify: `src-tauri/src/runtime/tools/builtin/file.rs`
+- Modify: `src-tauri/src/runtime/tools/capability.rs` — 新增 `FileOperations` trait 和受控 accessor
+- Modify: `src-tauri/src/runtime/tools/builtin/file.rs` — LoadFileRuntimeTool 消费 capability.file_ops
+- Create: `src-tauri/src/runtime/tools/capability/file_ops.rs` — FileOperations trait 定义 + infra 层实现
 - Modify: `src-tauri/src/llm/tool_executor/file_load.rs`（如需拆出 runtime-friendly helper）
 
-- [ ] 把 `handle_load_file(ctx: &PluginContext, ...)` 的核心逻辑拆为 runtime-friendly helper，接收明确的 deps：
-  - `workspace_path: &Path`
-  - `conversation_id: &str`
-  - `run_id: Option<&RunId>`
-  - `storage: &AppStorage`（或更窄的 trait）
-  - `file_manager: &FileManager`
-- [ ] `LoadFileRuntimeTool::execute()` 从 `ExecutionContext.capability` 获取所需 deps，直接调用 helper
+- [ ] 定义 `FileOperations` trait（S0 定义的受控 accessor）：
+  ```rust
+  #[async_trait]
+  pub trait FileOperations: Send + Sync {
+      async fn load_file(&self, file_id: &str, scope_id: &str) -> Result<LoadedFile>;
+      fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool;
+      fn workspace_path(&self) -> &Path;
+  }
+  ```
+- [ ] 在 `CapabilityContext` 中新增 `file_ops: Option<Arc<dyn FileOperations>>`
+- [ ] 实现 `DefaultFileOperations`（infra 层），封装现有 `handle_load_file` 的核心逻辑：
+  - 接收 `AppStorage`、`FileManager`、workspace_path 等依赖
+  - 实现 `FileOperations` trait 的三个方法
+  - 保持 loaded key 语义（`loaded:{scope_id}:{file_id}`）
+  - 保持 parser / masking 行为
+- [ ] `LoadFileRuntimeTool::execute()` 从 `ctx.capability.file_ops` 获取 accessor，调用 `file_ops.load_file()`
 - [ ] 删除 `build_plugin_ctx()` 桥接函数
 - [ ] 编译验证
 
+**关键约束**
+- `CapabilityContext` 暴露的是 **trait object accessor**，不是底层 `Arc<AppStorage>`
+- 工具不能绕过 `FileOperations` 直接操作文件系统
+- 如果需要更多能力，必须新增 trait method 而不是把原始依赖塞回 capability
+
 **完成标准**
-- LoadFileRuntimeTool 不再构造 PluginContext
+- LoadFileRuntimeTool 通过 `capability.file_ops` 访问文件能力
+- 不再构造 PluginContext
+- FileOperations trait 的实现封装在 infra 层
 
 ---
 
