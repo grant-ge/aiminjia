@@ -1,158 +1,279 @@
 # 2026-04-15 架构闭环分期设计
 
-## 背景
+目的：基于 2026-04-15 当前代码状态，为“还没闭合的架构边界”设计一个**可分期、可独立落地、可验证**的收口方案。  
+范围：本设计聚焦当前最值得继续推进的三期工作 `S1-S3`；完整的 LLM streaming ownership 回收与 runtime state 真相源统一，保留到后续阶段。  
+结论口径：当前主链路**功能上已基本可用**，但仍不能说“runtime-first 架构已经 fully closed”。
 
-基于对 `docs/2026-04-15-current-architecture-improvement-needs.md` 五项核心断言（A1-A5）的代码验证，全部确认成立。当前系统主链路功能可用，但 runtime ownership、权限边界、取消边界、legacy bridge、状态真相源五条主线尚未闭合。
+---
 
-本设计采用**窄切面 x 多期**策略（方案 A），每期可独立编译、测试、合并，按风险优先排序。
+## 一、当前基线
 
-## 代码验证摘要
+结合当前代码、review 文档和验证结果，可以确认：
 
-| 断言 | 结论 | 关键证据 |
-|------|------|---------|
-| A1: LLM streaming ownership 未回收 | TRUE | `chat_runtime_impl.rs` 3900 行主循环；`RuntimeChatTurnDriver` 是 passthrough |
-| A2: PluginContext 仍在热路径 | TRUE | 36 个文件、42 个函数签名接受 `&PluginContext` |
-| A3: 取消模型分裂 | TRUE | `registry.rs` 两处 `new()`、`chat_runtime_impl` 独立 token、python 无透传 |
-| A4: 权限边界未全覆盖 | TRUE | `registry.execute()` legacy 回退用 `allow_all()`；无 Ask 变体 |
-| A5: 事件真相源有合成痕迹 | TRUE | `exec-msg-<run_id>` + `{"executor_owned": true}` synthetic payload |
+- chat 主链路中的 **tool dispatch 已经走 runtime path**
+  - `RuntimeChatTurnDriver` 已能驱动 `ToolRoundDriver`
+  - `review_chat_tool_dispatch_runtime_test` 与 `send_message_production_path_test` 当前为绿色
+- `P4-A` 主链路 cancel token 与 `PermissionStore` 原子写入已落地
+- `StorePolicyPipeline` 已接入 chat 主链路 dispatcher
+- `file_meta / is_degraded / degradation_notice` 的 runtime 透传已落地
 
-## 分期路线图
+但同时仍然成立的是：
 
+1. **LLM streaming / orchestration ownership 仍在 `legacy_send_message_impl(...)`**
+2. **非 chat / legacy fallback 入口的权限边界还没有完全统一**
+3. **取消传播仍按入口点分裂，尚未形成单一 cancel source**
+4. **`PluginContext` 仍在 hot path 承担过重桥接职责**
+5. **runtime 事件可用，但 state 真相源仍有 compat / synthetic 痕迹**
+
+所以接下来的收口原则应当是：
+
+> **优先把边界收干净，而不是继续堆“看起来能跑”的局部能力。**
+
+---
+
+## 二、为什么不能一轮大重构
+
+当前剩余问题里，风险最高但也最重的，是把 `agent_loop` / `legacy_send_message_impl(...)` 中的 streaming loop 完整回收到 runtime。
+
+这一段不仅是 tool round，还包括：
+
+- context decay
+- masking
+- retry / timeout / phase advance
+- precompute
+- checkpoint extraction
+- assistant message 收尾
+- 流式事件发射
+
+直接一轮“把所有权一次性收回来”会带来两个问题：
+
+1. **改动面过大**：容易把已转绿的主链路重新打红
+2. **证明链变差**：很难区分“权限问题 / 取消问题 / ownership 问题”到底是哪一层回归
+
+因此，本设计采用：
+
+> **窄切面、分阶段、每期独立可验证** 的方案。
+
+---
+
+## 三、设计原则
+
+### 1. 先收边界，再收 ownership
+
+完整 ownership 回收是后续阶段的大任务；在那之前，先把：
+
+- 权限边界
+- 取消边界
+- 高价值 legacy bridge
+
+这些更容易腐化架构的点先收干净。
+
+### 2. 每期都必须可单独合并
+
+每一期都要满足：
+
+- 可独立编译
+- 有明确回归测试
+- 不依赖“下一期做完才成立”
+
+### 3. 不用“文档已关闭”替代“架构已关闭”
+
+对当前架构的判断要保持克制：
+
+- `tool dispatch` 已闭合，不等于 `streaming ownership` 已闭合
+- `cancel` 主链路已修，不等于系统级 cancel model 已统一
+- `event` 能驱动前端，不等于 runtime state model 已统一
+
+---
+
+## 四、分期设计
+
+## S1：权限边界统一
+
+### 目标
+
+把**所有当前仍在用的工具入口**统一到同一条 permission boundary 上，消除“chat 主链路走 StorePolicyPipeline，但其他入口还能绕开”的双轨状态。
+
+### 需要解决的现状问题
+
+- `src-tauri/src/plugin/registry.rs` 的 `execute()` 在 legacy fallback 时仍用 `ToolDispatcher::allow_all()`
+- `src-tauri/src/commands/chat.rs` 等非 chat 入口会复用 `ToolRegistry.execute()`，因此也会继承这条 bypass
+- 当前 `PermissionStore + StorePolicyPipeline` 已经具备 allow / deny / persisted / unknown-scope fail-closed，但入口覆盖还不完整
+- `ask` 交互尚未闭环，但这不应成为 bypass 合理化的理由
+
+### 设计决策
+
+- **S1 不做 ask UI**，只做**入口统一**与**bypass 消除**
+- legacy fallback 也必须经过与 runtime path 同级别的 permission pipeline
+- `unknown scope` 继续保持 deny-by-default
+
+### S1 完成后的状态
+
+- “从哪个入口进来”不再决定权限是否生效
+- 后续 ask / revoke / visibility 可以建立在统一边界之上
+
+### S1 非目标
+
+- 不引入前端 ask 对话框
+- 不改变 `PolicyDecision` 模型
+- 不做完整权限产品化，只做主路径闭环
+
+---
+
+## S2：取消传播统一
+
+### 目标
+
+在**当前 ownership 结构不大改**的前提下，把仍留在 legacy / non-chat 路径里的取消传播断点补齐，让所有下游执行至少共享**同一份 turn-scoped cancel token**。
+
+### 需要解决的现状问题
+
+- `src-tauri/src/plugin/registry.rs` 的 runtime / legacy fallback 两条路径都在自己 `CancellationToken::new()`
+- `src-tauri/src/llm/tool_executor/python.rs` 的旧执行路径仍未透传 cancel token
+- `PluginContext` 仍是 legacy tool / request-scoped runtime tool 的桥接载体，但当前不携带 cancellation
+- chat 主链路虽然已有 `cancel_token.cancel()` 调用，但其下游消费链仍未全部接上
+
+### 设计决策
+
+- **S2 采用过渡方案**：在 `PluginContext` 上新增 `cancel_token: Option<CancellationToken>`
+- 这是一个**战术性桥接字段**，不是鼓励继续扩张 `PluginContext`
+- 这样做的原因是：
+  - 现阶段 legacy tools / request-scoped runtime tools 仍大量依赖 `PluginContext`
+  - 比起一次性重写所有函数签名，新增一个可空字段能更快把 cancel 传到底
+- `ToolRegistry.execute()`、Python 旧路径、sub-agent 路径统一消费这份 token
+
+### 关键边界说明
+
+S2 做完后，**能保证下游执行共享同一份 turn-scoped token**；  
+但它**还不等于**“TurnState 已成为系统唯一 cancel root source”。
+
+也就是说：
+
+- S2 收的是**传播链断点**
+- 不是最终的 **global cancel architecture**
+
+后者仍依赖后续 ownership 回收。
+
+### S2 非目标
+
+- 不在 S2 里重写 `TurnState` / `RunRegistry` 架构
+- 不在 S2 里完全移除 `PluginContext`
+- 不要求一次性把所有 background path 都改成 runtime-native
+
+---
+
+## S3：高价值 legacy bridge 收缩
+
+### 目标
+
+优先移除当前最“热”、最影响 runtime-first 纯度的桥接点，降低 `PluginContext` 在生产热路径上的存在感，为后续 ownership 回收做准备。
+
+### 需要解决的现状问题
+
+- `src-tauri/src/runtime/tools/builtin/file.rs` 的 `LoadFileRuntimeTool` 仍靠 `build_plugin_ctx()` 回桥
+- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` 的 precompute auto-load 仍构造 `PluginContext`
+- `execute_python` 虽已部分改成 cancel-aware，但仍主要沿用 legacy handler 模式
+- hot path 里继续构造 `PluginContext`，会让 capability / permission / cancel / event 边界都带着兼容层味道
+
+### 设计决策
+
+- **S3 不尝试回收完整 streaming ownership**
+- S3 聚焦“高价值 hot path bridge”
+- 第一优先级是：
+  1. `load_file` runtime bridge
+  2. precompute auto-load 路径
+  3. `execute_python` 的 cancel-aware / request-scoped deps 收口
+
+### S3 完成后的状态
+
+- `PluginContext` 仍存在，但不再卡在最核心的 hot path 上
+- ownership 回收时，需要迁的点会明显减少
+- runtime / capability / request-scoped deps 的边界会更清晰
+
+### S3 非目标
+
+- 不关闭 P1 的“完整 streaming ownership”问题
+- 不在本期把全部 legacy tools 一次性迁完
+- 不在本期解决 runtime state synthetic marker 问题
+
+---
+
+## 五、S1-S3 之后的后续阶段
+
+## S4：完整 ownership 回收
+
+这才是把 `legacy_send_message_impl(...)` 中的 streaming/orchestration loop 真正迁入 runtime 的阶段。  
+它对应当前 review 中保留的那个 P1 级 open finding。
+
+S4 之前，不应把 P1/P1-A 写成 fully closed。
+
+## S5：runtime state 真相源收口
+
+在 ownership 回收后，再把：
+
+- synthetic `message_persisted`
+- compat payload
+- 前端兼容事件消费
+
+逐步统一成真正 runtime-owned state model。
+
+## S6：权限 ask / revoke / visibility 产品闭环
+
+在 S1 建立统一权限边界后，再把 ask / remember / revoke / UI 状态做完整。
+
+---
+
+## 六、阶段依赖关系
+
+推荐依赖关系如下：
+
+```text
+S1 权限边界统一
+  ↓
+S2 取消传播统一
+  ↓
+S3 高价值 legacy bridge 收缩
+  ↓
+S4 完整 ownership 回收
+  ↓
+S5 runtime state 真相源收口
+  ↘
+   S6 权限 ask/UI 闭环
 ```
-S1 取消模型统一
-  ↓
-S2 权限 bypass 消除
-  ↓          ↘
-S3 P1 收尾    S6 权限 ask 前端闭环
-  ↓
-S4 PluginContext 高价值迁移
-  ↓
-S5 事件真相源
-  ↓
-S7 剩余迁移 + 证明链
-```
 
-依赖关系：
-- S1 → S2：权限修复需要 cancel token 传播已统一
-- S2 → S6：ask UI 需要 StorePolicyPipeline 已在生产路径生效
-- S3 → S4 → S5：PluginContext 退出依赖 ownership 回收；状态模型依赖工具已迁移
-- S7 收尾依赖前面所有期
+解释：
 
-可并行：S3 与 S2 无强依赖；S6 与 S5 可并行。
+- **S1 最先做**：因为它最像架构安全边界问题，且切面最窄
+- **S2 第二做**：因为很多 legacy 热路径仍要靠 `PluginContext` / registry 承接，先把 cancel 传通
+- **S3 第三做**：把最热的桥点收掉，降低 S4 的重构面
+- **S4** 才是大头：完整 ownership 回收
 
 ---
 
-## S1：取消模型统一
+## 七、验收口径
 
-**目标**：消除生产路径中所有孤立的 `CancellationToken::new()`，统一到 `TurnState` 作为唯一 cancel source。
+### S1 验收口径
 
-**改动范围**：
+- 生产代码中不再存在 `allow_all()` 式权限 bypass
+- `ToolRegistry.execute()` legacy fallback 也走统一 pipeline
+- 非 chat 入口与 chat 入口的 unknown-scope 行为一致
 
-| 文件 | 改动 |
-|------|------|
-| `src-tauri/src/plugin/registry.rs` | `execute()` 签名新增 `cancel: CancellationToken`；line 308 和 352 替换为传入 token |
-| `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` | line 1081 本地 `CancellationToken::new()` 替换为从 `RuntimeRunRegistry` 获取的 run-scoped token |
-| `src-tauri/src/llm/tool_executor/python.rs` | `execute_for_run()` 调用处透传 cancel token |
-| `src-tauri/src/python/session.rs` | LRU eviction spawn 内部检查 `token.is_cancelled()` |
+### S2 验收口径
 
-**不改**：`TurnState` 本身、`query_engine.rs`（已正确）、工具实现内部。
+- legacy / non-chat 执行链不再随手创建 ad-hoc token
+- `PluginContext` 能把当前 turn token 传到底层工具执行
+- Python 旧路径与 registry fallback 至少能消费上游传入 token
 
-**验收**：
-1. `grep -r "CancellationToken::new()" src-tauri/src/` 生产代码归零（test 除外）
-2. 全量 `review_` 测试绿
-3. 新增测试：`registry.execute()` 透传 token cancelled 时工具执行被中断
+### S3 验收口径
 
----
-
-## S2：权限 bypass 消除
-
-**目标**：消除 `allow_all()` 在生产路径的使用，所有工具入口统一经过 `StorePolicyPipeline`。
-
-**改动范围**：
-
-| 文件 | 改动 |
-|------|------|
-| `src-tauri/src/plugin/registry.rs` | `execute()` legacy 回退路径 line 340 从 `allow_all()` 改为 `StorePolicyPipeline` |
-| `src-tauri/src/commands/chat.rs` | line 213 直接调用改为走统一 dispatcher |
-| `src-tauri/src/runtime/tools/dispatcher.rs` | `allow_all()` 标记 `#[cfg(test)]` |
-
-**不改**：`PolicyDecision` 枚举（Ask 是 S6）、前端、`StorePolicyPipeline` 逻辑。
-
-**验收**：
-1. `grep -r "allow_all" src-tauri/src/` 非 test 代码归零
-2. 新增回归测试：legacy tool 经 `registry.execute()` 调用时 unknown scope 被 deny
-3. 全量测试绿
+- `load_file` 不再依赖 runtime -> PluginContext 回桥
+- precompute auto-load 不再构造 full `PluginContext`
+- hot path 中 `PluginContext` 的存在感明显下降
 
 ---
 
-## S3：P1 收尾 — tool round ownership
+## 八、一句话结论
 
-**目标**：执行已有 P1 计划 Task 4，`TauriLegacyTurnExecutor` 实现 `run_llm_step`，tool dispatch 经过 session-level runtime。
+`S1-S3` 的设计目标不是“立刻把所有架构问题一次性做完”，而是：
 
-**设计**：沿用 `docs/superpowers/plans/2026-04-15-p1-tool-round-ownership-plan.md` Task 4，不重新设计。
-
-**验收**：
-1. T1-T6 review 测试在 production path 全绿
-2. `legacy_send_message_impl` 不再持有 tool dispatch 逻辑
-3. P1 标记已关闭
-
----
-
-## S4：PluginContext 高价值工具迁移
-
-**目标**：`load_file` 和 `execute_python` 转为 runtime-native contract，不再构造 `PluginContext`。
-
-**改动范围**：
-- `runtime/tools/builtin/file.rs`：`LoadFileRuntimeTool` 直接使用 `CapabilityContext`，移除 `build_plugin_ctx()` 桥接
-- `llm/tool_executor/python.rs`：改为接受 `ToolExecutionContext`
-- `chat_runtime_impl.rs`：line 1812（precompute）和 line 2768（tool round）两处 `PluginContext` 构造移除
-
-**验收**：两个工具路径无 `PluginContext` 构造。
-
----
-
-## S5：事件真相源
-
-**目标**：runtime 事件携带真实数据，消除 synthetic marker。
-
-**改动范围**：
-- `runtime/chat/chat_turn_driver.rs`：`message_persisted` 改为真实 message ID 和内容
-- `runtime/state.rs`：`TurnState` 扩展 `messages` / `active_tool_calls` 集合
-
-**验收**：`grep "exec-msg-" src-tauri/src/` 归零。
-
----
-
-## S6：权限 ask 前端闭环
-
-**目标**：完整的权限 ask 交互闭环。
-
-**改动范围**：
-- `PolicyDecision` 新增 `Ask` 变体
-- 后端通过 runtime event 发起 ask，等待前端响应
-- 前端权限对话框 + 记忆/撤销 UI
-
-**验收**：端到端 ask 流程可演示。
-
----
-
-## S7：剩余迁移 + 证明链
-
-**目标**：收尾。
-
-**改动范围**：
-- 批量迁移剩余高频工具的 `&PluginContext` 接受点
-- C1 ownership gating test
-- C2 非 chat 权限一致性测试
-- C3 并发验证（多会话 cancel、Python eviction、子 agent）
-
-**验收**：全量证明测试套件绿。
-
----
-
-## 不做的事
-
-- 不重新设计已关闭的 P0-P3 专项
-- 不动前端 store 架构（S6 只加权限 UI，不重构 chatStore）
-- 不做 Workspace-First / Atomic Tool / Prompt Slimming / Skill 导入统一（这些已独立关闭或是独立专项）
-- S4-S7 到执行前再出详细实施计划，本轮只为 S1-S3 出完整计划
+> **先把权限边界、取消传播、高价值 legacy bridge 这三条最容易继续腐化系统的主线收紧，为后续 ownership 大迁移创造一个风险更低的地基。**

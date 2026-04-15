@@ -1,600 +1,350 @@
-# 架构闭环 S1-S3 实施计划
+# 2026-04-15 架构闭环 S1-S3 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> 设计文档：`docs/superpowers/specs/2026-04-15-architecture-closure-phased-design.md`
 
-**Goal:** 完成架构闭环前三期：S1 取消模型统一、S2 权限 bypass 消除、S3 P1 tool round ownership 收尾。每期可独立编译、测试、合并。
+Goal：按窄切面分三期推进架构闭环：
 
-**Architecture:** S1 统一所有生产路径的 CancellationToken 来源到 TurnState/AgentContext（消除 4 处孤立 `new()`）；S2 消除 `allow_all()` bypass，统一到 StorePolicyPipeline；S3 沿用已有 P1 计划 Task 4，让 TauriLegacyTurnExecutor 实现 run_llm_step。
+- `S1` 权限边界统一
+- `S2` 取消传播统一
+- `S3` 高价值 legacy bridge 收缩
 
-**Tech Stack:** Rust, Tauri v2, tokio, async_trait
-
-**Design Spec:** `docs/superpowers/specs/2026-04-15-architecture-closure-phased-design.md`
-
----
-
-## 文件结构
-
-| 文件 | 变更类型 | 职责 |
-|------|----------|------|
-| `src-tauri/src/plugin/context.rs` | 修改 | PluginContext 新增 `cancel_token` 字段 |
-| `src-tauri/src/plugin/registry.rs` | 修改 | S1: execute() 透传 token；S2: legacy 回退用 StorePolicyPipeline |
-| `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` | 修改 | S1: PluginContext 构造处填入 cancel_token |
-| `src-tauri/src/llm/tool_executor/python.rs` | 修改 | S1: 切换到 execute_for_run_with_cancel |
-| `src-tauri/src/llm/sub_agent.rs` | 修改 | S1: execute() 调用处传入 cancel_token |
-| `src-tauri/src/runtime/tools/dispatcher.rs` | 修改 | S2: allow_all() 标记 #[cfg(test)] |
-| `src-tauri/tests/` | 修改/新增 | S1: cancel 透传测试；S2: 权限回归测试 |
+本计划刻意**不**把完整 LLM streaming ownership 回收塞进来；那是后续 `S4` / Tasks 3/4 级别的大重构。
 
 ---
 
-# S1：取消模型统一
+## 总体原则
 
-## Task 1: PluginContext 新增 cancel_token 字段
+1. **每期都能独立合并**
+   - 可单独编译
+   - 有明确测试
+   - 不依赖“下一期做完才成立”
 
-**Files:**
-- Modify: `src-tauri/src/plugin/context.rs:74-102`
+2. **先收边界，再收 ownership**
+   - S1 先把权限边界统一
+   - S2 再把取消传播断点补齐
+   - S3 再缩减 hot path legacy bridge
 
-- [ ] **Step 1: 在 PluginContext struct 中新增字段**
-
-在 `src-tauri/src/plugin/context.rs` 的 `PluginContext` struct 末尾（line 101 `authorized_workspace` 之后）添加：
-
-```rust
-    /// Cancellation token for the current turn/run. Propagated to tool
-    /// executors so that upstream cancel signals reach long-running operations.
-    pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
-```
-
-- [ ] **Step 2: 修复所有 PluginContext 构造点的编译错误**
-
-运行编译查找所有缺失字段的构造点：
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "missing field"`
-Expected: 多个错误，列出所有需要补 `cancel_token` 的位置
-
-对每个构造点添加 `cancel_token: None`（默认值），除了 `chat_runtime_impl.rs` 的两处（Task 2 会填入真实 token）。
-
-- [ ] **Step 3: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 4: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/plugin/context.rs
-git commit -m "feat(S1): add cancel_token field to PluginContext"
-```
+3. **不假装关闭 P1**
+   - 即使 S1-S3 全做完，也仍然**不直接关闭**“完整 streaming ownership”那条 P1 open finding
 
 ---
 
-## Task 2: chat_runtime_impl 填入真实 cancel_token
+## 文件范围
 
-**Files:**
-- Modify: `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs:1081,1812,2768`
-
-- [ ] **Step 1: line 1081 — AgentContext 的 cancel_token 已经是真实 token**
-
-确认 line 1081 的 `cancel_token` 在 AgentContext 中通过 `cancel_rx` 被正确 cancel。这个 token 是 S1 的 canonical source，不需要修改。记录：`agent_ctx.cancel_token` 是本 turn 的唯一 cancel source。
-
-- [ ] **Step 2: line ~1812 — precompute auto_load PluginContext 填入 cancel_token**
-
-找到 `chat_runtime_impl.rs` 中 precompute 阶段构造 `PluginContext` 的位置（约 line 1812），将 `cancel_token: None` 改为：
-
-```rust
-cancel_token: Some(agent_ctx.cancel_token.clone()),
-```
-
-- [ ] **Step 3: line ~2768 — tool round PluginContext 填入 cancel_token**
-
-找到 `chat_runtime_impl.rs` 中 tool round 入口构造 `PluginContext` 的位置（约 line 2768），同样改为：
-
-```rust
-cancel_token: Some(agent_ctx.cancel_token.clone()),
-```
-
-- [ ] **Step 4: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs
-git commit -m "feat(S1): propagate cancel_token through PluginContext in chat_runtime_impl"
-```
+| 文件 | S1 | S2 | S3 | 说明 |
+|---|---|---|---|---|
+| `src-tauri/src/plugin/registry.rs` | ✅ | ✅ |  | 统一权限边界、透传 cancel token |
+| `src-tauri/src/plugin/context.rs` |  | ✅ |  | 过渡性新增 `cancel_token` |
+| `src-tauri/src/commands/chat.rs` | 观察 |  |  | 复核非 chat 入口是否还存在额外 bypass |
+| `src-tauri/src/llm/tool_executor/python.rs` |  | ✅ | 部分 | 改为 cancel-aware 路径；后续继续去桥 |
+| `src-tauri/src/llm/sub_agent.rs` |  | ✅ |  | sub-agent 透传 cancel token |
+| `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` |  | ✅ | ✅ | hot path 传 token、减少 precompute bridge |
+| `src-tauri/src/runtime/tools/dispatcher.rs` | ✅ |  |  | `allow_all()` 约束为 test-only |
+| `src-tauri/src/runtime/tools/builtin/file.rs` |  |  | ✅ | 移除 `load_file` 的 PluginContext 回桥 |
+| `src-tauri/src/llm/tool_executor/file_load.rs` |  |  | ✅ | 提取 runtime-friendly helper |
+| `src-tauri/tests/` | ✅ | ✅ | ✅ | 各期补 regression tests |
 
 ---
 
-## Task 3: registry.execute() 透传 cancel_token
+# S1：权限边界统一
 
-**Files:**
-- Modify: `src-tauri/src/plugin/registry.rs:303-310,345-353`
+## 目标
 
-- [ ] **Step 1: line 308 — RuntimeTool 路径用 ctx.cancel_token**
+让当前仍在使用的所有工具入口都遵守同一条 permission boundary，消除 legacy fallback / non-chat 路径上的 bypass。
 
-将 `registry.rs` line 303-310 的 `ToolExecutionContext::new(...)` 调用中的 `CancellationToken::new()` 替换为：
+## 非目标
 
-```rust
-let exec_ctx = crate::runtime::tools::ToolExecutionContext::new(
-    ctx.session_id.clone(),
-    run_id,
-    ctx.agent_id.clone(),
-    format!("tool-{}", name),
-    ctx.cancel_token.clone().unwrap_or_default(),  // was: CancellationToken::new()
-)
-.with_capability(capability);
-```
-
-- [ ] **Step 2: line 352 — legacy ToolPlugin 路径用 ctx.cancel_token**
-
-将 `registry.rs` line 345-353 的 `ToolExecutionContext::new(...)` 中的 `CancellationToken::new()` 替换为：
-
-```rust
-let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
-    ctx.session_id.clone(),
-    ctx.run_id.clone().unwrap_or_else(|| {
-        crate::runtime::ids::RunId::new(format!("run-{}", ctx.conversation_id))
-    }),
-    ctx.agent_id.clone(),
-    format!("tool-{}", name),
-    ctx.cancel_token.clone().unwrap_or_default(),  // was: CancellationToken::new()
-);
-```
-
-- [ ] **Step 3: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 4: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/plugin/registry.rs
-git commit -m "feat(S1): registry.execute() propagates cancel_token from PluginContext"
-```
+- 不在 S1 引入 ask UI
+- 不在 S1 调整 `PolicyDecision` 类型
+- 不在 S1 重构完整工具系统
 
 ---
 
-## Task 4: python executor 切换到 cancel-aware 路径
+## Task 1：统一 `ToolRegistry.execute()` 的 legacy fallback 权限裁决
 
-**Files:**
-- Modify: `src-tauri/src/llm/tool_executor/python.rs:281-295`
+**文件**
 
-- [ ] **Step 1: 将 execute_for_run 替换为 execute_for_run_with_cancel**
+- `src-tauri/src/plugin/registry.rs`
 
-在 `python.rs` 约 line 285-288，将：
+- [ ] 把 `execute()` 中 legacy fallback 路径的 `ToolDispatcher::allow_all()` 替换为与 runtime path 同级别的 permission pipeline
+- [ ] 优先复用当前文件中已存在的模式：
+  - 有 `permission_store` 时用 `StorePolicyPipeline`
+  - 没有 `permission_store` 时退回 `CapabilityPermissionPipeline`
+- [ ] 确保 runtime path 与 legacy fallback path 在 unknown-scope 行为上保持一致（deny by default）
+- [ ] 确认 fallback 路径的报错语义仍会被归一化成当前调用方可接受的 `ToolError`
 
-```rust
-ctx.session_manager
-    .execute_for_run(run_id, &final_code, timeout, &sandbox)
-    .await?
-```
+**完成标准**
 
-替换为：
-
-```rust
-ctx.session_manager
-    .execute_for_run_with_cancel(
-        run_id,
-        &final_code,
-        timeout,
-        &sandbox,
-        ctx.cancel_token.clone(),
-    )
-    .await?
-```
-
-- [ ] **Step 2: 同样处理非 analysis 模式的 execute 调用**
-
-检查同一函数中是否有其他 `session_manager.execute(...)` 调用（非 run-scoped），如果有，同样切换到 cancel-aware 变体（如果存在 `execute_with_cancel`）。如果没有 cancel-aware 变体，保持原样并添加 `// TODO(S1): add cancel-aware variant` 注释。
-
-- [ ] **Step 3: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 4: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/llm/tool_executor/python.rs
-git commit -m "feat(S1): python executor uses cancel-aware execute_for_run_with_cancel"
-```
+- `execute()` 不再存在 `allow_all()` bypass
 
 ---
 
-## Task 5: sub_agent.rs 透传 cancel_token
+## Task 2：把 `allow_all()` 收缩为 test-only helper
 
-**Files:**
-- Modify: `src-tauri/src/llm/sub_agent.rs:259`
+**文件**
 
-- [ ] **Step 1: 确认 sub_agent 的 PluginContext 构造处已有 cancel_token**
+- `src-tauri/src/runtime/tools/dispatcher.rs`
+- `src-tauri/src/runtime/tools/testing.rs`
+- 相关 tests
 
-读取 `sub_agent.rs` 中构造 `sub_plugin_ctx` 的代码，确认 `cancel_token` 字段被正确从上游传入。如果上游 `PluginContext` 已有 `cancel_token`，则 `sub_plugin_ctx` 应 clone 它：
+- [ ] 将 `ToolDispatcher::allow_all()` 明确约束为测试辅助能力
+- [ ] 若生产代码仍依赖它，先补替代路径，再收缩
+- [ ] 保证测试辅助代码（如 `runtime/tools/testing.rs`）仍可正常构造 allow-all dispatcher
 
-```rust
-cancel_token: parent_ctx.cancel_token.clone(),
-```
+**完成标准**
 
-- [ ] **Step 2: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 3: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/llm/sub_agent.rs
-git commit -m "feat(S1): sub_agent propagates cancel_token to sub_plugin_ctx"
-```
+- 生产代码中不再依赖 `allow_all()`
+- allow-all 仅作为测试辅助存在
 
 ---
 
-## Task 6: S1 验证 — 生产路径 CancellationToken::new() 归零
+## Task 3：补一条“非 chat / legacy fallback 权限一致性”回归测试
 
-**Files:**
-- No code changes, verification only
+**建议测试目标**
 
-- [ ] **Step 1: grep 验证生产路径无孤立 new()**
+- 一个 legacy tool 通过 `ToolRegistry.execute()` 调用时：
+  - 若声明 unknown scope，应 fail-closed
+  - 若 permission store 中已有 persisted allow/deny，应遵守 persisted decision
 
-Run: `cd src-tauri && grep -rn "CancellationToken::new()" src/ --include="*.rs" | grep -v "test\|for_test\|#\[cfg(test)\]\|tests/"`
-Expected: 只剩 `runtime/cancellation.rs:10`（CancellationToken 的 `new()` 定义本身）和 `runtime/state.rs:27`（TurnState::new 的合法构造）。不应有其他生产路径调用。
+**优先实现方式**
 
-- [ ] **Step 2: 全量 review_ 回归测试**
+- 优先写在 `src-tauri/tests/` 的 integration test
+- 如果构造完整 `PluginContext` 成本过高，可在 `plugin/registry.rs` 写模块内单元测试
 
-Run: `cd src-tauri && cargo test review_ --tests --no-fail-fast -- --nocapture`
-Expected: 全绿
+**完成标准**
 
-- [ ] **Step 3: Rust 全量测试**
-
-Run: `cd src-tauri && cargo test`
-Expected: 全绿
-
-- [ ] **Step 4: 如有残余，修复并 commit**
+- 能直接证明 `ToolRegistry.execute()` 不再绕开统一权限边界
 
 ---
 
-## Task 7: S1 新增 cancel 透传回归测试
+## S1 验收
 
-**Files:**
-- Create: `src-tauri/tests/cancel_token_propagation_test.rs`
-
-- [ ] **Step 1: 写测试 — registry.execute() 透传 cancelled token 到 RuntimeTool**
-
-创建文件 `src-tauri/tests/cancel_token_propagation_test.rs`：
-
-```rust
-//! Verify that a cancelled CancellationToken propagated through PluginContext
-//! reaches the RuntimeTool via ToolExecutionContext.
-
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use serde_json::json;
-use async_trait::async_trait;
-
-use lotus_tauri::runtime::cancellation::CancellationToken;
-use lotus_tauri::runtime::tools::{RuntimeTool, ToolExecutionContext};
-use lotus_tauri::runtime::tools::definition::ToolDefinition;
-use lotus_tauri::runtime::tools::executor::{ToolResult, ToolError};
-use lotus_tauri::plugin::registry::ToolRegistry;
-
-/// Spy tool that records whether the received CancellationToken was cancelled.
-struct CancelSpyTool {
-    saw_cancelled: Arc<AtomicBool>,
-}
-
-#[async_trait]
-impl RuntimeTool for CancelSpyTool {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("cancel_spy", "test tool")
-    }
-
-    async fn execute(
-        &self,
-        _input: serde_json::Value,
-        ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        self.saw_cancelled.store(
-            ctx.cancellation.is_cancelled(),
-            Ordering::SeqCst,
-        );
-        Ok(ToolResult::new("cancel_spy", "ok", None))
-    }
-}
-
-#[tokio::test]
-async fn registry_execute_propagates_cancelled_token() {
-    let saw_cancelled = Arc::new(AtomicBool::new(false));
-    let spy = Arc::new(CancelSpyTool { saw_cancelled: saw_cancelled.clone() });
-
-    let registry = ToolRegistry::new();
-    registry.register_runtime(spy).await;
-
-    // Create a PluginContext with a pre-cancelled token.
-    // PluginContext requires many fields — construct with defaults where possible.
-    // The key field is cancel_token: Some(cancelled_token).
-    let token = CancellationToken::new();
-    token.cancel();
-
-    // Build minimal PluginContext (adjust fields to compile — most can be
-    // dummy/default values since CancelSpyTool doesn't use them).
-    // NOTE: The exact struct literal depends on post-Task-1 field set.
-    // If this doesn't compile, add the minimum required dummy values.
-    let ctx = lotus_tauri::plugin::context::PluginContext {
-        storage: Arc::new(lotus_tauri::storage::AppStorage::new_temp().unwrap()),
-        file_manager: Arc::new(lotus_tauri::storage::FileManager::new_temp().unwrap()),
-        workspace_path: std::path::PathBuf::from("/tmp/test"),
-        conversation_id: "test-conv".into(),
-        session_id: lotus_tauri::runtime::ids::SessionId::new("test-session".into()),
-        run_id: None,
-        agent_id: None,
-        tavily_api_key: None,
-        bocha_api_key: None,
-        app_handle: None,
-        session_manager: Arc::new(lotus_tauri::python::session::PythonSessionManager::new()),
-        auth_manager: None,
-        connector_engine: None,
-        use_cloud: false,
-        model: "test".into(),
-        gateway: None,
-        tool_registry: None,
-        app_settings: None,
-        agent_runtime: None,
-        event_bus: None,
-        authorized_workspace: None,
-        cancel_token: Some(token),
-    };
-
-    let result = registry.execute("cancel_spy", &ctx, json!({})).await;
-    assert!(result.is_ok(), "tool execution should succeed");
-    assert!(
-        saw_cancelled.load(Ordering::SeqCst),
-        "RuntimeTool should see cancelled token via ToolExecutionContext"
-    );
-}
-```
-
-注意：`AppStorage::new_temp()` 和 `FileManager::new_temp()` 等测试辅助方法可能不存在。如果编译失败，根据错误信息调整构造方式——核心断言逻辑不变，只是 PluginContext 的 dummy 字段需要适配。
-
-- [ ] **Step 2: 跑测试验证通过**
-
-Run: `cd src-tauri && cargo test --test cancel_token_propagation_test -- --nocapture`
-Expected: PASS
-
-- [ ] **Step 3: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/tests/cancel_token_propagation_test.rs
-git commit -m "test(S1): cancel token propagation regression test"
-```
+- [ ] `rg "allow_all\\(" src-tauri/src` 的生产路径调用归零
+- [ ] legacy fallback 的 unknown-scope regression test 通过
+- [ ] `cargo test --manifest-path src-tauri/Cargo.toml review_ --tests --no-fail-fast` 通过
 
 ---
 
-# S2：权限 bypass 消除
+# S2：取消传播统一
 
-## Task 8: registry.execute() legacy 回退用 StorePolicyPipeline
+## 目标
 
-**Files:**
-- Modify: `src-tauri/src/plugin/registry.rs:340`
+在当前 ownership 结构不大改的前提下，把 legacy / non-chat / Python 热路径的 cancel 传播断点补齐，让下游消费同一份 turn-scoped token。
 
-- [ ] **Step 1: 写失败测试 — legacy tool 经 execute() 时 unknown scope 被 deny**
+## 非目标
 
-创建 `src-tauri/tests/permission_bypass_elimination_test.rs`：
-
-```rust
-//! Verify that legacy tools dispatched via registry.execute() go through
-//! StorePolicyPipeline (or CapabilityPermissionPipeline), NOT AllowAllPermissionPipeline.
-//! A tool declaring an unknown capability_scope must be denied.
-
-use std::sync::Arc;
-use serde_json::{json, Value};
-use async_trait::async_trait;
-
-use lotus_tauri::plugin::tool_trait::{ToolPlugin, ToolOutput};
-use lotus_tauri::plugin::registry::ToolRegistry;
-use lotus_tauri::runtime::store::permission_store::PermissionStore;
-
-/// Fake legacy tool that declares an unknown capability scope.
-struct UnknownScopeLegacyTool;
-
-#[async_trait]
-impl ToolPlugin for UnknownScopeLegacyTool {
-    fn name(&self) -> &str { "unknown_scope_tool" }
-    fn description(&self) -> &str { "test tool with unknown scope" }
-    fn parameters_schema(&self) -> Value { json!({}) }
-
-    // The key: this tool declares a scope that no pipeline recognizes
-    fn capability_scope(&self) -> Vec<String> {
-        vec!["custom:nonexistent".to_string()]
-    }
-
-    async fn execute(
-        &self,
-        _ctx: &lotus_tauri::plugin::context::PluginContext,
-        _input: Value,
-    ) -> Result<ToolOutput, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(ToolOutput::success("should not reach here"))
-    }
-}
-
-#[tokio::test]
-async fn registry_execute_legacy_denies_unknown_scope() {
-    let registry = ToolRegistry::new();
-
-    // Inject an empty PermissionStore so StorePolicyPipeline is used
-    let store = Arc::new(PermissionStore::in_memory());
-    registry.set_permission_store(store).await;
-
-    // Register the legacy tool
-    registry.register(Arc::new(UnknownScopeLegacyTool), "test").await;
-
-    // Build a minimal PluginContext (same pattern as cancel test)
-    let ctx = lotus_tauri::plugin::context::PluginContext {
-        storage: Arc::new(lotus_tauri::storage::AppStorage::new_temp().unwrap()),
-        file_manager: Arc::new(lotus_tauri::storage::FileManager::new_temp().unwrap()),
-        workspace_path: std::path::PathBuf::from("/tmp/test"),
-        conversation_id: "test-conv".into(),
-        session_id: lotus_tauri::runtime::ids::SessionId::new("test-session".into()),
-        run_id: None,
-        agent_id: None,
-        tavily_api_key: None,
-        bocha_api_key: None,
-        app_handle: None,
-        session_manager: Arc::new(lotus_tauri::python::session::PythonSessionManager::new()),
-        auth_manager: None,
-        connector_engine: None,
-        use_cloud: false,
-        model: "test".into(),
-        gateway: None,
-        tool_registry: None,
-        app_settings: None,
-        agent_runtime: None,
-        event_bus: None,
-        authorized_workspace: None,
-        cancel_token: None,
-    };
-
-    let result = registry.execute("unknown_scope_tool", &ctx, json!({})).await;
-    assert!(
-        result.is_err(),
-        "Legacy tool with unknown capability scope should be denied, got: {:?}",
-        result
-    );
-    let err_msg = format!("{}", result.unwrap_err());
-    assert!(
-        err_msg.contains("Unknown capability scope") || err_msg.contains("Permission denied"),
-        "Error should mention unknown scope or permission denied, got: {}",
-        err_msg
-    );
-}
-```
-
-注意：与 Task 7 同样的约束 — PluginContext dummy 字段需要适配编译。`ToolPlugin` trait 的 `capability_scope()` 方法可能没有默认实现或方法名不同，需要根据实际 trait 定义调整。如果 `ToolPlugin` 没有 `capability_scope()` 方法（scope 由 `ToolDefinition` 而非 plugin 声明），则需要通过 `LegacyToolAdapter` 的 `definition()` 来设置 scope。
-
-- [ ] **Step 2: 跑测试确认它在当前代码下 PASS（因为 allow_all 放行了）**
-
-Run: `cd src-tauri && cargo test --test <test_file> -- registry_execute_legacy_denies_unknown_scope --nocapture`
-Expected: FAIL — 当前 `allow_all()` 放行了 unknown scope，测试应期望 deny 但实际得到 allow。
-
-注意：如果测试框架不方便构造完整的 legacy ToolPlugin + PluginContext，可以改为在 `registry.rs` 中写 `#[cfg(test)] mod tests` 的单元测试，利用模块内部可见性直接测试 `execute()` 路径。
-
-- [ ] **Step 3: 替换 allow_all() 为 StorePolicyPipeline**
-
-在 `registry.rs` line 340 替换：
-
-```rust
-// BEFORE:
-let dispatcher = ToolDispatcher::allow_all();
-
-// AFTER:
-let pipeline: Arc<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
-    Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
-    None => Arc::new(CapabilityPermissionPipeline),
-};
-let dispatcher = ToolDispatcher::new(pipeline);
-```
-
-需要在文件头部添加 `use crate::runtime::store::permission_store::StorePolicyPipeline;`（如果尚未导入）和 `use crate::runtime::tools::permission::CapabilityPermissionPipeline;`。
-
-这与同一文件 line 313-316（RuntimeTool 路径）和 line 380-384（`to_runtime_dispatcher`）已有的模式完全一致。
-
-- [ ] **Step 4: 跑测试确认变绿**
-
-Run: `cd src-tauri && cargo test --test <test_file> -- registry_execute_legacy_denies_unknown_scope --nocapture`
-Expected: PASS
-
-- [ ] **Step 5: 编译验证**
-
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error
-
-- [ ] **Step 6: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/plugin/registry.rs src-tauri/tests/
-git commit -m "feat(S2): registry.execute() legacy path uses StorePolicyPipeline instead of allow_all"
-```
+- 不要求 S2 直接把 `TurnState` 变成系统唯一 cancel root
+- 不要求 S2 完整移除 `PluginContext`
+- 不把 background / child-run / sub-agent 全部 runtime-native 化
 
 ---
 
-## Task 9: allow_all() 限制为 test-only
+## Task 4：在 `PluginContext` 上增加过渡性 `cancel_token`
 
-**Files:**
-- Modify: `src-tauri/src/runtime/tools/dispatcher.rs:41-43`
+**文件**
 
-- [ ] **Step 1: 标记 allow_all() 为 cfg(test)**
+- `src-tauri/src/plugin/context.rs`
 
-```rust
-#[cfg(test)]
-pub fn allow_all() -> Self {
-    Self::new(Arc::new(AllowAllPermissionPipeline))
-}
-```
+- [ ] 在 `PluginContext` 中新增：
+  - `cancel_token: Option<CancellationToken>`
+- [ ] 在注释里明确说明：
+  - 这是 legacy bridge 的**过渡字段**
+  - 目的仅是把 cancel 传到底层旧路径
+  - 不是鼓励继续扩张 `PluginContext`
+- [ ] 补齐所有 `PluginContext` 构造点的默认值
+  - 大多数填 `None`
+  - 只有当前真正持有 turn token 的 hot path 填 `Some(...)`
 
-- [ ] **Step 2: 编译验证**
+**完成标准**
 
-Run: `cd src-tauri && cargo check 2>&1 | grep "^error"`
-Expected: 无 error（如果生产代码还在调用 `allow_all()` 则会报错，说明 Task 8 的替换不完整）
-
-- [ ] **Step 3: 如果有报错，修复残留调用**
-
-检查报错位置，全部替换为 StorePolicyPipeline 模式。
-
-- [ ] **Step 4: 跑全量回归**
-
-Run: `cd src-tauri && cargo test review_ --tests --no-fail-fast -- --nocapture`
-Expected: 全绿
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add src-tauri/src/runtime/tools/dispatcher.rs
-git commit -m "feat(S2): restrict allow_all() to #[cfg(test)], prevent production bypass"
-```
+- 所有 `PluginContext` 构造点可编译
 
 ---
 
-## Task 10: S2 最终验证
+## Task 5：chat hot path / sub-agent 把真实 token 填进 `PluginContext`
 
-- [ ] **Step 1: grep 验证**
+**文件**
 
-Run: `cd src-tauri && grep -rn "allow_all" src/ --include="*.rs" | grep -v "#\[cfg(test)\]\|tests/\|test\b"`
-Expected: 无匹配（生产代码中不再有 allow_all 调用）
+- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
+- `src-tauri/src/llm/sub_agent.rs`
 
-- [ ] **Step 2: Rust 全量测试**
+- [ ] 在 precompute auto-load 路径构造 `PluginContext` 时填入当前 turn token
+- [ ] 在 tool round 构造 `PluginContext` 时填入当前 turn token
+- [ ] 在 sub-agent 派生的 `PluginContext` 上 clone 父 token
+- [ ] 保持没有上游 token 的路径仍可安全为 `None`
 
-Run: `cd src-tauri && cargo test`
-Expected: 全绿
+**完成标准**
 
-- [ ] **Step 3: Commit docs 更新**
-
-更新 `docs/superpowers/plans/README.md` 中 P4 状态，记录 S1/S2 完成。
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && git add docs/
-git commit -m "docs: mark S1 cancel unification and S2 permission bypass as complete"
-```
+- chat / sub-agent 热路径不再默默丢失 cancel token
 
 ---
 
-# S3：P1 收尾 — tool round ownership
+## Task 6：`ToolRegistry.execute()` 与 Python 旧路径透传 token
 
-## Task 11-15: 沿用已有计划
+**文件**
 
-**计划文件**: `docs/superpowers/plans/2026-04-15-p1-tool-round-ownership-plan.md` Task 4 及 Task 5。
+- `src-tauri/src/plugin/registry.rs`
+- `src-tauri/src/llm/tool_executor/python.rs`
 
-S3 不重新定义 Task，直接执行已有计划的：
-- **Task 4**：TauriLegacyTurnExecutor 实现 run_llm_step（Step 1-8）
-- **Task 5**：更新文档和最终验证（Step 1-5）
+- [ ] `registry.execute()` 中 runtime path 构造 `ToolExecutionContext` 时，不再 `CancellationToken::new()`
+- [ ] `registry.execute()` 中 legacy fallback 构造 `ToolExecutionContext` 时，也消费 `ctx.cancel_token`
+- [ ] `python.rs` 的 run-scoped 执行切换到 `execute_for_run_with_cancel(...)`
+- [ ] 若仍有非 run-scoped 路径暂时没有 cancel-aware 变体，明确写 TODO 注释，不要静默制造新的断点
 
-**验收标准**：
-1. T1-T6 review 测试在 production path 全绿
-2. `legacy_send_message_impl` 不再持有 tool dispatch 逻辑
-3. P1 状态标记为已关闭
+**完成标准**
+
+- registry / python 旧路径不再自己造 ad-hoc token
 
 ---
 
-## 风险与注意事项
+## Task 7：补一条 cancel propagation regression test
 
-1. **S1 Task 1（PluginContext 新增字段）的编译波及面**：PluginContext 在 36 个文件中使用，新增字段需要修复所有构造点。大多数只需加 `cancel_token: None`，但要逐一检查。
-2. **S2 对已存储 permission 的影响**：如果 `PermissionStore` 为空（首次运行），legacy 工具会经过 `CapabilityPermissionPipeline`（而非 `AllowAllPermissionPipeline`），未知 scope 会被 deny 而非放行。需确认所有内置 legacy 工具的 `capability_scope` 都在已知范围内。
-3. **S3 是最大风险项**：3900 行 agent_loop 拆分，见已有计划的风险分析。
-4. **S1 和 S2 可以分别独立合并**：即使 S3 延期，S1+S2 的价值也是独立的。
+**建议测试目标**
+
+- 给 `ToolRegistry.execute()` 一个带 `cancelled` token 的 `PluginContext`
+- 由一个 spy `RuntimeTool` 或 legacy-adapted tool 断言：
+  - `ToolExecutionContext.cancellation.is_cancelled()` 为 true
+
+**实现建议**
+
+- 优先做一个最小 spy `RuntimeTool`
+- 不依赖复杂 storage/file manager helper；dummy 依赖只保证能构造上下文即可
+
+**完成标准**
+
+- 有一条直接证明“token 从 PluginContext 传到 ToolExecutionContext”的测试
+
+---
+
+## S2 验收
+
+- [ ] 生产热路径里不再出现新的 ad-hoc `CancellationToken::new()`
+- [ ] registry / python / sub-agent 至少已经消费上传下来的 token
+- [ ] cancel propagation regression test 通过
+- [ ] `cargo check --manifest-path src-tauri/Cargo.toml` 通过
+
+---
+
+# S3：高价值 legacy bridge 收缩
+
+## 目标
+
+优先移除当前最热、最影响 runtime-first 纯度的 `PluginContext` 回桥点，为后续 ownership 大迁移减负。
+
+## 非目标
+
+- 不在 S3 里回收完整 LLM streaming ownership
+- 不要求一次性迁完所有 legacy tools
+- 不在 S3 里解决 synthetic `message_persisted`
+
+---
+
+## Task 8：重构 `load_file`，移除 runtime -> PluginContext 回桥
+
+**文件**
+
+- `src-tauri/src/runtime/tools/builtin/file.rs`
+- `src-tauri/src/llm/tool_executor/file_load.rs`
+
+- [ ] 把 `handle_load_file(ctx: &PluginContext, ...)` 依赖拆成 runtime-friendly helper
+- [ ] 目标是让 `LoadFileRuntimeTool` 直接消费 `LoadFileDeps + ToolExecutionContext`
+- [ ] 删除 `build_plugin_ctx()` 这类仅为过渡桥接存在的 helper
+- [ ] 保持 `load_file` 的现有行为不回退：
+  - loaded cache
+  - uploaded file resolve
+  - parser / masking
+  - memory key 语义
+
+**完成标准**
+
+- `src-tauri/src/runtime/tools/builtin/file.rs` 不再为 `load_file` 构造 `PluginContext`
+
+---
+
+## Task 9：precompute auto-load 改为 runtime-friendly helper，不再构造 full `PluginContext`
+
+**文件**
+
+- `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
+- 如有需要，配套 `src-tauri/src/llm/tool_executor/file_load.rs`
+
+- [ ] 把 precompute auto-load 依赖的“file key / loaded key / load failed key / load file”逻辑抽成更窄的 helper
+- [ ] 在 chat hot path 里只传：
+  - request-scoped deps
+  - conversation/run identity
+  - cancel token / workspace context
+- [ ] 避免在 precompute 阶段重新构造 full `PluginContext`
+
+**完成标准**
+
+- precompute auto-load 路径不再依赖 full `PluginContext`
+
+---
+
+## Task 10：评估并收口 `execute_python` 的下一步迁移边界
+
+**文件**
+
+- `src-tauri/src/llm/tool_executor/python.rs`
+- 如有需要，相关 builtin tool file
+
+- [ ] 先不强求本期把 `execute_python` 全量 runtime-native 化
+- [ ] 本期至少做两件事：
+  - 让 cancel-aware 执行路径成为默认路径
+  - 梳理它还依赖 `PluginContext` 的最小字段集
+- [ ] 产出明确结论：
+  - 哪些字段可下期迁成 request-scoped deps
+  - 哪些仍需暂时保留
+
+**完成标准**
+
+- `execute_python` 后续迁移边界被显式定义，而不是继续隐含在 `PluginContext` 里
+
+---
+
+## Task 11：补一条 load_file / precompute bridge reduction regression test
+
+**建议测试目标**
+
+- 证明 runtime `load_file` 路径已经不再依赖 `PluginContext` bridge
+- 或证明 precompute auto-load 在不构造 full `PluginContext` 的情况下仍能工作
+
+**完成标准**
+
+- S3 至少有一条测试能直接证明“高价值 bridge 确实被去掉了”
+
+---
+
+## S3 验收
+
+- [ ] `LoadFileRuntimeTool` 不再回桥到 `PluginContext`
+- [ ] precompute auto-load 不再构造 full `PluginContext`
+- [ ] `execute_python` 的下一步迁移边界已明确
+- [ ] `cargo test --manifest-path src-tauri/Cargo.toml review_ --tests --no-fail-fast` 通过
+
+---
+
+## 最终文档回写
+
+在 S1-S3 任一期完成后，按实际完成情况更新：
+
+- `docs/2026-04-15-current-architecture-improvement-needs.md`
+- `docs/reviews/2026-04-15-plan-implementation-review.md`
+- `docs/superpowers/plans/README.md`
+
+注意：
+
+- S1 / S2 / S3 完成后，仍然**不要**直接把 P1/P1-A 记为 fully closed
+- 只有后续完整 ownership 回收做完，才讨论关闭那条 P1 open
+
+---
+
+## 一句话执行顺序
+
+按顺序执行：
+
+1. **S1 先堵住权限 bypass**
+2. **S2 再打通 cancel 传播**
+3. **S3 再缩减高价值 legacy bridge**
+
+等这三条线收紧以后，再进入完整 ownership 回收的大阶段。
