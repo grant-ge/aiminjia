@@ -144,18 +144,31 @@
 
 ---
 
-## Task 3：统一 registry.execute() 的权限入口
+## Task 3：统一 registry.execute() 的权限入口 + Ask-preserving 返回契约
 
 **文件**
 - Modify: `src-tauri/src/plugin/registry.rs`
 
 - [ ] `execute()` 中 legacy fallback（line 340）从 `ToolDispatcher::allow_all()` 改为与 runtime path 同级别的 pipeline（复用已有 `permission_store` 模式）
 - [ ] 确保 runtime path（line 308-320）和 legacy fallback path 使用同一个 `PermissionPipeline` trait 返回三态
+- [ ] **升级 `execute()` 的返回类型**以保留 Ask 语义：
+  ```rust
+  pub enum RegistryExecuteOutcome {
+      Completed(ToolOutput),
+      AskRequired(PermissionDecision),
+  }
+
+  pub async fn execute(...) -> Result<RegistryExecuteOutcome, ToolError>
+  ```
+  或者更简单：直接返回 `Result<ToolOutput, ToolError>` 并新增 `ToolError::AskRequired(PermissionDecision)` 变体。选择取决于调用方的处理模式——但关键是 **Ask 不能在 registry 边界被压成 PermissionDenied**。
+- [ ] 修复所有 `execute()` 调用方（`sub_agent.rs`、`commands/chat.rs`）以处理 Ask 结果：
+  - 不经过 TurnDriver 的调用方（如 sub_agent）可以暂时 log + 转 deny，但必须在代码中标注 `// FIXME(S6): handle Ask via parent TurnDriver or sub-agent permission mode`
 - [ ] 编译验证
 
 **完成标准**
 - `execute()` 中不再存在 `allow_all()` bypass
 - runtime path 和 legacy path 经过同一个 pipeline
+- **Ask 结果能穿透 `execute()` 的返回边界**，调用方可以区分 Ask 与 Deny
 
 ---
 
@@ -414,6 +427,11 @@
   - 保持 parser / masking 行为
 - [ ] `LoadFileRuntimeTool::execute()` 从 `ctx.capability.file_ops` 获取 accessor，调用 `file_ops.load_file()`
 - [ ] 删除 `build_plugin_ctx()` 桥接函数
+- [ ] **确认 runtime 结果模型已携带完整文件元信息**：
+  - `ToolResult`（`runtime/tools/executor.rs`）已有 `file_meta: Option<FileMeta>`、`is_degraded: bool`、`degradation_notice: Option<String>` —— 确认这三个字段在 load_file 返回时被正确填充
+  - `RuntimeToolCallOutcome`（`runtime/chat/tool_round_types.rs`）已有对应字段 —— 确认 `QueryEngine::run_tool_call_with_bus()` 在构建 outcome 时从 `ToolResult` 映射这些字段
+  - `chat_runtime_impl.rs` 中 `all_file_metas` 的聚合路径确认能从 runtime tool round 路径收集到 file_meta（而不是只从 legacy 路径收集）
+  - 如果任何字段缺失或映射断裂，在本 Task 中补齐
 - [ ] 编译验证
 
 **关键约束**
@@ -424,6 +442,7 @@
 **完成标准**
 - LoadFileRuntimeTool 通过 `capability.file_ops` 访问文件能力
 - 不再构造 PluginContext
+- **file_meta / is_degraded / degradation_notice 从 ToolResult 到 RuntimeToolCallOutcome 到 chat_runtime_impl 的聚合路径完整**
 - FileOperations trait 的实现封装在 infra 层
 
 ---
@@ -483,7 +502,7 @@
 - [ ] precompute auto-load 不再构造 full PluginContext
 - [ ] **运行时语义 gate**：
   - loaded/load_failed key 语义保持
-  - file_meta/generatedFiles/degradation 透传到 TurnDriver（注意：需确认 `RuntimeToolCallOutcome` 和 `ToolResult` 已携带 `file_meta`、`is_degraded`、`degradation_notice` 字段——如果当前结果模型缺失 `generated_files` 聚合，需在 Task 9 中一并补齐，涉及 `src-tauri/src/runtime/chat/tool_round_types.rs` 和 `src-tauri/src/runtime/tools/executor.rs`）
+  - file_meta/is_degraded/degradation_notice 从 ToolResult → RuntimeToolCallOutcome → chat_runtime_impl all_file_metas 聚合路径完整（**必做项，不是条件式备注**）
   - cancellation 来自 turn cascade
   - 经过统一 permission pipeline
 - [ ] execute_python 只完成迁移边界定义（dependency inventory + boundary doc），不计作 runtime-native 迁移完成

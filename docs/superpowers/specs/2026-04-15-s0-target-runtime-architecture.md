@@ -395,8 +395,9 @@ pub trait RuntimeTool: Send + Sync {
 
 ### S3：高价值工具迁到 ExecutionContext
 
-- `load_file` 和 `execute_python` 改为接收 `ExecutionContext`
-- 验收：不仅验代码形状，还验运行时语义（loaded key、metadata、file_meta 透传、cancel/permission 路径一致性）
+- **S3 canonical migration target**：`load_file` + precompute auto-load 改为接收 `ExecutionContext`
+- `execute_python` 在 S3 只做 dependency inventory + boundary definition，不做 runtime-native migration（留到 S4）
+- 验收：不仅验代码形状，还验运行时语义（loaded key、file_meta/generatedFiles/degradation 透传、cancel cascade、permission pipeline 一致性）
 
 ---
 
