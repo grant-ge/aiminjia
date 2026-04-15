@@ -51,18 +51,15 @@ impl ChatTurnRequest {
 /// ## Tool call routing
 ///
 /// `run_chat_turn` preserves backward compatibility (returns `Result<(), String>`).
-/// Executors that produce LLM-driven tool calls for the runtime to dispatch should
-/// override `run_chat_turn_with_calls` instead — its default implementation calls
-/// `run_chat_turn` and returns an empty Vec, so existing implementations compile
+/// Executors that produce LLM-driven tool calls for the runtime to dispatch can
+/// override either `run_chat_turn_with_calls` for one-shot compatibility or the
+/// newer `run_llm_step` / `feed_tool_results` pair for iterative tool rounds.
+/// Default implementations preserve existing behaviour, so legacy executors compile
 /// without change.
-///
-/// `RuntimeChatTurnDriver` calls `run_chat_turn_with_calls` and routes the returned
-/// tool calls through `ToolRoundDriver` → `QueryEngine::run_tool_call_with_bus`.
-/// When the Vec is empty no dispatch happens (legacy executor path).
 #[async_trait]
 pub trait RuntimeTurnExecutor: Send + Sync {
     /// Execute the chat turn.  Backward-compatible signature; override this
-    /// **or** `run_chat_turn_with_calls` (not both).
+    /// **or** `run_chat_turn_with_calls` / `run_llm_step` (not all of them).
     async fn run_chat_turn(
         &self,
         request: ChatTurnRequest,
@@ -79,6 +76,28 @@ pub trait RuntimeTurnExecutor: Send + Sync {
     ) -> std::result::Result<Vec<RuntimeToolCallRequest>, String> {
         self.run_chat_turn(request).await?;
         Ok(vec![])
+    }
+
+    /// Execute a single LLM step and return tool calls.
+    ///
+    /// Default: calls `run_chat_turn` (full turn) and returns an empty Vec.
+    async fn run_llm_step(
+        &self,
+        request: ChatTurnRequest,
+        _previous_tool_results: &[crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome],
+    ) -> std::result::Result<Vec<RuntimeToolCallRequest>, String> {
+        self.run_chat_turn(request).await?;
+        Ok(vec![])
+    }
+
+    /// Receive tool execution results.
+    ///
+    /// Default: no-op.
+    async fn feed_tool_results(
+        &self,
+        _outcomes: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome>,
+    ) -> std::result::Result<(), String> {
+        Ok(())
     }
 }
 
@@ -149,23 +168,52 @@ impl RuntimeChatTurnDriver {
             .await?;
 
         if let Some(executor) = &self.legacy_executor {
-            // Executor-backed mode: the legacy helper owns real LLM / tool work
-            // and fires frontend legacy events directly via the Tauri app handle.
-            // We invoke it as a runtime-controlled helper (not a full delegate).
-            // `run_chat_turn_with_calls` returns any tool calls the executor produced;
-            // these are routed through `ToolRoundDriver` so the runtime dispatcher
-            // owns tool execution.  When the executor returns an empty Vec (legacy
-            // path) no dispatch happens and behaviour is unchanged.
-            let tool_calls = executor
-                .run_chat_turn_with_calls(request.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
+            // Executor-backed mode: iterative tool-round loop.
+            // `run_llm_step` returns any tool calls the LLM issued; these are
+            // dispatched through `ToolRoundDriver` so the runtime owns execution.
+            // Results are fed back via `feed_tool_results` for the next step.
+            // When `run_llm_step` returns an empty Vec the loop ends (legacy
+            // executors use the default impl that always returns vec![], so
+            // behaviour is unchanged for existing executors).
+            let round_driver = ToolRoundDriver::new(self.query_engine.clone());
+            let mut previous_outcomes: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> = vec![];
 
-            if !tool_calls.is_empty() {
-                let round_driver = ToolRoundDriver::new(self.query_engine.clone());
-                round_driver
+            loop {
+                let tool_calls = executor
+                    .run_llm_step(request.clone(), &previous_outcomes)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+
+                if tool_calls.is_empty() {
+                    break;
+                }
+
+                let round_results = round_driver
                     .execute_round(turn, &self.event_bus, tool_calls)
                     .await;
+
+                previous_outcomes = round_results
+                    .iter()
+                    .filter_map(|r| match r {
+                        crate::runtime::ToolRoundResult::Ok(outcome) => Some(outcome.clone()),
+                        crate::runtime::ToolRoundResult::Blocked(blocked) => {
+                            Some(crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome {
+                                tool_call_id: blocked.tool_call_id.clone(),
+                                tool_name: blocked.tool_name.clone(),
+                                content: blocked.reason.clone(),
+                                is_error: true,
+                                file_meta: None,
+                                is_degraded: false,
+                                degradation_notice: None,
+                            })
+                        }
+                    })
+                    .collect();
+
+                executor
+                    .feed_tool_results(previous_outcomes.clone())
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
             }
 
             // Emit runtime events through the bus so TauriEventAdapter can

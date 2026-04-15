@@ -34,6 +34,7 @@ use serde_json::Value;
 #[derive(Default)]
 struct CapturingExecutor {
     requests: Mutex<Vec<ChatTurnRequest>>,
+    step_count: Mutex<u32>,
 }
 
 #[async_trait]
@@ -43,21 +44,30 @@ impl RuntimeTurnExecutor for CapturingExecutor {
         Ok(())
     }
 
-    // Override to return a mock tool call so ToolRoundDriver can dispatch
-    // it to the SpyTool registered in QueryEngine's ToolDispatcher.
-    async fn run_chat_turn_with_calls(
+    // Override run_llm_step: on the first call, return a mock tool call so
+    // ToolRoundDriver can dispatch it to the SpyTool registered in QueryEngine's
+    // ToolDispatcher.  On subsequent calls return empty to terminate the loop.
+    async fn run_llm_step(
         &self,
         request: ChatTurnRequest,
+        _previous_tool_results: &[app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome],
     ) -> Result<Vec<app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest>, String> {
-        self.requests.lock().unwrap().push(request.clone());
-        Ok(vec![
-            app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest {
-                tool_call_id: "mock-tc-spy-1".to_string(),
-                tool_name: "spy_dispatch_tool".to_string(),
-                args: serde_json::json!({}),
-                purpose: None,
-            },
-        ])
+        let mut count = self.step_count.lock().unwrap();
+        *count += 1;
+        if *count == 1 {
+            // Record the request only on the first step so T3 sees exactly one entry.
+            self.requests.lock().unwrap().push(request.clone());
+            Ok(vec![
+                app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: "mock-tc-spy-1".to_string(),
+                    tool_name: "spy_dispatch_tool".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+            ])
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
@@ -85,11 +95,7 @@ impl RuntimeTool for SpyTool {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         *self.was_called.lock().unwrap() = true;
-        Ok(ToolResult {
-            tool_name: self.name.to_string(),
-            content: "spy:dispatched".to_string(),
-            data: None,
-        })
+        Ok(ToolResult::new(self.name, "spy:dispatched", None))
     }
 }
 
