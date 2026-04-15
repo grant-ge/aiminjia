@@ -103,20 +103,21 @@
 
 ### 设计决策
 
-- **S1 不做 ask UI**，只做**入口统一**与**bypass 消除**
-- legacy fallback 也必须经过与 runtime path 同级别的 permission pipeline
-- `unknown scope` 继续保持 deny-by-default
+- **S1 在后端层把权限契约升级为三态**（`Allow / Deny / Ask`），对标 S0 的 `PermissionDecision`
+- 消除 legacy fallback 的 `allow_all()` bypass
+- Ask 语义在后端完整保留——Dispatcher 返回 `AskRequired`，TurnDriver 按 mode 决定处理方式
+- **S1 不做前端 ask UI**——Ask 在 S1 由 TurnDriver 暂转 deny，但后端接口已就位，S6 只需在 TurnDriver 层改 Ask 分支
+- `unknown scope` 在 `StorePolicyPipeline` 下返回 Ask（而非直接 deny），给后续 ask 流程预留正确入口
 
 ### S1 完成后的状态
 
 - “从哪个入口进来”不再决定权限是否生效
-- 后续 ask / revoke / visibility 可以建立在统一边界之上
+- 后端权限契约已是三态——后续 ask / revoke / visibility 可以建立在统一边界之上，不需要再重塑接口
 
 ### S1 非目标
 
-- 不引入前端 ask 对话框
-- 不改变 `PolicyDecision` 模型
-- 不做完整权限产品化，只做主路径闭环
+- 不实现前端 Ask 对话框（UI 在 S6 做）
+- 不做完整权限产品化，只做后端契约升级 + 入口统一
 
 ---
 
@@ -135,30 +136,32 @@
 
 ### 设计决策
 
-- **S2 采用过渡方案**：在 `PluginContext` 上新增 `cancel_token: Option<CancellationToken>`
-- 这是一个**战术性桥接字段**，不是鼓励继续扩张 `PluginContext`
-- 这样做的原因是：
-  - 现阶段 legacy tools / request-scoped runtime tools 仍大量依赖 `PluginContext`
-  - 比起一次性重写所有函数签名，新增一个可空字段能更快把 cancel 传到底
-- `ToolRegistry.execute()`、Python 旧路径、sub-agent 路径统一消费这份 token
+- **S2 不通过 `PluginContext` 加字段做取消透传**——那会继续加厚 service locator
+- `CancellationToken` 升级为层级 cascade 模型：
+  - Session root token
+  - Turn child token
+  - Tool-call child token
+- 只允许通过 runtime 自有路径派生 child token，禁止用 `CancellationToken::default()` 或重命名来伪装闭环
+- 未能接入真实 parent token 的 side path 必须保留 `CancellationToken::new()` 并加 `FIXME(S4)`，让 grep gate 能持续暴露未闭合点
+- `child_token()` 实现必须是 shared-state / weak-child-registry 的事件驱动传播，禁止一 child 一线程轮询
 
 ### 关键边界说明
 
-S2 做完后，**能保证下游执行共享同一份 turn-scoped token**；  
-但它**还不等于**“TurnState 已成为系统唯一 cancel root source”。
+S2 做完后，**chat 主链路的 tool dispatch** 应形成：
 
-也就是说：
+```text
+session/root cancel
+  → turn child cancel
+    → tool-call child cancel
+```
 
-- S2 收的是**传播链断点**
-- 不是最终的 **global cancel architecture**
-
-后者仍依赖后续 ownership 回收。
+但 S2 不假装所有 legacy / sub-agent / non-chat side path 都已经闭合。未闭合路径必须显式标记，不能 cosmetic pass。
 
 ### S2 非目标
 
-- 不在 S2 里重写 `TurnState` / `RunRegistry` 架构
 - 不在 S2 里完全移除 `PluginContext`
-- 不要求一次性把所有 background path 都改成 runtime-native
+- 不要求所有 legacy `ToolPlugin` 都支持 cancel（它们仍受旧接口限制）
+- 不要求 background / child-run / sub-agent 全部 runtime-native 化
 
 ---
 
@@ -254,21 +257,30 @@ S5 runtime state 真相源收口
 
 ### S1 验收口径
 
-- 生产代码中不再存在 `allow_all()` 式权限 bypass
-- `ToolRegistry.execute()` legacy fallback 也走统一 pipeline
-- 非 chat 入口与 chat 入口的 unknown-scope 行为一致
+- `PermissionPipeline::authorize()` 返回三态 `PermissionDecision`（Allow/Deny/Ask），不是 `Result<()>`
+- 生产代码中不再存在 `allow_all()` bypass
+- `ToolDispatcher.dispatch()` 对 Ask 返回 `AskRequired`，不在 Dispatcher 层压扁
+- `StorePolicyPipeline` 对 unknown scope 返回 Ask（不是 Deny）
+- legacy fallback 与 runtime path 使用同一个 pipeline
 
 ### S2 验收口径
 
-- legacy / non-chat 执行链不再随手创建 ad-hoc token
-- `PluginContext` 能把当前 turn token 传到底层工具执行
-- Python 旧路径与 registry fallback 至少能消费上游传入 token
+- `CancellationToken` 支持 `child_token()` cascade（shared-state 事件驱动，不是轮询线程）
+- cancel 形成 session → turn → tool_call 三级层级
+- chat 主链路的 tool round 已接入真实 parent token
+- 未闭合 side path 保留 `CancellationToken::new()` + FIXME 标记，不用 `default()` 伪装闭环
+- 禁止用 PluginContext 做 cancel 透传（不给 PluginContext 加 cancel_token 字段）
 
 ### S3 验收口径
 
-- `load_file` 不再依赖 runtime -> PluginContext 回桥
-- precompute auto-load 不再构造 full `PluginContext`
-- hot path 中 `PluginContext` 的存在感明显下降
+- `LoadFileRuntimeTool` 通过 `CapabilityContext.file_ops`（`FileOperations` trait accessor）访问文件能力，不再构造 PluginContext
+- precompute auto-load 路径使用 runtime-friendly helper，不再构造 full PluginContext
+- **运行时语义 gate**（不只看代码形状）：
+  - `loaded/load_failed` key 语义保持（`loaded:{scope_id}:{file_id}`）
+  - `file_meta/generatedFiles/degradation` 透传到 TurnDriver 不回退
+  - cancellation 来自 turn cascade（parent cancel 时 load_file 可观察到 cancelled）
+  - 经过统一 permission pipeline（不是 allow_all）
+- `execute_python` 的迁移边界已显式定义（本期只做边界收敛，不做完整迁移）
 
 ---
 
