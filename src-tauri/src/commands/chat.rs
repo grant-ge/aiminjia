@@ -199,6 +199,32 @@ fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
 /// `save_analysis_note`.
 ///
 /// Max output: 4000 chars to prevent context bloat.
+/// Tools whose output IS a generated file (not text the LLM should narrate).
+/// Capturing the LLM's narration after these calls injects format-specific
+/// phrasing ("HTML 报告", ".html", "Excel 详细底表", ...) into subsequent
+/// step prompts, biasing the LLM to keep choosing the same output format on
+/// later analyses. This was the root cause of the "every analysis ends up as
+/// HTML" complaint (2026-04-15 fix).
+const FILE_GEN_TOOLS: &[&str] = &[
+    "generate_report",
+    "generate_chart",
+    "export_data",
+    "generate_slides",
+];
+
+/// Returns true iff the most recent tool message in `messages` was produced
+/// by one of the file-generating tools. Used by `auto_capture_step_context`
+/// to skip steps whose deliverable is the file itself, not the chat narration.
+fn is_last_tool_file_generation(messages: &[ChatMessage]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "tool")
+        .and_then(|m| m.name.as_deref())
+        .map(|name| FILE_GEN_TOOLS.contains(&name))
+        .unwrap_or(false)
+}
+
 fn auto_capture_step_context(
     db: &AppStorage,
     conversation_id: &str,
@@ -206,6 +232,16 @@ fn auto_capture_step_context(
     messages: &[ChatMessage],
 ) {
     const MAX_CONTEXT_CHARS: usize = 6000;
+
+    // Skip capture for file-generation steps (avoids format-bias pollution).
+    // See `is_last_tool_file_generation` for rationale.
+    if is_last_tool_file_generation(messages) {
+        log::info!(
+            "[auto_capture] Skipping step {} for conversation {} — last tool was file-generation; the file itself is the deliverable, no text capture needed (avoids format-bias pollution)",
+            step_num, conversation_id
+        );
+        return;
+    }
 
     let mut context_parts: Vec<String> = Vec::new();
 
@@ -3848,6 +3884,98 @@ fn strip_thinking_markers(text: &str) -> String {
         .replace("<｜begin▁of▁thinking｜>", "")
         .replace("<|end▁of▁thinking|>", "")
         .replace("<|begin▁of▁thinking|>", "")
+}
+
+#[cfg(test)]
+mod auto_capture_tests {
+    use super::is_last_tool_file_generation;
+    use crate::llm::streaming::ChatMessage;
+
+    fn user(content: &str) -> ChatMessage {
+        ChatMessage::text("user", content)
+    }
+    fn assistant(content: &str) -> ChatMessage {
+        ChatMessage::text("assistant", content)
+    }
+    fn tool(name: &str, content: &str) -> ChatMessage {
+        ChatMessage {
+            role: "tool".into(),
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: Some("tc-1".into()),
+            name: Some(name.into()),
+        }
+    }
+
+    #[test]
+    fn detects_generate_report_as_file_gen() {
+        let msgs = vec![
+            user("分析这份数据"),
+            assistant("好的"),
+            tool("execute_python", "df = pd.read_excel(...)"),
+            assistant("生成报告"),
+            tool("generate_report", "{\"file_id\":\"abc\"}"),
+            assistant("已生成"),
+        ];
+        assert!(is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn detects_generate_chart_as_file_gen() {
+        let msgs = vec![
+            tool("execute_python", "data ready"),
+            tool("generate_chart", "{\"file_id\":\"x\"}"),
+        ];
+        assert!(is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn detects_export_data_as_file_gen() {
+        let msgs = vec![tool("export_data", "ok")];
+        assert!(is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn detects_generate_slides_as_file_gen() {
+        let msgs = vec![tool("generate_slides", "ok")];
+        assert!(is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn does_not_skip_when_last_tool_is_analysis() {
+        // execute_python is the last tool — analysis step, should be captured
+        let msgs = vec![
+            user("clean data"),
+            assistant("分析中"),
+            tool("generate_report", "early generation"),
+            tool("execute_python", "stats: mean=5.2"),
+            assistant("均值是 5.2"),
+        ];
+        assert!(!is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn does_not_skip_when_no_tool_messages() {
+        // Pure dialog with no tool calls — not a file-gen step, capture normally
+        let msgs = vec![user("你好"), assistant("你好！请问有什么可以帮你？")];
+        assert!(!is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn does_not_skip_when_tool_is_save_analysis_note() {
+        // save_analysis_note is bookkeeping, not file gen — capture normally
+        let msgs = vec![
+            assistant("recording finding"),
+            tool("save_analysis_note", "saved"),
+        ];
+        assert!(!is_last_tool_file_generation(&msgs));
+    }
+
+    #[test]
+    fn does_not_skip_when_tool_is_load_file() {
+        let msgs = vec![tool("load_file", "loaded 1095 rows")];
+        assert!(!is_last_tool_file_generation(&msgs));
+    }
 }
 
 #[cfg(test)]
