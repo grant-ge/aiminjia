@@ -107,6 +107,11 @@ impl TurnState {
 }
 ```
 
+**`build_execution_context()` 约束**：
+- 只构造 call-independent defaults + call-scoped child token + agent identity 透传
+- 禁止在 builder 中塞入 message snapshot、app_state handle、storage raw deps
+- 如果工具需要这些信息，必须通过 `CapabilityContext` 上的受控 trait accessor 暴露
+
 ### App-wide State（thin reactive store）
 
 ```rust
@@ -237,6 +242,7 @@ Session.abort_controller （用户取消整个会话）
 - **Session cancel → 所有 turn/tool/subprocess 都中断**
 - **单个 tool cancel → 不影响同 turn 的其他 tool**
 - 取消后的状态清理：pending tool_call 标记为 cancelled，synthetic tool_result 注入 messages
+- **cancel cascade 必须是事件驱动的 shared-state 树形传播**（shared inner + weak child registry），禁止"一 child 一 OS 线程轮询"实现
 
 ---
 
@@ -373,9 +379,11 @@ pub trait RuntimeTool: Send + Sync {
 ### S1：权限模型升级到三态 + 单一入口
 
 - 把 `PermissionPipeline::authorize()` 返回值从 `Result<()>` 改为 `PermissionDecision`（三态）
+- `Allow` 变体必须携带 `updated_input: Option<Value>`——允许 pipeline 在放行时修改工具入参
 - 消除 `allow_all()` bypass
 - 所有入口统一到同一个 pipeline
-- Ask 暂时转为 Deny（后端契约已就位，UI 后做）
+- `ToolDispatcher.dispatch()` 对 Ask 返回 `ToolDispatchOutcome::AskRequired`，Ask 语义由 TurnDriver 按 mode 决定处理，不在 Dispatcher 压扁
+- Ask 在 S1 由 TurnDriver 暂转 Deny（后端契约已就位，UI 在 S6 做）
 
 ### S2：Cancel model 改为 child_token cascade
 
