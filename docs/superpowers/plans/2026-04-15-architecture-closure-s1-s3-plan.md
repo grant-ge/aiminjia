@@ -63,11 +63,22 @@
 - [ ] 新增 `PermissionDecision` 枚举（S0 定义的三态）：
   ```rust
   pub enum PermissionDecision {
-      Allow { reason: PermissionReason },
-      Deny { message: String, reason: PermissionReason },
-      Ask { message: String, reason: PermissionReason },
+      Allow {
+          updated_input: Option<Value>,
+          reason: PermissionReason,
+      },
+      Deny {
+          message: String,
+          reason: PermissionReason,
+      },
+      Ask {
+          message: String,
+          suggestions: Vec<PermissionUpdate>,
+          reason: PermissionReason,
+      },
   }
   ```
+- [ ] `Allow.updated_input` 和 `Ask.suggestions` 来自 S0 规范，S1 实施必须保持同构
 - [ ] 新增 `PermissionReason` 枚举：
   ```rust
   pub enum PermissionReason {
@@ -319,12 +330,12 @@
   - `commands/chat.rs`（test support）：同样保留 `CancellationToken::new()` + FIXME 注释
 - [ ] 更新 grep gate 的期望值：
   ```
-  # 期望的 CancellationToken::new() 位置：
-  # 1. cancellation.rs:定义本身
-  # 2. state.rs:TurnState::new() 默认值
-  # 3. sub_agent.rs:FIXME 标记（已知未闭合）
-  # 4. commands/chat.rs:test support（已知未闭合）
-  # 其他位置 = 回退，需要修复
+  # CancellationToken::new() 白名单（精确匹配，每处必须有注释）：
+  # 1. src-tauri/src/runtime/cancellation.rs — new() 方法定义本身
+  # 2. src-tauri/src/runtime/state.rs — TurnState::new() 默认 token（被 with_cancellation 覆盖）
+  # 3. src-tauri/src/llm/sub_agent.rs — FIXME(S4): 尚未接入 parent child_token
+  # 4. src-tauri/src/commands/chat.rs — test support / non-production helper
+  # 其他位置 = 架构回退，必须修复
   ```
 
 **完成标准**
@@ -352,7 +363,7 @@
 
 - [ ] CancellationToken 支持 child_token() cascade
 - [ ] cancel 形成 session → turn → tool_call 三级层级
-- [ ] `CancellationToken::new()` 在生产热路径归零（合法位置除外）
+- [ ] `CancellationToken::new()` 只允许出现在上述白名单位置；每个白名单位置必须有注释说明为什么尚未闭合
 - [ ] cascade regression tests 通过
 - [ ] `cargo test` 全绿
 
@@ -443,7 +454,7 @@
 
 ---
 
-## Task 12：评估 execute_python 迁移边界
+## Task 12：定义 execute_python 后续迁移边界（S3 不实施迁移）
 
 **文件**
 - `src-tauri/src/llm/tool_executor/python.rs`
@@ -455,7 +466,8 @@
 - [ ] 将结论写入 `docs/2026-04-15-execute-python-migration-boundary.md`
 
 **完成标准**
-- execute_python 的迁移边界被显式定义
+- execute_python 在 S3 只完成 dependency inventory 和 boundary definition，不要求 runtime-native migration
+- S3 的 canonical migration target 仅为 load_file + precompute auto-load
 
 ---
 
@@ -468,7 +480,8 @@
   - file_meta/generatedFiles 透传到 TurnDriver
   - cancellation 来自 turn cascade
   - 经过统一 permission pipeline
-- [ ] execute_python 迁移边界已明确
+- [ ] execute_python 只完成迁移边界定义（dependency inventory + boundary doc），不计作 runtime-native 迁移完成
+- [ ] S3 的 canonical migration target 仅为 load_file + precompute auto-load
 - [ ] `cargo test` 全绿
 
 ---
