@@ -94,6 +94,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     ) -> Result<(), TurnError> {
         Ok(())
     }
+
+    /// 构建 Turn 级的 system prompt。
+    /// 由 executor 从 DB / settings / persona / product_name 合成。
+    /// 默认 no-op（返回空字符串），生产 executor 必须 override。
+    async fn build_system_prompt(
+        &self,
+        _conversation_id: &str,
+        _is_analysis: bool,
+    ) -> Result<String, TurnError> {
+        Ok(String::new())
+    }
 }
 
 /// Runtime-owned chat turn driver.
@@ -187,8 +198,15 @@ impl RuntimeChatTurnDriver {
         // config fields that matter for the driver loop are max_iterations and
         // the IDs. Remaining fields are filled with sentinel defaults — T14
         // (production path switch) will enrich them.
+
+        // Build the system prompt via the executor (reads DB/persona/auth).
+        let system_prompt = executor
+            .build_system_prompt(&request.conversation_id, false)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
         let config = TurnConfig {
-            system_prompt: String::new(),
+            system_prompt,
             tool_defs: vec![],
             allowed_tools: None,
             max_iterations: 30,

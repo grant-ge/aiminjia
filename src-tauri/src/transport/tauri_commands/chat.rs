@@ -711,6 +711,47 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         );
         Ok(())
     }
+
+    /// 构建 Turn 级的 system prompt（daily 模式）。
+    /// 精确移植 agent_loop Block 4 的逻辑：
+    ///   - 从 DB 读取 active persona
+    ///   - 从 auth_manager 获取 product_name（租户品牌名）
+    ///   - 调用 prompts::get_system_prompt 合成完整 system prompt
+    async fn build_system_prompt(
+        &self,
+        _conversation_id: &str,
+        is_analysis: bool,
+    ) -> Result<String, TurnError> {
+        // Analysis mode: the step config owns the system prompt; daily mode is handled below.
+        // For now always build the daily-mode prompt regardless of is_analysis, as analysis
+        // step prompts are not yet wired into TurnConfig (see finalize_step TODO above).
+        // The daily prompt is a safe fallback even in analysis mode.
+        let _ = is_analysis;
+
+        // Read active persona (failure is non-fatal; proceed without persona).
+        let persona = self.services.db.get_active_persona().ok();
+
+        // Read product_name from auth_manager (tenant branding).
+        let product_name: Option<String> = self
+            .services
+            .auth_manager
+            .get_auth_info()
+            .await
+            .tenant
+            .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
+
+        let prompt =
+            prompts::get_system_prompt(None, persona.as_ref(), product_name.as_deref());
+
+        log::info!(
+            "[build_system_prompt] len={} persona={} product_name={}",
+            prompt.len(),
+            persona.as_ref().map(|p| p.identity.as_str()).unwrap_or("(none)"),
+            product_name.as_deref().unwrap_or("(none)"),
+        );
+
+        Ok(prompt)
+    }
 }
 
 // ---------------------------------------------------------------------------
