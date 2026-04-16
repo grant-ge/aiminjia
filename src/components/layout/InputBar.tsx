@@ -4,7 +4,7 @@
  *
  * Wired to useChat (send / stop) and useFileUpload (native file picker).
  */
-import { useState, useRef, useEffect, useMemo, type KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useChat } from '@/hooks/useChat'
@@ -86,8 +86,12 @@ export function InputBar() {
 
   const slashOpen = slashMatch !== null
 
-  const handleSlashSelect = (skill: SkillInfo) => {
-    // Replace "/filter" with triggerText, keep tail if any.
+  // useCallback so the popover's window-level keydown listener doesn't
+  // re-bind on every InputBar render (would cause tiny races between
+  // unbind/rebind and Enter keypresses).
+  const handleSlashSelect = useCallback((skill: SkillInfo) => {
+    // Replace "/filter" with triggerText, keep tail if any (e.g. user typed
+    // "/cmp 主要看P3" — select cmp → "帮我做薪酬公平性分析 主要看P3")
     const tail = slashMatch?.tail ?? ''
     const next = tail ? `${skill.triggerText}${tail}` : skill.triggerText
     setInput(next)
@@ -99,14 +103,14 @@ export function InputBar() {
         el.setSelectionRange(next.length, next.length)
       }
     })
-  }
+  }, [slashMatch])
 
-  const handleSlashClose = () => {
+  const handleSlashClose = useCallback(() => {
     // No state to clear — slash detection is driven purely by input text.
     // Users cancel by either clearing input, Backspace'ing past the "/",
     // or pressing Esc (handled inside the popover).
     textareaRef.current?.focus()
-  }
+  }, [])
 
   const handleSend = async () => {
     const trimmed = input.trim()

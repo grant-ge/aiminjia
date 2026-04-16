@@ -80,16 +80,28 @@ pub(crate) struct PromptBranchConfig {
 
 /// Parse a `prompt_router` TOML string of form
 /// `"note:{suffix}.{field}"` into `(suffix, field)`.
-/// Returns `None` if the format doesn't match. Validation is loose
-/// on purpose — unknown prefixes fall through to static-prompt mode.
+///
+/// **Only flat JSON fields are supported.** If `field` contains `.`
+/// (implying nested lookup) we return None — current `parse_branch_from_json`
+/// does literal key lookup, not JSONPath, so `.` in a field name would
+/// silently never match and every call would fall back to `default_branch`.
+/// We reject at load time rather than let the failure hide.
+///
+/// Returns `None` if the format doesn't match; callers surface this as
+/// a load-time error with a helpful message.
 fn parse_prompt_router(raw: &str) -> Option<(String, String)> {
     let rest = raw.strip_prefix("note:")?;
-    // Expect exactly one '.' separating suffix and field (note keys
-    // themselves never contain dots in this codebase).
+    // First '.' separates suffix from field. suffix (the note key tail)
+    // must not contain '.' in this codebase; field must be a single-level
+    // JSON key (no nesting).
     let idx = rest.find('.')?;
     let suffix = rest[..idx].to_string();
     let field = rest[idx + 1..].to_string();
     if suffix.is_empty() || field.is_empty() {
+        return None;
+    }
+    if field.contains('.') {
+        // Nested JSON path requested but not supported.
         return None;
     }
     Some((suffix, field))
@@ -360,7 +372,18 @@ fn resolve_branch_key(
     field: &str,
 ) -> Option<String> {
     let raw = storage.get_memory(note_key).ok().flatten()?;
-    parse_branch_from_json(&raw, field)
+    parse_branch_from_json(&raw, field).or_else(|| {
+        // Note present but JSON-parse or field-lookup failed. Fall back to
+        // default_branch silently BUT log a warning — this usually means the
+        // upstream step0 prompt stopped emitting the expected structured
+        // JSON (easy regression to miss otherwise because flows still
+        // "work" via the default branch).
+        log::warn!(
+            "[dynamic-prompt] note '{}' present but could not extract '.{}' field as string — falling back to default_branch",
+            note_key, field
+        );
+        None
+    })
 }
 
 fn parse_branch_from_json(raw: &str, field: &str) -> Option<String> {
@@ -422,15 +445,23 @@ impl Skill for DeclarativeSkill {
         }
         // Phase 12: skills activate only via explicit entry points
         // (WelcomeScreen card click, ⌘K command palette, `/` slash
-        // command — all of which send the exact `trigger_text` as the
-        // user message). Keyword fuzzy-matching was causing too many
-        // accidental skill entries when users casually mentioned a topic
-        // in daily chat; with 20+ skills the keyword surface had become
-        // unpredictable. Explicit entry points give users clear control.
+        // command — all of which send `trigger_text` as the user message).
+        // Keyword fuzzy-matching was removed because with 20+ skills the
+        // keyword surface had become too noisy (casual chat constantly
+        // hijacked into specialized skills).
         //
-        // The `keywords` field is still read by non-activation paths
-        // (e.g. trigger_text rendering, potential future auto-suggest).
-        !self.trigger.is_empty() && message.trim() == self.trigger.trim()
+        // We use `starts_with(trigger)` rather than strict equality so the
+        // user can APPEND context after selecting from the `/` picker:
+        // "帮我做薪酬公平性分析，主要看 P3 员工" still activates the
+        // comp-analysis-v2 skill. Prefix match is the minimum change that
+        // lets that UX flow work (confirmed as intended by the slash
+        // popover's contract: "user can then edit / add context before
+        // pressing Enter to send" — SlashCommandPopover.tsx docstring).
+        //
+        // Side note: the `keywords` field is still read by non-activation
+        // paths (trigger_text rendering, potential future auto-suggest).
+        let trigger_trimmed = self.trigger.trim();
+        !trigger_trimmed.is_empty() && message.trim_start().starts_with(trigger_trimmed)
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {

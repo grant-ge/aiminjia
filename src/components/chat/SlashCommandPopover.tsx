@@ -12,7 +12,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePluginStore } from '@/stores/pluginStore'
-import { usePersonaStore } from '@/stores/personaStore'
 import type { SkillInfo } from '@/lib/tauri'
 
 interface SlashCommandPopoverProps {
@@ -56,20 +55,21 @@ export function SlashCommandPopover({
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const skills = usePluginStore((s) => s.skills)
-  const activePersona = usePersonaStore((s) => s.activePersona)
-  const linkedCategories = activePersona?.linkedCategories ?? []
-  const hasLinked = linkedCategories.length > 0
   const [selectedIdx, setSelectedIdx] = useState(0)
   const listRef = useRef<HTMLUListElement>(null)
 
-  // Filter + sort skills (persona-aware, like WelcomeScreen)
+  // Filter + sort skills.
+  //
+  // Note: we intentionally do NOT apply persona.linkedCategories filtering
+  // here (WelcomeScreen does). The `/` slash picker is an explicit escape
+  // hatch: if the user typed it, they know what they're looking for, and
+  // hiding skills based on the active persona would silently swallow matches.
+  // (Reviewer flagged this 2026-04-16.)
   const visibleSkills = useMemo(() => {
     return skills
       .filter((s) => {
         // Exclude daily-assistant (the fallback one) and skills without icon
         if (s.id === 'daily-assistant' || !s.icon) return false
-        // Respect persona's linked categories when set
-        if (hasLinked && !linkedCategories.includes(s.category || 'general')) return false
         // Score filter
         return scoreSkill(s, filterText) > 0
       })
@@ -81,7 +81,7 @@ export function SlashCommandPopover({
         return a.skill.id.localeCompare(b.skill.id)
       })
       .map((x) => x.skill)
-  }, [skills, filterText, hasLinked, linkedCategories])
+  }, [skills, filterText])
 
   // Reset selection when filter changes
   useEffect(() => {
