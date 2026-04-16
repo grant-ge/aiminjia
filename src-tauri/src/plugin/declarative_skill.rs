@@ -25,6 +25,12 @@ pub struct DeclarativeSkill {
     include_app_base: bool,
     base_prompt: String,
     step_prompts: HashMap<String, String>,
+    /// Dynamic prompt routing (Phase 12 multi-file-handler).
+    /// Steps with a `prompt_router` in TOML get a branch config; at
+    /// runtime `resolve_dynamic_prompt` reads the referenced note from
+    /// storage, extracts the routing field, and returns the matching
+    /// branch prompt (falling back to `default_branch` on any miss).
+    step_prompt_branches: HashMap<String, PromptBranchConfig>,
     workflow: Option<WorkflowDefinition>,
     step_configs: HashMap<String, StepToolConfig>,
     extract_base: String,
@@ -52,6 +58,41 @@ struct StepToolConfig {
     tools_on_feedback: Option<Vec<String>>,
     /// Max iterations in feedback mode.
     max_iterations_feedback: Option<usize>,
+}
+
+/// Runtime branch selector — pre-loaded prompt texts keyed by branch,
+/// plus the source path (inside a saved note) that determines which
+/// branch to pick.
+#[derive(Debug, Clone)]
+pub(crate) struct PromptBranchConfig {
+    /// note_suffix (without the `note:{conv_id}:` prefix) that stores
+    /// the routing JSON. e.g. "step0_intent".
+    pub(crate) note_suffix: String,
+    /// JSON field whose value is used as the branch key. e.g. "mode".
+    pub(crate) field: String,
+    /// Pre-loaded prompt text per branch_key.
+    pub(crate) branches: HashMap<String, String>,
+    /// Branch_key to use when lookup fails (note missing, JSON parse
+    /// error, field absent, or value not in `branches`). Guaranteed to
+    /// exist in `branches` at load time (else skill load fails).
+    pub(crate) default_key: String,
+}
+
+/// Parse a `prompt_router` TOML string of form
+/// `"note:{suffix}.{field}"` into `(suffix, field)`.
+/// Returns `None` if the format doesn't match. Validation is loose
+/// on purpose — unknown prefixes fall through to static-prompt mode.
+fn parse_prompt_router(raw: &str) -> Option<(String, String)> {
+    let rest = raw.strip_prefix("note:")?;
+    // Expect exactly one '.' separating suffix and field (note keys
+    // themselves never contain dots in this codebase).
+    let idx = rest.find('.')?;
+    let suffix = rest[..idx].to_string();
+    let field = rest[idx + 1..].to_string();
+    if suffix.is_empty() || field.is_empty() {
+        return None;
+    }
+    Some((suffix, field))
 }
 
 impl DeclarativeSkill {
@@ -118,7 +159,7 @@ impl DeclarativeSkill {
 
         // Load workflow and step prompts
         let workflow_path = plugin_dir.join("workflow.toml");
-        let (workflow, step_prompts, step_configs) = if workflow_path.exists() {
+        let (workflow, step_prompts, step_configs, step_prompt_branches) = if workflow_path.exists() {
             let workflow_content = std::fs::read_to_string(&workflow_path)
                 .map_err(|e| format!("Failed to read workflow.toml: {}", e))?;
             let wf_manifest: WorkflowManifest = toml::from_str(&workflow_content)
@@ -126,14 +167,71 @@ impl DeclarativeSkill {
 
             let mut prompts = HashMap::new();
             let mut configs = HashMap::new();
+            let mut branches: HashMap<String, PromptBranchConfig> = HashMap::new();
             let mut steps = Vec::new();
 
             for step in &wf_manifest.steps {
+                // Static prompt path (existing behavior)
                 if let Some(prompt_path) = &step.prompt {
                     let prompt = Self::load_prompt(plugin_dir, prompt_path);
                     if !prompt.is_empty() {
                         prompts.insert(step.id.clone(), prompt);
                     }
+                }
+
+                // Dynamic prompt routing (new): if `prompt_router` +
+                // `prompts` map + `default_branch` all present and valid,
+                // pre-load all branch prompts into step_prompt_branches.
+                // Validation is strict — any malformed config fails skill
+                // load with a clear error, so mistakes surface early.
+                if let Some(router_raw) = &step.prompt_router {
+                    let (note_suffix, field) = parse_prompt_router(router_raw)
+                        .ok_or_else(|| format!(
+                            "step '{}': prompt_router '{}' must be of form 'note:{{suffix}}.{{field}}'",
+                            step.id, router_raw
+                        ))?;
+
+                    let prompts_map = step.prompts.as_ref().ok_or_else(|| format!(
+                        "step '{}': prompt_router set but [steps.prompts] map missing",
+                        step.id
+                    ))?;
+                    if prompts_map.is_empty() {
+                        return Err(format!(
+                            "step '{}': [steps.prompts] map is empty — at least one branch required",
+                            step.id
+                        ));
+                    }
+
+                    let default_key = step.default_branch.clone().ok_or_else(|| format!(
+                        "step '{}': prompt_router set but default_branch missing",
+                        step.id
+                    ))?;
+                    if !prompts_map.contains_key(&default_key) {
+                        return Err(format!(
+                            "step '{}': default_branch '{}' not found in [steps.prompts] (have: {:?})",
+                            step.id, default_key, prompts_map.keys().collect::<Vec<_>>()
+                        ));
+                    }
+
+                    // Pre-load all branch prompt texts
+                    let mut loaded_branches = HashMap::new();
+                    for (branch_key, rel_path) in prompts_map {
+                        let content = Self::load_prompt(plugin_dir, rel_path);
+                        if content.is_empty() {
+                            return Err(format!(
+                                "step '{}': branch '{}' prompt file '{}' is missing or empty",
+                                step.id, branch_key, rel_path
+                            ));
+                        }
+                        loaded_branches.insert(branch_key.clone(), content);
+                    }
+
+                    branches.insert(step.id.clone(), PromptBranchConfig {
+                        note_suffix,
+                        field,
+                        branches: loaded_branches,
+                        default_key,
+                    });
                 }
 
                 let advance_on = match step.advance_on.as_str() {
@@ -161,9 +259,9 @@ impl DeclarativeSkill {
 
             let initial = steps.first().map(|s| s.id.clone()).unwrap_or_default();
             let wf = WorkflowDefinition { steps, initial_step: initial };
-            (Some(wf), prompts, configs)
+            (Some(wf), prompts, configs, branches)
         } else {
-            (None, HashMap::new(), HashMap::new())
+            (None, HashMap::new(), HashMap::new(), HashMap::new())
         };
 
         Ok(Self {
@@ -180,6 +278,7 @@ impl DeclarativeSkill {
             include_app_base,
             base_prompt,
             step_prompts,
+            step_prompt_branches,
             workflow,
             step_configs,
             extract_base,
@@ -220,10 +319,91 @@ impl DeclarativeSkill {
             .map(|s| s.id == step_id)
             .unwrap_or(false)
     }
+
+    // ─── Dynamic prompt routing (Phase 12) ───────────────────────────────────
+    //
+    // Steps with `prompt_router` in workflow.toml resolve their prompt at
+    // runtime. The agent loop calls `resolve_dynamic_prompt` before each
+    // step's streaming and writes the result to `state.resolved_step_prompt`.
+    //
+    // Resolution:
+    //   1. Look up memory key `note:{conv_id}:{note_suffix}`
+    //   2. Parse value as JSON, extract `.{field}` as string
+    //   3. Return `branches[key]` if key is a known branch, else `branches[default_key]`
+    //
+    // Any failure (no branches configured, note missing, JSON parse error,
+    // field absent) falls back to the default_key silently. This is
+    // intentional: static-prompt skills never hit this code path and
+    // dynamic-prompt skills always have a working default. Callers can
+    // check return `None` to know the step has no dynamic config.
+
+    /// For unit testing without a real AppStorage — takes a pre-resolved
+    /// note value (or None to simulate missing note).
+    #[cfg(test)]
+    pub(crate) fn resolve_dynamic_prompt_from_note_value(
+        &self,
+        step_id: &str,
+        note_json_value: Option<&str>,
+    ) -> Option<String> {
+        let branch_cfg = self.step_prompt_branches.get(step_id)?;
+        let branch_key = note_json_value
+            .and_then(|v| parse_branch_from_json(v, &branch_cfg.field))
+            .filter(|k| branch_cfg.branches.contains_key(k))
+            .unwrap_or_else(|| branch_cfg.default_key.clone());
+        branch_cfg.branches.get(&branch_key).cloned()
+    }
+}
+
+fn resolve_branch_key(
+    storage: &crate::storage::file_store::AppStorage,
+    note_key: &str,
+    field: &str,
+) -> Option<String> {
+    let raw = storage.get_memory(note_key).ok().flatten()?;
+    parse_branch_from_json(&raw, field)
+}
+
+fn parse_branch_from_json(raw: &str, field: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    v.get(field).and_then(|f| f.as_str()).map(|s| s.to_string())
 }
 
 #[async_trait]
 impl Skill for DeclarativeSkill {
+    // ─── Dynamic prompt routing (Phase 12) ───────────────────────────────────
+    //
+    // Steps with `prompt_router` in workflow.toml resolve their prompt at
+    // runtime. The agent loop calls this before each step's streaming and
+    // writes the result to `state.resolved_step_prompt`.
+    //
+    // Resolution steps:
+    //   1. Look up memory key `note:{conv_id}:{note_suffix}`
+    //   2. Parse value as JSON, extract `.{field}` as string
+    //   3. Return `branches[key]` if key is a known branch, else `branches[default_key]`
+    //
+    // Any failure (no branches configured, note missing, JSON parse error,
+    // field absent) falls back to the default_key silently. This is
+    // intentional: static-prompt skills return `None` (trait default);
+    // dynamic-prompt skills always have a working default.
+    fn resolve_dynamic_prompt(
+        &self,
+        state: &SkillState,
+        storage: &crate::storage::file_store::AppStorage,
+        conversation_id: &str,
+    ) -> Option<String> {
+        let step_id = state.current_step.as_deref()?;
+        let branch_cfg = self.step_prompt_branches.get(step_id)?;
+
+        let note_key = format!("note:{}:{}", conversation_id, branch_cfg.note_suffix);
+        let branch_key = resolve_branch_key(storage, &note_key, &branch_cfg.field)
+            .filter(|k| branch_cfg.branches.contains_key(k))
+            .unwrap_or_else(|| branch_cfg.default_key.clone());
+
+        // `default_key` was validated to exist at load time, so this clone
+        // always succeeds for static-default-only paths too.
+        branch_cfg.branches.get(&branch_key).cloned()
+    }
+
     fn id(&self) -> &str { &self.id }
     fn display_name(&self) -> &str { &self.name }
     fn description(&self) -> &str { &self.description }
@@ -265,10 +445,14 @@ impl Skill for DeclarativeSkill {
         }
 
         if let Some(step) = state.current_step.as_deref() {
-            if let Some(sp) = self.step_prompts.get(step) {
-                if !sp.is_empty() {
-                    parts.push(sp.clone());
-                }
+            // Prefer the runtime-resolved dynamic prompt when the agent
+            // loop populated it (Phase 12 multi-file-handler). Falls back
+            // to the static per-step prompt for all other skills.
+            let step_prompt = state.resolved_step_prompt.as_ref()
+                .filter(|p| !p.is_empty())
+                .or_else(|| self.step_prompts.get(step).filter(|p| !p.is_empty()));
+            if let Some(sp) = step_prompt {
+                parts.push(sp.clone());
             }
 
             // Guide user to upload files when requires_files skill enters step0 without files
@@ -548,5 +732,220 @@ mod tests {
 
         let state0 = SkillState { current_step: Some("step0".into()), ..SkillState::new("comp-analysis-v2") };
         assert_eq!(skill.max_iterations(&state0), 5);
+    }
+
+    // ─── Phase 12 dynamic prompt routing tests ───────────────────────────────
+    //
+    // Build a minimal skill in a tempdir with a `prompt_router` step, then
+    // exercise all 4 resolution paths: happy-path (valid mode), missing
+    // note (falls back to default), unknown mode (falls back to default),
+    // missing field (falls back to default).
+
+    fn build_dynamic_routing_skill() -> (tempfile::TempDir, DeclarativeSkill) {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"[plugin]
+id = "routing-test-skill"
+name = "Routing Test"
+type = "skill"
+
+[trigger]
+keywords = ["routing-test", "rt1", "rt2"]
+
+[display]
+category = "general"
+icon = "🔀"
+"#,
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::write(dir.join("prompts/step0.md"), "Step 0 static prompt text for testing routing fallback behavior.").unwrap();
+        std::fs::write(dir.join("prompts/step2-compare.md"), "COMPARE branch selected.").unwrap();
+        std::fs::write(dir.join("prompts/step2-merge.md"), "MERGE branch selected.").unwrap();
+        std::fs::write(dir.join("prompts/step2-summarize.md"), "SUMMARIZE branch selected.").unwrap();
+
+        std::fs::write(
+            dir.join("workflow.toml"),
+            r#"
+[[steps]]
+id = "step0"
+name = "intent"
+prompt = "prompts/step0.md"
+advance_on = "any"
+
+[[steps]]
+id = "step2"
+name = "execute"
+prompt_router = "note:step0_intent.mode"
+default_branch = "compare"
+advance_on = "confirm"
+
+[steps.prompts]
+compare = "prompts/step2-compare.md"
+merge = "prompts/step2-merge.md"
+summarize = "prompts/step2-summarize.md"
+"#,
+        )
+        .unwrap();
+
+        let manifest = parse_plugin_manifest(&std::fs::read_to_string(dir.join("plugin.toml")).unwrap()).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, dir).unwrap();
+        (tmp, skill)
+    }
+
+    #[test]
+    fn dynamic_prompt_routes_to_matching_branch() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // mode = "merge" → should pick step2-merge.md
+        let p = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"merge"}"#))
+            .expect("branch should resolve");
+        assert!(p.contains("MERGE branch"), "got: {}", p);
+    }
+
+    #[test]
+    fn dynamic_prompt_falls_back_to_default_when_note_missing() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // None → default_branch "compare"
+        let p = skill
+            .resolve_dynamic_prompt_from_note_value("step2", None)
+            .expect("fallback should resolve");
+        assert!(p.contains("COMPARE branch"), "got: {}", p);
+    }
+
+    #[test]
+    fn dynamic_prompt_falls_back_to_default_when_mode_unknown() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // mode = "frobnicate" (not in branches) → default_branch "compare"
+        let p = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"frobnicate"}"#))
+            .expect("fallback should resolve");
+        assert!(p.contains("COMPARE branch"), "got: {}", p);
+    }
+
+    #[test]
+    fn dynamic_prompt_falls_back_to_default_when_field_missing() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // JSON valid but no `mode` field → default_branch "compare"
+        let p = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"other_field":"x"}"#))
+            .expect("fallback should resolve");
+        assert!(p.contains("COMPARE branch"), "got: {}", p);
+    }
+
+    #[test]
+    fn dynamic_prompt_returns_none_for_static_prompt_step() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // step0 uses static prompt = no branches configured
+        assert!(skill
+            .resolve_dynamic_prompt_from_note_value("step0", Some(r#"{"mode":"merge"}"#))
+            .is_none());
+    }
+
+    #[test]
+    fn dynamic_prompt_returns_none_for_unknown_step() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        assert!(skill
+            .resolve_dynamic_prompt_from_note_value("step-nonexistent", None)
+            .is_none());
+    }
+
+    // ─── Validation at load time ─────────────────────────────────────────────
+
+    #[test]
+    fn load_fails_when_default_branch_not_in_prompts_map() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"[plugin]
+id = "bad-routing"
+name = "Bad"
+type = "skill"
+[trigger]
+keywords = ["a", "b", "c"]
+[display]
+category = "general"
+icon = "X"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::write(dir.join("prompts/step2-compare.md"), "x").unwrap();
+        std::fs::write(
+            dir.join("workflow.toml"),
+            r#"
+[[steps]]
+id = "step2"
+name = "exec"
+prompt_router = "note:s0.mode"
+default_branch = "missing_branch"
+
+[steps.prompts]
+compare = "prompts/step2-compare.md"
+"#,
+        )
+        .unwrap();
+        let manifest = parse_plugin_manifest(&std::fs::read_to_string(dir.join("plugin.toml")).unwrap()).unwrap();
+        let err = match DeclarativeSkill::load(&manifest, dir) {
+            Ok(_) => panic!("expected load to fail"),
+            Err(e) => e,
+        };
+        assert!(err.contains("default_branch 'missing_branch' not found"), "got: {}", err);
+    }
+
+    #[test]
+    fn load_fails_when_prompt_router_malformed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("plugin.toml"), r#"[plugin]
+id = "bad-routing2"
+name = "Bad2"
+type = "skill"
+[trigger]
+keywords = ["a", "b", "c"]
+[display]
+category = "general"
+icon = "X"
+"#).unwrap();
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::write(dir.join("prompts/step2-compare.md"), "x").unwrap();
+        std::fs::write(
+            dir.join("workflow.toml"),
+            r#"
+[[steps]]
+id = "step2"
+name = "exec"
+prompt_router = "bad-format-no-note-prefix"
+default_branch = "compare"
+
+[steps.prompts]
+compare = "prompts/step2-compare.md"
+"#,
+        )
+        .unwrap();
+        let manifest = parse_plugin_manifest(&std::fs::read_to_string(dir.join("plugin.toml")).unwrap()).unwrap();
+        let err = match DeclarativeSkill::load(&manifest, dir) {
+            Ok(_) => panic!("expected load to fail"),
+            Err(e) => e,
+        };
+        assert!(err.contains("must be of form"), "got: {}", err);
+    }
+
+    #[test]
+    fn system_prompt_uses_resolved_over_static() {
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        // step2 has prompt_router — normally static prompt is empty. Set
+        // resolved_step_prompt manually and confirm system_prompt includes it.
+        let mut state = SkillState::new("routing-test-skill");
+        state.current_step = Some("step2".into());
+        state.resolved_step_prompt = Some("RESOLVED DYNAMIC CONTENT".into());
+
+        let sp = skill.system_prompt(&state);
+        assert!(sp.contains("RESOLVED DYNAMIC CONTENT"), "got: {}", sp);
     }
 }

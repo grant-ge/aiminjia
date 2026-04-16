@@ -83,7 +83,7 @@ pub struct WorkflowManifest {
 pub struct WorkflowStepManifest {
     pub id: String,
     pub name: String,
-    pub prompt: Option<String>, // path to prompt .md file
+    pub prompt: Option<String>, // path to prompt .md file (static mode)
     pub tools_only: Option<Vec<String>>,
     pub tools_exclude: Option<Vec<String>>,
     pub max_iterations: Option<usize>,
@@ -101,6 +101,27 @@ pub struct WorkflowStepManifest {
     pub tools_on_feedback: Option<Vec<String>>,
     /// Maximum iterations in feedback/modify mode (default 3).
     pub max_iterations_feedback: Option<usize>,
+    // ─── Dynamic prompt routing (multi-file-handler, Phase 12) ─────────────
+    /// Map of branch_key → prompt file path. When present, resolves the
+    /// prompt at runtime based on `prompt_router` instead of the static
+    /// `prompt` field. Example:
+    ///
+    /// ```toml
+    /// [steps.prompts]
+    /// compare = "prompts/step2-compare.md"
+    /// merge   = "prompts/step2-merge.md"
+    /// ```
+    pub prompts: Option<std::collections::HashMap<String, String>>,
+    /// Dotted path locating the branch_key inside a saved note.
+    /// Format: `note:{note_suffix}.{json_field}` (conversation_id is
+    /// injected automatically).
+    ///
+    /// Example: `"note:step0_intent.mode"` resolves to memory key
+    /// `note:{conv_id}:step0_intent`, parsed as JSON, read `.mode` field.
+    pub prompt_router: Option<String>,
+    /// Branch_key to use when the router source is missing or its value
+    /// isn't in the `prompts` map. Must be a key in `prompts`.
+    pub default_branch: Option<String>,
 }
 
 fn default_confirm() -> String {

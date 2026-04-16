@@ -426,6 +426,8 @@ async fn build_config_from_skill(
     skill: &dyn crate::plugin::Skill,
     state: &SkillState,
     tool_registry: &ToolRegistry,
+    storage: &AppStorage,
+    conversation_id: &str,
 ) -> StepConfig {
     let step_num = state.current_step.as_deref()
         .and_then(|s| s.strip_prefix("step"))
@@ -460,9 +462,23 @@ async fn build_config_from_skill(
     let precompute = skill.on_step_enter(state);
     let feedback_config = skill.feedback_config(state);
 
+    // Phase 12 dynamic prompt routing: resolve any branch prompt before
+    // asking the skill for its system_prompt. For skills without a
+    // `prompt_router` this is a cheap None (trait default), no-op.
+    // We clone state rather than requiring `&mut` because that would
+    // cascade through every caller.
+    let mut state_for_prompt = state.clone();
+    if let Some(resolved) = skill.resolve_dynamic_prompt(state, storage, conversation_id) {
+        log::info!(
+            "[build_config] dynamic prompt resolved for skill={} step={:?} ({} chars)",
+            skill.id(), state.current_step, resolved.len()
+        );
+        state_for_prompt.resolved_step_prompt = Some(resolved);
+    }
+
     StepConfig {
         step: step_num,
-        system_prompt: skill.system_prompt(state),
+        system_prompt: skill.system_prompt(&state_for_prompt),
         tool_defs,
         max_iterations: max_iter,
         requires_confirmation: true,
@@ -928,7 +944,7 @@ pub async fn send_message(
                         let mut state = SkillState::new(&skill_id);
                         state.current_step = Some(initial_step.clone());
                         state.has_files = has_files;
-                        Some(build_config_from_skill(&*skill, &state, &tool_registry).await)
+                        Some(build_config_from_skill(&*skill, &state, &tool_registry, &db, &conversation_id).await)
                     }
                     _ => {
                         // No workflow → stay in daily mode
@@ -1052,7 +1068,7 @@ pub async fn send_message(
                         log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
                     }
 
-                    Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
+                    Some(build_config_from_skill(&*skill, &skill_state, &tool_registry, &db, &conversation_id).await)
                 }
 
                 Some(&StepStatus::InProgress) => {
@@ -1080,7 +1096,7 @@ pub async fn send_message(
                         ) {
                             log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
                         }
-                        Some(build_config_from_skill(&*skill, &skill_state, &tool_registry).await)
+                        Some(build_config_from_skill(&*skill, &skill_state, &tool_registry, &db, &conversation_id).await)
                     }
                 }
 
@@ -1278,7 +1294,7 @@ pub async fn send_message(
                             new_state.current_step = Some(next_step_id);
                             new_state.has_files = has_files;
 
-                            Some(build_config_from_skill(&*skill, &new_state, &tool_registry).await)
+                            Some(build_config_from_skill(&*skill, &new_state, &tool_registry, &db, &conversation_id).await)
                         }
 
                         StepAction::WaitForUser => {
@@ -1291,7 +1307,7 @@ pub async fn send_message(
                                 log::error!("Failed to mark step {} as in_progress: {}", step_num, e);
                             }
 
-                            let mut config = build_config_from_skill(&*skill, &skill_state, &tool_registry).await;
+                            let mut config = build_config_from_skill(&*skill, &skill_state, &tool_registry, &db, &conversation_id).await;
                             config.is_feedback = true;
                             Some(config)
                         }

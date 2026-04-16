@@ -22,6 +22,15 @@ pub struct SkillState {
     pub custom_data: serde_json::Value,
     #[serde(default)]
     pub has_files: bool,
+    /// Runtime-resolved step prompt (Phase 12 dynamic routing).
+    ///
+    /// When a step has a `prompt_router` in workflow.toml, the agent loop
+    /// calls `DeclarativeSkill::resolve_dynamic_prompt` before streaming
+    /// and writes the picked branch prompt here. `system_prompt` then
+    /// prefers this over the static `step_prompts` lookup. `#[serde(skip)]`
+    /// because it's transient — never persisted to disk.
+    #[serde(skip)]
+    pub resolved_step_prompt: Option<String>,
 }
 
 impl SkillState {
@@ -32,6 +41,7 @@ impl SkillState {
             step_status: HashMap::new(),
             custom_data: serde_json::Value::Null,
             has_files: false,
+            resolved_step_prompt: None,
         }
     }
 }
@@ -190,6 +200,24 @@ pub trait Skill: Send + Sync + 'static {
 
     /// System prompt for this Skill (may vary by step).
     fn system_prompt(&self, state: &SkillState) -> String;
+
+    /// Resolve a runtime-dynamic step prompt (Phase 12 multi-file-handler
+    /// routing). Returns `Some(prompt_text)` when the current step has a
+    /// `prompt_router` configured and the matching branch prompt should be
+    /// used in place of the static `step_prompts` entry. Returns `None` for
+    /// all static-prompt skills (the vast majority) — callers then fall
+    /// back to `system_prompt(state)` unchanged.
+    ///
+    /// Called by the agent loop BEFORE streaming each step; implementers
+    /// that read a note for routing need storage + conversation_id.
+    fn resolve_dynamic_prompt(
+        &self,
+        _state: &SkillState,
+        _storage: &crate::storage::file_store::AppStorage,
+        _conversation_id: &str,
+    ) -> Option<String> {
+        None
+    }
 
     /// Which tools are available in this Skill/step.
     fn tool_filter(&self, state: &SkillState) -> ToolFilter;
