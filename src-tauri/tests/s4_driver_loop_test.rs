@@ -397,3 +397,119 @@ fn walk_rust_files(dir: &str) -> Vec<std::path::PathBuf> {
     out
 }
 
+// ── S4-T2: system-reminder 日期注入测试 ──────────────────────────────────────
+
+struct RecordingMockExecutor {
+    responses: std::sync::Mutex<Vec<LlmStepResult>>,
+    received_messages: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+}
+
+impl RecordingMockExecutor {
+    fn new(responses: Vec<LlmStepResult>) -> Self {
+        Self {
+            responses: std::sync::Mutex::new(responses),
+            received_messages: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn all_messages(&self) -> Vec<Vec<serde_json::Value>> {
+        self.received_messages.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for RecordingMockExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.received_messages.lock().unwrap().push(input.messages.clone());
+        let mut responses = self.responses.lock().unwrap();
+        if responses.is_empty() {
+            Ok(LlmStepResult::ContentComplete {
+                content: "done".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+            })
+        } else {
+            Ok(responses.remove(0))
+        }
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-msg-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_injects_system_reminder_as_first_user_message() {
+    let executor = Arc::new(RecordingMockExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        },
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-reminder");
+    let request = ChatTurnRequest::new("conv-reminder", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let all_messages = executor.all_messages();
+    assert!(!all_messages.is_empty(), "executor must have received messages");
+    let first_call_messages = &all_messages[0];
+
+    let first_msg = &first_call_messages[0];
+    assert_eq!(first_msg["role"], "user", "first message must be user role");
+    let content = first_msg["content"].as_str().unwrap_or("");
+    assert!(content.contains("<system-reminder>"),
+        "first user message must contain <system-reminder> tag, got: {}", content);
+    assert!(content.contains("今天是"),
+        "system-reminder must contain date info, got: {}", content);
+    assert!(content.contains("</system-reminder>"),
+        "system-reminder must have closing tag, got: {}", content);
+}
+
+#[tokio::test]
+async fn driver_s4_system_reminder_precedes_user_content_message() {
+    let executor = Arc::new(RecordingMockExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        },
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-reminder-order");
+    let request = ChatTurnRequest::new("conv-reminder-order", "what is today?", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let first_call_messages = &executor.all_messages()[0];
+    assert!(first_call_messages.len() >= 2,
+        "must have at least system-reminder + user content");
+
+    let first = &first_call_messages[0];
+    let second = &first_call_messages[1];
+
+    assert!(first["content"].as_str().unwrap_or("").contains("<system-reminder>"),
+        "index 0 must be system-reminder");
+    assert_eq!(second["content"], "what is today?",
+        "index 1 must be the actual user content");
+}
+

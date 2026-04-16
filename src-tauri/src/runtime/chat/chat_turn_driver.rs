@@ -220,17 +220,24 @@ impl RuntimeChatTurnDriver {
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        // Seed messages with the current user turn so the executor sees the
-        // request. NOTE: persisted history is currently NOT loaded here —
-        // the executor's legacy code path was loading it from DB, so until
-        // history loading is wired into the driver, single-turn behavior works
-        // but multi-turn within the same conversation will lose context across
-        // sessions. Track this in S4 follow-up.
+        // messages[0] = <system-reminder>（日期注入，对齐 claude-code-best getUserContext()）
+        // messages[1] = 用户实际 content
+        // NOTE: persisted history is currently NOT loaded here — that is Task 5.
+        let now = chrono::Local::now();
+        let today = now.format("%Y年%m月%d日");
+        let today_iso = now.format("%Y-%m-%d");
+        let system_reminder_message = serde_json::json!({
+            "role": "user",
+            "content": format!(
+                "<system-reminder>\n今天是 {}（{}）。\n</system-reminder>",
+                today, today_iso
+            ),
+        });
         let user_message = serde_json::json!({
             "role": "user",
             "content": request.content,
         });
-        let mut state = TurnIterationState::new(vec![user_message]);
+        let mut state = TurnIterationState::new(vec![system_reminder_message, user_message]);
 
         // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
         // Legacy path wrote the user message to DB before spawning agent_loop.
