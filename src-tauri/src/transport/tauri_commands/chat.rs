@@ -480,41 +480,204 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         _config: &TurnConfig,
         _state: &mut TurnIterationState,
     ) -> Result<Option<String>, TurnError> {
-        // TODO(S4-T12): extract from agent_loop Block 6 (L1795-L2034)
-        // Only runs when config.step_config.is_some() (analysis mode).
-        // Default no-op returns Ok(None) — acceptable for daily mode.
+        // TODO(S4-T12/future): full precompute requires StepConfig.precompute, which is not yet
+        // carried by TurnConfig. TurnConfig only has is_analysis:bool, not the full StepConfig.
+        // When S4-T13 wires the driver loop, TurnConfig should be extended with:
+        //   pub step_config: Option<StepConfig>,
+        // at which point this body can be extracted from chat_runtime_impl.rs Block 6 (L1795-L2034).
+        // For daily mode (is_analysis == false) Ok(None) is always correct.
+        // For analysis mode without the step_config, falling back to no-precompute is safe
+        // (the agent will do the computation itself in the tool loop).
         Ok(None)
     }
 
     async fn persist_assistant_message(
         &self,
-        _conversation_id: &str,
-        _content: &str,
-        _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value],
+        conversation_id: &str,
+        content: &str,
+        generated_file_ids: &[String],
+        file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
-        // TODO(S4-T12): extract DB persistence logic from finish_agent() in chat_runtime_impl.rs
-        // - unmask PII
-        // - leak detection
-        // - persist to AppStorage
-        // - return message_id
-        // Must NOT emit app.emit("message:updated") — that is driver's responsibility via bus
-        Err(TurnError::PersistenceError(
-            "persist_assistant_message not yet implemented (S4-T12)".to_string(),
-        ))
+        // Generate a stable message ID for this assistant turn.
+        let message_id = uuid::Uuid::new_v4().to_string();
+
+        // --- Leak detection at persistence boundary ---
+        // No MaskingContext available at this layer (the gateway already returned plain text
+        // after unmasking); apply prompt_guard as a last-resort safety net.
+        let (filtered_content, was_leaked) = prompt_guard::filter_leaked_content(content);
+        if was_leaked {
+            log::warn!(
+                "[persist_assistant_message] Prompt leak caught at persistence for conv={}",
+                conversation_id
+            );
+        }
+
+        let trimmed = filtered_content.trim();
+
+        // Skip persisting empty messages (tool-call-only iterations produce no visible text).
+        if trimmed.is_empty() {
+            log::info!(
+                "[persist_assistant_message] Skipping empty assistant message for conv={} id={}",
+                conversation_id,
+                message_id
+            );
+            return Ok(message_id);
+        }
+
+        // Check that the conversation still exists (might have been deleted while the agent ran).
+        if self.services.db.get_conversation_mode(conversation_id).is_err() {
+            log::warn!(
+                "[persist_assistant_message] Conversation {} deleted during agent run, skipping save",
+                conversation_id
+            );
+            return Ok(message_id);
+        }
+
+        let workspace_path = self.services.file_mgr.workspace_path();
+
+        // --- Build content JSON, attaching generated files when present ---
+        let content_value = if !generated_file_ids.is_empty() {
+            match self.services.db.get_generated_files_by_ids(generated_file_ids) {
+                Ok(file_records) if !file_records.is_empty() => {
+                    let gen_files: Vec<serde_json::Value> = file_records
+                        .iter()
+                        .map(|f| {
+                            let stored_path = f["storedPath"].as_str().unwrap_or("");
+                            let full_path = workspace_path.join(stored_path);
+                            let file_id_str = f["id"].as_str().unwrap_or("");
+                            // Look up FileMeta JSON to inject degradation info.
+                            // file_metas entries are serde_json::Value serialised from FileMeta.
+                            let matching_meta = file_metas.iter().find(|m| {
+                                m.get("fileId")
+                                    .or_else(|| m.get("file_id"))
+                                    .and_then(|v| v.as_str())
+                                    == Some(file_id_str)
+                            });
+                            let mut file_json = serde_json::json!({
+                                "id": f["id"],
+                                "fileName": f["fileName"],
+                                "filePath": full_path.to_string_lossy(),
+                                "fileType": f["fileType"],
+                                "fileSize": f["fileSize"],
+                                "category": f["category"],
+                                "version": f["version"],
+                                "isLatest": f["isLatest"],
+                                "createdAt": f["createdAt"],
+                                "createdByStep": f["createdByStep"],
+                                "description": f["description"],
+                                "actions": [],
+                            });
+                            if let Some(meta) = matching_meta {
+                                let requested = meta
+                                    .get("requestedFormat")
+                                    .or_else(|| meta.get("requested_format"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let actual = meta
+                                    .get("actualFormat")
+                                    .or_else(|| meta.get("actual_format"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                if !requested.is_empty() && requested != actual {
+                                    file_json["isDegraded"] = serde_json::json!(true);
+                                    file_json["requestedFormat"] = serde_json::json!(requested);
+                                    file_json["degradationNotice"] = serde_json::json!(format!(
+                                        "{} 转换失败，已降级为 {} 格式",
+                                        requested.to_uppercase(),
+                                        actual.to_uppercase()
+                                    ));
+                                }
+                            }
+                            file_json
+                        })
+                        .collect();
+                    log::info!(
+                        "[persist_assistant_message] Attaching {} generated files to message {}",
+                        gen_files.len(),
+                        message_id
+                    );
+                    serde_json::json!({
+                        "text": filtered_content,
+                        "generatedFiles": gen_files,
+                    })
+                }
+                Ok(_) => serde_json::json!({ "text": filtered_content }),
+                Err(e) => {
+                    log::error!(
+                        "[persist_assistant_message] Failed to query generated files: {:#}",
+                        e
+                    );
+                    serde_json::json!({ "text": filtered_content })
+                }
+            }
+        } else {
+            serde_json::json!({ "text": filtered_content })
+        };
+
+        // --- Persist to AppStorage ---
+        let content_json = content_value.to_string();
+        log::info!(
+            "[persist_assistant_message] Saving id={} conv={} content_len={}",
+            message_id,
+            conversation_id,
+            content_json.len()
+        );
+        match self.services.db.insert_message(
+            &message_id,
+            conversation_id,
+            "assistant",
+            &content_json,
+        ) {
+            Ok(_) => {
+                log::info!(
+                    "[persist_assistant_message] Message saved successfully id={}",
+                    message_id
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "[persist_assistant_message] Failed to save message to DB: {:#}",
+                    e
+                );
+                return Err(TurnError::PersistenceError(format!(
+                    "Failed to save assistant message: {}",
+                    e
+                )));
+            }
+        }
+
+        // NOTE: message:updated event is NOT emitted here — that is the driver's
+        // responsibility via bus.emit(RuntimeEventKind::MessagePersisted { ... }).
+        // Auto-title update is also omitted: it requires app.emit() and is a side-effect
+        // that the driver (T13) should handle via the bus.
+
+        Ok(message_id)
     }
 
     async fn finalize_step(
         &self,
-        _state: &TurnIterationState,
-        _config: &TurnConfig,
+        state: &TurnIterationState,
+        config: &TurnConfig,
     ) -> Result<(), TurnError> {
-        // TODO(S4-T12): extract from agent_loop Block 34 (L3300-L3372)
-        // Only runs when config.step_config.is_some() (analysis mode).
-        // - auto_capture_step_context
-        // - verify analysis notes
-        // - orchestrator::advance_step
-        // Default no-op is acceptable for daily mode.
+        // TODO(S4-T12/future): full finalize_step requires StepConfig.step (u32), which is not yet
+        // carried by TurnConfig. TurnConfig only has is_analysis:bool.
+        // When S4-T13 wires the driver loop, TurnConfig should be extended with:
+        //   pub step_config: Option<StepConfig>,
+        // at which point this body can be extracted from chat_runtime_impl.rs Block 34 (L3300-L3372):
+        //   - auto_capture_step_context(&db, &conversation_id, step_num, &messages)
+        //   - validate analysis notes (warn if missing)
+        //   - orchestrator::advance_step(&db, &conversation_id, step_num, "completed")
+        // For daily mode (is_analysis == false) the no-op is always correct.
+        if !config.is_analysis {
+            return Ok(());
+        }
+        // analysis mode: log that we skipped finalize (until step_config is available)
+        log::debug!(
+            "[finalize_step] Analysis mode but step_config not in TurnConfig — skipping \
+             auto_capture and advance_step for conv={}. full_content_len={}",
+            config.conversation_id,
+            state.full_content.len()
+        );
         Ok(())
     }
 }
