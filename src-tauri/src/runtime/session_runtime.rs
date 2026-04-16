@@ -6,7 +6,7 @@ use anyhow::Result;
 // they now live in `runtime::chat` to avoid circular imports.
 pub use crate::runtime::chat::{ChatTurnRequest, RuntimeTurnExecutor};
 use crate::runtime::cancellation::CancellationToken;
-use crate::runtime::chat::RuntimeChatTurnDriver;
+use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
@@ -28,6 +28,10 @@ pub struct SessionRuntime {
     /// executor. Instead, `RuntimeChatTurnDriver` remains the single turn entry
     /// point and decides when the helper is invoked.
     legacy_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
+    /// S4 new executor: owns the query loop; executor is a provider streaming adapter only.
+    /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`
+    /// (S4 path) instead of the legacy executor path.
+    llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
     /// Session-level cancellation token.  When set, every `TurnState` produced by
     /// `run_chat_request` receives a **child** token so that cancelling the session
@@ -46,6 +50,7 @@ impl SessionRuntime {
             query_engine,
             event_bus,
             legacy_executor: None,
+            llm_executor: None,
             authorized_workspace_store: None,
             cancel_token: None,
         }
@@ -66,6 +71,27 @@ impl SessionRuntime {
             query_engine,
             event_bus,
             legacy_executor: Some(turn_executor),
+            llm_executor: None,
+            authorized_workspace_store: None,
+            cancel_token: None,
+        }
+    }
+
+    /// Construct a `SessionRuntime` wired to the S4 `RuntimeLlmExecutor`.
+    ///
+    /// The driver loop (`RuntimeChatTurnDriver::run_chat_turn_s4`) owns the
+    /// query/tool loop; the executor is a pure provider streaming adapter.
+    /// Use this constructor to switch production traffic to the S4 path.
+    pub fn with_llm_executor(
+        query_engine: QueryEngine,
+        event_bus: RuntimeEventBus,
+        executor: Arc<dyn RuntimeLlmExecutor>,
+    ) -> Self {
+        Self {
+            query_engine,
+            event_bus,
+            legacy_executor: None,
+            llm_executor: Some(executor),
             authorized_workspace_store: None,
             cancel_token: None,
         }
@@ -183,6 +209,14 @@ impl SessionRuntime {
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
+        // S4 path takes priority: when an llm_executor is present, use the S4 driver.
+        if let Some(ref executor) = self.llm_executor {
+            return RuntimeChatTurnDriver::with_llm_executor(
+                query_engine,
+                self.event_bus.clone(),
+                executor.clone(),
+            );
+        }
         match &self.legacy_executor {
             Some(executor) => RuntimeChatTurnDriver::with_legacy_executor(
                 query_engine,

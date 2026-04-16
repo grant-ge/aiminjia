@@ -783,12 +783,13 @@ impl TauriChatCommandAdapter {
         let adapter = Arc::new(TauriEventAdapter::new(host));
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
-        let mut runtime = SessionRuntime::with_executor(
+        let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
+            services: services.clone(),
+        });
+        let mut runtime = SessionRuntime::with_llm_executor(
             QueryEngine::new().with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
-            Arc::new(TauriLegacyTurnExecutor {
-                services: services.clone(),
-            }),
+            llm_executor,
         );
         if let Some(facade) = services
             .app
