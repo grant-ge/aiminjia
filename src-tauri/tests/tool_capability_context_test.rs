@@ -32,11 +32,7 @@ impl RuntimeTool for WorkspacePrinterTool {
             .and_then(|c| c.storage.as_ref())
             .map(|s| s.workspace_path.display().to_string())
             .unwrap_or_else(|| "<none>".to_string());
-        Ok(ToolResult {
-            tool_name: "workspace_printer".to_string(),
-            content: workspace,
-            data: None,
-        })
+        Ok(ToolResult::new("workspace_printer", workspace, None))
     }
 }
 
@@ -62,6 +58,7 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
         storage: Some(storage_cap),
         workspace_id: Some("ws-42".to_string()),
         browser_available: false,
+        file_ops: None,
     };
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_capability(Arc::new(cap_ctx));
@@ -81,6 +78,7 @@ fn capability_context_does_not_expose_full_plugin_context() {
         storage: None,
         workspace_id: Some("ws-1".to_string()),
         browser_available: false,
+        file_ops: None,
     };
     // Verify we can ONLY access the declared fields: storage, workspace_id.
     // If PluginContext fields (e.g. gateway, auth_manager) were leaked, this

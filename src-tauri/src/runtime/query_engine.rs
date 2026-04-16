@@ -8,7 +8,7 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::state::TurnState;
-use crate::runtime::tools::{CapabilityContext, StorageCapability, ToolDispatcher, ToolExecutionContext};
+use crate::runtime::tools::{CapabilityContext, FileOperations, StorageCapability, ToolDispatcher, ToolExecutionContext};
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
@@ -24,6 +24,10 @@ pub struct QueryEngine {
     /// Injected from `connector_engine.is_some()` on the production path so that
     /// browser-scope tools pass `CapabilityPermissionPipeline` checks.
     browser_available: bool,
+    /// File operations accessor injected from the transport layer.
+    /// When present, `load_file` runtime tool uses this to load files
+    /// instead of bridging through `PluginContext`.
+    file_ops: Option<Arc<dyn FileOperations>>,
 }
 
 impl QueryEngine {
@@ -37,6 +41,7 @@ impl QueryEngine {
             workspace_path: None,
             authorized_workspace: None,
             browser_available: false,
+            file_ops: None,
         }
     }
 
@@ -63,6 +68,13 @@ impl QueryEngine {
     /// check.  On the production path, pass `connector_engine.is_some()`.
     pub fn with_browser_available(mut self, browser_available: bool) -> Self {
         self.browser_available = browser_available;
+        self
+    }
+
+    /// Attach a file operations accessor so that `load_file` runtime tool can
+    /// operate through `CapabilityContext.file_ops` without a `PluginContext`.
+    pub fn with_file_ops(mut self, file_ops: Arc<dyn FileOperations>) -> Self {
+        self.file_ops = Some(file_ops);
         self
     }
 
@@ -204,6 +216,7 @@ impl QueryEngine {
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
+                file_ops: self.file_ops.clone(),
             });
             ctx.with_capability(capability)
         } else {
@@ -341,6 +354,7 @@ impl QueryEngine {
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
+                file_ops: self.file_ops.clone(),
             });
             ctx.with_capability(capability)
         } else {

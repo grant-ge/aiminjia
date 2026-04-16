@@ -134,7 +134,7 @@ fn workspace_primitives_have_correct_scope() {
 fn builtin_modules_compile() {
     // If these use-statements compile, the modules are correctly wired in mod.rs.
     use app_lib::runtime::tools::builtin::browser::BrowserDeps;
-    use app_lib::runtime::tools::builtin::file::LoadFileDeps;
+    use app_lib::runtime::tools::builtin::file::LoadFileRuntimeTool;
     use app_lib::runtime::tools::builtin::network::SearchDeps;
     // Confirm the Deps structs are constructible (field names exist).
     let _ = SearchDeps {
@@ -143,9 +143,10 @@ fn builtin_modules_compile() {
         use_cloud: false,
         auth_manager: None,
     };
-    // BrowserDeps and LoadFileDeps require Arc<ConnectorEngine> / Arc<AppStorage>
-    // which need real paths — construction is tested in integration tests.
+    // BrowserDeps requires Arc<ConnectorEngine> which needs real paths —
+    // construction is tested in integration tests.
     // Here we only verify the type names resolve.
     let _: fn() -> Option<BrowserDeps> = || None;
-    let _: fn() -> Option<LoadFileDeps> = || None;
+    // LoadFileRuntimeTool is stateless — its deps come from CapabilityContext.file_ops.
+    let _ = LoadFileRuntimeTool::new();
 }

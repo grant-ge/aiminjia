@@ -2806,7 +2806,16 @@ async fn agent_loop(
         let query_engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(workspace_path.clone())
             .with_authorized_workspace(authorized_workspace.clone())
-            .with_browser_available(browser_available);
+            .with_browser_available(browser_available)
+            .with_file_ops(Arc::new(
+                crate::runtime::tools::capability::DefaultFileOperations {
+                    storage: db.clone(),
+                    file_manager: file_mgr.clone(),
+                    workspace_path: workspace_path.clone(),
+                    conversation_id: conversation_id.clone(),
+                    run_id: Some(run_id.clone()),
+                },
+            ));
 
         // Create or reuse event bus for tool round.
         // When a session-level bus is available, tool events flow through the

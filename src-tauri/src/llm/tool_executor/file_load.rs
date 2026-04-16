@@ -15,8 +15,43 @@ use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
+use crate::runtime::ids::RunId;
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::AppStorage;
+use std::sync::Arc;
 
 use super::{optional_str, require_str};
+
+// ---------------------------------------------------------------------------
+// LoadFileParams — PluginContext-free parameter bundle for handle_load_file_core.
+// ---------------------------------------------------------------------------
+
+/// Parameters required by [`handle_load_file_core`].
+///
+/// This is the transport-neutral equivalent of the subset of `PluginContext`
+/// that `handle_load_file` reads.  Used by
+/// [`crate::runtime::tools::capability::DefaultFileOperations`] so that
+/// `LoadFileRuntimeTool` does not need to rebuild a `PluginContext`.
+pub(crate) struct LoadFileParams<'a> {
+    pub storage: &'a Arc<AppStorage>,
+    pub file_manager: &'a Arc<FileManager>,
+    pub workspace_path: &'a Path,
+    pub conversation_id: &'a str,
+    pub run_id: Option<&'a RunId>,
+    pub app_handle: Option<&'a tauri::AppHandle>,
+}
+
+impl<'a> LoadFileParams<'a> {
+    fn loaded_scope_id(&self) -> &str {
+        self.run_id
+            .map(|r| r.as_str())
+            .unwrap_or(self.conversation_id)
+    }
+
+    fn loaded_key(&self, file_id: &str) -> String {
+        format!("loaded:{}:{}", self.loaded_scope_id(), file_id)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Embedded Python script for tabular PII masking
@@ -450,7 +485,30 @@ pub(crate) fn unmask_text(text: &str, unmask_map: &HashMap<String, String>) -> S
 /// applies PII masking, and stores the mapping in DB so execute_python
 /// can auto-inject `_df`/`_text` using the masked version.
 /// The LLM never sees or handles file paths — all path resolution is system-managed.
+///
+/// Legacy wrapper — new callers should use [`handle_load_file_core`] with
+/// [`LoadFileParams`] directly.  This wrapper is retained so existing callers
+/// that still thread a `PluginContext` (e.g. legacy ToolPlugin, auto-load in
+/// execute_python) do not have to migrate atomically.
 pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let params = LoadFileParams {
+        storage: &ctx.storage,
+        file_manager: &ctx.file_manager,
+        workspace_path: &ctx.workspace_path,
+        conversation_id: &ctx.conversation_id,
+        run_id: ctx.run_id.as_ref(),
+        app_handle: ctx.app_handle.as_ref(),
+    };
+    handle_load_file_core(&params, args).await
+}
+
+/// PluginContext-free implementation of `load_file`.  All callers that do not
+/// already have a `PluginContext` (e.g. `LoadFileRuntimeTool` via
+/// `FileOperations`) should call this directly.
+pub(crate) async fn handle_load_file_core(
+    ctx: &LoadFileParams<'_>,
+    args: &Value,
+) -> Result<String> {
     let file_id = require_str(args, "file_id")?;
     let sheet = optional_str(args, "sheet");
     let nrows = args.get("nrows").and_then(|v| v.as_u64());
@@ -497,7 +555,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     // 1. Resolve file_id → stored_path → absolute path
     let file_record = ctx
         .storage
-        .get_uploaded_file_for_conversation(file_id, &ctx.conversation_id)?
+        .get_uploaded_file_for_conversation(file_id, ctx.conversation_id)?
         .ok_or_else(|| {
             anyhow!(
                 "Uploaded file not found or does not belong to this conversation: {}",
@@ -552,13 +610,14 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     };
 
     // 4. Parse the file to get metadata (reuses existing parser)
+    let workspace_pathbuf = ctx.workspace_path.to_path_buf();
     let mut parse_sandbox =
-        crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+        crate::python::sandbox::SandboxConfig::for_workspace(&workspace_pathbuf);
     parse_sandbox.timeout_seconds = 60;
     let runner = PythonRunner::with_config(
-        ctx.workspace_path.clone(),
+        workspace_pathbuf,
         parse_sandbox,
-        ctx.app_handle.as_ref(),
+        ctx.app_handle,
     );
     info!(
         "[TOOL:load_file] Starting parse_file for format={:?} path={}",
@@ -600,7 +659,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     if actual_loaded_as == "dataframe" {
         // Tabular data: use Python masking script
         if let Some(mask_result) =
-            mask_tabular_file(&runner, &full_path, &format, &ctx.workspace_path).await
+            mask_tabular_file(&runner, &full_path, &format, ctx.workspace_path).await
         {
             // Re-parse the masked file to get updated sample_data
             match parser::parse_file(&runner, &mask_result.masked_path).await {
@@ -611,8 +670,8 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                     pii_masked_columns = Some(mask_result.masked_columns);
                     // Store PII mapping for later unmask
                     if let Err(e) = store_pii_mapping(
-                        &ctx.storage,
-                        &ctx.conversation_id,
+                        ctx.storage,
+                        ctx.conversation_id,
                         file_id,
                         &mask_result.mapping,
                     ) {
@@ -678,8 +737,8 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                                 parse_result.sample_data = json!({"preview": preview});
                                 // Store mapping
                                 if let Err(e) = store_pii_mapping(
-                                    &ctx.storage,
-                                    &ctx.conversation_id,
+                                    ctx.storage,
+                                    ctx.conversation_id,
                                     file_id,
                                     &mapping,
                                 ) {
@@ -722,11 +781,11 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
 
     // When user explicitly loads a (new) file during analysis, clear ALL pkl snapshots
     // (_original, _step_df, _step{N}_df, _step_dfs) so fresh data takes priority.
-    if orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id).is_some() {
+    if orchestrator::get_step_state(ctx.storage, ctx.conversation_id).is_some() {
         let snap_dir = ctx
             .workspace_path
             .join("analysis")
-            .join(&ctx.conversation_id);
+            .join(ctx.conversation_id);
         if snap_dir.exists() {
             for entry in std::fs::read_dir(&snap_dir).into_iter().flatten() {
                 if let Ok(e) = entry {

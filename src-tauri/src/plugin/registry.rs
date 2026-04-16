@@ -282,7 +282,7 @@ impl ToolRegistry {
         };
 
         // Step 2: Try request-level factory (session-scoped deps built from PluginContext)
-        // TRANSITIONAL: BrowserDeps / LoadFileDeps carry conversation_id / run_id which
+        // TRANSITIONAL: BrowserDeps carry conversation_id / run_id which
         // cannot be stored in the global singleton registry.
         let runtime_tool = runtime_tool.or_else(|| Self::try_build_request_scoped_tool(name, ctx));
 
@@ -294,10 +294,20 @@ impl ToolRegistry {
                     authorized_workspace: ctx.authorized_workspace.clone(),
                 };
                 let browser_available = ctx.connector_engine.is_some();
+                let file_ops = (name == "load_file").then(|| {
+                    Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
+                        storage: ctx.storage.clone(),
+                        file_manager: ctx.file_manager.clone(),
+                        workspace_path: ctx.workspace_path.clone(),
+                        conversation_id: ctx.conversation_id.clone(),
+                        run_id: ctx.run_id.clone(),
+                    }) as Arc<dyn crate::runtime::tools::capability::FileOperations>
+                });
                 let cap = CapabilityContext {
                     storage: Some(storage),
                     workspace_id: Some(ctx.conversation_id.clone()),
                     browser_available,
+                    file_ops,
                 };
                 std::sync::Arc::new(cap)
             };
@@ -526,17 +536,7 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(deps))
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
-            "load_file" => {
-                let deps = builtin::file::LoadFileDeps {
-                    storage: ctx.storage.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    session_manager: ctx.session_manager.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                    run_id: ctx.run_id.clone(),
-                };
-                Some(Arc::new(builtin::file::LoadFileRuntimeTool::new(deps)))
-            }
+            "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
             _ => None,
         }
     }
