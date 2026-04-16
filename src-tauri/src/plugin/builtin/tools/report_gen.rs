@@ -59,7 +59,13 @@ impl ToolPlugin for ReportGenTool {
                                 "description": "Structured data table"
                             },
                             "items": { "type": "array", "items": { "type": "string" }, "description": "Bullet list items" },
-                            "highlight": { "type": "string", "description": "Highlighted callout text" }
+                            "highlight": { "type": "string", "description": "Highlighted callout text" },
+                            "chart": {
+                                "type": "string",
+                                "description": "OPTIONAL: embed an interactive chart in this section. \
+                                    Pass the 'storedPath' returned by generate_chart (e.g. 'charts/chart_xxx.html'). \
+                                    Renders as inline iframe in HTML reports, as a link in Markdown."
+                            }
                         },
                         "required": ["heading"]
                     },

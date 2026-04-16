@@ -460,6 +460,13 @@ for section in data.get('sections', []):
         highlight = re.sub('\\*\\*(.+?)\\*\\*', '<b>\\1</b>', highlight)
         elements.append(Paragraph(highlight, style_callout))
 
+    # Embedded chart placeholder (PDF can't render interactive HTML chart)
+    chart_path = section.get('chart')
+    if chart_path and isinstance(chart_path, str) and chart_path.strip():
+        note = f'<i>📊 见随附交互图表：{{chart_path}}</i>'
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(note, style_body))
+
     # Try to keep each section together
     try:
         story.append(KeepTogether(elements))
@@ -634,6 +641,29 @@ fn build_html_report(title: &str, sections: &[Value]) -> String {
                 "      <div class=\"callout\">{}</div>\n",
                 report_inline_md(&html_escape(highlight)),
             ));
+        }
+
+        // Embedded chart (iframe to a generate_chart output, e.g. "charts/chart_xxx.html")
+        if let Some(chart_path) = section.get("chart").and_then(|v| v.as_str()) {
+            let trimmed = chart_path.trim();
+            // Whitelist: only allow relative path under charts/, no traversal, must end with .html
+            let safe = !trimmed.is_empty()
+                && !trimmed.contains("..")
+                && !trimmed.starts_with('/')
+                && !trimmed.contains(':')
+                && trimmed.ends_with(".html")
+                && (trimmed.starts_with("charts/") || !trimmed.contains('/'));
+            if safe {
+                let src = if trimmed.contains('/') {
+                    format!("../{}", trimmed)
+                } else {
+                    format!("../charts/{}", trimmed)
+                };
+                body.push_str(&format!(
+                    "      <div class=\"chart-embed\"><iframe src=\"{}\" loading=\"lazy\" style=\"width:100%;height:560px;border:1px solid #e5e7eb;border-radius:8px;background:#fff\"></iframe></div>\n",
+                    html_escape(&src),
+                ));
+            }
         }
 
         body.push_str("    </section>\n");
@@ -970,6 +1000,12 @@ fn build_markdown_report(title: &str, sections: &[Value]) -> String {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         output.push_str(&format!("## {}\n\n{}\n\n", heading, content));
+        if let Some(chart_path) = section.get("chart").and_then(|v| v.as_str()) {
+            let trimmed = chart_path.trim();
+            if !trimmed.is_empty() && !trimmed.contains("..") {
+                output.push_str(&format!("> 📊 [查看交互图表]({})\n\n", trimmed));
+            }
+        }
     }
     output
 }
