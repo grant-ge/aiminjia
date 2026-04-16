@@ -1,4 +1,5 @@
 pub mod chat_turn_driver;
+pub mod compaction;
 pub mod metrics;
 pub mod post_process;
 pub mod safeguard;
