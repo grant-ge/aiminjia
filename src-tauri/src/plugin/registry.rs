@@ -333,7 +333,7 @@ impl ToolRegistry {
             match pipeline.authorize(&def, &input, &exec_ctx) {
                 PermissionDecision::Allow { .. } => {}
                 PermissionDecision::Deny { message, .. } => {
-                    return Err(ToolError::ExecutionFailed(format!(
+                    return Err(ToolError::PermissionDenied(format!(
                         "Permission denied: {}",
                         message
                     )));

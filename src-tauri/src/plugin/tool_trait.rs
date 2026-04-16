@@ -95,6 +95,9 @@ pub enum ToolError {
     #[error("Execution failed: {0}")]
     ExecutionFailed(String),
 
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
+
     /// The permission pipeline returned Ask — user confirmation is required
     /// before this tool can run. Callers that cannot surface a UI prompt
     /// should treat this as a deny and log appropriately.
