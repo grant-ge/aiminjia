@@ -54,6 +54,19 @@ pub struct SubAgentConfig {
     pub background: bool,
     /// App handle for emitting Tauri events.
     pub app_handle: Option<tauri::AppHandle>,
+    /// Parent cancellation token.  When `Some`, tool executions inside this
+    /// sub-agent receive a **child** of this token so that cancelling the
+    /// parent turn propagates into the sub-agent's tool calls.
+    ///
+    /// `None` means no cancel cascade (isolated root token per tool call).
+    ///
+    /// FIXME(S4/blocker): `LegacyToolAdapter::from_plugin` currently drops the
+    /// `ToolExecutionContext` (and its cancel token), so the cancel signal does
+    /// not reach inside individual tool plugins even when this field is `Some`.
+    /// Wiring requires either (a) plumbing the token through `PluginContext`, or
+    /// (b) migrating the relevant tools to `RuntimeTool`.  Until then, `Some`
+    /// here at least means the sub-agent loop itself observes the cancel cascade.
+    pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
 }
 
 /// Result from a sub-agent run.
@@ -255,9 +268,13 @@ pub async fn run_sub_agent(
                 );
             }
 
-            // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()
-            // 当前是孤立 root token，cancel cascade 不生效
-            let sub_cancel = crate::runtime::cancellation::CancellationToken::new();
+            // Derive a child token from the parent when available so that cancelling
+            // the parent turn (e.g. user stop_streaming) propagates into this tool call.
+            // Falls back to an isolated root token when no parent is provided.
+            let sub_cancel = match config.cancel_token.as_ref() {
+                Some(parent) => parent.child_token(),
+                None => crate::runtime::cancellation::CancellationToken::new(),
+            };
             let result = tool_registry
                 .execute(&tc.name, &sub_plugin_ctx, tc.arguments.clone(), sub_cancel)
                 .await;

@@ -5,6 +5,7 @@ use anyhow::Result;
 // Import and re-export from chat module.  Types were previously defined here;
 // they now live in `runtime::chat` to avoid circular imports.
 pub use crate::runtime::chat::{ChatTurnRequest, RuntimeTurnExecutor};
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::RuntimeChatTurnDriver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
@@ -28,6 +29,15 @@ pub struct SessionRuntime {
     /// point and decides when the helper is invoked.
     legacy_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
+    /// Session-level cancellation token.  When set, every `TurnState` produced by
+    /// `run_chat_request` receives a **child** token so that cancelling the session
+    /// token cascades down to the active turn and its tool calls.
+    ///
+    /// The token is injected by the transport layer (e.g. via
+    /// `with_cancellation_token`) and should be sourced from the same cancel
+    /// hierarchy that `stop_streaming` / `RuntimeRunRegistry` uses, so that the
+    /// runtime path and the legacy agent-loop path share one cancel tree.
+    cancel_token: Option<CancellationToken>,
 }
 
 impl SessionRuntime {
@@ -37,6 +47,7 @@ impl SessionRuntime {
             event_bus,
             legacy_executor: None,
             authorized_workspace_store: None,
+            cancel_token: None,
         }
     }
 
@@ -56,6 +67,7 @@ impl SessionRuntime {
             event_bus,
             legacy_executor: Some(turn_executor),
             authorized_workspace_store: None,
+            cancel_token: None,
         }
     }
 
@@ -64,6 +76,20 @@ impl SessionRuntime {
         authorized_workspace_store: Arc<dyn AuthorizedWorkspaceStore>,
     ) -> Self {
         self.authorized_workspace_store = Some(authorized_workspace_store);
+        self
+    }
+
+    /// Attach a session-level cancellation token.
+    ///
+    /// Every `TurnState` constructed by [`run_chat_request`] will receive a
+    /// **child** of this token, so that cancelling `token` (e.g. from
+    /// `stop_streaming`) cascades down to the active turn and its tool calls.
+    ///
+    /// The token should be sourced from the same cancel hierarchy that the
+    /// `RuntimeRunRegistry` / gateway cancel path uses so that both the
+    /// pure-runtime and the legacy agent-loop paths share one cancel tree.
+    pub fn with_cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.cancel_token = Some(token);
         self
     }
 
@@ -99,6 +125,13 @@ impl SessionRuntime {
         let _ = self.event_bus.emit(run_started).await;
 
         let mut turn = TurnState::new(mapping, run_id, request.content.clone());
+
+        // If a session-level cancel token is present, derive a child token so
+        // that cancelling the session (e.g. stop_streaming) cascades into this
+        // turn and its tool calls.
+        if let Some(ref session_token) = self.cancel_token {
+            turn = turn.with_cancellation(session_token.child_token());
+        }
 
         // Build a driver for this session and drive the full turn lifecycle.
         // The driver remains the only chat-turn entry and may invoke the legacy
@@ -196,11 +229,7 @@ mod tests {
                 .and_then(|storage| storage.authorized_workspace.as_ref())
                 .map(|aw| aw.root_path.clone());
             *self.seen_root.lock().unwrap() = seen;
-            Ok(ToolResult {
-                tool_name: "capture_authorized_workspace".to_string(),
-                content: "ok".to_string(),
-                data: None,
-            })
+            Ok(ToolResult::new("capture_authorized_workspace", "ok", None))
         }
     }
 

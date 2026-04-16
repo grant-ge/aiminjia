@@ -444,6 +444,14 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         parent_run_id: ctx.run_id.clone(),
         background: sub_agent_background,
         app_handle: ctx.app_handle.clone(),
+        // FIXME(S4/blocker): PluginContext does not carry a CancellationToken.
+        // The parent cancel token is not reachable here because
+        // `LegacyToolAdapter::from_plugin` drops the `ToolExecutionContext`
+        // (which does carry the token).  Wiring requires migrating `browse_data`
+        // from `ToolPlugin` to `RuntimeTool`, or plumbing the token through
+        // `PluginContext`.  Until then, `None` means the sub-agent uses isolated
+        // root tokens per tool call (no cancel cascade from parent run).
+        cancel_token: None,
     };
 
     let result =
