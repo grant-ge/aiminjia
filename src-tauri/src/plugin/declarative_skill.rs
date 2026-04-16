@@ -420,13 +420,17 @@ impl Skill for DeclarativeSkill {
         if current_skill != "daily-assistant" {
             return false;
         }
-        let lower = message.to_lowercase();
-
-        // Only primary keywords trigger activation (explicit analysis requests).
-        // Secondary file_keywords path removed: when users upload files with
-        // casual mentions of salary/compensation, daily mode should parse first,
-        // show a summary, and let the user decide whether to start full analysis.
-        self.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
+        // Phase 12: skills activate only via explicit entry points
+        // (WelcomeScreen card click, ⌘K command palette, `/` slash
+        // command — all of which send the exact `trigger_text` as the
+        // user message). Keyword fuzzy-matching was causing too many
+        // accidental skill entries when users casually mentioned a topic
+        // in daily chat; with 20+ skills the keyword surface had become
+        // unpredictable. Explicit entry points give users clear control.
+        //
+        // The `keywords` field is still read by non-activation paths
+        // (e.g. trigger_text rendering, potential future auto-suggest).
+        !self.trigger.is_empty() && message.trim() == self.trigger.trim()
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {
@@ -706,9 +710,31 @@ mod tests {
         assert!(allowed5.contains(&"generate_report".to_string()));
         assert!(allowed5.contains(&"export_data".to_string()));
 
-        // Keyword activation
-        assert!(skill.should_activate("请进行薪酬分析v2", true, "daily-assistant"));
-        assert!(!skill.should_activate("请进行薪酬分析", true, "daily-assistant"));
+        // Phase 12 activation — skills activate only when user message exactly
+        // equals the skill's trigger_text (produced by card click / ⌘K / `/`).
+        // Fuzzy keyword matching was removed to eliminate accidental skill
+        // entries during casual chat.
+        let trigger_text = skill.trigger_text();
+        assert!(
+            !trigger_text.is_empty(),
+            "comp-analysis-v2 must define a non-empty trigger_text"
+        );
+        assert!(
+            skill.should_activate(trigger_text, true, "daily-assistant"),
+            "exact trigger_text should activate"
+        );
+        assert!(
+            !skill.should_activate("请进行薪酬分析", true, "daily-assistant"),
+            "casual keyword mention should NOT activate (Phase 12 design)"
+        );
+        assert!(
+            !skill.should_activate("看看这个工资表", true, "daily-assistant"),
+            "file_keyword mention should NOT activate"
+        );
+        assert!(
+            !skill.should_activate(trigger_text, true, "some-other-skill"),
+            "non-daily current_skill should not switch"
+        );
     }
 
     /// Verify max_iterations per step.
