@@ -153,6 +153,7 @@ fn resolve_draft_file(app: &AppHandle, draft_id: &str, rel: &str) -> Result<Path
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DraftFile {
     pub relative_path: String,
     pub size: u64,
@@ -160,6 +161,7 @@ pub struct DraftFile {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DraftSummary {
     pub draft_id: String,
     pub created_at: i64,
@@ -626,6 +628,48 @@ name = "Test Skill"
 
         crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &plugins_dir)
             .expect("DeclarativeSkill::load should succeed on built-in skill-smith");
+    }
+
+    // ─── Serde camelCase regression tests (T2 + T3 + T4 + T7 IPC payloads) ──
+    //
+    // ALL structs that cross the Tauri JS<->Rust boundary as serialized
+    // values MUST have `#[serde(rename_all = "camelCase")]`. Without it,
+    // Rust's default snake_case serialization produces JSON like
+    // `{"draft_id": "..."}` while the TS bindings expect `{"draftId": "..."}`,
+    // so accessing the field returns `undefined` and downstream IPC fails
+    // with cryptic "missing required key" errors. See discardSkillDraft
+    // bug 2026-04-15. These tests assert the actual JSON shape so future
+    // additions can't silently regress.
+
+    #[test]
+    fn draft_file_serializes_camel_case() {
+        let f = DraftFile {
+            relative_path: "plugin.toml".to_string(),
+            size: 100,
+            modified_ts: 1234,
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(json.contains("\"relativePath\""), "got: {}", json);
+        assert!(json.contains("\"modifiedTs\""), "got: {}", json);
+        assert!(!json.contains("relative_path"), "found snake_case: {}", json);
+        assert!(!json.contains("modified_ts"), "found snake_case: {}", json);
+    }
+
+    #[test]
+    fn draft_summary_serializes_camel_case() {
+        let s = DraftSummary {
+            draft_id: "abc123def456".to_string(),
+            created_at: 100,
+            last_modified: 200,
+            stage: "intent".to_string(),
+            skill_name: Some("X".to_string()),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"draftId\""), "got: {}", json);
+        assert!(json.contains("\"createdAt\""), "got: {}", json);
+        assert!(json.contains("\"lastModified\""), "got: {}", json);
+        assert!(json.contains("\"skillName\""), "got: {}", json);
+        assert!(!json.contains("draft_id"), "found snake_case: {}", json);
     }
 
     /// All prompt files referenced by workflow.toml must exist and be

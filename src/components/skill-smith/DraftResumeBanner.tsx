@@ -19,6 +19,7 @@ import { ask } from '@tauri-apps/plugin-dialog'
 import { listSkillDrafts, discardSkillDraft } from '@/lib/tauri'
 import type { DraftSummary } from '@/lib/tauri'
 import { useChat } from '@/hooks/useChat'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 const SKILL_SMITH_TRIGGER = '我想创建一个技能'
 
@@ -46,6 +47,7 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
   const [drafts, setDrafts] = useState<DraftSummary[]>([])
   const [loaded, setLoaded] = useState(false)
   const { sendUserMessage } = useChat()
+  const pushNotification = useNotificationStore((s) => s.push)
 
   const reload = useCallback(async () => {
     try {
@@ -75,20 +77,42 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
   const handleDiscard = useCallback(
     async (draft: DraftSummary) => {
       const name = draft.skillName ?? t('skillSmith.banner.unnamed')
-      const confirmed = await ask(t('skillSmith.banner.discardConfirm', { name }), {
-        title: t('skillSmith.banner.discardTitle'),
-        kind: 'warning',
-      })
-      if (!confirmed) return
+      // Wrap the entire flow in try/catch so any failure (ask() throwing,
+      // permission missing, IPC error) surfaces as a user-visible toast
+      // instead of a silent no-op. Without this, a thrown ask() left the
+      // user staring at an unresponsive button.
       try {
+        // eslint-disable-next-line no-console
+        console.log('[DraftResumeBanner] discard clicked', draft.draftId)
+        const confirmed = await ask(t('skillSmith.banner.discardConfirm', { name }), {
+          title: t('skillSmith.banner.discardTitle'),
+          kind: 'warning',
+        })
+        // eslint-disable-next-line no-console
+        console.log('[DraftResumeBanner] ask resolved', { confirmed })
+        if (!confirmed) return
+
         await discardSkillDraft(draft.draftId)
         await reload()
-      } catch {
-        // Silent; draft may already have been cleaned up between list and discard
-        await reload()
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[DraftResumeBanner] discard failed', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        pushNotification({
+          level: 'error',
+          title: t('skillSmith.banner.discardTitle'),
+          message: msg || 'discard failed',
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+        // Best-effort reload — the draft may have been deleted despite the
+        // error path firing (e.g. ask threw after IPC succeeded).
+        await reload().catch(() => {})
       }
     },
-    [reload, t],
+    [reload, t, pushNotification],
   )
 
   if (!loaded || drafts.length === 0) return null

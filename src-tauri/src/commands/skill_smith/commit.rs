@@ -24,6 +24,7 @@ use crate::commands::skill_management::{copy_dir_recursive, pack_skill_to_dir};
 const STAGING_SUFFIX: &str = ".smith-tmp";
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitResult {
     pub skill_id: String,
     pub installed_path: String,
@@ -463,6 +464,21 @@ name = "X"
         )
         .unwrap();
         assert_eq!(extract_skill_id(&path).unwrap(), "my-id");
+    }
+
+    // ─── Serde camelCase regression — see mod.rs::draft_file_serializes_camel_case
+    #[test]
+    fn commit_result_serializes_camel_case() {
+        let r = CommitResult {
+            skill_id: "x".into(),
+            installed_path: "/p".into(),
+            conflict: false,
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"skillId\""), "got: {}", json);
+        assert!(json.contains("\"installedPath\""), "got: {}", json);
+        assert!(!json.contains("skill_id"), "found snake_case: {}", json);
+        assert!(!json.contains("installed_path"), "found snake_case: {}", json);
     }
 
     #[test]

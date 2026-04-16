@@ -92,6 +92,7 @@ pub(crate) const RESERVED_PLUGIN_IDS: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ValidationReport {
     pub valid: bool,
     pub errors: Vec<ValidationError>,
@@ -100,6 +101,7 @@ pub struct ValidationReport {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ValidationError {
     /// The source file, e.g. `"plugin.toml"` / `"workflow.toml"` / `"prompts/step0.md"`.
     pub file: String,
@@ -1116,6 +1118,28 @@ prompt = "prompts/step1.md"
         let tmp = make_valid_draft();
         let report = validate_draft_dir(tmp.path());
         assert!(report.summary.contains("校验通过"));
+    }
+
+    // ─── Serde camelCase regression — see mod.rs::draft_file_serializes_camel_case
+    #[test]
+    fn validation_report_serializes_camel_case() {
+        let r = ValidationReport {
+            valid: false,
+            errors: vec![ValidationError {
+                file: "plugin.toml".into(),
+                path: "plugin.id".into(),
+                rule: "format".into(),
+                actual: "X".into(),
+                message: "bad".into(),
+                fix_hint: Some("fix it".into()),
+            }],
+            warnings: vec![],
+            summary: "fail".into(),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        // ValidationReport itself has no snake fields but check ValidationError nested
+        assert!(json.contains("\"fixHint\""), "got: {}", json);
+        assert!(!json.contains("fix_hint"), "found snake_case: {}", json);
     }
 
     #[test]

@@ -42,6 +42,7 @@ pub enum CheckStatus {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CheckResult {
     /// Stable machine-readable id — safe to match on in TS.
     pub name: String,
@@ -51,6 +52,7 @@ pub struct CheckResult {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DryRunReport {
     /// `true` iff no check has status `Fail`. `Warn` / `Skip` don't block.
     pub pass: bool,
@@ -683,6 +685,27 @@ advance_on = "confirm"
     }
 
     // ---- Metric sanity ----
+
+    // ─── Serde camelCase regression — see mod.rs::draft_file_serializes_camel_case
+    #[test]
+    fn dry_run_report_serializes_camel_case() {
+        let r = DryRunReport {
+            pass: true,
+            checks: vec![CheckResult {
+                name: "schema".into(),
+                status: CheckStatus::Pass,
+                detail: "ok".into(),
+            }],
+            summary: "passed".into(),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        // DryRunReport has no snake fields. CheckResult has only snake-free
+        // fields. Status enum should serialize as "pass" (snake_case via the
+        // explicit serde rename_all on the enum, which is intentional).
+        assert!(json.contains("\"checks\""));
+        // Status enum should be lowercase string per #[serde(rename_all = "snake_case")]
+        assert!(json.contains("\"status\":\"pass\""), "got: {}", json);
+    }
 
     #[test]
     fn pass_flag_is_true_iff_no_fail() {

@@ -302,20 +302,30 @@ function _markdownToHtmlImpl(md: string): string {
     }
 
     // --- Unordered list ---
+    //
+    // Bug history (2026-04-15): items used to be `string[]` where the main
+    // bullet text and nested-continuation HTML were concatenated into one
+    // string, then passed through `inlineFmt` again at <li> emit time.
+    // `inlineFmt` calls `esc()` which escaped the already-injected <span>
+    // and <strong> tags from nested continuations, so users saw literal
+    // HTML markup like "<span style=...>" as visible text.
+    //
+    // Fix: split each item into raw `text` (gets inlineFmt'd at emit) and
+    // pre-rendered `extras` (HTML for nested children, emit verbatim).
     if (/^[-*+]\s/.test(trimmed)) {
-      const items: string[] = []
+      const items: { text: string; extras: string }[] = []
       while (i < lines.length) {
         const cur = lines[i]
         const curTrimmed = cur.trim()
         if (curTrimmed === '') { i++; break }
         if (/^[-*+]\s/.test(curTrimmed)) {
-          items.push(curTrimmed.replace(/^[-*+]\s/, ''))
+          items.push({ text: curTrimmed.replace(/^[-*+]\s/, ''), extras: '' })
           i++
         } else if (/^\s{2,}/.test(cur) || /^\t/.test(cur)) {
-          // Indented continuation — append to last item
+          // Indented continuation — append already-rendered HTML to last item's extras
           if (items.length > 0) {
             const subContent = curTrimmed.replace(/^[-*+]\s/, '')
-            items[items.length - 1] += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
+            items[items.length - 1].extras += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
           }
           i++
         } else {
@@ -323,26 +333,25 @@ function _markdownToHtmlImpl(md: string): string {
         }
       }
       output.push(
-        `<ul style="margin:8px 0;padding-left:20px;list-style:disc">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item)}</li>`).join('')}</ul>`,
+        `<ul style="margin:8px 0;padding-left:20px;list-style:disc">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ul>`,
       )
       continue
     }
 
-    // --- Ordered list ---
+    // --- Ordered list --- (same bug as unordered, same fix shape)
     if (/^\d+[.)]\s/.test(trimmed)) {
-      const items: string[] = []
+      const items: { text: string; extras: string }[] = []
       while (i < lines.length) {
         const cur = lines[i]
         const curTrimmed = cur.trim()
         if (curTrimmed === '') { i++; break }
         if (/^\d+[.)]\s/.test(curTrimmed)) {
-          items.push(curTrimmed.replace(/^\d+[.)]\s/, ''))
+          items.push({ text: curTrimmed.replace(/^\d+[.)]\s/, ''), extras: '' })
           i++
         } else if (/^\s{2,}/.test(cur) || /^\t/.test(cur)) {
-          // Indented continuation — append to last item
           if (items.length > 0) {
             const subContent = curTrimmed.replace(/^[-*+]\s/, '')
-            items[items.length - 1] += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
+            items[items.length - 1].extras += `<br/><span style="padding-left:16px;color:var(--color-text-muted)">\u00b7 ${inlineFmt(subContent)}</span>`
           }
           i++
         } else {
@@ -350,7 +359,7 @@ function _markdownToHtmlImpl(md: string): string {
         }
       }
       output.push(
-        `<ol style="margin:8px 0;padding-left:20px;list-style:decimal">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item)}</li>`).join('')}</ol>`,
+        `<ol style="margin:8px 0;padding-left:20px;list-style:decimal">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ol>`,
       )
       continue
     }
