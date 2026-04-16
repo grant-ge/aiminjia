@@ -157,6 +157,31 @@ pub struct DefaultFileOperations {
     pub(crate) run_id: Option<crate::runtime::ids::RunId>,
 }
 
+impl DefaultFileOperations {
+    /// Construct a `DefaultFileOperations` from its constituent parts.
+    ///
+    /// This constructor is the canonical way to build a `DefaultFileOperations`
+    /// outside of `runtime/` (e.g. in integration tests or transport glue code).
+    /// Fields are `pub(crate)` so that internal modules can read them, but external
+    /// callers must go through this constructor to ensure all dependencies are
+    /// wired correctly.
+    pub fn new(
+        storage: Arc<crate::storage::file_store::AppStorage>,
+        file_manager: Arc<crate::storage::file_manager::FileManager>,
+        workspace_path: PathBuf,
+        conversation_id: impl Into<String>,
+        run_id: Option<crate::runtime::ids::RunId>,
+    ) -> Self {
+        Self {
+            storage,
+            file_manager,
+            workspace_path,
+            conversation_id: conversation_id.into(),
+            run_id,
+        }
+    }
+}
+
 impl std::fmt::Debug for DefaultFileOperations {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DefaultFileOperations")
