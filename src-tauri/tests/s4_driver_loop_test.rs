@@ -183,3 +183,158 @@ fn collect_results_counts_success_and_error() {
     assert_eq!(collected.error_count, 1);
     assert_eq!(collected.tool_result_messages.len(), 2);
 }
+
+// ── S4-T13: driver_s4 core loop ──────────────────────────────────────────────
+
+use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver};
+use app_lib::runtime::identity::IdentityMapping;
+use app_lib::runtime::state::TurnState;
+use app_lib::runtime::query_engine::QueryEngine;
+
+fn make_test_turn(conversation_id: &str) -> TurnState {
+    let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
+    TurnState::new(mapping, app_lib::runtime::ids::RunId::new("test-run"), "hi".to_string())
+}
+
+#[tokio::test]
+async fn driver_s4_loop_content_complete() {
+    // Single ContentComplete response: driver should emit StreamStarted,
+    // MessagePersisted, StreamDone, AgentIdle.
+    let executor = Arc::new(MockLlmExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "Hello world".to_string(),
+            tokens_in: 10,
+            tokens_out: 5,
+        },
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
+
+    let mut turn = make_test_turn("conv-content-complete");
+    let request = ChatTurnRequest::new("conv-content-complete", "hi", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "run_chat_turn returned error: {:?}", result);
+
+    let events = bus.recorded();
+    assert!(
+        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamStarted)),
+        "missing StreamStarted"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        "missing StreamDone"
+    );
+    assert!(
+        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })),
+        "missing MessagePersisted"
+    );
+    assert!(
+        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::AgentIdle { .. })),
+        "missing AgentIdle"
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_loop_cancelled() {
+    // Cancelled result: driver should still emit StreamStarted and StreamDone.
+    let executor = Arc::new(MockLlmExecutor::new(vec![
+        LlmStepResult::Cancelled,
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
+
+    let mut turn = make_test_turn("conv-cancelled");
+    let request = ChatTurnRequest::new("conv-cancelled", "cancel me", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "run_chat_turn returned error: {:?}", result);
+
+    let events = bus.recorded();
+    assert!(
+        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamStarted)),
+        "missing StreamStarted on cancel"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        "missing StreamDone on cancel"
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_loop_tool_calls_then_content() {
+    // First iteration: ToolCalls (no real tools registered, round returns empty).
+    // Second iteration: ContentComplete.
+    // This tests the multi-iteration path.
+    let executor = Arc::new(MockLlmExecutor::new(vec![
+        LlmStepResult::ToolCalls {
+            assistant_content: "Let me check that.".to_string(),
+            tool_calls: vec![],  // empty: no real dispatcher needed
+            tokens_in: 20,
+            tokens_out: 10,
+        },
+        LlmStepResult::ContentComplete {
+            content: "Done.".to_string(),
+            tokens_in: 5,
+            tokens_out: 3,
+        },
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
+
+    let mut turn = make_test_turn("conv-tool-then-content");
+    let request = ChatTurnRequest::new("conv-tool-then-content", "do something", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "run_chat_turn returned error: {:?}", result);
+
+    let events = bus.recorded();
+    assert!(
+        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        "missing StreamDone in tool-then-content path"
+    );
+    assert!(
+        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })),
+        "missing MessagePersisted in tool-then-content path"
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_message_persisted_carries_content() {
+    // Verify the MessagePersisted event contains the LLM's text.
+    let executor = Arc::new(MockLlmExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "The answer is 42.".to_string(),
+            tokens_in: 8,
+            tokens_out: 4,
+        },
+    ]));
+
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
+
+    let mut turn = make_test_turn("conv-content-check");
+    let request = ChatTurnRequest::new("conv-content-check", "what is the answer?", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let events = bus.recorded();
+    let persisted = events.iter().find(|e| {
+        matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })
+    });
+    assert!(persisted.is_some(), "no MessagePersisted event");
+    if let app_lib::runtime::events::RuntimeEventKind::MessagePersisted { content, role, .. } =
+        &persisted.unwrap().kind
+    {
+        assert_eq!(role, "assistant");
+        assert_eq!(content.as_str().unwrap_or(""), "The answer is 42.");
+    }
+}
+

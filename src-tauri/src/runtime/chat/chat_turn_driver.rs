@@ -4,6 +4,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::chat::post_process;
+use crate::runtime::chat::safeguard::{self, SafeguardAction};
+use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::ToolRoundDriver;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfig, TurnError, TurnIterationState};
@@ -217,6 +220,13 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
+        // S4 new path takes priority.
+        if let Some(ref executor) = self.llm_executor {
+            return self
+                .run_chat_turn_s4(turn, request, executor.as_ref())
+                .await;
+        }
+
         // Emit StreamStarted on the bus in all cases.  TauriEventAdapter does not
         // map StreamStarted to a legacy event, so this is always safe.
         self.event_bus
@@ -312,6 +322,241 @@ impl RuntimeChatTurnDriver {
             // TauriEventAdapter translates these to the expected frontend events.
             self.query_engine.run(turn, &self.event_bus).await?;
         }
+
+        Ok(())
+    }
+
+    /// S4 core loop: driver owns the query loop when an `RuntimeLlmExecutor` is present.
+    ///
+    /// ## Flow
+    /// 1. Build `TurnConfig` with defaults (executor reads settings/tool_registry internally).
+    /// 2. Initialize `TurnIterationState`.
+    /// 3. `executor.run_precompute` (analysis mode; no-op in daily mode).
+    /// 4. Emit `StreamStarted`.
+    /// 5. Iteration loop (up to `config.max_iterations`):
+    ///    a. Build `LlmStepInput` (read-only view).
+    ///    b. Call `executor.run_llm_step` → `LlmStepResult`.
+    ///    c. On `ContentComplete` → merge content, break.
+    ///    d. On `Cancelled` → mark cancelled, break.
+    ///    e. On `ToolCalls` → `ToolRoundDriver::execute_round`, collect results, merge,
+    ///       then run safeguard checks.
+    ///    f. Check cancellation at end of each iteration.
+    /// 6. `post_process::finalize_content`.
+    /// 7. `executor.persist_assistant_message`.
+    /// 8. Emit `MessagePersisted`, `StreamDone`, `AgentIdle`.
+    async fn run_chat_turn_s4(
+        &self,
+        turn: &mut TurnState,
+        request: &ChatTurnRequest,
+        executor: &dyn RuntimeLlmExecutor,
+    ) -> Result<()> {
+        // ── Step 1: Build TurnConfig ──────────────────────────────────────────
+        // Executor reads settings and tool_registry from its own services; the
+        // config fields that matter for the driver loop are max_iterations and
+        // the IDs. Remaining fields are filled with sentinel defaults — T14
+        // (production path switch) will enrich them.
+        let config = TurnConfig {
+            system_prompt: String::new(),
+            tool_defs: vec![],
+            allowed_tools: None,
+            max_iterations: 30,
+            token_budget: 4096,
+            chunk_timeout_secs: 90,
+            is_analysis: false,
+            masking_level: "strict".to_string(),
+            workspace_path: std::path::PathBuf::new(),
+            conversation_id: request.conversation_id.clone(),
+            run_id: request.run_id.as_str().to_string(),
+        };
+
+        // ── Step 2: Initialize iteration state ───────────────────────────────
+        let mut state = TurnIterationState::new(vec![]);
+
+        // ── Step 3: Precompute (analysis mode; no-op in daily mode) ──────────
+        let precompute_result = executor.run_precompute(&config, &mut state).await?;
+
+        // ── Step 4: Emit StreamStarted ────────────────────────────────────────
+        let session_id = turn.session_id().clone();
+        let run_id = turn.run_id().clone();
+        self.event_bus
+            .emit(RuntimeEvent::new(
+                session_id.clone(),
+                run_id.clone(),
+                RuntimeEventKind::StreamStarted,
+            ))
+            .await?;
+
+        // Build the cancel token for this turn.
+        let cancel = turn.cancellation();
+
+        // ── Step 5: Iteration loop ────────────────────────────────────────────
+        let round_driver = ToolRoundDriver::new(self.query_engine.clone());
+
+        'turn: for iteration in 0..config.max_iterations {
+            // Build a dynamic context string for this iteration.
+            // Currently minimal; T14 will wire the full context_builder call.
+            let dynamic_context = precompute_result.as_deref().unwrap_or_default().to_string();
+
+            // Build the read-only executor input.
+            let input = LlmStepInput {
+                system_prompt: &config.system_prompt,
+                dynamic_context: &dynamic_context,
+                // Pass a clone of the current messages slice so executor cannot
+                // mutate driver state.
+                messages: state.messages.clone(),
+                tool_defs: &config.tool_defs,
+                token_budget: config.token_budget,
+                chunk_timeout_secs: config.chunk_timeout_secs,
+                masking_level: &config.masking_level,
+                force_no_tools: state.force_no_tools,
+                conversation_id: &config.conversation_id,
+                run_id: &config.run_id,
+            };
+
+            // ── Step 5b: single LLM step ─────────────────────────────────────
+            let step_result = executor
+                .run_llm_step(&input, &self.event_bus, &cancel)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+            match step_result {
+                // ── 5c: pure content response — done ─────────────────────────
+                LlmStepResult::ContentComplete {
+                    content,
+                    tokens_in,
+                    tokens_out,
+                } => {
+                    state.full_content.push_str(&content);
+                    state.step_tokens_in += tokens_in;
+                    state.step_tokens_out += tokens_out;
+                    state.iteration_count = iteration + 1;
+                    break 'turn;
+                }
+
+                // ── 5d: user / token cancellation ────────────────────────────
+                LlmStepResult::Cancelled => {
+                    state.stream_cancelled = true;
+                    break 'turn;
+                }
+
+                // ── 5e: tool calls ────────────────────────────────────────────
+                LlmStepResult::ToolCalls {
+                    assistant_content,
+                    tool_calls,
+                    tokens_in,
+                    tokens_out,
+                } => {
+                    // Merge assistant message into state so the next iteration
+                    // sees the full conversation history.
+                    if !assistant_content.is_empty() {
+                        state.full_content.push_str(&assistant_content);
+                        state.messages.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": assistant_content,
+                        }));
+                    }
+                    state.step_tokens_in += tokens_in;
+                    state.step_tokens_out += tokens_out;
+                    state.iteration_count = iteration + 1;
+
+                    // Execute the tool round.
+                    let round_results = round_driver
+                        .execute_round(turn, &self.event_bus, tool_calls)
+                        .await;
+
+                    // Collect and merge results into state.
+                    let results =
+                        tool_result_collector::collect_results(round_results, 8000);
+                    for msg in results.tool_result_messages {
+                        state.messages.push(msg);
+                    }
+                    state.all_file_metas.extend(results.new_file_metas);
+                    state
+                        .generated_file_ids
+                        .extend(results.new_generated_file_ids);
+
+                    // Safeguard check.
+                    let has_saved_note = state.messages.iter().any(|m| {
+                        m.get("role").and_then(|v| v.as_str()) == Some("tool")
+                            && m.get("name").and_then(|v| v.as_str())
+                                == Some("save_analysis_note")
+                    });
+                    match safeguard::check_iteration(
+                        iteration,
+                        config.max_iterations,
+                        &state.full_content,
+                        config.is_analysis,
+                        has_saved_note,
+                        &mut state.safeguard_phase1_injected,
+                        state.force_no_tools,
+                    ) {
+                        SafeguardAction::Continue => {}
+                        SafeguardAction::InjectPromptAndContinue(msg) => {
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": msg,
+                            }));
+                        }
+                        SafeguardAction::ForceNoToolsAndContinue(msg) => {
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": msg,
+                            }));
+                            state.force_no_tools = true;
+                        }
+                    }
+                }
+            }
+
+            // ── 5f: per-iteration cancel check ───────────────────────────────
+            if cancel.is_cancelled() {
+                state.stream_cancelled = true;
+                break 'turn;
+            }
+        }
+
+        // ── Step 6: Post-process content ──────────────────────────────────────
+        post_process::finalize_content(
+            &mut state.full_content,
+            state.iteration_count,
+            config.max_iterations,
+            state.stream_cancelled,
+        );
+
+        // ── Step 7: Persist assistant message ─────────────────────────────────
+        let message_id = executor
+            .persist_assistant_message(
+                &config.conversation_id,
+                &state.full_content,
+                &state.generated_file_ids,
+                &state.all_file_metas,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // ── Step 8: Emit terminal events ──────────────────────────────────────
+        self.event_bus
+            .emit(RuntimeEvent::message_persisted(
+                session_id.clone(),
+                run_id.clone(),
+                message_id,
+                "assistant",
+                serde_json::json!(state.full_content),
+            ))
+            .await?;
+        self.event_bus
+            .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
+            .await?;
+        self.event_bus
+            .emit(RuntimeEvent::new(
+                session_id,
+                run_id.clone(),
+                RuntimeEventKind::AgentIdle {
+                    agent_id: AgentId::new(format!("agent-{}", run_id.as_str())),
+                    scope: AgentIdleScope::Primary,
+                },
+            ))
+            .await?;
 
         Ok(())
     }
