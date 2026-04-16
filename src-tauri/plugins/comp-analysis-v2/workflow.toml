@@ -15,7 +15,7 @@ precompute = "scripts/step1.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -27,7 +27,7 @@ precompute = "scripts/step2.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -39,7 +39,7 @@ precompute = "scripts/step3.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -51,7 +51,7 @@ precompute = "scripts/step4.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -63,6 +63,6 @@ precompute = "scripts/step5.py"
 tools_only = ["generate_report", "export_data"]
 tools_on_feedback = ["execute_python", "generate_report", "export_data"]
 max_iterations = 8
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
