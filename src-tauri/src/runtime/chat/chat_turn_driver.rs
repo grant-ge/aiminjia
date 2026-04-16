@@ -3,8 +3,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::tool_round_driver::ToolRoundDriver;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfig, TurnError, TurnIterationState};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId};
@@ -101,6 +103,47 @@ pub trait RuntimeTurnExecutor: Send + Sync {
     }
 }
 
+/// S4 新 trait：executor 只做 provider streaming adapter。
+/// Driver 拥有 query loop 和状态变更，executor 不修改外部状态。
+#[async_trait]
+pub trait RuntimeLlmExecutor: Send + Sync {
+    /// 单步 LLM 调用。接收只读输入，返回结构化结果。
+    /// 内部调用 gateway.stream_message()，通过 bus emit StreamDelta/StreamError。
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        bus: &RuntimeEventBus,
+        cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError>;
+
+    /// Precompute 执行（analysis 模式专用）。默认 no-op。
+    async fn run_precompute(
+        &self,
+        _config: &TurnConfig,
+        _state: &mut TurnIterationState,
+    ) -> Result<Option<String>, TurnError> {
+        Ok(None)
+    }
+
+    /// 持久化 assistant message 到存储。纯 I/O，不含事件发射。
+    async fn persist_assistant_message(
+        &self,
+        conversation_id: &str,
+        content: &str,
+        generated_file_ids: &[String],
+        file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError>;
+
+    /// Step 后处理（analysis 模式专用）。默认 no-op。
+    async fn finalize_step(
+        &self,
+        _state: &TurnIterationState,
+        _config: &TurnConfig,
+    ) -> Result<(), TurnError> {
+        Ok(())
+    }
+}
+
 /// Runtime-owned chat turn driver.
 ///
 /// Single entry point for chat turn orchestration.  There are two execution modes:
@@ -129,6 +172,8 @@ pub struct RuntimeChatTurnDriver {
     event_bus: RuntimeEventBus,
     /// Legacy executor helper, present on production paths during migration.
     legacy_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
+    /// S4 新增：新 executor，只做 provider streaming adapter。
+    llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
 }
 
 impl RuntimeChatTurnDriver {
@@ -137,6 +182,7 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             legacy_executor: None,
+            llm_executor: None,
         }
     }
 
@@ -149,6 +195,20 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             legacy_executor: Some(legacy_executor),
+            llm_executor: None,
+        }
+    }
+
+    pub fn with_llm_executor(
+        query_engine: QueryEngine,
+        event_bus: RuntimeEventBus,
+        executor: Arc<dyn RuntimeLlmExecutor>,
+    ) -> Self {
+        Self {
+            query_engine,
+            event_bus,
+            legacy_executor: None,
+            llm_executor: Some(executor),
         }
     }
 
