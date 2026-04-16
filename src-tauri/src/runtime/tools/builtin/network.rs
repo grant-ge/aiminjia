@@ -79,6 +79,9 @@ impl RuntimeTool for WebSearchRuntimeTool {
             tool_name: "web_search".to_string(),
             content: result.clone(),
             data: Some(Value::String(result)),
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
         })
     }
 }

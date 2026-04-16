@@ -1142,7 +1142,7 @@ pub(crate) async fn legacy_send_message_impl(
         // Early exit if cancelled before the loop starts
         if agent_ctx
             .gateway
-            .is_conversation_cancelled(&conversation_id_clone)
+            .is_conversation_busy(&conversation_id_clone)
         {
             log::info!(
                 "[AgentGuard] agent_loop skipped (cancelled before start) for conversation {}",
@@ -1887,12 +1887,11 @@ async fn agent_loop(
             // (timeout, memory limit, path restriction) still applies via session_mgr.execute().
 
             match session_mgr
-                .execute_for_run_with_cancel(
+                .execute_for_run(
                     &run_id,
                     &full_code,
                     timeout,
                     &sandbox,
-                    Some(cancel_token.clone()),
                 )
                 .await
             {

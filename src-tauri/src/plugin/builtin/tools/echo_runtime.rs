@@ -29,6 +29,9 @@ impl RuntimeTool for EchoRuntimeTool {
             tool_name: "echo_runtime".to_string(),
             content: text,
             data: None,
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
         })
     }
 }

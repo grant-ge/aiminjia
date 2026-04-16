@@ -55,6 +55,9 @@ fn tool_result(tool_name: &str, content: String) -> ToolResult {
         tool_name: tool_name.to_string(),
         content: content.clone(),
         data: Some(Value::String(content)),
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
     }
 }
 

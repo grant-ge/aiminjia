@@ -110,6 +110,7 @@ impl RuntimeTurnExecutor for TauriLegacyTurnExecutor {
             request.content,
             request.file_ids,
             request.run_id,
+            None,
         )
         .await
     }

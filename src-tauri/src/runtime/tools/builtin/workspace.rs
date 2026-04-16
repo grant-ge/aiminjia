@@ -53,6 +53,9 @@ fn tool_result(tool_name: &str, value: Value) -> ToolResult {
         tool_name: tool_name.to_string(),
         content: serde_json::to_string_pretty(&value).unwrap_or_default(),
         data: Some(value),
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
     }
 }
 

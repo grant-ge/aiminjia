@@ -50,6 +50,9 @@ impl LegacyToolAdapter {
                         tool_name,
                         content,
                         data: Some(input),
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
                     })
                 }
                 .boxed()
@@ -73,6 +76,9 @@ impl LegacyToolAdapter {
                         tool_name: plugin.name().to_string(),
                         content: output.content,
                         data: output.data,
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
                     })
                 }
                 .map(|result| result.map_err(ToolError::Other))
