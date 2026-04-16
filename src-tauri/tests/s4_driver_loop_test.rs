@@ -338,3 +338,58 @@ async fn driver_s4_message_persisted_carries_content() {
     }
 }
 
+// ============================================================================
+// S4 架构约束测试：确保编排层隔离 claude-code-best 对齐
+// ============================================================================
+
+#[test]
+fn review_s4_no_plugin_context_in_driver() {
+    let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
+        .expect("read chat_turn_driver.rs");
+    assert!(
+        !driver_src.contains("PluginContext"),
+        "chat_turn_driver.rs must not reference PluginContext (编排层不持有工具层对象)"
+    );
+}
+
+#[test]
+fn review_s4_no_app_emit_in_runtime_chat() {
+    let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
+        .expect("read chat_turn_driver.rs");
+    assert!(
+        !driver_src.contains("app.emit("),
+        "chat_turn_driver.rs must not directly call app.emit() (事件必须走 RuntimeEventBus)"
+    );
+}
+
+#[test]
+fn review_s4_runtime_has_no_tauri_use() {
+    // Sanity check: ensure runtime/ modules do not import tauri::*
+    for entry in walk_rust_files("src/runtime/") {
+        let content = std::fs::read_to_string(&entry).unwrap_or_default();
+        assert!(
+            !content.contains("use tauri::"),
+            "{} should not `use tauri::*` (runtime/ must be transport-neutral)",
+            entry.display()
+        );
+    }
+}
+
+fn walk_rust_files(dir: &str) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    fn recurse(path: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    recurse(&p, out);
+                } else if p.extension().map(|e| e == "rs").unwrap_or(false) {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    recurse(std::path::Path::new(dir), &mut out);
+    out
+}
+
