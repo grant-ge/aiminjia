@@ -936,6 +936,69 @@ compare = "prompts/step2-compare.md"
         assert!(err.contains("must be of form"), "got: {}", err);
     }
 
+    // ─── Integration test: real multi-file-handler skill loads & routes ──
+
+    #[test]
+    fn multi_file_handler_loads_with_dynamic_routing() {
+        let plugin_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("plugins/multi-file-handler");
+        if !plugin_dir.exists() {
+            return; // skipped in envs without plugins bundled
+        }
+
+        let plugin_toml = std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
+        let manifest = parse_plugin_manifest(&plugin_toml).unwrap();
+        assert_eq!(manifest.plugin.id, "multi-file-handler");
+
+        let skill = DeclarativeSkill::load(&manifest, &plugin_dir)
+            .expect("multi-file-handler should load cleanly");
+        assert_eq!(skill.id(), "multi-file-handler");
+
+        let wf = skill.workflow().expect("should have workflow");
+        assert_eq!(wf.steps.len(), 4);
+        assert_eq!(wf.initial_step, "step0");
+
+        // step2 has dynamic routing; static step_prompts lookup returns empty
+        // but resolve_dynamic_prompt_from_note_value should return a branch.
+        let compare_prompt = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"compare"}"#))
+            .expect("compare branch should resolve");
+        assert!(
+            compare_prompt.contains("执行对比分析"),
+            "expected compare prompt content, got: {}",
+            &compare_prompt[..compare_prompt.len().min(80)]
+        );
+
+        let merge_prompt = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"merge"}"#))
+            .expect("merge branch should resolve");
+        assert!(merge_prompt.contains("执行合并"));
+
+        let translate_prompt = skill
+            .resolve_dynamic_prompt_from_note_value(
+                "step2",
+                Some(r#"{"mode":"batch_translate"}"#),
+            )
+            .expect("batch_translate branch should resolve");
+        assert!(translate_prompt.contains("批量翻译"));
+
+        let cross_ref_prompt = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"cross_ref"}"#))
+            .expect("cross_ref branch should resolve");
+        assert!(cross_ref_prompt.contains("交叉引用"));
+
+        let summarize_prompt = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"summarize_all"}"#))
+            .expect("summarize_all branch should resolve");
+        assert!(summarize_prompt.contains("批量摘要"));
+
+        // Unknown mode → falls back to default (compare)
+        let unknown = skill
+            .resolve_dynamic_prompt_from_note_value("step2", Some(r#"{"mode":"unknown"}"#))
+            .expect("fallback should resolve");
+        assert!(unknown.contains("执行对比分析"));
+    }
+
     #[test]
     fn system_prompt_uses_resolved_over_static() {
         let (_tmp, skill) = build_dynamic_routing_skill();
