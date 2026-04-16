@@ -15,6 +15,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::StreamStarted => "StreamStarted",
         RuntimeEventKind::StreamDelta { .. } => "StreamDelta",
         RuntimeEventKind::StreamDone => "StreamDone",
+        RuntimeEventKind::StreamError { .. } => "StreamError",
         RuntimeEventKind::MessagePersisted { .. } => "MessagePersisted",
         RuntimeEventKind::ToolCallExecuting { .. } => "ToolCallExecuting",
         RuntimeEventKind::ToolCallCompleted { .. } => "ToolCallCompleted",

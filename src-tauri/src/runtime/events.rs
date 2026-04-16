@@ -16,6 +16,10 @@ pub enum RuntimeEventKind {
         content: String,
     },
     StreamDone,
+    StreamError {
+        error: String,
+        raw_error: Option<String>,
+    },
     ToolCallExecuting {
         tool_call_id: ToolCallId,
         tool_name: String,
