@@ -698,3 +698,132 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
     }
 }
 
+// ── S4-T5: 多轮历史加载测试 ──────────────────────────────────────────────────
+
+struct HistoryAwareMockExecutor {
+    history: Vec<serde_json::Value>,
+    captured_initial_messages: std::sync::Mutex<Vec<serde_json::Value>>,
+}
+
+impl HistoryAwareMockExecutor {
+    fn new(history: Vec<serde_json::Value>) -> Self {
+        Self {
+            history,
+            captured_initial_messages: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        let mut captured = self.captured_initial_messages.lock().unwrap();
+        if captured.is_empty() {
+            *captured = input.messages.clone();
+        }
+        Ok(LlmStepResult::ContentComplete {
+            content: "response".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        })
+    }
+
+    async fn load_history(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(self.history.clone())
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_loads_history_into_messages() {
+    let history = vec![
+        serde_json::json!({"role": "user", "content": "previous question"}),
+        serde_json::json!({"role": "assistant", "content": "previous answer"}),
+    ];
+    let executor = Arc::new(HistoryAwareMockExecutor::new(history.clone()));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-history");
+    let request = ChatTurnRequest::new("conv-history", "current question", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_initial_messages.lock().unwrap();
+    assert!(!captured.is_empty(), "must have captured messages");
+
+    let has_prev_question = captured.iter().any(|m| m["content"].as_str() == Some("previous question"));
+    let has_prev_answer = captured.iter().any(|m| m["content"].as_str() == Some("previous answer"));
+    assert!(has_prev_question, "history: 'previous question' must be in messages");
+    assert!(has_prev_answer, "history: 'previous answer' must be in messages");
+
+    let has_current = captured.iter().any(|m| m["content"].as_str() == Some("current question"));
+    assert!(has_current, "current user content must be in messages");
+}
+
+#[tokio::test]
+async fn driver_s4_message_order_is_reminder_history_current() {
+    let history = vec![
+        serde_json::json!({"role": "user", "content": "past user msg"}),
+        serde_json::json!({"role": "assistant", "content": "past assistant msg"}),
+    ];
+    let executor = Arc::new(HistoryAwareMockExecutor::new(history));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-order");
+    let request = ChatTurnRequest::new("conv-order", "new msg", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_initial_messages.lock().unwrap();
+    assert!(
+        captured[0]["content"].as_str().unwrap_or("").contains("<system-reminder>"),
+        "messages[0] must be system-reminder, got: {:?}", captured[0]
+    );
+    let last = captured.last().unwrap();
+    assert_eq!(last["content"], "new msg",
+        "last message must be current user content");
+
+    let middle_contents: Vec<&str> = captured[1..captured.len()-1]
+        .iter()
+        .filter_map(|m| m["content"].as_str())
+        .collect();
+    assert!(middle_contents.contains(&"past user msg"), "history user msg must be in middle");
+    assert!(middle_contents.contains(&"past assistant msg"), "history assistant msg must be in middle");
+}
+
+#[tokio::test]
+async fn driver_s4_empty_history_works_normally() {
+    let executor = Arc::new(HistoryAwareMockExecutor::new(vec![]));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-no-history");
+    let request = ChatTurnRequest::new("conv-no-history", "first message", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "must work without history");
+
+    let captured = executor.captured_initial_messages.lock().unwrap();
+    assert_eq!(captured.len(), 2,
+        "without history: messages must be [system-reminder, user-content]");
+}
+

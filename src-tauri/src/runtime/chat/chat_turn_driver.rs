@@ -133,6 +133,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     ) -> Result<Vec<serde_json::Value>, TurnError> {
         Ok(vec![])
     }
+
+    /// 加载 conversation 的历史对话消息（格式：[{role, content}, ...]）。
+    ///
+    /// 返回的消息将被插入到 messages 中（在 system-reminder 之后、当前 user message 之前）。
+    /// 默认实现返回空 vec（无历史）。生产 executor 必须 override。
+    async fn load_history(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])
+    }
 }
 
 /// Runtime-owned chat turn driver.
@@ -254,9 +265,7 @@ impl RuntimeChatTurnDriver {
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        // messages[0] = <system-reminder>（日期注入，对齐 claude-code-best getUserContext()）
-        // messages[1] = 用户实际 content
-        // NOTE: persisted history is currently NOT loaded here — that is Task 5.
+        // messages 顺序：[system-reminder, ...history, current-user-content]
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日");
         let today_iso = now.format("%Y-%m-%d");
@@ -267,11 +276,24 @@ impl RuntimeChatTurnDriver {
                 today, today_iso
             ),
         });
+
+        // 加载历史对话
+        let history = executor
+            .load_history(&request.conversation_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
         let user_message = serde_json::json!({
             "role": "user",
             "content": request.content,
         });
-        let mut state = TurnIterationState::new(vec![system_reminder_message, user_message]);
+
+        let mut initial_messages = Vec::with_capacity(1 + history.len() + 1);
+        initial_messages.push(system_reminder_message);
+        initial_messages.extend(history);
+        initial_messages.push(user_message);
+
+        let mut state = TurnIterationState::new(initial_messages);
 
         // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
         // Legacy path wrote the user message to DB before spawning agent_loop.

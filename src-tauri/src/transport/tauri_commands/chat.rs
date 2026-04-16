@@ -796,6 +796,50 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         Ok(json_defs)
     }
+
+    async fn load_history(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        const HISTORY_LIMIT: u32 = 50;
+
+        let raw_messages = self.services.db
+            .get_recent_messages(conversation_id, HISTORY_LIMIT)
+            .map_err(|e| TurnError::PersistenceError(format!(
+                "Failed to load conversation history: {}", e
+            )))?;
+
+        // 转换格式：content 可能是 {"text": "..."} 或直接字符串
+        let chat_messages: Vec<serde_json::Value> = raw_messages
+            .into_iter()
+            .filter_map(|msg| {
+                let role = msg["role"].as_str()?.to_string();
+                let content = if let Some(text) = msg["content"]["text"].as_str() {
+                    text.to_string()
+                } else if let Some(text) = msg["content"].as_str() {
+                    text.to_string()
+                } else {
+                    return None;
+                };
+                if content.trim().is_empty() {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "role": role,
+                    "content": content,
+                }))
+            })
+            .collect();
+
+        log::info!(
+            "[load_history] conv={} loaded {} messages (limit={})",
+            conversation_id,
+            chat_messages.len(),
+            HISTORY_LIMIT,
+        );
+
+        Ok(chat_messages)
+    }
 }
 
 // ---------------------------------------------------------------------------
