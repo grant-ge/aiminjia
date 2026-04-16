@@ -119,6 +119,20 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
+
+    /// 返回本次 Turn 使用的 tool definitions（JSON schema）。
+    ///
+    /// - `is_analysis=false`（daily）：从 registry 按 DAILY_ALLOWED_TOOLS 白名单过滤
+    /// - `is_analysis=true`（analysis）：全量工具
+    ///
+    /// 默认实现返回空 vec（向后兼容旧 mock executor）。
+    /// 生产 executor（TauriLegacyTurnExecutor）必须 override。
+    async fn get_tool_defs(
+        &self,
+        _is_analysis: bool,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])
+    }
 }
 
 /// Runtime-owned chat turn driver.
@@ -219,9 +233,15 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        // Build the tool definitions via the executor (daily: whitelist, analysis: all).
+        let tool_defs = executor
+            .get_tool_defs(request.is_analysis)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
         let config = TurnConfig {
             system_prompt,
-            tool_defs: vec![],
+            tool_defs,
             allowed_tools: None,
             max_iterations: 30,
             token_budget: 4096,

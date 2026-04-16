@@ -759,6 +759,39 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         Ok(prompt)
     }
+
+    async fn get_tool_defs(
+        &self,
+        is_analysis: bool,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
+
+        let filter = if is_analysis {
+            ToolFilter::All
+        } else {
+            ToolFilter::Only(
+                DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
+            )
+        };
+
+        let tool_definitions = self.services.tool_registry
+            .get_schemas_filtered(&filter)
+            .await;
+
+        // ToolDefinition implements Serialize
+        let json_defs: Vec<serde_json::Value> = tool_definitions
+            .into_iter()
+            .filter_map(|td| serde_json::to_value(&td).ok())
+            .collect();
+
+        log::info!(
+            "[get_tool_defs] is_analysis={} returned {} tool definitions",
+            is_analysis,
+            json_defs.len(),
+        );
+
+        Ok(json_defs)
+    }
 }
 
 // ---------------------------------------------------------------------------

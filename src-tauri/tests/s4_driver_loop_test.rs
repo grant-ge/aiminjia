@@ -599,3 +599,102 @@ async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
         "analysis mode must use analysis system prompt, got: {}", prompts[0]);
 }
 
+// ── S4-T4: tool_defs 精确传递测试 ─────────────────────────────────────────────
+
+struct ToolDefsCapturingExecutor {
+    is_analysis: bool,
+    captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+}
+
+impl ToolDefsCapturingExecutor {
+    fn new(is_analysis: bool) -> Self {
+        Self {
+            is_analysis,
+            captured_tool_defs: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_tool_defs.lock().unwrap()
+            .push(input.tool_defs.to_vec());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        })
+    }
+
+    async fn get_tool_defs(
+        &self,
+        is_analysis: bool,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
+        let names: Vec<String> = if is_analysis {
+            vec!["all_tool_a".to_string(), "all_tool_b".to_string()]
+        } else {
+            DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
+        };
+        Ok(names.iter().map(|n| serde_json::json!({"name": n, "description": ""})).collect())
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
+    let executor = Arc::new(ToolDefsCapturingExecutor::new(false));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-tool-defs-daily");
+    let request = ChatTurnRequest::new("conv-tool-defs-daily", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_tool_defs.lock().unwrap();
+    assert!(!captured.is_empty(), "must have captured tool defs");
+    assert!(!captured[0].is_empty(),
+        "tool_defs must be non-empty for daily mode (was vec![] before fix)");
+}
+
+#[tokio::test]
+async fn driver_s4_daily_tool_defs_match_whitelist() {
+    use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
+    let executor = Arc::new(ToolDefsCapturingExecutor::new(false));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-tool-defs-whitelist");
+    let request = ChatTurnRequest::new("conv-tool-defs-whitelist", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_tool_defs.lock().unwrap();
+    let received_names: std::collections::HashSet<String> = captured[0]
+        .iter()
+        .filter_map(|v| v["name"].as_str())
+        .map(|s| s.to_string())
+        .collect();
+
+    for allowed in DAILY_ALLOWED_TOOLS {
+        assert!(received_names.contains(*allowed),
+            "daily whitelist tool '{}' must be in tool_defs", allowed);
+    }
+}
+
