@@ -109,6 +109,9 @@ async fn query_engine_injects_authorized_workspace_into_capability_context() {
                 tool_name: "capture_authorized_workspace".to_string(),
                 content: "ok".to_string(),
                 data: None,
+                file_meta: None,
+                is_degraded: false,
+                degradation_notice: None,
             })
         }
     }
