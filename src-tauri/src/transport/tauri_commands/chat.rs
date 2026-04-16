@@ -31,6 +31,10 @@ use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::{
     ChatTurnRequest, QueryEngine, RuntimeEventBus, RuntimeTurnExecutor, SessionRuntime,
 };
+use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::chat::{
+    LlmStepInput, LlmStepResult, RuntimeLlmExecutor, TurnConfig, TurnError, TurnIterationState,
+};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 use crate::storage::crypto::SecureStorage;
@@ -113,6 +117,70 @@ impl RuntimeTurnExecutor for TauriLegacyTurnExecutor {
             None,
         )
         .await
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
+    async fn run_llm_step(
+        &self,
+        _input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        // TODO(S4-T11): extract from agent_loop Blocks 15+17 (gateway.stream_message + stream event loop)
+        // Blocks to migrate:
+        //   - Block 15 (L2340-L2430): gateway.stream_message() call + error handling
+        //   - Block 17 (L2442-L2668): tokio::select! stream event consumption
+        //   - Block 16 (L2432-L2440): MaskingContext merge
+        //   - Block 19 (L2691-L2731): no-tool exit + ghost call recovery
+        //   - Block 20 (L2732-L2743): stop_reason validation
+        Err(TurnError::LlmError(
+            "run_llm_step not yet implemented (S4-T11)".to_string(),
+        ))
+    }
+
+    async fn run_precompute(
+        &self,
+        _config: &TurnConfig,
+        _state: &mut TurnIterationState,
+    ) -> Result<Option<String>, TurnError> {
+        // TODO(S4-T12): extract from agent_loop Block 6 (L1795-L2034)
+        // Only runs when config.step_config.is_some() (analysis mode).
+        // Default no-op returns Ok(None) — acceptable for daily mode.
+        Ok(None)
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        // TODO(S4-T12): extract DB persistence logic from finish_agent() in chat_runtime_impl.rs
+        // - unmask PII
+        // - leak detection
+        // - persist to AppStorage
+        // - return message_id
+        // Must NOT emit app.emit("message:updated") — that is driver's responsibility via bus
+        Err(TurnError::PersistenceError(
+            "persist_assistant_message not yet implemented (S4-T12)".to_string(),
+        ))
+    }
+
+    async fn finalize_step(
+        &self,
+        _state: &TurnIterationState,
+        _config: &TurnConfig,
+    ) -> Result<(), TurnError> {
+        // TODO(S4-T12): extract from agent_loop Block 34 (L3300-L3372)
+        // Only runs when config.step_config.is_some() (analysis mode).
+        // - auto_capture_step_context
+        // - verify analysis notes
+        // - orchestrator::advance_step
+        // Default no-op is acceptable for daily mode.
+        Ok(())
     }
 }
 
