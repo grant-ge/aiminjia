@@ -292,7 +292,12 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
     };
 
     let result = registry
-        .execute("legacy_unknown_scope_tool", &ctx, json!({}))
+        .execute(
+            "legacy_unknown_scope_tool",
+            &ctx,
+            json!({}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
         .await;
 
     // With StorePolicyPipeline + unknown scope + no stored policy → AskRequired

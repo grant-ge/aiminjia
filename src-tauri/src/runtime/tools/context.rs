@@ -75,6 +75,11 @@ impl ToolExecutionContext {
         self
     }
 
+    /// Convenience constructor for integration-test code.
+    ///
+    /// Creates an isolated root `CancellationToken` that is not connected to any
+    /// session hierarchy.  This is intentional for test helpers — production code
+    /// must call `ToolExecutionContext::new(…, parent.child_token())` instead.
     pub fn for_test(
         conversation_id: impl Into<String>,
         run_id: impl Into<String>,
@@ -85,6 +90,7 @@ impl ToolExecutionContext {
             RunId::new(run_id.into()),
             None,
             tool_call_id,
+            // Test-only root token — cancel cascade not required in test helpers.
             CancellationToken::new(),
         )
     }

@@ -68,7 +68,12 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
     // The tool requires workspace capability; our ctx has workspace_path set,
     // which is enough to satisfy the CapabilityPermissionPipeline check.
     let result = registry
-        .execute("list_directory", &ctx, serde_json::json!({"path": "."}))
+        .execute(
+            "list_directory",
+            &ctx,
+            serde_json::json!({"path": "."}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
         .await;
     assert!(
         result.is_ok(),
@@ -123,7 +128,12 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
 
     let result = registry
-        .execute("list_directory", &ctx, serde_json::json!({"path": "."}))
+        .execute(
+            "list_directory",
+            &ctx,
+            serde_json::json!({"path": "."}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
         .await;
     assert!(
         result.is_ok(),
@@ -161,7 +171,12 @@ async fn workspace_runtime_tool_uses_authorized_workspace_when_present() {
     });
 
     let result = registry
-        .execute("list_directory", &ctx, serde_json::json!({"path": "."}))
+        .execute(
+            "list_directory",
+            &ctx,
+            serde_json::json!({"path": "."}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
         .await
         .expect("list_directory should succeed with authorized workspace");
 
@@ -194,7 +209,12 @@ async fn web_search_routes_to_runtime_tool_via_factory() {
     // With empty/fake credentials it will fail with a search error — that's fine.
     // The critical assertion is that it does NOT return "Unknown tool: web_search".
     let result = registry
-        .execute("web_search", &ctx, serde_json::json!({"query": "test"}))
+        .execute(
+            "web_search",
+            &ctx,
+            serde_json::json!({"query": "test"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
         .await;
     if let Err(e) = &result {
         assert!(
@@ -225,6 +245,7 @@ async fn load_file_routes_to_runtime_tool_via_factory() {
             "load_file",
             &ctx,
             serde_json::json!({"file_id": "nonexistent-file-id"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await;
     if let Err(e) = &result {
@@ -254,6 +275,7 @@ async fn browser_tool_without_connector_engine_is_permission_denied() {
             "browse_navigate",
             &ctx,
             serde_json::json!({"url": "https://example.com"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await;
     assert!(

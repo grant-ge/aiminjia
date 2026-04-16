@@ -265,11 +265,15 @@ impl ToolRegistry {
     /// The read lock is released before calling `execute()` so that
     /// long-running tools (Python subprocess, web search) do not block
     /// concurrent `register()`/`unregister()` calls.
+    ///
+    /// `cancel_token` should be a child of the call-site's parent token so that
+    /// cancellation cascades correctly through the session→turn→tool_call hierarchy.
     pub async fn execute(
         &self,
         name: &str,
         ctx: &PluginContext,
         input: serde_json::Value,
+        cancel_token: crate::runtime::cancellation::CancellationToken,
     ) -> Result<ToolOutput, ToolError> {
         // Step 1: Check global runtime_tools (stateless, e.g. workspace tools)
         let runtime_tool: Option<Arc<dyn crate::runtime::tools::RuntimeTool>> = {
@@ -306,7 +310,7 @@ impl ToolRegistry {
                 run_id,
                 ctx.agent_id.clone(),
                 format!("tool-{}", name),
-                crate::runtime::cancellation::CancellationToken::new(),
+                cancel_token.child_token(),
             )
             .with_capability(capability);
 
@@ -363,7 +367,7 @@ impl ToolRegistry {
             }),
             ctx.agent_id.clone(),
             format!("tool-{}", name),
-            crate::runtime::cancellation::CancellationToken::new(),
+            cancel_token.child_token(),
         );
         let outcome = dispatcher
             .dispatch(name, input, runtime_ctx)

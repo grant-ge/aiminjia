@@ -1078,6 +1078,9 @@ pub(crate) async fn legacy_send_message_impl(
 
     // Build AgentContext for the background task
     let assistant_id = uuid::Uuid::new_v4().to_string();
+    // Session-level root token: this is the top of the cancel hierarchy for this
+    // legacy send_message path (session → turn → tool_call).  No parent exists above
+    // the transport entry point, so CancellationToken::new() is intentional here.
     let cancel_token = CancellationToken::new();
     let agent_ctx = AgentContext {
         db: db.clone(),

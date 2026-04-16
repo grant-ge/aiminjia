@@ -255,8 +255,11 @@ pub async fn run_sub_agent(
                 );
             }
 
+            // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()
+            // 当前是孤立 root token，cancel cascade 不生效
+            let sub_cancel = crate::runtime::cancellation::CancellationToken::new();
             let result = tool_registry
-                .execute(&tc.name, &sub_plugin_ctx, tc.arguments.clone())
+                .execute(&tc.name, &sub_plugin_ctx, tc.arguments.clone(), sub_cancel)
                 .await;
 
             match result {
