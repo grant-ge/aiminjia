@@ -774,14 +774,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             )
         };
 
-        let tool_definitions = self.services.tool_registry
+        let tool_definitions: Vec<crate::llm::streaming::ToolDefinition> = self.services.tool_registry
             .get_schemas_filtered(&filter)
             .await;
 
         // ToolDefinition implements Serialize
         let json_defs: Vec<serde_json::Value> = tool_definitions
             .into_iter()
-            .filter_map(|td| serde_json::to_value(&td).ok())
+            .filter_map(|td| {
+                serde_json::to_value(&td)
+                    .map_err(|e| log::warn!("[get_tool_defs] Failed to serialize tool '{}': {}", td.name, e))
+                    .ok()
+            })
             .collect();
 
         log::info!(
