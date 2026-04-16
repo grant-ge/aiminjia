@@ -32,7 +32,7 @@ impl TurnState {
     /// Attach a cancellation token to this turn, replacing the default one created in `new`.
     ///
     /// Use this to wire the session → turn cancel cascade:
-    /// ```no_run
+    /// ```ignore
     /// let turn = TurnState::new(mapping, run_id, input)
     ///     .with_cancellation(session_cancel_token.child_token());
     /// ```
