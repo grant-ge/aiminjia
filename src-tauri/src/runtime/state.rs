@@ -29,6 +29,37 @@ impl TurnState {
         }
     }
 
+    /// Attach a cancellation token to this turn, replacing the default one created in `new`.
+    ///
+    /// Use this to wire the session → turn cancel cascade:
+    /// ```no_run
+    /// let turn = TurnState::new(mapping, run_id, input)
+    ///     .with_cancellation(session_cancel_token.child_token());
+    /// ```
+    pub fn with_cancellation(mut self, token: CancellationToken) -> Self {
+        self.cancellation = token;
+        self
+    }
+
+    /// Build a [`crate::runtime::tools::context::ToolExecutionContext`] for a single tool call
+    /// within this turn.
+    ///
+    /// Creates a **child** cancellation token from the turn-level token so that:
+    /// - Cancelling the turn cascades down to the running tool call.
+    /// - Cancelling one tool call does not affect the turn token or sibling tool calls.
+    pub fn build_execution_context(
+        &self,
+        tool_call_id: impl Into<String>,
+    ) -> crate::runtime::tools::context::ToolExecutionContext {
+        crate::runtime::tools::context::ToolExecutionContext::new(
+            self.session_id().clone(),
+            self.run_id().clone(),
+            self.agent_id().cloned(),
+            tool_call_id,
+            self.cancellation.child_token(),
+        )
+    }
+
     pub fn session_id(&self) -> &SessionId {
         self.identity.session_id()
     }

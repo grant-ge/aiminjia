@@ -1,5 +1,6 @@
 use super::chat_support::AgentGuard;
 use super::*;
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 
@@ -136,6 +137,7 @@ pub(crate) async fn legacy_send_message_impl(
     content: String,
     file_ids: Vec<String>,
     run_id: RunId,
+    session_event_bus: Option<RuntimeEventBus>,
 ) -> Result<(), String> {
     log::info!(
         "=== send_message START === conversation_id={}, content_len={}, file_ids={:?}",
@@ -1076,6 +1078,7 @@ pub(crate) async fn legacy_send_message_impl(
 
     // Build AgentContext for the background task
     let assistant_id = uuid::Uuid::new_v4().to_string();
+    let cancel_token = CancellationToken::new();
     let agent_ctx = AgentContext {
         db: db.clone(),
         gateway: gateway.clone(),
@@ -1091,6 +1094,8 @@ pub(crate) async fn legacy_send_message_impl(
         authorized_workspace,
         assistant_id: assistant_id.clone(),
         masking_level,
+        session_event_bus,
+        cancel_token,
     };
 
     // 9. Spawn the agent loop in a background task with guard and timeout
@@ -1124,14 +1129,25 @@ pub(crate) async fn legacy_send_message_impl(
         }
     }
 
-    // Note: This spawn does not receive a CancellationToken because
-    // `legacy_send_message_impl` predates the runtime cancellation model.
-    // External cancellation is handled via `gateway.cancel_conversation()` at the
-    // LLM-gateway layer. A proper CancellationToken would require threading it
-    // through the legacy call chain, deferred to P4 full refactor.
+    // Agent loop spawn: use the real upstream cancel source from RuntimeRunRegistry
+    // (via LlmGateway) instead of a local token with no caller.
     tokio::spawn(async move {
         let conversation_id_clone = agent_ctx.conversation_id.clone();
         let app_clone = agent_ctx.app.clone();
+        let cancel_token = agent_ctx.cancel_token.clone();
+
+        // Early exit if cancelled before the loop starts
+        if agent_ctx
+            .gateway
+            .is_conversation_cancelled(&conversation_id_clone)
+        {
+            log::info!(
+                "[AgentGuard] agent_loop skipped (cancelled before start) for conversation {}",
+                conversation_id_clone
+            );
+            cancel_token.cancel();
+            return;
+        }
 
         let mut guard = AgentGuard::new(
             agent_ctx.gateway.clone(),
@@ -1161,6 +1177,7 @@ pub(crate) async fn legacy_send_message_impl(
                     AGENT_TIMEOUT_SECS,
                     conversation_id_clone
                 );
+                cancel_token.cancel();
                 guard
                     .gateway
                     .cancel_conversation(&conversation_id_clone)
@@ -1334,6 +1351,16 @@ struct AgentContext {
     authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     assistant_id: String,
     masking_level: MaskingLevel,
+    /// Session-level event bus from RuntimeChatTurnDriver.  When present, tool
+    /// round events (ToolCallExecuting / ToolCallCompleted) are emitted through
+    /// this bus instead of a locally-constructed one, so TauriEventAdapter and
+    /// any test recording host on the session bus receive them.
+    session_event_bus: Option<RuntimeEventBus>,
+    /// Cancellation token for this turn.  Cancelled when the user triggers
+    /// stop_streaming or the agent loop times out.  Passed to
+    /// `PythonSessionManager` so LRU-evicted sessions skip checkpoint writes
+    /// when the owning turn has already been cancelled.
+    cancel_token: CancellationToken,
 }
 
 // ---------------------------------------------------------------------------
@@ -1637,6 +1664,8 @@ async fn agent_loop(
         authorized_workspace,
         assistant_id,
         masking_level,
+        session_event_bus,
+        cancel_token,
     } = ctx;
 
     let tavily_api_key = if settings.tavily_api_key.is_empty() {
@@ -1865,7 +1894,13 @@ async fn agent_loop(
             // (timeout, memory limit, path restriction) still applies via session_mgr.execute().
 
             match session_mgr
-                .execute_for_run(&run_id, &full_code, timeout, &sandbox)
+                .execute_for_run_with_cancel(
+                    &run_id,
+                    &full_code,
+                    timeout,
+                    &sandbox,
+                    Some(cancel_token.clone()),
+                )
                 .await
             {
                 Ok(result) if result.result.exit_code == 0 => {
@@ -2425,6 +2460,7 @@ async fn agent_loop(
                 _ = cancel_rx.changed() => {
                     if *cancel_rx.borrow() {
                         log::info!("[AGENT] Cancel signal received for conversation {}", conversation_id);
+                        cancel_token.cancel();
                         stream_cancelled = true;
                         break;
                     }
@@ -2769,13 +2805,21 @@ async fn agent_loop(
             .with_authorized_workspace(authorized_workspace.clone())
             .with_browser_available(browser_available);
 
-        // Create a per-round event bus with TauriEventAdapter so tool:executing /
-        // tool:completed events reach the frontend via RuntimeEventBus → TauriEventAdapter
-        // instead of direct app.emit() calls.
-        let round_host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-            Arc::new(crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.clone()));
-        let round_bus = RuntimeEventBus::new();
-        round_bus.subscribe(Arc::new(TauriEventAdapter::new(round_host)));
+        // Create or reuse event bus for tool round.
+        // When a session-level bus is available, tool events flow through the
+        // RuntimeChatTurnDriver's bus (and its TauriEventAdapter subscriber),
+        // making them visible to recording hosts in tests and to the session
+        // event log.  When no session bus is present (standalone agent_loop),
+        // fall back to a locally-constructed bus wired to a TauriRuntimeHost.
+        let round_bus = if let Some(ref sbus) = session_event_bus {
+            sbus.clone()
+        } else {
+            let round_host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                Arc::new(crate::transport::tauri_runtime_host::TauriRuntimeHost::new(app.clone()));
+            let local_bus = RuntimeEventBus::new();
+            local_bus.subscribe(Arc::new(TauriEventAdapter::new(round_host)));
+            local_bus
+        };
 
         // Build a TurnState for this tool round (identity from conversation_id + run_id).
         let round_mapping = crate::runtime::identity::IdentityMapping::from_legacy_conversation_id(
@@ -2785,7 +2829,8 @@ async fn agent_loop(
             round_mapping,
             run_id.clone(),
             String::new(), // user_input not relevant for tool round
-        );
+        )
+        .with_cancellation(cancel_token.child_token());
 
         // Convert LLM tool_calls to RuntimeToolCallRequest.
         let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
@@ -2842,6 +2887,14 @@ async fn agent_loop(
                     true, // blocked tools are treated as errors for stats
                 ),
             };
+
+            // Collect file_meta from successful tool outcomes into all_file_metas
+            // so verify_file_claims and file card semantics work correctly.
+            if let crate::runtime::ToolRoundResult::Ok(outcome) = round_result {
+                if let Some(ref meta) = outcome.file_meta {
+                    all_file_metas.push(meta.clone());
+                }
+            }
 
             log::info!(
                 "[AGENT] Tool '{}' result: is_error={}, content_len={}, preview='{}'",
@@ -3084,6 +3137,7 @@ async fn agent_loop(
                 "[AGENT] Cancel signal detected after tool execution for conversation {}",
                 conversation_id
             );
+            cancel_token.cancel();
             stream_cancelled = true;
         }
     }
@@ -3730,9 +3784,6 @@ fn verify_file_claims(
 
 /// Tag a tool result with structured metadata so the LLM can correctly report
 /// the actual file format (especially when degraded from the requested format).
-/// NOTE: Currently unused after the runtime dispatcher migration removed the
-/// file_meta code path. Will be re-enabled when RuntimeToolCallOutcome carries
-/// file_meta through the runtime dispatcher.
 #[allow(dead_code)]
 fn tag_file_tool_result(
     original_content: &str,
