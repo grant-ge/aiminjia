@@ -4,13 +4,15 @@
  *
  * Wired to useChat (send / stop) and useFileUpload (native file picker).
  */
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useChat } from '@/hooks/useChat'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import type { PendingFileInfo } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
+import type { SkillInfo } from '@/lib/tauri'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
@@ -50,6 +52,62 @@ export function InputBar() {
     }
   }, [input])
 
+  // ─── Slash-command detection ────────────────────────────────────────────
+  //
+  // User types "/" at the beginning of input (or at the very start, ignoring
+  // leading whitespace) → opens a skill picker popover. We only honor the
+  // slash when it's at position 0 of the TRIMMED input — we don't want to
+  // hijack a stray "/" in the middle of normal writing.
+  //
+  // The filter text is whatever follows the slash (trimmed). Selecting a
+  // skill replaces the entire "/xxx" portion with `skill.triggerText`,
+  // preserving any content the user typed AFTER a space/newline (uncommon).
+  const slashMatch = useMemo(() => {
+    // Match only when input starts with "/" followed by non-whitespace chars
+    // (possibly empty). Anything after the first whitespace is "tail content"
+    // the user may have typed and we should preserve on select.
+    //
+    // Examples:
+    //   "/"             → filter=""
+    //   "/薪酬"         → filter="薪酬"
+    //   "/compare"      → filter="compare"
+    //   "/cmp extra"    → filter="cmp", tail=" extra"  (uncommon; supported)
+    //   "  /foo"        → no slash match (must be char 0)
+    //   "hello /foo"    → no slash match
+    if (!input.startsWith('/')) return null
+    const rest = input.slice(1)
+    // Split at first whitespace
+    const wsIdx = rest.search(/\s/)
+    if (wsIdx === -1) {
+      return { filter: rest, tail: '' }
+    }
+    return { filter: rest.slice(0, wsIdx), tail: rest.slice(wsIdx) }
+  }, [input])
+
+  const slashOpen = slashMatch !== null
+
+  const handleSlashSelect = (skill: SkillInfo) => {
+    // Replace "/filter" with triggerText, keep tail if any.
+    const tail = slashMatch?.tail ?? ''
+    const next = tail ? `${skill.triggerText}${tail}` : skill.triggerText
+    setInput(next)
+    // Focus back on textarea with caret at end
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(next.length, next.length)
+      }
+    })
+  }
+
+  const handleSlashClose = () => {
+    // No state to clear — slash detection is driven purely by input text.
+    // Users cancel by either clearing input, Backspace'ing past the "/",
+    // or pressing Esc (handled inside the popover).
+    textareaRef.current?.focus()
+  }
+
   const handleSend = async () => {
     const trimmed = input.trim()
     if (!trimmed && pendingFiles.length === 0) return
@@ -85,6 +143,14 @@ export function InputBar() {
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // When the slash-command popover is open, its own capture-phase keydown
+    // listener handles Enter (to pick a skill). Skip our Enter-to-send here
+    // so we don't fire twice. The popover's onSelect handler will set the
+    // input text; user presses Enter AGAIN (popover now closed) to send.
+    if (slashOpen) {
+      return
+    }
+
     // Some WebView engines fire compositionEnd BEFORE keyDown when the user
     // presses Enter to confirm an IME candidate.  In that case the native
     // `isComposing` property on the event is the only reliable guard.
@@ -211,32 +277,42 @@ export function InputBar() {
             )}
           </button>
 
-          {/* Multi-line text input */}
-          <textarea
-            ref={textareaRef}
-            className="flex-1 resize-none border-none bg-transparent py-[5px] text-md outline-none"
-            style={{
-              color: 'var(--color-text-primary)',
-              fontFamily: 'var(--font-sans)',
-              minHeight: '32px',
-              maxHeight: '160px',
-              lineHeight: '1.5',
-            }}
-            rows={1}
-            placeholder={pendingFiles.length > 0
-              ? t('inputBar.placeholderWithFile')
-              : t('inputBar.placeholder')}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => { isComposingRef.current = true }}
-            onCompositionEnd={() => {
-              // Delay clearing the flag: some engines fire compositionEnd before
-              // the final keyDown, so we let the event loop settle first.
-              setTimeout(() => { isComposingRef.current = false }, 50)
-            }}
-            disabled={isStreaming}
-          />
+          {/* Multi-line text input (wrapped in relative container for slash popover positioning) */}
+          <div className="relative flex-1">
+            <textarea
+              ref={textareaRef}
+              className="w-full resize-none border-none bg-transparent py-[5px] text-md outline-none"
+              style={{
+                color: 'var(--color-text-primary)',
+                fontFamily: 'var(--font-sans)',
+                minHeight: '32px',
+                maxHeight: '160px',
+                lineHeight: '1.5',
+              }}
+              rows={1}
+              placeholder={pendingFiles.length > 0
+                ? t('inputBar.placeholderWithFile')
+                : t('inputBar.placeholder')}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onCompositionStart={() => { isComposingRef.current = true }}
+              onCompositionEnd={() => {
+                // Delay clearing the flag: some engines fire compositionEnd before
+                // the final keyDown, so we let the event loop settle first.
+                setTimeout(() => { isComposingRef.current = false }, 50)
+              }}
+              disabled={isStreaming}
+            />
+
+            {slashOpen && (
+              <SlashCommandPopover
+                filterText={slashMatch!.filter}
+                onSelect={handleSlashSelect}
+                onClose={handleSlashClose}
+              />
+            )}
+          </div>
 
           {/* Send / Stop button */}
           <button

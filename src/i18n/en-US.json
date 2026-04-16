@@ -84,7 +84,12 @@
     "uploadFile": "Upload file (Excel/Word/PDF)",
     "placeholderWithFile": "Add a note (optional), then press Enter to send...",
     "placeholder": "Ask anything, or upload a file for analysis...",
-    "analyzeFile": "Please analyze this file"
+    "analyzeFile": "Please analyze this file",
+    "slashEmpty": "No matching skills",
+    "slashFiltered": "{{count}} skill(s)",
+    "slashNav": "navigate",
+    "slashSelect": "select",
+    "slashClose": "close"
   },
 
   "chatArea": {
