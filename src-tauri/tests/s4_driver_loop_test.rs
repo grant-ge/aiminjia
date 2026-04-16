@@ -334,7 +334,11 @@ async fn driver_s4_message_persisted_carries_content() {
         &persisted.unwrap().kind
     {
         assert_eq!(role, "assistant");
-        assert_eq!(content.as_str().unwrap_or(""), "The answer is 42.");
+        // content must be a MessageContent object {"text": "..."} — not a raw string.
+        // The frontend Message type requires content: MessageContent, so we always
+        // emit {"text": full_content} to match the legacy finish_agent path.
+        let text = content.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(text, "The answer is 42.");
     }
 }
 

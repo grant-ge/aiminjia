@@ -81,6 +81,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "id": message_id,
                 "role": role,
                 "content": content,
+                "createdAt": chrono::Utc::now().to_rfc3339(),
                 "runId": event.run_id.as_str(),
             }),
         }),

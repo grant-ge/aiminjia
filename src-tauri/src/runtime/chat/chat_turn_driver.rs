@@ -389,13 +389,16 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // ── Step 8: Emit terminal events ──────────────────────────────────────
+        // content must be a MessageContent object (matching the frontend Message type),
+        // not a raw string.  The legacy finish_agent path always emitted {"text": "..."},
+        // so we must do the same here or the frontend will discard the message.
         self.event_bus
             .emit(RuntimeEvent::message_persisted(
                 session_id.clone(),
                 run_id.clone(),
                 message_id,
                 "assistant",
-                serde_json::json!(state.full_content),
+                serde_json::json!({ "text": state.full_content }),
             ))
             .await?;
         self.event_bus
