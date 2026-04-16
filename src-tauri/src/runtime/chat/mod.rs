@@ -1,4 +1,5 @@
 pub mod chat_turn_driver;
+pub mod safeguard;
 pub mod tool_round_driver;
 pub mod tool_round_types;
 pub mod turn_config;

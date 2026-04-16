@@ -94,3 +94,31 @@ fn mock_executor_implements_trait() {
     let _arc: Arc<dyn RuntimeLlmExecutor> = Arc::new(executor);
     // 编译通过即为成功
 }
+
+// ── S4-T6: safeguard 模块 ──────────────────────────────────────────────────
+
+use app_lib::runtime::chat::safeguard::{check_iteration, SafeguardAction};
+
+#[test]
+fn safeguard_continues_when_not_near_limit() {
+    let mut injected = false;
+    // iteration=0, max=10, has_saved_note=false, force_no_tools=false
+    let action = check_iteration(0, 10, "some content", false, false, &mut injected, false);
+    assert!(matches!(action, SafeguardAction::Continue));
+}
+
+#[test]
+fn safeguard_daily_injects_when_near_limit_no_content() {
+    let mut injected = false;
+    // Daily mode: iteration 7 >= max_iterations(10) - 3 = 7, empty full_content
+    let action = check_iteration(7, 10, "", false, false, &mut injected, false);
+    assert!(matches!(action, SafeguardAction::InjectPromptAndContinue(_)));
+}
+
+#[test]
+fn safeguard_analysis_forces_no_tools_at_final_phase() {
+    let mut injected = true; // phase 1 already injected
+    // iteration=12, max=15 → remaining = 15-13 = 2 (<= 3), no content, has_saved_note=true
+    let action = check_iteration(12, 15, "", true, true, &mut injected, false);
+    assert!(matches!(action, SafeguardAction::ForceNoToolsAndContinue(_)));
+}
