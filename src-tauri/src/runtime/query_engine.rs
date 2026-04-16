@@ -147,12 +147,12 @@ impl QueryEngine {
             .await?;
         let mut event_names = match outcome {
             crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
-            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision) => {
-                // S1 transition: Ask is not yet wired through the UI — treat as denied.
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
+                // FIXME(S6): extend return type to carry Ask up to TurnDriver/transport.
+                // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).
                 log::warn!(
-                    "run_single_tool_turn: tool '{}' requires user confirmation (Ask) \
-                     — denying for now (S1 transition)",
-                    tool_name
+                    "run_single_tool_turn: tool '{}' returned Ask — error fallback (S1). Decision: {:?}",
+                    tool_name, decision
                 );
                 return Err(anyhow::anyhow!(
                     "Tool '{}' requires user confirmation before it can run.",
@@ -268,13 +268,21 @@ impl QueryEngine {
                     degradation_notice: tool_result.degradation_notice,
                 })
             }
-            Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision)) => {
-                // S1 transition: Ask is not yet wired through the UI — surface as a
-                // permission-denied error so the LLM loop sees a tool failure.
+            Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision)) => {
+                // S1 transition: Ask reaches QueryEngine as a structured decision,
+                // NOT collapsed into Err at the Dispatcher level.
+                //
+                // Current limitation (S1): we convert Ask → error outcome here because
+                // RuntimeToolCallOutcome is still a flat struct without an Ask variant.
+                // The PermissionDecision is preserved in the log for debugging.
+                //
+                // FIXME(S6): extend RuntimeToolCallOutcome to enum with AskRequired variant,
+                // then TurnDriver/transport can emit RuntimeEvent::PermissionAsk to the UI
+                // and await user response. At that point, remove this conversion.
                 log::warn!(
-                    "run_tool_call_with_bus: tool '{}' requires user confirmation (Ask) \
-                     — denying for now (S1 transition)",
-                    call.tool_name
+                    "run_tool_call_with_bus: tool '{}' returned Ask — \
+                     converting to error outcome (S1 transition). Decision: {:?}",
+                    call.tool_name, decision
                 );
                 bus.emit(RuntimeEvent::new(
                     turn.session_id().clone(),
@@ -365,12 +373,12 @@ impl QueryEngine {
             .await?;
         let event_names = match outcome {
             crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
-            crate::runtime::tools::ToolDispatchOutcome::AskRequired(_decision) => {
-                // S1 transition: Ask is not yet wired through the UI — treat as denied.
+            crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
+                // FIXME(S6): extend return type to carry Ask up to TurnDriver/transport.
+                // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).
                 log::warn!(
-                    "run_tool_with_bus: tool '{}' requires user confirmation (Ask) \
-                     — denying for now (S1 transition)",
-                    tool_name
+                    "run_tool_with_bus: tool '{}' returned Ask — error fallback (S1). Decision: {:?}",
+                    tool_name, decision
                 );
                 return Err(anyhow::anyhow!(
                     "Tool '{}' requires user confirmation before it can run.",

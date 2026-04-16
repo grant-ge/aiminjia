@@ -22,14 +22,21 @@ impl CancellationToken {
         }
     }
 
-    /// 创建 child token——parent cancel 传播到 child，child cancel 不影响 parent
+    /// 创建 child token——parent cancel 传播到 child，child cancel 不影响 parent。
+    /// 线程安全：注册和取消检查在同一个 Mutex 临界区内完成，消除竞态。
     pub fn child_token(&self) -> CancellationToken {
         let child = CancellationToken::new();
-        if self.is_cancelled() {
+        // 在 parent 的 children Mutex 内完成注册 + 取消检查，
+        // 确保 cancel() 不会在 "检查 is_cancelled" 和 "push child" 之间传播并遗漏这个 child。
+        let mut children = self.inner.children.lock().unwrap();
+        children.push(Arc::downgrade(&child.inner));
+        // 如果 parent 在我们拿到锁之前（或之中）已经被 cancel，
+        // cancel() 的 propagate_to_children() 可能已经跑完了旧的 children 快照，
+        // 所以这里需要补发一次 cancel。
+        if self.inner.cancelled.load(Ordering::SeqCst) {
+            drop(children); // 先释放锁再 cancel，避免死锁（child.cancel 不需要 parent 的锁）
             child.cancel();
-            return child;
         }
-        self.inner.children.lock().unwrap().push(Arc::downgrade(&child.inner));
         child
     }
 
@@ -131,5 +138,43 @@ mod tests {
         parent.cancel();
 
         assert!(parent.is_cancelled(), "parent should still be cancellable after child is dropped");
+    }
+
+    #[test]
+    fn child_token_race_with_cancel_is_safe() {
+        // 验证：即使 parent.cancel() 和 parent.child_token() 并发，
+        // child 最终一定能观察到 cancelled 状态。
+        use std::sync::Barrier;
+        let iterations = 1000;
+        for _ in 0..iterations {
+            let parent = Arc::new(CancellationToken::new());
+            let barrier = Arc::new(Barrier::new(2));
+            let child_holder: Arc<Mutex<Option<CancellationToken>>> = Arc::new(Mutex::new(None));
+
+            let p = parent.clone();
+            let b = barrier.clone();
+            let h = child_holder.clone();
+
+            let t1 = std::thread::spawn(move || {
+                b.wait();
+                *h.lock().unwrap() = Some(p.child_token());
+            });
+
+            let p2 = parent.clone();
+            let b2 = barrier.clone();
+            let t2 = std::thread::spawn(move || {
+                b2.wait();
+                p2.cancel();
+            });
+
+            t1.join().unwrap();
+            t2.join().unwrap();
+
+            let child = child_holder.lock().unwrap().take().unwrap();
+            assert!(
+                child.is_cancelled(),
+                "child created concurrently with parent.cancel() must end up cancelled"
+            );
+        }
     }
 }
