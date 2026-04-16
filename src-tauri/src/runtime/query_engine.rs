@@ -93,16 +93,6 @@ impl QueryEngine {
             return Err(anyhow!("turn already cancelled"));
         }
 
-        if turn.executor_backed() {
-            bus.emit(RuntimeEvent::new(
-                turn.session_id().clone(),
-                turn.run_id().clone(),
-                RuntimeEventKind::StreamStarted,
-            ))
-            .await?;
-            return Ok(());
-        }
-
         let content = format!("runtime:{}", turn.user_input());
         turn.append_output(&content);
         bus.emit(RuntimeEvent::stream_delta(

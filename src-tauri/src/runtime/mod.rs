@@ -21,5 +21,5 @@ pub use identity::{IdentityMapping, RuntimeIdentity};
 pub use ids::{AgentId, RunId, SessionId, TaskId, ToolCallId};
 pub use query_engine::QueryEngine;
 pub use run_registry::RuntimeRunRegistry;
-pub use session_runtime::{ChatTurnRequest, RuntimeTurnExecutor, SessionRuntime};
+pub use session_runtime::{ChatTurnRequest, SessionRuntime};
 pub use state::TurnState;

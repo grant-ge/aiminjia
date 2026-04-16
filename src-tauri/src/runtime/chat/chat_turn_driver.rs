@@ -8,7 +8,6 @@ use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::ToolRoundDriver;
-use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfig, TurnError, TurnIterationState};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
@@ -42,67 +41,6 @@ impl ChatTurnRequest {
             file_ids,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
         }
-    }
-}
-
-/// Trait implemented by legacy turn executors.
-///
-/// Retained as a runtime-controlled helper during the chat-runtime-first migration.
-/// The runtime (via `RuntimeChatTurnDriver`) remains the single turn entry; the
-/// executor is invoked by the driver — not by `SessionRuntime` directly — to
-/// preserve current LLM / transport behaviour while the migration is in progress.
-/// Will be removed once Tasks 3/4 complete the migration.
-///
-/// ## Tool call routing
-///
-/// `run_chat_turn` preserves backward compatibility (returns `Result<(), String>`).
-/// Executors that produce LLM-driven tool calls for the runtime to dispatch can
-/// override either `run_chat_turn_with_calls` for one-shot compatibility or the
-/// newer `run_llm_step` / `feed_tool_results` pair for iterative tool rounds.
-/// Default implementations preserve existing behaviour, so legacy executors compile
-/// without change.
-#[async_trait]
-pub trait RuntimeTurnExecutor: Send + Sync {
-    /// Execute the chat turn.  Backward-compatible signature; override this
-    /// **or** `run_chat_turn_with_calls` / `run_llm_step` (not all of them).
-    async fn run_chat_turn(
-        &self,
-        request: ChatTurnRequest,
-    ) -> std::result::Result<(), String>;
-
-    /// Execute the chat turn and return any tool calls the LLM issued so the
-    /// driver can dispatch them via `ToolRoundDriver`.
-    ///
-    /// Default: calls `run_chat_turn` and returns an empty Vec.  Executors that
-    /// need to surface tool calls for runtime dispatch override this method.
-    async fn run_chat_turn_with_calls(
-        &self,
-        request: ChatTurnRequest,
-    ) -> std::result::Result<Vec<RuntimeToolCallRequest>, String> {
-        self.run_chat_turn(request).await?;
-        Ok(vec![])
-    }
-
-    /// Execute a single LLM step and return tool calls.
-    ///
-    /// Default: calls `run_chat_turn` (full turn) and returns an empty Vec.
-    async fn run_llm_step(
-        &self,
-        request: ChatTurnRequest,
-        _previous_tool_results: &[crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome],
-    ) -> std::result::Result<Vec<RuntimeToolCallRequest>, String> {
-        self.run_chat_turn(request).await?;
-        Ok(vec![])
-    }
-
-    /// Receive tool execution results.
-    ///
-    /// Default: no-op.
-    async fn feed_tool_results(
-        &self,
-        _outcomes: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome>,
-    ) -> std::result::Result<(), String> {
-        Ok(())
     }
 }
 
@@ -151,31 +89,20 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 ///
 /// Single entry point for chat turn orchestration.  There are two execution modes:
 ///
-/// **No-executor mode** (pure runtime path, used in tests and future production):
-///   `run_chat_turn` emits `StreamStarted`, then calls `QueryEngine::run()` which
-///   emits `StreamDelta → MessagePersisted → StreamDone` on the bus.  The
+/// **No-executor mode** (pure runtime path, used in tests):
+///   `run_chat_turn` calls `QueryEngine::run()` which emits
+///   `StreamDelta → MessagePersisted → StreamDone` on the bus.  The
 ///   `TauriEventAdapter` translates these to the expected frontend legacy events.
 ///
-/// **Executor-backed mode** (current production, until Tasks 3/4 complete):
-///   `run_chat_turn` emits `StreamStarted` on the bus, invokes the legacy executor
-///   as a runtime-controlled helper (it performs the real LLM / tool loop), then
-///   emits `MessagePersisted`, `StreamDone`, and `AgentIdle` through the bus so
-///   `TauriEventAdapter` can deliver the corresponding legacy frontend events
-///   (`message:updated`, `streaming:done`, `agent:idle`).
-///
-/// This design satisfies three constraints simultaneously:
-///   1. `SessionRuntime` never full-delegates; the driver is the only turn owner.
-///   2. `MessagePersisted` and `StreamDone` appear in `recorded_events()`.
-///   3. `TauriEventAdapter` is notified so frontend receives `streaming:done`,
-///      `message:updated`, and `agent:idle`.  `AgentGuard::clear()` and `Drop` must
-///      NOT re-emit these events to avoid duplicates.
+/// **S4 executor mode** (production):
+///   `run_chat_turn_s4` is the driver-owned loop.  The `RuntimeLlmExecutor` is a
+///   pure provider streaming adapter; the driver owns the query/tool loop and
+///   emits all lifecycle events through the bus.
 #[derive(Clone)]
 pub struct RuntimeChatTurnDriver {
     query_engine: QueryEngine,
     event_bus: RuntimeEventBus,
-    /// Legacy executor helper, present on production paths during migration.
-    legacy_executor: Option<Arc<dyn RuntimeTurnExecutor>>,
-    /// S4 新增：新 executor，只做 provider streaming adapter。
+    /// S4 executor：只做 provider streaming adapter。
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
 }
 
@@ -184,20 +111,6 @@ impl RuntimeChatTurnDriver {
         Self {
             query_engine,
             event_bus,
-            legacy_executor: None,
-            llm_executor: None,
-        }
-    }
-
-    pub fn with_legacy_executor(
-        query_engine: QueryEngine,
-        event_bus: RuntimeEventBus,
-        legacy_executor: Arc<dyn RuntimeTurnExecutor>,
-    ) -> Self {
-        Self {
-            query_engine,
-            event_bus,
-            legacy_executor: Some(legacy_executor),
             llm_executor: None,
         }
     }
@@ -210,7 +123,6 @@ impl RuntimeChatTurnDriver {
         Self {
             query_engine,
             event_bus,
-            legacy_executor: None,
             llm_executor: Some(executor),
         }
     }
@@ -220,108 +132,17 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
-        // S4 new path takes priority.
+        // S4 path: when an llm_executor is present, use the S4 driver loop.
         if let Some(ref executor) = self.llm_executor {
             return self
                 .run_chat_turn_s4(turn, request, executor.as_ref())
                 .await;
         }
 
-        // Emit StreamStarted on the bus in all cases.  TauriEventAdapter does not
-        // map StreamStarted to a legacy event, so this is always safe.
-        self.event_bus
-            .emit(RuntimeEvent::new(
-                turn.session_id().clone(),
-                turn.run_id().clone(),
-                RuntimeEventKind::StreamStarted,
-            ))
-            .await?;
-
-        if let Some(executor) = &self.legacy_executor {
-            // Executor-backed mode: iterative tool-round loop.
-            // `run_llm_step` returns any tool calls the LLM issued; these are
-            // dispatched through `ToolRoundDriver` so the runtime owns execution.
-            // Results are fed back via `feed_tool_results` for the next step.
-            // When `run_llm_step` returns an empty Vec the loop ends (legacy
-            // executors use the default impl that always returns vec![], so
-            // behaviour is unchanged for existing executors).
-            let round_driver = ToolRoundDriver::new(self.query_engine.clone());
-            let mut previous_outcomes: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> = vec![];
-
-            loop {
-                let tool_calls = executor
-                    .run_llm_step(request.clone(), &previous_outcomes)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
-
-                if tool_calls.is_empty() {
-                    break;
-                }
-
-                let round_results = round_driver
-                    .execute_round(turn, &self.event_bus, tool_calls)
-                    .await;
-
-                previous_outcomes = round_results
-                    .iter()
-                    .filter_map(|r| match r {
-                        crate::runtime::ToolRoundResult::Ok(outcome) => Some(outcome.clone()),
-                        crate::runtime::ToolRoundResult::Blocked(blocked) => {
-                            // FIXME(S6): blocked tools could also be surfaced structurally.
-                            // For now, synthesize a Completed(is_error=true) outcome so
-                            // the executor receives feedback via feed_tool_results.
-                            Some(crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome::Completed {
-                                tool_call_id: blocked.tool_call_id.clone(),
-                                tool_name: blocked.tool_name.clone(),
-                                content: blocked.reason.clone(),
-                                is_error: true,
-                                file_meta: None,
-                                is_degraded: false,
-                                degradation_notice: None,
-                            })
-                        }
-                    })
-                    .collect();
-
-                executor
-                    .feed_tool_results(previous_outcomes.clone())
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))?;
-            }
-
-            // Emit runtime events through the bus so TauriEventAdapter can
-            // deliver the corresponding legacy frontend events (message:updated,
-            // streaming:done, agent:idle).
-            let session_id = turn.session_id().clone();
-            let run_id = turn.run_id().clone();
-            self.event_bus
-                .emit(RuntimeEvent::message_persisted(
-                    session_id.clone(),
-                    run_id.clone(),
-                    format!("exec-msg-{}", run_id.as_str()),
-                    "assistant",
-                    serde_json::json!({"executor_owned": true}),
-                ))
-                .await?;
-            self.event_bus
-                .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
-                .await?;
-            self.event_bus
-                .emit(RuntimeEvent::new(
-                    session_id,
-                    run_id.clone(),
-                    RuntimeEventKind::AgentIdle {
-                        agent_id: AgentId::new(format!("agent-{}", run_id.as_str())),
-                        scope: AgentIdleScope::Primary,
-                    },
-                ))
-                .await?;
-        } else {
-            // Pure runtime mode: QueryEngine drives the full turn and emits
-            // StreamDelta → MessagePersisted → StreamDone through the bus.
-            // TauriEventAdapter translates these to the expected frontend events.
-            self.query_engine.run(turn, &self.event_bus).await?;
-        }
+        // Pure runtime mode: QueryEngine drives the full turn and emits
+        // StreamDelta → MessagePersisted → StreamDone through the bus.
+        // TauriEventAdapter translates these to the expected frontend events.
+        self.query_engine.run(turn, &self.event_bus).await?;
 
         Ok(())
     }

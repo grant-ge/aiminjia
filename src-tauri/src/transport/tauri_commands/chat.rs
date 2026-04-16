@@ -29,7 +29,7 @@ use crate::runtime::conversation_service;
 use crate::runtime::ids::{RunId, SessionId};
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::{
-    ChatTurnRequest, QueryEngine, RuntimeEventBus, RuntimeTurnExecutor, SessionRuntime,
+    ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime,
 };
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::{
@@ -44,7 +44,7 @@ use crate::storage::file_store::AppStorage;
 mod chat_runtime_impl;
 mod chat_support;
 
-pub(crate) use chat_runtime_impl::{build_visible_tool_defs, legacy_send_message_impl};
+pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
 /// Maximum agent loop iterations for daily consultation mode.
 /// 30 iterations allows multi-step browser workflows: navigate → login check →
@@ -95,29 +95,6 @@ struct TauriChatServices {
 
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
-}
-
-#[async_trait]
-impl RuntimeTurnExecutor for TauriLegacyTurnExecutor {
-    async fn run_chat_turn(&self, request: ChatTurnRequest) -> Result<(), String> {
-        legacy_send_message_impl(
-            self.services.db.clone(),
-            self.services.gateway.clone(),
-            self.services.file_mgr.clone(),
-            self.services.crypto.clone(),
-            self.services.tool_registry.clone(),
-            self.services.skill_registry.clone(),
-            self.services.session_mgr.clone(),
-            self.services.auth_manager.clone(),
-            self.services.app.clone(),
-            request.conversation_id,
-            request.content,
-            request.file_ids,
-            request.run_id,
-            None,
-        )
-        .await
-    }
 }
 
 #[async_trait]
