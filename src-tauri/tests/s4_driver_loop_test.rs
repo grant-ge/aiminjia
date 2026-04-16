@@ -122,3 +122,30 @@ fn safeguard_analysis_forces_no_tools_at_final_phase() {
     let action = check_iteration(12, 15, "", true, true, &mut injected, false);
     assert!(matches!(action, SafeguardAction::ForceNoToolsAndContinue(_)));
 }
+
+// ── S4-T7: post_process 模块 ──────────────────────────────────────────────
+
+use app_lib::runtime::chat::post_process;
+
+#[test]
+fn finalize_adds_max_iter_notice_when_hit_limit() {
+    let mut content = "partial result".to_string();
+    post_process::finalize_content(&mut content, 10, 10, false);
+    // 验证追加了 max iterations 通知文本
+    assert!(content.contains("partial result")); // 原内容保留
+    assert!(content.len() > "partial result".len()); // 有追加
+}
+
+#[test]
+fn finalize_sets_fallback_when_content_empty() {
+    let mut content = String::new();
+    post_process::finalize_content(&mut content, 1, 10, false);
+    assert!(!content.is_empty());
+}
+
+#[test]
+fn finalize_no_change_for_normal_content() {
+    let mut content = "normal response".to_string();
+    post_process::finalize_content(&mut content, 3, 10, false);
+    assert_eq!(content, "normal response");
+}
