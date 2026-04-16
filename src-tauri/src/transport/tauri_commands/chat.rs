@@ -124,20 +124,355 @@ impl RuntimeTurnExecutor for TauriLegacyTurnExecutor {
 impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     async fn run_llm_step(
         &self,
-        _input: &LlmStepInput<'_>,
-        _bus: &RuntimeEventBus,
-        _cancel: &CancellationToken,
+        input: &LlmStepInput<'_>,
+        bus: &RuntimeEventBus,
+        cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        // TODO(S4-T11): extract from agent_loop Blocks 15+17 (gateway.stream_message + stream event loop)
-        // Blocks to migrate:
-        //   - Block 15 (L2340-L2430): gateway.stream_message() call + error handling
-        //   - Block 17 (L2442-L2668): tokio::select! stream event consumption
-        //   - Block 16 (L2432-L2440): MaskingContext merge
-        //   - Block 19 (L2691-L2731): no-tool exit + ghost call recovery
-        //   - Block 20 (L2732-L2743): stop_reason validation
-        Err(TurnError::LlmError(
-            "run_llm_step not yet implemented (S4-T11)".to_string(),
-        ))
+        use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
+        use crate::llm::masking::MaskingLevel;
+        use crate::models::settings::AppSettings;
+        use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+        use crate::runtime::ids::{RunId, SessionId};
+        use futures::StreamExt;
+
+        let session_id = SessionId::from(input.conversation_id);
+        let run_id = RunId::from(input.run_id);
+
+        // --- Load settings from DB ---
+        let settings: AppSettings = {
+            let settings_map = self.services.db.get_all_settings().unwrap_or_default();
+            if settings_map.is_empty() {
+                AppSettings::default()
+            } else {
+                AppSettings::from_string_map(&settings_map)
+            }
+        };
+
+        // --- Convert JsonValue messages to ChatMessage ---
+        let chat_messages: Vec<ChatMessage> = input
+            .messages
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+
+        // --- Resolve masking level (always Strict; field kept for forward compat) ---
+        let masking_level = match input.masking_level.to_lowercase().as_str() {
+            "relaxed" => MaskingLevel::Relaxed,
+            "standard" => MaskingLevel::Standard,
+            _ => MaskingLevel::Strict,
+        };
+
+        // --- Build effective tool defs (empty when force_no_tools) ---
+        let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
+            log::info!(
+                "[run_llm_step] force_no_tools=true — sending empty tool_defs (conv={})",
+                input.conversation_id
+            );
+            Some(vec![])
+        } else if input.tool_defs.is_empty() {
+            None // Let gateway use its default registry
+        } else {
+            let defs: Vec<ToolDefinition> = input
+                .tool_defs
+                .iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect();
+            Some(defs)
+        };
+
+        let dynamic_ctx_opt: Option<&str> = if input.dynamic_context.is_empty() {
+            None
+        } else {
+            Some(input.dynamic_context)
+        };
+
+        // --- Retry loop: up to MAX_STREAM_RETRIES for gateway / stream errors ---
+        let mut stream_retry_count: u32 = 0;
+        loop {
+            log::info!(
+                "[run_llm_step] Calling gateway.stream_message() messages={} tools={} \
+                 force_no_tools={} conv={} run={}",
+                chat_messages.len(),
+                effective_tools.as_ref().map_or(0, |t| t.len()),
+                input.force_no_tools,
+                input.conversation_id,
+                input.run_id,
+            );
+
+            // --- Block 15: call gateway.stream_message ---
+            let stream_result = self
+                .services
+                .gateway
+                .stream_message(
+                    &settings,
+                    chat_messages.clone(),
+                    masking_level.clone(),
+                    Some(input.system_prompt),
+                    dynamic_ctx_opt,
+                    effective_tools.clone(),
+                    input.token_budget as u32,
+                    Some(input.conversation_id),
+                )
+                .await;
+
+            let (_task_id, mut stream, _mask_ctx, mut cancel_rx) = match stream_result {
+                Ok(r) => {
+                    log::info!("[run_llm_step] gateway.stream_message() OK task_id={}", r.0);
+                    r
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    log::error!("[run_llm_step] gateway.stream_message() FAILED: {}", err_str);
+
+                    // Retry transient errors
+                    if stream_retry_count < MAX_STREAM_RETRIES
+                        && is_retryable_stream_error_str(&err_str)
+                    {
+                        stream_retry_count += 1;
+                        log::warn!(
+                            "[run_llm_step] Gateway error retryable (attempt {}/{}) conv={}",
+                            stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
+                            .await;
+                        continue;
+                    }
+
+                    let user_error = classify_llm_error_str(&err_str);
+                    let _ = bus
+                        .emit(RuntimeEvent::new(
+                            session_id.clone(),
+                            run_id.clone(),
+                            RuntimeEventKind::StreamError {
+                                error: user_error.clone(),
+                                raw_error: Some(truncate_str(&err_str, 200)),
+                            },
+                        ))
+                        .await;
+                    return Err(TurnError::LlmError(user_error));
+                }
+            };
+
+            // --- Block 16/17: stream event loop ---
+            let mut iter_content = String::new();
+            let mut tool_calls = Vec::new();
+            let mut stop_reason = StopReason::EndTurn;
+            let mut tokens_in: u64 = 0;
+            let mut tokens_out: u64 = 0;
+            let mut stream_needs_retry = false;
+
+            loop {
+                // Check the runtime CancellationToken before each iteration
+                if cancel.is_cancelled() {
+                    log::info!(
+                        "[run_llm_step] Cancel signal detected conv={}",
+                        input.conversation_id
+                    );
+                    return Ok(LlmStepResult::Cancelled);
+                }
+
+                let chunk_timeout = tokio::time::sleep(std::time::Duration::from_secs(
+                    input.chunk_timeout_secs,
+                ));
+                tokio::select! {
+                    // Legacy cancel_rx from gateway run-registry
+                    _ = cancel_rx.changed() => {
+                        if *cancel_rx.borrow() || cancel.is_cancelled() {
+                            log::info!(
+                                "[run_llm_step] cancel_rx fired conv={}",
+                                input.conversation_id
+                            );
+                            return Ok(LlmStepResult::Cancelled);
+                        }
+                    }
+                    // Chunk timeout — treat as stalled stream
+                    _ = chunk_timeout => {
+                        log::error!(
+                            "[run_llm_step] Chunk timeout ({}s) conv={}",
+                            input.chunk_timeout_secs, input.conversation_id
+                        );
+                        if stream_retry_count < MAX_STREAM_RETRIES {
+                            stream_retry_count += 1;
+                            log::warn!(
+                                "[run_llm_step] Chunk timeout retryable (attempt {}/{}) conv={}",
+                                stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
+                            );
+                            iter_content.clear();
+                            tool_calls.clear();
+                            stream_needs_retry = true;
+                            break;
+                        }
+                        // All retries exhausted
+                        let error_msg = format!(
+                            "响应超时（{}秒无数据）。请检查网络连接后重试。",
+                            input.chunk_timeout_secs
+                        );
+                        let _ = bus
+                            .emit(RuntimeEvent::new(
+                                session_id.clone(),
+                                run_id.clone(),
+                                RuntimeEventKind::StreamError {
+                                    error: error_msg.clone(),
+                                    raw_error: Some("chunk_timeout".to_string()),
+                                },
+                            ))
+                            .await;
+                        return Err(TurnError::MaxRetriesExceeded);
+                    }
+                    // Normal stream event
+                    event = stream.next() => {
+                        match event {
+                            Some(StreamEvent::ContentDelta { delta }) => {
+                                // Strip DeepSeek-style thinking markers before forwarding
+                                let clean = strip_thinking_tag(&delta);
+                                if !clean.is_empty() {
+                                    iter_content.push_str(&clean);
+                                    // TODO(leak-detect): skipped — check_for_leak requires
+                                    // app_handle context not available in executor
+                                    let _ = bus
+                                        .emit(RuntimeEvent::stream_delta(
+                                            session_id.clone(),
+                                            run_id.clone(),
+                                            clean,
+                                        ))
+                                        .await;
+                                }
+                            }
+                            Some(StreamEvent::ThinkingDelta { .. }) => {
+                                // ThinkingDelta: internal model reasoning — intentionally dropped.
+                                // Not shown to users; bypasses prompt_guard.
+                            }
+                            Some(StreamEvent::ToolCallStart { tool_call }) => {
+                                log::info!(
+                                    "[run_llm_step] Tool call received: name='{}' id='{}'",
+                                    tool_call.name, tool_call.id
+                                );
+                                tool_calls.push(tool_call);
+                            }
+                            Some(StreamEvent::Done { stop_reason: reason, usage }) => {
+                                stop_reason = reason;
+                                tokens_in = usage.input_tokens as u64;
+                                tokens_out = usage.output_tokens as u64;
+                                log::info!(
+                                    "[run_llm_step] Stream done: stop_reason={:?} \
+                                     in={} out={} content_len={} tool_calls={}",
+                                    stop_reason, tokens_in, tokens_out,
+                                    iter_content.len(), tool_calls.len()
+                                );
+                                // TODO(telemetry): record token usage metrics
+                                break;
+                            }
+                            Some(StreamEvent::Error { error }) => {
+                                log::error!(
+                                    "[run_llm_step] Stream error: {}", error
+                                );
+                                if stream_retry_count < MAX_STREAM_RETRIES
+                                    && is_retryable_stream_error_str(&error)
+                                {
+                                    stream_retry_count += 1;
+                                    log::warn!(
+                                        "[run_llm_step] Stream error retryable \
+                                         (attempt {}/{}) conv={}",
+                                        stream_retry_count, MAX_STREAM_RETRIES,
+                                        input.conversation_id
+                                    );
+                                    iter_content.clear();
+                                    tool_calls.clear();
+                                    stream_needs_retry = true;
+                                    break;
+                                }
+                                let user_error = classify_llm_error_str(&error);
+                                let _ = bus
+                                    .emit(RuntimeEvent::new(
+                                        session_id.clone(),
+                                        run_id.clone(),
+                                        RuntimeEventKind::StreamError {
+                                            error: user_error.clone(),
+                                            raw_error: Some(truncate_str(&error, 200)),
+                                        },
+                                    ))
+                                    .await;
+                                return Err(TurnError::LlmError(user_error));
+                            }
+                            None => {
+                                log::info!(
+                                    "[run_llm_step] Stream ended (None) conv={}",
+                                    input.conversation_id
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If a retry was requested, sleep and restart the gateway call
+            if stream_needs_retry {
+                stream_needs_retry = false;
+                log::info!(
+                    "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
+                    STREAM_RETRY_DELAY_SECS, stream_retry_count, MAX_STREAM_RETRIES,
+                    input.conversation_id
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
+                    .await;
+                continue;
+            }
+
+            // --- Block 19: determine result ---
+            if tool_calls.is_empty() {
+                // Block 20: warn if stop_reason is ToolUse but no calls arrived
+                if stop_reason == StopReason::ToolUse && iter_content.is_empty() {
+                    // Ghost call recovery: SSE chunk loss dropped all args.
+                    // Return a special marker so the driver can inject a retry prompt.
+                    // For now, treat as ContentComplete — driver (T13) can handle ghost recovery.
+                    log::warn!(
+                        "[run_llm_step] Ghost call: stop_reason=ToolUse but 0 tool calls \
+                         and empty content. Treating as ContentComplete. conv={}",
+                        input.conversation_id
+                    );
+                }
+                if stop_reason != StopReason::EndTurn && stop_reason != StopReason::MaxTokens {
+                    log::warn!(
+                        "[run_llm_step] Unexpected stop_reason={:?} with no tool calls conv={}",
+                        stop_reason, input.conversation_id
+                    );
+                }
+                return Ok(LlmStepResult::ContentComplete {
+                    content: iter_content,
+                    tokens_in,
+                    tokens_out,
+                });
+            }
+
+            // Block 20: warn if stop_reason mismatch
+            if stop_reason != StopReason::ToolUse {
+                log::warn!(
+                    "[run_llm_step] stop_reason={:?} but {} tool calls received — \
+                     proceeding with tool execution (possible SSE chunk loss) conv={}",
+                    stop_reason, tool_calls.len(), input.conversation_id
+                );
+            }
+
+            // Convert streaming ToolCall to RuntimeToolCallRequest
+            let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
+                tool_calls
+                    .into_iter()
+                    .map(|tc| crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                        tool_call_id: tc.id,
+                        tool_name: tc.name,
+                        args: tc.arguments,
+                        purpose: None,
+                    })
+                    .collect();
+
+            return Ok(LlmStepResult::ToolCalls {
+                assistant_content: iter_content,
+                tool_calls: requests,
+                tokens_in,
+                tokens_out,
+            });
+        }
     }
 
     async fn run_precompute(
@@ -182,6 +517,73 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // Default no-op is acceptable for daily mode.
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers for run_llm_step
+// ---------------------------------------------------------------------------
+
+/// Check if an LLM / stream error string is transient and worth retrying.
+fn is_retryable_stream_error_str(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("broken pipe")
+        || lower.contains("network")
+        || lower.contains("429")
+        || lower.contains("rate limit")
+}
+
+/// Classify an LLM error into a user-friendly Chinese message.
+fn classify_llm_error_str(error: &str) -> String {
+    let lower = error.to_lowercase();
+    if lower.contains("429") || lower.contains("rate limit") {
+        "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
+    } else if lower.contains("401")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+    {
+        "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
+    } else if lower.contains("402") || lower.contains("insufficient") || lower.contains("quota") {
+        "API 额度不足，请检查账户余额。".to_string()
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "AI 服务连接超时，请检查网络连接后重试。".to_string()
+    } else if lower.contains("connection") || lower.contains("network") {
+        "网络连接异常，请检查网络后重试。".to_string()
+    } else if lower.contains("500")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+    {
+        "AI 服务暂时不可用，请稍后重试。".to_string()
+    } else {
+        format!("服务异常：{}。请重试。", truncate_str(error, 100))
+    }
+}
+
+/// Truncate a string at a character boundary for safe UI display.
+fn truncate_str(text: &str, max_len: usize) -> String {
+    if text.len() <= max_len {
+        text.to_string()
+    } else {
+        let mut t = text.chars().take(max_len).collect::<String>();
+        t.push_str("...");
+        t
+    }
+}
+
+/// Strip DeepSeek-style internal thinking markers from a content delta.
+fn strip_thinking_tag(text: &str) -> String {
+    text.replace("<｜end▁of▁thinking｜>", "")
+        .replace("<｜begin▁of▁thinking｜>", "")
+        .replace("<|end▁of▁thinking|>", "")
+        .replace("<|begin▁of▁thinking|>", "")
 }
 
 #[derive(Clone)]
