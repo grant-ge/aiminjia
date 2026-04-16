@@ -27,6 +27,8 @@ pub struct ChatTurnRequest {
     /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
     /// with the single authoritative id generated for this turn.
     pub run_id: RunId,
+    /// true = analysis 步骤模式；false = daily 日常模式（默认）
+    pub is_analysis: bool,
 }
 
 impl ChatTurnRequest {
@@ -40,7 +42,19 @@ impl ChatTurnRequest {
             content: content.into(),
             file_ids,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
+            is_analysis: false,
         }
+    }
+
+    /// Convenience constructor for analysis mode turns.
+    pub fn new_analysis(
+        conversation_id: impl Into<String>,
+        content: impl Into<String>,
+        file_ids: Vec<String>,
+    ) -> Self {
+        let mut r = Self::new(conversation_id, content, file_ids);
+        r.is_analysis = true;
+        r
     }
 }
 
@@ -201,7 +215,7 @@ impl RuntimeChatTurnDriver {
 
         // Build the system prompt via the executor (reads DB/persona/auth).
         let system_prompt = executor
-            .build_system_prompt(&request.conversation_id, false)
+            .build_system_prompt(&request.conversation_id, request.is_analysis)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -212,7 +226,7 @@ impl RuntimeChatTurnDriver {
             max_iterations: 30,
             token_budget: 4096,
             chunk_timeout_secs: 90,
-            is_analysis: false,
+            is_analysis: request.is_analysis,
             masking_level: "strict".to_string(),
             workspace_path: std::path::PathBuf::new(),
             conversation_id: request.conversation_id.clone(),

@@ -513,3 +513,89 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
         "index 1 must be the actual user content");
 }
 
+// ── S4-T3-Task3: is_analysis 传递测试 ────────────────────────────────────────
+
+struct CapturingMockExecutor {
+    is_analysis: bool,
+    responses: std::sync::Mutex<Vec<LlmStepResult>>,
+    received_system_prompts: std::sync::Mutex<Vec<String>>,
+}
+
+impl CapturingMockExecutor {
+    fn new_analysis() -> Self {
+        Self {
+            is_analysis: true,
+            responses: std::sync::Mutex::new(vec![
+                LlmStepResult::ContentComplete {
+                    content: "ok".to_string(),
+                    tokens_in: 0,
+                    tokens_out: 0,
+                },
+            ]),
+            received_system_prompts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for CapturingMockExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.received_system_prompts.lock().unwrap()
+            .push(input.system_prompt.to_string());
+        let mut responses = self.responses.lock().unwrap();
+        if responses.is_empty() {
+            Ok(LlmStepResult::ContentComplete {
+                content: "done".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+            })
+        } else {
+            Ok(responses.remove(0))
+        }
+    }
+
+    async fn build_system_prompt(
+        &self,
+        _conversation_id: &str,
+        is_analysis: bool,
+    ) -> Result<String, TurnError> {
+        if is_analysis {
+            Ok("[ANALYSIS-SYSTEM-PROMPT]".to_string())
+        } else {
+            Ok("[DAILY-SYSTEM-PROMPT]".to_string())
+        }
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
+    let executor = Arc::new(CapturingMockExecutor::new_analysis());
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-analysis");
+    let request = ChatTurnRequest::new_analysis("conv-analysis", "analyze data", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let prompts = executor.received_system_prompts.lock().unwrap();
+    assert!(!prompts.is_empty());
+    assert_eq!(prompts[0], "[ANALYSIS-SYSTEM-PROMPT]",
+        "analysis mode must use analysis system prompt, got: {}", prompts[0]);
+}
+
