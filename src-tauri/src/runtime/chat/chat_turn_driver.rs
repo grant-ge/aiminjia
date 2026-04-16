@@ -277,11 +277,14 @@ impl RuntimeChatTurnDriver {
             ),
         });
 
-        // 加载历史对话
+        // 加载历史对话（失败时 fallback 空历史，避免中断 turn 导致前端 StreamDone 丢失）
         let history = executor
             .load_history(&request.conversation_id)
             .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+            .unwrap_or_else(|e| {
+                log::warn!("[run_chat_turn_s4] Failed to load history for conv={}: {}", request.conversation_id, e);
+                vec![]
+            });
 
         let user_message = serde_json::json!({
             "role": "user",
