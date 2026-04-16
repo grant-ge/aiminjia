@@ -18,6 +18,39 @@ const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 /// All recognized prompt names.
 const PROMPT_NAMES: &[&str] = &["base", "daily", "browser_agent"];
 
+// 工具选择偏好章节——静态内容，写入 static_section
+const TOOL_PREFERENCE_SECTION: &str = r#"
+
+【工具选择偏好】
+- 优先使用专用工具：有专用工具时，不要改用 execute_python 模拟
+- 文件操作：读文件用 load_file/read_workspace_file，不要用 execute_python 读文件
+- 搜索：信息查询用 web_search，不要伪造搜索结果
+- 内存：需要记忆时用 save_memory/search_memory，不要依赖对话历史
+- 分析：数据分析用 execute_python，结果必须来自实际执行"#;
+
+/// System prompt 构建模式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptMode {
+    /// 日常助手模式（base + 工具偏好 + daily.md + persona）
+    Daily,
+    /// 分析步骤模式（base + 工具偏好，无 daily.md，无 persona）
+    Analysis,
+    /// 浏览器子代理模式（base + 工具偏好 + browser_agent.md）
+    BrowserAgent,
+}
+
+/// System prompt 的分层结构。
+///
+/// `static_section`：可跨会话复用的稳定内容（base + 工具偏好）。
+/// `dynamic_section`：会话级动态内容（persona + mode-specific prompt）。
+#[derive(Debug, Clone)]
+pub struct SystemPromptParts {
+    /// 稳定前缀（base.md 品牌替换后 + 工具选择偏好章节）
+    pub static_section: String,
+    /// 动态后缀（persona 段 + daily.md / browser_agent.md，Analysis 时为空）
+    pub dynamic_section: String,
+}
+
 /// Source from which a prompt was loaded (for logging).
 #[derive(Debug, Clone, Copy)]
 enum PromptSource {
@@ -171,91 +204,102 @@ pub fn get_browser_agent_prompt() -> String {
     guard.get("browser_agent").to_string()
 }
 
-/// Compose the full system prompt by combining BASE + mode-specific prompt.
+/// 构建分层 system prompt（section 化版本）。
 ///
-/// - `step = None` → daily consultation mode (BASE + date + persona + DAILY)
-/// - `step = Some(_)` → analysis mode (BASE + date only; step prompts are in the plugin)
+/// - `static_section` = base.md（品牌替换后）+ TOOL_PREFERENCE_SECTION
+/// - `dynamic_section` = persona 段 + mode-specific prompt（Analysis 时无 daily.md）
+///
+/// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
+pub fn build_system_prompt_parts(
+    mode: PromptMode,
+    persona: Option<&crate::storage::file_store::persona::Persona>,
+    product_name: Option<&str>,
+) -> SystemPromptParts {
+    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+
+    // ── static_section: base.md + 品牌替换 + 工具偏好 ───────────────
+    let base_raw = guard.get("base");
+    let base = match product_name {
+        Some(name) if !name.is_empty() && name != "AI小家" => base_raw.replace("AI小家", name),
+        _ => base_raw.to_string(),
+    };
+    let static_section = format!("{}{}", base, TOOL_PREFERENCE_SECTION);
+
+    // ── dynamic_section: persona + mode prompt ───────────────────────
+    let mut dynamic_parts: Vec<String> = Vec::new();
+
+    // Daily 和 BrowserAgent 模式注入 persona
+    if matches!(mode, PromptMode::Daily | PromptMode::BrowserAgent) {
+        if let Some(p) = persona {
+            if !p.identity.is_empty() {
+                dynamic_parts.push(format!("【角色设定】{}", p.identity));
+            }
+            if !p.expertise.is_empty() {
+                dynamic_parts.push(format!("【专业领域】{}", p.expertise.join("、")));
+            }
+            if !p.memory_hints.is_empty() {
+                let hints = p.memory_hints.iter()
+                    .map(|h| format!("- {}", h))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                dynamic_parts.push(format!("【记忆管理（白名单制）】\n{}", hints));
+            }
+        }
+    }
+
+    // Mode-specific prompt
+    match mode {
+        PromptMode::Daily => {
+            let daily = guard.get("daily");
+            if !daily.is_empty() {
+                let has_persona_memory = persona.map_or(false, |p| !p.memory_hints.is_empty());
+                let final_daily = if has_persona_memory {
+                    strip_memory_section(daily)
+                } else {
+                    daily.to_string()
+                };
+                if !final_daily.trim().is_empty() {
+                    dynamic_parts.push(final_daily);
+                }
+            }
+        }
+        PromptMode::Analysis => {
+            // analysis 模式不加 daily.md
+        }
+        PromptMode::BrowserAgent => {
+            let browser = guard.get("browser_agent");
+            if !browser.is_empty() {
+                dynamic_parts.push(browser.to_string());
+            }
+        }
+    }
+
+    let dynamic_section = dynamic_parts.join("\n\n");
+
+    SystemPromptParts { static_section, dynamic_section }
+}
+
+/// Compose the full system prompt (backward-compatible shim).
+///
+/// 调用 `build_system_prompt_parts` 后拼接 static + dynamic。
+/// **不再注入当前日期**——日期改为 `run_chat_turn_s4` 的首条 user message 注入。
+///
+/// - `step = None` → PromptMode::Daily
+/// - `step = Some(_)` → PromptMode::Analysis
 pub fn get_system_prompt(
     step: Option<u32>,
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
 ) -> String {
-    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
-
-    let base_raw = guard.get("base");
-    // Replace default brand name with custom product name if provided
-    let base = match product_name {
-        Some(name) if !name.is_empty() && name != "AI小家" => base_raw.replace("AI小家", name),
-        _ => base_raw.to_string(),
+    let mode = match step {
+        None => PromptMode::Daily,
+        Some(_) => PromptMode::Analysis,
     };
-    let mode_key = match step {
-        None => Some("daily"),
-        Some(_) => None, // step prompts now live in the declarative plugin
-    };
-    let mode_prompt = mode_key.map(|k| guard.get(k)).unwrap_or("");
-
-    // Inject current date prominently so the LLM knows "today"
-    let now = chrono::Local::now();
-    let today = now.format("%Y年%m月%d日");
-    let today_iso = now.format("%Y-%m-%d");
-    let date_line = format!(
-        "\n\n【当前时间】今天是 {}（{}）。你的回答中涉及时间时，以此日期为准。",
-        today, today_iso
-    );
-
-    // Inject persona identity and memory hints (daily mode only)
-    let has_persona_memory = persona
-        .as_ref()
-        .map_or(false, |p| !p.memory_hints.is_empty());
-    let persona_section = if step.is_none() {
-        if let Some(p) = persona {
-            let mut parts = Vec::new();
-
-            // Identity
-            if !p.identity.is_empty() {
-                parts.push(format!("\n\n【角色设定】{}", p.identity));
-            }
-
-            // Expertise
-            if !p.expertise.is_empty() {
-                let expertise_list = p.expertise.join("、");
-                parts.push(format!("\n\n【专业领域】{}", expertise_list));
-            }
-
-            // Memory hints (override daily.md memory section)
-            if !p.memory_hints.is_empty() {
-                let hints = p
-                    .memory_hints
-                    .iter()
-                    .map(|h| format!("- {}", h))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                parts.push(format!("\n\n【记忆管理（白名单制）】\n{}", hints));
-            }
-
-            parts.join("")
-        } else {
-            String::new()
-        }
+    let parts = build_system_prompt_parts(mode, persona, product_name);
+    if parts.dynamic_section.is_empty() {
+        parts.static_section
     } else {
-        String::new()
-    };
-
-    // When persona provides memory_hints, strip the memory section from daily.md
-    // to avoid conflicting instructions.
-    let final_mode_prompt = if has_persona_memory && !mode_prompt.is_empty() {
-        strip_memory_section(mode_prompt)
-    } else {
-        mode_prompt.to_string()
-    };
-
-    if final_mode_prompt.is_empty() {
-        format!("{}{}{}", base, date_line, persona_section)
-    } else {
-        format!(
-            "{}{}{}\n\n{}",
-            base, date_line, persona_section, final_mode_prompt
-        )
+        format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
     }
 }
 
@@ -446,5 +490,143 @@ mod tests {
 
         store.reload();
         assert!(store.get("base").contains("Updated base"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_parts_daily_has_static_and_dynamic() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(
+            &bundled,
+            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+        );
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        assert!(parts.static_section.contains("AI小家 base"),
+            "static_section must contain base prompt");
+        assert!(parts.static_section.contains("工具选择偏好"),
+            "static_section must contain tool preference section");
+        assert!(!parts.static_section.contains("今天是"),
+            "static_section must NOT contain date");
+        assert!(parts.dynamic_section.contains("日常工作助手"),
+            "dynamic_section must contain daily prompt");
+        assert!(!parts.dynamic_section.contains("AI小家 base"),
+            "dynamic_section must NOT repeat base prompt");
+    }
+
+    #[test]
+    fn test_build_system_prompt_parts_analysis_no_daily() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(
+            &bundled,
+            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+        );
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Analysis, None, None);
+        assert!(!parts.dynamic_section.contains("日常工作助手"),
+            "Analysis dynamic_section must NOT contain daily prompt");
+    }
+
+    #[test]
+    fn test_build_system_prompt_parts_product_name_replacement() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "你是 AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, Some("智能办公"));
+        assert!(parts.static_section.contains("智能办公"),
+            "product_name replacement must work in static_section");
+        assert!(!parts.static_section.contains("AI小家"),
+            "original brand name must be replaced");
+    }
+
+    #[test]
+    fn test_build_system_prompt_parts_persona_in_dynamic() {
+        use crate::storage::file_store::persona::Persona;
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "日常")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let persona = Persona {
+            id: "test".to_string(),
+            version: 1,
+            builtin: false,
+            name: "Test".to_string(),
+            icon: "🧪".to_string(),
+            description: "test".to_string(),
+            name_en: "".to_string(),
+            description_en: "".to_string(),
+            identity: "你是专业 HR 顾问".to_string(),
+            expertise: vec!["薪酬分析".to_string()],
+            memory_hints: vec![],
+            linked_categories: vec![],
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+        };
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, Some(&persona), None);
+        assert!(parts.dynamic_section.contains("你是专业 HR 顾问"),
+            "persona identity must appear in dynamic_section");
+        assert!(parts.dynamic_section.contains("薪酬分析"),
+            "persona expertise must appear in dynamic_section");
+        assert!(!parts.static_section.contains("你是专业 HR 顾问"),
+            "persona must NOT be in static_section");
+    }
+
+    #[test]
+    fn test_get_system_prompt_shim_backward_compatible() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家 base"), ("daily", "日常工作助手")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let prompt = get_system_prompt(None, None, None);
+        assert!(prompt.contains("AI小家 base"), "shim: base must be present");
+        assert!(prompt.contains("日常工作助手"), "shim: daily must be present for step=None");
+        let prompt_step = get_system_prompt(Some(0), None, None);
+        assert!(prompt_step.contains("AI小家 base"), "shim: base must be present for step");
+        assert!(!prompt_step.contains("日常工作助手"), "shim: daily must be absent for step=Some");
+        assert!(!prompt.contains("今天是"), "shim: date must NOT be in system prompt");
+    }
+
+    #[test]
+    fn test_tool_preference_section_content() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        assert!(parts.static_section.contains("优先使用专用工具"),
+            "must mention prefer dedicated tools");
+        assert!(parts.static_section.contains("execute_python"),
+            "must mention execute_python in context");
+        assert!(parts.static_section.contains("web_search"),
+            "must mention web_search in context");
+        assert!(parts.static_section.contains("save_memory"),
+            "must mention save_memory in context");
     }
 }
