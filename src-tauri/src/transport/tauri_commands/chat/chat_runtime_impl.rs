@@ -1812,29 +1812,15 @@ async fn agent_loop(
                 let uploaded_files = db
                     .get_uploaded_files_for_conversation(&conversation_id)
                     .unwrap_or_default();
-                let auto_load_ctx = PluginContext {
-                    storage: db.clone(),
-                    file_manager: file_mgr.clone(),
-                    workspace_path: workspace_path.clone(),
-                    conversation_id: conversation_id.clone(),
-                    session_id: SessionId::new(conversation_id.clone()),
-                    run_id: Some(run_id.clone()),
-                    agent_id: None,
-                    tavily_api_key: tavily_api_key.clone(),
-                    bocha_api_key: bocha_api_key.clone(),
-                    app_handle: Some(app.clone()),
-                    session_manager: session_mgr.clone(),
-                    auth_manager: Some(auth_manager.clone()),
-                    connector_engine: None,
-                    use_cloud: settings.use_cloud,
-                    model: settings.primary_model.clone(),
-                    gateway: None,
-                    tool_registry: None,
-                    app_settings: None,
-                    agent_runtime: None,
-                    event_bus: None,
-                    authorized_workspace: authorized_workspace.clone(),
-                };
+                let auto_load_params =
+                    crate::llm::tool_executor::file_load::LoadFileParams {
+                        storage: &db,
+                        file_manager: &file_mgr,
+                        workspace_path: workspace_path.as_path(),
+                        conversation_id: &conversation_id,
+                        run_id: Some(&run_id),
+                        app_handle: Some(&app),
+                    };
                 for file in &uploaded_files {
                     let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     if file_id.is_empty() {
@@ -1851,11 +1837,12 @@ async fn agent_loop(
                             conversation_id
                         );
                         let load_args = serde_json::json!({"file_id": file_id});
-                        if let Err(e) = crate::llm::tool_executor::file_load::handle_load_file(
-                            &auto_load_ctx,
-                            &load_args,
-                        )
-                        .await
+                        if let Err(e) =
+                            crate::llm::tool_executor::file_load::handle_load_file_core(
+                                &auto_load_params,
+                                &load_args,
+                            )
+                            .await
                         {
                             log::warn!("[PRECOMPUTE] Auto-load failed for '{}': {}", file_id, e);
                             let _ = db.set_memory(
