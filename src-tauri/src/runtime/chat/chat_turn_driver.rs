@@ -75,6 +75,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError>;
 
+    /// 持久化 user message 到存储。纯 I/O，不含事件发射。
+    /// 默认 no-op（返回空 message_id）；生产 executor 必须 override。
+    async fn persist_user_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        Ok(String::new())
+    }
+
     /// Step 后处理（analysis 模式专用）。默认 no-op。
     async fn finalize_step(
         &self,
@@ -191,7 +202,29 @@ impl RuntimeChatTurnDriver {
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        let mut state = TurnIterationState::new(vec![]);
+        // Seed messages with the current user turn so the executor sees the
+        // request. NOTE: persisted history is currently NOT loaded here —
+        // the executor's legacy code path was loading it from DB, so until
+        // history loading is wired into the driver, single-turn behavior works
+        // but multi-turn within the same conversation will lose context across
+        // sessions. Track this in S4 follow-up.
+        let user_message = serde_json::json!({
+            "role": "user",
+            "content": request.content,
+        });
+        let mut state = TurnIterationState::new(vec![user_message]);
+
+        // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
+        // Legacy path wrote the user message to DB before spawning agent_loop.
+        // The driver must do the same so the frontend message list is durable.
+        let _user_msg_id = executor
+            .persist_user_message(
+                &request.conversation_id,
+                &request.content,
+                &request.file_ids,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // ── Step 3: Precompute (analysis mode; no-op in daily mode) ──────────
         let precompute_result = executor.run_precompute(&config, &mut state).await?;

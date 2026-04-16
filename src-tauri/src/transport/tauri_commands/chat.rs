@@ -118,11 +118,20 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // --- Load settings from DB ---
         let settings: AppSettings = {
             let settings_map = self.services.db.get_all_settings().unwrap_or_default();
-            if settings_map.is_empty() {
+            let mut s = if settings_map.is_empty() {
                 AppSettings::default()
             } else {
                 AppSettings::from_string_map(&settings_map)
+            };
+
+            // Decrypt API keys (same as legacy_send_message_impl does)
+            if let Some(ss) = self.services.crypto.as_ref() {
+                s.primary_api_key = decrypt_api_key(ss, &s.primary_api_key);
+                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
+                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
             }
+
+            s
         };
 
         // --- Convert JsonValue messages to ChatMessage ---
@@ -468,6 +477,51 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(None)
     }
 
+    async fn persist_user_message(
+        &self,
+        conversation_id: &str,
+        content: &str,
+        file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
+
+        // Build the same content_json structure as legacy_send_message_impl
+        let content_json = if file_ids.is_empty() {
+            serde_json::json!({ "text": content }).to_string()
+        } else {
+            let files_meta: Vec<serde_json::Value> = file_ids
+                .iter()
+                .map(|id| serde_json::json!({ "id": id }))
+                .collect();
+            serde_json::json!({
+                "text": content,
+                "files": files_meta,
+            })
+            .to_string()
+        };
+
+        if let Err(e) = self
+            .services
+            .db
+            .insert_message(&msg_id, conversation_id, "user", &content_json)
+        {
+            log::error!(
+                "[persist_user_message] Failed to save user message: {:#}",
+                e
+            );
+            return Err(TurnError::PersistenceError(format!(
+                "Failed to save user message: {}",
+                e
+            )));
+        }
+        log::info!(
+            "[persist_user_message] Saved user message id={} conv={}",
+            msg_id,
+            conversation_id
+        );
+        Ok(msg_id)
+    }
+
     async fn persist_assistant_message(
         &self,
         conversation_id: &str,
@@ -662,6 +716,25 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 // ---------------------------------------------------------------------------
 // Private helpers for run_llm_step
 // ---------------------------------------------------------------------------
+
+/// Decrypt an API key stored in encrypted form (salt:iv:ciphertext).
+/// Returns empty string on decryption failure to trigger default fallback.
+/// Mirrors legacy `decrypt_key()` in chat_runtime_impl.rs.
+fn decrypt_api_key(ss: &SecureStorage, value: &str) -> String {
+    if value.is_empty() || !value.contains(':') {
+        return value.to_string();
+    }
+    match ss.decrypt(value) {
+        Ok(plaintext) => plaintext,
+        Err(e) => {
+            log::warn!(
+                "[run_llm_step] Failed to decrypt API key (err={}), returning empty",
+                e
+            );
+            String::new()
+        }
+    }
+}
 
 /// Check if an LLM / stream error string is transient and worth retrying.
 fn is_retryable_stream_error_str(error: &str) -> bool {
