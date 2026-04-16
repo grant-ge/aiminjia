@@ -61,7 +61,7 @@ pub fn finalize_content(
             max_iterations,
         );
         let notice = format!(
-            "\n\n---\n⚠️ 本步分析较为复杂，已达处理���限（{} 次迭代）。以上是当前阶段的分析结果。\n\
+            "\n\n---\n⚠️ 本步分析较为复杂，已达处理上限（{} 次迭代）。以上是当前阶段的分析结果。\n\
             如需补充分析，请回复具体要求；如结果已满足需要，请确认继续下一步。",
             max_iterations
         );
