@@ -149,3 +149,37 @@ fn finalize_no_change_for_normal_content() {
     post_process::finalize_content(&mut content, 3, 10, false);
     assert_eq!(content, "normal response");
 }
+
+// ── S4-T8: tool_result_collector 模块 ────────────────────────────────────────
+
+use app_lib::runtime::chat::tool_result_collector::collect_results;
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
+use app_lib::runtime::chat::tool_round_driver::ToolRoundResult;
+
+#[test]
+fn collect_results_counts_success_and_error() {
+    let results = vec![
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id: "tc1".to_string(),
+            tool_name: "search".to_string(),
+            content: "found it".to_string(),
+            is_error: false,
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
+        }),
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id: "tc2".to_string(),
+            tool_name: "load".to_string(),
+            content: "error loading".to_string(),
+            is_error: true,
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
+        }),
+    ];
+    let collected = collect_results(results, 8000);
+    assert_eq!(collected.success_count, 1);
+    assert_eq!(collected.error_count, 1);
+    assert_eq!(collected.tool_result_messages.len(), 2);
+}
