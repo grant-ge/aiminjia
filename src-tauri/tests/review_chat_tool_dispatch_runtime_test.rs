@@ -374,7 +374,7 @@ async fn review_tool_round_driver_dispatches_via_runtime_query_engine() {
         "Expected Ok outcome, got: {:?}",
         match &results[0] {
             ToolRoundResult::Blocked(b) => format!("Blocked({})", b.reason),
-            ToolRoundResult::Ok(o) => format!("Ok({})", o.content),
+            ToolRoundResult::Ok(o) => format!("Ok({})", o.content()),
         }
     );
     assert!(

@@ -5,6 +5,7 @@
 //! - ToolDispatcher.dispatch() 收到 Ask 时返回 Ok(AskRequired)
 //! - Ask 和 Deny 在 Dispatcher 层可区分（AskRequired ≠ Err(PermissionDenied)）
 //! - legacy 工具经 registry.execute() 也经过统一 pipeline，unknown scope 不被放行
+//! - QueryEngine.run_tool_call_with_bus() 对 Ask 返回 RuntimeToolCallOutcome::AskRequired
 
 use std::sync::Arc;
 
@@ -314,5 +315,68 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         matches!(err, app_lib::plugin::tool_trait::ToolError::AskRequired(_)),
         "unknown scope with no stored policy should surface as AskRequired, got: {:?}",
         err
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 测试 5：QueryEngine.run_tool_call_with_bus() 对 Ask 返回
+//         RuntimeToolCallOutcome::AskRequired（结构化上浮至 TurnDriver 层）
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn query_engine_run_tool_call_with_bus_ask_returns_ask_required_outcome() {
+    use app_lib::runtime::chat::tool_round_types::{
+        RuntimeToolCallOutcome, RuntimeToolCallRequest,
+    };
+    use app_lib::runtime::event_bus::RuntimeEventBus;
+    use app_lib::runtime::identity::IdentityMapping;
+    use app_lib::runtime::ids::RunId;
+    use app_lib::runtime::query_engine::QueryEngine;
+    use app_lib::runtime::state::TurnState;
+
+    // Dispatcher wired to AlwaysAskPermissionPipeline so any tool call returns Ask.
+    let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AlwaysAskPermissionPipeline)));
+    dispatcher.register(Arc::new(EchoTool));
+
+    let engine = QueryEngine::with_dispatcher(dispatcher);
+    let bus = RuntimeEventBus::new();
+
+    let mapping = IdentityMapping::from_legacy_conversation_id("conv-ask-outcome");
+    let turn = TurnState::new(mapping, RunId::new("run-ask-outcome"), "ask test".to_string());
+
+    let outcome = engine
+        .run_tool_call_with_bus(
+            &turn,
+            &bus,
+            RuntimeToolCallRequest {
+                tool_call_id: "tc-ask-001".to_string(),
+                tool_name: "echo_tool".to_string(),
+                args: json!({}),
+                purpose: None,
+            },
+        )
+        .await
+        .expect("run_tool_call_with_bus must not return Err for Ask (Ask is not an infra error)");
+
+    // The key assertion: Ask is now structurally surfaced as AskRequired,
+    // not flattened into Completed(is_error=true).
+    assert!(
+        matches!(outcome, RuntimeToolCallOutcome::AskRequired { .. }),
+        "QueryEngine.run_tool_call_with_bus() with an Ask pipeline must return \
+         RuntimeToolCallOutcome::AskRequired, not Completed(is_error=true). \
+         Got: {:?}",
+        outcome
+    );
+
+    // Confirm the helper methods still work correctly for AskRequired.
+    assert_eq!(outcome.tool_call_id(), "tc-ask-001");
+    assert_eq!(outcome.tool_name(), "echo_tool");
+    assert!(
+        outcome.is_error(),
+        "AskRequired must report is_error()=true so downstream guards continue to apply"
+    );
+    assert!(
+        !outcome.content().is_empty(),
+        "AskRequired must provide a non-empty synthetic content() for the LLM"
     );
 }

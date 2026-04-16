@@ -80,7 +80,7 @@ async fn review_runtime_tool_failure_maps_tool_completed_success_false() {
         .await
         .expect("runtime tool round should convert tool failure into typed outcome");
 
-    assert!(outcome.is_error, "failing tool must surface is_error=true");
+    assert!(outcome.is_error(), "failing tool must surface is_error=true");
 
     let trace = host.trace();
     let completed = trace

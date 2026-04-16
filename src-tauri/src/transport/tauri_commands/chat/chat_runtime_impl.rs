@@ -2872,17 +2872,19 @@ async fn agent_loop(
         let tool_total_elapsed = round_elapsed;
         for round_result in &round_results {
             // Unpack the result into common fields for downstream processing.
+            // AskRequired outcomes use the helper methods which synthesise the
+            // "permission ask required" content string for the LLM.
             let (tr_id, tr_name, tr_content, tr_is_error) = match round_result {
                 crate::runtime::ToolRoundResult::Ok(outcome) => (
-                    &outcome.tool_call_id,
-                    &outcome.tool_name,
-                    &outcome.content,
-                    outcome.is_error,
+                    outcome.tool_call_id(),
+                    outcome.tool_name(),
+                    outcome.content(),
+                    outcome.is_error(),
                 ),
                 crate::runtime::ToolRoundResult::Blocked(blocked) => (
-                    &blocked.tool_call_id,
-                    &blocked.tool_name,
-                    &blocked.reason,
+                    blocked.tool_call_id.as_str(),
+                    blocked.tool_name.as_str(),
+                    blocked.reason.as_str(),
                     true, // blocked tools are treated as errors for stats
                 ),
             };
@@ -2890,7 +2892,7 @@ async fn agent_loop(
             // Collect file_meta from successful tool outcomes into all_file_metas
             // so verify_file_claims and file card semantics work correctly.
             if let crate::runtime::ToolRoundResult::Ok(outcome) = round_result {
-                if let Some(ref meta) = outcome.file_meta {
+                if let Some(meta) = outcome.file_meta() {
                     all_file_metas.push(meta.clone());
                 }
             }
@@ -2909,7 +2911,7 @@ async fn agent_loop(
             } else {
                 tool_success_count += 1;
             }
-            tool_names.push(tr_name.clone());
+            tool_names.push(tr_name.to_string());
 
             // Collect fileId from tool results
             if !tr_is_error {
@@ -2941,7 +2943,7 @@ async fn agent_loop(
 
             let masked_result = match combined_mask_ctx.as_mut() {
                 Some(ctx) => ctx.mask_text(tr_content),
-                None => tr_content.clone(),
+                None => tr_content.to_string(),
             };
             const MAX_TOOL_RESULT_CHARS: usize = 8000;
             let truncated_result = if masked_result.len() > MAX_TOOL_RESULT_CHARS {
@@ -2964,7 +2966,7 @@ async fn agent_loop(
 
             // P2: Update analysis context from tool results (analysis mode only)
             if is_analysis {
-                match tr_name.as_str() {
+                match tr_name {
                     "load_file" => {
                         // Extract file info from tool result for AnalysisContext.
                         // load_file returns JSON: {"status":"loaded","fileId":"...","originalName":"...","columns":[...],...}

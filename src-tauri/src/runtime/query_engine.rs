@@ -258,7 +258,7 @@ impl QueryEngine {
                 ))
                 .await?;
 
-                Ok(RuntimeToolCallOutcome {
+                Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
                     content: tool_result.content,
@@ -269,19 +269,16 @@ impl QueryEngine {
                 })
             }
             Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision)) => {
-                // S1 transition: Ask reaches QueryEngine as a structured decision,
-                // NOT collapsed into Err at the Dispatcher level.
+                // S6 transition: Ask is now surfaced as a structured AskRequired variant
+                // instead of being flattened into a Completed(is_error=true) outcome.
+                // TurnDriver/transport can structurally distinguish Ask from Deny/error.
                 //
-                // Current limitation (S1): we convert Ask → error outcome here because
-                // RuntimeToolCallOutcome is still a flat struct without an Ask variant.
-                // The PermissionDecision is preserved in the log for debugging.
-                //
-                // FIXME(S6): extend RuntimeToolCallOutcome to enum with AskRequired variant,
-                // then TurnDriver/transport can emit RuntimeEvent::PermissionAsk to the UI
-                // and await user response. At that point, remove this conversion.
+                // FIXME(S6): route AskRequired to the UI (emit RuntimeEvent::PermissionAsk,
+                // await user response) instead of synthesizing a tool-result message.
+                // Until S6, callers convert AskRequired to a text tool-result for the LLM.
                 log::warn!(
                     "run_tool_call_with_bus: tool '{}' returned Ask — \
-                     converting to error outcome (S1 transition). Decision: {:?}",
+                     surfacing as AskRequired outcome (S6 routing pending). Decision: {:?}",
                     call.tool_name, decision
                 );
                 bus.emit(RuntimeEvent::new(
@@ -297,14 +294,10 @@ impl QueryEngine {
                 ))
                 .await?;
 
-                Ok(RuntimeToolCallOutcome {
+                Ok(RuntimeToolCallOutcome::AskRequired {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
-                    content: "Tool requires user confirmation before it can run.".to_string(),
-                    is_error: true,
-                    file_meta: None,
-                    is_degraded: false,
-                    degradation_notice: None,
+                    decision,
                 })
             }
             Err(err) => {
@@ -321,7 +314,7 @@ impl QueryEngine {
                 ))
                 .await?;
 
-                Ok(RuntimeToolCallOutcome {
+                Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
                     content: err.to_string(),

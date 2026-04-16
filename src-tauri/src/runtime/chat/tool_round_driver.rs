@@ -104,11 +104,14 @@ impl ToolRoundDriver {
                         // Wrap as an error outcome so the LLM receives feedback.
                         results.push((
                             idx,
-                            ToolRoundResult::Ok(RuntimeToolCallOutcome {
+                            ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
                                 tool_call_id: String::new(),
                                 tool_name: String::new(),
                                 content: format!("Error: {}", e),
                                 is_error: true,
+                                file_meta: None,
+                                is_degraded: false,
+                                degradation_notice: None,
                             }),
                         ));
                     }
@@ -130,11 +133,14 @@ impl ToolRoundDriver {
                             Ok(o) => (idx, ToolRoundResult::Ok(o)),
                             Err(e) => (
                                 idx,
-                                ToolRoundResult::Ok(RuntimeToolCallOutcome {
+                                ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
                                     tool_call_id: String::new(),
                                     tool_name: String::new(),
                                     content: format!("Error: {}", e),
                                     is_error: true,
+                                    file_meta: None,
+                                    is_degraded: false,
+                                    degradation_notice: None,
                                 }),
                             ),
                         }
@@ -223,11 +229,7 @@ mod tests {
             _ctx: ToolExecutionContext,
         ) -> Result<ToolResult, ToolError> {
             self.calls.lock().unwrap().push(input);
-            Ok(ToolResult {
-                tool_name: self.name.clone(),
-                content: format!("ok:{}", self.name),
-                data: None,
-            })
+            Ok(ToolResult::new(self.name.clone(), format!("ok:{}", self.name), None))
         }
     }
 
@@ -265,7 +267,7 @@ mod tests {
             .await;
 
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], ToolRoundResult::Ok(o) if !o.is_error));
+        assert!(matches!(&results[0], ToolRoundResult::Ok(o) if !o.is_error()));
         assert_eq!(calls.lock().unwrap().len(), 1);
     }
 
@@ -416,6 +418,6 @@ mod tests {
             .await;
 
         assert_eq!(results.len(), 1);
-        assert!(matches!(&results[0], ToolRoundResult::Ok(o) if !o.is_error));
+        assert!(matches!(&results[0], ToolRoundResult::Ok(o) if !o.is_error()));
     }
 }

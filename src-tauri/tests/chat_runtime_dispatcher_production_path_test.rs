@@ -64,11 +64,7 @@ impl RuntimeTool for CapturingRuntimeTool {
             .and_then(|storage| storage.authorized_workspace.as_ref())
             .map(|aw| aw.root_path.clone());
         *self.captured_authorized_root.lock().unwrap() = authorized_root;
-        Ok(ToolResult {
-            tool_name: self.name.to_string(),
-            content: format!("dispatched:{}", self.name),
-            data: None,
-        })
+        Ok(ToolResult::new(self.name, format!("dispatched:{}", self.name), None))
     }
 }
 
@@ -103,11 +99,7 @@ impl RuntimeTool for BrowserScopedRuntimeTool {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         *self.reached_execute.lock().unwrap() = true;
-        Ok(ToolResult {
-            tool_name: "browser_scoped_tool".to_string(),
-            content: "browser-ok".to_string(),
-            data: None,
-        })
+        Ok(ToolResult::new("browser_scoped_tool", "browser-ok", None))
     }
 }
 
@@ -293,7 +285,7 @@ async fn runtime_chat_mainline_passes_browser_capability_to_runtime_tool_round()
         .expect("runtime tool round should complete without transport error");
 
     assert!(
-        !outcome.is_error,
+        !outcome.is_error(),
         "browser-scoped tool should not be blocked when browser_available=true: {:?}",
         outcome
     );

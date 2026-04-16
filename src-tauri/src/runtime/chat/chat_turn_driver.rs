@@ -197,7 +197,10 @@ impl RuntimeChatTurnDriver {
                     .filter_map(|r| match r {
                         crate::runtime::ToolRoundResult::Ok(outcome) => Some(outcome.clone()),
                         crate::runtime::ToolRoundResult::Blocked(blocked) => {
-                            Some(crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome {
+                            // FIXME(S6): blocked tools could also be surfaced structurally.
+                            // For now, synthesize a Completed(is_error=true) outcome so
+                            // the executor receives feedback via feed_tool_results.
+                            Some(crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome::Completed {
                                 tool_call_id: blocked.tool_call_id.clone(),
                                 tool_name: blocked.tool_name.clone(),
                                 content: blocked.reason.clone(),

@@ -1,3 +1,5 @@
+use crate::plugin::tool_trait::FileMeta;
+
 /// A single tool call request coming from the LLM.
 ///
 /// Carries all information needed to route and execute one tool invocation,
@@ -18,20 +20,100 @@ pub struct RuntimeToolCallRequest {
 
 /// Outcome of executing a single runtime tool call.
 ///
-/// Returned by `QueryEngine::run_tool_call_with_bus` after the tool completes
-/// (or fails).  The caller uses `content` to construct the tool-result message
-/// sent back to the LLM.
+/// Returned by `QueryEngine::run_tool_call_with_bus`.  Upper layers
+/// (`ToolRoundDriver`, `TurnDriver`, transport) can structurally distinguish
+/// between:
+/// - `Completed` — tool finished (successfully or with a tool-level error)
+/// - `AskRequired` — the permission pipeline requires explicit user confirmation
+///   before the tool may run.  S6 will route this to the UI; until then,
+///   callers produce a "permission ask required" tool-result message for the LLM.
 #[derive(Debug, Clone)]
-pub struct RuntimeToolCallOutcome {
-    /// Echoes `RuntimeToolCallRequest::tool_call_id` for correlation.
-    pub tool_call_id: String,
-    /// Name of the tool that was executed.
-    pub tool_name: String,
-    /// Serialized content to return to the LLM as the tool result.
-    pub content: String,
-    /// Whether the tool reported an error (content still contains the
-    /// error description that the LLM should reason over).
-    pub is_error: bool,
+pub enum RuntimeToolCallOutcome {
+    /// Tool executed and produced a result (success or tool-level error).
+    Completed {
+        /// Echoes `RuntimeToolCallRequest::tool_call_id` for correlation.
+        tool_call_id: String,
+        /// Name of the tool that was executed.
+        tool_name: String,
+        /// Serialized content to return to the LLM as the tool result.
+        content: String,
+        /// Whether the tool reported an error (content still contains the
+        /// error description that the LLM should reason over).
+        is_error: bool,
+        /// Metadata for the generated file, if the tool produced one.
+        file_meta: Option<FileMeta>,
+        /// Whether the tool result was degraded (e.g. PDF→HTML fallback).
+        is_degraded: bool,
+        /// Human-readable notice when degradation occurred.
+        degradation_notice: Option<String>,
+    },
+
+    /// The permission pipeline returned `Ask` — user confirmation is required
+    /// before the tool can execute.
+    ///
+    /// The structured `decision` is preserved here so S6 can route it to the UI.
+    /// Until S6, callers should synthesize a "permission ask required" tool-result
+    /// message for the LLM and add a `FIXME(S6)` comment.
+    AskRequired {
+        /// Echoes `RuntimeToolCallRequest::tool_call_id` for correlation.
+        tool_call_id: String,
+        /// Name of the tool that needs confirmation.
+        tool_name: String,
+        /// The structured permission decision from the pipeline.
+        decision: crate::runtime::tools::permission::PermissionDecision,
+    },
+}
+
+impl RuntimeToolCallOutcome {
+    /// Returns the `tool_call_id` for this outcome regardless of variant.
+    pub fn tool_call_id(&self) -> &str {
+        match self {
+            Self::Completed { tool_call_id, .. } => tool_call_id,
+            Self::AskRequired { tool_call_id, .. } => tool_call_id,
+        }
+    }
+
+    /// Returns the `tool_name` for this outcome regardless of variant.
+    pub fn tool_name(&self) -> &str {
+        match self {
+            Self::Completed { tool_name, .. } => tool_name,
+            Self::AskRequired { tool_name, .. } => tool_name,
+        }
+    }
+
+    /// Returns `true` if the tool call encountered an error or requires Ask.
+    ///
+    /// `AskRequired` is treated as an error-equivalent so callers that only
+    /// inspect `is_error()` continue to gate downstream logic correctly.
+    pub fn is_error(&self) -> bool {
+        match self {
+            Self::Completed { is_error, .. } => *is_error,
+            Self::AskRequired { .. } => true,
+        }
+    }
+
+    /// Returns the content string for this outcome.
+    ///
+    /// For `AskRequired`, a synthetic "permission ask required" message is
+    /// returned so the LLM receives coherent feedback.
+    /// FIXME(S6): remove the synthetic text once S6 routes Ask to the UI.
+    pub fn content(&self) -> &str {
+        match self {
+            Self::Completed { content, .. } => content,
+            Self::AskRequired { .. } => {
+                "Tool requires user confirmation before it can run. \
+                 Please await user permission."
+            }
+        }
+    }
+
+    /// Returns the file metadata if present (only `Completed` variant).
+    pub fn file_meta(&self) -> Option<&FileMeta> {
+        match self {
+            Self::Completed { file_meta, .. } => file_meta.as_ref(),
+            Self::AskRequired { .. } => None,
+        }
+    }
 }
 
 /// A tool call that was blocked by the allowed-tools filter before execution.
