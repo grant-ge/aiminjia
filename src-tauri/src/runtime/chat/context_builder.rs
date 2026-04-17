@@ -76,6 +76,69 @@ pub fn build_iteration_context(
     ctx
 }
 
+/// 构建会话级环境信息段落，注入到 dynamic context。
+///
+/// 对齐 claude-code-best 的 `computeSimpleEnvInfo`：
+/// - 当前工作目录 / 已授权目录
+/// - git 状态摘要（失败时静默跳过）
+/// - 操作系统平台
+///
+/// `authorized` = `Some((root_path_str, display_name))` 当用户已连接本地目录时。
+pub fn build_env_info(
+    workspace_path: &std::path::PathBuf,
+    authorized: Option<(&str, &str)>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. 工作目录 / 已授权目录
+    match authorized {
+        Some((root_path, display_name)) => {
+            parts.push(format!("已连接目录: {} ({})", display_name, root_path));
+        }
+        None => {
+            parts.push(format!("工作目录: {}", workspace_path.display()));
+        }
+    }
+
+    // 2. Git 状态（静默失败）
+    let effective_path = authorized
+        .map(|(p, _)| std::path::PathBuf::from(p))
+        .unwrap_or_else(|| workspace_path.clone());
+
+    if let Ok(output) = std::process::Command::new("git")
+        .args([
+            "-C",
+            &effective_path.to_string_lossy(),
+            "status",
+            "--short",
+            "--branch",
+        ])
+        .output()
+    {
+        if output.status.success() {
+            let status_str = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+            if !status_str.is_empty() {
+                let lines: Vec<&str> = status_str.lines().take(10).collect();
+                parts.push(format!("Git: {}", lines.join(" | ")));
+            }
+        }
+    }
+
+    // 3. 平台信息
+    let platform = if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    };
+    parts.push(format!("Platform: {}", platform));
+
+    format!("\n\n[当前环境]\n{}", parts.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +203,44 @@ mod tests {
         assert!(notes_pos < pre_pos);
         assert!(pre_pos < conn_pos);
         assert!(conn_pos < ana_pos);
+    }
+
+    #[test]
+    fn test_build_env_info_with_authorized_workspace() {
+        let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
+        let authorized = Some(("/tmp/test-workspace/my-project".to_string(), "我的项目".to_string()));
+        let result = build_env_info(
+            &workspace_path,
+            authorized.as_ref().map(|(p, n)| (p.as_str(), n.as_str())),
+        );
+        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(result.contains("已连接目录"), "must mention authorized dir");
+        assert!(
+            result.contains("my-project") || result.contains("我的项目"),
+            "must include dir name"
+        );
+        assert!(result.contains("Platform:"), "must include platform");
+    }
+
+    #[test]
+    fn test_build_env_info_without_authorized_workspace() {
+        let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
+        let result = build_env_info(&workspace_path, None);
+        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(result.contains("工作目录"), "must include working dir");
+        assert!(result.contains("Platform:"), "must include platform");
+        assert!(
+            !result.contains("已连接目录"),
+            "must NOT mention authorized dir when absent"
+        );
+    }
+
+    #[test]
+    fn test_build_env_info_platform_info() {
+        let workspace_path = std::path::PathBuf::from("/tmp");
+        let result = build_env_info(&workspace_path, None);
+        let has_platform =
+            result.contains("darwin") || result.contains("windows") || result.contains("linux");
+        assert!(has_platform, "must include OS type, got: {}", result);
     }
 }
