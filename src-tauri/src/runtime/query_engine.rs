@@ -61,11 +61,14 @@ impl QueryEngine {
     }
 
     /// Clone static runtime configuration while creating fresh per-session state.
+    ///
+    /// Session-scoped fields (`authorized_workspace`, `read_file_state`,
+    /// `total_usage`) are reset and must be injected by SessionRuntime.
     pub fn clone_with_fresh_session_state(&self) -> Self {
         Self {
             tool_dispatcher: self.tool_dispatcher.clone(),
             workspace_path: self.workspace_path.clone(),
-            authorized_workspace: self.authorized_workspace.clone(),
+            authorized_workspace: None,
             browser_available: self.browser_available,
             file_ops: self.file_ops.clone(),
             read_file_state: Arc::new(FileStateCache::new()),

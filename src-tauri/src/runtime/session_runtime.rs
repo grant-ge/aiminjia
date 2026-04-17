@@ -161,6 +161,14 @@ impl SessionRuntime {
         self.event_bus.recorded()
     }
 
+    pub fn clear_session_state(&self, session_id: &crate::runtime::ids::SessionId) {
+        let session_key = session_id.as_str().to_string();
+        self.session_query_engines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&session_key);
+    }
+
     fn query_engine_for_session(
         &self,
         session_id: &crate::runtime::ids::SessionId,
@@ -309,6 +317,30 @@ mod tests {
         assert_eq!(
             usage_b.tokens_out, 0,
             "different sessions must not share total_usage.tokens_out"
+        );
+    }
+
+    #[test]
+    fn clear_session_state_resets_cached_engine_state_for_that_session() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session_id = crate::runtime::ids::SessionId::new("session-b2-clear");
+
+        let engine_before_clear = runtime.query_engine_for_session(&session_id);
+        let read_state_before_clear = engine_before_clear.read_file_state();
+        engine_before_clear.accumulate_usage(8, 13);
+        assert_eq!(engine_before_clear.get_total_usage().tokens_in, 8);
+        assert_eq!(engine_before_clear.get_total_usage().tokens_out, 13);
+
+        runtime.clear_session_state(&session_id);
+
+        let engine_after_clear = runtime.query_engine_for_session(&session_id);
+        let read_state_after_clear = engine_after_clear.read_file_state();
+        let usage_after_clear = engine_after_clear.get_total_usage();
+        assert_eq!(usage_after_clear.tokens_in, 0);
+        assert_eq!(usage_after_clear.tokens_out, 0);
+        assert!(
+            !Arc::ptr_eq(&read_state_before_clear, &read_state_after_clear),
+            "cleared session must get a fresh read_file_state cache"
         );
     }
 }

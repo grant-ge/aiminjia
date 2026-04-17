@@ -1212,6 +1212,9 @@ impl TauriChatCommandAdapter {
         )
         .await?;
 
+        self.runtime
+            .clear_session_state(&SessionId::new(outcome.conversation_id.clone()));
+
         if outcome.cancelled_active_agent {
             let _ = self.services.app.emit(
                 "streaming:done",
