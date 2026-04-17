@@ -15,6 +15,15 @@ use crate::runtime::tools::permission::AllowAllPermissionPipeline;
 #[async_trait]
 pub trait RuntimeTool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
+    fn is_read_only(&self, _input: &Value) -> bool {
+        self.definition().default_read_only
+    }
+    fn is_destructive(&self, _input: &Value) -> bool {
+        self.definition().default_destructive
+    }
     async fn execute(
         &self,
         input: Value,

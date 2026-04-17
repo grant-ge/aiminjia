@@ -60,3 +60,20 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     sorted.sort();
     assert_eq!(names, sorted, "get_schemas_filtered must return tools sorted by name");
 }
+
+// ── Task 2.1 tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn tool_definition_default_read_only_is_false() {
+    use app_lib::runtime::tools::definition::ToolDefinition;
+    let def = ToolDefinition::new("test_tool", "desc");
+    assert!(!def.default_read_only);
+    assert!(!def.default_destructive);
+}
+
+#[test]
+fn tool_definition_with_read_only_flag() {
+    use app_lib::runtime::tools::definition::ToolDefinition;
+    let def = ToolDefinition::new("read_tool", "desc").with_read_only(true);
+    assert!(def.default_read_only);
+}

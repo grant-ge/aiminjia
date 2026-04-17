@@ -25,6 +25,8 @@ pub struct ToolDefinition {
     pub description: String,
     pub capability_scope: Vec<String>,
     pub kind: ToolKind,
+    pub default_read_only: bool,
+    pub default_destructive: bool,
 }
 
 impl ToolDefinition {
@@ -36,12 +38,24 @@ impl ToolDefinition {
             description: description.into(),
             capability_scope: Vec::new(),
             kind: ToolKind::default(),
+            default_read_only: false,
+            default_destructive: false,
         }
     }
 
     /// 设置工具分类。
     pub fn with_kind(mut self, kind: ToolKind) -> Self {
         self.kind = kind;
+        self
+    }
+
+    pub fn with_read_only(mut self, read_only: bool) -> Self {
+        self.default_read_only = read_only;
+        self
+    }
+
+    pub fn with_destructive(mut self, destructive: bool) -> Self {
+        self.default_destructive = destructive;
         self
     }
 
