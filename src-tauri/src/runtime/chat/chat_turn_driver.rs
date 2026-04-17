@@ -8,13 +8,15 @@ use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
-use crate::runtime::chat::tool_round_driver::ToolRoundDriver;
+use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
+use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfig, TurnError, TurnIterationState};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
+use crate::runtime::tools::permission::PermissionDecision;
 
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
@@ -246,6 +248,29 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
     }
 
     injected
+}
+
+fn permission_ask_event_from_round_result(
+    round_result: &ToolRoundResult,
+) -> Option<RuntimeEventKind> {
+    match round_result {
+        ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id,
+            tool_name,
+            decision:
+                PermissionDecision::Ask {
+                    message,
+                    suggestions,
+                    ..
+                },
+        }) => Some(RuntimeEventKind::PermissionAskRequired {
+            tool_call_id: tool_call_id.clone().into(),
+            tool_name: tool_name.clone(),
+            message: message.clone(),
+            suggestions: suggestions.clone(),
+        }),
+        _ => None,
+    }
 }
 
 impl RuntimeChatTurnDriver {
@@ -514,6 +539,20 @@ impl RuntimeChatTurnDriver {
                     let round_results = round_driver
                         .execute_round(turn, &self.event_bus, tool_calls)
                         .await;
+
+                    for round_result in &round_results {
+                        if let Some(event_kind) =
+                            permission_ask_event_from_round_result(round_result)
+                        {
+                            self.event_bus
+                                .emit(RuntimeEvent::new(
+                                    session_id.clone(),
+                                    run_id.clone(),
+                                    event_kind,
+                                ))
+                                .await?;
+                        }
+                    }
 
                     // Collect and merge results into state.
                     let results =

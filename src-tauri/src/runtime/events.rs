@@ -31,6 +31,12 @@ pub enum RuntimeEventKind {
         /// Carried through to the frontend `success` field in `tool:completed`.
         is_error: bool,
     },
+    PermissionAskRequired {
+        tool_call_id: ToolCallId,
+        tool_name: String,
+        message: String,
+        suggestions: Vec<String>,
+    },
     AgentIdle {
         agent_id: AgentId,
         scope: AgentIdleScope,
@@ -61,7 +67,8 @@ impl RuntimeEvent {
     pub fn new(session_id: SessionId, run_id: RunId, kind: RuntimeEventKind) -> Self {
         let tool_call_id = match &kind {
             RuntimeEventKind::ToolCallExecuting { tool_call_id, .. }
-            | RuntimeEventKind::ToolCallCompleted { tool_call_id, .. } => {
+            | RuntimeEventKind::ToolCallCompleted { tool_call_id, .. }
+            | RuntimeEventKind::PermissionAskRequired { tool_call_id, .. } => {
                 Some(tool_call_id.clone())
             }
             _ => None,

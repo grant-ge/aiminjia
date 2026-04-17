@@ -69,6 +69,22 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "success": !is_error,
             }),
         }),
+        RuntimeEventKind::PermissionAskRequired {
+            tool_call_id,
+            tool_name,
+            message,
+            suggestions,
+        } => Some(LegacyEvent {
+            name: "permission:ask".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "toolCallId": tool_call_id.as_str(),
+                "toolName": tool_name,
+                "message": message,
+                "suggestions": suggestions,
+            }),
+        }),
         RuntimeEventKind::MessagePersisted {
             message_id,
             role,
