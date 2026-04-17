@@ -984,3 +984,91 @@ async fn driver_s4_returns_error_when_history_loading_fails() {
     assert!(err_text.contains("history backend unavailable"),
         "error should mention history loading failure, got: {}", err_text);
 }
+
+struct EnvInfoCapturingExecutor {
+    env_info: String,
+    captured_dynamic_contexts: std::sync::Mutex<Vec<String>>,
+}
+
+impl EnvInfoCapturingExecutor {
+    fn new(env_info: impl Into<String>) -> Self {
+        Self {
+            env_info: env_info.into(),
+            captured_dynamic_contexts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_dynamic_contexts
+            .lock()
+            .unwrap()
+            .push(input.dynamic_context.to_string());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        })
+    }
+
+    async fn get_env_info(&self) -> Result<String, TurnError> {
+        Ok(self.env_info.clone())
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_env_info_appears_in_dynamic_context() {
+    let executor = Arc::new(EnvInfoCapturingExecutor::new(
+        "\n\n[当前环境]\n工作目录: /tmp/test\nPlatform: darwin",
+    ));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-env-info");
+    let request = ChatTurnRequest::new("conv-env-info", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_dynamic_contexts.lock().unwrap();
+    assert!(!captured.is_empty(), "must have captured dynamic_context");
+    assert!(
+        captured[0].contains("[当前环境]"),
+        "dynamic_context must contain env info, got: {}",
+        captured[0]
+    );
+    assert!(
+        captured[0].contains("工作目录: /tmp/test"),
+        "dynamic_context must contain working dir, got: {}",
+        captured[0]
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_empty_env_info_does_not_break_context() {
+    let executor = Arc::new(EnvInfoCapturingExecutor::new(""));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-env-info-empty");
+    let request = ChatTurnRequest::new("conv-env-info-empty", "hello", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "must work when env_info is empty");
+}

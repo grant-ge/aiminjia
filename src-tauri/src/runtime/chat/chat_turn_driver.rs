@@ -157,6 +157,15 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     ) -> Result<Vec<serde_json::Value>, TurnError> {
         Ok(vec![])
     }
+
+    /// 返回会话级环境信息字符串（工作目录、git 状态、平台）。
+    ///
+    /// 返回值将被注入到每次 iteration 的 dynamic_context 中。
+    /// 默认实现返回空字符串（向后兼容旧 mock executor）。
+    /// 生产 executor 必须 override。
+    async fn get_env_info(&self) -> Result<String, TurnError> {
+        Ok(String::new())
+    }
 }
 
 /// Runtime-owned chat turn driver.
@@ -349,10 +358,24 @@ impl RuntimeChatTurnDriver {
         // ── Step 5: Iteration loop ────────────────────────────────────────────
         let round_driver = ToolRoundDriver::new(self.query_engine.clone());
 
+        // 获取会话级环境信息（整个 turn 内稳定）
+        let env_info = executor
+            .get_env_info()
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
+                String::new()
+            });
+
         'turn: for iteration in 0..config.max_iterations {
-            // Build a dynamic context string for this iteration.
-            // Currently minimal; T14 will wire the full context_builder call.
-            let dynamic_context = precompute_result.as_deref().unwrap_or_default().to_string();
+            let precompute_ctx = precompute_result.as_deref().unwrap_or_default();
+            let dynamic_context = if env_info.is_empty() {
+                precompute_ctx.to_string()
+            } else if precompute_ctx.is_empty() {
+                env_info.clone()
+            } else {
+                format!("{}\n\n{}", env_info, precompute_ctx)
+            };
 
             // Build the read-only executor input.
             let input = LlmStepInput {
