@@ -182,8 +182,10 @@ impl QueryEngine {
     /// 4. Returns a [`RuntimeToolCallOutcome`] indicating success or failure
     ///    without surfacing internal errors as transport-layer panics.
     ///
-    /// Existing `run_tool_with_bus` is **not modified** and remains available for
-    /// the legacy/test paths that supply only a tool name.
+    /// `run_tool_with_bus` remains available for the legacy/test paths that
+    /// supply only a tool name; both methods inject the same capability shape
+    /// (including session-scoped `read_file_state`) when workspace capability
+    /// is available.
     pub async fn run_tool_call_with_bus(
         &self,
         turn: &TurnState,
