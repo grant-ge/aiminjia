@@ -48,9 +48,14 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
             "web_search".to_string(),
             "browse_navigate".to_string(),
             "list_directory".to_string(),
-        ]))
+    ]))
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
+    assert_eq!(
+        names,
+        vec!["browse_navigate".to_string(), "web_search".to_string()],
+        "get_schemas_filtered must return the expected filtered tool set"
+    );
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "get_schemas_filtered must return tools sorted by name");
