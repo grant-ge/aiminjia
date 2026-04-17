@@ -310,6 +310,9 @@ impl ToolRegistry {
                     workspace_id: Some(ctx.conversation_id.clone()),
                     browser_available,
                     file_ops,
+                    read_file_state: None,
+                    file_reading_limits: None,
+                    notification_sink: None,
                 };
                 std::sync::Arc::new(cap)
             };

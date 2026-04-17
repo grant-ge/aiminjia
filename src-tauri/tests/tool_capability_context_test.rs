@@ -59,6 +59,9 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
         workspace_id: Some("ws-42".to_string()),
         browser_available: false,
         file_ops: None,
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: None,
     };
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_capability(Arc::new(cap_ctx));
@@ -79,6 +82,9 @@ fn capability_context_does_not_expose_full_plugin_context() {
         workspace_id: Some("ws-1".to_string()),
         browser_available: false,
         file_ops: None,
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: None,
     };
     // Verify we can ONLY access the declared fields: storage, workspace_id.
     // If PluginContext fields (e.g. gateway, auth_manager) were leaked, this
@@ -86,4 +92,54 @@ fn capability_context_does_not_expose_full_plugin_context() {
     // CapabilityContext.
     let _ = cap.storage;
     let _ = cap.workspace_id;
+}
+
+// ── Task 1.2 tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn file_state_cache_returns_none_for_unknown_path() {
+    use app_lib::runtime::tools::capability::FileStateCache;
+    let cache = FileStateCache::new();
+    assert!(cache.get(std::path::Path::new("/tmp/nonexistent.txt")).is_none());
+}
+
+#[test]
+fn file_state_cache_stores_and_retrieves_entry() {
+    use app_lib::runtime::tools::capability::{FileState, FileStateCache};
+    let cache = FileStateCache::new();
+    let path = std::path::PathBuf::from("/tmp/test.csv");
+    let state = FileState {
+        content: "a,b,c".to_string(),
+        mtime_secs: 1000,
+        offset: None,
+        limit: None,
+    };
+    cache.set(path.clone(), state.clone());
+    let retrieved = cache.get(&path).unwrap();
+    assert_eq!(retrieved.content, "a,b,c");
+    assert_eq!(retrieved.mtime_secs, 1000);
+}
+
+#[test]
+fn file_reading_limits_default_is_one_mb() {
+    use app_lib::runtime::tools::capability::FileReadingLimits;
+    let limits = FileReadingLimits::default();
+    assert_eq!(limits.max_size_bytes, 1_048_576);
+}
+
+#[test]
+fn capability_context_new_fields_default_to_none() {
+    use app_lib::runtime::tools::capability::CapabilityContext;
+    let ctx = CapabilityContext {
+        storage: None,
+        workspace_id: None,
+        browser_available: false,
+        file_ops: None,
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: None,
+    };
+    assert!(ctx.read_file_state.is_none());
+    assert!(ctx.file_reading_limits.is_none());
+    assert!(ctx.notification_sink.is_none());
 }

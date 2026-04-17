@@ -7,7 +7,10 @@ pub mod legacy_adapter;
 pub mod permission;
 pub mod testing;
 
-pub use capability::{CapabilityContext, FileOperations, SharedCapabilityContext, StorageCapability};
+pub use capability::{
+    CapabilityContext, FileOperations, FileReadingLimits, FileState, FileStateCache,
+    NotificationSink, SharedCapabilityContext, StorageCapability,
+};
 pub use context::{EventCollectingSink, ToolExecutionContext};
 pub use definition::ToolDefinition;
 pub use dispatcher::{RuntimeTool, ToolDispatchOutcome, ToolDispatcher};

@@ -207,6 +207,9 @@ impl QueryEngine {
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
+                read_file_state: None,
+                file_reading_limits: None,
+                notification_sink: None,
             });
             ctx.with_capability(capability)
         } else {
@@ -346,6 +349,9 @@ impl QueryEngine {
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
+                read_file_state: None,
+                file_reading_limits: None,
+                notification_sink: None,
             });
             ctx.with_capability(capability)
         } else {

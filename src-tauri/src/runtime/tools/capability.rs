@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 /// Storage-related capability subset exposed to runtime tools.
 ///
@@ -29,6 +31,65 @@ pub struct StorageCapability {
     /// Authorized local directory for this session (if any).
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
 }
+
+#[derive(Clone, Debug)]
+pub struct FileState {
+    pub content: String,
+    pub mtime_secs: u64,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct FileStateCache {
+    cache: Mutex<lru::LruCache<PathBuf, FileState>>,
+}
+
+impl FileStateCache {
+    pub fn new() -> Self {
+        Self {
+            cache: Mutex::new(lru::LruCache::new(
+                NonZeroUsize::new(100).expect("FileStateCache capacity must be non-zero"),
+            )),
+        }
+    }
+
+    pub fn get(&self, path: &Path) -> Option<FileState> {
+        self.cache
+            .lock()
+            .expect("FileStateCache mutex poisoned")
+            .get(path)
+            .cloned()
+    }
+
+    pub fn set(&self, path: PathBuf, state: FileState) {
+        self.cache
+            .lock()
+            .expect("FileStateCache mutex poisoned")
+            .put(path, state);
+    }
+}
+
+impl Default for FileStateCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FileReadingLimits {
+    pub max_size_bytes: usize,
+}
+
+impl Default for FileReadingLimits {
+    fn default() -> Self {
+        Self {
+            max_size_bytes: 1_048_576,
+        }
+    }
+}
+
+pub trait NotificationSink: Send + Sync + std::fmt::Debug {}
 
 // ── FileOperations trait ─────────────────────────────────────────────────────
 
@@ -94,6 +155,12 @@ pub struct CapabilityContext {
     /// `PluginContext`.  `None` for paths that don't require file loading
     /// (workspace tools, browser tools, tests).
     pub file_ops: Option<Arc<dyn FileOperations>>,
+    /// Optional cache of recent file-read state keyed by absolute path.
+    pub read_file_state: Option<Arc<FileStateCache>>,
+    /// Optional limits for file-reading operations.
+    pub file_reading_limits: Option<FileReadingLimits>,
+    /// Optional sink for user-visible notifications emitted by runtime tools.
+    pub notification_sink: Option<Arc<dyn NotificationSink>>,
 }
 
 impl std::fmt::Debug for CapabilityContext {
@@ -103,6 +170,15 @@ impl std::fmt::Debug for CapabilityContext {
             .field("workspace_id", &self.workspace_id)
             .field("browser_available", &self.browser_available)
             .field("file_ops", &self.file_ops.as_ref().map(|f| format!("{:?}", f)))
+            .field(
+                "read_file_state",
+                &self.read_file_state.as_ref().map(|_| "<FileStateCache>"),
+            )
+            .field("file_reading_limits", &self.file_reading_limits)
+            .field(
+                "notification_sink",
+                &self.notification_sink.as_ref().map(|_| "<NotificationSink>"),
+            )
             .finish()
     }
 }
@@ -118,12 +194,33 @@ impl CapabilityContext {
             workspace_id: Some(workspace_id.into()),
             browser_available: false,
             file_ops: None,
+            read_file_state: None,
+            file_reading_limits: None,
+            notification_sink: None,
         }
     }
 
     /// Mark this context as having an active browser connector.
     pub fn with_browser(mut self) -> Self {
         self.browser_available = true;
+        self
+    }
+
+    pub fn with_read_file_state(mut self, read_file_state: Arc<FileStateCache>) -> Self {
+        self.read_file_state = Some(read_file_state);
+        self
+    }
+
+    pub fn with_file_reading_limits(mut self, file_reading_limits: FileReadingLimits) -> Self {
+        self.file_reading_limits = Some(file_reading_limits);
+        self
+    }
+
+    pub fn with_notification_sink(
+        mut self,
+        notification_sink: Arc<dyn NotificationSink>,
+    ) -> Self {
+        self.notification_sink = Some(notification_sink);
         self
     }
 

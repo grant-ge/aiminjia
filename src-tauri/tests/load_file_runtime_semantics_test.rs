@@ -112,6 +112,9 @@ fn make_ctx_with_file_ops(file_ops: Arc<dyn FileOperations>) -> ToolExecutionCon
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,
         file_ops: Some(file_ops),
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: None,
     };
     ToolExecutionContext::for_test("test-conv", "test-run", "test-tc")
         .with_capability(Arc::new(cap))
@@ -198,6 +201,9 @@ async fn load_file_runtime_tool_execute_errors_when_file_ops_is_none() {
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,
         file_ops: None, // deliberately absent
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: None,
     };
     let ctx = ToolExecutionContext::for_test("test-conv", "test-run", "test-tc")
         .with_capability(Arc::new(cap));
