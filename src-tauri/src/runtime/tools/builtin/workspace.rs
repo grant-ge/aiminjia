@@ -79,6 +79,30 @@ fn limit_text_content(content: &str, max_bytes: usize) -> (String, bool) {
     (limited, truncated)
 }
 
+fn update_file_state_cache(ctx: &ToolExecutionContext, resolved: &Path, content: &str) {
+    if let Some(cache) = ctx
+        .capability
+        .as_ref()
+        .and_then(|cap| cap.read_file_state.as_ref())
+    {
+        let mtime_secs = std::fs::metadata(resolved)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        cache.set(
+            resolved.to_path_buf(),
+            FileState {
+                content: content.to_string(),
+                mtime_secs,
+                offset: None,
+                limit: None,
+            },
+        );
+    }
+}
+
 // ── ListDirectoryRuntimeTool ──────────────────────────────────────────────
 
 pub struct ListDirectoryRuntimeTool;
@@ -459,27 +483,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         std::fs::write(&resolved, content.as_bytes())
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
 
-        if let Some(cache) = ctx
-            .capability
-            .as_ref()
-            .and_then(|cap| cap.read_file_state.as_ref())
-        {
-            let mtime_secs = std::fs::metadata(&resolved)
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            cache.set(
-                resolved,
-                FileState {
-                    content: content.to_string(),
-                    mtime_secs,
-                    offset: None,
-                    limit: None,
-                },
-            );
-        }
+        update_file_state_cache(&ctx, &resolved, content);
 
         Ok(tool_result(
             "write_file",
@@ -487,6 +491,107 @@ impl RuntimeTool for WriteFileRuntimeTool {
                 "path": rel,
                 "size": content.len(),
                 "created": true,
+            }),
+        ))
+    }
+}
+
+// ── EditFileRuntimeTool ───────────────────────────────────────────────────
+
+pub struct EditFileRuntimeTool;
+
+#[async_trait]
+impl RuntimeTool for EditFileRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        TOOL_CATALOG
+            .get("edit_file")
+            .cloned()
+            .unwrap_or_else(|| ToolDefinition::new("edit_file", "Edit workspace file"))
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let root = require_workspace_root(&ctx)?;
+        let rel = input
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+        let old_string = input
+            .get("old_string")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: old_string".into()))?;
+        let new_string = input
+            .get("new_string")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: new_string".into()))?;
+
+        let resolved = resolve_path(&root, rel)?;
+
+        let original_content = if resolved.is_file() {
+            std::fs::read_to_string(&resolved)
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to read file: {e}")))?
+        } else if old_string.is_empty() {
+            String::new()
+        } else {
+            return Err(ToolError::ExecutionFailed(format!(
+                "File does not exist: {rel}"
+            )));
+        };
+
+        if old_string.is_empty() {
+            if !original_content.trim().is_empty() {
+                return Err(ToolError::ExecutionFailed(
+                    "old_string is empty but file already has content. Use write_file to overwrite, or provide old_string to match existing content.".into(),
+                ));
+            }
+            if let Some(parent) = resolved.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    ToolError::ExecutionFailed(format!("Failed to create dirs: {e}"))
+                })?;
+            }
+            std::fs::write(&resolved, new_string.as_bytes())
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
+            update_file_state_cache(&ctx, &resolved, new_string);
+            return Ok(tool_result(
+                "edit_file",
+                json!({
+                    "path": rel,
+                    "operation": "create",
+                    "bytes_written": new_string.len(),
+                }),
+            ));
+        }
+
+        let matches = original_content.matches(old_string).count();
+        if matches == 0 {
+            return Err(ToolError::ExecutionFailed(format!(
+                "old_string not found in file: {rel}\nString: {old_string}"
+            )));
+        }
+        if matches > 1 {
+            return Err(ToolError::ExecutionFailed(format!(
+                "old_string found {matches} times in file: {rel}. Provide more context to uniquely identify the target.\nString: {old_string}"
+            )));
+        }
+
+        let updated_content = original_content.replacen(old_string, new_string, 1);
+        std::fs::write(&resolved, updated_content.as_bytes())
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
+        update_file_state_cache(&ctx, &resolved, &updated_content);
+
+        Ok(tool_result(
+            "edit_file",
+            json!({
+                "path": rel,
+                "operation": "edit",
+                "bytes_written": updated_content.len(),
             }),
         ))
     }

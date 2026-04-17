@@ -142,6 +142,27 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "edit_file",
+            "基于 old_string/new_string 精确替换编辑授权工作目录中的文件（要求 old_string 在文件中唯一存在）",
+        )
+        .with_kind(ToolKind::Primitive)
+        .with_capability_scope(["workspace:read", "workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["path", "old_string", "new_string"],
+            "properties": {
+                "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
+                "old_string": {
+                    "type": "string",
+                    "description": "要替换的原始字符串，必须在文件中唯一存在。若为空字符串，则视为向空文件追加内容（文件必须为空或不存在）"
+                },
+                "new_string": { "type": "string", "description": "替换后的新字符串" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
         ToolDefinition::new("load_file",
             "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
             \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\
