@@ -70,7 +70,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     // These four tools have no constructor deps and can be registered unconditionally.
     use crate::runtime::tools::builtin::workspace::{
         GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
-        SearchFilesRuntimeTool,
+        SearchFilesRuntimeTool, WriteFileRuntimeTool,
     };
     registry
         .register_runtime(Arc::new(ListDirectoryRuntimeTool))
@@ -83,5 +83,8 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(GetFileInfoRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(WriteFileRuntimeTool))
         .await;
 }

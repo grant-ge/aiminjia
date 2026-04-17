@@ -105,6 +105,7 @@ async fn all_four_workspace_runtime_tools_are_registered() {
         "read_workspace_file",
         "search_files",
         "get_file_info",
+        "write_file",
     ] {
         assert!(
             names.contains(tool_name),

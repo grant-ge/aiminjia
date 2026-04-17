@@ -216,18 +216,24 @@ impl FileManager {
 pub fn resolve_local_reference(root_path: &std::path::Path, rel_path: &str) -> anyhow::Result<std::path::PathBuf> {
     use anyhow::anyhow;
     let joined = root_path.join(rel_path);
-    // 如果路径存在则 canonicalize，否则 canonicalize parent
+
+    fn canonicalize_existing_ancestor(path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+        let mut current = path;
+        while !current.exists() {
+            current = current
+                .parent()
+                .ok_or_else(|| anyhow!("Path traversal rejected: ancestor missing"))?;
+        }
+        let canonical = current.canonicalize()?;
+        let suffix = path.strip_prefix(current).unwrap_or(std::path::Path::new(""));
+        Ok(canonical.join(suffix))
+    }
+
+    // 如果路径存在则 canonicalize，否则 canonicalize 最近的已存在祖先
     let canonical = if joined.exists() {
         joined.canonicalize()?
     } else {
-        let parent = joined.parent().unwrap_or(&joined);
-        if parent.exists() {
-            let canon_parent = parent.canonicalize()?;
-            let file_name = joined.file_name().unwrap_or_default();
-            canon_parent.join(file_name)
-        } else {
-            joined.clone()
-        }
+        canonicalize_existing_ancestor(&joined)?
     };
     let root_canonical = root_path.canonicalize().unwrap_or_else(|_| root_path.to_path_buf());
     if !canonical.starts_with(&root_canonical) {

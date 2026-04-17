@@ -417,3 +417,77 @@ impl RuntimeTool for GetFileInfoRuntimeTool {
         Ok(tool_result("get_file_info", info))
     }
 }
+
+// ── WriteFileRuntimeTool ──────────────────────────────────────────────────
+
+pub struct WriteFileRuntimeTool;
+
+#[async_trait]
+impl RuntimeTool for WriteFileRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        TOOL_CATALOG
+            .get("write_file")
+            .cloned()
+            .unwrap_or_else(|| ToolDefinition::new("write_file", "Write workspace file"))
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        false
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let root = require_workspace_root(&ctx)?;
+        let rel = input
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+        let content = input
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: content".into()))?;
+        let resolved = resolve_path(&root, rel)?;
+
+        if let Some(parent) = resolved.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to create dirs: {e}")))?;
+        }
+
+        std::fs::write(&resolved, content.as_bytes())
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
+
+        if let Some(cache) = ctx
+            .capability
+            .as_ref()
+            .and_then(|cap| cap.read_file_state.as_ref())
+        {
+            let mtime_secs = std::fs::metadata(&resolved)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            cache.set(
+                resolved,
+                FileState {
+                    content: content.to_string(),
+                    mtime_secs,
+                    offset: None,
+                    limit: None,
+                },
+            );
+        }
+
+        Ok(tool_result(
+            "write_file",
+            json!({
+                "path": rel,
+                "size": content.len(),
+                "created": true,
+            }),
+        ))
+    }
+}

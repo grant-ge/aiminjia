@@ -128,6 +128,20 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
+        ToolDefinition::new("write_file", "在授权工作目录中创建或覆盖写入文本文件")
+            .with_kind(ToolKind::Primitive)
+            .with_capability_scope(["workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["path", "content"],
+            "properties": {
+                "path": { "type": "string", "description": "相对于授权工作目录的目标文件路径" },
+                "content": { "type": "string", "description": "要写入的文件内容（UTF-8 文本）" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
         ToolDefinition::new("load_file",
             "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
             \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\
