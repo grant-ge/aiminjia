@@ -1,7 +1,7 @@
 # lotus-app 设计问题审计报告
 
 **日期**：2026-04-17  
-**调查方式**：三路并行 agent 深度代码审计（Runtime/编排层、工具/权限层、LLM/存储层）  
+**调查方式**：六路并行 agent 深度代码审计（Runtime层、工具/权限层、LLM/存储层、前端架构、Rust质量、Python/初始化）  
 **性质**：设计问题（架构反模式、会阻碍演进的决策），区别于功能差距
 
 > 参见功能差距文档：`docs/2026-04-17-full-gap-assessment.md`
@@ -186,27 +186,139 @@
 
 ---
 
-## 六、修复优先级建议
+## 六、第二轮审计新发现（前端 / Rust质量 / Python子系统）
+
+### 前端架构问题
+
+#### F1：chatStore 职责混淆 **严重**
+
+**位置**：`src/stores/chatStore.ts:34-116`
+
+chatStore 同时承担"会话网关"（会话列表、消息 CRUD）和"流式缓冲"（per-conv 流式状态、工具执行、任务状态）两个职责。`deriveLegacy()` 函数（L93-103）每次状态更新都重算派生字段，容易与源状态不同步（已见于 `setConversationAgentPhase:L252` 遗漏 legacy 同步）。
+
+**影响**：多对话并发竞态隐患；新开发者理解成本高；11 个 action 围绕流式状态难以维护。
+
+**修复方向**：拆分为 `SessionStore`（会话CRUD）+ `StreamingStore`（per-conv 流式）。
+
+---
+
+#### F2：stop + retry 竞态导致旧流 token 混入新响应 **严重**
+
+**位置**：`src/hooks/useChat.ts:174-179`、`src/hooks/useStreaming.tsx:155-163`
+
+用户快速"停止"再"重试"时：`stopStreaming(convId)` 被调用后，`deltaBufferRef[convId]` 中的旧 token 仍在 RAF 回调队列中，与新请求的 `resetConversationStreamContent()` 产生竞态——旧内容混入新响应。
+
+**修复方向**：为每个流赋予唯一 generation token，flush 前校验 token 一致性。
+
+---
+
+#### F3：useTauriEvent listener 泄露风险 **设计债**
+
+**位置**：`src/hooks/useTauriEvent.ts:28-48`
+
+`setup().then()` 的 Promise reject 路径中 `unlisten` 函数永远不会被调用，导致 listener 泄漏。useStreaming 扇出 11 个 listener，任何一个注册失败均无感知。
+
+**修复方向**：`Promise.all` 批量注册 + 统一 error boundary；cleanup 加 try-catch。
+
+---
+
+#### F4：`getConversations()` 返回 `unknown[]`，手工转换在 hook 层做 **轻微**
+
+**位置**：`src/lib/tauri.ts:178`
+
+类型转换应在 `tauri.ts` 完成，而非在调用方 hook 中手工 map。
+
+---
+
+### Rust 代码质量问题
+
+#### R1：`std::sync::Mutex` 在 async 路径被 `unwrap()`，poison 会全进程崩溃 **严重**
+
+**位置**：`runtime/run_registry.rs:28/56/80/89/95/99/103/109/117`
+
+Mutex 被 poison 后所有 `unwrap()` 全部 panic，整个进程崩溃。async 上下文中应用 `tokio::sync::Mutex`；`unwrap()` 改为 `map_err`。
+
+---
+
+#### R2：`conversation_id` 裸 `String` 与 `SessionId` newtype 混用 **设计债**
+
+**位置**：`run_registry.rs`、`llm/gateway.rs`、`runtime/tools/capability.rs:255` 等
+
+已有 `SessionId` newtype（`ids.rs`）但未全面推广，编译器无法防止误传。
+
+---
+
+#### R3：LRU eviction 的 Python 进程 kill 在后台 spawn 后无人监控 **中**
+
+**位置**：`python/session.rs:646`
+
+`tokio::spawn(async { evicted.write_checkpoint().await; evicted.kill().await })` ——checkpoint 失败无处报告，应用退出时子进程可能泄漏。
+
+---
+
+### Python 子系统问题
+
+#### P1：Python session 生命周期与 RunId 模型不对齐 **P1**
+
+**位置**：`python/session.rs:61-63`
+
+`PythonSessionManager` 按 `conversation_id` 创建 session，但新模型下一个 conversation 包含多个 run，多个 run 共享同一 Python 进程状态（全局变量、`_written_files`、import 状态相互污染）。
+
+**影响**：多轮对话数据泄露、脏状态导致分析结果错误。
+
+---
+
+#### P2：Sandbox path 边界绕过 **P2**
+
+**位置**：`python/sandbox.rs:267-300`
+
+`_safe_open` 的白名单检查用 `startswith('/workspace')`，允许 `/workspace.backup/file` 绕过。
+
+**修复方向**：改为 `startswith('/workspace/') or path == '/workspace'`。
+
+---
+
+#### P3：`validate_code()` 标记 deprecated 但仍被 `runner.rs:86` 调用且只 warn **P2**
+
+弃用的安全检查函数仍在生产路径中以非阻止方式运行，形成安全假象。
+
+---
+
+## 七、完整修复优先级建议
 
 ```
-立即（影响正确性）
-  D1  Schema/注册/执行不一致（现实 bug 风险）
-  D2  build_env_info 阻塞 tokio（性能）
-  D3  Executor 持有 AppHandle（分层约束违反）
+立即（影响正确性 / 安全）
+  D1   Schema/注册/执行不一致（现实 bug 风险）
+  D2   build_env_info 阻塞 tokio（性能）
+  D3   Executor 持有 AppHandle（分层约束违反）
+  R1   std::Mutex unwrap() 在 async 路径（全进程崩溃风险）
+  F2   stop+retry 竞态（旧 token 混入新响应）
+  P1   Python session 生命周期不对齐 RunId 模型
+  P2   Sandbox path 边界绕过
 
 短期（影响可维护性）
-  D4  权限管线重复逻辑 → 责任链重构
-  D8  Prompt 构建两处 → 统一入口
-  D11 settings 每步重读 → turn 入口读一次
+  D4   权限管线重复逻辑 → 责任链重构
+  D8   Prompt 构建两处 → 统一入口
+  D11  settings 每步重读 → turn 入口读一次
+  F1   chatStore 拆分（SessionStore + StreamingStore）
+  F3   useTauriEvent listener 泄露修复
+  R2   SessionId newtype 全面推广
+  P3   validate_code deprecated 改为强制阻止或删除
 
 中期（影响演进能力）
-  D5  CapabilityContext 拆分（权限凭证 vs 服务注入）
-  D7  LLM 层解耦 AppStorage
-  D10 TOOL_CATALOG 动态化（MCP 前置条件）
-  D16 ConversationStore 全面覆盖
+  D5   CapabilityContext 拆分（权限凭证 vs 服务注入）
+  D7   LLM 层解耦 AppStorage
+  D10  TOOL_CATALOG 动态化（MCP 前置条件）
+  D16  ConversationStore 全面覆盖
+  R3   LRU eviction 进程 kill 加监控
 
 长期（技术债清理）
-  D6  LegacyToolAdapter 逐步收窄
+  D6   LegacyToolAdapter 逐步收窄
+  D9   REQUEST_SCOPED 工具自声明
+  D12-D15 轻微修复
+  D17  存储 schema version
+  F4   getConversations 类型提升到 tauri.ts 层
+```
   D9  REQUEST_SCOPED 工具自声明
   D12-D15 轻微修复
   D17 存储 schema version
