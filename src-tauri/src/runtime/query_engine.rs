@@ -8,7 +8,10 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::state::TurnState;
-use crate::runtime::tools::{CapabilityContext, FileOperations, StorageCapability, ToolDispatcher, ToolExecutionContext};
+use crate::runtime::tools::{
+    CapabilityContext, FileOperations, FileStateCache, StorageCapability, ToolDispatcher,
+    ToolExecutionContext,
+};
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
@@ -28,6 +31,8 @@ pub struct QueryEngine {
     /// When present, `load_file` runtime tool uses this to load files
     /// instead of bridging through `PluginContext`.
     file_ops: Option<Arc<dyn FileOperations>>,
+    /// Session-scoped cache shared by all read-file tool calls in this engine.
+    read_file_state: Arc<FileStateCache>,
 }
 
 impl QueryEngine {
@@ -42,6 +47,7 @@ impl QueryEngine {
             authorized_workspace: None,
             browser_available: false,
             file_ops: None,
+            read_file_state: Arc::new(FileStateCache::new()),
         }
     }
 
@@ -80,6 +86,10 @@ impl QueryEngine {
 
     pub fn for_test(tool_dispatcher: Arc<ToolDispatcher>) -> Self {
         Self::with_dispatcher(tool_dispatcher)
+    }
+
+    pub fn read_file_state(&self) -> Arc<FileStateCache> {
+        self.read_file_state.clone()
     }
 
     pub async fn run(&self, turn: &mut TurnState, bus: &RuntimeEventBus) -> Result<()> {
@@ -207,7 +217,7 @@ impl QueryEngine {
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
-                read_file_state: None,
+                read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
             });
@@ -349,7 +359,7 @@ impl QueryEngine {
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
                 file_ops: self.file_ops.clone(),
-                read_file_state: None,
+                read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
             });
