@@ -99,3 +99,93 @@ fn browser_tool_still_rejected_when_browser_available_false() {
     let result = pipeline.authorize(&def, &json!({}), &ctx);
     assert!(is_deny(&result), "browser tool must be rejected when browser_available=false");
 }
+
+// Task 3.1 tests
+
+#[tokio::test]
+async fn tool_check_permissions_overrides_pipeline_when_some() {
+    use app_lib::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolError,
+        ToolResult,
+    };
+    use app_lib::runtime::tools::permission::PermissionReason;
+    use async_trait::async_trait;
+    use serde_json::Value;
+
+    struct AlwaysDenyTool;
+
+    #[async_trait]
+    impl RuntimeTool for AlwaysDenyTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("always_deny", "always deny")
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new("always_deny", "should not reach", None))
+        }
+
+        async fn check_permissions(
+            &self,
+            _input: &Value,
+            _ctx: &ToolExecutionContext,
+        ) -> Option<PermissionDecision> {
+            Some(PermissionDecision::Deny {
+                message: "tool-level deny".to_string(),
+                reason: PermissionReason::Other("test".into()),
+            })
+        }
+    }
+
+    let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
+    dispatcher.register(Arc::new(AlwaysDenyTool));
+
+    let ctx = ToolExecutionContext::for_test("c", "r", "t1");
+    let result = dispatcher.dispatch("always_deny", json!({}), ctx).await;
+
+    assert!(
+        matches!(result, Err(ToolError::PermissionDenied(message)) if message == "tool-level deny"),
+        "tool-level deny should override allow_all pipeline"
+    );
+}
+
+#[tokio::test]
+async fn tool_check_permissions_falls_through_to_pipeline_when_none() {
+    use app_lib::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDispatchOutcome, ToolDispatcher, ToolError,
+        ToolResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::Value;
+
+    struct PassthroughTool;
+
+    #[async_trait]
+    impl RuntimeTool for PassthroughTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("passthrough", "passthrough")
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new("passthrough", "executed", None))
+        }
+    }
+
+    let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
+    dispatcher.register(Arc::new(PassthroughTool));
+
+    let ctx = ToolExecutionContext::for_test("c", "r", "t1");
+    let result = dispatcher.dispatch("passthrough", json!({}), ctx).await;
+
+    assert!(
+        matches!(result, Ok(ToolDispatchOutcome::Completed { .. })),
+        "None from check_permissions should fall through to pipeline"
+    );
+}

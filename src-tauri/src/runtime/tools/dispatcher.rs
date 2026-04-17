@@ -24,6 +24,13 @@ pub trait RuntimeTool: Send + Sync {
     fn is_destructive(&self, _input: &Value) -> bool {
         self.definition().default_destructive
     }
+    async fn check_permissions(
+        &self,
+        _input: &Value,
+        _ctx: &ToolExecutionContext,
+    ) -> Option<crate::runtime::tools::permission::PermissionDecision> {
+        None
+    }
     async fn execute(
         &self,
         input: Value,
@@ -81,10 +88,17 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
+        let permission_decision = if let Some(decision) = tool.check_permissions(&input, &ctx).await
+        {
+            decision
+        } else {
+            self.permission_pipeline.authorize(&definition, &input, &ctx)
+        };
+
         // Map PermissionDecision to ToolError / AskRequired.
         // Deny → Err(PermissionDenied)
         // Ask  → Ok(AskRequired) so the TurnDriver can handle user confirmation
-        match self.permission_pipeline.authorize(&definition, &input, &ctx) {
+        match permission_decision {
             PermissionDecision::Allow { .. } => {}
             PermissionDecision::Deny { message, .. } => {
                 return Err(ToolError::PermissionDenied(message));
