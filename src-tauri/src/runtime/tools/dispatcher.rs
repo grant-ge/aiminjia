@@ -102,4 +102,66 @@ impl ToolDispatcher {
             event_names: ctx.event_sink.snapshot(),
         })
     }
+
+    pub async fn dispatch_batch(
+        &self,
+        calls: Vec<(String, Value, ToolExecutionContext)>,
+    ) -> Vec<Result<ToolDispatchOutcome, ToolError>> {
+        const MAX_CONCURRENCY: usize = 10;
+
+        struct Batch {
+            concurrent: bool,
+            calls: Vec<(String, Value, ToolExecutionContext)>,
+        }
+
+        let mut batches: Vec<Batch> = Vec::new();
+
+        for (name, input, ctx) in calls {
+            let is_concurrent = {
+                let tools = self.tools.read().unwrap();
+                tools
+                    .get(&name)
+                    .map(|tool| tool.is_concurrency_safe(&input))
+                    .unwrap_or(false)
+            };
+
+            let should_start_new_batch = match batches.last() {
+                None => true,
+                Some(batch) if !is_concurrent => true,
+                Some(batch) => !batch.concurrent,
+            };
+
+            if should_start_new_batch {
+                batches.push(Batch {
+                    concurrent: is_concurrent,
+                    calls: vec![(name, input, ctx)],
+                });
+            } else {
+                batches
+                    .last_mut()
+                    .unwrap()
+                    .calls
+                    .push((name, input, ctx));
+            }
+        }
+
+        let mut results = Vec::new();
+
+        for batch in batches {
+            if batch.concurrent {
+                for chunk in batch.calls.chunks(MAX_CONCURRENCY) {
+                    let futures = chunk.iter().map(|(name, input, ctx)| {
+                        self.dispatch(name, input.clone(), ctx.clone())
+                    });
+                    results.extend(futures::future::join_all(futures).await);
+                }
+            } else {
+                for (name, input, ctx) in batch.calls {
+                    results.push(self.dispatch(&name, input, ctx).await);
+                }
+            }
+        }
+
+        results
+    }
 }
