@@ -53,6 +53,14 @@ impl TurnIterationState {
             safeguard_phase1_injected: false,
         }
     }
+
+    /// Append a fully-prepared message batch in one step.
+    ///
+    /// The driver builds assistant/tool batches off-state and calls this once
+    /// so turn cancellation can only land between batches, never mid-merge.
+    pub fn append_messages_batch(&mut self, batch: Vec<JsonValue>) {
+        self.messages.extend(batch);
+    }
 }
 
 /// Executor 的只读输入。由 driver 从 TurnConfig + TurnIterationState 构建。

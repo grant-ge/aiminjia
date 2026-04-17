@@ -525,8 +525,6 @@ impl RuntimeChatTurnDriver {
                     tokens_in,
                     tokens_out,
                 } => {
-                    // Merge assistant message into state so the next iteration
-                    // sees the full conversation history.
                     if !assistant_content.is_empty() {
                         state.full_content.push_str(&assistant_content);
                     }
@@ -540,11 +538,11 @@ impl RuntimeChatTurnDriver {
                             })
                         })
                         .collect();
-                    state.messages.push(serde_json::json!({
+                    let assistant_history_message = serde_json::json!({
                         "role": "assistant",
                         "content": assistant_content,
                         "toolCalls": normalized_tool_calls,
-                    }));
+                    });
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.iteration_count = iteration + 1;
@@ -556,6 +554,7 @@ impl RuntimeChatTurnDriver {
 
                     // CP-2: check cancellation right after execute_round.
                     if cancel.is_cancelled() {
+                        state.append_messages_batch(vec![assistant_history_message.clone()]);
                         mark_turn_cancelled_with_synthetic_results(&mut state);
                         break 'turn;
                     }
@@ -577,14 +576,20 @@ impl RuntimeChatTurnDriver {
                     // Collect and merge results into state.
                     let results =
                         tool_result_collector::collect_results(round_results, 8000);
+                    let mut history_batch =
+                        Vec::with_capacity(1 + results.tool_result_messages.len());
+                    history_batch.push(assistant_history_message);
+
                     for msg in results.tool_result_messages {
-                        state.messages.push(msg);
-                        // CP-3: check cancellation after each merged tool result.
+                        history_batch.push(msg);
+                        // CP-3: check cancellation after each staged tool result.
                         if cancel.is_cancelled() {
+                            state.append_messages_batch(history_batch);
                             mark_turn_cancelled_with_synthetic_results(&mut state);
                             break 'turn;
                         }
                     }
+                    state.append_messages_batch(history_batch);
                     state.all_file_metas.extend(results.new_file_metas);
                     state
                         .generated_file_ids
