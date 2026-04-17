@@ -12,6 +12,92 @@
 
 ---
 
+## 改造视角
+
+> 设计债清理是重构，不是新功能。每个子任务的目标是改善代码结构，使其更易维护和演进，**不应改变可观察行为**。现有测试全绿是验收标准。
+
+### 重构原则
+
+1. **行为不变**：重构后所有现有测试必须继续通过
+2. **独立 commit**：每个子任务独立 commit，出问题可单独回滚
+3. **最小改动**：不引入新功能，只改结构
+
+---
+
+### F1：Schema/注册一致性校验
+
+**当前问题**：`TOOL_CATALOG` 和 `runtime_tools HashMap` 独立维护，不一致时静默丢失 schema，LLM 可能收到无法执行的工具。
+
+**改造目标**：启动期（`ToolRegistry::new()` 或 `setup_builtin_tools`）加一致性校验，不一致时 panic（快速失败，而非运行时静默错误）。
+
+**改造范围**：`plugin/registry.rs`，不影响运行时行为。
+
+---
+
+### F2：权限管线 scope 匹配逻辑去重
+
+**当前问题**：`CapabilityPermissionPipeline` 和 `StorePolicyPipeline` 各自内联 scope 匹配逻辑，新增 scope 需改两处。
+
+**改造目标**：提取 `fn check_scope_capability(scope, ctx) -> Option<PermissionDecision>` 共享函数，两个 pipeline 调用它。**注意**：unknown scope 的处理差异（Deny vs Ask）保持不变，不统一。
+
+**改造范围**：`runtime/tools/permission.rs`，接口不变，只是内部重构。
+
+---
+
+### F3：Prompt 构建统一入口
+
+**当前问题**：`llm/prompts.rs` 和 `chat_turn_driver.rs` 各有一处 prompt 构建，文档中职责不清晰。
+
+**改造目标**：明确 `llm/prompts.rs` 是片段仓库（只返回字符串片段），`context_builder.rs` 是唯一组装入口，用注释和文档标明职责。不需要移动代码，只需确认并文档化。
+
+---
+
+### F4：settings 每步重读优化
+
+**当前问题**：`run_llm_step` 每次调用都 `get_all_settings()` + 解密 API key，一次 turn 最多 30 次重复 I/O。
+
+**改造目标**：turn 入口读一次，存入 `TurnConfig`，`run_llm_step` 从 config 取。
+
+**改造范围**：`transport/tauri_commands/chat.rs` + `turn_config.rs`，不改 turn 逻辑。
+
+---
+
+### F5：chatStore 拆分
+
+**当前问题**：`chatStore.ts` 同时管理会话 CRUD 和流式状态，`deriveLegacy` 是两者混合的证明。
+
+**改造目标**：拆分为 `sessionStore.ts`（会话 CRUD）和 `streamingStore.ts`（流式状态），`chatStore.ts` 变为薄的组合层，向后兼容现有调用方。
+
+**改造范围**：`src/stores/`，不改组件和 hooks 的使用接口（向后兼容）。
+
+---
+
+### F6：useTauriEvent listener 泄露修复
+
+**当前问题**：`useTauriEvent.ts` 的 `setup()` reject 路径无 `.catch`，listener 泄露无感知。
+
+**改造目标**：加 error boundary，cleanup 确保 unlisten 被调用。行为不变，只是更健壮。
+
+---
+
+### F7：SessionId newtype 推广
+
+**当前问题**：runtime 层 `conversation_id` 大量用裸 `String`，类型系统无法防止误传。
+
+**改造目标**：`QueryEngine`、`TurnConfig`、`ToolExecutionContext` 的接口改用 `SessionId`，编译期保证类型安全。不需要全量替换，优先改 runtime 层核心接口。
+
+---
+
+### 整体回归验证
+
+每个子任务完成后：
+```bash
+cd src-tauri && cargo test review_ --tests --no-fail-fast
+pnpm test
+```
+
+---
+
 ## 背景与问题诊断
 
 在阅读代码后，识别出以下实际存在的设计债：

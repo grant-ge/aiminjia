@@ -12,6 +12,65 @@
 
 ---
 
+## 改造视角
+
+> 本节说明每个子任务的"现状 → 目标"，帮助执行者理解这是架构迁移而非纯新功能。
+
+### B1：QueryEngine 持有 FileStateCache（跨 turn 复用）
+
+**当前状态**：`query_engine.rs` 构建 `CapabilityContext` 时 `read_file_state: None`（两处：`run_tool_call_with_bus` 和 `run_tool_with_bus`）。每次 turn 工具读文件都是全新读取，多轮对话中同一文件被反复读入 LLM 上下文，浪费 token。
+
+**目标状态**：`QueryEngine` struct 持有 `read_file_state: Arc<FileStateCache>` 字段，构建 `CapabilityContext` 时注入，跨 turn 共享同一缓存实例。文件未修改时工具返回缓存，不重新注入。
+
+**迁移路径**：`QueryEngine::new()` 初始化 FileStateCache → 两处 CapabilityContext 构建注入 → 不改工具实现（工具已支持缓存）。
+
+**对标**：claude-code-best `QueryEngine` 持有 `readFileState: FileStateCache`，跨 turn 复用。
+
+**回归验证**：`cargo test review_ --tests --no-fail-fast`
+
+---
+
+### B2：QueryEngine 持有 total_usage（跨 turn 累积）
+
+**当前状态**：每次 turn 的 token 用量存在 `TurnIterationState.step_tokens_in/out`，turn 结束后丢失，无法统计整个会话的总 token 消耗。
+
+**目标状态**：`QueryEngine` 持有 `total_usage: Arc<Mutex<TotalTokenUsage>>`，每次 turn 结束时累加，提供 `get_total_usage()` 查询接口。
+
+**迁移路径**：新增字段和类型，在 `run_chat_turn_s4` 末尾 Step 6/7 之间累加，不影响现有 turn 逻辑。
+
+**回归验证**：`cargo test --tests --no-fail-fast 2>&1 | grep -E "FAILED|error\["`
+
+---
+
+### B3：Turn 内部多处 cancel checkpoint
+
+**当前状态**：`chat_turn_driver.rs` 仅在每次 iteration 末尾（Step 5f，L492-496）检查一次 `cancel.is_cancelled()`。工具执行期间（可能数十秒）无法响应取消，ESC 后需等到当前工具执行完才能停止。
+
+**目标状态**：在三处增加 checkpoint：
+- CP-1：`run_llm_step` 调用前（避免已 cancel 时仍发起 LLM 请求）
+- CP-2：`execute_round` 返回后（工具执行完立即检查）
+- CP-3：tool results 逐条 merge 时（长批次工具轮次中的中途取消）
+
+**迁移路径**：在 `run_turn` 主循环中三处插入 `if cancel.is_cancelled() { state.stream_cancelled = true; break 'turn; }`，不影响正常执行路径。
+
+**对标**：claude-code-best `query.ts` 6 处 checkpoint。
+
+**回归验证**：`cargo test review_query_engine_cancellation --tests`
+
+---
+
+### B4：Turn state 不可变更新保护
+
+**当前状态**：`state.messages.push(...)` 直接原地修改，cancel 后 state 可能处于半更新状态（assistant message 已 push 但 tool_results 未 push）。
+
+**目标状态**：引入 `append_messages_batch` 方法，将 assistant message 和对应的 tool_results 打包为一次 `extend`，保证 cancel 发生在批次之间而非批次内部。
+
+**迁移路径**：新增方法，替换现有 push 调用，不改 state 数据结构。
+
+**回归验证**：`cargo test review_ --tests --no-fail-fast`
+
+---
+
 ## 当前代码现状（阅读后确认）
 
 ### QueryEngine struct（`src-tauri/src/runtime/query_engine.rs`）

@@ -12,6 +12,85 @@
 
 ---
 
+## 改造视角
+
+> 本节说明每个修复点的"现状 → 目标"，帮助执行者理解改造意图，而非只是机械执行测试步骤。
+
+### A1：Cancel 后 synthetic tool_result 注入
+
+**当前状态**：`chat_turn_driver.rs` 的 `LlmStepResult::Cancelled` 分支（L418-421）仅设置 `stream_cancelled = true` 并 break，不对已发出但未收到结果的 `tool_use` 补充对应的 `tool_result`。下次调用 Anthropic API 时消息历史中 `tool_use` 无对应 `tool_result`，返回 HTTP 400。
+
+**目标状态**：cancel 发生后，在 break 前遍历 `state.messages`，为所有未配对的 `tool_use` 块注入 synthetic `tool_result`（内容："Tool execution was interrupted by user cancellation"）。下次继续对话时 API 调用正常。
+
+**迁移路径**：只改 `chat_turn_driver.rs` 的 Cancelled 分支，不影响正常 ToolCalls 路径。
+
+**回归验证**：`cargo test review_ --tests --no-fail-fast`
+
+---
+
+### A2：权限 Ask 路径接通
+
+**当前状态**：`query_engine.rs` L264-290 的 `AskRequired` 分支有 FIXME(S6) 注释，将 Ask 转为 warn log + 文字 tool_result 返回给 LLM，用户永远看不到权限确认。`RuntimeEventKind` 无 `PermissionAskRequired` variant，前端无对应事件处理。
+
+**目标状态**：`AskRequired` → emit `RuntimeEvent::PermissionAskRequired` → `tauri_event_adapter` 映射为 `"permission:ask"` 前端事件 → 前端收到后显示确认提示。本期实现"通知到前端"，不实现阻塞等待用户响应（完整交互式等待在 Φ1 专项）。
+
+**迁移路径**：
+1. `events.rs` 新增 `PermissionAskRequired` variant
+2. `tauri_event_adapter.rs` 新增映射
+3. `query_engine.rs` FIXME 处改为 emit 事件
+
+**回归验证**：`cargo test review_permission --tests`
+
+---
+
+### A3：std::Mutex → tokio::sync::Mutex
+
+**当前状态**：`run_registry.rs` 全部 `std::sync::Mutex::lock().unwrap()`，在 async 上下文持有 std Mutex 会阻塞 tokio 工作线程；若持锁线程 panic，Mutex 进入 poisoned 状态，后续所有 `unwrap()` 全部 panic。
+
+**目标状态**：改为 `tokio::sync::Mutex`（不会 poison），所有方法改为 `async fn`，`.unwrap()` 改为 `.map_err(...)`。
+
+**迁移路径**：纯机械替换，不改业务逻辑。注意所有调用方要加 `.await`。
+
+**回归验证**：`cargo test --tests --no-fail-fast 2>&1 | grep -E "FAILED|error\["`
+
+---
+
+### A4：Python session key 改为 per-run
+
+**当前状态**：部分调用路径仍用 `conversation_id` 作为 Python session key，导致同一 conversation 的多个 run 共享 Python 进程状态（全局变量、已导入包、`_written_files` 列表互相污染）。
+
+**目标状态**：所有调用路径统一走 `session_key_for_run(run_id)`，每个 run 有独立 Python session。
+
+**迁移路径**：grep 找出所有直接传 `conversation_id` 给 session manager 的调用点，逐一改为传 `run_id`。
+
+**回归验证**：`cargo test python --tests`
+
+---
+
+### A5：Sandbox path 边界绕过修复
+
+**当前状态**：`sandbox.py` 的 `_safe_open` 用 `abs_path.startswith(realpath(p))` 做白名单检查，`/workspace.backup/file` 能通过 `/workspace` 白名单（字符串前缀匹配而非路径前缀匹配）。
+
+**目标状态**：改为 `abs_path == realpath(p) or abs_path.startswith(realpath(p) + os.sep)`，确保路径边界正确。
+
+**迁移路径**：单行修改。
+
+**回归验证**：Python sandbox 单元测试
+
+---
+
+### A6：build_env_info 阻塞 tokio 线程
+
+**当前状态**：`context_builder.rs` 的 `build_env_info` 调用 `std::process::Command::new("git").output()`（同步阻塞系统调用），在 async 上下文中执行会阻塞整个 tokio 工作线程。
+
+**目标状态**：改为 `tokio::process::Command`，`build_env_info` 改为 `async fn`，调用方加 `.await`。
+
+**迁移路径**：修改 `context_builder.rs`，更新所有调用方的 await 链。
+
+**回归验证**：`cargo test context_builder --tests`
+
+---
+
 ## Task A1：Cancel 后 synthetic tool_result 注入
 
 **问题根因：** `chat_turn_driver.rs` 的 `LlmStepResult::Cancelled` 分支在工具执行中途被取消时，直接 `break 'turn`。此时 `state.messages` 里已追加了带 `tool_use` 块的 assistant message，但没有对应的 `tool_result`（role=tool）消息。下一轮用户发消息时 Anthropic API 拿到残缺对话历史，返回 400 "messages: final assistant content must end in a human turn"。

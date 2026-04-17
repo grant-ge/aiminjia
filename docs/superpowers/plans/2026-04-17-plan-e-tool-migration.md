@@ -12,6 +12,66 @@
 
 ---
 
+## 改造视角
+
+> 这是迁移计划，不是新功能开发。三个工具已有旧实现（PluginContext 路径），目标是将它们迁移到 RuntimeTool 路径，消除对全局 PluginContext 的依赖。
+
+### 整体迁移策略
+
+**当前状态**：`execute_python`、`generate_report`、`generate_chart` 三个核心工具全部走 `LegacyToolAdapter` → `PluginContext` 全局 service locator 路径，可以访问整个编排层对象（gateway、auth_manager 等），无能力隔离约束。
+
+**目标状态**：三个工具实现 `RuntimeTool` trait，通过 capability trait 注入最小依赖，`PluginContext` 依赖消除。旧实现文件保留（加 `#[allow(dead_code)]`），作为回滚保险，确认 zero regression 后再删除。
+
+**迁移模式（三个工具相同）**：
+```
+旧路径：ToolPlugin::execute(&PluginContext) → 访问任意全局对象
+新路径：RuntimeTool::execute(input, ToolExecutionContext) → 通过 capability trait 访问最小依赖
+```
+
+**执行顺序**：E1（trait 定义）→ E2（execute_python）→ E3（generate_report）→ E4（generate_chart）→ E5（注册 + 回归）
+
+---
+
+### E1：PythonExecution trait
+
+**当前状态**：`execute_python` 通过 `PluginContext.session_manager` 访问 `PythonSessionManager`，带走整个 context。
+
+**目标状态**：定义 `trait PythonExecution` 只暴露 execute_python 实际需要的操作，`DefaultPythonExecution` 包装 `PythonSessionManager`。
+
+**迁移影响**：仅新增文件，不改现有代码。
+
+---
+
+### E2：ExecutePythonRuntimeTool 完整实现
+
+**当前状态**：`src-tauri/src/runtime/tools/builtin/python.rs` 是 stub，execute 返回错误。生产路径仍走旧 `python_exec.rs`。
+
+**目标状态**：stub 升级为完整实现，通过 `PythonExecution` trait 执行，注册到 `try_build_request_scoped_tool`。旧 `python_exec.rs` 加 `#[allow(dead_code)]`。
+
+**迁移验证**：运行现有 Python 执行相关测试，确保行为一致。
+
+---
+
+### E3/E4：generate_report / generate_chart
+
+**当前状态**：两个工具都是 stub，生产路径走旧 `report_gen.rs` / `chart_gen.rs`。
+
+**目标状态**：分别定义 `ReportCapability` / `ChartCapability` trait，完整实现迁移，旧实现标 dead_code。
+
+---
+
+### 回归验证（整体）
+
+每个工具迁移后必须运行：
+```bash
+cd src-tauri && cargo test review_ --tests --no-fail-fast
+cd src-tauri && cargo test review_atomic_tool_closure_test --tests
+```
+
+确认新旧路径行为一致后，再进行下一个工具的迁移。
+
+---
+
 ## 现状（Pre-E）
 
 - `ExecutePythonRuntimeTool`（`runtime/tools/builtin/python.rs`）：stub 已注册，`execute()` 仍持有 `Option<PluginContext>` 桥接到 `handle_execute_python`
