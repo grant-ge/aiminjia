@@ -184,6 +184,7 @@ impl ToolRegistry {
             }
         }
 
+        schemas.sort_by(|a, b| a.name.cmp(&b.name));
         schemas
     }
 
@@ -252,6 +253,7 @@ impl ToolRegistry {
             }
         }
 
+        schemas.sort_by(|a, b| a.name.cmp(&b.name));
         schemas
     }
 
