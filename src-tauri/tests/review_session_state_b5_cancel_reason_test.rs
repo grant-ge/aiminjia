@@ -37,15 +37,11 @@ fn review_session_state_b5_child_cancel_does_not_override_parent_reason() {
 }
 
 #[test]
-fn review_session_state_b5_abandoned_child_is_cleaned_from_tracking() {
-    let parent = CancellationToken::new();
+fn review_session_state_b5_cancel_defaults_to_user_cancel() {
+    let token = CancellationToken::new();
 
-    {
-        let _child = parent.child_token();
-        assert_eq!(parent.debug_child_count(), 1);
-    }
+    token.cancel();
 
-    parent.compact_children_for_test();
-
-    assert_eq!(parent.debug_child_count(), 0);
+    assert!(token.is_cancelled());
+    assert_eq!(token.reason(), Some(CancellationReason::UserCancel));
 }

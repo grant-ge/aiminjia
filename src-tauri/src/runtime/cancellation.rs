@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CancellationReason {
@@ -9,6 +9,27 @@ pub enum CancellationReason {
     BackgroundStop,
 }
 
+impl CancellationReason {
+    fn as_state(self) -> u8 {
+        match self {
+            Self::UserCancel => 1,
+            Self::Interrupt => 2,
+            Self::SiblingError => 3,
+            Self::BackgroundStop => 4,
+        }
+    }
+
+    fn from_state(state: u8) -> Option<Self> {
+        match state {
+            1 => Some(Self::UserCancel),
+            2 => Some(Self::Interrupt),
+            3 => Some(Self::SiblingError),
+            4 => Some(Self::BackgroundStop),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CancellationToken {
     inner: Arc<TokenInner>,
@@ -16,18 +37,20 @@ pub struct CancellationToken {
 
 #[derive(Debug)]
 struct TokenInner {
-    cancelled: AtomicBool,
-    reason: Mutex<Option<CancellationReason>>,
+    cancel_state: AtomicU8,
     parent: Mutex<Option<Weak<TokenInner>>>,
     children: Mutex<Vec<Weak<TokenInner>>>,
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl CancellationToken {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(TokenInner {
-                cancelled: AtomicBool::new(false),
-                reason: Mutex::new(None),
+                cancel_state: AtomicU8::new(0),
                 parent: Mutex::new(None),
                 children: Mutex::new(Vec::new()),
             }),
@@ -38,15 +61,16 @@ impl CancellationToken {
     /// 线程安全：注册和取消检查在同一个 Mutex 临界区内完成，消除竞态。
     pub fn child_token(&self) -> CancellationToken {
         let child = CancellationToken::new();
-        *child.inner.parent.lock().unwrap() = Some(Arc::downgrade(&self.inner));
-        let mut children = self.inner.children.lock().unwrap();
+        *lock_or_recover(&child.inner.parent) = Some(Arc::downgrade(&self.inner));
+        let mut children = lock_or_recover(&self.inner.children);
         children.push(Arc::downgrade(&child.inner));
         self.compact_children_locked(&mut children);
-        let parent_was_cancelled = self.inner.cancelled.load(Ordering::SeqCst);
+        let parent_reason =
+            CancellationReason::from_state(self.inner.cancel_state.load(Ordering::SeqCst));
         drop(children);
 
-        if parent_was_cancelled {
-            child.cancel_with_optional_reason(self.reason());
+        if let Some(reason) = parent_reason {
+            child.cancel_with_reason(reason);
         }
         child
     }
@@ -56,39 +80,38 @@ impl CancellationToken {
     }
 
     pub fn cancel_with_reason(&self, reason: CancellationReason) {
-        self.cancel_with_optional_reason(Some(reason));
+        self.cancel_with_reason_internal(reason, || {});
     }
 
     pub fn reason(&self) -> Option<CancellationReason> {
-        *self
-            .inner
-            .reason
-            .lock()
-            .expect("cancellation reason mutex poisoned")
+        CancellationReason::from_state(self.inner.cancel_state.load(Ordering::SeqCst))
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.inner.cancelled.load(Ordering::SeqCst)
+        self.inner.cancel_state.load(Ordering::SeqCst) != 0
     }
 
-    fn cancel_with_optional_reason(&self, reason: Option<CancellationReason>) {
-        if self.inner.cancelled.swap(true, Ordering::SeqCst) {
+    fn cancel_with_reason_internal<F>(&self, reason: CancellationReason, after_mark_cancelled: F)
+    where
+        F: FnOnce(),
+    {
+        if self
+            .inner
+            .cancel_state
+            .compare_exchange(0, reason.as_state(), Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return;
         }
 
-        *self
-            .inner
-            .reason
-            .lock()
-            .expect("cancellation reason mutex poisoned") = reason;
-
+        after_mark_cancelled();
         self.propagate_to_children(reason);
         self.detach_from_parent();
     }
 
-    fn propagate_to_children(&self, reason: Option<CancellationReason>) {
+    fn propagate_to_children(&self, reason: CancellationReason) {
         let child_inners: Vec<Arc<TokenInner>> = {
-            let mut children = self.inner.children.lock().unwrap();
+            let mut children = lock_or_recover(&self.inner.children);
             let live_children = children.iter().filter_map(|weak| weak.upgrade()).collect();
             self.compact_children_locked(&mut children);
             live_children
@@ -96,7 +119,7 @@ impl CancellationToken {
 
         for child_inner in child_inners {
             let child_token = CancellationToken { inner: child_inner };
-            child_token.cancel_with_optional_reason(reason);
+            child_token.cancel_with_reason(reason);
         }
     }
 
@@ -105,12 +128,7 @@ impl CancellationToken {
     }
 
     fn detach_from_parent(&self) {
-        let parent = self
-            .inner
-            .parent
-            .lock()
-            .expect("cancellation parent mutex poisoned")
-            .clone();
+        let parent = lock_or_recover(&self.inner.parent).clone();
         let Some(parent) = parent else {
             return;
         };
@@ -118,7 +136,7 @@ impl CancellationToken {
             return;
         };
 
-        let mut children = parent_inner.children.lock().unwrap();
+        let mut children = lock_or_recover(&parent_inner.children);
         children.retain(|weak| {
             if weak.strong_count() == 0 {
                 return false;
@@ -129,15 +147,26 @@ impl CancellationToken {
         });
     }
 
-    #[doc(hidden)]
-    pub fn compact_children_for_test(&self) {
-        let mut children = self.inner.children.lock().unwrap();
+    #[cfg(test)]
+    fn compact_children_for_test(&self) {
+        let mut children = lock_or_recover(&self.inner.children);
         self.compact_children_locked(&mut children);
     }
 
-    #[doc(hidden)]
-    pub fn debug_child_count(&self) -> usize {
-        self.inner.children.lock().unwrap().len()
+    #[cfg(test)]
+    fn debug_child_count(&self) -> usize {
+        lock_or_recover(&self.inner.children).len()
+    }
+
+    #[cfg(test)]
+    fn cancel_with_reason_after_marking_cancelled_for_test<F>(
+        &self,
+        reason: CancellationReason,
+        after_mark_cancelled: F,
+    ) where
+        F: FnOnce(),
+    {
+        self.cancel_with_reason_internal(reason, after_mark_cancelled);
     }
 }
 
@@ -257,5 +286,39 @@ mod tests {
             );
             assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
         }
+    }
+
+    #[test]
+    fn child_created_during_parent_cancel_still_inherits_reason() {
+        use std::sync::Barrier;
+
+        let parent = Arc::new(CancellationToken::new());
+        let barrier = Arc::new(Barrier::new(2));
+
+        let cancel_parent = parent.clone();
+        let cancel_barrier = barrier.clone();
+        let cancel_thread = std::thread::spawn(move || {
+            cancel_parent.cancel_with_reason_after_marking_cancelled_for_test(
+                CancellationReason::Interrupt,
+                || {
+                    cancel_barrier.wait();
+                },
+            );
+        });
+
+        while !parent.is_cancelled() {
+            std::thread::yield_now();
+        }
+
+        let child = parent.child_token();
+        barrier.wait();
+        cancel_thread.join().unwrap();
+
+        assert!(child.is_cancelled());
+        assert_eq!(
+            child.reason(),
+            Some(CancellationReason::Interrupt),
+            "child created after parent entered cancelled state must still inherit the same reason",
+        );
     }
 }
