@@ -1018,7 +1018,7 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
         })
     }
 
-    async fn get_env_info(&self) -> Result<String, TurnError> {
+    async fn get_env_info(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok(self.env_info.clone())
     }
 
@@ -1071,4 +1071,131 @@ async fn driver_s4_empty_env_info_does_not_break_context() {
 
     let result = driver.run_chat_turn(&mut turn, &request).await;
     assert!(result.is_ok(), "must work when env_info is empty");
+}
+
+// ── S4-Task3: CountingEnvInfoExecutor — 次数、顺序、错误回退 ─────────────────
+
+struct CountingEnvInfoExecutor {
+    env_info: Result<String, ()>,
+    get_env_info_calls: std::sync::Mutex<u32>,
+    captured_dynamic_contexts: std::sync::Mutex<Vec<String>>,
+}
+
+impl CountingEnvInfoExecutor {
+    fn ok(env_info: impl Into<String>) -> Self {
+        Self {
+            env_info: Ok(env_info.into()),
+            get_env_info_calls: std::sync::Mutex::new(0),
+            captured_dynamic_contexts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn err() -> Self {
+        Self {
+            env_info: Err(()),
+            get_env_info_calls: std::sync::Mutex::new(0),
+            captured_dynamic_contexts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_dynamic_contexts
+            .lock()
+            .unwrap()
+            .push(input.dynamic_context.to_string());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        })
+    }
+
+    async fn get_env_info(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        *self.get_env_info_calls.lock().unwrap() += 1;
+        match &self.env_info {
+            Ok(v) => Ok(v.clone()),
+            Err(_) => Err(TurnError::LlmError("boom".to_string())),
+        }
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_env_info_precedes_precompute_result_in_dynamic_context() {
+    let executor = Arc::new(CountingEnvInfoExecutor::ok(
+        "\n\n[当前环境]\n工作目录: /tmp/test\nPlatform: darwin",
+    ));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-env-precompute");
+    let request = ChatTurnRequest::new("conv-env-precompute", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_dynamic_contexts.lock().unwrap();
+    assert!(!captured.is_empty(), "must capture dynamic_context");
+    let ctx = &captured[0];
+    let env_pos = ctx.find("[当前环境]").expect("missing env info");
+    if let Some(pre_pos) = ctx.find("[precompute_result]") {
+        assert!(env_pos < pre_pos, "env_info must precede precompute_result");
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_get_env_info_called_once_per_turn() {
+    let executor = Arc::new(CountingEnvInfoExecutor::ok(
+        "\n\n[当前环境]\n工作目录: /tmp/test\nPlatform: darwin",
+    ));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-env-once");
+    let request = ChatTurnRequest::new("conv-env-once", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    assert_eq!(
+        *executor.get_env_info_calls.lock().unwrap(),
+        1,
+        "get_env_info must be called once per turn"
+    );
+}
+
+#[tokio::test]
+async fn driver_s4_get_env_info_error_falls_back_to_empty_string() {
+    let executor = Arc::new(CountingEnvInfoExecutor::err());
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-env-err");
+    let request = ChatTurnRequest::new("conv-env-err", "hello", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_ok(), "turn must continue when get_env_info fails");
+
+    let captured = executor.captured_dynamic_contexts.lock().unwrap();
+    assert!(!captured.is_empty(), "must capture dynamic_context");
+    assert!(
+        !captured[0].contains("[当前环境]"),
+        "failed get_env_info should fall back to empty string, got: {}",
+        captured[0]
+    );
 }

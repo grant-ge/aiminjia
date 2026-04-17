@@ -903,6 +903,38 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         Ok(chat_messages)
     }
+
+    async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
+        use crate::runtime::chat::context_builder::build_env_info;
+
+        let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
+
+        let authorized = chat_runtime_impl::load_authorized_workspace(
+            &self.services.app,
+            conversation_id,
+        );
+        let authorized_tuple = authorized.as_ref().map(|aw| {
+            (
+                aw.root_path.to_string_lossy().into_owned(),
+                aw.display_name.clone(),
+            )
+        });
+        let authorized_ref = authorized_tuple
+            .as_ref()
+            .map(|(p, n)| (p.as_str(), n.as_str()));
+
+        let env_info = build_env_info(&workspace_path, authorized_ref);
+
+        log::info!(
+            "[get_env_info] conv={} workspace={} authorized={} env_info_len={}",
+            conversation_id,
+            workspace_path.display(),
+            authorized.is_some(),
+            env_info.len()
+        );
+
+        Ok(env_info)
+    }
 }
 
 #[cfg(test)]

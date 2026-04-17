@@ -163,7 +163,8 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 返回值将被注入到每次 iteration 的 dynamic_context 中。
     /// 默认实现返回空字符串（向后兼容旧 mock executor）。
     /// 生产 executor 必须 override。
-    async fn get_env_info(&self) -> Result<String, TurnError> {
+    async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
+        let _ = conversation_id;
         Ok(String::new())
     }
 }
@@ -360,7 +361,7 @@ impl RuntimeChatTurnDriver {
 
         // 获取会话级环境信息（整个 turn 内稳定）
         let env_info = executor
-            .get_env_info()
+            .get_env_info(&request.conversation_id)
             .await
             .unwrap_or_else(|e| {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);

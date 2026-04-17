@@ -78,16 +78,24 @@ pub(crate) fn load_authorized_workspace(
 
 fn build_workspace_context(
     authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
+    fallback_workspace_path: Option<&std::path::Path>,
 ) -> String {
-    let Some(authorized_workspace) = authorized_workspace else {
-        return String::new();
-    };
+    if let Some(aw) = authorized_workspace {
+        return format!(
+            "\n\n[已连接本地目录]\n- 名称: {}\n- 根目录: {}\n- 当前会话可以直接读取这个目录，不需要先上传或复制文件。\n- 处理本地目录时，优先使用 list_directory / read_workspace_file / search_files / get_file_info。\n- 只有处理用户上传的附件时，才使用 load_file(file_id)。\n- 如果需要进一步计算或生成产物，再结合 execute_python。",
+            aw.display_name,
+            aw.root_path.display()
+        );
+    }
 
-    format!(
-        "\n\n[已连接本地目录]\n- 名称: {}\n- 根目录: {}\n- 当前会话可以直接读取这个目录，不需要先上传或复制文件。\n- 处理本地目录时，优先使用 list_directory / read_workspace_file / search_files / get_file_info。\n- 只有处理用户上传的附件时，才使用 load_file(file_id)。\n- 如果需要进一步计算或生成产物，再结合 execute_python。",
-        authorized_workspace.display_name,
-        authorized_workspace.root_path.display()
-    )
+    if let Some(wp) = fallback_workspace_path {
+        return format!(
+            "\n\n[工作目录]\n- 路径: {}\n- 处理文件时使用 list_directory / read_workspace_file / search_files。",
+            wp.display()
+        );
+    }
+
+    String::new()
 }
 
 pub(crate) fn build_llm_content(
@@ -1683,7 +1691,7 @@ async fn agent_loop(
     };
 
     // Build workspace/file context and analysis notes for the system prompt
-    let workspace_context = build_workspace_context(authorized_workspace.as_ref());
+    let workspace_context = build_workspace_context(authorized_workspace.as_ref(), Some(&workspace_path));
     let file_context = build_file_context(&db, &conversation_id, run_id.as_str());
 
     let current_step_config = step_config;
@@ -3995,7 +4003,7 @@ mod tests {
             display_name: "customer-data".to_string(),
         };
 
-        let ctx = build_workspace_context(Some(&authorized));
+        let ctx = build_workspace_context(Some(&authorized), None);
 
         assert!(ctx.contains("[已连接本地目录]"));
         assert!(ctx.contains("customer-data"));
@@ -4006,7 +4014,7 @@ mod tests {
 
     #[test]
     fn test_build_workspace_context_without_authorization_is_empty() {
-        assert!(build_workspace_context(None).is_empty());
+        assert!(build_workspace_context(None, None).is_empty());
     }
 
     #[test]
