@@ -192,3 +192,31 @@ fn execute_python_check_permissions_denies_dangerous_code() {
         "dangerous code should be denied by check_permissions"
     );
 }
+
+// Task 3.3 tests
+
+#[test]
+fn generate_report_tool_is_runtime_tool_type() {
+    use app_lib::runtime::tools::builtin::report::GenerateReportRuntimeTool;
+    use app_lib::runtime::tools::RuntimeTool;
+
+    let tool = GenerateReportRuntimeTool::stub();
+    assert_eq!(tool.definition().id, "generate_report");
+    assert!(
+        !tool.is_concurrency_safe(&serde_json::json!({})),
+        "generate_report writes files, not concurrency safe"
+    );
+}
+
+#[test]
+fn generate_chart_tool_is_runtime_tool_type() {
+    use app_lib::runtime::tools::builtin::chart::GenerateChartRuntimeTool;
+    use app_lib::runtime::tools::RuntimeTool;
+
+    let tool = GenerateChartRuntimeTool::stub();
+    assert_eq!(tool.definition().id, "generate_chart");
+    assert!(
+        !tool.is_concurrency_safe(&serde_json::json!({})),
+        "generate_chart writes files, not concurrency safe"
+    );
+}
