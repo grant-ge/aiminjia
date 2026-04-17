@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
@@ -20,6 +21,7 @@ use crate::transport::tauri_event_adapter::TauriEventAdapter;
 #[derive(Clone)]
 pub struct SessionRuntime {
     query_engine: QueryEngine,
+    session_query_engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
     event_bus: RuntimeEventBus,
     /// S4 executor: owns the query loop; executor is a provider streaming adapter only.
     /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`.
@@ -40,6 +42,7 @@ impl SessionRuntime {
     pub fn new(query_engine: QueryEngine, event_bus: RuntimeEventBus) -> Self {
         Self {
             query_engine,
+            session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             event_bus,
             llm_executor: None,
             authorized_workspace_store: None,
@@ -59,6 +62,7 @@ impl SessionRuntime {
     ) -> Self {
         Self {
             query_engine,
+            session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             event_bus,
             llm_executor: Some(executor),
             authorized_workspace_store: None,
@@ -170,9 +174,15 @@ impl SessionRuntime {
                 root_path: aw.root_path,
                 display_name: aw.display_name,
             });
-        self.query_engine
-            .clone()
-            .with_authorized_workspace(authorized_workspace)
+        let mut engines = self
+            .session_query_engines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let session_engine = engines
+            .entry(session_id.as_str().to_string())
+            .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
+            .clone();
+        session_engine.with_authorized_workspace(authorized_workspace)
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
@@ -275,6 +285,30 @@ mod tests {
         assert_eq!(
             seen_root.lock().unwrap().clone(),
             Some(external_workspace.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn query_engine_for_session_reuses_state_within_session_and_isolates_across_sessions() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session_a = crate::runtime::ids::SessionId::new("session-b2-a");
+        let session_b = crate::runtime::ids::SessionId::new("session-b2-b");
+
+        let engine_a_1 = runtime.query_engine_for_session(&session_a);
+        engine_a_1.accumulate_usage(5, 7);
+
+        let usage_a_2 = runtime.query_engine_for_session(&session_a).get_total_usage();
+        assert_eq!(usage_a_2.tokens_in, 5);
+        assert_eq!(usage_a_2.tokens_out, 7);
+
+        let usage_b = runtime.query_engine_for_session(&session_b).get_total_usage();
+        assert_eq!(
+            usage_b.tokens_in, 0,
+            "different sessions must not share total_usage.tokens_in"
+        );
+        assert_eq!(
+            usage_b.tokens_out, 0,
+            "different sessions must not share total_usage.tokens_out"
         );
     }
 }

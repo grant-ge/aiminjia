@@ -60,6 +60,19 @@ impl QueryEngine {
         }
     }
 
+    /// Clone static runtime configuration while creating fresh per-session state.
+    pub fn clone_with_fresh_session_state(&self) -> Self {
+        Self {
+            tool_dispatcher: self.tool_dispatcher.clone(),
+            workspace_path: self.workspace_path.clone(),
+            authorized_workspace: self.authorized_workspace.clone(),
+            browser_available: self.browser_available,
+            file_ops: self.file_ops.clone(),
+            read_file_state: Arc::new(FileStateCache::new()),
+            total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
+        }
+    }
+
     /// Attach a workspace path so that workspace-scoped tools executed through
     /// this engine receive a properly populated `CapabilityContext`.
     pub fn with_workspace_path(mut self, workspace_path: PathBuf) -> Self {
