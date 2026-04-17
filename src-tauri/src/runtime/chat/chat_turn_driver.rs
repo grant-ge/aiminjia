@@ -250,6 +250,15 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
     injected
 }
 
+/// Shared cancel tail for all turn-level checkpoints.
+///
+/// Keeps early checkpoints (CP-1/2/3) behavior-aligned with the original 5f
+/// cancellation path by injecting missing synthetic tool results first.
+pub fn mark_turn_cancelled_with_synthetic_results(state: &mut TurnIterationState) {
+    inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
+    state.stream_cancelled = true;
+}
+
 fn permission_ask_event_from_round_result(
     round_result: &ToolRoundResult,
 ) -> Option<RuntimeEventKind> {
@@ -479,7 +488,7 @@ impl RuntimeChatTurnDriver {
 
             // CP-1: check cancellation before invoking provider.
             if cancel.is_cancelled() {
-                state.stream_cancelled = true;
+                mark_turn_cancelled_with_synthetic_results(&mut state);
                 break 'turn;
             }
 
@@ -548,7 +557,7 @@ impl RuntimeChatTurnDriver {
 
                     // CP-2: check cancellation right after execute_round.
                     if cancel.is_cancelled() {
-                        state.stream_cancelled = true;
+                        mark_turn_cancelled_with_synthetic_results(&mut state);
                         break 'turn;
                     }
 
@@ -573,7 +582,7 @@ impl RuntimeChatTurnDriver {
                         state.messages.push(msg);
                         // CP-3: check cancellation after each merged tool result.
                         if cancel.is_cancelled() {
-                            state.stream_cancelled = true;
+                            mark_turn_cancelled_with_synthetic_results(&mut state);
                             break 'turn;
                         }
                     }
@@ -617,8 +626,7 @@ impl RuntimeChatTurnDriver {
 
             // ── 5f: per-iteration cancel check ───────────────────────────────
             if cancel.is_cancelled() {
-                inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
-                state.stream_cancelled = true;
+                mark_turn_cancelled_with_synthetic_results(&mut state);
                 break 'turn;
             }
         }
