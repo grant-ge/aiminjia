@@ -614,6 +614,9 @@ impl RuntimeChatTurnDriver {
             state.stream_cancelled,
         );
 
+        self.query_engine
+            .accumulate_usage(state.step_tokens_in, state.step_tokens_out);
+
         // ── Step 7: Persist assistant message ─────────────────────────────────
         let message_id = executor
             .persist_assistant_message(

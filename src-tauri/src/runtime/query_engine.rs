@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use serde_json::json;
@@ -33,6 +33,14 @@ pub struct QueryEngine {
     file_ops: Option<Arc<dyn FileOperations>>,
     /// Session-scoped cache shared by all read-file tool calls in this engine.
     read_file_state: Arc<FileStateCache>,
+    /// Session-scoped accumulated token usage across turns.
+    total_usage: Arc<Mutex<TotalTokenUsage>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TotalTokenUsage {
+    pub tokens_in: u64,
+    pub tokens_out: u64,
 }
 
 impl QueryEngine {
@@ -48,6 +56,7 @@ impl QueryEngine {
             browser_available: false,
             file_ops: None,
             read_file_state: Arc::new(FileStateCache::new()),
+            total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
         }
     }
 
@@ -90,6 +99,22 @@ impl QueryEngine {
 
     pub fn read_file_state(&self) -> Arc<FileStateCache> {
         self.read_file_state.clone()
+    }
+
+    pub fn get_total_usage(&self) -> TotalTokenUsage {
+        self.total_usage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub fn accumulate_usage(&self, tokens_in: u64, tokens_out: u64) {
+        let mut usage = self
+            .total_usage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        usage.tokens_in += tokens_in;
+        usage.tokens_out += tokens_out;
     }
 
     pub async fn run(&self, turn: &mut TurnState, bus: &RuntimeEventBus) -> Result<()> {
