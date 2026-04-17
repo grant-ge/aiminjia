@@ -311,7 +311,9 @@ impl ToolRegistry {
                     browser_available,
                     file_ops,
                     read_file_state: None,
-                    file_reading_limits: None,
+                    file_reading_limits: Some(
+                        crate::runtime::tools::capability::FileReadingLimits::default(),
+                    ),
                     notification_sink: None,
                 };
                 std::sync::Arc::new(cap)

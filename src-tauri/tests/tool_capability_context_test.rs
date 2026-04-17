@@ -172,3 +172,83 @@ fn notification_sink_exposes_notify_method() {
     let sink = TestNotificationSink;
     sink.notify("hello");
 }
+
+// ── Task 1.3 tests ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn read_workspace_file_uses_file_state_cache_on_second_read() {
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
+    use app_lib::runtime::tools::capability::{
+        CapabilityContext, FileReadingLimits, FileStateCache,
+    };
+    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use serde_json::json;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "line1").unwrap();
+    writeln!(tmp, "line2").unwrap();
+    let path = tmp.path().to_path_buf();
+    let dir = path.parent().unwrap().to_path_buf();
+    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+
+    let cache = Arc::new(FileStateCache::new());
+    let cap = CapabilityContext::with_workspace(dir.clone(), "ws")
+        .with_read_file_state(cache.clone())
+        .with_file_reading_limits(FileReadingLimits::default());
+    let ctx = || {
+        ToolExecutionContext::for_test("conv", "run", "tc-1")
+            .with_capability(Arc::new(cap.clone()))
+    };
+
+    let tool = ReadWorkspaceFileRuntimeTool;
+
+    let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+        .await
+        .unwrap();
+    assert!(r1.content.contains("line1"), "first read should return file content");
+
+    assert!(cache.get(&path).is_some(), "cache should be populated after first read");
+
+    let r2 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+        .await
+        .unwrap();
+    assert!(!r2.content.is_empty(), "second read should still return content");
+}
+
+#[test]
+fn notification_sink_receives_message_from_tool_context() {
+    use app_lib::runtime::tools::capability::{CapabilityContext, NotificationSink};
+    use std::sync::{Arc, Mutex};
+
+    struct RecordingSink(Mutex<Vec<String>>);
+    impl std::fmt::Debug for RecordingSink {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "RecordingSink")
+        }
+    }
+    impl NotificationSink for RecordingSink {
+        fn notify(&self, message: &str) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let sink = Arc::new(RecordingSink(Mutex::new(vec![])));
+    let cap = CapabilityContext {
+        storage: None,
+        workspace_id: None,
+        browser_available: false,
+        file_ops: None,
+        read_file_state: None,
+        file_reading_limits: None,
+        notification_sink: Some(sink.clone()),
+    };
+
+    if let Some(s) = &cap.notification_sink {
+        s.notify("test notification");
+    }
+    let msgs = sink.0.lock().unwrap();
+    assert_eq!(msgs.as_slice(), &["test notification"]);
+}

@@ -7,8 +7,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 use crate::runtime::tools::catalog::TOOL_CATALOG;
+use crate::runtime::tools::capability::FileState;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -134,18 +136,49 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
+        let capability = ctx.capability.as_ref();
         let root = require_workspace_root(&ctx)?;
         let rel = input
             .get("path")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
-        let max_bytes = input
-            .get("max_bytes")
-            .and_then(Value::as_u64)
-            .unwrap_or(1_048_576) as usize;
+        let max_bytes = capability
+            .and_then(|cap| cap.file_reading_limits.as_ref())
+            .map(|limits| limits.max_size_bytes)
+            .or_else(|| input.get("max_bytes").and_then(Value::as_u64).map(|v| v as usize))
+            .unwrap_or(1_048_576);
+        let offset = input.get("offset").and_then(Value::as_u64).map(|v| v as usize);
+        let limit = input.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+        let joined = root.join(rel);
         let resolved = resolve_path(&root, rel)?;
         if !resolved.is_file() {
             return Err(ToolError::ExecutionFailed(format!("Not a file: {rel}")));
+        }
+        let metadata = std::fs::metadata(&resolved)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let mtime_secs = metadata
+            .modified()
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
+            .as_secs();
+        let cache = capability.and_then(|cap| cap.read_file_state.as_ref());
+        if offset.is_none() && limit.is_none() {
+            if let Some(state) = cache.and_then(|cache| cache.get(&resolved)) {
+                if state.mtime_secs == mtime_secs && state.offset.is_none() && state.limit.is_none()
+                {
+                    let mut result = json!({
+                        "path": rel,
+                        "content": state.content,
+                        "size": metadata.len(),
+                        "cached": true,
+                    });
+                    if metadata.len() > max_bytes as u64 {
+                        result["truncated"] = json!(true);
+                    }
+                    return Ok(tool_result("read_workspace_file", result));
+                }
+            }
         }
         let bytes = std::fs::read(&resolved)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
@@ -153,6 +186,18 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let content =
             String::from_utf8_lossy(if truncated { &bytes[..max_bytes] } else { &bytes })
                 .to_string();
+        if let Some(cache) = cache {
+            let state = FileState {
+                content: content.clone(),
+                mtime_secs,
+                offset: None,
+                limit: None,
+            };
+            cache.set(resolved.clone(), state.clone());
+            if joined != resolved {
+                cache.set(joined, state);
+            }
+        }
         let mut result = json!({ "path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
