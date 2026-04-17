@@ -61,11 +61,10 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     assert_eq!(names, sorted, "get_schemas_filtered must return tools sorted by name");
 }
 
-// ── Task 2.1 tests ──────────────────────────────────────────────────────────
+// Task 2.1 tests
 
 #[test]
 fn tool_definition_default_read_only_is_false() {
-    use app_lib::runtime::tools::definition::ToolDefinition;
     let def = ToolDefinition::new("test_tool", "desc");
     assert!(!def.default_read_only);
     assert!(!def.default_destructive);
@@ -73,7 +72,49 @@ fn tool_definition_default_read_only_is_false() {
 
 #[test]
 fn tool_definition_with_read_only_flag() {
-    use app_lib::runtime::tools::definition::ToolDefinition;
     let def = ToolDefinition::new("read_tool", "desc").with_read_only(true);
     assert!(def.default_read_only);
+}
+
+#[test]
+fn tool_definition_with_destructive_flag() {
+    let def = ToolDefinition::new("write_tool", "desc").with_destructive(true);
+    assert!(def.default_destructive);
+}
+
+#[test]
+fn runtime_tool_default_predicates_follow_definition_flags() {
+    use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext, ToolResult};
+    use async_trait::async_trait;
+    use serde_json::{json, Value};
+
+    struct PredicateTool(ToolDefinition);
+
+    #[async_trait]
+    impl RuntimeTool for PredicateTool {
+        fn definition(&self) -> ToolDefinition {
+            self.0.clone()
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new(self.0.id.clone(), "ok", None))
+        }
+    }
+
+    let default_tool = PredicateTool(ToolDefinition::new("default_tool", "desc"));
+    assert!(!default_tool.is_concurrency_safe(&json!({})));
+    assert!(!default_tool.is_read_only(&json!({})));
+    assert!(!default_tool.is_destructive(&json!({})));
+
+    let flagged_tool = PredicateTool(
+        ToolDefinition::new("flagged_tool", "desc")
+            .with_read_only(true)
+            .with_destructive(true),
+    );
+    assert!(flagged_tool.is_read_only(&json!({})));
+    assert!(flagged_tool.is_destructive(&json!({})));
 }
