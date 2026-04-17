@@ -671,7 +671,7 @@ feat(tools): EditFileTool — edit_file with old/new string replace + cache upda
 
 ## Task 3：BashTool（`bash`）
 
-BashTool 是四个工具中复杂度最高的，核心难点在于：**异步进程执行 + CancellationToken 联动 + timeout 处理**。设计参考 claude-code-best `BashTool.tsx` 的 timeout/background 策略（超时后不 kill，让进程转后台并返回 timeout 提示），但不使用 bash security 的全套正则校验——代之以最小危险 pattern 检查。
+BashTool 是四个工具中复杂度最高的，核心难点在于：**异步进程执行 + CancellationToken 联动 + timeout 处理**。对照 claude-code-best `BashTool.tsx` / `ShellCommand.ts` 之后，Task 3 需要先做一处设计校准：**claude-code-best 并不是“所有 timeout 都转后台”**，而是“只有具备 shell background task 基础设施、且命令允许 auto-background 时，timeout 才转后台；否则 timeout 直接终止前台进程”。lotus 当前还没有 `LocalShellTask` / `TaskOutput` / background notification 这一整套 shell 后台生命周期，所以本 Task 的正确对标落点应当是：**先实现前台 BashTool**——timeout/cancel 都终止子进程，保留 claude-code-best 的前台执行语义；`run_in_background` / timeout auto-background 作为后续 shell task 基础设施建设再补，不在本 Task 伪造。
 
 ### 3.1 Catalog 注册
 
@@ -681,9 +681,9 @@ BashTool 是四个工具中复杂度最高的，核心难点在于：**异步进
 c.insert(CatalogEntry::new(
     ToolDefinition::new(
         "bash",
-        "在授权工作目录中执行 shell 命令。默认 timeout 120s，超时后进程转后台并返回提示。\
-        \n\n安全约束：拒绝明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）。\
-        \n\n stdout + stderr 合并返回。",
+        "在授权工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
+        \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
+        \n\n stdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
     )
     .with_kind(ToolKind::Primitive)
     .with_destructive(true)
@@ -713,10 +713,11 @@ c.insert(CatalogEntry::new(
 //! BashTool — 在授权工作目录中执行 shell 命令（tokio::process，可取消）。
 //!
 //! 设计原则：
-//! - CancellationToken 通过 `tokio::select!` 监听，token cancel 时 kill 进程
-//! - Timeout 超时后：不 kill 进程（让其转后台），返回 timeout 提示 + 已有输出
-//! - stdout + stderr 通过 `Stdio::piped()` 合并（process 级 stderr→stdout 重定向）
-//! - is_destructive = true（默认），check_permissions 检查明显危险 pattern
+//! - CancellationToken 通过 `tokio::select!` 监听；当前 lotus 无 shell background infra，任意 cancel 都直接 kill 子进程
+//! - Timeout 走 claude-code-best 的“前台路径”语义：终止前台进程并返回 timeout 错误；不伪造 background task
+//! - 非零 exit code 默认按错误处理；`grep`/`rg`/`find`/`diff`/`test`/`[` 保留 claude-code-best 的 command semantics 例外
+//! - stdout/stderr 分管道并发读取、最终拼接，避免 pipe buffer 死锁
+//! - is_destructive = true（默认），仅对不可恢复/越权 pattern 做最小 hard deny
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -740,7 +741,8 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
 /// 明显危险的命令 pattern（最小集，仅覆盖不可恢复/越权操作）。
-/// 触发时返回 PermissionDecision::Deny，不允许执行。
+/// 与 claude-code-best 的 parser-driven ask 流程不同，这里仅保留最小 hard deny；
+/// 更细的 ask/classifier 语义留待后续 shell permission 基础设施补齐。
 static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ("rm -rf /", "Refusing: rm -rf / would destroy the entire filesystem"),
     ("rm -rf /*", "Refusing: rm -rf /* would destroy the entire filesystem"),
@@ -817,8 +819,8 @@ impl RuntimeTool for BashTool {
             .unwrap_or(DEFAULT_TIMEOUT_SECS)
             .min(MAX_TIMEOUT_SECS);
 
-        // 启动进程：在 authorized workspace root 目录下，用 /bin/sh 执行命令
-        // stderr 重定向到 stdout（合并输出）
+        // 启动进程：在 authorized workspace root 目录下执行 shell 命令。
+        // 当前阶段不引入持久 shell/cwd；每次调用都从 workspace root 开始。
         let mut child = Command::new("/bin/sh")
             .arg("-c")
             .arg(command)
@@ -837,8 +839,8 @@ impl RuntimeTool for BashTool {
 
         // 读取输出（限制最大字节）+ 等待进程结束，三路 select：
         //   1. 进程自然结束（读完 stdout/stderr + wait）
-        //   2. timeout
-        //   3. CancellationToken cancel（kill 进程）
+        //   2. timeout → kill 子进程并返回 ToolError
+        //   3. CancellationToken cancel → kill 子进程并返回 ToolError
 
         tokio::select! {
             result = async {
@@ -869,37 +871,41 @@ impl RuntimeTool for BashTool {
                     format!("{stdout_str}{stderr_str}")
                 };
                 let exit_code = status_res.ok().and_then(|s| s.code());
-                let success = exit_code.map(|c| c == 0).unwrap_or(false);
+                let exit_code = exit_code.unwrap_or(-1);
+                let semantics = interpret_command_result(command, exit_code);
+                if semantics.is_error {
+                    return Err(ToolError::ExecutionFailed(format_command_failure(
+                        command,
+                        exit_code,
+                        &combined,
+                        semantics.message.as_deref(),
+                    )));
+                }
+
                 let truncated = combined.len() >= MAX_OUTPUT_BYTES;
                 Ok(tool_result_bash(
                     &combined,
                     json!({
                         "command": command,
                         "exit_code": exit_code,
-                        "success": success,
-                        "output": combined,
+                        "stdout_stderr": combined,
                         "truncated": truncated,
+                        "semantic_message": semantics.message,
                     }),
                 ))
             }
             _ = tokio::time::sleep(timeout_duration) => {
-                // Timeout：进程转后台，不 kill，返回 timeout 提示
-                // （与 claude-code-best BashTool 的 background 行为对齐）
-                Ok(tool_result_bash(
-                    format!("[timeout after {timeout_secs}s] Command is still running in the background."),
-                    json!({
-                        "command": command,
-                        "timeout": true,
-                        "timeout_secs": timeout_secs,
-                    }),
-                ))
+                let _ = child.kill().await;
+                Err(ToolError::ExecutionFailed(format!(
+                    "Command timed out after {timeout_secs}s"
+                )))
             }
             _ = async {
                 while !cancellation.is_cancelled() {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
             } => {
-                // CancellationToken 触发：kill 进程
+                // CancellationToken 触发：当前 lotus 无 shell background infra，直接 kill 进程
                 let _ = child.kill().await;
                 Err(ToolError::ExecutionFailed("Command cancelled".into()))
             }
@@ -965,22 +971,45 @@ async fn bash_executes_echo_command() {
     assert!(result.content.contains("hello"), "Output should contain 'hello': {}", result.content);
 }
 
-/// exit code 非 0 时返回结果（不报 ToolError）
+/// 默认语义下，非零 exit code 应返回 ToolError（对标 claude-code-best）
 #[tokio::test]
-async fn bash_returns_nonzero_exit_code() {
+async fn bash_returns_error_for_nonzero_exit_code() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
     let tool = BashTool;
     let result = tool
         .execute(json!({ "command": "exit 42" }), ctx)
+        .await;
+
+    assert!(result.is_err(), "exit 42 should surface as tool error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("42") || err.contains("exit code"),
+        "Should mention exit code: {err}"
+    );
+}
+
+/// grep/rg/find/diff/test 等沿用 claude-code-best command semantics：
+/// exit 1 可作为“无匹配/不同/条件为假”的非错误结果返回
+#[tokio::test]
+async fn bash_allows_grep_exit_one_as_non_error() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("sample.txt"), "hello world\n").unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool;
+    let result = tool
+        .execute(
+            json!({ "command": "grep needle sample.txt" }),
+            ctx,
+        )
         .await
         .unwrap();
 
     let data = result.data.unwrap();
-    let exit_code = data["exit_code"].as_i64();
-    assert_eq!(exit_code, Some(42), "Should capture exit code 42");
-    assert_eq!(data["success"], json!(false));
+    assert_eq!(data["exit_code"], json!(1));
+    assert_eq!(data["semantic_message"], json!("No matches found"));
 }
 
 /// 命令在工作目录下执行（cwd = workspace root）
@@ -1023,9 +1052,9 @@ async fn bash_merges_stdout_and_stderr() {
     assert!(result.content.contains("STDERR"), "Should contain STDERR: {}", result.content);
 }
 
-/// timeout 返回 timeout 提示（使用 sleep 命令 + 极短 timeout）
+/// timeout 走前台 kill 路径：返回 ToolError，而不是伪造 background result
 #[tokio::test]
-async fn bash_returns_timeout_message_on_timeout() {
+async fn bash_returns_error_on_timeout() {
     let tmp = TempDir::new().unwrap();
     let ctx = make_ctx(&tmp);
 
@@ -1035,16 +1064,18 @@ async fn bash_returns_timeout_message_on_timeout() {
             json!({ "command": "sleep 10", "timeout_secs": 1 }),
             ctx,
         )
-        .await
-        .unwrap(); // timeout 不是 ToolError，返回 Ok 的 timeout 提示
+        .await;
 
+    assert!(result.is_err(), "timeout should surface as tool error");
+    let err = result.unwrap_err().to_string();
     assert!(
-        result.content.contains("timeout") || result.content.contains("running in the background"),
-        "Should indicate timeout: {}",
-        result.content
+        err.contains("timed out") || err.contains("timeout"),
+        "Should indicate timeout: {err}"
     );
-    let data = result.data.unwrap();
-    assert_eq!(data["timeout"], json!(true));
+    assert!(
+        !err.contains("background"),
+        "Current lotus Task 3 must not claim background semantics: {err}"
+    );
 }
 
 /// CancellationToken cancel → ToolError::ExecutionFailed("Command cancelled")
@@ -1802,4 +1833,4 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "process
 
 ### Timeout 语义
 
-BashTool timeout 的返回是 `Ok(ToolResult)` 而非 `Err(ToolError)`——进程转后台，LLM 收到 timeout 提示后可决定是否继续等待或放弃。这与 claude-code-best `backgroundExistingForegroundTask` 的设计哲学一致。
+对标 claude-code-best 的真实实现，timeout 并不是天然“转后台”。`ShellCommand` 的默认前台路径是：**timeout → 终止进程**；只有在 `run_in_background` / auto-background + `LocalShellTask` / `TaskOutput` / notification 全链路都存在时，才会进入 background continuation。lotus 当前 Task 3 还没有这套 shell 后台基础设施，所以 timeout 必须返回 `Err(ToolError)`，而不是伪造 `Ok(ToolResult)` 的 background 提示。

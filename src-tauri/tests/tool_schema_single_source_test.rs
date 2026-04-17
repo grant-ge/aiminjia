@@ -5,6 +5,7 @@ use app_lib::runtime::tools::definition::ToolKind;
 fn catalog_contains_all_registered_tools() {
     let required = vec![
         "list_directory", "read_workspace_file", "search_files", "get_file_info",
+        "write_file", "edit_file", "bash",
         "web_search", "browse_navigate", "read_page_content", "page_execute_js",
         "extract_table_data", "extract_with_pagination", "load_file",
         "execute_python",
@@ -37,7 +38,15 @@ fn browse_data_is_composite_in_catalog() {
 #[test]
 fn workspace_tools_are_primitive_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
-    for name in &["list_directory", "read_workspace_file", "search_files", "get_file_info"] {
+    for name in &[
+        "list_directory",
+        "read_workspace_file",
+        "search_files",
+        "get_file_info",
+        "write_file",
+        "edit_file",
+        "bash",
+    ] {
         let def = catalog.get(name).unwrap_or_else(|| panic!("{} must be in catalog", name));
         assert!(
             matches!(def.kind, ToolKind::Primitive),

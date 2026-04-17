@@ -52,9 +52,9 @@ fn build_test_plugin_ctx(
 
 // ─── Test 1: register_builtin_tools registers workspace RuntimeTools ─────────
 
-/// register_builtin_tools should call register_runtime for the four workspace
-/// RuntimeTool implementations.  After registration the runtime_tools map
-/// must contain all four names.
+/// register_builtin_tools should call register_runtime for the workspace/file
+/// RuntimeTool implementations plus bash. After registration the runtime tool
+/// schemas should include all of them.
 #[tokio::test]
 async fn register_builtin_tools_registers_workspace_runtime_tools() {
     let registry = ToolRegistry::new();
@@ -89,7 +89,7 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
     );
 }
 
-// ─── Test 2: all four workspace tools are reachable via execute() ────────────
+// ─── Test 2: workspace/file/bash runtime tools are registered ─────────────────
 
 #[tokio::test]
 async fn all_four_workspace_runtime_tools_are_registered() {
@@ -106,6 +106,8 @@ async fn all_four_workspace_runtime_tools_are_registered() {
         "search_files",
         "get_file_info",
         "write_file",
+        "edit_file",
+        "bash",
     ] {
         assert!(
             names.contains(tool_name),
@@ -114,6 +116,31 @@ async fn all_four_workspace_runtime_tools_are_registered() {
             names
         );
     }
+}
+
+#[tokio::test]
+async fn bash_runtime_tool_executes_via_registry() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let result = registry
+        .execute(
+            "bash",
+            &ctx,
+            serde_json::json!({"command": "echo hi"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("bash should execute via runtime tool");
+
+    assert!(
+        result.content.contains("hi"),
+        "bash output should contain echo result: {}",
+        result.content
+    );
 }
 
 // ─── Test 3: execute() routes to RuntimeTool, not legacy ToolPlugin ──────────

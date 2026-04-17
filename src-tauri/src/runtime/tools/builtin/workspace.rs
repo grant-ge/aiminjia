@@ -28,7 +28,7 @@ use crate::storage::file_manager;
 ///
 /// Returns `PermissionDenied` only when no capability context is present at all
 /// (i.e., the tool was invoked outside a proper session context).
-fn require_workspace_root(ctx: &ToolExecutionContext) -> Result<std::path::PathBuf, ToolError> {
+pub(crate) fn require_workspace_root(ctx: &ToolExecutionContext) -> Result<std::path::PathBuf, ToolError> {
     ctx.capability
         .as_ref()
         .and_then(|c| c.storage.as_ref())

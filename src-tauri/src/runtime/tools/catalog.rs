@@ -163,6 +163,30 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "bash",
+            "在授权工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
+            \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
+            \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
+        )
+        .with_kind(ToolKind::Primitive)
+        .with_destructive(true)
+        .with_capability_scope(["workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+                "command": { "type": "string", "description": "要执行的 shell 命令" },
+                "timeout_secs": {
+                    "type": "integer",
+                    "description": "超时秒数，默认 120，最大 600",
+                    "default": 120
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
         ToolDefinition::new("load_file",
             "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
             \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\
