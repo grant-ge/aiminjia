@@ -40,9 +40,21 @@ schemas
 
 ### P0-A：CapabilityContext 扩展
 
-**问题**：`CapabilityContext` 只有 4 个字段（storage、workspace_id、browser_available、file_ops），工具无法取消操作、无法发通知、无法访问对话消息。
+**问题**：`CapabilityContext` 只有 4 个字段，工具无法利用文件状态缓存（导致重复读同一文件）、无法感知读取限制、无法向前端推送通知。
 
-**新增字段**（全部 `Option`，向后兼容）：
+**对标 claude-code-best 实际使用**（来自 FileReadTool/BashTool/GlobTool/GrepTool 源码调研）：
+
+| claude-code-best 字段 | 实际使用工具 | lotus-app 对应 |
+|----------------------|------------|---------------|
+| `abortController` | 全部 4 个工具 | **已有**：`ToolExecutionContext.cancellation`，无需重复加入 CapabilityContext |
+| `readFileState: FileStateCache` | FileReadTool、BashTool(sed) | **缺失**：需新增 `read_file_state` |
+| `fileReadingLimits` | FileReadTool | **缺失**：需新增 `file_reading_limits` |
+| `globLimits` | GlobTool | 已有：`search_files` 参数 `max_results` 覆盖，暂不重复 |
+| `setToolJSX` | BashTool | **缺失**：需新增 `notification_sink` |
+| `getAppState()` | 全部 4 个工具（权限上下文） | `CapabilityPermissionPipeline` 覆盖，工具不直接访问 |
+| `contentReplacementState` | 由 query loop 管理 | 暂不加入，Phase 2+ 考虑 |
+
+**新增字段**（全部 `Option`，向后兼容，不破坏现有测试）：
 
 ```rust
 pub struct CapabilityContext {
@@ -52,42 +64,83 @@ pub struct CapabilityContext {
     pub browser_available: bool,
     pub file_ops: Option<Arc<dyn FileOperations>>,
 
-    // 新增字段
-    /// 工具可检查此 signal，在 ESC/cancel 时提前退出长时间操作。
-    pub abort_signal: Option<tokio_util::sync::CancellationToken>,
+    // 新增字段（对标 claude-code-best ToolUseContext）
 
-    /// 工具推送通知给前端（非阻塞，fire-and-forget）。
+    /// 文件状态缓存——防止重复读取未修改的文件。
+    /// 对应 claude-code-best `readFileState: FileStateCache`（LRU cache by path）。
+    /// 工具在读取文件后写入缓存，下次读取同文件同范围时检查 mtime，未修改则返回缓存。
+    pub read_file_state: Option<Arc<FileStateCache>>,
+
+    /// 文件读取限制——防止超大文件撑满 LLM 上下文窗口。
+    /// 对应 claude-code-best `fileReadingLimits: { maxTokens?, maxSizeBytes? }`。
+    pub file_reading_limits: Option<FileReadingLimits>,
+
+    /// 工具通知回调——工具可向前端推送非阻塞消息（进度、提示）。
+    /// 对应 claude-code-best `setToolJSX`（简化版，仅文字通知）。
     pub notification_sink: Option<Arc<dyn NotificationSink>>,
-
-    /// 当前 turn 的对话消息快照（只读，工具不可修改）。
-    pub conversation_messages: Option<Arc<Vec<serde_json::Value>>>,
 }
 ```
 
-**`NotificationSink` trait**（新建，`runtime/tools/capability.rs` 内）：
+**新增类型**（同在 `runtime/tools/capability.rs`）：
 
 ```rust
+/// 文件状态缓存条目。
+#[derive(Clone, Debug)]
+pub struct FileState {
+    pub content: String,
+    pub mtime_secs: u64,          // 文件修改时间（秒级）
+    pub offset: Option<usize>,    // 读取起始行
+    pub limit: Option<usize>,     // 读取行数限制
+}
+
+/// LRU 文件状态缓存（最多 100 条，防止重读未修改文件）。
+/// 对应 claude-code-best FileStateCache（LRU, max 100 entries, max 25MB）。
+pub struct FileStateCache {
+    inner: std::sync::Mutex<lru::LruCache<std::path::PathBuf, FileState>>,
+}
+
+impl FileStateCache {
+    pub fn new() -> Self { ... }
+    pub fn get(&self, path: &Path) -> Option<FileState> { ... }
+    pub fn set(&self, path: PathBuf, state: FileState) { ... }
+}
+
+/// 文件读取大小上限。
+#[derive(Clone, Debug)]
+pub struct FileReadingLimits {
+    pub max_size_bytes: usize,    // 默认 1MB（已有 read_workspace_file 默认值对齐）
+}
+
+impl Default for FileReadingLimits {
+    fn default() -> Self { Self { max_size_bytes: 1_048_576 } }
+}
+
+/// 工具通知回调 trait。
 pub trait NotificationSink: Send + Sync + std::fmt::Debug {
     fn notify(&self, message: &str);
 }
 ```
 
-**`CapabilityContext` builder 方法**（链式，保持现有 `with_workspace`/`with_browser` 风格）：
+**`CapabilityContext` builder 方法**（链式，保持 `with_workspace`/`with_browser` 风格）：
 
 ```rust
 impl CapabilityContext {
-    pub fn with_abort_signal(mut self, token: tokio_util::sync::CancellationToken) -> Self { ... }
+    pub fn with_read_file_state(mut self, cache: Arc<FileStateCache>) -> Self { ... }
+    pub fn with_file_reading_limits(mut self, limits: FileReadingLimits) -> Self { ... }
     pub fn with_notification_sink(mut self, sink: Arc<dyn NotificationSink>) -> Self { ... }
-    pub fn with_conversation_messages(mut self, msgs: Arc<Vec<serde_json::Value>>) -> Self { ... }
 }
 ```
 
-**构建点更新**：`plugin/registry.rs` 的 `execute()` 中构建 `CapabilityContext` 时，从 `PluginContext` 提取 `cancel_token` 并注入 `abort_signal`；`notification_sink` 和 `conversation_messages` 在 S4 TurnDriver 路径中注入（本期 None）。
+**构建点更新**：`plugin/registry.rs` 的 `execute()` 中构建 `CapabilityContext` 时注入 `file_reading_limits`（固定默认值 1MB）；`read_file_state` 和 `notification_sink` 在 S4 TurnDriver 路径中按 turn 创建后注入（本期 `None`，工具收到 `None` 时降级为无缓存模式）。
+
+**`ReadWorkspaceFileRuntimeTool` 同期更新**：读文件前检查 `ctx.capability?.read_file_state`，命中且 mtime 未变则返回缓存；读后写入缓存。`max_bytes` 参数以 `file_reading_limits.max_size_bytes` 为上限。
 
 **测试**：`tests/tool_capability_context_test.rs` 新增：
-- `capability_context_abort_signal_is_none_by_default`
-- `capability_context_with_abort_signal_propagates_to_tool`
+- `file_state_cache_returns_none_for_unknown_path`
+- `file_state_cache_hit_when_mtime_unchanged`
+- `capability_context_file_reading_limits_default_is_one_mb`
 - `capability_context_notification_sink_tool_can_notify`
+- `read_workspace_file_uses_file_state_cache_on_second_read`
 
 ---
 
@@ -280,10 +333,11 @@ pub trait RuntimeTool: Send + Sync {
 ### Phase 1
 | 文件 | 改动 |
 |------|------|
-| `src-tauri/src/runtime/tools/capability.rs` | 新增 `NotificationSink` trait、3 个字段、3 个 builder 方法 |
-| `src-tauri/src/plugin/registry.rs` | `get_all_schemas`/`get_schemas_filtered` 末尾加排序；`execute()` 构建 capability 时注入 `abort_signal` |
+| `src-tauri/src/runtime/tools/capability.rs` | 新增 `FileState`、`FileStateCache`、`FileReadingLimits`、`NotificationSink` 类型；`CapabilityContext` 新增 3 个字段 + 3 个 builder 方法 |
+| `src-tauri/src/plugin/registry.rs` | `get_all_schemas`/`get_schemas_filtered` 末尾加排序；`execute()` 构建 capability 时注入 `file_reading_limits` |
+| `src-tauri/src/runtime/tools/builtin/workspace.rs` | `ReadWorkspaceFileRuntimeTool` 使用 `read_file_state` 缓存 + `file_reading_limits` 上限 |
 | `src-tauri/tests/tool_catalog_contract_test.rs` | 新增排序测试 |
-| `src-tauri/tests/tool_capability_context_test.rs` | 新增 3 个 abort/notify 测试 |
+| `src-tauri/tests/tool_capability_context_test.rs` | 新增 5 个缓存/限制/通知测试 |
 
 ### Phase 2
 | 文件 | 改动 |
