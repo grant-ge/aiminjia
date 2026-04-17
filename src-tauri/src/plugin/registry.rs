@@ -30,6 +30,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "extract_table_data",
     "extract_with_pagination",
     "load_file",
+    "execute_python",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -337,7 +338,15 @@ impl ToolRegistry {
                 None => Box::new(CapabilityPermissionPipeline),
             };
             let def = tool.definition();
-            match pipeline.authorize(&def, &input, &exec_ctx) {
+            let permission_decision = if let Some(decision) =
+                tool.check_permissions(&input, &exec_ctx).await
+            {
+                decision
+            } else {
+                pipeline.authorize(&def, &input, &exec_ctx)
+            };
+
+            match permission_decision {
                 PermissionDecision::Allow { .. } => {}
                 PermissionDecision::Deny { message, .. } => {
                     return Err(ToolError::PermissionDenied(format!(
@@ -544,6 +553,9 @@ impl ToolRegistry {
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
+            "execute_python" => Some(Arc::new(
+                builtin::python::ExecutePythonRuntimeTool::new(ctx.clone()),
+            ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
             _ => None,
         }
     }

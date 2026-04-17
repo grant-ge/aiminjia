@@ -5,6 +5,7 @@
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::ToolRegistry;
+use app_lib::runtime::tools::ToolExecutionContext;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -255,6 +256,132 @@ async fn load_file_routes_to_runtime_tool_via_factory() {
             e
         );
     }
+}
+
+// ─── Test 7: runtime path in ToolRegistry::execute honors check_permissions ──
+
+#[tokio::test]
+async fn registry_execute_uses_runtime_tool_check_permissions() {
+    use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+    use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolResult};
+    use async_trait::async_trait;
+    use serde_json::Value;
+
+    struct DenyRuntimeTool;
+
+    #[async_trait]
+    impl RuntimeTool for DenyRuntimeTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("deny_runtime_tool", "deny runtime tool")
+        }
+
+        async fn check_permissions(
+            &self,
+            _input: &Value,
+            _ctx: &ToolExecutionContext,
+        ) -> Option<PermissionDecision> {
+            Some(PermissionDecision::Deny {
+                message: "blocked by runtime tool".into(),
+                reason: PermissionReason::Other("test".into()),
+            })
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new(
+                "deny_runtime_tool",
+                "should not execute",
+                None,
+            ))
+        }
+    }
+
+    let registry = ToolRegistry::new();
+    registry.register_runtime(Arc::new(DenyRuntimeTool)).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let result = registry
+        .execute(
+            "deny_runtime_tool",
+            &ctx,
+            serde_json::json!({}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await;
+
+    let err = result.expect_err("runtime tool check_permissions should deny before execute");
+    assert!(
+        err.to_string().contains("blocked by runtime tool"),
+        "expected tool-level deny to surface, got: {}",
+        err
+    );
+}
+
+// ─── Test 8: execute_python request-scoped runtime tool uses check_permissions ──
+
+#[tokio::test]
+async fn execute_python_routes_to_runtime_tool_via_factory_and_denies_dangerous_code() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let result = registry
+        .execute(
+            "execute_python",
+            &ctx,
+            serde_json::json!({"code": "__import__('os').system"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await;
+
+    let err = result.expect_err("dangerous execute_python input should be denied");
+    let message = err.to_string();
+    assert!(
+        message.contains("dangerous pattern detected")
+            || message.contains("Permission denied"),
+        "execute_python should deny dangerous code in runtime path, got: {}",
+        message
+    );
+}
+
+// ─── Test 9: execute_python is request-scoped in to_runtime_dispatcher() ─────
+
+#[tokio::test]
+async fn execute_python_in_runtime_dispatcher_denies_dangerous_code() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+    let dispatcher = registry.to_runtime_dispatcher(ctx).await;
+
+    let exec_ctx = ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
+    let result = dispatcher
+        .dispatch(
+            "execute_python",
+            serde_json::json!({"code": "__import__('os').system"}),
+            exec_ctx,
+        )
+        .await;
+
+    let err = match result {
+        Ok(_) => panic!("dangerous execute_python input should be denied"),
+        Err(err) => err,
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("dangerous pattern detected")
+            || message.contains("permission denied"),
+        "dispatcher should surface execute_python tool-level deny, got: {}",
+        message
+    );
 }
 
 // ─── Test 7: browser tools without connector_engine are denied by capability ─
