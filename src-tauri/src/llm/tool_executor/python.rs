@@ -283,15 +283,15 @@ except Exception as _e:
         // The session reuses a long-running Python REPL, eliminating process spawn,
         // pandas/numpy import, and _analysis_utils.py compilation on every call.
         let timeout = std::time::Duration::from_secs(600);
-        let session_result = if let Some(run_id) = ctx.run_id.as_ref() {
-            ctx.session_manager
-                .execute_for_run(run_id, &final_code, timeout, &sandbox)
-                .await?
-        } else {
-            ctx.session_manager
-                .execute(&ctx.conversation_id, &final_code, timeout, &sandbox)
-                .await?
-        };
+        let run_id = ctx.run_id.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "analysis mode requires run_id for execute_python persistent session"
+            )
+        })?;
+        let session_result = ctx
+            .session_manager
+            .execute_for_run(run_id, &final_code, timeout, &sandbox)
+            .await?;
         session_result.result
     } else {
         // Daily mode: use one-shot PythonRunner (no persistent state needed)
