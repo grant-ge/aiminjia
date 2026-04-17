@@ -181,3 +181,95 @@ Ask 决策中无建议规则字段，用户无法一键接受 "always allow" 等
 专项 F：MCP 支持 — P1，扩展性
 专项 G：Subagent state 隔离 — P2
 ```
+
+---
+
+## 七、哲学级架构差距（需独立立项，不可通过修补解决）
+
+> 以上各项差距多数可以逐步修复。以下 4 项是**设计哲学层面**的根本性差距——需要重新设计对应子系统，不应混入现有计划。
+
+---
+
+### 哲学差距 Φ1：权限管线是唯一安全边界 vs 多层重叠检查
+
+**claude-code-best 的哲学**：permission pipeline 是系统唯一的安全边界，所有工具执行必须且只需通过它，用户决策（allow/deny/ask）是权威裁决。
+
+**lotus-app 的现状**：三套互相不知道对方的安全机制并行存在：
+1. `CapabilityPermissionPipeline`（capability scope 静态检查）
+2. `validate_code()`（Python 代码字符串匹配，已标 deprecated 但仍在生产路径运行）
+3. Python `sandbox.py` 的 `_safe_open`（运行时路径白名单，存在边界绕过漏洞）
+
+**为什么是哲学问题**：多层静态检查给人"更安全"的错觉，实际上每层都可以单独绕过，三层加起来仍然不如一个统一的用户决策权限管线可靠。安全边界越多越模糊，责任越分散越脆弱。
+
+**需要做的**：删除 `validate_code`，修复 sandbox 边界漏洞，将所有安全决策统一到 permission pipeline + 用户交互 Ask 路径（依赖专项 B 先完成）。
+
+---
+
+### 哲学差距 Φ2：Hook 系统完全缺失
+
+**claude-code-best 的哲学**：系统行为应该在运行时可扩展——`PreToolUse`、`PostToolUse`、`PreBash`、`Stop` 等 Hook 让外部程序可以注入任意行为（修改输入、中断执行、审计日志、自动化决策），而不需要修改源码。Hook 是整个系统可扩展性的核心机制。
+
+**lotus-app 的现状**：完全没有 Hook 机制。想要在工具执行前后注入行为（如审计所有 bash 命令、自动授权特定工具、自定义安全策略），只能修改核心代码。
+
+**为什么是哲学问题**：这意味着 lotus-app 的行为是**不可在运行时扩展的**。所有定制都是侵入式的，每次升级都要重新 patch。这不是缺少一个功能，而是缺少一个扩展点设计。
+
+**需要做的**：设计 Hook 架构——Hook 注册机制、Hook 执行上下文、PreToolUse/PostToolUse/Stop 三个核心钩子、Hook 可中断执行（abort）、Hook 结果影响后续决策的协议。
+
+---
+
+### 哲学差距 Φ3：Context Window 管理是一等公民 vs 临时补丁
+
+**claude-code-best 的哲学**：上下文窗口是有限资源，必须**主动管理**：
+- `FileStateCache`：避免重复注入相同文件内容（去重）
+- `contentReplacementState`：工具结果有全局预算，超限自动截断并告知模型
+- `auto-compact`：context 接近上限时主动触发 summarization，对话可以无限持续
+- `fileReadingLimits`：单次读取有 token 上限
+
+这三套机制协同工作，保证模型始终在一个"干净、有效"的上下文里工作。
+
+**lotus-app 的现状**：`compress_context_if_needed()` 是被动补丁（在 agent_loop 里，S4 后要删除），没有 token 预算概念，没有工具结果截断，没有文件内容去重。当 context 满了，行为不可预测——可能截断、可能 API 400、可能模型输出质量急剧下降。
+
+**为什么是哲学问题**：这不是"加一个功能"，而是需要重新设计整个**上下文构建流水线**——从"把所有东西塞进去"变成"主动管理一个有限预算的资源池"。
+
+**需要做的**：设计统一的 Context Budget 机制——token 计数器、工具结果大小限制、文件内容去重（FileStateCache turn-level）、context 超限时的 compaction 策略（summarize vs truncate vs evict）。
+
+---
+
+### 哲学差距 Φ4：Subagent 是一等公民 vs 后加的附加功能
+
+**claude-code-best 的哲学**：系统从一开始就设计成"可以有多个 agent 并发运行"——subagent 有专门的状态隔离（`setAppState` is no-op）、独立 AbortController、父子 cancel cascade、`agentId` 影响工具行为（BashTool 的 CWD 权限）、`cloneFileStateCache` 共享读/隔离写。
+
+**lotus-app 的现状**：subagent 是后加进来的（`AgentRuntime::spawn_child_run`）：
+- 共享父代理的 workspace/capability context（无隔离）
+- 没有状态克隆机制
+- cancel 不从父级级联
+- 工具执行时不知道自己在哪个 agent 里（agentId 有但未影响工具行为）
+
+**为什么是哲学问题**：把并发当成"附加功能"而非"基础设计"，意味着每个新特性都要问"这在多 agent 场景下安全吗"——而现在的答案几乎都是"不确定"。
+
+**需要做的**：重新设计 subagent 状态模型——`AgentContext` 隔离（独立的 file state、独立的 messages buffer）、父子 cancel 级联、subagent 的 `setAppState` 变成隔离写、subagent 结果汇报协议。
+
+---
+
+## 八、全局优先级视图（含哲学差距）
+
+```
+当前计划（Phase 1-3）—— 工具系统内部补齐
+  ↓ 并行
+设计债修复 —— D1/D2/D3/R1/F2/P1/P2（正确性相关，立即修）
+  ↓
+专项 A：Cancel synthetic tool_result 注入           P0
+专项 B：Ask 路径接通（权限交互闭环）               P0
+  ↓                                                 ↓
+专项 C：Session state owner                        Φ1：安全边界统一（依赖专项B）
+专项 D：bash/file 工具                             Φ3：Context Budget 机制
+专项 E：工具结果预算                               Φ2：Hook 系统
+  ↓
+专项 F：MCP 支持                                   Φ4：Subagent 状态隔离
+专项 G：设计债中期修复（D5/D7/D10/D16）
+  ↓
+长期技术债清理（D6/D9/D12-D17）
+```
+
+**哲学差距说明**：Φ1-Φ4 应独立立项，每个都是一个完整的子系统设计任务，不是在某个专项里"顺便做"。Φ1 依赖专项 B 先完成；Φ3 可与专项 E 协同推进；Φ2 和 Φ4 是独立的，可并行规划。
+
