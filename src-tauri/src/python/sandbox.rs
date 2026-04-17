@@ -281,7 +281,7 @@ def _safe_open(file, mode='r', *args, **kwargs):
                 # Resolve to absolute path for comparison
                 abs_path = os.path.realpath(os.path.abspath(file_str))
                 allowed = any(
-                    abs_path.startswith(os.path.realpath(p))
+                    (lambda real_root: abs_path == real_root or abs_path.startswith(real_root + os.sep))(os.path.realpath(p))
                     for p in _ALLOWED_WRITE_PATHS
                 ) if _ALLOWED_WRITE_PATHS else False
                 if not allowed:
