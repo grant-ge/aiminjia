@@ -72,6 +72,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("list_directory", "列出授权工作目录中的文件和子目录")
             .with_kind(ToolKind::Primitive)
+            .with_read_only(true)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -84,6 +85,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("read_workspace_file", "读取授权工作目录中的文本文件内容")
             .with_kind(ToolKind::Primitive)
+            .with_read_only(true)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -98,6 +100,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("search_files", "在授权工作目录中搜索匹配 glob 模式的文件")
             .with_kind(ToolKind::Primitive)
+            .with_read_only(true)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -113,6 +116,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new("get_file_info", "获取授权工作目录中文件或目录的元数据")
             .with_kind(ToolKind::Primitive)
+            .with_read_only(true)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",

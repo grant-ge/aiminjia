@@ -92,6 +92,10 @@ impl RuntimeTool for ListDirectoryRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("list_directory", "List authorized directory"))
     }
 
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
     async fn execute(
         &self,
         input: Value,
@@ -147,6 +151,10 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             .get("read_workspace_file")
             .cloned()
             .unwrap_or_else(|| ToolDefinition::new("read_workspace_file", "Read workspace file"))
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
     }
 
     async fn execute(
@@ -315,6 +323,10 @@ impl RuntimeTool for SearchFilesRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("search_files", "Search files"))
     }
 
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
     async fn execute(
         &self,
         input: Value,
@@ -356,6 +368,10 @@ impl RuntimeTool for GetFileInfoRuntimeTool {
             .get("get_file_info")
             .cloned()
             .unwrap_or_else(|| ToolDefinition::new("get_file_info", "Get file info"))
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
     }
 
     async fn execute(
