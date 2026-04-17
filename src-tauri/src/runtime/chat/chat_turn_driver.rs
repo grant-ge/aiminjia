@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use std::collections::HashSet;
 
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::post_process;
@@ -188,6 +189,63 @@ pub struct RuntimeChatTurnDriver {
     event_bus: RuntimeEventBus,
     /// S4 executor：只做 provider streaming adapter。
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
+}
+
+const SYNTHETIC_CANCELLED_TOOL_RESULT: &str =
+    "Tool execution was interrupted by user cancellation.";
+
+/// Inject synthetic tool results for assistant tool calls that have no matching
+/// tool response yet. Returns the number of injected messages.
+pub fn inject_synthetic_tool_results_for_missing_calls(
+    messages: &mut Vec<serde_json::Value>,
+) -> usize {
+    let mut pending_ids: Vec<(String, Option<String>)> = Vec::new();
+    let mut seen_assistant_ids: HashSet<String> = HashSet::new();
+    let mut existing_tool_result_ids: HashSet<String> = HashSet::new();
+
+    for message in messages.iter() {
+        let role = message.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        if role == "assistant" {
+            if let Some(tool_calls) = message.get("toolCalls").and_then(|v| v.as_array()) {
+                for tc in tool_calls {
+                    let Some(id) = tc.get("id").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    if seen_assistant_ids.insert(id.to_string()) {
+                        let name = tc
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        pending_ids.push((id.to_string(), name));
+                    }
+                }
+            }
+        } else if role == "tool" {
+            let tool_call_id = message
+                .get("toolCallId")
+                .or_else(|| message.get("tool_call_id"))
+                .and_then(|v| v.as_str());
+            if let Some(id) = tool_call_id {
+                existing_tool_result_ids.insert(id.to_string());
+            }
+        }
+    }
+
+    let mut injected = 0usize;
+    for (id, name) in pending_ids {
+        if existing_tool_result_ids.contains(&id) {
+            continue;
+        }
+        messages.push(serde_json::json!({
+            "role": "tool",
+            "toolCallId": id,
+            "name": name.unwrap_or_else(|| "unknown_tool".to_string()),
+            "content": SYNTHETIC_CANCELLED_TOOL_RESULT,
+        }));
+        injected += 1;
+    }
+
+    injected
 }
 
 impl RuntimeChatTurnDriver {
@@ -416,6 +474,7 @@ impl RuntimeChatTurnDriver {
 
                 // ── 5d: user / token cancellation ────────────────────────────
                 LlmStepResult::Cancelled => {
+                    inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
                     state.stream_cancelled = true;
                     break 'turn;
                 }
@@ -431,11 +490,22 @@ impl RuntimeChatTurnDriver {
                     // sees the full conversation history.
                     if !assistant_content.is_empty() {
                         state.full_content.push_str(&assistant_content);
-                        state.messages.push(serde_json::json!({
-                            "role": "assistant",
-                            "content": assistant_content,
-                        }));
                     }
+                    let normalized_tool_calls: Vec<serde_json::Value> = tool_calls
+                        .iter()
+                        .map(|call| {
+                            serde_json::json!({
+                                "id": call.tool_call_id,
+                                "name": call.tool_name,
+                                "arguments": call.args,
+                            })
+                        })
+                        .collect();
+                    state.messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": assistant_content,
+                        "toolCalls": normalized_tool_calls,
+                    }));
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.iteration_count = iteration + 1;
@@ -491,6 +561,7 @@ impl RuntimeChatTurnDriver {
 
             // ── 5f: per-iteration cancel check ───────────────────────────────
             if cancel.is_cancelled() {
+                inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
                 state.stream_cancelled = true;
                 break 'turn;
             }
