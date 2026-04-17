@@ -83,7 +83,14 @@ pub fn build_iteration_context(
 /// - git 状态摘要（失败时静默跳过）
 /// - 操作系统平台
 ///
-/// `authorized` = `Some((root_path_str, display_name))` 当用户已连接本地目录时。
+/// Contract:
+/// - `authorized = Some((root_path_str, display_name))` 表示用户已连接本地目录，且它是
+///   LLM 应看到的“当前工作目录”的权威来源。
+/// - 在该场景下，输出只展示 `authorized` 对应的目录信息；`workspace_path` 仅作为
+///   fallback 输入保留，不出现在输出里。
+/// - git status 也基于 `authorized` 路径执行，而不是 `workspace_path`。
+/// - 当 `authorized = None` 时，退回使用 `workspace_path` 作为工作目录展示和 git
+///   status 的执行路径。
 pub fn build_env_info(
     workspace_path: &std::path::PathBuf,
     authorized: Option<(&str, &str)>,
@@ -242,5 +249,50 @@ mod tests {
         let has_platform =
             result.contains("darwin") || result.contains("windows") || result.contains("linux");
         assert!(has_platform, "must include OS type, got: {}", result);
+    }
+
+    #[test]
+    fn test_build_env_info_non_git_directory_skips_git_quietly() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let workspace_path = temp_dir.path().to_path_buf();
+
+        let result = build_env_info(&workspace_path, None);
+
+        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(result.contains("工作目录:"), "must include working dir");
+        assert!(!result.contains("Git:"), "must skip git section in non-git dir");
+    }
+
+    #[test]
+    fn test_build_env_info_authorized_path_has_git_priority() {
+        let workspace_dir = tempfile::tempdir().expect("create workspace temp dir");
+        let authorized_dir = tempfile::tempdir().expect("create authorized temp dir");
+        let workspace_path = workspace_dir.path().to_path_buf();
+        let authorized_root = authorized_dir.path().to_path_buf();
+
+        let git_init = std::process::Command::new("git")
+            .args(["init", authorized_root.to_string_lossy().as_ref()])
+            .output()
+            .expect("run git init");
+        assert!(git_init.status.success(), "git init must succeed");
+
+        std::fs::write(authorized_root.join("untracked.txt"), "hello")
+            .expect("write untracked file");
+
+        let result = build_env_info(
+            &workspace_path,
+            Some((authorized_root.to_string_lossy().as_ref(), "授权目录")),
+        );
+
+        assert!(
+            result.contains("已连接目录: 授权目录 ("),
+            "must include authorized dir header"
+        );
+        assert!(result.contains("Git:"), "must include git status from authorized dir");
+        assert!(
+            result.contains("untracked.txt") || result.contains("##"),
+            "must reflect authorized git repo status, got: {}",
+            result
+        );
     }
 }
