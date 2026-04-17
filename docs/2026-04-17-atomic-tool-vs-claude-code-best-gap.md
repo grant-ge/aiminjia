@@ -231,9 +231,13 @@ lotus-app 已有 `CancellationToken::child_token()` 级联机制，但以下问�
 
 ### 建议优先级
 
-1. **P0-A**：`CapabilityContext` 扩展——让工具能感知会话状态（至少补充：`abortController`、`messages`、`addNotification`、`setToolJSX`）
+> ⚠️ 以下优先级在对标 claude-code-best 实际工具源码调研后已修正（见 `docs/superpowers/specs/2026-04-17-atomic-tool-capability-upgrade-design.md`）。
+
+1. **P0-A**：`CapabilityContext` 扩展——补充 `FileStateCache`（防重读）、`FileReadingLimits`（防超大文件）、`NotificationSink`（UI 通知）。`abortController` 已有（`ToolExecutionContext.cancellation`），`messages` 在实际工具中未直接使用，暂不加入。
 2. **P0-B**：`RuntimeTool` trait 增加 `isConcurrencySafe` + `ToolDispatcher` 支持并发分区编排
 3. **P0-C**：`execute_python` / `generate_report` / `generate_chart` 尽快迁离 `LegacyToolAdapter`（核心 Power/Composite 工具优先）
 4. **P1-A**：`RuntimeTool` trait 增加 `check_permissions(input, ctx)` 方法，允许工具基于具体输入动态决策
-5. **P1-B**：`ToolDefinition` 增加运行时谓词字段（`is_concurrency_safe_for`, `is_read_only_for`, `is_destructive_for`）
+5. **P1-B**：`ToolDefinition` 增加运行时谓词字段（`default_read_only`、`default_destructive`）+ `RuntimeTool` 对应默认方法
 6. **P2-A**：`get_schemas_filtered()` 返回结果按 tool id 排序，稳定 prompt cache key
+
+**实施计划**：`docs/superpowers/plans/2026-04-17-atomic-tool-capability-upgrade-plan.md`
