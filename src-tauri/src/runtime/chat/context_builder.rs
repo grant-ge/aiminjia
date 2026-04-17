@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_env_info_authorized_path_has_git_priority() {
+    fn test_build_env_info_authorized_path_prefers_git_status() {
         let workspace_dir = tempfile::tempdir().expect("create workspace temp dir");
         let authorized_dir = tempfile::tempdir().expect("create authorized temp dir");
         let workspace_path = workspace_dir.path().to_path_buf();
