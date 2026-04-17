@@ -513,10 +513,90 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
         "index 1 must be the actual user content");
 }
 
+struct EnrichedUserMessageExecutor {
+    received_messages: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+}
+
+impl EnrichedUserMessageExecutor {
+    fn new() -> Self {
+        Self {
+            received_messages: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn all_messages(&self) -> Vec<Vec<serde_json::Value>> {
+        self.received_messages.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.received_messages.lock().unwrap().push(input.messages.clone());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+        })
+    }
+
+    async fn build_user_message_content(
+        &self,
+        _conversation_id: &str,
+        content: &str,
+        file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        assert_eq!(file_ids, &["file-1".to_string()]);
+        Ok(format!(
+            "{}\n\n[已上传文件]\n- demo.csv (file_id: \"file-1\", 类型: text/csv)",
+            content
+        ))
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-msg-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
+    let executor = Arc::new(EnrichedUserMessageExecutor::new());
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-upload");
+    let request = ChatTurnRequest::new(
+        "conv-upload",
+        "请分析这个文件",
+        vec!["file-1".to_string()],
+    );
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let first_call_messages = &executor.all_messages()[0];
+    let last = first_call_messages.last().unwrap();
+    let content = last["content"].as_str().unwrap_or("");
+    assert_eq!(last["role"], "user");
+    assert!(content.contains("[已上传文件]"),
+        "user content sent to LLM must include uploaded-file hints, got: {}", content);
+    assert!(content.contains("file-1"),
+        "user content sent to LLM must include file_id, got: {}", content);
+}
+
 // ── S4-T3-Task3: is_analysis 传递测试 ────────────────────────────────────────
 
 struct CapturingMockExecutor {
-    is_analysis: bool,
     responses: std::sync::Mutex<Vec<LlmStepResult>>,
     received_system_prompts: std::sync::Mutex<Vec<String>>,
 }
@@ -524,7 +604,6 @@ struct CapturingMockExecutor {
 impl CapturingMockExecutor {
     fn new_analysis() -> Self {
         Self {
-            is_analysis: true,
             responses: std::sync::Mutex::new(vec![
                 LlmStepResult::ContentComplete {
                     content: "ok".to_string(),
@@ -602,14 +681,14 @@ async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
 // ── S4-T4: tool_defs 精确传递测试 ─────────────────────────────────────────────
 
 struct ToolDefsCapturingExecutor {
-    is_analysis: bool,
+    seen_is_analysis: std::sync::Mutex<Vec<bool>>,
     captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
 }
 
 impl ToolDefsCapturingExecutor {
-    fn new(is_analysis: bool) -> Self {
+    fn new() -> Self {
         Self {
-            is_analysis,
+            seen_is_analysis: std::sync::Mutex::new(Vec::new()),
             captured_tool_defs: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -636,6 +715,7 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         &self,
         is_analysis: bool,
     ) -> Result<Vec<serde_json::Value>, TurnError> {
+        self.seen_is_analysis.lock().unwrap().push(is_analysis);
         use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
         let names: Vec<String> = if is_analysis {
             vec!["all_tool_a".to_string(), "all_tool_b".to_string()]
@@ -658,7 +738,7 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
 
 #[tokio::test]
 async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
-    let executor = Arc::new(ToolDefsCapturingExecutor::new(false));
+    let executor = Arc::new(ToolDefsCapturingExecutor::new());
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
@@ -676,7 +756,7 @@ async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
 #[tokio::test]
 async fn driver_s4_daily_tool_defs_match_whitelist() {
     use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
-    let executor = Arc::new(ToolDefsCapturingExecutor::new(false));
+    let executor = Arc::new(ToolDefsCapturingExecutor::new());
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
@@ -692,10 +772,39 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
         .map(|s| s.to_string())
         .collect();
 
+    let expected_names: std::collections::HashSet<String> =
+        DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
+    assert_eq!(received_names, expected_names,
+        "daily tool_defs must exactly match whitelist");
     for allowed in DAILY_ALLOWED_TOOLS {
         assert!(received_names.contains(*allowed),
             "daily whitelist tool '{}' must be in tool_defs", allowed);
     }
+}
+
+#[tokio::test]
+async fn driver_s4_analysis_tool_defs_use_analysis_flag() {
+    let executor = Arc::new(ToolDefsCapturingExecutor::new());
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-tool-defs-analysis");
+    let request = ChatTurnRequest::new_analysis("conv-tool-defs-analysis", "analyze", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let seen = executor.seen_is_analysis.lock().unwrap();
+    assert_eq!(&*seen, &[true], "analysis turn must request analysis tool defs");
+    let captured = executor.captured_tool_defs.lock().unwrap();
+    let names: std::collections::HashSet<String> = captured[0]
+        .iter()
+        .filter_map(|v| v["name"].as_str())
+        .map(|s| s.to_string())
+        .collect();
+    assert_eq!(names, std::collections::HashSet::from([
+        "all_tool_a".to_string(),
+        "all_tool_b".to_string(),
+    ]));
 }
 
 // ── S4-T5: 多轮历史加载测试 ──────────────────────────────────────────────────
@@ -827,3 +936,51 @@ async fn driver_s4_empty_history_works_normally() {
         "without history: messages must be [system-reminder, user-content]");
 }
 
+struct FailingHistoryExecutor;
+
+#[async_trait]
+impl RuntimeLlmExecutor for FailingHistoryExecutor {
+    async fn run_llm_step(
+        &self,
+        _input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        panic!("run_llm_step must not be called when history loading fails");
+    }
+
+    async fn load_history(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>, TurnError> {
+        Err(TurnError::PersistenceError(
+            "history backend unavailable".to_string(),
+        ))
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_returns_error_when_history_loading_fails() {
+    let executor = Arc::new(FailingHistoryExecutor);
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
+    let mut turn = make_test_turn("conv-history-fail");
+    let request = ChatTurnRequest::new("conv-history-fail", "hello", vec![]);
+
+    let result = driver.run_chat_turn(&mut turn, &request).await;
+    assert!(result.is_err(), "history loading failure must be surfaced");
+    let err_text = format!("{:?}", result.err().unwrap());
+    assert!(err_text.contains("history backend unavailable"),
+        "error should mention history loading failure, got: {}", err_text);
+}

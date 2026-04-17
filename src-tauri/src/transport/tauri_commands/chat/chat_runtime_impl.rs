@@ -57,7 +57,7 @@ fn file_load_failed_key(scope_id: &str, file_id: &str) -> String {
     format!("load_failed:{}:{}", scope_id, file_id)
 }
 
-fn load_authorized_workspace(
+pub(crate) fn load_authorized_workspace(
     app: &AppHandle,
     conversation_id: &str,
 ) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
@@ -90,7 +90,7 @@ fn build_workspace_context(
     )
 }
 
-fn build_llm_content(
+pub(crate) fn build_llm_content(
     content: &str,
     file_attachments: &[serde_json::Value],
     has_authorized_workspace: bool,

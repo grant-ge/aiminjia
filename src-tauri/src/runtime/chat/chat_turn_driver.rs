@@ -120,6 +120,19 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
+    /// 构建发给 LLM 的当前用户消息内容。
+    ///
+    /// 允许生产 executor 将上传附件提示、workspace 提示等附加到用户消息，
+    /// 但持久化到 DB 的原始 user message 仍由 `persist_user_message` 负责。
+    async fn build_user_message_content(
+        &self,
+        _conversation_id: &str,
+        content: &str,
+        _file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        Ok(content.to_string())
+    }
+
     /// 返回本次 Turn 使用的 tool definitions（JSON schema）。
     ///
     /// - `is_analysis=false`（daily）：从 registry 按 DAILY_ALLOWED_TOOLS 白名单过滤
@@ -277,18 +290,24 @@ impl RuntimeChatTurnDriver {
             ),
         });
 
-        // 加载历史对话（失败时 fallback 空历史，避免中断 turn 导致前端 StreamDone 丢失）
+        let llm_user_content = executor
+            .build_user_message_content(
+                &request.conversation_id,
+                &request.content,
+                &request.file_ids,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        // 加载历史对话；失败时直接返回错误，避免静默丢失上下文。
         let history = executor
             .load_history(&request.conversation_id)
             .await
-            .unwrap_or_else(|e| {
-                log::warn!("[run_chat_turn_s4] Failed to load history for conv={}: {}", request.conversation_id, e);
-                vec![]
-            });
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let user_message = serde_json::json!({
             "role": "user",
-            "content": request.content,
+            "content": llm_user_content,
         });
 
         let mut initial_messages = Vec::with_capacity(1 + history.len() + 1);

@@ -80,6 +80,36 @@ pub(crate) use chat_support::{
     clear_analysis_notes, compress_tool_result, is_daily_question, truncate_at_char_boundary,
 };
 
+fn resolve_request_is_analysis(db: &AppStorage, conversation_id: &str) -> bool {
+    matches!(
+        db.get_conversation_mode(conversation_id).ok().as_deref(),
+        Some("confirming" | "analyzing")
+    )
+}
+
+fn build_history_message_content(
+    role: &str,
+    content_value: &serde_json::Value,
+    has_authorized_workspace: bool,
+) -> Option<String> {
+    if let Some(text) = content_value.get("text").and_then(|v| v.as_str()) {
+        if role == "user" {
+            if let Some(files) = content_value.get("files").and_then(|v| v.as_array()) {
+                if !files.is_empty() {
+                    return Some(chat_runtime_impl::build_llm_content(
+                        text,
+                        files,
+                        has_authorized_workspace,
+                    ));
+                }
+            }
+        }
+        return Some(text.to_string());
+    }
+
+    content_value.as_str().map(|text| text.to_string())
+}
+
 #[derive(Clone)]
 struct TauriChatServices {
     db: Arc<AppStorage>,
@@ -156,7 +186,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             );
             Some(vec![])
         } else if input.tool_defs.is_empty() {
-            None // Let gateway use its default registry
+            Some(vec![])
         } else {
             let defs: Vec<ToolDefinition> = input
                 .tool_defs
@@ -760,6 +790,36 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(prompt)
     }
 
+    async fn build_user_message_content(
+        &self,
+        conversation_id: &str,
+        content: &str,
+        file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        let file_attachments = if file_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.services
+                .db
+                .get_uploaded_files_by_ids(file_ids)
+                .map_err(|e| {
+                    TurnError::PersistenceError(format!(
+                        "Failed to load uploaded file metadata: {}",
+                        e
+                    ))
+                })?
+        };
+        let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
+            &self.services.app,
+            conversation_id,
+        );
+        Ok(chat_runtime_impl::build_llm_content(
+            content,
+            &file_attachments,
+            authorized_workspace.is_some(),
+        ))
+    }
+
     async fn get_tool_defs(
         &self,
         is_analysis: bool,
@@ -808,19 +868,22 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .map_err(|e| TurnError::PersistenceError(format!(
                 "Failed to load conversation history: {}", e
             )))?;
+        let has_authorized_workspace = chat_runtime_impl::load_authorized_workspace(
+            &self.services.app,
+            conversation_id,
+        )
+        .is_some();
 
-        // 转换格式：content 可能是 {"text": "..."} 或直接字符串
+        // 转换格式：content 可能是 {"text": "...", "files": [...]} 或直接字符串
         let chat_messages: Vec<serde_json::Value> = raw_messages
             .into_iter()
             .filter_map(|msg| {
                 let role = msg["role"].as_str()?.to_string();
-                let content = if let Some(text) = msg["content"]["text"].as_str() {
-                    text.to_string()
-                } else if let Some(text) = msg["content"].as_str() {
-                    text.to_string()
-                } else {
-                    return None;
-                };
+                let content = build_history_message_content(
+                    &role,
+                    msg.get("content")?,
+                    has_authorized_workspace,
+                )?;
                 if content.trim().is_empty() {
                     return None;
                 }
@@ -839,6 +902,80 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         );
 
         Ok(chat_messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn test_storage() -> (AppStorage, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let storage = AppStorage::new(dir.path()).unwrap();
+        (storage, dir)
+    }
+
+    #[test]
+    fn resolve_request_is_analysis_follows_conversation_mode() {
+        let (storage, _dir) = test_storage();
+        storage.create_conversation("c1", "Conv").unwrap();
+
+        assert!(
+            !resolve_request_is_analysis(&storage, "c1"),
+            "daily conversations must stay in daily mode"
+        );
+
+        storage.set_conversation_mode("c1", "confirming").unwrap();
+        assert!(
+            resolve_request_is_analysis(&storage, "c1"),
+            "confirming conversations must use analysis mode"
+        );
+
+        storage.set_conversation_mode("c1", "analyzing").unwrap();
+        assert!(
+            resolve_request_is_analysis(&storage, "c1"),
+            "analyzing conversations must use analysis mode"
+        );
+
+        storage.set_conversation_mode("c1", "daily").unwrap();
+        assert!(
+            !resolve_request_is_analysis(&storage, "c1"),
+            "daily conversations must not use analysis mode"
+        );
+    }
+
+    #[test]
+    fn build_history_message_content_preserves_uploaded_file_hints() {
+        let content = serde_json::json!({
+            "text": "请继续分析这个表格",
+            "files": [
+                {
+                    "id": "file-1",
+                    "originalName": "sales.csv",
+                    "fileType": "text/csv"
+                }
+            ]
+        });
+
+        let llm_content =
+            build_history_message_content("user", &content, false).expect("history content");
+
+        assert!(llm_content.contains("[已上传文件]"));
+        assert!(llm_content.contains("file-1"));
+        assert!(llm_content.contains("load_file(file_id)"));
+    }
+
+    #[test]
+    fn build_history_message_content_keeps_assistant_text_plain() {
+        let content = serde_json::json!({
+            "text": "这是上一轮助手回复"
+        });
+
+        let llm_content =
+            build_history_message_content("assistant", &content, false).expect("assistant text");
+
+        assert_eq!(llm_content, "这是上一轮助手回复");
     }
 }
 
@@ -994,8 +1131,11 @@ impl TauriChatCommandAdapter {
         content: String,
         file_ids: Vec<String>,
     ) -> Result<(), String> {
+        let is_analysis = resolve_request_is_analysis(&self.services.db, &conversation_id);
+        let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        request.is_analysis = is_analysis;
         self.runtime
-            .run_chat_request(ChatTurnRequest::new(conversation_id, content, file_ids))
+            .run_chat_request(request)
             .await
     }
 
