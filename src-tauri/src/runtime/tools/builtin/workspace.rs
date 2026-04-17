@@ -61,6 +61,18 @@ fn tool_result(tool_name: &str, value: Value) -> ToolResult {
     }
 }
 
+fn truncate_text_to_max_bytes(content: &str, max_bytes: usize) -> String {
+    if content.len() <= max_bytes {
+        return content.to_string();
+    }
+
+    let mut end = max_bytes;
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    content[..end].to_string()
+}
+
 // ── ListDirectoryRuntimeTool ──────────────────────────────────────────────
 
 pub struct ListDirectoryRuntimeTool;
@@ -149,7 +161,6 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             .unwrap_or(1_048_576);
         let offset = input.get("offset").and_then(Value::as_u64).map(|v| v as usize);
         let limit = input.get("limit").and_then(Value::as_u64).map(|v| v as usize);
-        let joined = root.join(rel);
         let resolved = resolve_path(&root, rel)?;
         if !resolved.is_file() {
             return Err(ToolError::ExecutionFailed(format!("Not a file: {rel}")));
@@ -167,13 +178,19 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             if let Some(state) = cache.and_then(|cache| cache.get(&resolved)) {
                 if state.mtime_secs == mtime_secs && state.offset.is_none() && state.limit.is_none()
                 {
+                    let truncated = state.content.len() > max_bytes;
+                    let content = if truncated {
+                        truncate_text_to_max_bytes(&state.content, max_bytes)
+                    } else {
+                        state.content
+                    };
                     let mut result = json!({
                         "path": rel,
-                        "content": state.content,
+                        "content": content,
                         "size": metadata.len(),
                         "cached": true,
                     });
-                    if metadata.len() > max_bytes as u64 {
+                    if truncated {
                         result["truncated"] = json!(true);
                     }
                     return Ok(tool_result("read_workspace_file", result));
@@ -186,16 +203,17 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let content =
             String::from_utf8_lossy(if truncated { &bytes[..max_bytes] } else { &bytes })
                 .to_string();
-        if let Some(cache) = cache {
-            let state = FileState {
-                content: content.clone(),
-                mtime_secs,
-                offset: None,
-                limit: None,
-            };
-            cache.set(resolved.clone(), state.clone());
-            if joined != resolved {
-                cache.set(joined, state);
+        if !truncated && offset.is_none() && limit.is_none() {
+            if let Some(cache) = cache {
+                cache.set(
+                    resolved.clone(),
+                    FileState {
+                        content: content.clone(),
+                        mtime_secs,
+                        offset: None,
+                        limit: None,
+                    },
+                );
             }
         }
         let mut result = json!({ "path": rel, "content": content, "size": bytes.len() });

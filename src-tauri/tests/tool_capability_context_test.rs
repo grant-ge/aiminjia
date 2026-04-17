@@ -188,11 +188,15 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
     use tempfile::NamedTempFile;
 
     let mut tmp = NamedTempFile::new().unwrap();
-    writeln!(tmp, "line1").unwrap();
-    writeln!(tmp, "line2").unwrap();
-    let path = tmp.path().to_path_buf();
-    let dir = path.parent().unwrap().to_path_buf();
-    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+    write!(tmp, "line1\nline2\n").unwrap();
+    let dir = tmp.path().parent().unwrap().to_path_buf();
+    let filename = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
     let cache = Arc::new(FileStateCache::new());
     let cap = CapabilityContext::with_workspace(dir.clone(), "ws")
@@ -208,14 +212,121 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
     let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
         .await
         .unwrap();
-    assert!(r1.content.contains("line1"), "first read should return file content");
-
-    assert!(cache.get(&path).is_some(), "cache should be populated after first read");
+    let r1_data = r1.data.as_ref().expect("first read should include structured data");
+    assert_eq!(r1_data["content"], json!("line1\nline2\n"));
+    assert!(r1_data.get("cached").is_none());
 
     let r2 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
         .await
         .unwrap();
-    assert!(!r2.content.is_empty(), "second read should still return content");
+    let r2_data = r2
+        .data
+        .as_ref()
+        .expect("second read should include structured data");
+    assert_eq!(r2_data["content"], json!("line1\nline2\n"));
+    assert_eq!(r2_data["cached"], json!(true));
+}
+
+#[tokio::test]
+async fn read_workspace_file_does_not_reuse_truncated_result_for_larger_read() {
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
+    use app_lib::runtime::tools::capability::{CapabilityContext, FileStateCache};
+    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use serde_json::json;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "abcdefghij").unwrap();
+    let dir = tmp.path().parent().unwrap().to_path_buf();
+    let filename = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let cache = Arc::new(FileStateCache::new());
+    let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
+    let ctx = || {
+        ToolExecutionContext::for_test("conv", "run", "tc-1")
+            .with_capability(Arc::new(cap.clone()))
+    };
+
+    let tool = ReadWorkspaceFileRuntimeTool;
+
+    let r1 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
+        .await
+        .unwrap();
+    let r1_data = r1
+        .data
+        .as_ref()
+        .expect("truncated read should include structured data");
+    assert_eq!(r1_data["content"], json!("abcd"));
+    assert_eq!(r1_data["truncated"], json!(true));
+
+    let r2 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+        .await
+        .unwrap();
+    let r2_data = r2
+        .data
+        .as_ref()
+        .expect("follow-up read should include structured data");
+    assert_eq!(r2_data["content"], json!("abcdefghij"));
+    assert!(r2_data.get("cached").is_none());
+}
+
+#[tokio::test]
+async fn read_workspace_file_truncates_cached_content_for_smaller_follow_up_limit() {
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
+    use app_lib::runtime::tools::capability::{CapabilityContext, FileStateCache};
+    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use serde_json::json;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "abcdefghij").unwrap();
+    let dir = tmp.path().parent().unwrap().to_path_buf();
+    let filename = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let cache = Arc::new(FileStateCache::new());
+    let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
+    let ctx = || {
+        ToolExecutionContext::for_test("conv", "run", "tc-1")
+            .with_capability(Arc::new(cap.clone()))
+    };
+
+    let tool = ReadWorkspaceFileRuntimeTool;
+
+    let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+        .await
+        .unwrap();
+    let r1_data = r1
+        .data
+        .as_ref()
+        .expect("initial read should include structured data");
+    assert_eq!(r1_data["content"], json!("abcdefghij"));
+
+    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
+        .await
+        .unwrap();
+    let r2_data = r2
+        .data
+        .as_ref()
+        .expect("cached read should include structured data");
+    assert_eq!(r2_data["content"], json!("abcd"));
+    assert_eq!(r2_data["cached"], json!(true));
+    assert_eq!(r2_data["truncated"], json!(true));
 }
 
 #[test]
