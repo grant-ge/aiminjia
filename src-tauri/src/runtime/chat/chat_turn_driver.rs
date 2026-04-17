@@ -477,6 +477,12 @@ impl RuntimeChatTurnDriver {
                 run_id: &config.run_id,
             };
 
+            // CP-1: check cancellation before invoking provider.
+            if cancel.is_cancelled() {
+                state.stream_cancelled = true;
+                break 'turn;
+            }
+
             // ── Step 5b: single LLM step ─────────────────────────────────────
             let step_result = executor
                 .run_llm_step(&input, &self.event_bus, &cancel)
@@ -540,6 +546,12 @@ impl RuntimeChatTurnDriver {
                         .execute_round(turn, &self.event_bus, tool_calls)
                         .await;
 
+                    // CP-2: check cancellation right after execute_round.
+                    if cancel.is_cancelled() {
+                        state.stream_cancelled = true;
+                        break 'turn;
+                    }
+
                     for round_result in &round_results {
                         if let Some(event_kind) =
                             permission_ask_event_from_round_result(round_result)
@@ -559,6 +571,11 @@ impl RuntimeChatTurnDriver {
                         tool_result_collector::collect_results(round_results, 8000);
                     for msg in results.tool_result_messages {
                         state.messages.push(msg);
+                        // CP-3: check cancellation after each merged tool result.
+                        if cancel.is_cancelled() {
+                            state.stream_cancelled = true;
+                            break 'turn;
+                        }
                     }
                     state.all_file_metas.extend(results.new_file_metas);
                     state
