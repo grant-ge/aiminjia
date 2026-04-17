@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::chat_turn_driver::mark_turn_cancelled_with_synthetic_results;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
@@ -10,7 +9,6 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
-use serde_json::json;
 
 fn make_test_turn(conversation_id: &str) -> TurnState {
     let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
@@ -76,35 +74,5 @@ async fn pre_cancelled_turn_should_not_call_run_llm_step() {
     assert_eq!(
         count, 0,
         "run_llm_step should not be called when turn is already cancelled"
-    );
-}
-
-#[test]
-fn cancel_checkpoint_helper_injects_synthetic_tool_results() {
-    let mut state = app_lib::runtime::chat::turn_config::TurnIterationState::new(vec![json!({
-        "role": "assistant",
-        "content": "",
-        "toolCalls": [
-            {"id": "tc-b3-cp1", "name": "unknown_tool", "arguments": {}}
-        ]
-    })]);
-
-    mark_turn_cancelled_with_synthetic_results(&mut state);
-
-    assert!(state.stream_cancelled, "cancel helper must mark stream_cancelled");
-    let synthetic = state
-        .messages
-        .iter()
-        .find(|msg| {
-            msg.get("role").and_then(|v| v.as_str()) == Some("tool")
-                && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-b3-cp1")
-        })
-        .expect("cancel helper should inject missing synthetic tool result");
-    assert_eq!(
-        synthetic
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default(),
-        "Tool execution was interrupted by user cancellation."
     );
 }

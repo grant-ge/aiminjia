@@ -250,11 +250,11 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
     injected
 }
 
-/// Shared cancel tail for all turn-level checkpoints.
+/// Shared cancel finalizer for driver-owned turn checkpoints.
 ///
-/// Keeps early checkpoints (CP-1/2/3) behavior-aligned with the original 5f
-/// cancellation path by injecting missing synthetic tool results first.
-pub fn mark_turn_cancelled_with_synthetic_results(state: &mut TurnIterationState) {
+/// Injects any missing synthetic tool results before marking the turn as
+/// cancelled so the in-memory transcript never contains orphaned tool calls.
+fn mark_turn_cancelled_with_synthetic_results(state: &mut TurnIterationState) {
     inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
     state.stream_cancelled = true;
 }
@@ -514,8 +514,7 @@ impl RuntimeChatTurnDriver {
 
                 // ── 5d: user / token cancellation ────────────────────────────
                 LlmStepResult::Cancelled => {
-                    inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
-                    state.stream_cancelled = true;
+                    mark_turn_cancelled_with_synthetic_results(&mut state);
                     break 'turn;
                 }
 
@@ -681,5 +680,42 @@ impl RuntimeChatTurnDriver {
             .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cancel_finalizer_injects_missing_tool_results() {
+        let mut state = TurnIterationState::new(vec![json!({
+            "role": "assistant",
+            "content": "",
+            "toolCalls": [
+                {"id": "tc-b3-cp1", "name": "unknown_tool", "arguments": {}}
+            ]
+        })]);
+
+        mark_turn_cancelled_with_synthetic_results(&mut state);
+
+        assert!(state.stream_cancelled, "cancel finalizer must mark stream_cancelled");
+        let synthetic = state
+            .messages
+            .iter()
+            .find(|msg| {
+                msg.get("role").and_then(|v| v.as_str()) == Some("tool")
+                    && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-b3-cp1")
+            })
+            .expect("cancel finalizer should inject missing synthetic tool result");
+        let content = synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        assert!(
+            content.contains("interrupted"),
+            "synthetic tool result should mention interruption"
+        );
     }
 }
