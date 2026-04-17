@@ -91,7 +91,7 @@ pub fn build_iteration_context(
 /// - git status 也基于 `authorized` 路径执行，而不是 `workspace_path`。
 /// - 当 `authorized = None` 时，退回使用 `workspace_path` 作为工作目录展示和 git
 ///   status 的执行路径。
-pub fn build_env_info(
+pub async fn build_env_info(
     workspace_path: &std::path::PathBuf,
     authorized: Option<(&str, &str)>,
 ) -> String {
@@ -112,15 +112,14 @@ pub fn build_env_info(
         .map(|(p, _)| std::path::PathBuf::from(p))
         .unwrap_or_else(|| workspace_path.clone());
 
-    if let Ok(output) = std::process::Command::new("git")
-        .args([
-            "-C",
-            &effective_path.to_string_lossy(),
-            "status",
-            "--short",
-            "--branch",
-        ])
+    if let Ok(output) = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(&effective_path)
+        .arg("status")
+        .arg("--short")
+        .arg("--branch")
         .output()
+        .await
     {
         if output.status.success() {
             let status_str = String::from_utf8_lossy(&output.stdout)
@@ -212,14 +211,15 @@ mod tests {
         assert!(conn_pos < ana_pos);
     }
 
-    #[test]
-    fn test_build_env_info_with_authorized_workspace() {
+    #[tokio::test]
+    async fn test_build_env_info_with_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
         let authorized = Some(("/tmp/test-workspace/my-project".to_string(), "我的项目".to_string()));
         let result = build_env_info(
             &workspace_path,
             authorized.as_ref().map(|(p, n)| (p.as_str(), n.as_str())),
-        );
+        )
+        .await;
         assert!(result.contains("[当前环境]"), "must have env section header");
         assert!(result.contains("已连接目录"), "must mention authorized dir");
         assert!(
@@ -229,10 +229,10 @@ mod tests {
         assert!(result.contains("Platform:"), "must include platform");
     }
 
-    #[test]
-    fn test_build_env_info_without_authorized_workspace() {
+    #[tokio::test]
+    async fn test_build_env_info_without_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
-        let result = build_env_info(&workspace_path, None);
+        let result = build_env_info(&workspace_path, None).await;
         assert!(result.contains("[当前环境]"), "must have env section header");
         assert!(result.contains("工作目录"), "must include working dir");
         assert!(result.contains("Platform:"), "must include platform");
@@ -242,29 +242,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_build_env_info_platform_info() {
+    #[tokio::test]
+    async fn test_build_env_info_platform_info() {
         let workspace_path = std::path::PathBuf::from("/tmp");
-        let result = build_env_info(&workspace_path, None);
+        let result = build_env_info(&workspace_path, None).await;
         let has_platform =
             result.contains("darwin") || result.contains("windows") || result.contains("linux");
         assert!(has_platform, "must include OS type, got: {}", result);
     }
 
-    #[test]
-    fn test_build_env_info_non_git_directory_skips_git_quietly() {
+    #[tokio::test]
+    async fn test_build_env_info_non_git_directory_skips_git_quietly() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let workspace_path = temp_dir.path().to_path_buf();
 
-        let result = build_env_info(&workspace_path, None);
+        let result = build_env_info(&workspace_path, None).await;
 
         assert!(result.contains("[当前环境]"), "must have env section header");
         assert!(result.contains("工作目录:"), "must include working dir");
         assert!(!result.contains("Git:"), "must skip git section in non-git dir");
     }
 
-    #[test]
-    fn test_build_env_info_authorized_path_prefers_git_status() {
+    #[tokio::test]
+    async fn test_build_env_info_authorized_path_prefers_git_status() {
         let workspace_dir = tempfile::tempdir().expect("create workspace temp dir");
         let authorized_dir = tempfile::tempdir().expect("create authorized temp dir");
         let workspace_path = workspace_dir.path().to_path_buf();
@@ -282,7 +282,8 @@ mod tests {
         let result = build_env_info(
             &workspace_path,
             Some((authorized_root.to_string_lossy().as_ref(), "授权目录")),
-        );
+        )
+        .await;
 
         assert!(
             result.contains("已连接目录: 授权目录 ("),

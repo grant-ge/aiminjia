@@ -923,7 +923,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .as_ref()
             .map(|(p, n)| (p.as_str(), n.as_str()));
 
-        let env_info = build_env_info(&workspace_path, authorized_ref);
+        let env_info = build_env_info(&workspace_path, authorized_ref).await;
 
         log::info!(
             "[get_env_info] conv={} workspace={} authorized={} env_info_len={}",
