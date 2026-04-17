@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashSet;
 
-use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
@@ -259,6 +259,13 @@ fn mark_turn_cancelled_with_synthetic_results(state: &mut TurnIterationState) {
     state.stream_cancelled = true;
 }
 
+fn cancellation_reason(cancel: &CancellationToken) -> Option<CancellationReason> {
+    if !cancel.is_cancelled() {
+        return None;
+    }
+    cancel.reason().or(Some(CancellationReason::UserCancel))
+}
+
 fn permission_ask_event_from_round_result(
     round_result: &ToolRoundResult,
 ) -> Option<RuntimeEventKind> {
@@ -487,7 +494,7 @@ impl RuntimeChatTurnDriver {
             };
 
             // CP-1: check cancellation before invoking provider.
-            if cancel.is_cancelled() {
+            if cancellation_reason(&cancel).is_some() {
                 mark_turn_cancelled_with_synthetic_results(&mut state);
                 break 'turn;
             }
@@ -553,7 +560,7 @@ impl RuntimeChatTurnDriver {
                         .await;
 
                     // CP-2: check cancellation right after execute_round.
-                    if cancel.is_cancelled() {
+                    if cancellation_reason(&cancel).is_some() {
                         state.append_messages_batch(vec![assistant_history_message.clone()]);
                         mark_turn_cancelled_with_synthetic_results(&mut state);
                         break 'turn;
@@ -583,7 +590,7 @@ impl RuntimeChatTurnDriver {
                     for msg in results.tool_result_messages {
                         history_batch.push(msg);
                         // CP-3: check cancellation after each staged tool result.
-                        if cancel.is_cancelled() {
+                        if cancellation_reason(&cancel).is_some() {
                             state.append_messages_batch(history_batch);
                             mark_turn_cancelled_with_synthetic_results(&mut state);
                             break 'turn;
@@ -629,7 +636,7 @@ impl RuntimeChatTurnDriver {
             }
 
             // ── 5f: per-iteration cancel check ───────────────────────────────
-            if cancel.is_cancelled() {
+            if cancellation_reason(&cancel).is_some() {
                 mark_turn_cancelled_with_synthetic_results(&mut state);
                 break 'turn;
             }

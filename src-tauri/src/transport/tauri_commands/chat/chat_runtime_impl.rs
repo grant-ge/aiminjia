@@ -1,6 +1,6 @@
 use super::chat_support::AgentGuard;
 use super::*;
-use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 
@@ -1156,7 +1156,7 @@ pub(crate) async fn legacy_send_message_impl(
                 "[AgentGuard] agent_loop skipped (cancelled before start) for conversation {}",
                 conversation_id_clone
             );
-            cancel_token.cancel();
+            cancel_token.cancel_with_reason(CancellationReason::UserCancel);
             return;
         }
 
@@ -1188,7 +1188,7 @@ pub(crate) async fn legacy_send_message_impl(
                     AGENT_TIMEOUT_SECS,
                     conversation_id_clone
                 );
-                cancel_token.cancel();
+                cancel_token.cancel_with_reason(CancellationReason::BackgroundStop);
                 guard
                     .gateway
                     .cancel_conversation(&conversation_id_clone)
@@ -2460,7 +2460,7 @@ async fn agent_loop(
                 _ = cancel_rx.changed() => {
                     if *cancel_rx.borrow() {
                         log::info!("[AGENT] Cancel signal received for conversation {}", conversation_id);
-                        cancel_token.cancel();
+                        cancel_token.cancel_with_reason(CancellationReason::Interrupt);
                         stream_cancelled = true;
                         break;
                     }
@@ -3148,7 +3148,7 @@ async fn agent_loop(
                 "[AGENT] Cancel signal detected after tool execution for conversation {}",
                 conversation_id
             );
-            cancel_token.cancel();
+            cancel_token.cancel_with_reason(CancellationReason::Interrupt);
             stream_cancelled = true;
         }
     }

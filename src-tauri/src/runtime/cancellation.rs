@@ -1,6 +1,14 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CancellationReason {
+    UserCancel,
+    Interrupt,
+    SiblingError,
+    BackgroundStop,
+}
+
 #[derive(Clone, Debug)]
 pub struct CancellationToken {
     inner: Arc<TokenInner>,
@@ -9,6 +17,8 @@ pub struct CancellationToken {
 #[derive(Debug)]
 struct TokenInner {
     cancelled: AtomicBool,
+    reason: Mutex<Option<CancellationReason>>,
+    parent: Mutex<Option<Weak<TokenInner>>>,
     children: Mutex<Vec<Weak<TokenInner>>>,
 }
 
@@ -17,6 +27,8 @@ impl CancellationToken {
         Self {
             inner: Arc::new(TokenInner {
                 cancelled: AtomicBool::new(false),
+                reason: Mutex::new(None),
+                parent: Mutex::new(None),
                 children: Mutex::new(Vec::new()),
             }),
         }
@@ -26,40 +38,106 @@ impl CancellationToken {
     /// 线程安全：注册和取消检查在同一个 Mutex 临界区内完成，消除竞态。
     pub fn child_token(&self) -> CancellationToken {
         let child = CancellationToken::new();
-        // 在 parent 的 children Mutex 内完成注册 + 取消检查，
-        // 确保 cancel() 不会在 "检查 is_cancelled" 和 "push child" 之间传播并遗漏这个 child。
+        *child.inner.parent.lock().unwrap() = Some(Arc::downgrade(&self.inner));
         let mut children = self.inner.children.lock().unwrap();
         children.push(Arc::downgrade(&child.inner));
-        // 如果 parent 在我们拿到锁之前（或之中）已经被 cancel，
-        // cancel() 的 propagate_to_children() 可能已经跑完了旧的 children 快照，
-        // 所以这里需要补发一次 cancel。
-        if self.inner.cancelled.load(Ordering::SeqCst) {
-            drop(children); // 先释放锁再 cancel，避免死锁（child.cancel 不需要 parent 的锁）
-            child.cancel();
+        self.compact_children_locked(&mut children);
+        let parent_was_cancelled = self.inner.cancelled.load(Ordering::SeqCst);
+        drop(children);
+
+        if parent_was_cancelled {
+            child.cancel_with_optional_reason(self.reason());
         }
         child
     }
 
     pub fn cancel(&self) {
-        if self.inner.cancelled.swap(true, Ordering::SeqCst) {
-            return; // 已经 cancelled，避免重复传播
-        }
-        // 递归传播到所有 children
-        self.propagate_to_children();
+        self.cancel_with_reason(CancellationReason::UserCancel);
     }
 
-    fn propagate_to_children(&self) {
-        let children = self.inner.children.lock().unwrap();
-        for weak_child in children.iter() {
-            if let Some(child_inner) = weak_child.upgrade() {
-                let child_token = CancellationToken { inner: child_inner };
-                child_token.cancel(); // 递归——会先 swap 再传播 grandchildren
-            }
-        }
+    pub fn cancel_with_reason(&self, reason: CancellationReason) {
+        self.cancel_with_optional_reason(Some(reason));
+    }
+
+    pub fn reason(&self) -> Option<CancellationReason> {
+        *self
+            .inner
+            .reason
+            .lock()
+            .expect("cancellation reason mutex poisoned")
     }
 
     pub fn is_cancelled(&self) -> bool {
         self.inner.cancelled.load(Ordering::SeqCst)
+    }
+
+    fn cancel_with_optional_reason(&self, reason: Option<CancellationReason>) {
+        if self.inner.cancelled.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        *self
+            .inner
+            .reason
+            .lock()
+            .expect("cancellation reason mutex poisoned") = reason;
+
+        self.propagate_to_children(reason);
+        self.detach_from_parent();
+    }
+
+    fn propagate_to_children(&self, reason: Option<CancellationReason>) {
+        let child_inners: Vec<Arc<TokenInner>> = {
+            let mut children = self.inner.children.lock().unwrap();
+            let live_children = children.iter().filter_map(|weak| weak.upgrade()).collect();
+            self.compact_children_locked(&mut children);
+            live_children
+        };
+
+        for child_inner in child_inners {
+            let child_token = CancellationToken { inner: child_inner };
+            child_token.cancel_with_optional_reason(reason);
+        }
+    }
+
+    fn compact_children_locked(&self, children: &mut Vec<Weak<TokenInner>>) {
+        children.retain(|weak| weak.strong_count() > 0);
+    }
+
+    fn detach_from_parent(&self) {
+        let parent = self
+            .inner
+            .parent
+            .lock()
+            .expect("cancellation parent mutex poisoned")
+            .clone();
+        let Some(parent) = parent else {
+            return;
+        };
+        let Some(parent_inner) = parent.upgrade() else {
+            return;
+        };
+
+        let mut children = parent_inner.children.lock().unwrap();
+        children.retain(|weak| {
+            if weak.strong_count() == 0 {
+                return false;
+            }
+            weak.upgrade()
+                .map(|child_inner| !Arc::ptr_eq(&child_inner, &self.inner))
+                .unwrap_or(false)
+        });
+    }
+
+    #[doc(hidden)]
+    pub fn compact_children_for_test(&self) {
+        let mut children = self.inner.children.lock().unwrap();
+        self.compact_children_locked(&mut children);
+    }
+
+    #[doc(hidden)]
+    pub fn debug_child_count(&self) -> usize {
+        self.inner.children.lock().unwrap().len()
     }
 }
 
@@ -85,6 +163,8 @@ mod tests {
 
         assert!(parent.is_cancelled());
         assert!(child.is_cancelled(), "child should be cancelled when parent is cancelled");
+        assert_eq!(parent.reason(), Some(CancellationReason::UserCancel));
+        assert_eq!(child.reason(), Some(CancellationReason::UserCancel));
     }
 
     #[test]
@@ -92,10 +172,13 @@ mod tests {
         let parent = CancellationToken::new();
         let child = parent.child_token();
 
-        child.cancel();
+        child.cancel_with_reason(CancellationReason::SiblingError);
 
         assert!(child.is_cancelled());
         assert!(!parent.is_cancelled(), "parent should NOT be cancelled when child is cancelled");
+        assert_eq!(child.reason(), Some(CancellationReason::SiblingError));
+        assert_eq!(parent.reason(), None);
+        assert_eq!(parent.debug_child_count(), 0);
     }
 
     #[test]
@@ -104,25 +187,24 @@ mod tests {
         let child = parent.child_token();
         let grandchild = child.child_token();
 
-        assert!(!parent.is_cancelled());
-        assert!(!child.is_cancelled());
-        assert!(!grandchild.is_cancelled());
-
-        parent.cancel();
+        parent.cancel_with_reason(CancellationReason::Interrupt);
 
         assert!(parent.is_cancelled());
         assert!(child.is_cancelled(), "child should be cancelled");
         assert!(grandchild.is_cancelled(), "grandchild should be cancelled via cascade");
+        assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
+        assert_eq!(grandchild.reason(), Some(CancellationReason::Interrupt));
     }
 
     #[test]
     fn child_token_from_already_cancelled_parent_is_immediately_cancelled() {
         let parent = CancellationToken::new();
-        parent.cancel();
+        parent.cancel_with_reason(CancellationReason::Interrupt);
 
         let child = parent.child_token();
 
         assert!(child.is_cancelled(), "child created from cancelled parent should be immediately cancelled");
+        assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
     }
 
     #[test]
@@ -131,10 +213,9 @@ mod tests {
 
         {
             let _child = parent.child_token();
-            // _child is dropped here
         }
 
-        // Parent cancel should succeed even though the child was dropped
+        parent.compact_children_for_test();
         parent.cancel();
 
         assert!(parent.is_cancelled(), "parent should still be cancellable after child is dropped");
@@ -142,9 +223,8 @@ mod tests {
 
     #[test]
     fn child_token_race_with_cancel_is_safe() {
-        // 验证：即使 parent.cancel() 和 parent.child_token() 并发，
-        // child 最终一定能观察到 cancelled 状态。
         use std::sync::Barrier;
+
         let iterations = 1000;
         for _ in 0..iterations {
             let parent = Arc::new(CancellationToken::new());
@@ -164,7 +244,7 @@ mod tests {
             let b2 = barrier.clone();
             let t2 = std::thread::spawn(move || {
                 b2.wait();
-                p2.cancel();
+                p2.cancel_with_reason(CancellationReason::Interrupt);
             });
 
             t1.join().unwrap();
@@ -175,6 +255,7 @@ mod tests {
                 child.is_cancelled(),
                 "child created concurrently with parent.cancel() must end up cancelled"
             );
+            assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
         }
     }
 }
