@@ -36,8 +36,8 @@ pub struct StorageCapability {
 pub struct FileState {
     pub content: String,
     pub mtime_secs: u64,
-    pub offset: Option<u64>,
-    pub limit: Option<u64>,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -89,7 +89,9 @@ impl Default for FileReadingLimits {
     }
 }
 
-pub trait NotificationSink: Send + Sync + std::fmt::Debug {}
+pub trait NotificationSink: Send + Sync + std::fmt::Debug {
+    fn notify(&self, message: &str);
+}
 
 // ── FileOperations trait ─────────────────────────────────────────────────────
 

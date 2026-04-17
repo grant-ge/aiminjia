@@ -143,3 +143,32 @@ fn capability_context_new_fields_default_to_none() {
     assert!(ctx.file_reading_limits.is_none());
     assert!(ctx.notification_sink.is_none());
 }
+
+#[test]
+fn file_state_offset_and_limit_accept_usize() {
+    use app_lib::runtime::tools::capability::FileState;
+    let offset: usize = 5;
+    let limit: usize = 10;
+    let state = FileState {
+        content: "a,b,c".to_string(),
+        mtime_secs: 1000,
+        offset: Some(offset),
+        limit: Some(limit),
+    };
+    assert_eq!(state.offset, Some(5_usize));
+    assert_eq!(state.limit, Some(10_usize));
+}
+
+#[derive(Debug)]
+struct TestNotificationSink;
+
+impl app_lib::runtime::tools::capability::NotificationSink for TestNotificationSink {
+    fn notify(&self, _message: &str) {}
+}
+
+#[test]
+fn notification_sink_exposes_notify_method() {
+    use app_lib::runtime::tools::capability::NotificationSink;
+    let sink = TestNotificationSink;
+    sink.notify("hello");
+}
