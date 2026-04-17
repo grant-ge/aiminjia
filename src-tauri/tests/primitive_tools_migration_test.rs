@@ -150,3 +150,45 @@ fn builtin_modules_compile() {
     // LoadFileRuntimeTool is stateless — its deps come from CapabilityContext.file_ops.
     let _ = LoadFileRuntimeTool::new();
 }
+
+// Task 3.2 tests
+
+#[test]
+fn execute_python_tool_is_registered_as_runtime_tool_in_request_scope() {
+    use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
+    use app_lib::runtime::tools::RuntimeTool;
+
+    let tool = ExecutePythonRuntimeTool::stub();
+    assert_eq!(tool.definition().id, "execute_python");
+}
+
+#[test]
+fn execute_python_runtime_tool_has_correct_catalog_kind() {
+    use app_lib::runtime::tools::catalog::ToolCatalog;
+    use app_lib::runtime::tools::definition::ToolKind;
+
+    let catalog = ToolCatalog::default_catalog();
+    let def = catalog
+        .get("execute_python")
+        .expect("execute_python must be in catalog");
+    assert!(matches!(def.kind, ToolKind::Power));
+}
+
+#[test]
+fn execute_python_check_permissions_denies_dangerous_code() {
+    use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
+    use app_lib::runtime::tools::permission::PermissionDecision;
+    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use serde_json::json;
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let tool = ExecutePythonRuntimeTool::stub();
+    let ctx = ToolExecutionContext::for_test("c", "r", "t");
+    let input = json!({"code": "__import__('os').system('rm -rf /')"});
+    let result = rt.block_on(tool.check_permissions(&input, &ctx));
+
+    assert!(
+        matches!(result, Some(PermissionDecision::Deny { .. })),
+        "dangerous code should be denied by check_permissions"
+    );
+}
