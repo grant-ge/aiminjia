@@ -1,7 +1,7 @@
 //! Integration tests for BashTool.
 //! 所有测试仅使用安全命令（echo, ls, cat, grep 等），不执行危险操作。
 
-use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::tools::builtin::bash::BashTool;
 use app_lib::runtime::tools::capability::CapabilityContext;
@@ -96,18 +96,29 @@ async fn bash_merges_stdout_and_stderr() {
 
     let tool = BashTool;
     let result = tool
-        .execute(json!({ "command": "echo STDOUT && echo STDERR >&2" }), ctx)
+        .execute(
+            json!({
+                "command": "printf 'stdout-1\\n'; printf 'stderr-1\\n' >&2; printf 'stdout-2\\n'; printf 'stderr-2\\n' >&2"
+            }),
+            ctx,
+        )
         .await
         .unwrap();
 
     assert!(
-        result.content.contains("STDOUT"),
+        result.content.contains("stdout-1"),
         "should contain stdout: {}",
         result.content
     );
     assert!(
-        result.content.contains("STDERR"),
+        result.content.contains("stderr-1"),
         "should contain stderr: {}",
+        result.content
+    );
+    let expected = "stdout-1\nstderr-1\nstdout-2\nstderr-2";
+    assert!(
+        result.content.contains(expected),
+        "stdout/stderr should keep merged ordering.\nexpected snippet: {expected}\nactual: {}",
         result.content
     );
 }
@@ -131,6 +142,30 @@ async fn bash_returns_error_on_timeout() {
     assert!(
         !err.contains("background"),
         "task 3 should not claim background semantics: {err}"
+    );
+}
+
+#[tokio::test]
+async fn bash_timeout_kills_descendant_processes() {
+    let tmp = TempDir::new().unwrap();
+    let ctx = make_ctx(&tmp);
+
+    let tool = BashTool;
+    let result = tool
+        .execute(
+            json!({
+                "command": "sh -c 'sleep 2; echo orphan > timeout-child.txt' & wait",
+                "timeout_secs": 1
+            }),
+            ctx,
+        )
+        .await;
+
+    assert!(result.is_err(), "timeout should still return an error");
+    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    assert!(
+        !tmp.path().join("timeout-child.txt").exists(),
+        "timeout should kill descendant processes, but background child still wrote a file"
     );
 }
 
@@ -165,6 +200,79 @@ async fn bash_returns_error_when_cancelled() {
     assert!(
         err.contains("cancelled") || err.contains("cancel"),
         "error should mention cancellation: {err}"
+    );
+}
+
+#[tokio::test]
+async fn bash_cancel_kills_descendant_processes() {
+    let tmp = TempDir::new().unwrap();
+    let token = CancellationToken::new();
+    let cap = Arc::new(CapabilityContext::with_workspace(
+        tmp.path().to_path_buf(),
+        "test-ws",
+    ));
+    let ctx = ToolExecutionContext::new(
+        SessionId::new("conv-1"),
+        RunId::new("run-1"),
+        None,
+        "tc-1",
+        token.clone(),
+    )
+    .with_capability(cap);
+
+    let token_clone = token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        token_clone.cancel();
+    });
+
+    let tool = BashTool;
+    let result = tool
+        .execute(
+            json!({ "command": "sh -c 'sleep 2; echo orphan > cancel-child.txt' & wait" }),
+            ctx,
+        )
+        .await;
+
+    assert!(result.is_err(), "cancelled command should still return an error");
+    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    assert!(
+        !tmp.path().join("cancel-child.txt").exists(),
+        "cancel should kill descendant processes, but background child still wrote a file"
+    );
+}
+
+#[tokio::test]
+async fn bash_cancel_does_not_report_background_stop_reason() {
+    let tmp = TempDir::new().unwrap();
+    let token = CancellationToken::new();
+    let cap = Arc::new(CapabilityContext::with_workspace(
+        tmp.path().to_path_buf(),
+        "test-ws",
+    ));
+    let ctx = ToolExecutionContext::new(
+        SessionId::new("conv-1"),
+        RunId::new("run-1"),
+        None,
+        "tc-1",
+        token.clone(),
+    )
+    .with_capability(cap);
+
+    let token_clone = token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        token_clone.cancel_with_reason(CancellationReason::BackgroundStop);
+    });
+
+    let tool = BashTool;
+    let result = tool.execute(json!({ "command": "sleep 10" }), ctx).await;
+
+    assert!(result.is_err(), "cancelled command should return error");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        !err.contains("background"),
+        "foreground bash tool must not surface background wording: {err}"
     );
 }
 

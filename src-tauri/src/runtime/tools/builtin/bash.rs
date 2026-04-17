@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
@@ -119,7 +119,6 @@ fn format_cancel_message(reason: Option<CancellationReason>, output: &str) -> St
     let prefix = match reason {
         Some(CancellationReason::Interrupt) => "Command interrupted",
         Some(CancellationReason::SiblingError) => "Command cancelled due to sibling error",
-        Some(CancellationReason::BackgroundStop) => "Command cancelled because the background run stopped",
         _ => "Command cancelled",
     };
     if output.trim().is_empty() {
@@ -148,33 +147,56 @@ fn content_from_output(output: &str, semantic_message: Option<&str>) -> String {
     }
 }
 
-async fn read_stream_to_limit<R>(mut reader: R) -> std::io::Result<(Vec<u8>, bool)>
+async fn read_merged_streams<R1, R2>(
+    mut stdout: R1,
+    mut stderr: R2,
+) -> std::io::Result<(Vec<u8>, bool)>
 where
-    R: tokio::io::AsyncRead + Unpin,
+    R1: tokio::io::AsyncRead + Unpin,
+    R2: tokio::io::AsyncRead + Unpin,
 {
     let mut captured = Vec::new();
-    let mut buf = [0u8; 8192];
+    let mut stdout_buf = [0u8; 8192];
+    let mut stderr_buf = [0u8; 8192];
+    let mut stdout_open = true;
+    let mut stderr_open = true;
     let mut truncated = false;
 
-    loop {
-        let read = reader.read(&mut buf).await?;
-        if read == 0 {
-            break;
-        }
-
-        if captured.len() < MAX_OUTPUT_BYTES {
-            let remaining = MAX_OUTPUT_BYTES - captured.len();
-            let copy_len = remaining.min(read);
-            captured.extend_from_slice(&buf[..copy_len]);
-            if copy_len < read {
-                truncated = true;
+    while stdout_open || stderr_open {
+        tokio::select! {
+            read = stdout.read(&mut stdout_buf), if stdout_open => {
+                let read = read?;
+                if read == 0 {
+                    stdout_open = false;
+                } else {
+                    append_capped_bytes(&mut captured, &stdout_buf[..read], &mut truncated);
+                }
             }
-        } else {
-            truncated = true;
+            read = stderr.read(&mut stderr_buf), if stderr_open => {
+                let read = read?;
+                if read == 0 {
+                    stderr_open = false;
+                } else {
+                    append_capped_bytes(&mut captured, &stderr_buf[..read], &mut truncated);
+                }
+            }
         }
     }
 
     Ok((captured, truncated))
+}
+
+fn append_capped_bytes(captured: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool) {
+    if captured.len() < MAX_OUTPUT_BYTES {
+        let remaining = MAX_OUTPUT_BYTES - captured.len();
+        let copy_len = remaining.min(chunk.len());
+        captured.extend_from_slice(&chunk[..copy_len]);
+        if copy_len < chunk.len() {
+            *truncated = true;
+        }
+    } else {
+        *truncated = true;
+    }
 }
 
 async fn collect_reader(
@@ -194,6 +216,35 @@ async fn wait_for_cancellation(token: CancellationToken) -> Option<CancellationR
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+#[cfg(unix)]
+fn configure_child_process_group(command: &mut Command) {
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn configure_child_process_group(_command: &mut Command) {}
+
+async fn kill_child_process_tree(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        if let Some(pid) = child.id() {
+            let _ = unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
+            let _ = child.wait().await;
+            return;
+        }
+    }
+
+    let _ = child.kill().await;
+    let _ = child.wait().await;
 }
 
 #[async_trait]
@@ -246,10 +297,13 @@ impl RuntimeTool for BashTool {
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_TIMEOUT_SECS)
             .min(MAX_TIMEOUT_SECS);
+        let wrapped_command = format!("exec 2>&1; {command}");
 
-        let mut child = Command::new("/bin/sh")
+        let mut shell = Command::new("/bin/sh");
+        configure_child_process_group(&mut shell);
+        let mut child = shell
             .arg("-c")
-            .arg(&command)
+            .arg(&wrapped_command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -264,8 +318,7 @@ impl RuntimeTool for BashTool {
             .stderr
             .take()
             .ok_or_else(|| ToolError::ExecutionFailed("stderr pipe missing".into()))?;
-        let stdout_handle = tokio::spawn(read_stream_to_limit(stdout));
-        let stderr_handle = tokio::spawn(read_stream_to_limit(stderr));
+        let merged_handle = tokio::spawn(read_merged_streams(stdout, stderr));
 
         let exit_kind = tokio::select! {
             status = child.wait() => {
@@ -274,23 +327,19 @@ impl RuntimeTool for BashTool {
                 )
             }
             _ = tokio::time::sleep(Duration::from_secs(timeout_secs)) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                kill_child_process_tree(&mut child).await;
                 ExitKind::TimedOut
             }
             reason = wait_for_cancellation(ctx.cancellation.clone()) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                kill_child_process_tree(&mut child).await;
                 ExitKind::Cancelled(reason)
             }
         };
 
-        let (stdout_str, stdout_truncated) = collect_reader(stdout_handle).await?;
-        let (stderr_str, stderr_truncated) = collect_reader(stderr_handle).await?;
-        let combined_output = format!("{stdout_str}{stderr_str}");
+        let (combined_output, stream_truncated) = collect_reader(merged_handle).await?;
         let (combined_output, combined_truncated) =
             truncated_to_max_bytes(&combined_output, MAX_OUTPUT_BYTES);
-        let truncated = stdout_truncated || stderr_truncated || combined_truncated;
+        let truncated = stream_truncated || combined_truncated;
 
         match exit_kind {
             ExitKind::Completed(status) => {
