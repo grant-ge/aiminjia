@@ -228,7 +228,7 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
 }
 
 #[tokio::test]
-async fn read_workspace_file_does_not_reuse_truncated_result_for_larger_read() {
+async fn read_workspace_file_reloads_when_larger_request_exceeds_truncated_cache() {
     use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
     use app_lib::runtime::tools::capability::{CapabilityContext, FileStateCache};
     use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
@@ -266,16 +266,29 @@ async fn read_workspace_file_does_not_reuse_truncated_result_for_larger_read() {
         .expect("truncated read should include structured data");
     assert_eq!(r1_data["content"], json!("abcd"));
     assert_eq!(r1_data["truncated"], json!(true));
+    assert!(r1_data.get("cached").is_none());
 
-    let r2 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
         .await
         .unwrap();
     let r2_data = r2
         .data
         .as_ref()
-        .expect("follow-up read should include structured data");
-    assert_eq!(r2_data["content"], json!("abcdefghij"));
-    assert!(r2_data.get("cached").is_none());
+        .expect("repeat read should include structured data");
+    assert_eq!(r2_data["content"], json!("abcd"));
+    assert_eq!(r2_data["cached"], json!(true));
+    assert_eq!(r2_data["truncated"], json!(true));
+
+    let r3 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+        .await
+        .unwrap();
+    let r3_data = r3
+        .data
+        .as_ref()
+        .expect("larger read should include structured data");
+    assert_eq!(r3_data["content"], json!("abcdefghij"));
+    assert!(r3_data.get("cached").is_none());
+    assert!(r3_data.get("truncated").is_none());
 }
 
 #[tokio::test]
@@ -327,6 +340,61 @@ async fn read_workspace_file_truncates_cached_content_for_smaller_follow_up_limi
     assert_eq!(r2_data["content"], json!("abcd"));
     assert_eq!(r2_data["cached"], json!(true));
     assert_eq!(r2_data["truncated"], json!(true));
+}
+
+#[tokio::test]
+async fn read_workspace_file_preserves_utf8_boundaries_between_cold_and_cached_reads() {
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
+    use app_lib::runtime::tools::capability::{CapabilityContext, FileStateCache};
+    use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
+    use serde_json::json;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tempfile::NamedTempFile;
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "你好z").unwrap();
+    let dir = tmp.path().parent().unwrap().to_path_buf();
+    let filename = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let cache = Arc::new(FileStateCache::new());
+    let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
+    let ctx = || {
+        ToolExecutionContext::for_test("conv", "run", "tc-1")
+            .with_capability(Arc::new(cap.clone()))
+    };
+
+    let tool = ReadWorkspaceFileRuntimeTool;
+
+    let r1 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 6}), ctx())
+        .await
+        .unwrap();
+    let r1_data = r1
+        .data
+        .as_ref()
+        .expect("cold read should include structured data");
+    assert_eq!(r1_data["content"], json!("你好"));
+    assert_eq!(r1_data["truncated"], json!(true));
+    assert!(r1_data.get("cached").is_none());
+    assert!(!r1_data["content"].as_str().unwrap().contains('\u{fffd}'));
+
+    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 6}), ctx())
+        .await
+        .unwrap();
+    let r2_data = r2
+        .data
+        .as_ref()
+        .expect("cached read should include structured data");
+    assert_eq!(r2_data["content"], json!("你好"));
+    assert_eq!(r2_data["cached"], json!(true));
+    assert_eq!(r2_data["truncated"], json!(true));
+    assert!(!r2_data["content"].as_str().unwrap().contains('\u{fffd}'));
 }
 
 #[test]

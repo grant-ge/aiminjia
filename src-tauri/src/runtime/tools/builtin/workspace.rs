@@ -73,6 +73,12 @@ fn truncate_text_to_max_bytes(content: &str, max_bytes: usize) -> String {
     content[..end].to_string()
 }
 
+fn limit_text_content(content: &str, max_bytes: usize) -> (String, bool) {
+    let limited = truncate_text_to_max_bytes(content, max_bytes);
+    let truncated = limited.len() < content.len();
+    (limited, truncated)
+}
+
 // ── ListDirectoryRuntimeTool ──────────────────────────────────────────────
 
 pub struct ListDirectoryRuntimeTool;
@@ -178,32 +184,33 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             if let Some(state) = cache.and_then(|cache| cache.get(&resolved)) {
                 if state.mtime_secs == mtime_secs && state.offset.is_none() && state.limit.is_none()
                 {
-                    let truncated = state.content.len() > max_bytes;
-                    let content = if truncated {
-                        truncate_text_to_max_bytes(&state.content, max_bytes)
-                    } else {
-                        state.content
-                    };
-                    let mut result = json!({
-                        "path": rel,
-                        "content": content,
-                        "size": metadata.len(),
-                        "cached": true,
-                    });
-                    if truncated {
-                        result["truncated"] = json!(true);
+                    let cache_is_too_short = metadata.len() as usize > state.content.len()
+                        && max_bytes > state.content.len();
+                    if !cache_is_too_short {
+                        let (content, limit_truncated) =
+                            limit_text_content(&state.content, max_bytes);
+                        let truncated =
+                            limit_truncated || metadata.len() as usize > content.len();
+                        let mut result = json!({
+                            "path": rel,
+                            "content": content,
+                            "size": metadata.len(),
+                            "cached": true,
+                        });
+                        if truncated {
+                            result["truncated"] = json!(true);
+                        }
+                        return Ok(tool_result("read_workspace_file", result));
                     }
-                    return Ok(tool_result("read_workspace_file", result));
                 }
             }
         }
         let bytes = std::fs::read(&resolved)
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let truncated = bytes.len() > max_bytes;
-        let content =
-            String::from_utf8_lossy(if truncated { &bytes[..max_bytes] } else { &bytes })
-                .to_string();
-        if !truncated && offset.is_none() && limit.is_none() {
+        let full_content = String::from_utf8_lossy(&bytes).to_string();
+        let (content, limit_truncated) = limit_text_content(&full_content, max_bytes);
+        let truncated = limit_truncated || bytes.len() > content.len();
+        if offset.is_none() && limit.is_none() {
             if let Some(cache) = cache {
                 cache.set(
                     resolved.clone(),
