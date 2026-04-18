@@ -49,6 +49,7 @@ import {
   onStreamingStepReset,
   onFileGenerated,
   onTaskStatusChanged,
+  onTurnCompleted,
 } from '@/lib/tauri'
 import type {
   StreamingDeltaPayload,
@@ -62,6 +63,7 @@ import type {
   StreamingStepResetPayload,
   FileGeneratedPayload,
   TaskStatusChangedPayload,
+  TurnCompletedPayload,
 } from '@/lib/tauri'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
@@ -347,6 +349,98 @@ export function useStreaming() {
         taskId,
         status,
         runId,
+      })
+    }),
+  )
+
+  // --- turn:completed ----------------------------------------------------
+  useTauriEvent(() =>
+    onTurnCompleted(({
+      conversationId,
+      outcome,
+      totalInputTokens,
+      totalOutputTokens,
+      totalCostUsd,
+    }: TurnCompletedPayload) => {
+      console.log('[turn:completed]', conversationId, outcome, {
+        totalInputTokens,
+        totalOutputTokens,
+        totalCostUsd,
+      })
+
+      // Non-success terminal outcomes should immediately release UI loading state
+      // instead of waiting for the watchdog fallback.
+      if (outcome !== 'Success') {
+        flushConversationDeltas(conversationId)
+        delete lastActivityRef.current[conversationId]
+        const store = useChatStore.getState()
+        store.clearConversationStreamState(conversationId)
+        store.removeBusyConversation(conversationId)
+      }
+
+      useStreamingStore.getState().clearConversationPendingAsks(conversationId)
+
+      switch (outcome) {
+        case 'MaxIterationsReached':
+          useNotificationStore.getState().push({
+            level: 'warning',
+            title: i18n.t('turnOutcome.maxIterationsTitle'),
+            message: i18n.t('turnOutcome.maxIterationsDesc'),
+            actions: [],
+            dismissible: true,
+            autoHide: 12,
+            context: 'toast',
+          })
+          break
+        case 'BudgetExceeded':
+          useNotificationStore.getState().push({
+            level: 'warning',
+            title: i18n.t('turnOutcome.budgetExceededTitle'),
+            message: i18n.t('turnOutcome.budgetExceededDesc'),
+            actions: [],
+            dismissible: true,
+            autoHide: 12,
+            context: 'toast',
+          })
+          break
+        case 'ExecutionError':
+          useNotificationStore.getState().push({
+            level: 'error',
+            title: i18n.t('turnOutcome.executionErrorTitle'),
+            message: i18n.t('turnOutcome.executionErrorDesc'),
+            actions: [],
+            dismissible: true,
+            autoHide: 10,
+            context: 'toast',
+          })
+          break
+        case 'Success':
+          if (totalCostUsd != null && totalCostUsd > 0) {
+            const tokens = (totalInputTokens ?? 0) + (totalOutputTokens ?? 0)
+            useNotificationStore.getState().push({
+              level: 'info',
+              title: i18n.t('turnOutcome.successSummaryTitle'),
+              message: i18n.t('turnOutcome.successSummaryDesc', {
+                tokens,
+                cost: totalCostUsd.toFixed(4),
+              }),
+              actions: [],
+              dismissible: true,
+              autoHide: 6,
+              context: 'toast',
+            })
+          }
+          break
+        case 'Cancelled':
+          break
+      }
+
+      useChatStore.getState().setLastTurnSummary(conversationId, {
+        outcome,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCostUsd,
+        completedAt: Date.now(),
       })
     }),
   )

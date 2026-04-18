@@ -1,4 +1,5 @@
 import type { StoreApi, UseBoundStore } from 'zustand'
+import type { TurnOutcome } from '@/lib/tauri'
 
 export interface ToolExecution {
   toolName: string
@@ -15,6 +16,14 @@ export interface ConversationTaskState {
   runId: string
 }
 
+export interface TurnSummary {
+  outcome: TurnOutcome
+  totalInputTokens?: number
+  totalOutputTokens?: number
+  totalCostUsd?: number | null
+  completedAt: number
+}
+
 export interface PendingAsk {
   conversationId: string
   runId: string
@@ -29,6 +38,7 @@ export interface ConversationStreamState {
   streamingContent: string
   toolExecutions: ToolExecution[]
   agentPhase?: AgentPhase
+  lastTurnSummary?: TurnSummary
 }
 
 export interface StreamingState {
@@ -54,6 +64,7 @@ export interface StreamingState {
   addPendingAsk: (ask: PendingAsk) => void
   removePendingAsk: (toolCallId: string) => void
   clearConversationPendingAsks: (conversationId: string) => void
+  setLastTurnSummary: (convId: string, summary: TurnSummary) => void
   setStreaming: (isStreaming: boolean) => void
   setStreamingContent: (content: string) => void
   appendStreamingContent: (delta: string) => void
@@ -105,7 +116,11 @@ export function getStreamState(
   states: Record<string, ConversationStreamState>,
   convId: string,
 ): ConversationStreamState {
-  return states[convId] ?? { isStreaming: false, streamingContent: '', toolExecutions: [] }
+  return states[convId] ?? {
+    isStreaming: false,
+    streamingContent: '',
+    toolExecutions: [],
+  }
 }
 
 /** Derive legacy scalar fields from active conversation's stream state. */
@@ -191,6 +206,7 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             streamingContent: '',
             toolExecutions: previous.toolExecutions,
             agentPhase: undefined,
+            lastTurnSummary: previous.lastTurnSummary,
           },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
@@ -293,6 +309,17 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
           }
         }
         return changed ? { pendingAsks: next } : {}
+      }),
+
+    setLastTurnSummary: (convId, summary) =>
+      set((state) => {
+        const previous = getStreamState(state.streamStates, convId)
+        const streamStates = {
+          ...state.streamStates,
+          [convId]: { ...previous, lastTurnSummary: summary },
+        }
+        const legacy = deriveLegacy(state.activeConversationId, streamStates)
+        return { streamStates, ...legacy }
       }),
 
     setStreaming: (isStreaming) => {

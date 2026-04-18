@@ -17,8 +17,10 @@ import {
   approvePermissionRequest,
   denyPermissionRequest,
   onPermissionAsk,
+  onTurnCompleted,
   onTaskStatusChanged,
   type AgentIdlePayload,
+  type TurnCompletedPayload,
 } from './tauri'
 
 describe('tauri event contract', () => {
@@ -89,5 +91,37 @@ describe('tauri event contract', () => {
       toolCallId: 'tool-call-123',
       message: undefined,
     })
+  })
+
+  it('exposes TURN_COMPLETED event constant with correct value', () => {
+    expect(TAURI_EVENTS.TURN_COMPLETED).toBe('turn:completed')
+  })
+
+  it('TurnCompletedPayload keeps frontend-facing outcome shape stable', () => {
+    const payload: TurnCompletedPayload = {
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      outcome: 'BudgetExceeded',
+      totalInputTokens: 123,
+      totalOutputTokens: 45,
+      totalCostUsd: 0.12,
+      permissionDenialCount: 2,
+      reason: 'Reached maximum budget ($0.10)',
+    }
+
+    expect(payload.outcome).toBe('BudgetExceeded')
+    expect(payload.conversationId).toBe('conv-1')
+    expect(payload.totalCostUsd).toBe(0.12)
+  })
+
+  it('onTurnCompleted registers listener with correct event name', async () => {
+    const handler = vi.fn()
+
+    await onTurnCompleted(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'turn:completed',
+      expect.any(Function),
+    )
   })
 })

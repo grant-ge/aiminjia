@@ -29,6 +29,7 @@ vi.mock('@/i18n', () => ({
 import { useStreaming } from './useStreaming'
 import { useChatStore } from '@/stores/chatStore'
 import { useStreamingStore } from '@/stores/streamingStore'
+import { useNotificationStore } from '@/stores/notificationStore'
 
 function HookHarness() {
   useStreaming()
@@ -57,6 +58,7 @@ describe('useStreaming integration review', () => {
       streamingContent: '',
       toolExecutions: [],
     })
+    useNotificationStore.getState().dismissAll()
   })
 
   it('registers a frontend listener for runtime task terminal notifications', async () => {
@@ -199,5 +201,188 @@ describe('useStreaming integration review', () => {
     })
 
     expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
+  })
+
+  it('registers a listener for turn:completed events', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    expect(tauriEventMock.listeners.has('turn:completed')).toBe(true)
+  })
+
+  it('pushes warning toast and clears busy state for MaxIterationsReached', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-turn',
+      busyConversations: new Set(['conv-turn']),
+      streamStates: {
+        'conv-turn': {
+          isStreaming: true,
+          streamingContent: 'thinking',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'thinking',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-turn',
+          runId: 'run-turn',
+          outcome: 'MaxIterationsReached',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.01,
+          permissionDenialCount: 0,
+          iterations: 30,
+        },
+      })
+    })
+
+    const chatState = useChatStore.getState()
+    const notifications = useNotificationStore.getState().notifications
+    expect(chatState.busyConversations.has('conv-turn')).toBe(false)
+    expect(chatState.streamStates['conv-turn']?.isStreaming).toBe(false)
+    expect(notifications.some((n) => n.level === 'warning' && n.title === 'turnOutcome.maxIterationsTitle')).toBe(true)
+  })
+
+  it('pushes warning toast for BudgetExceeded', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-budget',
+          runId: 'run-budget',
+          outcome: 'BudgetExceeded',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.12,
+          permissionDenialCount: 0,
+          reason: 'Reached maximum budget ($0.10)',
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'warning' && n.title === 'turnOutcome.budgetExceededTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('pushes error toast for ExecutionError', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-error',
+          runId: 'run-error',
+          outcome: 'ExecutionError',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.02,
+          permissionDenialCount: 0,
+          message: 'gateway timeout',
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'error' && n.title === 'turnOutcome.executionErrorTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('pushes info toast for Success when cost is present', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-success',
+          runId: 'run-success',
+          outcome: 'Success',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.001,
+          permissionDenialCount: 0,
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'info' && n.title === 'turnOutcome.successSummaryTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('does not push Success toast when cost is null', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-success-null',
+          runId: 'run-success-null',
+          outcome: 'Success',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: null,
+          permissionDenialCount: 0,
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.title === 'turnOutcome.successSummaryTitle',
+      ),
+    ).toBe(false)
+  })
+
+  it('stores the latest turn summary when turn:completed arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-summary',
+          runId: 'run-summary',
+          outcome: 'ExecutionError',
+          totalInputTokens: 250,
+          totalOutputTokens: 50,
+          totalCostUsd: 0.003,
+          permissionDenialCount: 0,
+          message: 'bad gateway',
+        },
+      })
+    })
+
+    expect(useChatStore.getState().streamStates['conv-summary']?.lastTurnSummary).toMatchObject({
+      outcome: 'ExecutionError',
+      totalInputTokens: 250,
+      totalOutputTokens: 50,
+      totalCostUsd: 0.003,
+    })
   })
 })

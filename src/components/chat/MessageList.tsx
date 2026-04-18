@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { MessageItem } from './MessageItem'
 import { StepDivider } from './StepDivider'
 import { StreamingBubble } from './StreamingBubble'
+import { TurnSummaryBadge } from './TurnSummaryBadge'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -29,6 +30,10 @@ export function MessageList() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => s.streamingContent)
+  const lastTurnSummary = useChatStore((s) => {
+    const activeId = s.activeConversationId
+    return activeId ? s.streamStates[activeId]?.lastTurnSummary : undefined
+  })
 
   return (
     <div>
@@ -50,6 +55,7 @@ export function MessageList() {
 
       {/* Show streaming assistant response in real-time */}
       {isStreaming && <StreamingBubble content={streamingContent} />}
+      <TurnSummaryBadge summary={lastTurnSummary} />
     </div>
   )
 }

@@ -132,3 +132,29 @@ describe('pendingAsks state', () => {
     expect(next.pendingAsks.has('tc-3')).toBe(true)
   })
 })
+
+describe('turn summaries', () => {
+  beforeEach(() => {
+    resetChatStore()
+  })
+
+  it('stores the latest turn summary per conversation', () => {
+    const store = useStreamingStore.getState()
+
+    store.setLastTurnSummary('conv-summary', {
+      outcome: 'BudgetExceeded',
+      totalInputTokens: 1200,
+      totalOutputTokens: 300,
+      totalCostUsd: 0.24,
+      completedAt: 1_713_000_000,
+    })
+
+    expect(useStreamingStore.getState().streamStates['conv-summary']?.lastTurnSummary).toEqual({
+      outcome: 'BudgetExceeded',
+      totalInputTokens: 1200,
+      totalOutputTokens: 300,
+      totalCostUsd: 0.24,
+      completedAt: 1_713_000_000,
+    })
+  })
+})

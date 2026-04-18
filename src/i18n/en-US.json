@@ -48,7 +48,6 @@
     "loading": "Loading...",
     "unknownError": "Unknown error"
   },
-
   "sidebar": {
     "newChat": "New Chat",
     "noConversations": "No conversations yet",
@@ -67,7 +66,6 @@
       "earlier": "Earlier"
     }
   },
-
   "topBar": {
     "exportConversation": "Export conversation",
     "export": "Export",
@@ -77,7 +75,6 @@
     "exportAsPdf": "Export as PDF",
     "exportAsHtml": "Export as HTML"
   },
-
   "inputBar": {
     "attachData": "Add file or local directory",
     "uploadFile": "Upload file (Excel/Word/PDF)",
@@ -85,12 +82,10 @@
     "placeholder": "Ask anything, or upload a file for analysis...",
     "analyzeFile": "Please analyze this file"
   },
-
   "chatArea": {
     "fileNotFound": "File not found",
     "cannotOpenFile": "Cannot open file \"{{fileName}}\". It may not have been generated yet or has been moved."
   },
-
   "welcome": {
     "greeting": "Hi! I'm {{productName}}",
     "greetingWithPersona": "Hi! I'm {{productName}} · {{personaName}}",
@@ -100,7 +95,6 @@
     "askAnything": "Or ask me any work-related question",
     "hello": "Hello"
   },
-
   "aiBubble": {
     "sendFailed": "Send failed",
     "sendFailedDesc": "Failed to send reply. Please try again.",
@@ -112,11 +106,9 @@
     "confirmAction": "[Confirm]",
     "rejectAction": "[Reject]"
   },
-
   "userBubble": {
     "me": "Me"
   },
-
   "streaming": {
     "tools": {
       "execute_python": "Analyzing data...",
@@ -136,7 +128,6 @@
       "observe": "Summarizing..."
     }
   },
-
   "messageList": {
     "steps": {
       "1": "Data Cleaning & Understanding",
@@ -146,7 +137,6 @@
       "5": "Action Plan & Executive Materials"
     }
   },
-
   "settings": {
     "title": "Settings",
     "tabs": {
@@ -217,7 +207,6 @@
     "keyInvalid": "Key is invalid or validation failed",
     "enterApiKey": "Enter the API Key for {{provider}}",
     "apiKeyOptional": "API Key (optional, leave empty for local models)",
-
     "customModel": {
       "endpointLabel": "API Endpoint",
       "endpointDesc": "OpenAI-compatible API URL (required, enter up to /v1, the system will append /chat/completions)",
@@ -234,10 +223,8 @@
       "modelLike": "model e.g.",
       "keyEmpty": "leave Key empty"
     },
-
     "availableModels": "Available models",
     "reasoningRouting": "Supports reasoning model auto-routing",
-
     "search": {
       "tavilyLabel": "Tavily Search API Key",
       "tavilyDesc": "For web search (optional, backup)",
@@ -245,7 +232,6 @@
       "bochaDesc": "For web search of market compensation data (recommended)",
       "bochaGetKey": "Get Key →"
     },
-
     "general": {
       "language": "Language",
       "languageDesc": "Select the display language for the interface",
@@ -269,7 +255,6 @@
       "cleanup": "Clear"
     }
   },
-
   "login": {
     "loginSuccess": "Login successful",
     "welcome": "Welcome, {{name}}",
@@ -304,7 +289,6 @@
     "loggingIn": "Logging in...",
     "loginButton": "Log In"
   },
-
   "persona": {
     "description": "Select or customize your work persona. AI will adjust its expertise and memory focus based on your persona.",
     "import": "Import Persona",
@@ -331,7 +315,6 @@
     "descriptionLabel": "Description",
     "identity": "Persona Identity (system prompt injection)"
   },
-
   "onboarding": {
     "welcome": "Welcome to {{productName}}",
     "selectPersona": "Choose a persona to get started. AI will adjust its expertise based on your role.",
@@ -339,7 +322,6 @@
     "startUsing": "Get Started",
     "canSwitchLater": "You can switch or customize your persona anytime in Settings"
   },
-
   "updater": {
     "newVersionFound": "New version v{{version}} available. Update now?\n\n",
     "downloading": "Downloading update",
@@ -353,30 +335,9 @@
     "updateLater": "Later",
     "updateAvailableDesc": "A new version is available. Would you like to update now?"
   },
-
   "auth": {
     "expired": "Session expired",
     "expiredDesc": "Cloud service is temporarily unavailable. You can log in again or switch to local mode in Settings."
-  },
-
-  "streaming": {
-    "tools": {
-      "execute_python": "Analyzing data...",
-      "load_file": "Loading file...",
-      "save_analysis_note": "Saving analysis notes...",
-      "update_progress": "Updating analysis progress...",
-      "web_search": "Searching for information...",
-      "generate_report": "Generating report...",
-      "export_data": "Exporting data...",
-      "hypothesis_test": "Running statistical tests...",
-      "detect_anomalies": "Detecting anomalies...",
-      "generate_chart": "Generating chart..."
-    },
-    "phases": {
-      "think": "Thinking...",
-      "act": "Executing...",
-      "observe": "Summarizing..."
-    }
   },
   "errors": {
     "streamingError": "Response error",
@@ -399,7 +360,6 @@
     "monthsAgo": "{{count}} months ago",
     "yearsAgo": "{{count}} years ago"
   },
-
   "providers": {
     "deepseek-v3": "DeepSeek",
     "qwen-plus": "Qwen Plus",
@@ -415,5 +375,15 @@
       "volcano": "Default: ByteDance LLM",
       "custom": "Custom OpenAI-compatible model"
     }
+  },
+  "turnOutcome": {
+    "maxIterationsTitle": "Max iterations reached",
+    "maxIterationsDesc": "The agent reached its maximum iteration limit for this turn. Send a new message to continue.",
+    "budgetExceededTitle": "Budget limit exceeded",
+    "budgetExceededDesc": "This turn exceeded the configured token budget and was stopped automatically.",
+    "executionErrorTitle": "Execution error",
+    "executionErrorDesc": "The agent encountered an error and this turn was aborted. Please retry or check settings.",
+    "successSummaryTitle": "Turn complete",
+    "successSummaryDesc": "Used {{tokens}} tokens, estimated cost ${{cost}}."
   }
 }
