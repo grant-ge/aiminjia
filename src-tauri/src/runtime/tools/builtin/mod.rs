@@ -9,5 +9,6 @@ pub mod network;
 pub mod browser;
 pub mod file;
 pub mod python;
+pub mod python_execution;
 pub mod report;
 pub mod chart;

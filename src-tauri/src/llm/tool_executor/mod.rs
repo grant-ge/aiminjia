@@ -64,6 +64,8 @@ pub(crate) use memory::handle_save_memory;
 pub(crate) use memory::handle_search_memory;
 pub(crate) use notes::handle_save_analysis_note;
 pub(crate) use progress::handle_update_progress;
+pub(crate) use python::ExecutePythonCoreParams;
+pub(crate) use python::handle_execute_python_core;
 pub(crate) use python::handle_execute_python;
 pub(crate) use report::handle_generate_report;
 pub(crate) use search::execute_web_search_core;

@@ -553,9 +553,26 @@ impl ToolRegistry {
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
-            "execute_python" => Some(Arc::new(
-                builtin::python::ExecutePythonRuntimeTool::new(ctx.clone()),
-            ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            "execute_python" => {
+                use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
+
+                let (python_binary, python_home) =
+                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let python = Arc::new(DefaultPythonExecution::new(
+                    ctx.session_manager.clone(),
+                    python_binary,
+                    python_home,
+                ));
+                Some(Arc::new(
+                    builtin::python::ExecutePythonRuntimeTool::with_runtime_deps(
+                        python,
+                        ctx.storage.clone(),
+                        ctx.file_manager.clone(),
+                        ctx.run_id.clone(),
+                        ctx.model.clone(),
+                    ),
+                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             _ => None,
         }
     }

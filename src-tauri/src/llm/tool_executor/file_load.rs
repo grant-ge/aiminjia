@@ -1134,6 +1134,9 @@ _au_path = os.path.join(os.getcwd(), 'temp', '_analysis_utils.py')
 if os.path.exists(_au_path):
     with open(_au_path, encoding='utf-8') as _au_f:
         exec(_au_f.read())
+
+# Snapshot system variable names BEFORE user code runs (used by epilogue to detect user vars)
+_SYS_VARS_SNAPSHOT = set(globals().keys())
 "#,
         conv_id = py_escape(conversation_id),
         step = step,

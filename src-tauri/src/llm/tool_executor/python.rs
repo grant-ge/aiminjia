@@ -1,5 +1,9 @@
 //! execute_python handler.
 
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+
 use anyhow::Result;
 use log::{error, info, warn};
 use serde_json::{json, Value};
@@ -7,14 +11,66 @@ use uuid::Uuid;
 
 use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
-use crate::python::runner::PythonRunner;
 use crate::python::sandbox::SandboxConfig;
+use crate::runtime::ids::RunId;
+use crate::runtime::store::AuthorizedWorkspaceRef;
+use crate::runtime::tools::builtin::python_execution::{DefaultPythonExecution, PythonExecution};
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::AppStorage;
 
 use super::util::py_escape;
 use super::{optional_str, require_str};
 
+pub(crate) struct ExecutePythonCoreParams<'a> {
+    pub storage: &'a Arc<AppStorage>,
+    pub file_manager: &'a Arc<FileManager>,
+    pub workspace_path: &'a Path,
+    pub authorized_workspace: Option<&'a AuthorizedWorkspaceRef>,
+    pub conversation_id: &'a str,
+    pub requested_run_id: Option<&'a RunId>,
+    pub model: &'a str,
+    pub app_handle: Option<&'a tauri::AppHandle>,
+}
+
+impl<'a> ExecutePythonCoreParams<'a> {
+    fn loaded_scope_id(&self) -> &str {
+        self.requested_run_id
+            .map(RunId::as_str)
+            .unwrap_or(self.conversation_id)
+    }
+
+    fn loaded_key(&self, file_id: &str) -> String {
+        format!("loaded:{}:{}", self.loaded_scope_id(), file_id)
+    }
+
+    fn load_failed_key(&self, file_id: &str) -> String {
+        format!("load_failed:{}:{}", self.loaded_scope_id(), file_id)
+    }
+}
+
 /// 2. execute_python — run arbitrary Python code.
 pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let (python_binary, python_home) =
+        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let python = DefaultPythonExecution::new(ctx.session_manager.clone(), python_binary, python_home);
+    let params = ExecutePythonCoreParams {
+        storage: &ctx.storage,
+        file_manager: &ctx.file_manager,
+        workspace_path: &ctx.workspace_path,
+        authorized_workspace: ctx.authorized_workspace.as_ref(),
+        conversation_id: &ctx.conversation_id,
+        requested_run_id: ctx.run_id.as_ref(),
+        model: &ctx.model,
+        app_handle: ctx.app_handle.as_ref(),
+    };
+    handle_execute_python_core(&params, args, &python).await
+}
+
+pub(crate) async fn handle_execute_python_core(
+    params: &ExecutePythonCoreParams<'_>,
+    args: &Value,
+    python: &dyn PythonExecution,
+) -> Result<String> {
     let code = require_str(args, "code")?;
     let purpose = optional_str(args, "purpose").unwrap_or("code execution");
 
@@ -22,22 +78,23 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
         "[TOOL:execute_python] purpose='{}' code_len={} workspace={:?}",
         purpose,
         code.len(),
-        ctx.workspace_path
+        params.workspace_path
     );
     info!("[TOOL:execute_python] code:\n{}", code);
 
     // Validate user code early (before assembling system preamble/epilogue).
     // System-injected code bypasses validation via execute_raw().
-    let (sandbox, workspace_root_preamble) = match &ctx.authorized_workspace {
+    let workspace_path_buf = params.workspace_path.to_path_buf();
+    let (sandbox, workspace_root_preamble) = match params.authorized_workspace {
         Some(aw) => {
             let s = SandboxConfig::for_workspace_with_authorized(
-                &ctx.workspace_path,
+                &workspace_path_buf,
                 vec![aw.root_path.clone()],
             );
             let p = crate::llm::tool_executor::file_load::build_local_workspace_preamble(&aw.root_path);
             (s, p)
         }
-        None => (SandboxConfig::for_workspace(&ctx.workspace_path), String::new()),
+        None => (SandboxConfig::for_workspace(&workspace_path_buf), String::new()),
     };
     #[allow(deprecated)]
     if let Err(e) = sandbox.validate_code(code) {
@@ -51,32 +108,40 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
     // Auto-load uploaded files that haven't been loaded via load_file yet.
     // This ensures _df/_text variables are available even if the LLM skips load_file.
     {
-        let uploaded_files = ctx
+        let uploaded_files = params
             .storage
-            .get_uploaded_files_for_conversation(&ctx.conversation_id)
+            .get_uploaded_files_for_conversation(params.conversation_id)
             .unwrap_or_default();
         for file in &uploaded_files {
             let file_id = file.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if file_id.is_empty() {
                 continue;
             }
-            let loaded_key = ctx.loaded_key(file_id);
-            let failed_key = ctx.load_failed_key(file_id);
-            if ctx.storage.get_memory(&loaded_key).ok().flatten().is_none()
-                && ctx.storage.get_memory(&failed_key).ok().flatten().is_none()
+            let loaded_key = params.loaded_key(file_id);
+            let failed_key = params.load_failed_key(file_id);
+            if params.storage.get_memory(&loaded_key).ok().flatten().is_none()
+                && params.storage.get_memory(&failed_key).ok().flatten().is_none()
             {
                 info!(
                     "[TOOL:execute_python] Auto-loading file '{}' for conversation {}",
-                    file_id, ctx.conversation_id
+                    file_id, params.conversation_id
                 );
                 let load_args = json!({"file_id": file_id});
-                if let Err(e) = super::file_load::handle_load_file(ctx, &load_args).await {
+                let load_params = super::file_load::LoadFileParams {
+                    storage: params.storage,
+                    file_manager: params.file_manager,
+                    workspace_path: params.workspace_path,
+                    conversation_id: params.conversation_id,
+                    run_id: params.requested_run_id,
+                    app_handle: params.app_handle,
+                };
+                if let Err(e) = super::file_load::handle_load_file_core(&load_params, &load_args).await {
                     warn!(
                         "[TOOL:execute_python] Auto-load failed for '{}': {}",
                         file_id, e
                     );
                     // Mark as failed so we don't retry on every iteration
-                    let _ = ctx.storage.set_memory(
+                    let _ = params.storage.set_memory(
                         &failed_key,
                         &e.to_string(),
                         Some("auto_load_failed"),
@@ -88,9 +153,9 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
 
     // Auto-inject loaded files preamble (from load_file tool)
     let loaded_preamble = super::file_load::build_loaded_files_preamble_for_scope(
-        &ctx.storage,
-        ctx.loaded_scope_id(),
-        &ctx.workspace_path,
+        params.storage,
+        params.loaded_scope_id(),
+        params.workspace_path,
     );
     let mut final_code = if loaded_preamble.is_empty() {
         code.to_string()
@@ -116,161 +181,21 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
     // 1. Inject three-layer snapshot system + _df_raw + _CURRENT_STEP
     // 2. Inject pre-written analysis utility functions
     // 3. Append DataFrame auto-save epilogue (working + step snapshots)
-    let step_state = orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id);
+    let step_state = orchestrator::get_step_state(params.storage, params.conversation_id);
     let is_analysis = step_state.is_some();
     if is_analysis {
-        let snap_dir = format!("analysis/{}", ctx.conversation_id);
         let current_step = step_state.map(|s| s.step).unwrap_or(0);
-
-        // Write ANALYSIS_UTILS to a module file so Python doesn't
-        // re-compile ~50KB of utility code on every execute_python call.
-        // Only written once per session — the binary doesn't change mid-run.
-        let utils_path = ctx.workspace_path.join("temp/_analysis_utils.py");
-        if !utils_path.exists() {
-            if let Some(parent) = utils_path.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            if let Err(e) =
-                std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS)
-            {
-                warn!(
-                    "[TOOL:execute_python] Failed to write _analysis_utils.py: {}",
-                    e
-                );
-            }
-        }
-
-        // Analysis preamble: three-layer snapshot + _df_raw + _CURRENT_STEP + utils (loaded via exec)
-        let analysis_preamble = format!(
-            r#"
-_CONV_ID = '{conv_id}'
-_ANALYSIS_DIR = os.path.join(os.getcwd(), 'analysis', _CONV_ID)
-os.makedirs(_ANALYSIS_DIR, exist_ok=True)
-_CURRENT_STEP = {step}
-
-# Layer 1: Save original data (first time only, never modified)
-import pickle as _pkl
-_orig_path = os.path.join(_ANALYSIS_DIR, '_original.pkl')
-if '_df' in dir() and isinstance(_df, pd.DataFrame) and not os.path.exists(_orig_path):
-    _pkl.dump(_df.copy(), open(_orig_path + '.tmp', 'wb'))
-    os.replace(_orig_path + '.tmp', _orig_path)
-    _ckpt_sign(_orig_path)
-
-# Layer 3: Restore working snapshot (overrides file-loaded _df)
-# HMAC-verified before loading to prevent pickle RCE from tampered checkpoint files.
-_snap_path = os.path.join(_ANALYSIS_DIR, '_step_df.pkl')
-if os.path.exists(_snap_path):
-    if _ckpt_verify(_snap_path):
-        _df = _pkl.load(open(_snap_path, 'rb'))
-    else:
-        import sys as _sys
-        print(f'[WARN] Checkpoint signature invalid: {{_snap_path}} — skipped', file=_sys.stderr)
-
-# Restore _dfs snapshot if exists
-_snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
-if os.path.exists(_snap_dfs_path):
-    if _ckpt_verify(_snap_dfs_path):
-        _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
-    else:
-        import sys as _sys
-        print(f'[WARN] Checkpoint signature invalid: {{_snap_dfs_path}} — skipped', file=_sys.stderr)
-
-# Restore user-created variables from previous execute_python calls
-# (e.g. col_map, results, _df_final — anything except _df/_dfs which have dedicated snapshots)
-_uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
-if os.path.exists(_uv_path):
-    if _ckpt_verify(_uv_path):
-        try:
-            for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
-                globals()[_k] = _v
-            del _k, _v
-        except Exception:
-            pass
-    else:
-        import sys as _sys
-        print(f'[WARN] Checkpoint signature invalid: {{_uv_path}} — skipped', file=_sys.stderr)
-
-# _df_raw: read-only reference to original data (always available)
-if os.path.exists(_orig_path):
-    if _ckpt_verify(_orig_path):
-        _df_raw = _pkl.load(open(_orig_path, 'rb'))
-    else:
-        import sys as _sys
-        print(f'[WARN] Checkpoint signature invalid: {{_orig_path}} — skipped', file=_sys.stderr)
-        _df_raw = None
-else:
-    _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
-
-# Load analysis utility functions from module file
-_au_path = os.path.join(os.getcwd(), 'temp', '_analysis_utils.py')
-if os.path.exists(_au_path):
-    with open(_au_path, encoding='utf-8') as _au_f:
-        exec(_au_f.read())
-
-# Snapshot system variable names BEFORE user code runs (used by epilogue to detect user vars)
-_SYS_VARS_SNAPSHOT = set(globals().keys())
-"#,
-            conv_id = py_escape(&ctx.conversation_id),
-            step = current_step,
+        let analysis_preamble = super::file_load::build_analysis_preamble(
+            params.conversation_id,
+            current_step,
+            params.workspace_path,
         );
         info!("[TOOL:execute_python] Injecting analysis preamble ({} bytes, step={}) for conversation {}",
-            analysis_preamble.len(), current_step, ctx.conversation_id);
+            analysis_preamble.len(), current_step, params.conversation_id);
         final_code = format!("{}{}", analysis_preamble, final_code);
 
         // Epilogue: save working snapshot + step snapshot
-        let epilogue = format!(
-            r#"
-
-# ── System: DataFrame auto-save (three-layer snapshots) ──
-try:
-    import pickle as _pkl
-    _snap_dir = os.path.join(os.getcwd(), '{snap_dir}')
-    os.makedirs(_snap_dir, exist_ok=True)
-    if '_df' in dir() and isinstance(_df, pd.DataFrame):
-        # Layer 3: Working snapshot (persists across execute_python calls)
-        _pkl.dump(_df, open(os.path.join(_snap_dir, '_step_df.pkl.tmp'), 'wb'))
-        os.replace(os.path.join(_snap_dir, '_step_df.pkl.tmp'),
-                   os.path.join(_snap_dir, '_step_df.pkl'))
-        _ckpt_sign(os.path.join(_snap_dir, '_step_df.pkl'))
-        # Layer 2: Step snapshot (for per-step rollback)
-        _step_snap = os.path.join(_snap_dir, f'_step{{_CURRENT_STEP}}_df.pkl')
-        _pkl.dump(_df, open(_step_snap + '.tmp', 'wb'))
-        os.replace(_step_snap + '.tmp', _step_snap)
-        _ckpt_sign(_step_snap)
-    if '_dfs' in dir() and isinstance(_dfs, dict):
-        _pkl.dump(_dfs, open(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
-        os.replace(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
-                   os.path.join(_snap_dir, '_step_dfs.pkl'))
-        _ckpt_sign(os.path.join(_snap_dir, '_step_dfs.pkl'))
-    # Auto-save user-created variables (DataFrame, dict, list, etc.)
-    # so they persist across execute_python calls in the same conversation.
-    # Uses runtime snapshot taken before user code ran — no manual list to maintain.
-    _user_vars = {{}}
-    _CHEAP_TYPES = (int, float, str, bool, bytes, type(None))
-    for _vname, _vval in list(globals().items()):
-        if _vname.startswith('__'):
-            continue  # skip dunder vars (__name__, __builtins__, etc.)
-        if _vname in _SYS_VARS_SNAPSHOT:
-            continue  # skip system/snapshot vars (captured before user code)
-        if callable(_vval) or isinstance(_vval, type) or type(_vval).__name__ == 'module':
-            continue  # skip functions, classes, modules
-        try:
-            if not isinstance(_vval, _CHEAP_TYPES):
-                _pkl.dumps(_vval)  # probe only non-trivial types
-            _user_vars[_vname] = _vval
-        except Exception:
-            pass
-    if _user_vars:
-        _pkl.dump(_user_vars, open(os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
-        os.replace(os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
-                   os.path.join(_snap_dir, '_user_vars.pkl'))
-        _ckpt_sign(os.path.join(_snap_dir, '_user_vars.pkl'))
-except Exception as _e:
-    import sys as _sys
-    print(f"[WARN] DataFrame snapshot save failed: {{_e}}", file=_sys.stderr)
-"#,
-            snap_dir = py_escape(&snap_dir)
-        );
+        let epilogue = build_analysis_epilogue(params.conversation_id);
         info!(
             "[TOOL:execute_python] Appending DataFrame auto-save epilogue (analysis mode, step={})",
             current_step
@@ -282,22 +207,18 @@ except Exception as _e:
         // Analysis mode: use persistent session (warm process, no cold-start overhead).
         // The session reuses a long-running Python REPL, eliminating process spawn,
         // pandas/numpy import, and _analysis_utils.py compilation on every call.
-        let timeout = std::time::Duration::from_secs(600);
-        let run_id = ctx.run_id.as_ref().ok_or_else(|| {
+        let timeout = Duration::from_secs(600);
+        let run_id = params.requested_run_id.ok_or_else(|| {
             anyhow::anyhow!(
                 "analysis mode requires run_id for execute_python persistent session"
             )
         })?;
-        let session_result = ctx
-            .session_manager
-            .execute_for_run(run_id, &final_code, timeout, &sandbox)
-            .await?;
-        session_result.result
+        python.execute_for_run(run_id, &final_code, timeout, &sandbox).await?
     } else {
         // Daily mode: use one-shot PythonRunner (no persistent state needed)
-        let runner =
-            PythonRunner::with_config(ctx.workspace_path.clone(), sandbox, ctx.app_handle.as_ref());
-        runner.execute_raw(&final_code).await?
+        python
+            .execute_oneshot(params.workspace_path, &final_code, &sandbox)
+            .await?
     };
 
     info!(
@@ -328,7 +249,7 @@ except Exception as _e:
                     .and_then(|v| v.as_str())
                     .unwrap_or("excel");
 
-                let full_path = ctx.workspace_path.join(rel_path);
+                let full_path = params.workspace_path.join(rel_path);
                 // Path traversal guard: resolve symlinks/.. and reject paths outside workspace
                 let canonical = match full_path.canonicalize() {
                     Ok(p) => p,
@@ -342,10 +263,10 @@ except Exception as _e:
                         continue;
                     }
                 };
-                let workspace_canonical = ctx
+                let workspace_canonical = params
                     .workspace_path
                     .canonicalize()
-                    .unwrap_or_else(|_| ctx.workspace_path.clone());
+                    .unwrap_or_else(|_| params.workspace_path.to_path_buf());
                 if !canonical.starts_with(&workspace_canonical) {
                     error!("[TOOL:execute_python] Path traversal blocked in __GENERATED_FILE__: {:?} escapes workspace {:?}", canonical, workspace_canonical);
                     continue;
@@ -355,9 +276,9 @@ except Exception as _e:
                     .unwrap_or(0);
                 let file_id = Uuid::new_v4().to_string();
 
-                if let Err(e) = ctx.storage.insert_generated_file(
+                if let Err(e) = params.storage.insert_generated_file(
                     &file_id,
-                    &ctx.conversation_id,
+                    params.conversation_id,
                     None,
                     filename,
                     rel_path,
@@ -435,15 +356,15 @@ except Exception as _e:
     let timed_out = result.stderr.contains("timed out") || result.stderr.contains("TimeoutError");
     info!(
         "[METRICS:python] conv={} exit_code={} duration_ms={} stdout_chars={} stderr_chars={} compact_saved={}chars | has_error={} timeout={}",
-        ctx.conversation_id, result.exit_code, result.execution_time_ms,
+        params.conversation_id, result.exit_code, result.execution_time_ms,
         clean_stdout.len(), result.stderr.len(), compact_saved,
         has_error, timed_out,
     );
     crate::telemetry::record(
         "python",
-        &ctx.workspace_path,
+        params.workspace_path,
         &[
-            ("conv", &ctx.conversation_id),
+            ("conv", params.conversation_id),
             ("exit_code", &result.exit_code.to_string()),
             ("duration_ms", &result.execution_time_ms.to_string()),
             ("stdout_chars", &clean_stdout.len().to_string()),
@@ -451,11 +372,64 @@ except Exception as _e:
             ("compact_saved", &compact_saved.to_string()),
             ("has_error", &has_error.to_string()),
             ("timeout", &timed_out.to_string()),
-            ("model", &ctx.model),
+            ("model", params.model),
         ],
     );
 
     Ok(output)
+}
+
+fn build_analysis_epilogue(conversation_id: &str) -> String {
+    format!(
+        r#"
+
+# ── System: DataFrame auto-save (three-layer snapshots) ──
+try:
+    import pickle as _pkl
+    _snap_dir = os.path.join(os.getcwd(), 'analysis', '{conv_id}')
+    os.makedirs(_snap_dir, exist_ok=True)
+    if '_df' in dir() and isinstance(_df, pd.DataFrame):
+        # Layer 3: Working snapshot (persists across execute_python calls)
+        _pkl.dump(_df, open(os.path.join(_snap_dir, '_step_df.pkl.tmp'), 'wb'))
+        os.replace(os.path.join(_snap_dir, '_step_df.pkl.tmp'),
+                   os.path.join(_snap_dir, '_step_df.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_step_df.pkl'))
+        # Layer 2: Step snapshot (for per-step rollback)
+        _step_snap = os.path.join(_snap_dir, f'_step{{_CURRENT_STEP}}_df.pkl')
+        _pkl.dump(_df, open(_step_snap + '.tmp', 'wb'))
+        os.replace(_step_snap + '.tmp', _step_snap)
+        _ckpt_sign(_step_snap)
+    if '_dfs' in dir() and isinstance(_dfs, dict):
+        _pkl.dump(_dfs, open(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'), 'wb'))
+        os.replace(os.path.join(_snap_dir, '_step_dfs.pkl.tmp'),
+                   os.path.join(_snap_dir, '_step_dfs.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_step_dfs.pkl'))
+    _user_vars = {{}}
+    _CHEAP_TYPES = (int, float, str, bool, bytes, type(None))
+    for _vname, _vval in list(globals().items()):
+        if _vname.startswith('__'):
+            continue
+        if _vname in _SYS_VARS_SNAPSHOT:
+            continue
+        if callable(_vval) or isinstance(_vval, type) or type(_vval).__name__ == 'module':
+            continue
+        try:
+            if not isinstance(_vval, _CHEAP_TYPES):
+                _pkl.dumps(_vval)
+            _user_vars[_vname] = _vval
+        except Exception:
+            pass
+    if _user_vars:
+        _pkl.dump(_user_vars, open(os.path.join(_snap_dir, '_user_vars.pkl.tmp'), 'wb'))
+        os.replace(os.path.join(_snap_dir, '_user_vars.pkl.tmp'),
+                   os.path.join(_snap_dir, '_user_vars.pkl'))
+        _ckpt_sign(os.path.join(_snap_dir, '_user_vars.pkl'))
+except Exception as _e:
+    import sys as _sys
+    print(f"[WARN] DataFrame snapshot save failed: {{_e}}", file=_sys.stderr)
+"#,
+        conv_id = py_escape(conversation_id)
+    )
 }
 
 // ---------------------------------------------------------------------------

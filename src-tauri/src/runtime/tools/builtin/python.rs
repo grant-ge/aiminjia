@@ -1,22 +1,25 @@
 //! execute_python as RuntimeTool.
 //!
-//! This is the smallest Phase 3 migration slice:
-//! - `stub()` exists for tests and non-production wiring
-//! - `check_permissions()` performs static dangerous-code detection
-//! - `execute()` remains a placeholder until the full PythonExecution boundary lands
-#![allow(deprecated)]
+//! `ExecutePythonRuntimeTool` keeps static permission checks local, while the
+//! actual execution semantics are delegated to the shared
+//! `llm::tool_executor::python::handle_execute_python_core` helper so the
+//! runtime path and the legacy ToolPlugin path do not drift.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::Arc;
 
-use crate::plugin::context::PluginContext;
+use crate::runtime::ids::RunId;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
+use crate::runtime::tools::builtin::python_execution::PythonExecution;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::AppStorage;
 
 const DANGEROUS_PATTERNS: &[&str] = &[
     "__import__('os').system",
@@ -31,21 +34,39 @@ const DANGEROUS_PATTERNS: &[&str] = &[
 
 pub struct ExecutePythonRuntimeTool {
     stub_mode: bool,
-    plugin_ctx: Option<PluginContext>,
+    python: Option<Arc<dyn PythonExecution>>,
+    storage: Option<Arc<AppStorage>>,
+    file_manager: Option<Arc<FileManager>>,
+    requested_run_id: Option<RunId>,
+    model: Option<String>,
 }
 
 impl ExecutePythonRuntimeTool {
-    pub fn new(plugin_ctx: PluginContext) -> Self {
-        Self {
-            stub_mode: false,
-            plugin_ctx: Some(plugin_ctx),
-        }
-    }
-
     pub fn stub() -> Self {
         Self {
             stub_mode: true,
-            plugin_ctx: None,
+            python: None,
+            storage: None,
+            file_manager: None,
+            requested_run_id: None,
+            model: None,
+        }
+    }
+
+    pub fn with_runtime_deps(
+        python: Arc<dyn PythonExecution>,
+        storage: Arc<AppStorage>,
+        file_manager: Arc<FileManager>,
+        requested_run_id: Option<RunId>,
+        model: String,
+    ) -> Self {
+        Self {
+            stub_mode: false,
+            python: Some(python),
+            storage: Some(storage),
+            file_manager: Some(file_manager),
+            requested_run_id,
+            model: Some(model),
         }
     }
 }
@@ -82,7 +103,7 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
     async fn execute(
         &self,
         input: Value,
-        _ctx: ToolExecutionContext,
+        ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         if self.stub_mode {
             return Err(ToolError::ExecutionFailed(
@@ -90,14 +111,53 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
             ));
         }
 
-        let plugin_ctx = self.plugin_ctx.as_ref().ok_or_else(|| {
+        if ctx.cancellation.is_cancelled() {
+            return Err(ToolError::ExecutionFailed(
+                "ExecutePythonRuntimeTool: execution cancelled before start".into(),
+            ));
+        }
+
+        let python = self.python.as_ref().ok_or_else(|| {
             ToolError::ExecutionFailed(
-                "ExecutePythonRuntimeTool: missing PluginContext bridge for live execution".into(),
+                "ExecutePythonRuntimeTool: missing PythonExecution dependency".into(),
             )
         })?;
-        let content = crate::llm::tool_executor::handle_execute_python(plugin_ctx, &input)
-            .await
-            .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+        let storage = self.storage.as_ref().ok_or_else(|| {
+            ToolError::ExecutionFailed("ExecutePythonRuntimeTool: missing storage dependency".into())
+        })?;
+        let file_manager = self.file_manager.as_ref().ok_or_else(|| {
+            ToolError::ExecutionFailed(
+                "ExecutePythonRuntimeTool: missing file_manager dependency".into(),
+            )
+        })?;
+        let capability = ctx.capability.as_ref().ok_or_else(|| {
+            ToolError::ExecutionFailed(
+                "ExecutePythonRuntimeTool: missing capability context".into(),
+            )
+        })?;
+        let storage_cap = capability.storage.as_ref().ok_or_else(|| {
+            ToolError::ExecutionFailed(
+                "ExecutePythonRuntimeTool: missing workspace capability".into(),
+            )
+        })?;
+
+        let params = crate::llm::tool_executor::ExecutePythonCoreParams {
+            storage,
+            file_manager,
+            workspace_path: &storage_cap.workspace_path,
+            authorized_workspace: storage_cap.authorized_workspace.as_ref(),
+            conversation_id: ctx.session_id.as_str(),
+            requested_run_id: self.requested_run_id.as_ref(),
+            model: self.model.as_deref().unwrap_or("unknown"),
+            app_handle: None,
+        };
+        let content = crate::llm::tool_executor::handle_execute_python_core(
+            &params,
+            &input,
+            python.as_ref(),
+        )
+        .await
+        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
 
         Ok(ToolResult::new("execute_python", content, None))
     }

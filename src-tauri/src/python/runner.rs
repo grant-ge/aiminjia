@@ -69,6 +69,25 @@ impl PythonRunner {
         }
     }
 
+    /// Create a runner with an already-resolved Python runtime.
+    ///
+    /// This keeps `runtime/` free from `tauri::AppHandle` while still letting
+    /// request-scoped runtime tools execute against the same Python binary that
+    /// the legacy `PluginContext` path resolved during startup.
+    pub fn with_runtime(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            workspace_path,
+            python_binary,
+            python_home,
+            sandbox,
+        }
+    }
+
     /// Execute Python code string.
     ///
     /// 1. Validates code against sandbox rules.
