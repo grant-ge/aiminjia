@@ -99,6 +99,8 @@ fn build_runtime_tool(
         file_manager,
         requested_run_id,
         "test-model".to_string(),
+        std::path::PathBuf::from("python3"),
+        None,
     )
 }
 
@@ -160,6 +162,8 @@ async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
         file_manager,
         None,
         "test-model".to_string(),
+        std::path::PathBuf::from("python3"),
+        None,
     );
 
     let err = tool

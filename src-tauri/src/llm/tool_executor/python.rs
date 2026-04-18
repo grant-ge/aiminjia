@@ -29,7 +29,8 @@ pub(crate) struct ExecutePythonCoreParams<'a> {
     pub conversation_id: &'a str,
     pub requested_run_id: Option<&'a RunId>,
     pub model: &'a str,
-    pub app_handle: Option<&'a tauri::AppHandle>,
+    pub python_binary: Option<std::path::PathBuf>,
+    pub python_home: Option<std::path::PathBuf>,
 }
 
 impl<'a> ExecutePythonCoreParams<'a> {
@@ -52,7 +53,11 @@ impl<'a> ExecutePythonCoreParams<'a> {
 pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> Result<String> {
     let (python_binary, python_home) =
         crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
-    let python = DefaultPythonExecution::new(ctx.session_manager.clone(), python_binary, python_home);
+    let python = DefaultPythonExecution::new(
+        ctx.session_manager.clone(),
+        python_binary.clone(),
+        python_home.clone(),
+    );
     let params = ExecutePythonCoreParams {
         storage: &ctx.storage,
         file_manager: &ctx.file_manager,
@@ -61,7 +66,8 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
         conversation_id: &ctx.conversation_id,
         requested_run_id: ctx.run_id.as_ref(),
         model: &ctx.model,
-        app_handle: ctx.app_handle.as_ref(),
+        python_binary: Some(python_binary),
+        python_home,
     };
     handle_execute_python_core(&params, args, &python).await
 }
@@ -133,16 +139,8 @@ pub(crate) async fn handle_execute_python_core(
                     workspace_path: params.workspace_path,
                     conversation_id: params.conversation_id,
                     run_id: params.requested_run_id,
-                    python_binary: {
-                        let (binary, _) =
-                            crate::python::runner::resolve_python_path(params.app_handle);
-                        Some(binary)
-                    },
-                    python_home: {
-                        let (_, home) =
-                            crate::python::runner::resolve_python_path(params.app_handle);
-                        home
-                    },
+                    python_binary: params.python_binary.clone(),
+                    python_home: params.python_home.clone(),
                 };
                 if let Err(e) = super::file_load::handle_load_file_core(&load_params, &load_args).await {
                     warn!(
@@ -797,6 +795,10 @@ fn is_fixable_code_error(stderr: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
 
     #[test]
     fn compact_below_threshold_is_noop() {
@@ -908,6 +910,34 @@ mod tests {
         assert!(result.contains("Loading data..."));
         assert!(result.contains("Done."));
         assert!(result.contains("percentiles"));
+    }
+
+    #[test]
+    fn execute_python_core_params_has_python_binary_not_app_handle() {
+        let tempdir = tempfile::TempDir::new().expect("tempdir should exist");
+        let storage = Arc::new(AppStorage::new(tempdir.path()).expect("storage should initialize"));
+        storage
+            .create_conversation("conv-test", "Plan J")
+            .expect("conversation should exist");
+        let file_manager = Arc::new(FileManager::new(tempdir.path()));
+
+        let params = ExecutePythonCoreParams {
+            storage: &storage,
+            file_manager: &file_manager,
+            workspace_path: Path::new("/tmp"),
+            authorized_workspace: None,
+            conversation_id: "test",
+            requested_run_id: None,
+            model: "test-model",
+            python_binary: Some(PathBuf::from("/usr/bin/python3")),
+            python_home: None,
+        };
+
+        assert_eq!(
+            params.python_binary.as_deref(),
+            Some(Path::new("/usr/bin/python3"))
+        );
+        assert!(params.python_home.is_none());
     }
 
 }

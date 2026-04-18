@@ -8,6 +8,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::runtime::ids::RunId;
@@ -39,6 +40,8 @@ pub struct ExecutePythonRuntimeTool {
     file_manager: Option<Arc<FileManager>>,
     requested_run_id: Option<RunId>,
     model: Option<String>,
+    python_binary: Option<PathBuf>,
+    python_home: Option<PathBuf>,
 }
 
 impl ExecutePythonRuntimeTool {
@@ -50,6 +53,8 @@ impl ExecutePythonRuntimeTool {
             file_manager: None,
             requested_run_id: None,
             model: None,
+            python_binary: None,
+            python_home: None,
         }
     }
 
@@ -59,6 +64,8 @@ impl ExecutePythonRuntimeTool {
         file_manager: Arc<FileManager>,
         requested_run_id: Option<RunId>,
         model: String,
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
     ) -> Self {
         Self {
             stub_mode: false,
@@ -67,7 +74,14 @@ impl ExecutePythonRuntimeTool {
             file_manager: Some(file_manager),
             requested_run_id,
             model: Some(model),
+            python_binary: Some(python_binary),
+            python_home,
         }
+    }
+
+    #[cfg(test)]
+    pub fn python_binary_path(&self) -> Option<&PathBuf> {
+        self.python_binary.as_ref()
     }
 }
 
@@ -148,7 +162,8 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
             conversation_id: ctx.session_id.as_str(),
             requested_run_id: self.requested_run_id.as_ref(),
             model: self.model.as_deref().unwrap_or("unknown"),
-            app_handle: None,
+            python_binary: self.python_binary.clone(),
+            python_home: self.python_home.clone(),
         };
         let content = crate::llm::tool_executor::handle_execute_python_core(
             &params,
@@ -159,5 +174,45 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
         .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
 
         Ok(ToolResult::new("execute_python", content, None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExecutePythonRuntimeTool;
+    use crate::python::session::PythonSessionManager;
+    use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[test]
+    fn execute_python_runtime_tool_exposes_python_binary() {
+        let workspace = tempfile::TempDir::new().expect("tempdir should exist");
+        let session_manager = Arc::new(PythonSessionManager::new(
+            workspace.path().to_path_buf(),
+            None,
+        ));
+        let binary = PathBuf::from("/usr/bin/python3");
+        let python = Arc::new(DefaultPythonExecution::new(
+            session_manager,
+            binary.clone(),
+            None,
+        ));
+        let storage = Arc::new(AppStorage::new(workspace.path()).expect("storage should init"));
+        let file_manager = Arc::new(FileManager::new(workspace.path()));
+
+        let tool = ExecutePythonRuntimeTool::with_runtime_deps(
+            python,
+            storage,
+            file_manager,
+            None,
+            "test-model".to_string(),
+            binary.clone(),
+            None,
+        );
+
+        assert_eq!(tool.python_binary_path(), Some(&binary));
     }
 }

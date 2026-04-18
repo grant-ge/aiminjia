@@ -680,8 +680,8 @@ impl ToolRegistry {
                     crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
                 let python = Arc::new(DefaultPythonExecution::new(
                     ctx.session_manager.clone(),
-                    python_binary,
-                    python_home,
+                    python_binary.clone(),
+                    python_home.clone(),
                 ));
                 Some(Arc::new(
                     builtin::python::ExecutePythonRuntimeTool::with_runtime_deps(
@@ -690,6 +690,8 @@ impl ToolRegistry {
                         ctx.file_manager.clone(),
                         ctx.run_id.clone(),
                         ctx.model.clone(),
+                        python_binary,
+                        python_home,
                     ),
                 ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
