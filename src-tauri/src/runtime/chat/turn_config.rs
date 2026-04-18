@@ -7,6 +7,23 @@ use serde_json::Value as JsonValue;
 
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 
+/// LLM provider/routing settings resolved once per turn.
+///
+/// This keeps runtime code independent from the transport/database layer while
+/// still giving the executor everything it needs to call `LlmGateway` without
+/// re-reading settings on every iteration.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResolvedLlmSettings {
+    pub primary_model: String,
+    pub primary_api_key: String,
+    pub auto_model_routing: bool,
+    pub custom_model_endpoint: String,
+    pub custom_model_name: String,
+    pub use_cloud: bool,
+    pub cloud_model: String,
+    pub cloud_model_type: String,
+}
+
 /// Turn 级不可变配置。在 run_chat_turn 入口处构建一次，之后只读。
 #[derive(Debug, Clone)]
 pub struct TurnConfig {
@@ -19,6 +36,7 @@ pub struct TurnConfig {
     pub is_analysis: bool,
     pub masking_level: String,
     pub workspace_path: PathBuf,
+    pub llm_settings: ResolvedLlmSettings,
     pub conversation_id: String,
     pub run_id: String,
 }
@@ -74,6 +92,7 @@ pub struct LlmStepInput<'a> {
     pub chunk_timeout_secs: u64,
     pub masking_level: &'a str,
     pub force_no_tools: bool,
+    pub llm_settings: &'a ResolvedLlmSettings,
     pub conversation_id: &'a str,
     pub run_id: &'a str,
 }

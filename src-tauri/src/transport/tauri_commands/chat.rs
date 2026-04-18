@@ -33,7 +33,8 @@ use crate::runtime::{
 };
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, RuntimeLlmExecutor, TurnConfig, TurnError, TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig,
+    TurnError, TurnIterationState,
 };
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
@@ -137,7 +138,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ) -> Result<LlmStepResult, TurnError> {
         use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::llm::masking::MaskingLevel;
-        use crate::models::settings::AppSettings;
         use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
         use futures::StreamExt;
@@ -145,24 +145,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let session_id = SessionId::from(input.conversation_id);
         let run_id = RunId::from(input.run_id);
 
-        // --- Load settings from DB ---
-        let settings: AppSettings = {
-            let settings_map = self.services.db.get_all_settings().unwrap_or_default();
-            let mut s = if settings_map.is_empty() {
-                AppSettings::default()
-            } else {
-                AppSettings::from_string_map(&settings_map)
-            };
-
-            // Decrypt API keys (same as legacy_send_message_impl does)
-            if let Some(ss) = self.services.crypto.as_ref() {
-                s.primary_api_key = decrypt_api_key(ss, &s.primary_api_key);
-                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
-                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
-            }
-
-            s
-        };
+        let settings = build_gateway_settings(input.llm_settings);
 
         // --- Convert JsonValue messages to ChatMessage ---
         let chat_messages: Vec<ChatMessage> = input
@@ -489,6 +472,30 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 tokens_out,
             });
         }
+    }
+
+    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
+        let settings_map = self.services.db.get_all_settings().unwrap_or_default();
+        let mut settings = if settings_map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&settings_map)
+        };
+
+        if let Some(ss) = self.services.crypto.as_ref() {
+            settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
+        }
+
+        Ok(ResolvedLlmSettings {
+            primary_model: settings.primary_model,
+            primary_api_key: settings.primary_api_key,
+            auto_model_routing: settings.auto_model_routing,
+            custom_model_endpoint: settings.custom_model_endpoint,
+            custom_model_name: settings.custom_model_name,
+            use_cloud: settings.use_cloud,
+            cloud_model: settings.cloud_model,
+            cloud_model_type: settings.cloud_model_type,
+        })
     }
 
     async fn run_precompute(
@@ -1031,6 +1038,20 @@ fn decrypt_api_key(ss: &SecureStorage, value: &str) -> String {
             );
             String::new()
         }
+    }
+}
+
+fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
+    AppSettings {
+        primary_model: settings.primary_model.clone(),
+        primary_api_key: settings.primary_api_key.clone(),
+        auto_model_routing: settings.auto_model_routing,
+        custom_model_endpoint: settings.custom_model_endpoint.clone(),
+        custom_model_name: settings.custom_model_name.clone(),
+        use_cloud: settings.use_cloud,
+        cloud_model: settings.cloud_model.clone(),
+        cloud_model_type: settings.cloud_model_type.clone(),
+        ..AppSettings::default()
     }
 }
 

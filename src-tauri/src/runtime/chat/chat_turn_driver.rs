@@ -10,7 +10,10 @@ use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
-use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfig, TurnError, TurnIterationState};
+use crate::runtime::chat::turn_config::{
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError,
+    TurnIterationState,
+};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId};
@@ -73,6 +76,14 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         bus: &RuntimeEventBus,
         cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError>;
+
+    /// 解析本次 turn 使用的 LLM 路由设置。
+    ///
+    /// 生产 executor 应在这里做一次性的 DB 读取与密钥解密；driver 会把
+    /// 返回值存入 `TurnConfig` 并在线程内复用到每次 `run_llm_step`。
+    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
+        Ok(ResolvedLlmSettings::default())
+    }
 
     /// Precompute 执行（analysis 模式专用）。默认 no-op。
     async fn run_precompute(
@@ -348,10 +359,14 @@ impl RuntimeChatTurnDriver {
         executor: &dyn RuntimeLlmExecutor,
     ) -> Result<()> {
         // ── Step 1: Build TurnConfig ──────────────────────────────────────────
-        // Executor reads settings and tool_registry from its own services; the
-        // config fields that matter for the driver loop are max_iterations and
-        // the IDs. Remaining fields are filled with sentinel defaults — T14
-        // (production path switch) will enrich them.
+        // Executor loads the turn-scoped LLM settings/tool defs/history from its
+        // own services; the driver snapshots those results into immutable config
+        // so repeated iterations do not re-read DB state.
+
+        let llm_settings = executor
+            .load_llm_settings()
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Build the system prompt via the executor (reads DB/persona/auth).
         let system_prompt = executor
@@ -375,6 +390,7 @@ impl RuntimeChatTurnDriver {
             is_analysis: request.is_analysis,
             masking_level: "strict".to_string(),
             workspace_path: std::path::PathBuf::new(),
+            llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.as_str().to_string(),
         };
@@ -482,6 +498,7 @@ impl RuntimeChatTurnDriver {
                 chunk_timeout_secs: config.chunk_timeout_secs,
                 masking_level: &config.masking_level,
                 force_no_tools: state.force_no_tools,
+                llm_settings: &config.llm_settings,
                 conversation_id: &config.conversation_id,
                 run_id: &config.run_id,
             };
