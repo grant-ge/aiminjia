@@ -6,7 +6,7 @@ use anyhow::Result;
 // Import and re-export from chat module.  Types were previously defined here;
 // they now live in `runtime::chat` to avoid circular imports.
 pub use crate::runtime::chat::ChatTurnRequest;
-use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
@@ -25,20 +25,12 @@ use crate::transport::tauri_event_adapter::TauriEventAdapter;
 pub struct SessionRuntime {
     query_engine: QueryEngine,
     session_query_engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
+    session_cancel_roots: Arc<Mutex<HashMap<String, CancellationToken>>>,
     event_bus: RuntimeEventBus,
     /// S4 executor: owns the query loop; executor is a provider streaming adapter only.
     /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`.
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
-    /// Session-level cancellation token.  When set, every `TurnState` produced by
-    /// `run_chat_request` receives a **child** token so that cancelling the session
-    /// token cascades down to the active turn and its tool calls.
-    ///
-    /// The token is injected by the transport layer (e.g. via
-    /// `with_cancellation_token`) and should be sourced from the same cancel
-    /// hierarchy that `stop_streaming` / `RuntimeRunRegistry` uses, so that the
-    /// runtime path and the legacy agent-loop path share one cancel tree.
-    cancel_token: Option<CancellationToken>,
     pending_permission_store: Arc<PendingPermissionRequestStore>,
 }
 
@@ -47,10 +39,10 @@ impl SessionRuntime {
         Self {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
+            session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
             event_bus,
             llm_executor: None,
             authorized_workspace_store: None,
-            cancel_token: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
     }
@@ -68,10 +60,10 @@ impl SessionRuntime {
         Self {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
+            session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
             event_bus,
             llm_executor: Some(executor),
             authorized_workspace_store: None,
-            cancel_token: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
     }
@@ -89,20 +81,6 @@ impl SessionRuntime {
         authorized_workspace_store: Arc<dyn AuthorizedWorkspaceStore>,
     ) -> Self {
         self.authorized_workspace_store = Some(authorized_workspace_store);
-        self
-    }
-
-    /// Attach a session-level cancellation token.
-    ///
-    /// Every `TurnState` constructed by [`run_chat_request`] will receive a
-    /// **child** of this token, so that cancelling `token` (e.g. from
-    /// `stop_streaming`) cascades down to the active turn and its tool calls.
-    ///
-    /// The token should be sourced from the same cancel hierarchy that the
-    /// `RuntimeRunRegistry` / gateway cancel path uses so that both the
-    /// pure-runtime and the legacy agent-loop paths share one cancel tree.
-    pub fn with_cancellation_token(mut self, token: CancellationToken) -> Self {
-        self.cancel_token = Some(token);
         self
     }
 
@@ -138,13 +116,8 @@ impl SessionRuntime {
         let _ = self.event_bus.emit(run_started).await;
 
         let mut turn = TurnState::new(mapping, run_id, request.content.clone());
-
-        // If a session-level cancel token is present, derive a child token so
-        // that cancelling the session (e.g. stop_streaming) cascades into this
-        // turn and its tool calls.
-        if let Some(ref session_token) = self.cancel_token {
-            turn = turn.with_cancellation(session_token.child_token());
-        }
+        let session_root = self.ensure_active_session_cancel_root(turn.session_id());
+        turn = turn.with_cancellation(session_root.child_token());
 
         // Build a driver for this session and drive the full turn lifecycle.
         // The driver remains the only chat-turn entry and may invoke the legacy
@@ -192,11 +165,21 @@ impl SessionRuntime {
             .cancel_for_session(session_id, message)
     }
 
+    pub fn cancel_session(&self, session_id: &SessionId, reason: CancellationReason) {
+        if let Some(root) = self.current_session_cancel_root(session_id) {
+            root.cancel_with_reason(reason);
+        }
+    }
+
     pub fn clear_session_state(&self, session_id: &SessionId) {
         self.cancel_pending_permission_requests_for_session(
             session_id,
             "Permission request cancelled because the session state was cleared.",
         );
+        self.session_cancel_roots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(session_id.as_str());
         let session_key = session_id.as_str().to_string();
         self.session_query_engines
             .lock()
@@ -240,6 +223,28 @@ impl SessionRuntime {
             );
         }
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+    }
+
+    fn ensure_active_session_cancel_root(&self, session_id: &SessionId) -> CancellationToken {
+        let mut roots = self
+            .session_cancel_roots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let root = roots
+            .entry(session_id.as_str().to_string())
+            .or_insert_with(CancellationToken::new);
+        if root.is_cancelled() {
+            *root = CancellationToken::new();
+        }
+        root.clone()
+    }
+
+    fn current_session_cancel_root(&self, session_id: &SessionId) -> Option<CancellationToken> {
+        self.session_cancel_roots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(session_id.as_str())
+            .cloned()
     }
 }
 
@@ -414,5 +419,59 @@ mod tests {
             PendingPermissionResolution::Cancel { ref message }
                 if message.contains("session state was cleared")
         ));
+    }
+
+    #[test]
+    fn session_runtime_reuses_cancel_root_until_it_is_cancelled() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session = SessionId::new("sess-i1");
+
+        let root_a = runtime.ensure_active_session_cancel_root(&session);
+        let root_b = runtime.ensure_active_session_cancel_root(&session);
+
+        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+
+        assert!(root_a.is_cancelled());
+        assert!(root_b.is_cancelled());
+        assert_eq!(
+            root_a.reason(),
+            Some(crate::runtime::cancellation::CancellationReason::Interrupt)
+        );
+        assert_eq!(
+            root_b.reason(),
+            Some(crate::runtime::cancellation::CancellationReason::Interrupt)
+        );
+    }
+
+    #[test]
+    fn session_runtime_rotates_cancel_root_after_interrupt() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session = SessionId::new("sess-i1-rotate");
+
+        let old_root = runtime.ensure_active_session_cancel_root(&session);
+        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+        let new_root = runtime.ensure_active_session_cancel_root(&session);
+
+        assert!(old_root.is_cancelled());
+        assert_eq!(
+            old_root.reason(),
+            Some(crate::runtime::cancellation::CancellationReason::Interrupt)
+        );
+        assert!(!new_root.is_cancelled());
+    }
+
+    #[test]
+    fn clear_session_state_drops_cached_cancel_root_for_that_session() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session = SessionId::new("sess-i1-clear");
+
+        let root_before = runtime.ensure_active_session_cancel_root(&session);
+        runtime.clear_session_state(&session);
+        let root_after = runtime.ensure_active_session_cancel_root(&session);
+
+        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+
+        assert!(!root_before.is_cancelled());
+        assert!(root_after.is_cancelled());
     }
 }
