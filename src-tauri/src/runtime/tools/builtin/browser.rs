@@ -84,7 +84,6 @@ impl RuntimeTool for BrowseNavigateRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("browse_navigate")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("browse_navigate", "导航浏览器到指定 URL"))
     }
 
@@ -164,7 +163,6 @@ impl RuntimeTool for ReadPageContentRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("read_page_content")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("read_page_content", "读取当前浏览器页面的文本内容"))
     }
 
@@ -266,7 +264,6 @@ impl RuntimeTool for PageExecuteJsRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("page_execute_js")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("page_execute_js", "在当前浏览器页面执行 JavaScript"))
     }
 
@@ -324,7 +321,6 @@ impl RuntimeTool for ExtractTableDataRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("extract_table_data")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("extract_table_data", "从当前浏览器页面抽取表格数据"))
     }
 
@@ -457,7 +453,6 @@ impl RuntimeTool for ExtractWithPaginationRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("extract_with_pagination")
-            .cloned()
             .unwrap_or_else(|| {
                 ToolDefinition::new("extract_with_pagination", "分页抽取浏览器表格数据")
             })

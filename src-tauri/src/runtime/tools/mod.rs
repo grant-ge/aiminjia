@@ -19,6 +19,6 @@ pub use legacy_adapter::LegacyToolAdapter;
 pub use permission::{AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionDecision, PermissionPipeline, PermissionReason};
 
 pub mod catalog;
-pub use catalog::{CatalogEntry, ToolCatalog, TOOL_CATALOG};
+pub use catalog::{CatalogEntry, DynamicToolCatalog, ToolCatalog, TOOL_CATALOG};
 
 pub mod builtin;

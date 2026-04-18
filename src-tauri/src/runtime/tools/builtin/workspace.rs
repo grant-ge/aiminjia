@@ -112,7 +112,6 @@ impl RuntimeTool for ListDirectoryRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("list_directory")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("list_directory", "List authorized directory"))
     }
 
@@ -173,7 +172,6 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("read_workspace_file")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("read_workspace_file", "Read workspace file"))
     }
 
@@ -343,7 +341,6 @@ impl RuntimeTool for SearchFilesRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("search_files")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("search_files", "Search files"))
     }
 
@@ -390,7 +387,6 @@ impl RuntimeTool for GetFileInfoRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("get_file_info")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("get_file_info", "Get file info"))
     }
 
@@ -451,7 +447,6 @@ impl RuntimeTool for WriteFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("write_file")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("write_file", "Write workspace file"))
     }
 
@@ -505,7 +500,6 @@ impl RuntimeTool for EditFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("edit_file")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("edit_file", "Edit workspace file"))
     }
 

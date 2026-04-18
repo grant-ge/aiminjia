@@ -56,7 +56,6 @@ impl RuntimeTool for BrowseDataRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("browse_data")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("browse_data", "Browse data"))
     }
 

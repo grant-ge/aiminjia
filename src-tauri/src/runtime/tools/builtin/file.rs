@@ -30,7 +30,6 @@ impl RuntimeTool for LoadFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("load_file")
-            .cloned()
             .unwrap_or_else(|| {
                 ToolDefinition::new(
                     "load_file",

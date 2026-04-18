@@ -252,7 +252,6 @@ impl RuntimeTool for BashTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("bash")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("bash", "Execute shell command"))
     }
 

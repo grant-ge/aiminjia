@@ -38,7 +38,6 @@ impl RuntimeTool for GenerateChartRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("generate_chart")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("generate_chart", "Generate chart"))
     }
 

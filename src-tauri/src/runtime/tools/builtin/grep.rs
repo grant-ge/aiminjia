@@ -170,7 +170,6 @@ impl RuntimeTool for GrepContentTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("grep_content")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("grep_content", "Search file content"))
     }
 

@@ -38,7 +38,6 @@ impl RuntimeTool for GenerateReportRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("generate_report")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("generate_report", "Generate report"))
     }
 

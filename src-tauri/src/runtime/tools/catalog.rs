@@ -5,7 +5,7 @@
 //! `plugin/registry.rs` 的运行时注册以本 catalog 为权威来源。
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, RwLock};
 
 use serde_json::{json, Value};
 
@@ -62,6 +62,60 @@ impl ToolCatalog {
 
     fn insert(&mut self, entry: CatalogEntry) {
         self.entries.insert(entry.definition.id.clone(), entry);
+    }
+}
+
+/// 运行时可变工具目录。
+#[derive(Clone, Debug)]
+pub struct DynamicToolCatalog {
+    entries: Arc<RwLock<HashMap<String, CatalogEntry>>>,
+}
+
+impl DynamicToolCatalog {
+    /// 返回带 builtin 默认项的动态 catalog。
+    pub fn new_with_defaults() -> Self {
+        let catalog = build_default_catalog();
+        Self {
+            entries: Arc::new(RwLock::new(catalog.entries)),
+        }
+    }
+
+    /// 动态注册或更新一条工具目录记录。
+    pub fn register_entry(&self, entry: CatalogEntry) {
+        self.entries
+            .write()
+            .unwrap()
+            .insert(entry.definition.id.clone(), entry);
+    }
+
+    /// 按 ID 查找工具定义。
+    pub fn get(&self, id: &str) -> Option<ToolDefinition> {
+        self.entries
+            .read()
+            .unwrap()
+            .get(id)
+            .map(|entry| entry.definition.clone())
+    }
+
+    /// 按 ID 查找完整目录条目（含 JSON Schema）。
+    pub fn get_entry(&self, id: &str) -> Option<CatalogEntry> {
+        self.entries.read().unwrap().get(id).cloned()
+    }
+
+    /// 返回所有工具 ID。
+    pub fn all_ids(&self) -> Vec<String> {
+        self.entries.read().unwrap().keys().cloned().collect()
+    }
+
+    /// 返回指定 kind 的所有工具定义。
+    pub fn by_kind(&self, kind: &ToolKind) -> Vec<ToolDefinition> {
+        self.entries
+            .read()
+            .unwrap()
+            .values()
+            .filter(|entry| &entry.definition.kind == kind)
+            .map(|entry| entry.definition.clone())
+            .collect()
     }
 }
 
@@ -555,4 +609,5 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
 ];
 
 /// 全局默认 catalog（延迟初始化）。
-pub static TOOL_CATALOG: LazyLock<ToolCatalog> = LazyLock::new(build_default_catalog);
+pub static TOOL_CATALOG: LazyLock<DynamicToolCatalog> =
+    LazyLock::new(DynamicToolCatalog::new_with_defaults);

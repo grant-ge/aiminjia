@@ -50,7 +50,6 @@ impl RuntimeTool for WebSearchRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("web_search")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("web_search", "搜索互联网获取最新信息"))
     }
 

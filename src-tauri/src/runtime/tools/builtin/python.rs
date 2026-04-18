@@ -76,7 +76,6 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
             .get("execute_python")
-            .cloned()
             .unwrap_or_else(|| ToolDefinition::new("execute_python", "Execute Python code"))
     }
 
