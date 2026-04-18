@@ -100,6 +100,19 @@ fn browser_tool_still_rejected_when_browser_available_false() {
     assert!(is_deny(&result), "browser tool must be rejected when browser_available=false");
 }
 
+#[test]
+fn mcp_tool_allowed_without_local_capability() {
+    let pipeline = CapabilityPermissionPipeline;
+    let def = def_with_scope("mcp__demo__search", &["mcp"]);
+    let ctx = ctx_no_capability();
+    let result = pipeline.authorize(&def, &json!({}), &ctx);
+    assert!(
+        is_allow(&result),
+        "mcp tool should bypass local capability gating because permission is handled by the MCP server, got: {:?}",
+        result
+    );
+}
+
 // Task 3.1 tests
 
 #[tokio::test]

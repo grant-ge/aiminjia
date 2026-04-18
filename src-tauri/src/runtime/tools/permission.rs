@@ -88,7 +88,7 @@ fn check_scope_capability(
                 Some(ScopeCapabilityFailure::MissingBrowser)
             }
         }
-        "network" => None,
+        "network" | "mcp" => None,
         _ => Some(ScopeCapabilityFailure::UnknownScope),
     }
 }
@@ -118,6 +118,7 @@ impl PermissionPipeline for AllowAllPermissionPipeline {
 /// - 含 `browser` → 需要 `ctx.capability.has_browser_capability()` = true（目前默认 false）
 /// - 含 `python:exec` → 需要 `ctx.capability.storage` 存在
 /// - 含 `network` → 始终允许（网络访问不在本地 capability 层校验）
+/// - 含 `mcp` → 始终允许（具体权限与 server 侧策略由 MCP server 自行处理）
 /// - unknown scope → Deny（fail-closed）
 #[derive(Clone, Default)]
 pub struct CapabilityPermissionPipeline;
