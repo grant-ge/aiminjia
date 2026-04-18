@@ -67,6 +67,102 @@ pub fn build_compact_boundary_record(
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MicrocompactConfig {
+    pub trigger_chars: usize,
+    pub keep_recent_tool_results: usize,
+}
+
+impl Default for MicrocompactConfig {
+    fn default() -> Self {
+        Self {
+            trigger_chars: 120_000,
+            keep_recent_tool_results: 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MicrocompactResult {
+    pub messages: Vec<serde_json::Value>,
+    pub executed: bool,
+    pub tokens_freed_estimate: usize,
+}
+
+fn estimate_total_chars(messages: &[serde_json::Value]) -> usize {
+    messages.iter().map(|message| message.to_string().len()).sum()
+}
+
+pub fn microcompact(
+    messages: &[serde_json::Value],
+    config: &MicrocompactConfig,
+) -> MicrocompactResult {
+    let total_chars = estimate_total_chars(messages);
+    if total_chars < config.trigger_chars {
+        return MicrocompactResult {
+            messages: messages.to_vec(),
+            executed: false,
+            tokens_freed_estimate: 0,
+        };
+    }
+
+    let tool_result_indices: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter_map(|(index, message)| {
+            (message.get("role").and_then(|value| value.as_str()) == Some("tool")).then_some(index)
+        })
+        .collect();
+
+    if tool_result_indices.len() <= config.keep_recent_tool_results {
+        return MicrocompactResult {
+            messages: messages.to_vec(),
+            executed: false,
+            tokens_freed_estimate: 0,
+        };
+    }
+
+    let keep_from = tool_result_indices.len() - config.keep_recent_tool_results;
+    let indices_to_clear: std::collections::HashSet<usize> = tool_result_indices
+        .iter()
+        .take(keep_from)
+        .copied()
+        .collect();
+
+    let mut freed_chars = 0usize;
+    let rewritten_messages = messages
+        .iter()
+        .enumerate()
+        .map(|(index, message)| {
+            if !indices_to_clear.contains(&index) {
+                return message.clone();
+            }
+
+            let original_len = message
+                .get("content")
+                .and_then(|value| value.as_str())
+                .map(str::len)
+                .unwrap_or(0);
+            freed_chars += original_len;
+
+            let mut cleared = message.clone();
+            if let Some(object) = cleared.as_object_mut() {
+                object.insert(
+                    "content".to_string(),
+                    serde_json::Value::String("[microcompacted]".to_string()),
+                );
+            }
+            cleared
+        })
+        .collect();
+
+    MicrocompactResult {
+        messages: rewritten_messages,
+        executed: freed_chars > 0,
+        tokens_freed_estimate: freed_chars / 4,
+    }
+}
+
 // TODO(T15): extract compress_context_if_needed here once LlmGateway is
 // injectable via RuntimeLlmExecutor or a similar seam. For now the
 // implementation lives in transport/tauri_commands/chat.rs (the legacy agent
