@@ -6,6 +6,10 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+use crate::runtime::chat::compaction::{
+    compact_messages_via_llm, microcompact, should_auto_compact, AutoCompactConfig,
+    MicrocompactConfig,
+};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
@@ -659,6 +663,35 @@ impl RuntimeChatTurnDriver {
             });
 
         'turn: for iteration in 0..config.max_iterations {
+            let microcompact_result =
+                microcompact(&state.messages, &MicrocompactConfig::default());
+            if microcompact_result.executed {
+                state.messages = microcompact_result.messages;
+            }
+
+            let auto_compact_config = AutoCompactConfig::default();
+            if !state.compact_state.is_circuit_broken(&auto_compact_config)
+                && should_auto_compact(&state.messages, &auto_compact_config)
+            {
+                match executor
+                    .compact_summary(config.conversation_id.as_str(), &state.messages)
+                    .await
+                {
+                    Ok(summary_text) if !summary_text.is_empty() => {
+                        let output = compact_messages_via_llm(
+                            std::mem::take(&mut state.messages),
+                            summary_text,
+                        );
+                        state.messages = output.new_messages;
+                        state.compact_state.record_success();
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        state.compact_state.record_failure();
+                    }
+                }
+            }
+
             let precompute_ctx = precompute_result.as_deref().unwrap_or_default();
             let dynamic_context = if env_info.is_empty() {
                 precompute_ctx.to_string()
@@ -820,6 +853,10 @@ impl RuntimeChatTurnDriver {
             if cancel.is_cancelled() {
                 mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
+            }
+
+            if state.compact_state.compacted {
+                state.compact_state.increment_turn();
             }
         }
 

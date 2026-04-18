@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde_json::Value as JsonValue;
 
+use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::ids::{RunId, SessionId};
 
@@ -55,6 +56,7 @@ pub struct TurnIterationState {
     pub step_tokens_out: u64,
     pub force_no_tools: bool,
     pub safeguard_phase1_injected: bool,
+    pub compact_state: AutoCompactState,
 }
 
 impl TurnIterationState {
@@ -70,6 +72,7 @@ impl TurnIterationState {
             step_tokens_out: 0,
             force_no_tools: false,
             safeguard_phase1_injected: false,
+            compact_state: AutoCompactState::new(),
         }
     }
 

@@ -188,6 +188,37 @@ pub struct CompactLlmOutput {
     pub messages_summarized: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AutoCompactState {
+    pub compacted: bool,
+    pub turn_counter: u32,
+    pub consecutive_failures: u32,
+}
+
+impl AutoCompactState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_circuit_broken(&self, config: &AutoCompactConfig) -> bool {
+        self.consecutive_failures >= config.consecutive_failure_limit
+    }
+
+    pub fn record_success(&mut self) {
+        self.compacted = true;
+        self.turn_counter = 0;
+        self.consecutive_failures = 0;
+    }
+
+    pub fn record_failure(&mut self) {
+        self.consecutive_failures += 1;
+    }
+
+    pub fn increment_turn(&mut self) {
+        self.turn_counter += 1;
+    }
+}
+
 pub fn should_auto_compact(
     messages: &[serde_json::Value],
     config: &AutoCompactConfig,
