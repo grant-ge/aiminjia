@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 
+use crate::runtime::chat::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventSubscriber;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::transport::runtime_host::RuntimeHost;
@@ -130,6 +131,50 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "reason": reason,
             }),
         }),
+        RuntimeEventKind::TurnCompleted {
+            outcome,
+            total_input_tokens,
+            total_output_tokens,
+            total_cost_usd,
+            permission_denial_count,
+        } => {
+            let mut payload = json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "totalInputTokens": total_input_tokens,
+                "totalOutputTokens": total_output_tokens,
+                "totalCostUsd": total_cost_usd,
+                "permissionDenialCount": permission_denial_count,
+            });
+
+            if let Some(object) = payload.as_object_mut() {
+                match outcome {
+                    ChatTurnOutcome::Success => {
+                        object.insert("outcome".to_string(), json!("Success"));
+                    }
+                    ChatTurnOutcome::Cancelled => {
+                        object.insert("outcome".to_string(), json!("Cancelled"));
+                    }
+                    ChatTurnOutcome::MaxIterationsReached { iterations } => {
+                        object.insert("outcome".to_string(), json!("MaxIterationsReached"));
+                        object.insert("iterations".to_string(), json!(iterations));
+                    }
+                    ChatTurnOutcome::BudgetExceeded { reason, .. } => {
+                        object.insert("outcome".to_string(), json!("BudgetExceeded"));
+                        object.insert("reason".to_string(), json!(reason));
+                    }
+                    ChatTurnOutcome::ExecutionError { message } => {
+                        object.insert("outcome".to_string(), json!("ExecutionError"));
+                        object.insert("message".to_string(), json!(message));
+                    }
+                }
+            }
+
+            Some(LegacyEvent {
+                name: "turn:completed".to_string(),
+                payload,
+            })
+        }
         _ => None,
     };
     payload

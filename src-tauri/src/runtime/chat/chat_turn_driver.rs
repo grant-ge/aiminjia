@@ -10,6 +10,7 @@ use crate::runtime::chat::compaction::{
     compact_messages_via_llm, microcompact, should_auto_compact, AutoCompactConfig,
     MicrocompactConfig,
 };
+use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
@@ -655,6 +656,7 @@ impl RuntimeChatTurnDriver {
 
         // Build the cancel token for this turn.
         let cancel = turn.cancellation();
+        let mut turn_completed_normally = false;
 
         // ── Step 5: Iteration loop ────────────────────────────────────────────
         let round_driver = ToolRoundDriver::new(self.query_engine.clone());
@@ -747,6 +749,7 @@ impl RuntimeChatTurnDriver {
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.iteration_count = iteration + 1;
+                    turn_completed_normally = true;
                     break 'turn;
                 }
 
@@ -881,6 +884,25 @@ impl RuntimeChatTurnDriver {
         self.query_engine
             .accumulate_usage(state.step_tokens_in, state.step_tokens_out);
 
+        let final_outcome = if state.stream_cancelled {
+            ChatTurnOutcome::Cancelled
+        } else if self.query_engine.is_budget_exceeded() {
+            ChatTurnOutcome::BudgetExceeded {
+                reason: format!(
+                    "Reached maximum budget (${:.2}); estimated cost: ${:.4}",
+                    self.query_engine.max_budget_usd().unwrap_or(0.0),
+                    self.query_engine.estimated_cost_usd()
+                ),
+                total_cost_usd: self.query_engine.estimated_cost_usd(),
+            }
+        } else if !turn_completed_normally {
+            ChatTurnOutcome::MaxIterationsReached {
+                iterations: config.max_iterations,
+            }
+        } else {
+            ChatTurnOutcome::Success
+        };
+
         // ── Step 7: Persist assistant message ─────────────────────────────────
         let message_id = executor
             .persist_assistant_message(
@@ -922,6 +944,21 @@ impl RuntimeChatTurnDriver {
             .await?;
         self.event_bus
             .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
+            .await?;
+        self.event_bus
+            .emit(RuntimeEvent::new(
+                session_id.clone(),
+                run_id.clone(),
+                RuntimeEventKind::TurnCompleted {
+                    outcome: final_outcome,
+                    total_input_tokens: state.step_tokens_in,
+                    total_output_tokens: state.step_tokens_out,
+                    total_cost_usd: self.query_engine
+                        .max_budget_usd()
+                        .map(|_| self.query_engine.estimated_cost_usd()),
+                    permission_denial_count: self.query_engine.get_permission_denials().len(),
+                },
+            ))
             .await?;
         if state.stop_hook_prevent_continuation {
             self.event_bus

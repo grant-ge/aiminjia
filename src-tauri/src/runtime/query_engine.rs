@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use serde_json::json;
 
+use crate::runtime::chat::PermissionDenialRecord;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::store::AuthorizedWorkspaceRef;
@@ -36,6 +37,12 @@ pub struct QueryEngine {
     read_file_state: Arc<FileStateCache>,
     /// Session-scoped accumulated token usage across turns.
     total_usage: Arc<Mutex<TotalTokenUsage>>,
+    /// Session-scoped accumulation of permission denials across tool calls.
+    permission_denials: Arc<Mutex<Vec<PermissionDenialRecord>>>,
+    /// Optional USD budget cap for the current session.
+    max_budget_usd: Option<f64>,
+    /// Simplified cost estimate rate shared across input/output tokens.
+    cost_per_1k_tokens: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -58,6 +65,9 @@ impl QueryEngine {
             file_ops: None,
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
+            permission_denials: Arc::new(Mutex::new(Vec::new())),
+            max_budget_usd: None,
+            cost_per_1k_tokens: None,
         }
     }
 
@@ -74,6 +84,9 @@ impl QueryEngine {
             file_ops: self.file_ops.clone(),
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
+            permission_denials: Arc::new(Mutex::new(Vec::new())),
+            max_budget_usd: self.max_budget_usd,
+            cost_per_1k_tokens: self.cost_per_1k_tokens,
         }
     }
 
@@ -110,6 +123,16 @@ impl QueryEngine {
         self
     }
 
+    pub fn with_max_budget_usd(mut self, max_budget_usd: f64) -> Self {
+        self.max_budget_usd = Some(max_budget_usd);
+        self
+    }
+
+    pub fn with_cost_per_1k_tokens(mut self, cost_per_1k_tokens: f64) -> Self {
+        self.cost_per_1k_tokens = Some(cost_per_1k_tokens);
+        self
+    }
+
     pub fn for_test(tool_dispatcher: Arc<ToolDispatcher>) -> Self {
         Self::with_dispatcher(tool_dispatcher)
     }
@@ -123,6 +146,17 @@ impl QueryEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    pub fn get_permission_denials(&self) -> Vec<PermissionDenialRecord> {
+        self.permission_denials
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub fn max_budget_usd(&self) -> Option<f64> {
+        self.max_budget_usd
     }
 
     pub fn tool_interrupt_behavior(&self, tool_name: &str) -> InterruptBehavior {
@@ -141,6 +175,33 @@ impl QueryEngine {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         usage.tokens_in += tokens_in;
         usage.tokens_out += tokens_out;
+    }
+
+    pub fn estimated_cost_usd(&self) -> f64 {
+        let Some(rate) = self.cost_per_1k_tokens else {
+            return 0.0;
+        };
+        let usage = self.get_total_usage();
+        let total_k_tokens = (usage.tokens_in + usage.tokens_out) as f64 / 1000.0;
+        total_k_tokens * rate
+    }
+
+    pub fn is_budget_exceeded(&self) -> bool {
+        let Some(max) = self.max_budget_usd else {
+            return false;
+        };
+        self.estimated_cost_usd() >= max
+    }
+
+    fn record_permission_denial(&self, tool_name: &str, tool_call_id: &str, reason: &str) {
+        self.permission_denials
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(PermissionDenialRecord {
+                tool_name: tool_name.to_string(),
+                tool_call_id: tool_call_id.to_string(),
+                reason: reason.to_string(),
+            });
     }
 
     pub async fn run(&self, turn: &mut TurnState, bus: &RuntimeEventBus) -> Result<()> {
@@ -382,6 +443,11 @@ impl QueryEngine {
                 })
             }
             Err(err) => {
+                if let crate::runtime::tools::executor::ToolError::PermissionDenied(ref reason) = err
+                {
+                    self.record_permission_denial(&call.tool_name, &call.tool_call_id, reason);
+                }
+
                 bus.emit(RuntimeEvent::new(
                     turn.session_id().clone(),
                     turn.run_id().clone(),

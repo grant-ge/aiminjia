@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::runtime::chat::ChatTurnOutcome;
 use crate::runtime::ids::{AgentId, RunId, SessionId, TaskId, ToolCallId};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,6 +53,13 @@ pub enum RuntimeEventKind {
         message_id: String,
         role: String,
         content: serde_json::Value,
+    },
+    TurnCompleted {
+        outcome: ChatTurnOutcome,
+        total_input_tokens: u64,
+        total_output_tokens: u64,
+        total_cost_usd: Option<f64>,
+        permission_denial_count: usize,
     },
     RunCancelled,
     RunCompleted,

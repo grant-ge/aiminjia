@@ -318,6 +318,13 @@ async fn driver_s4_loop_content_complete() {
         events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::AgentIdle { .. })),
         "missing AgentIdle"
     );
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::TurnCompleted { .. }
+        )),
+        "missing TurnCompleted"
+    );
 }
 
 #[tokio::test]
@@ -345,6 +352,16 @@ async fn driver_s4_loop_cancelled() {
     assert!(
         events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
         "missing StreamDone on cancel"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::TurnCompleted {
+                outcome: app_lib::runtime::chat::ChatTurnOutcome::Cancelled,
+                ..
+            }
+        )),
+        "missing cancelled TurnCompleted"
     );
 }
 

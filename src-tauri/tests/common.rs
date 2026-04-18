@@ -19,6 +19,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::AgentIdle { .. } => "AgentIdle",
         RuntimeEventKind::TaskStatusChanged { .. } => "TaskStatusChanged",
         RuntimeEventKind::StopHookPreventedContinuation { .. } => "StopHookPreventedContinuation",
+        RuntimeEventKind::TurnCompleted { .. } => "TurnCompleted",
         RuntimeEventKind::RunCancelled => "RunCancelled",
         RuntimeEventKind::RunCompleted => "RunCompleted",
     }
