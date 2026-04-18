@@ -93,4 +93,5 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry.register_runtime(Arc::new(BashTool)).await;
     registry.register_runtime(Arc::new(GrepContentTool)).await;
+    registry.validate_catalog_consistency().await;
 }

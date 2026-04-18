@@ -112,6 +112,33 @@ impl ToolRegistry {
         self.runtime_tools.write().await.insert(id, tool);
     }
 
+    /// Validate that every runtime tool exposed through the runtime-first path
+    /// has a matching entry in TOOL_CATALOG.
+    pub async fn validate_catalog_consistency(&self) {
+        use crate::runtime::tools::catalog::TOOL_CATALOG;
+
+        let runtime_tools = self.runtime_tools.read().await;
+        for id in runtime_tools.keys() {
+            assert!(
+                TOOL_CATALOG.get_entry(id).is_some(),
+                "ToolRegistry consistency error: RuntimeTool '{}' is registered but missing from TOOL_CATALOG",
+                id
+            );
+        }
+        for id in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
+            assert!(
+                TOOL_CATALOG.get_entry(id).is_some(),
+                "ToolRegistry consistency error: request-scoped RuntimeTool '{}' is missing from TOOL_CATALOG",
+                id
+            );
+        }
+        log::info!(
+            "ToolRegistry catalog consistency check passed ({} global runtime tools, {} request-scoped runtime tools)",
+            runtime_tools.len(),
+            REQUEST_SCOPED_RUNTIME_TOOL_NAMES.len()
+        );
+    }
+
     /// Register a tool plugin.
     /// Warns and rejects if a builtin tool would be shadowed by a plugin.
     pub async fn register(&self, tool: Arc<dyn ToolPlugin>, source: &str) {
