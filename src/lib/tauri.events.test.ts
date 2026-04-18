@@ -14,6 +14,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import {
   TAURI_EVENTS,
+  approvePermissionRequest,
+  denyPermissionRequest,
+  onPermissionAsk,
   onTaskStatusChanged,
   type AgentIdlePayload,
 } from './tauri'
@@ -45,5 +48,46 @@ describe('tauri event contract', () => {
       'task:status-changed',
       expect.any(Function),
     )
+  })
+
+  it('exposes PERMISSION_ASK event constant with correct value', () => {
+    expect(TAURI_EVENTS.PERMISSION_ASK).toBe('permission:ask')
+  })
+
+  it('onPermissionAsk registers listener with correct event name', async () => {
+    const handler = vi.fn()
+
+    await onPermissionAsk(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'permission:ask',
+      expect.any(Function),
+    )
+  })
+
+  it('approvePermissionRequest calls invoke with correct command and params', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const invokeMock = vi.mocked(invoke)
+    invokeMock.mockResolvedValue(undefined)
+
+    await approvePermissionRequest('tool-call-123', null)
+
+    expect(invokeMock).toHaveBeenCalledWith('approve_permission_request', {
+      toolCallId: 'tool-call-123',
+      updatedInput: null,
+    })
+  })
+
+  it('denyPermissionRequest calls invoke with correct command and params', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const invokeMock = vi.mocked(invoke)
+    invokeMock.mockResolvedValue(undefined)
+
+    await denyPermissionRequest('tool-call-123', undefined)
+
+    expect(invokeMock).toHaveBeenCalledWith('deny_permission_request', {
+      toolCallId: 'tool-call-123',
+      message: undefined,
+    })
   })
 })

@@ -38,6 +38,8 @@ export const TAURI_EVENTS = {
   STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
+  PERMISSION_ASK: 'permission:ask',
+  TURN_COMPLETED: 'turn:completed',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -121,6 +123,35 @@ export interface TaskStatusChangedPayload {
   runId: string
 }
 
+export interface PermissionAskPayload {
+  conversationId: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  message: string
+  suggestions: string[] | null
+}
+
+export type TurnOutcome =
+  | 'Success'
+  | 'Cancelled'
+  | 'MaxIterationsReached'
+  | 'BudgetExceeded'
+  | 'ExecutionError'
+
+export interface TurnCompletedPayload {
+  conversationId: string
+  runId: string
+  outcome: TurnOutcome
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCostUsd?: number | null
+  permissionDenialCount: number
+  iterations?: number
+  reason?: string
+  message?: string
+}
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -147,6 +178,27 @@ export function sendMessage(conversationId: string, content: string, fileIds?: s
  */
 export function stopStreaming(conversationId: string): Promise<void> {
   return invoke<void>('stop_streaming', { conversationId })
+}
+
+export function approvePermissionRequest(
+  toolCallId: string,
+  updatedInput: unknown,
+): Promise<void> {
+  return invoke<void>('approve_permission_request', { toolCallId, updatedInput })
+}
+
+export function denyPermissionRequest(
+  toolCallId: string,
+  message?: string,
+): Promise<void> {
+  return invoke<void>('deny_permission_request', { toolCallId, message })
+}
+
+export function cancelPermissionRequest(
+  toolCallId: string,
+  message?: string,
+): Promise<void> {
+  return invoke<void>('cancel_permission_request', { toolCallId, message })
 }
 
 /**
@@ -909,6 +961,22 @@ export function onTaskStatusChanged(
   handler: (payload: TaskStatusChangedPayload) => void,
 ): Promise<() => void> {
   return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function onPermissionAsk(
+  handler: (payload: PermissionAskPayload) => void,
+): Promise<() => void> {
+  return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function onTurnCompleted(
+  handler: (payload: TurnCompletedPayload) => void,
+): Promise<() => void> {
+  return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, (event) => {
     handler(event.payload)
   })
 }
