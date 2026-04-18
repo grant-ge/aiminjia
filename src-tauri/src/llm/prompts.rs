@@ -18,7 +18,7 @@ const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 /// All recognized prompt names.
 const PROMPT_NAMES: &[&str] = &["base", "daily", "browser_agent"];
 
-// 工具选择偏好章节——静态内容，写入 static_section
+// 工具选择偏好章节——静态内容，写入 static_section，所有 mode 均包含。
 const TOOL_PREFERENCE_SECTION: &str = r#"
 
 【工具选择偏好】
@@ -69,6 +69,11 @@ impl std::fmt::Display for PromptSource {
     }
 }
 
+/// PromptStore 是纯文本片段仓库。
+///
+/// 它只负责按名字加载/缓存 base、daily、browser_agent 等原始 prompt
+/// 片段，不承担 system prompt 组装逻辑。新增 prompt 片段时修改这里；
+/// 组装策略统一放在 `build_system_prompt_parts`。
 struct PromptStore {
     prompts: HashMap<String, String>,
     #[allow(dead_code)]
@@ -210,6 +215,9 @@ pub fn get_browser_agent_prompt() -> String {
 /// - `dynamic_section` = persona 段 + mode-specific prompt（Analysis 时无 daily.md）
 ///
 /// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
+/// build_system_prompt_parts 是 system prompt 的唯一组装入口；
+/// 其他调用方若需要完整字符串，应通过 `get_system_prompt` 这个兼容 shim
+/// 间接调用，而不是自行拼接 base / daily / browser_agent 片段。
 pub fn build_system_prompt_parts(
     mode: PromptMode,
     persona: Option<&crate::storage::file_store::persona::Persona>,
