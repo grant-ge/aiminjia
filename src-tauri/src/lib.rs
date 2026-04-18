@@ -154,6 +154,9 @@ pub fn run() {
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
+            let mcp_server_manager = Arc::new(runtime::mcp::McpServerManager::new(
+                tool_registry.clone(),
+            ));
 
             // Register builtin tools and skills
             tauri::async_runtime::block_on(async {
@@ -272,6 +275,7 @@ pub fn run() {
             app.manage(auth_manager);
             app.manage(connector_engine);
             app.manage(tool_registry);
+            app.manage(mcp_server_manager);
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
