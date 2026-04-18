@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -62,3 +63,61 @@ pub trait McpConnection: Send + Sync {
 }
 
 pub type SharedMcpConnection = Arc<dyn McpConnection>;
+
+/// Transitional placeholder used by MCP config management before a concrete
+/// stdio/http/sse transport is implemented.
+pub struct PendingMcpConnection {
+    config: McpServerConfig,
+    connected: AtomicBool,
+}
+
+impl PendingMcpConnection {
+    pub fn new(config: McpServerConfig) -> Self {
+        Self {
+            config,
+            connected: AtomicBool::new(false),
+        }
+    }
+}
+
+#[async_trait]
+impl McpConnection for PendingMcpConnection {
+    async fn connect(&self) -> McpResult<()> {
+        self.connected.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> McpResult<()> {
+        self.connected.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Relaxed)
+    }
+
+    fn server_name(&self) -> &str {
+        &self.config.name
+    }
+
+    async fn list_tools(&self) -> McpResult<Vec<McpToolDefinition>> {
+        Ok(vec![])
+    }
+
+    async fn call_tool(&self, tool_name: &str, _arguments: Value) -> McpResult<Value> {
+        if !self.is_connected() {
+            return Err(McpError::NotConnected);
+        }
+
+        Err(McpError::ToolExecutionFailed(format!(
+            "MCP server '{}' is configured but transport '{}' does not implement tool execution yet (tool: '{}')",
+            self.server_name(),
+            self.config.transport_type,
+            tool_name,
+        )))
+    }
+
+    fn config(&self) -> &McpServerConfig {
+        &self.config
+    }
+}

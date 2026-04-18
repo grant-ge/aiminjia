@@ -31,6 +31,11 @@ pub fn run() {
             // Initialize app data directory
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
+            let app_config_dir = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| app_data_dir.clone());
+            std::fs::create_dir_all(&app_config_dir)?;
 
             // Initialize prompt store from external .md files
             let resource_dir = app
@@ -161,6 +166,31 @@ pub fn run() {
             let mcp_server_manager = Arc::new(runtime::mcp::McpServerManager::new(
                 tool_registry.clone(),
             ));
+            let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
+                app_config_dir.join("mcp_servers.json"),
+            ));
+
+            let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
+                log::warn!("Failed to load MCP configs from disk: {}", err);
+                Vec::new()
+            });
+
+            tauri::async_runtime::block_on(async {
+                for config in persisted_mcp_configs {
+                    if let Err(err) = mcp_server_manager
+                        .register(Arc::new(runtime::mcp::PendingMcpConnection::new(
+                            config.clone(),
+                        )))
+                        .await
+                    {
+                        log::warn!(
+                            "Failed to pre-register persisted MCP server '{}': {}",
+                            config.name,
+                            err
+                        );
+                    }
+                }
+            });
 
             // Register builtin tools and skills
             tauri::async_runtime::block_on(async {
@@ -280,6 +310,7 @@ pub fn run() {
             app.manage(connector_engine);
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
+            app.manage(mcp_config_store);
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
@@ -334,6 +365,12 @@ pub fn run() {
             commands::plugin::list_tools,
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
+            // MCP server management commands
+            transport::tauri_commands::mcp::list_mcp_servers,
+            transport::tauri_commands::mcp::add_mcp_server,
+            transport::tauri_commands::mcp::remove_mcp_server,
+            transport::tauri_commands::mcp::connect_mcp_server,
+            transport::tauri_commands::mcp::disconnect_mcp_server,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
