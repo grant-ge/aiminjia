@@ -107,9 +107,26 @@ impl ToolRegistry {
     /// When `to_runtime_dispatcher()` builds the dispatcher, registered RuntimeTools
     /// take priority over legacy ToolPlugin adapters for the same tool name.
     pub async fn register_runtime(&self, tool: Arc<dyn crate::runtime::tools::RuntimeTool>) {
-        let id = tool.definition().id.clone();
+        use crate::runtime::tools::catalog::{CatalogEntry, TOOL_CATALOG};
+
+        let def = tool.definition();
+        let id = def.id.clone();
         log::info!("Registering runtime tool: {}", id);
         self.runtime_tools.write().await.insert(id, tool);
+
+        if TOOL_CATALOG.get_entry(&def.id).is_none() {
+            TOOL_CATALOG.register_entry(CatalogEntry::new(
+                def,
+                Self::infer_json_schema(),
+            ));
+        }
+    }
+
+    fn infer_json_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {}
+        })
     }
 
     /// Validate that every runtime tool exposed through the runtime-first path

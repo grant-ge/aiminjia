@@ -32,19 +32,19 @@ impl RuntimeTool for MissingCatalogRuntimeTool {
 }
 
 #[tokio::test]
-async fn review_validate_catalog_consistency_panics_for_runtime_tool_without_catalog_entry() {
+async fn review_register_runtime_auto_syncs_missing_catalog_entry() {
     let registry = ToolRegistry::new();
     registry
         .register_runtime(Arc::new(MissingCatalogRuntimeTool))
         .await;
 
-    let handle = tokio::spawn(async move {
-        registry.validate_catalog_consistency().await;
-    });
-    let join_err = handle
-        .await
-        .expect_err("missing catalog entry should trigger panic");
-    assert!(join_err.is_panic(), "expected panic, got: {join_err}");
+    registry.validate_catalog_consistency().await;
+    assert!(
+        TOOL_CATALOG
+            .get_entry("missing_catalog_runtime_tool")
+            .is_some(),
+        "register_runtime should auto-sync missing runtime tool entries into TOOL_CATALOG"
+    );
 }
 
 #[tokio::test]
