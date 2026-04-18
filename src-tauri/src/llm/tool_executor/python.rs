@@ -133,7 +133,16 @@ pub(crate) async fn handle_execute_python_core(
                     workspace_path: params.workspace_path,
                     conversation_id: params.conversation_id,
                     run_id: params.requested_run_id,
-                    app_handle: params.app_handle,
+                    python_binary: {
+                        let (binary, _) =
+                            crate::python::runner::resolve_python_path(params.app_handle);
+                        Some(binary)
+                    },
+                    python_home: {
+                        let (_, home) =
+                            crate::python::runner::resolve_python_path(params.app_handle);
+                        home
+                    },
                 };
                 if let Err(e) = super::file_load::handle_load_file_core(&load_params, &load_args).await {
                     warn!(
@@ -900,4 +909,5 @@ mod tests {
         assert!(result.contains("Done."));
         assert!(result.contains("percentiles"));
     }
+
 }

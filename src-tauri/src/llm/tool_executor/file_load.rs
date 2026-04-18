@@ -38,7 +38,8 @@ pub(crate) struct LoadFileParams<'a> {
     pub workspace_path: &'a Path,
     pub conversation_id: &'a str,
     pub run_id: Option<&'a RunId>,
-    pub app_handle: Option<&'a tauri::AppHandle>,
+    pub python_binary: Option<PathBuf>,
+    pub python_home: Option<PathBuf>,
 }
 
 impl<'a> LoadFileParams<'a> {
@@ -491,13 +492,16 @@ pub(crate) fn unmask_text(text: &str, unmask_map: &HashMap<String, String>) -> S
 /// that still thread a `PluginContext` (e.g. legacy ToolPlugin, auto-load in
 /// execute_python) do not have to migrate atomically.
 pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let (python_binary, python_home) =
+        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
     let params = LoadFileParams {
         storage: &ctx.storage,
         file_manager: &ctx.file_manager,
         workspace_path: &ctx.workspace_path,
         conversation_id: &ctx.conversation_id,
         run_id: ctx.run_id.as_ref(),
-        app_handle: ctx.app_handle.as_ref(),
+        python_binary: Some(python_binary),
+        python_home,
     };
     handle_load_file_core(&params, args).await
 }
@@ -614,11 +618,16 @@ pub(crate) async fn handle_load_file_core(
     let mut parse_sandbox =
         crate::python::sandbox::SandboxConfig::for_workspace(&workspace_pathbuf);
     parse_sandbox.timeout_seconds = 60;
-    let runner = PythonRunner::with_config(
-        workspace_pathbuf,
-        parse_sandbox,
-        ctx.app_handle,
-    );
+    let runner = if let Some(binary) = ctx.python_binary.clone() {
+        PythonRunner::with_config_from_path(
+            binary,
+            ctx.python_home.clone(),
+            workspace_pathbuf,
+            parse_sandbox,
+        )
+    } else {
+        PythonRunner::with_config(workspace_pathbuf, parse_sandbox, None)
+    };
     info!(
         "[TOOL:load_file] Starting parse_file for format={:?} path={}",
         format,
@@ -1039,6 +1048,41 @@ pub(crate) fn build_loaded_files_preamble_for_scope(
 
     preamble.push('\n');
     preamble
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LoadFileParams;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    #[test]
+    fn load_file_params_accepts_python_binary_without_app_handle() {
+        let tempdir = tempfile::TempDir::new().expect("tempdir should exist");
+        let storage = Arc::new(AppStorage::new(tempdir.path()).expect("storage should initialize"));
+        storage
+            .create_conversation("conv-test", "Plan J")
+            .expect("conversation should exist");
+        let file_manager = Arc::new(FileManager::new(tempdir.path()));
+
+        let params = LoadFileParams {
+            storage: &storage,
+            file_manager: &file_manager,
+            workspace_path: Path::new("/tmp/ws"),
+            conversation_id: "conv-test",
+            run_id: None,
+            python_binary: Some(PathBuf::from("/usr/bin/python3")),
+            python_home: None,
+        };
+
+        assert_eq!(
+            params.python_binary.as_deref(),
+            Some(Path::new("/usr/bin/python3"))
+        );
+        assert!(params.python_home.is_none());
+    }
 }
 
 /// Build the analysis preamble that injects `_ANALYSIS_DIR`, `_CONV_ID`,

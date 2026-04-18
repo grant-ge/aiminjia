@@ -392,12 +392,16 @@ impl ToolRegistry {
                 };
                 let browser_available = ctx.connector_engine.is_some();
                 let file_ops = (name == "load_file").then(|| {
+                    let (python_binary, python_home) =
+                        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
                     Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
                         storage: ctx.storage.clone(),
                         file_manager: ctx.file_manager.clone(),
                         workspace_path: ctx.workspace_path.clone(),
                         conversation_id: ctx.conversation_id.clone(),
                         run_id: ctx.run_id.clone(),
+                        python_binary: Some(python_binary),
+                        python_home,
                     }) as Arc<dyn crate::runtime::tools::capability::FileOperations>
                 });
                 let cap = CapabilityContext {

@@ -283,6 +283,8 @@ pub struct DefaultFileOperations {
     pub(crate) workspace_path: PathBuf,
     pub(crate) conversation_id: String,
     pub(crate) run_id: Option<crate::runtime::ids::RunId>,
+    pub(crate) python_binary: Option<PathBuf>,
+    pub(crate) python_home: Option<PathBuf>,
 }
 
 impl DefaultFileOperations {
@@ -306,6 +308,8 @@ impl DefaultFileOperations {
             workspace_path,
             conversation_id: conversation_id.into(),
             run_id,
+            python_binary: None,
+            python_home: None,
         }
     }
 }
@@ -316,6 +320,8 @@ impl std::fmt::Debug for DefaultFileOperations {
             .field("workspace_path", &self.workspace_path)
             .field("conversation_id", &self.conversation_id)
             .field("run_id", &self.run_id)
+            .field("python_binary", &self.python_binary)
+            .field("python_home", &self.python_home)
             .finish()
     }
 }
@@ -331,8 +337,8 @@ impl FileOperations for DefaultFileOperations {
             workspace_path: &self.workspace_path,
             conversation_id: &self.conversation_id,
             run_id: self.run_id.as_ref(),
-            // runtime/ must not import tauri:: — pass None, same as the old bridge.
-            app_handle: None,
+            python_binary: self.python_binary.clone(),
+            python_home: self.python_home.clone(),
         };
         let content = handle_load_file_core(&params, args).await?;
         Ok(LoadedFileResult { content })
