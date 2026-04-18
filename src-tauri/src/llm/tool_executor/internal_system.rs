@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use log::{info, warn};
 use serde_json::Value;
+use std::sync::Arc;
 
 use super::{optional_str, require_str};
 use crate::plugin::context::PluginContext;
@@ -15,24 +16,105 @@ use crate::runtime::tools::builtin::browse_data::{
 };
 
 #[derive(Clone)]
+pub(crate) struct BrowseDataLauncherDeps {
+    storage: Arc<crate::storage::file_store::AppStorage>,
+    file_manager: Arc<crate::storage::file_manager::FileManager>,
+    workspace_path: std::path::PathBuf,
+    conversation_id: String,
+    session_id: crate::runtime::ids::SessionId,
+    run_id: Option<crate::runtime::ids::RunId>,
+    agent_id: Option<crate::runtime::ids::AgentId>,
+    session_manager: Arc<crate::python::session::PythonSessionManager>,
+    connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
+    model: String,
+    gateway: Option<Arc<crate::llm::gateway::LlmGateway>>,
+    tool_registry: Option<Arc<crate::plugin::registry::ToolRegistry>>,
+    app_settings: Option<Arc<crate::models::settings::AppSettings>>,
+    agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
+    event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
+    authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    cancellation: Option<CancellationToken>,
+    app_handle: Option<tauri::AppHandle>,
+}
+
+impl BrowseDataLauncherDeps {
+    pub(crate) fn from_plugin_ctx(ctx: &PluginContext) -> Self {
+        Self {
+            storage: ctx.storage.clone(),
+            file_manager: ctx.file_manager.clone(),
+            workspace_path: ctx.workspace_path.clone(),
+            conversation_id: ctx.conversation_id.clone(),
+            session_id: ctx.session_id.clone(),
+            run_id: ctx.run_id.clone(),
+            agent_id: ctx.agent_id.clone(),
+            session_manager: ctx.session_manager.clone(),
+            connector_engine: ctx.connector_engine.clone(),
+            model: ctx.model.clone(),
+            gateway: ctx.gateway.clone(),
+            tool_registry: ctx.tool_registry.clone(),
+            app_settings: ctx.app_settings.clone(),
+            agent_runtime: ctx.agent_runtime.clone(),
+            event_bus: ctx.event_bus.clone(),
+            authorized_workspace: ctx.authorized_workspace.clone(),
+            read_file_state: ctx.read_file_state.clone(),
+            cancellation: ctx.cancellation.clone(),
+            app_handle: ctx.app_handle.clone(),
+        }
+    }
+
+    fn into_plugin_ctx(self) -> PluginContext {
+        PluginContext {
+            storage: self.storage,
+            file_manager: self.file_manager,
+            workspace_path: self.workspace_path,
+            conversation_id: self.conversation_id,
+            session_id: self.session_id,
+            run_id: self.run_id,
+            agent_id: self.agent_id,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: self.app_handle,
+            session_manager: self.session_manager,
+            auth_manager: None,
+            connector_engine: self.connector_engine,
+            use_cloud: false,
+            model: self.model,
+            gateway: self.gateway,
+            tool_registry: self.tool_registry,
+            app_settings: self.app_settings,
+            agent_runtime: self.agent_runtime,
+            event_bus: self.event_bus,
+            authorized_workspace: self.authorized_workspace,
+            read_file_state: self.read_file_state,
+            cancellation: self.cancellation,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct DefaultBrowseDataLauncher {
-    base_ctx: PluginContext,
+    deps: BrowseDataLauncherDeps,
 }
 
 impl DefaultBrowseDataLauncher {
     pub fn new(base_ctx: PluginContext) -> Self {
-        Self { base_ctx }
+        Self::from_deps(BrowseDataLauncherDeps::from_plugin_ctx(&base_ctx))
+    }
+
+    pub fn from_deps(deps: BrowseDataLauncherDeps) -> Self {
+        Self { deps }
     }
 
     fn scoped_plugin_ctx(&self, launch_ctx: &BrowseDataLaunchContext) -> PluginContext {
-        let mut ctx = self.base_ctx.clone();
+        let mut ctx = self.deps.clone().into_plugin_ctx();
         ctx.conversation_id = launch_ctx.session_id.as_str().to_string();
         ctx.session_id = launch_ctx.session_id.clone();
         ctx.run_id = launch_ctx.parent_run_id.clone();
         ctx.agent_id = launch_ctx.parent_agent_id.clone();
         ctx.cancellation = Some(launch_ctx.cancellation.clone());
         ctx.read_file_state = self
-            .base_ctx
+            .deps
             .read_file_state
             .as_ref()
             .map(|cache| cache.clone_for_child());
@@ -52,7 +134,7 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
             &scoped_ctx,
             request,
             Some(context.cancellation),
-            self.base_ctx.run_id.is_some(),
+            self.deps.run_id.is_some(),
         )
         .await
     }
@@ -587,30 +669,30 @@ pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) ->
     Ok(output)
 }
 
-/// Handle browse_and_extract tool invocations.
-/// Handle browse_data tool — delegate to browser sub-agent.
-pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Result<String> {
+/// Handle browse_data tool — delegate to browser sub-agent and preserve
+/// structured ask semantics for callers that can consume them.
+pub(crate) async fn execute_browse_data(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<BrowseDataLaunchResult> {
     let request = BrowseDataLaunchRequest {
         task: require_str(args, "task")?.to_string(),
         url: optional_str(args, "url").map(str::to_string),
     };
-    let result = launch_browse_data_with_plugin_ctx(
+    launch_browse_data_with_plugin_ctx(
         ctx,
         request,
         ctx.cancellation.clone(),
         ctx.run_id.is_some(),
     )
-    .await?;
-    if let Some(decision) = result.ask_decision {
-        return Err(anyhow!("Permission Ask required: {}", decision));
-    }
-    Ok(result.content)
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::runtime::tools::capability::{FileState, FileStateCache};
+    use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
     use crate::storage::file_manager::FileManager;
     use crate::storage::file_store::AppStorage;
     use std::path::PathBuf;
@@ -671,10 +753,9 @@ mod tests {
             },
         );
 
-        let launcher = DefaultBrowseDataLauncher::new(make_plugin_ctx(
-            workspace.path(),
-            Some(parent_cache.clone()),
-        ));
+        let base_ctx = make_plugin_ctx(workspace.path(), Some(parent_cache.clone()));
+        let deps = BrowseDataLauncherDeps::from_plugin_ctx(&base_ctx);
+        let launcher = DefaultBrowseDataLauncher::from_deps(deps);
 
         let child_ctx = launcher.scoped_plugin_ctx(&BrowseDataLaunchContext {
             session_id: crate::runtime::ids::SessionId::new("child-conv"),
@@ -758,6 +839,32 @@ mod tests {
 
         assert!(output.contains("### Extracted Data Files"));
         assert!(output.contains(missing.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn browse_data_launch_result_keeps_structured_ask_decision() {
+        let result = BrowseDataLaunchResult::ask(PermissionDecision::Ask {
+            message: "need approval".to_string(),
+            suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            reason: PermissionReason::UnknownScope,
+        });
+
+        let decision = result
+            .ask_decision
+            .clone()
+            .expect("ask result should keep structured decision");
+
+        match decision {
+            PermissionDecision::Ask {
+                message,
+                suggestions,
+                ..
+            } => {
+                assert_eq!(message, "need approval");
+                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+            }
+            other => panic!("expected structured ask decision, got: {:?}", other),
+        }
     }
 }
 

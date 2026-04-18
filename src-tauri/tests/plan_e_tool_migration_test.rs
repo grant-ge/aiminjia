@@ -518,6 +518,28 @@ fn browse_data_runtime_tool_is_constructible_without_plugin_context() {
     assert_eq!(tool.definition().id, "browse_data");
 }
 
+#[derive(Debug)]
+struct AskBrowseDataLauncher {
+    message: String,
+}
+
+#[async_trait]
+impl BrowseDataLauncher for AskBrowseDataLauncher {
+    async fn launch(
+        &self,
+        _request: BrowseDataLaunchRequest,
+        _context: BrowseDataLaunchContext,
+    ) -> Result<BrowseDataLaunchResult> {
+        Ok(BrowseDataLaunchResult::ask(
+            app_lib::runtime::tools::permission::PermissionDecision::Ask {
+                message: self.message.clone(),
+                suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+                reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+            },
+        ))
+    }
+}
+
 #[tokio::test]
 async fn browse_data_runtime_tool_passes_parent_identity_to_launcher() {
     let snapshots = Arc::new(Mutex::new(Vec::new()));
@@ -598,4 +620,35 @@ async fn browse_data_runtime_tool_propagates_parent_cancellation_to_launcher() {
         "browse_data launcher must receive the parent-linked cancellation token"
     );
     assert_eq!(captured.parent_run_id.as_deref(), Some("run-e6"));
+}
+
+#[tokio::test]
+async fn browse_data_runtime_tool_preserves_structured_ask_required() {
+    let tool = BrowseDataRuntimeTool::with_launcher(Arc::new(AskBrowseDataLauncher {
+        message: "browse_data needs confirmation".to_string(),
+    }));
+    let ctx = ToolExecutionContext::new(
+        SessionId::new("plan-e-conv"),
+        RunId::new("run-e7"),
+        Some(AgentId::new("agent-e7")),
+        "tc-browse-data-ask",
+        CancellationToken::new(),
+    );
+
+    let err = tool
+        .execute(json!({ "task": "抓取需要授权的数据" }), ctx)
+        .await
+        .expect_err("browse_data runtime tool should surface structured ask");
+
+    match err {
+        ToolError::AskRequired(app_lib::runtime::tools::permission::PermissionDecision::Ask {
+            message,
+            suggestions,
+            ..
+        }) => {
+            assert_eq!(message, "browse_data needs confirmation");
+            assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+        }
+        other => panic!("expected ask-required error, got: {other:?}"),
+    }
 }

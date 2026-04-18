@@ -14,6 +14,14 @@ use serde_json::{json, Value};
 use crate::llm::tool_executor;
 use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::{ToolError, ToolOutput, ToolPlugin};
+use crate::runtime::tools::builtin::browse_data::BrowseDataLaunchResult;
+
+fn map_browse_data_launch_result(result: BrowseDataLaunchResult) -> Result<ToolOutput, ToolError> {
+    if let Some(decision) = result.ask_decision {
+        return Err(ToolError::AskRequired(decision));
+    }
+    Ok(ToolOutput::success(result.content))
+}
 
 pub struct BrowseDataTool;
 
@@ -51,9 +59,39 @@ impl ToolPlugin for BrowseDataTool {
     }
 
     async fn execute(&self, ctx: &PluginContext, input: Value) -> Result<ToolOutput, ToolError> {
-        match tool_executor::handle_browse_data(ctx, &input).await {
-            Ok(content) => Ok(ToolOutput::success(content)),
+        match tool_executor::execute_browse_data(ctx, &input).await {
+            Ok(result) => map_browse_data_launch_result(result),
             Err(e) => Err(ToolError::Other(e)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::tools::builtin::browse_data::BrowseDataLaunchResult;
+    use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+
+    #[test]
+    fn map_browse_data_launch_result_preserves_ask_required() {
+        let result = map_browse_data_launch_result(BrowseDataLaunchResult::ask(
+            PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+                reason: PermissionReason::UnknownScope,
+            },
+        ));
+
+        match result.expect_err("ask decision must stay structured") {
+            ToolError::AskRequired(PermissionDecision::Ask {
+                message,
+                suggestions,
+                ..
+            }) => {
+                assert_eq!(message, "need approval");
+                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+            }
+            other => panic!("expected ToolError::AskRequired, got: {:?}", other),
         }
     }
 }

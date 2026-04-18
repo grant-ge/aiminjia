@@ -2206,3 +2206,32 @@ registry 的 `try_build_request_scoped_tool` 会继续使用 `PluginContext`（`
 - [ ] **E6-Step 5：Commit**
   - `git add src-tauri/src/llm/tool_executor/internal_system.rs src-tauri/src/llm/sub_agent.rs src-tauri/src/plugin/registry.rs src-tauri/src/runtime/tools/builtin/`
   - `git commit -m "feat(browse-data): migrate subagent launcher off legacy plugin path — E6"`
+
+---
+
+## Task E7：删除 `browse_data` legacy 入口里的 Ask 扁平化 + 缩小 launcher 依赖面
+
+**复盘来源（2026-04-18，对齐 `claude-code-best`）：**
+- 当前生产 runtime path 已经能通过 `BrowseDataLaunchResult::ask(...)` 保留 Ask 语义；
+  但 `src-tauri/src/llm/tool_executor/internal_system.rs::handle_browse_data()` 仍保留：
+  ```rust
+  return Err(anyhow!("Permission Ask required: {}", decision));
+  ```
+  这说明 legacy 直调入口仍会把结构化 Ask 再压平成字符串错误。
+- 同时 `DefaultBrowseDataLauncher` 仍然从完整 `PluginContext` 派生 request-scoped child ctx；
+  虽然 E6 已把关键 cancel/run_id/agent_id/read_file_state 桥通，但依赖面仍偏大。
+- 对标 `claude-code-best`，tool execution 边界消费的是明确的 tool/use context，而不是再把整块 legacy context 继续往里送。
+
+**目标状态：**
+- 所有 `browse_data` caller 都消费 `BrowseDataLaunchResult` / runtime outcome，不再保留 legacy Ask string fallback。
+- launcher / child ctx 依赖面进一步缩小为 typed request-scoped dependency bag；
+  不再让完整 `PluginContext` 继续承担 runtime 语义真源。
+
+**建议文件：**
+- Modify: `src-tauri/src/llm/tool_executor/internal_system.rs`
+- Modify: `src-tauri/src/runtime/tools/builtin/browse_data.rs`
+- Modify: `src-tauri/src/plugin/registry.rs`
+- Optional Create: `src-tauri/src/runtime/tools/builtin/browse_data_context.rs`
+
+**建议顺序：**
+- 作为 E6 的 follow-up 单独执行；优先级低于已完成的 H5/H6，但高于新增 browse_data 功能开发。

@@ -55,7 +55,7 @@ pub(crate) use chart::handle_generate_chart_core;
 pub(crate) use export::handle_export_data;
 pub(crate) use file_load::handle_load_file;
 pub(crate) use internal_system::handle_browse_and_extract;
-pub(crate) use internal_system::handle_browse_data;
+pub(crate) use internal_system::execute_browse_data;
 pub(crate) use internal_system::handle_browse_navigate;
 pub(crate) use internal_system::DefaultBrowseDataLauncher;
 pub(crate) use internal_system::handle_extract_table_data;
