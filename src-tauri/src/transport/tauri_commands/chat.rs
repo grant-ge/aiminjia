@@ -3,30 +3,20 @@
 // Tauri commands and the legacy PluginContext-based tool chain.
 // Migrate to CapabilityContext when the command layer is refactored.
 #![allow(deprecated)]
-use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::StreamExt;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{Emitter, Manager};
 
 use crate::auth::AuthManager;
-use crate::llm::analysis_context::AnalysisContext;
-use crate::llm::content_filter::strip_hallucinated_xml;
-use crate::llm::context_decay;
 use crate::llm::gateway::LlmGateway;
-use crate::llm::masking::{MaskingContext, MaskingLevel};
-use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
-use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent};
-use crate::llm::taor::PhaseTracker;
 use crate::models::settings::AppSettings;
-use crate::plugin::skill_trait::{SkillState, StepAction, ToolFilter};
-use crate::plugin::tool_trait::FileMeta;
-use crate::plugin::{PluginContext, SkillRegistry, ToolRegistry};
+use crate::plugin::skill_trait::ToolFilter;
+use crate::plugin::ToolRegistry;
 use crate::runtime::conversation_service;
-use crate::runtime::ids::{RunId, SessionId};
+use crate::runtime::ids::SessionId;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::{
     ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime,
@@ -43,21 +33,8 @@ use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
 
 mod chat_runtime_impl;
-mod chat_support;
 
 pub(crate) use chat_runtime_impl::build_visible_tool_defs;
-
-/// Maximum agent loop iterations for daily consultation mode.
-/// 30 iterations allows multi-step browser workflows: navigate → login check →
-/// filter → paginate → read data across multiple pages.
-const MAX_TOOL_ITERATIONS: usize = 30;
-
-/// Maximum wall-clock time for the entire agent loop (15 minutes for multi-step analysis).
-const AGENT_TIMEOUT_SECS: u64 = 900;
-
-/// Maximum time to wait for a single chunk from the LLM stream (90 seconds).
-/// If no data arrives within this window, the stream is considered stalled.
-const CHUNK_TIMEOUT_SECS: u64 = 90;
 
 /// Maximum number of stream-level retries within the agent loop.
 /// When a stream error or gateway error is retryable (5xx, timeout, connection),
@@ -66,20 +43,6 @@ const MAX_STREAM_RETRIES: u32 = 2;
 
 /// Delay before retrying a failed stream (seconds).
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
-
-/// Character threshold for triggering context compression in daily mode.
-/// When total message content exceeds this, older messages are summarized.
-/// ~24K chars ≈ 8K tokens (Chinese averages ~3 chars/token).
-const COMPRESS_THRESHOLD_CHARS: usize = 24_000;
-
-/// Number of recent messages to preserve (not compress) during compression.
-/// These are kept verbatim so the LLM has full context for the current exchange.
-const COMPRESS_KEEP_RECENT: usize = 10;
-
-pub(crate) use chat_support::{
-    auto_capture_step_context, build_config_from_skill, build_knowledge_preamble,
-    clear_analysis_notes, compress_tool_result, is_daily_question, truncate_at_char_boundary,
-};
 
 fn resolve_request_is_analysis(db: &AppStorage, conversation_id: &str) -> bool {
     matches!(
@@ -118,7 +81,6 @@ struct TauriChatServices {
     file_mgr: Arc<FileManager>,
     crypto: Option<Arc<SecureStorage>>,
     tool_registry: Arc<ToolRegistry>,
-    skill_registry: Arc<SkillRegistry>,
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
@@ -407,7 +369,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
             // If a retry was requested, sleep and restart the gateway call
             if stream_needs_retry {
-                stream_needs_retry = false;
                 log::info!(
                     "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
                     STREAM_RETRY_DELAY_SECS, stream_retry_count, MAX_STREAM_RETRIES,
@@ -1132,7 +1093,6 @@ impl TauriChatCommandAdapter {
         file_mgr: Arc<FileManager>,
         crypto: Option<Arc<SecureStorage>>,
         tool_registry: Arc<ToolRegistry>,
-        skill_registry: Arc<SkillRegistry>,
         session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
         app: tauri::AppHandle,
@@ -1143,7 +1103,6 @@ impl TauriChatCommandAdapter {
             file_mgr,
             crypto,
             tool_registry,
-            skill_registry,
             session_mgr,
             auth_manager,
             app,

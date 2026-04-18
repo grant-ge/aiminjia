@@ -245,7 +245,6 @@ pub fn run() {
                     file_mgr.clone(),
                     secure_storage.clone(),
                     tool_registry.clone(),
-                    skill_registry.clone(),
                     session_mgr.clone(),
                     auth_manager.clone(),
                     app.handle().clone(),
