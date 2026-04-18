@@ -40,7 +40,7 @@ fn test_always_allow_bypasses_capability_check() {
     let pipeline = StorePolicyPipeline::new(store);
     let def = TOOL_CATALOG.get("execute_python").unwrap();
     let ctx = make_ctx(); // 无 capability
-    assert!(is_allow(&pipeline.authorize(def, &serde_json::json!({}), &ctx)));
+    assert!(is_allow(&pipeline.authorize(&def, &serde_json::json!({}), &ctx)));
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn test_always_deny_blocks_tool() {
     let pipeline = StorePolicyPipeline::new(store);
     let def = TOOL_CATALOG.get("web_search").unwrap();
     let ctx = make_ctx();
-    assert!(is_deny(&pipeline.authorize(def, &serde_json::json!({}), &ctx)));
+    assert!(is_deny(&pipeline.authorize(&def, &serde_json::json!({}), &ctx)));
 }
 
 #[test]
