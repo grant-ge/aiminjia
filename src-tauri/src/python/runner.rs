@@ -88,6 +88,22 @@ impl PythonRunner {
         }
     }
 
+    /// Create a runner from an already-resolved Python runtime path.
+    pub fn with_config_from_path(
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+    ) -> Self {
+        Self {
+            workspace_path,
+            python_binary,
+            python_home,
+            sandbox,
+        }
+    }
+
+
     /// Execute Python code string.
     ///
     /// 1. Validates code against sandbox rules.
@@ -343,4 +359,17 @@ mod tests {
         assert_eq!(binary, PathBuf::from("python3"));
         assert!(home.is_none());
     }
+
+    #[test]
+    fn runner_with_config_from_path_uses_provided_binary() {
+        let workspace = std::env::temp_dir().join("test_workspace_j1");
+        std::fs::create_dir_all(&workspace).ok();
+        let sandbox = SandboxConfig::for_workspace(&workspace);
+        let binary = PathBuf::from("/usr/bin/python3");
+
+        let runner = PythonRunner::with_config_from_path(binary.clone(), None, workspace, sandbox);
+
+        assert_eq!(runner.python_binary, binary);
+    }
+
 }
