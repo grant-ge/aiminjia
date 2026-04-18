@@ -110,6 +110,8 @@ fn rand_jitter(max_ms: u64) -> u64 {
 pub struct LlmGateway {
     #[allow(dead_code)]
     db: Arc<AppStorage>,
+    // Stream-level bridge only. Runtime-owned cancellation stays in
+    // SessionRuntime; gateway/run_registry must not become a second owner.
     run_registry: Arc<RuntimeRunRegistry>,
 }
 

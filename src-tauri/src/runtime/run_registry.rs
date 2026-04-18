@@ -14,6 +14,12 @@ struct ActiveRun {
     started_at: Instant,
 }
 
+/// RuntimeRunRegistry only tracks stream-level runtime metadata:
+/// 1. session -> active run_id mapping
+/// 2. provider stream cancel watch channel
+/// 3. busy session queries
+///
+/// Session / turn / tool cancellation ownership lives in `SessionRuntime`.
 #[derive(Default)]
 pub struct RuntimeRunRegistry {
     active_runs: Mutex<HashMap<String, ActiveRun>>,
