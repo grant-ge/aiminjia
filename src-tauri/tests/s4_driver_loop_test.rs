@@ -180,7 +180,7 @@ fn collect_results_counts_success_and_error() {
             max_result_size_chars: 8_000,
         }),
     ];
-    let collected = collect_results(results, 8000);
+    let collected = collect_results(results);
     assert_eq!(collected.success_count, 1);
     assert_eq!(collected.error_count, 1);
     assert_eq!(collected.tool_result_messages.len(), 2);
@@ -200,6 +200,65 @@ fn runtime_tool_call_outcome_exposes_declared_max_result_size_chars() {
     };
 
     assert_eq!(outcome.max_result_size_chars(), 12_345);
+}
+
+#[test]
+fn collect_results_truncation_message_includes_guidance() {
+    let long = "x".repeat(10_000);
+    let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+        tool_call_id: "tc1".to_string(),
+        tool_name: "search_files".to_string(),
+        content: long,
+        is_error: false,
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
+        max_result_size_chars: 4_000,
+    })];
+
+    let out = collect_results(results);
+    let content = out.tool_result_messages[0]["content"].as_str().unwrap();
+    assert!(content.contains("Use a more specific query"));
+    assert!(content.contains("[Output truncated:"));
+}
+
+#[test]
+fn collect_results_uses_per_result_limit_not_global_default() {
+    let content_6k = "d".repeat(6_000);
+    let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+        tool_call_id: "tc1".to_string(),
+        tool_name: "list_directory".to_string(),
+        content: content_6k,
+        is_error: false,
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
+        max_result_size_chars: 4_000,
+    })];
+
+    let out = collect_results(results);
+    let content = out.tool_result_messages[0]["content"].as_str().unwrap();
+    assert!(content.contains("[Output truncated:"));
+}
+
+#[test]
+fn collect_results_keeps_content_within_declared_limit() {
+    let content_5k = "p".repeat(5_000);
+    let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+        tool_call_id: "tc1".to_string(),
+        tool_name: "execute_python".to_string(),
+        content: content_5k,
+        is_error: false,
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
+        max_result_size_chars: 32_000,
+    })];
+
+    let out = collect_results(results);
+    let content = out.tool_result_messages[0]["content"].as_str().unwrap();
+    assert_eq!(content.len(), 5_000);
+    assert!(!content.contains("[Output truncated:"));
 }
 
 // ── S4-T13: driver_s4 core loop ──────────────────────────────────────────────

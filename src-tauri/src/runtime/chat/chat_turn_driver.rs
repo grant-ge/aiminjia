@@ -574,8 +574,7 @@ impl RuntimeChatTurnDriver {
                     }
 
                     // Collect and merge results into state.
-                    let results =
-                        tool_result_collector::collect_results(round_results, 8000);
+                    let results = tool_result_collector::collect_results(round_results);
                     let mut history_batch =
                         Vec::with_capacity(1 + results.tool_result_messages.len());
                     history_batch.push(assistant_history_message);

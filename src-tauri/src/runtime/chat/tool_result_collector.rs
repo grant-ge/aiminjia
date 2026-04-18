@@ -60,13 +60,7 @@ fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
 ///
 /// # Arguments
 /// * `round_results` — results returned by `ToolRoundDriver::execute_round`.
-/// * `max_tool_result_chars` — byte limit for a single tool result; content
-///   exceeding this is truncated with an "[output truncated …]" suffix.
-///   Use `MAX_TOOL_RESULT_CHARS` (8000) for the standard limit.
-pub fn collect_results(
-    round_results: Vec<ToolRoundResult>,
-    max_tool_result_chars: usize,
-) -> ToolRoundResults {
+pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults {
     let mut tool_result_messages: Vec<JsonValue> = Vec::with_capacity(round_results.len());
     let mut new_file_metas: Vec<JsonValue> = Vec::new();
     let mut new_generated_file_ids: Vec<String> = Vec::new();
@@ -77,18 +71,20 @@ pub fn collect_results(
         // Unpack the result into common fields for downstream processing.
         // AskRequired outcomes use the helper methods which synthesise the
         // "permission ask required" content string for the LLM.
-        let (tr_id, tr_name, tr_content, tr_is_error) = match round_result {
+        let (tr_id, tr_name, tr_content, tr_is_error, max_tool_result_chars) = match round_result {
             ToolRoundResult::Ok(outcome) => (
                 outcome.tool_call_id(),
                 outcome.tool_name(),
                 outcome.content(),
                 outcome.is_error(),
+                outcome.max_result_size_chars(),
             ),
             ToolRoundResult::Blocked(blocked) => (
                 blocked.tool_call_id.as_str(),
                 blocked.tool_name.as_str(),
                 blocked.reason.as_str(),
                 true, // blocked tools are treated as errors for stats
+                8_000,
             ),
         };
 
@@ -146,9 +142,9 @@ pub fn collect_results(
         let truncated_result = if tr_content.len() > max_tool_result_chars {
             let end = truncate_at_char_boundary(tr_content, max_tool_result_chars);
             format!(
-                "{}...\n[output truncated — {} chars total]",
+                "{}\n[Output truncated: exceeded {} char limit. Use a more specific query to get smaller results.]",
                 &tr_content[..end],
-                tr_content.len()
+                max_tool_result_chars
             )
         } else {
             tr_content.to_string()
@@ -194,7 +190,7 @@ mod tests {
 
     #[test]
     fn empty_round_produces_empty_output() {
-        let out = collect_results(vec![], 8000);
+        let out = collect_results(vec![]);
         assert_eq!(out.success_count, 0);
         assert_eq!(out.error_count, 0);
         assert!(out.tool_result_messages.is_empty());
@@ -206,7 +202,7 @@ mod tests {
             completed("tc1", "search", "found it", false),
             completed("tc2", "load", "error loading", true),
         ];
-        let out = collect_results(results, 8000);
+        let out = collect_results(results);
         assert_eq!(out.success_count, 1);
         assert_eq!(out.error_count, 1);
     }
@@ -218,7 +214,7 @@ mod tests {
             tool_name: "forbidden".to_string(),
             reason: "not allowed".to_string(),
         })];
-        let out = collect_results(results, 8000);
+        let out = collect_results(results);
         assert_eq!(out.error_count, 1);
         assert_eq!(out.success_count, 0);
     }
@@ -226,7 +222,7 @@ mod tests {
     #[test]
     fn message_fields_are_populated_correctly() {
         let results = vec![completed("tc-42", "my_tool", "hello world", false)];
-        let out = collect_results(results, 8000);
+        let out = collect_results(results);
         assert_eq!(out.tool_result_messages.len(), 1);
         let msg = &out.tool_result_messages[0];
         assert_eq!(msg["role"], "tool");
@@ -239,9 +235,10 @@ mod tests {
     fn long_content_is_truncated() {
         let long = "a".repeat(10000);
         let results = vec![completed("tc1", "tool", &long, false)];
-        let out = collect_results(results, 8000);
+        let out = collect_results(results);
         let content = out.tool_result_messages[0]["content"].as_str().unwrap();
-        assert!(content.contains("[output truncated"));
+        assert!(content.contains("[Output truncated:"));
+        assert!(content.contains("Use a more specific query"));
         assert!(content.len() < long.len());
     }
 
@@ -249,7 +246,7 @@ mod tests {
     fn file_id_extracted_from_json_content() {
         let content = r#"{"status":"ok","fileId":"aaaabbbb-1234-5678-9012-abcdef012345","name":"report.pdf"}"#;
         let results = vec![completed("tc1", "make_report", content, false)];
-        let out = collect_results(results, 8000);
+        let out = collect_results(results);
         assert_eq!(out.new_generated_file_ids, vec!["aaaabbbb-1234-5678-9012-abcdef012345"]);
     }
 }
