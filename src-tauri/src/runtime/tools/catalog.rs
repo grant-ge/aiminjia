@@ -187,6 +187,42 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "grep_content",
+            "在授权工作目录中搜索文件内容。当前 Phase 1 对标 claude-code-best 的 GrepTool 核心模式：\
+            \n- `output_mode=files_with_matches`：返回命中文件路径\
+            \n- `output_mode=content`：返回 `path:line:content` 文本\
+            \n- `output_mode=count`：返回 `path:count` 文本\
+            \n\n当前不包含 `type/head_limit/offset/multiline/context/-i` 等扩展参数。",
+        )
+        .with_kind(ToolKind::Primitive)
+        .with_read_only(true)
+        .with_capability_scope(["workspace:read"]),
+        json!({
+            "type": "object",
+            "required": ["pattern"],
+            "properties": {
+                "pattern": { "type": "string", "description": "要搜索的正则表达式模式" },
+                "path": {
+                    "type": "string",
+                    "description": "相对于 workspace root 的搜索起点（文件或目录），默认 '.'",
+                    "default": "."
+                },
+                "glob": {
+                    "type": "string",
+                    "description": "可选文件名 glob，仅支持简单 * 通配符，如 '*.rs'"
+                },
+                "output_mode": {
+                    "type": "string",
+                    "enum": ["content", "files_with_matches", "count"],
+                    "description": "结果模式，默认 files_with_matches",
+                    "default": "files_with_matches"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
         ToolDefinition::new("load_file",
             "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
             \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\

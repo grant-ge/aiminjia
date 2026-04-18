@@ -71,6 +71,7 @@ zip = "2"
 # File watching (skill dev mode hot-reload)
 notify = "7"
 lru = "0.12"
+regex = "1"
 
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]

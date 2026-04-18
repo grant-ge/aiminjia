@@ -1,4 +1,4 @@
-//! Verify all 11 primitive tools are registered in catalog as RuntimeTool structs.
+//! Verify primitive tools are registered in catalog as RuntimeTool structs.
 //!
 //! These tests do NOT execute tools (that would require live browser / Python
 //! environment).  They only assert that:
@@ -11,7 +11,7 @@
 use app_lib::runtime::tools::catalog::ToolCatalog;
 use app_lib::runtime::tools::definition::ToolKind;
 
-/// All 10 primitive tools must be in catalog as Primitive kind.
+/// Primitive runtime tools must be in catalog as Primitive kind.
 #[test]
 fn all_primitive_tools_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
@@ -20,6 +20,7 @@ fn all_primitive_tools_in_catalog() {
         "read_workspace_file",
         "search_files",
         "get_file_info",
+        "grep_content",
         "web_search",
         "browse_navigate",
         "read_page_content",
@@ -112,6 +113,7 @@ fn workspace_primitives_have_correct_scope() {
         "read_workspace_file",
         "search_files",
         "get_file_info",
+        "grep_content",
     ] {
         let def = catalog
             .get(id)

@@ -1193,7 +1193,14 @@ feat(tools): BashTool — bash RuntimeTool with tokio::process + cancellation + 
 
 ## Task 4：GrepTool（`grep_content`）
 
-GrepTool 对标 claude-code-best 的 GrepTool（`output_mode: content|files_with_matches|count`），使用 Rust `regex` crate 实现递归文件内容搜索。
+GrepTool 对标 claude-code-best 的 GrepTool（`output_mode: content|files_with_matches|count`），但当前 lotus 先落一版 **Phase 1 最小可用实现**：底层仍使用 Rust `regex` crate + 本地递归读取文件，而不是直接依赖 ripgrep binary；输入只支持 `pattern/path/glob/output_mode` 四个核心字段，`type/head_limit/offset/multiline/context/-i` 等 CCB 扩展参数暂不在本 Task 引入。
+
+### Task 4 设计校准（对标 claude-code-best 后的执行边界）
+
+- **结果结构优先对齐 CCB 的 envelope，而不是继续发明一套 Lotus 专用 shape**：`ToolResult.data` 以 `mode/filenames/content/num_files/num_lines/num_matches` 为主，必要时补 `files_searched/truncated` 这类 Lotus 侧诊断字段；`ToolResult.content` 直接返回面向 LLM 的搜索文本（文件列表、匹配行文本、或 `path:count` 列表）。
+- **注册落点要修正**：`src-tauri/src/runtime/tools/builtin/mod.rs` 只负责 `pub mod grep;` 暴露模块；真正的生产 `register_runtime(...)` 注册入口在 `src-tauri/src/plugin/builtin/tools/mod.rs`。
+- **复用现有 workspace helper**：不要在 `grep.rs` 再拷一份 glob 匹配逻辑；应复用 `workspace.rs` 中已经存在的 `matches_glob` 实现（必要时把 helper 提升为 `pub(crate)`）。
+- **顺序稳定性要显式保证**：递归遍历时按文件名排序，避免测试和不同机器上的结果抖动。
 
 ### 4.1 Cargo.toml 依赖
 
@@ -1510,13 +1517,13 @@ impl RuntimeTool for GrepContentTool {
 
 - [ ] 新建 `src-tauri/src/runtime/tools/builtin/grep.rs`
 
-### 4.4 注册到 `builtin/mod.rs`
+### 4.4 注册到 builtin 模块与生产 registry
 
 ```rust
 pub mod grep;
 ```
 
-以及在生产 dispatcher 注册函数中添加：
+以及在 `src-tauri/src/plugin/builtin/tools/mod.rs` 的生产 runtime 注册函数中添加：
 
 ```rust
 dispatcher.register(Arc::new(grep::GrepContentTool));
@@ -1785,12 +1792,19 @@ fn all_new_plan_c_tools_are_in_catalog() {
 
 - [ ] `builtin_runtime_registration_test` 通过
 
-### 5.3 全量回归
+### 5.3 工具可见面与迁移契约
+
+- [ ] 更新 `chat_runtime_impl.rs` 中的 `WORKSPACE_TOOL_NAMES`，把 `write_file`、`edit_file`、`bash`、`grep_content` 一并纳入“无授权 workspace 时应隐藏”的工具集合
+- [ ] 更新 `primitive_tools_migration_test.rs`，确认 `grep_content` 属于 Primitive 且带 `workspace:read`
+- [ ] 如新增了 catalog/skill surface 相关断言，同步更新对应契约测试（如 `tool_catalog_contract_test.rs` / `skill_tool_contract_test.rs`）
+
+### 5.4 全量回归
 
 ```bash
 cd src-tauri && cargo test review_ --tests --no-fail-fast 2>&1 | tail -20
 cd src-tauri && cargo test --test tool_catalog_contract_test -- --nocapture
 cd src-tauri && cargo test --test builtin_runtime_registration_test -- --nocapture
+cd src-tauri && cargo test --test primitive_tools_migration_test -- --nocapture
 cd src-tauri && cargo test --test write_file_tool_test -- --nocapture
 cd src-tauri && cargo test --test edit_file_tool_test -- --nocapture
 cd src-tauri && cargo test --test bash_tool_test -- --nocapture
@@ -1799,7 +1813,7 @@ cd src-tauri && cargo test --test grep_content_tool_test -- --nocapture
 
 - [ ] 所有测试通过，无 review_ 系列测试回归
 
-### 5.4 最终 Git Commit
+### 5.5 最终 Git Commit
 
 ```
 feat(tools): Plan-C complete — write_file, edit_file, bash, grep_content registered and tested

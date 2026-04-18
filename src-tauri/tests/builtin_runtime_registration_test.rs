@@ -53,7 +53,7 @@ fn build_test_plugin_ctx(
 // ─── Test 1: register_builtin_tools registers workspace RuntimeTools ─────────
 
 /// register_builtin_tools should call register_runtime for the workspace/file
-/// RuntimeTool implementations plus bash. After registration the runtime tool
+/// RuntimeTool implementations plus bash/grep_content. After registration the runtime tool
 /// schemas should include all of them.
 #[tokio::test]
 async fn register_builtin_tools_registers_workspace_runtime_tools() {
@@ -89,7 +89,7 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
     );
 }
 
-// ─── Test 2: workspace/file/bash runtime tools are registered ─────────────────
+// ─── Test 2: workspace/file/bash/grep runtime tools are registered ────────────
 
 #[tokio::test]
 async fn all_four_workspace_runtime_tools_are_registered() {
@@ -108,6 +108,7 @@ async fn all_four_workspace_runtime_tools_are_registered() {
         "write_file",
         "edit_file",
         "bash",
+        "grep_content",
     ] {
         assert!(
             names.contains(tool_name),
@@ -139,6 +140,32 @@ async fn bash_runtime_tool_executes_via_registry() {
     assert!(
         result.content.contains("hi"),
         "bash output should contain echo result: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn grep_runtime_tool_executes_via_registry() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("note.txt"), "hello grep\n").unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let result = registry
+        .execute(
+            "grep_content",
+            &ctx,
+            serde_json::json!({"pattern": "hello", "output_mode": "files_with_matches"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("grep_content should execute via runtime tool");
+
+    assert!(
+        result.content.contains("note.txt"),
+        "grep_content output should contain matched file: {}",
         result.content
     );
 }

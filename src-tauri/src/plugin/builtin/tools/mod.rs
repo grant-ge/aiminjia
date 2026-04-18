@@ -73,6 +73,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
     };
     use crate::runtime::tools::builtin::bash::BashTool;
+    use crate::runtime::tools::builtin::grep::GrepContentTool;
     registry
         .register_runtime(Arc::new(ListDirectoryRuntimeTool))
         .await;
@@ -92,4 +93,5 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .register_runtime(Arc::new(EditFileRuntimeTool))
         .await;
     registry.register_runtime(Arc::new(BashTool)).await;
+    registry.register_runtime(Arc::new(GrepContentTool)).await;
 }

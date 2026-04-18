@@ -267,7 +267,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
 
 pub struct SearchFilesRuntimeTool;
 
-fn matches_glob(name: &str, pattern: &str) -> bool {
+pub(crate) fn matches_glob(name: &str, pattern: &str) -> bool {
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.len() == 1 {
         return name == pattern;
