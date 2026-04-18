@@ -28,6 +28,7 @@ vi.mock('@/i18n', () => ({
 
 import { useStreaming } from './useStreaming'
 import { useChatStore } from '@/stores/chatStore'
+import { useStreamingStore } from '@/stores/streamingStore'
 
 function HookHarness() {
   useStreaming()
@@ -51,6 +52,7 @@ describe('useStreaming integration review', () => {
       busyConversations: new Set(),
       streamStates: {},
       taskStates: {},
+      pendingAsks: new Map(),
       isStreaming: false,
       streamingContent: '',
       toolExecutions: [],
@@ -140,5 +142,62 @@ describe('useStreaming integration review', () => {
     )
 
     view.unmount()
+  })
+
+  it('adds pending ask to store when permission:ask event arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('permission:ask')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'run-1',
+          toolCallId: 'tc-abc',
+          toolName: 'execute_python',
+          message: 'Run code?',
+          suggestions: null,
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().pendingAsks.get('tc-abc')).toBeDefined()
+  })
+
+  it('clears pending asks for conversation when streaming:done arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const askHandler = tauriEventMock.listeners.get('permission:ask')
+    const doneHandler = tauriEventMock.listeners.get('streaming:done')
+    expect(askHandler).toBeTypeOf('function')
+    expect(doneHandler).toBeTypeOf('function')
+
+    act(() => {
+      askHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-1',
+          toolName: 'execute_python',
+          message: 'Run code?',
+          suggestions: null,
+        },
+      })
+    })
+
+    act(() => {
+      doneHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'msg-1',
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
   })
 })

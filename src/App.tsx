@@ -7,12 +7,27 @@ import { ChatArea } from '@/components/layout/ChatArea'
 import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
+import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
 import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
+import {
+  approvePermissionRequest,
+  cancelPermissionRequest,
+  denyPermissionRequest,
+  getCloudAuth,
+  getCloudModels,
+  getPluginInfo,
+  getSettings,
+  onAuthExpired,
+  onBrowserClosed,
+  onBrowserNavigating,
+  onBrowserPageReady,
+  onConversationTitleUpdated,
+  updateSettings,
+} from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -21,6 +36,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useBrowserStore } from '@/stores/browserStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useStreamingStore } from '@/stores/streamingStore'
 
 function App() {
   useStreaming()
@@ -167,6 +183,42 @@ function App() {
   }, [])
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const pendingAsks = useStreamingStore((s) => s.pendingAsks)
+  const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
+  const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
+
+  const handleAllowAsk = async () => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await approvePermissionRequest(toolCallId, null)
+    } catch (err) {
+      console.error('[permission:ask] approve failed', err)
+    }
+  }
+
+  const handleDenyAsk = async () => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await denyPermissionRequest(toolCallId)
+    } catch (err) {
+      console.error('[permission:ask] deny failed', err)
+    }
+  }
+
+  const handleCancelAsk = async () => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await cancelPermissionRequest(toolCallId)
+    } catch (err) {
+      console.error('[permission:ask] cancel failed', err)
+    }
+  }
 
   return (
     <div className="flex h-screen w-full flex-col">
@@ -186,6 +238,13 @@ function App() {
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
+      <PermissionAskDialog
+        open={activeAsk !== null}
+        ask={activeAsk}
+        onAllow={handleAllowAsk}
+        onDeny={handleDenyAsk}
+        onCancel={handleCancelAsk}
+      />
     
       {showPersonaSelector && (
         <PersonaSelector onComplete={handlePersonaOnboardingComplete} />
