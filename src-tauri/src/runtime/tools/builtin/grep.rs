@@ -181,6 +181,20 @@ impl RuntimeTool for GrepContentTool {
         true
     }
 
+    fn validate_input(&self, input: &Value) -> Option<ToolError> {
+        match input.get("pattern") {
+            None => Some(ToolError::InputValidationError {
+                tool_name: "grep_content".to_string(),
+                message: "Missing required field: pattern (string regex)".to_string(),
+            }),
+            Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
+                tool_name: "grep_content".to_string(),
+                message: "Field 'pattern' must be a string".to_string(),
+            }),
+            _ => None,
+        }
+    }
+
     async fn execute(
         &self,
         input: Value,

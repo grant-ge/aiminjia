@@ -37,6 +37,8 @@ pub enum ToolError {
     AskRequired(crate::runtime::tools::permission::PermissionDecision),
     #[error("tool execution failed: {0}")]
     ExecutionFailed(String),
+    #[error("input validation error for tool '{tool_name}': {message}")]
+    InputValidationError { tool_name: String, message: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

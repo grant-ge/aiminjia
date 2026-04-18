@@ -263,6 +263,23 @@ impl RuntimeTool for BashTool {
         true
     }
 
+    fn validate_input(&self, input: &Value) -> Option<ToolError> {
+        match input.get("command") {
+            None => Some(ToolError::InputValidationError {
+                tool_name: "bash".to_string(),
+                message: "Missing required field: command (string)".to_string(),
+            }),
+            Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
+                tool_name: "bash".to_string(),
+                message: format!(
+                    "Field 'command' must be a string, got: {}",
+                    value.to_string().chars().take(40).collect::<String>()
+                ),
+            }),
+            _ => None,
+        }
+    }
+
     async fn check_permissions(
         &self,
         input: &Value,

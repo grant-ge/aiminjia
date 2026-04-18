@@ -384,10 +384,18 @@ impl QueryEngine {
                 ))
                 .await?;
 
+                let content = match &err {
+                    crate::runtime::tools::executor::ToolError::InputValidationError {
+                        tool_name,
+                        message,
+                    } => format!("InputValidationError for tool '{tool_name}': {message}"),
+                    other => other.to_string(),
+                };
+
                 Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
-                    content: err.to_string(),
+                    content,
                     is_error: true,
                     file_meta: None,
                     is_degraded: false,

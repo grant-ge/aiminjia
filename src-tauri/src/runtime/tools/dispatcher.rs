@@ -24,6 +24,9 @@ pub trait RuntimeTool: Send + Sync {
     fn is_destructive(&self, _input: &Value) -> bool {
         self.definition().default_destructive
     }
+    fn validate_input(&self, _input: &Value) -> Option<ToolError> {
+        None
+    }
     async fn check_permissions(
         &self,
         _input: &Value,
@@ -108,6 +111,9 @@ impl ToolDispatcher {
             decision @ PermissionDecision::Ask { .. } => {
                 return Ok(ToolDispatchOutcome::AskRequired(decision));
             }
+        }
+        if let Some(validation_err) = tool.validate_input(&input) {
+            return Err(validation_err);
         }
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;

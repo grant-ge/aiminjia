@@ -469,6 +469,11 @@ impl ToolRegistry {
                 Err(crate::runtime::tools::ToolError::ExecutionFailed(message)) => {
                     return Err(ToolError::ExecutionFailed(message));
                 }
+                Err(crate::runtime::tools::ToolError::InputValidationError { tool_name, message }) => {
+                    return Err(ToolError::ExecutionFailed(format!(
+                        "input validation error for tool '{tool_name}': {message}"
+                    )));
+                }
                 Err(crate::runtime::tools::ToolError::Other(err)) => {
                     return Err(ToolError::Other(err));
                 }
