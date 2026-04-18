@@ -45,6 +45,9 @@ pub enum RuntimeEventKind {
         task_id: TaskId,
         status: String,
     },
+    StopHookPreventedContinuation {
+        reason: Option<String>,
+    },
     MessagePersisted {
         message_id: String,
         role: String,

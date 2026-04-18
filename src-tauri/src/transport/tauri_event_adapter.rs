@@ -122,6 +122,14 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
+        RuntimeEventKind::StopHookPreventedContinuation { reason } => Some(LegacyEvent {
+            name: "stop:prevented-continuation".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "reason": reason,
+            }),
+        }),
         _ => None,
     };
     payload

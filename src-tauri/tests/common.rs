@@ -18,6 +18,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::PermissionAskRequired { .. } => "PermissionAskRequired",
         RuntimeEventKind::AgentIdle { .. } => "AgentIdle",
         RuntimeEventKind::TaskStatusChanged { .. } => "TaskStatusChanged",
+        RuntimeEventKind::StopHookPreventedContinuation { .. } => "StopHookPreventedContinuation",
         RuntimeEventKind::RunCancelled => "RunCancelled",
         RuntimeEventKind::RunCompleted => "RunCompleted",
     }

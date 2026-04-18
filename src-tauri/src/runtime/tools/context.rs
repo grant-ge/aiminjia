@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::tools::capability::SharedCapabilityContext;
 use crate::runtime::tools::permission::PermissionDecision;
 
@@ -50,6 +51,8 @@ pub struct ToolExecutionContext {
     /// pending permission ask has already been resolved and the original tool
     /// call should be replayed without re-entering the permission pipeline.
     pub permission_override: Option<PermissionDecision>,
+    /// Optional session-scoped hooks executed around tool dispatch.
+    pub hook_registry: Option<Arc<HookRegistry>>,
 }
 
 impl ToolExecutionContext {
@@ -69,6 +72,7 @@ impl ToolExecutionContext {
             event_sink: Arc::new(EventCollectingSink::default()),
             capability: None,
             permission_override: None,
+            hook_registry: None,
         }
     }
 
@@ -83,6 +87,11 @@ impl ToolExecutionContext {
 
     pub fn with_permission_override(mut self, decision: PermissionDecision) -> Self {
         self.permission_override = Some(decision);
+        self
+    }
+
+    pub fn with_hook_registry(mut self, registry: Arc<HookRegistry>) -> Self {
+        self.hook_registry = Some(registry);
         self
     }
 

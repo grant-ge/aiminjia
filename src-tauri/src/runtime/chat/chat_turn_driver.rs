@@ -21,6 +21,8 @@ use crate::runtime::chat::turn_config::{
 };
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
+use crate::runtime::hooks::config::{HookEvent, HookRegistry};
+use crate::runtime::hooks::HookRunner;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::store::{
@@ -44,6 +46,7 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     /// true = analysis 步骤模式；false = daily 日常模式（默认）
     pub is_analysis: bool,
+    pub hook_registry: Option<Arc<HookRegistry>>,
 }
 
 impl ChatTurnRequest {
@@ -58,6 +61,7 @@ impl ChatTurnRequest {
             file_ids,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             is_analysis: false,
+            hook_registry: None,
         }
     }
 
@@ -579,6 +583,7 @@ impl RuntimeChatTurnDriver {
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
+            hook_registry: request.hook_registry.clone(),
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
@@ -882,6 +887,21 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        if let Some(registry) = config.hook_registry.as_ref() {
+            let stop_hooks = registry.hooks_for(HookEvent::Stop, "__stop__");
+            if !stop_hooks.is_empty() {
+                let stop_input = serde_json::json!({
+                    "stop_reason": if state.stream_cancelled { "cancelled" } else { "content_complete" },
+                    "content": &state.full_content,
+                });
+                let runner = HookRunner::new();
+                if let Ok(outcome) = runner.run_hooks(&stop_hooks, "__stop__", &stop_input).await {
+                    state.stop_hook_prevent_continuation = outcome.prevent_continuation;
+                    state.stop_hook_reason = outcome.stop_reason;
+                }
+            }
+        }
+
         // ── Step 8: Emit terminal events ──────────────────────────────────────
         // content must be a MessageContent object (matching the frontend Message type),
         // not a raw string.  The legacy finish_agent path always emitted {"text": "..."},
@@ -898,6 +918,17 @@ impl RuntimeChatTurnDriver {
         self.event_bus
             .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
             .await?;
+        if state.stop_hook_prevent_continuation {
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    session_id.clone(),
+                    run_id.clone(),
+                    RuntimeEventKind::StopHookPreventedContinuation {
+                        reason: state.stop_hook_reason.clone(),
+                    },
+                ))
+                .await?;
+        }
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id,

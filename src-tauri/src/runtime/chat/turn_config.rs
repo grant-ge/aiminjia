@@ -2,11 +2,13 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
 use crate::runtime::chat::compaction::AutoCompactState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{RunId, SessionId};
 
 /// LLM provider/routing settings resolved once per turn.
@@ -41,6 +43,7 @@ pub struct TurnConfig {
     pub llm_settings: ResolvedLlmSettings,
     pub conversation_id: SessionId,
     pub run_id: RunId,
+    pub hook_registry: Option<Arc<HookRegistry>>,
 }
 
 /// Turn 级可变状态。Driver 是唯一修改者。
@@ -57,6 +60,8 @@ pub struct TurnIterationState {
     pub force_no_tools: bool,
     pub safeguard_phase1_injected: bool,
     pub compact_state: AutoCompactState,
+    pub stop_hook_prevent_continuation: bool,
+    pub stop_hook_reason: Option<String>,
 }
 
 impl TurnIterationState {
@@ -73,6 +78,8 @@ impl TurnIterationState {
             force_no_tools: false,
             safeguard_phase1_injected: false,
             compact_state: AutoCompactState::new(),
+            stop_hook_prevent_continuation: false,
+            stop_hook_reason: None,
         }
     }
 

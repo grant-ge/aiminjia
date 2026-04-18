@@ -4,6 +4,7 @@ pub mod chat;
 pub mod conversation_service;
 pub mod event_bus;
 pub mod events;
+pub mod hooks;
 pub mod identity;
 pub mod ids;
 pub mod mcp;

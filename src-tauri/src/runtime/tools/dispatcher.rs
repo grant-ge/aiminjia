@@ -5,6 +5,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::runtime::hooks::config::HookEvent;
+use crate::runtime::hooks::{HookDecision, HookRunner};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -41,12 +43,15 @@ pub trait RuntimeTool: Send + Sync {
     ) -> Result<ToolResult, ToolError>;
 }
 
+#[derive(Debug)]
 pub enum ToolDispatchOutcome {
     /// The tool completed execution (success or tool-level error encoded in the result).
     Completed {
         result: ToolResult,
         event_names: Vec<String>,
         max_result_size_chars: usize,
+        prevent_continuation: bool,
+        stop_reason: Option<String>,
     },
     /// The permission pipeline returned `Ask` — user confirmation is required.
     /// The decision is returned as-is so the TurnDriver can handle it.
@@ -81,7 +86,7 @@ impl ToolDispatcher {
     pub async fn dispatch(
         &self,
         tool_name: &str,
-        input: Value,
+        mut input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolDispatchOutcome, ToolError> {
         let tool = {
@@ -92,6 +97,28 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
+
+        if let Some(registry) = ctx.hook_registry.as_ref() {
+            let runner = HookRunner::new();
+            let hooks = registry.hooks_for(HookEvent::PreToolUse, tool_name);
+            if !hooks.is_empty() {
+                let outcome = runner
+                    .run_hooks(&hooks, tool_name, &input)
+                    .await
+                    .map_err(|err| ToolError::ExecutionFailed(format!("pre-tool hook error: {err}")))?;
+                match outcome.decision {
+                    HookDecision::Deny { message } => {
+                        return Err(ToolError::PermissionDenied(message));
+                    }
+                    HookDecision::Allow => {
+                        if let Some(updated_input) = outcome.updated_input {
+                            input = updated_input;
+                        }
+                    }
+                }
+            }
+        }
+
         let permission_decision = if let Some(decision) = ctx.permission_override.clone() {
             decision
         } else if let Some(decision) = tool.check_permissions(&input, &ctx).await {
@@ -122,10 +149,25 @@ impl ToolDispatcher {
         }
         ctx.event_sink.emit("tool:completed");
         let result = result?;
+        let mut prevent_continuation = false;
+        let mut stop_reason = None;
+        if let Some(registry) = ctx.hook_registry.as_ref() {
+            let runner = HookRunner::new();
+            let hooks = registry.hooks_for(HookEvent::PostToolUse, tool_name);
+            if !hooks.is_empty() {
+                let result_value = serde_json::to_value(&result.content).unwrap_or(Value::Null);
+                if let Ok(outcome) = runner.run_hooks(&hooks, tool_name, &result_value).await {
+                    prevent_continuation = outcome.prevent_continuation;
+                    stop_reason = outcome.stop_reason;
+                }
+            }
+        }
         Ok(ToolDispatchOutcome::Completed {
             result,
             event_names: ctx.event_sink.snapshot(),
             max_result_size_chars: definition.default_max_result_size_chars,
+            prevent_continuation,
+            stop_reason,
         })
     }
 
