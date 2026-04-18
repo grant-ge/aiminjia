@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::chat::chat_turn_driver::inject_synthetic_tool_results_for_missing_calls;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -140,7 +140,10 @@ fn injects_synthetic_tool_result_for_unmatched_assistant_tool_call() {
         }),
     ];
 
-    let injected = inject_synthetic_tool_results_for_missing_calls(&mut messages);
+    let injected = inject_synthetic_tool_results_for_missing_calls(
+        &mut messages,
+        Some(CancellationReason::UserCancel),
+    );
     assert_eq!(injected, 1, "must inject one synthetic tool result");
 
     let synthetic = messages
@@ -154,6 +157,66 @@ fn injects_synthetic_tool_result_for_unmatched_assistant_tool_call() {
     assert_eq!(
         synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
         "Tool execution was interrupted by user cancellation.",
+    );
+}
+
+#[test]
+fn injects_reason_specific_synthetic_tool_result_for_interrupt() {
+    let mut messages = vec![json!({
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+            {"id": "tc-a1-interrupt", "name": "unknown_tool", "arguments": {}}
+        ]
+    })];
+
+    let injected = inject_synthetic_tool_results_for_missing_calls(
+        &mut messages,
+        Some(CancellationReason::Interrupt),
+    );
+    assert_eq!(injected, 1, "must inject one synthetic tool result");
+
+    let synthetic = messages
+        .iter()
+        .find(|msg| {
+            msg.get("role").and_then(|v| v.as_str()) == Some("tool")
+                && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-a1-interrupt")
+        })
+        .expect("synthetic tool result should exist");
+
+    assert_eq!(
+        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        "Tool execution was interrupted before completion.",
+    );
+}
+
+#[test]
+fn injects_reason_specific_synthetic_tool_result_for_sibling_error() {
+    let mut messages = vec![json!({
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+            {"id": "tc-a1-sibling", "name": "unknown_tool", "arguments": {}}
+        ]
+    })];
+
+    let injected = inject_synthetic_tool_results_for_missing_calls(
+        &mut messages,
+        Some(CancellationReason::SiblingError),
+    );
+    assert_eq!(injected, 1, "must inject one synthetic tool result");
+
+    let synthetic = messages
+        .iter()
+        .find(|msg| {
+            msg.get("role").and_then(|v| v.as_str()) == Some("tool")
+                && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-a1-sibling")
+        })
+        .expect("synthetic tool result should exist");
+
+    assert_eq!(
+        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        "Tool execution was cancelled because another tool call failed.",
     );
 }
 

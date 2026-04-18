@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
@@ -210,13 +210,28 @@ pub struct RuntimeChatTurnDriver {
     pending_permission_store: Arc<PendingPermissionRequestStore>,
 }
 
-const SYNTHETIC_CANCELLED_TOOL_RESULT: &str =
-    "Tool execution was interrupted by user cancellation.";
+fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
+    match reason {
+        Some(CancellationReason::Interrupt) => {
+            "Tool execution was interrupted before completion."
+        }
+        Some(CancellationReason::SiblingError) => {
+            "Tool execution was cancelled because another tool call failed."
+        }
+        Some(CancellationReason::BackgroundStop) => {
+            "Tool execution was cancelled because the background run stopped."
+        }
+        Some(CancellationReason::UserCancel) | None => {
+            "Tool execution was interrupted by user cancellation."
+        }
+    }
+}
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
 /// tool response yet. Returns the number of injected messages.
 pub fn inject_synthetic_tool_results_for_missing_calls(
     messages: &mut Vec<serde_json::Value>,
+    reason: Option<CancellationReason>,
 ) -> usize {
     let mut pending_ids: Vec<(String, Option<String>)> = Vec::new();
     let mut seen_assistant_ids: HashSet<String> = HashSet::new();
@@ -259,7 +274,7 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
             "role": "tool",
             "toolCallId": id,
             "name": name.unwrap_or_else(|| "unknown_tool".to_string()),
-            "content": SYNTHETIC_CANCELLED_TOOL_RESULT,
+            "content": synthetic_cancelled_tool_result(reason),
         }));
         injected += 1;
     }
@@ -271,8 +286,11 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
 ///
 /// Injects any missing synthetic tool results before marking the turn as
 /// cancelled so the in-memory transcript never contains orphaned tool calls.
-fn mark_turn_cancelled_with_synthetic_results(state: &mut TurnIterationState) {
-    inject_synthetic_tool_results_for_missing_calls(&mut state.messages);
+fn mark_turn_cancelled_with_synthetic_results(
+    state: &mut TurnIterationState,
+    reason: Option<CancellationReason>,
+) {
+    inject_synthetic_tool_results_for_missing_calls(&mut state.messages, reason);
     state.stream_cancelled = true;
 }
 
@@ -653,7 +671,7 @@ impl RuntimeChatTurnDriver {
 
             // CP-1: check cancellation before invoking provider.
             if cancel.is_cancelled() {
-                mark_turn_cancelled_with_synthetic_results(&mut state);
+                mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
             }
 
@@ -679,7 +697,7 @@ impl RuntimeChatTurnDriver {
 
                 // ── 5d: user / token cancellation ────────────────────────────
                 LlmStepResult::Cancelled => {
-                    mark_turn_cancelled_with_synthetic_results(&mut state);
+                    mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                     break 'turn;
                 }
 
@@ -720,7 +738,7 @@ impl RuntimeChatTurnDriver {
                     // CP-2: check cancellation right after execute_round.
                     if cancel.is_cancelled() {
                         state.append_messages_batch(vec![assistant_history_message.clone()]);
-                        mark_turn_cancelled_with_synthetic_results(&mut state);
+                        mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                         break 'turn;
                     }
 
@@ -739,7 +757,7 @@ impl RuntimeChatTurnDriver {
                         // CP-3: check cancellation after each staged tool result.
                         if cancel.is_cancelled() {
                             state.append_messages_batch(history_batch);
-                            mark_turn_cancelled_with_synthetic_results(&mut state);
+                            mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                             break 'turn;
                         }
                     }
@@ -784,7 +802,7 @@ impl RuntimeChatTurnDriver {
 
             // ── 5f: per-iteration cancel check ───────────────────────────────
             if cancel.is_cancelled() {
-                mark_turn_cancelled_with_synthetic_results(&mut state);
+                mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
             }
         }
@@ -857,7 +875,10 @@ mod tests {
             ]
         })]);
 
-        mark_turn_cancelled_with_synthetic_results(&mut state);
+        mark_turn_cancelled_with_synthetic_results(
+            &mut state,
+            Some(CancellationReason::Interrupt),
+        );
 
         assert!(state.stream_cancelled, "cancel finalizer must mark stream_cancelled");
         let synthetic = state
@@ -873,8 +894,8 @@ mod tests {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         assert!(
-            content.contains("interrupted"),
-            "synthetic tool result should mention interruption"
+            content.contains("interrupted before completion"),
+            "synthetic tool result should reflect the cancel reason"
         );
     }
 }
