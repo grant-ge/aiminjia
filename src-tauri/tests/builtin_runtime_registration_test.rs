@@ -439,6 +439,82 @@ async fn execute_python_in_runtime_dispatcher_denies_dangerous_code() {
     );
 }
 
+// ─── Test 10: generate_report survives legacy unregistration via runtime factory ──
+
+#[tokio::test]
+async fn generate_report_request_scoped_runtime_factory_preserves_file_meta_without_legacy_tool() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+    registry.unregister("generate_report").await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+    ctx.storage
+        .create_conversation("test-conv", "Plan E")
+        .expect("conversation should be created");
+
+    let output = registry
+        .execute(
+            "generate_report",
+            &ctx,
+            serde_json::json!({
+                "title": "Runtime Report",
+                "sections": [{"heading": "Summary", "content": "hello"}],
+            }),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("generate_report should route through request-scoped runtime factory");
+
+    let meta = output
+        .file_meta
+        .expect("runtime generate_report should preserve file metadata");
+    assert!(
+        meta.stored_path.starts_with("reports/"),
+        "report file should be stored under reports/: {:?}",
+        meta
+    );
+}
+
+// ─── Test 11: generate_chart survives legacy unregistration via runtime factory ──
+
+#[tokio::test]
+async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_boundary_without_legacy_tool() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+    registry.unregister("generate_chart").await;
+
+    let tmp = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let data_file = outside.path().join("chart.json");
+    std::fs::write(&data_file, r#"{"labels":["Q1"],"values":[1]}"#).unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+    ctx.storage
+        .create_conversation("test-conv", "Plan E")
+        .expect("conversation should be created");
+
+    let err = registry
+        .execute(
+            "generate_chart",
+            &ctx,
+            serde_json::json!({
+                "chart_type": "bar",
+                "title": "Runtime Chart",
+                "data_file": data_file.to_string_lossy(),
+            }),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect_err("runtime generate_chart should reject data_file outside workspace");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("outside the workspace"),
+        "generate_chart should still route through runtime factory and keep path boundary checks, got: {}",
+        message
+    );
+}
+
 // ─── Test 7: browser tools without connector_engine are denied by capability ─
 
 /// F8+F12: browser tools are now request-scoped RuntimeTools even when no

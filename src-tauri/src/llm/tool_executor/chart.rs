@@ -1,40 +1,108 @@
 //! generate_chart handler — Plotly interactive HTML charts.
 
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
-use uuid::Uuid;
 
 use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
-use crate::python::runner::PythonRunner;
+use crate::runtime::tools::builtin::chart_capability::{
+    ChartCapability, DefaultChartCapability,
+};
 
 use super::require_str;
 use super::FileGenResult;
+
+pub(crate) struct ChartCoreParams<'a> {
+    pub workspace_path: &'a Path,
+    pub conversation_id: &'a str,
+}
 
 /// 5. generate_chart — create a Plotly interactive HTML chart.
 pub(crate) async fn handle_generate_chart(
     ctx: &PluginContext,
     args: &Value,
 ) -> Result<FileGenResult> {
+    let (python_binary, python_home) =
+        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let capability = DefaultChartCapability {
+        storage: ctx.storage.clone(),
+        workspace_path: ctx.workspace_path.clone(),
+        python_binary,
+        python_home,
+    };
+    let params = ChartCoreParams {
+        workspace_path: &ctx.workspace_path,
+        conversation_id: &ctx.conversation_id,
+    };
+    handle_generate_chart_core(&params, args, &capability).await
+}
+
+pub(crate) async fn handle_generate_chart_core(
+    params: &ChartCoreParams<'_>,
+    args: &Value,
+    capability: &dyn ChartCapability,
+) -> Result<FileGenResult> {
     let chart_type = require_str(args, "chart_type")?;
     let title = require_str(args, "title")?;
+    let data = resolve_chart_data(params.workspace_path, args)?;
+    let options = args.get("options").cloned().unwrap_or(json!({}));
 
-    // Resolve data: prefer `data_file` (file path) over inline `data`.
-    let data: Value;
+    let generated = capability
+        .run_chart_python(params.workspace_path, chart_type, title, &data, &options)
+        .await?;
+    let persisted = capability
+        .persist_chart(
+            params.conversation_id,
+            &generated.html_bytes,
+            &generated.chart_filename,
+            chart_type,
+            title,
+        )
+        .await?;
+
+    let content = serde_json::to_string_pretty(&json!({
+        "fileId": persisted.file_id,
+        "fileName": persisted.file_name,
+        "storedPath": persisted.stored_path,
+        "fileSize": persisted.file_size,
+        "chartType": chart_type,
+    }))?;
+
+    Ok(FileGenResult {
+        content,
+        file_meta: FileMeta {
+            file_id: persisted.file_id,
+            file_name: persisted.file_name,
+            requested_format: "html".to_string(),
+            actual_format: "html".to_string(),
+            file_size: persisted.file_size,
+            stored_path: persisted.stored_path,
+            category: "chart".to_string(),
+        },
+        is_degraded: false,
+        degradation_notice: None,
+    })
+}
+
+fn resolve_chart_data(workspace_path: &Path, args: &Value) -> Result<Value> {
     if let Some(data_file_path) = args.get("data_file").and_then(|v| v.as_str()) {
         let full_path = if std::path::Path::new(data_file_path).is_absolute() {
             std::path::PathBuf::from(data_file_path)
         } else {
-            ctx.workspace_path.join(data_file_path)
+            workspace_path.join(data_file_path)
         };
-        // Security: ensure resolved path is within the workspace directory.
         let canonical = full_path.canonicalize().map_err(|e| {
-            anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
+            anyhow!(
+                "Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.",
+                data_file_path,
+                e
+            )
         })?;
-        let workspace_canonical = ctx
-            .workspace_path
+        let workspace_canonical = workspace_path
             .canonicalize()
-            .unwrap_or_else(|_| ctx.workspace_path.clone());
+            .unwrap_or_else(|_| workspace_path.to_path_buf());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow!(
                 "data_file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
@@ -42,9 +110,13 @@ pub(crate) async fn handle_generate_chart(
             ));
         }
         let content = std::fs::read_to_string(&canonical).map_err(|e| {
-            anyhow!("Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.", data_file_path, e)
+            anyhow!(
+                "Failed to read data_file '{}': {}. Use execute_python to generate the JSON file first.",
+                data_file_path,
+                e
+            )
         })?;
-        data = serde_json::from_str(&content).map_err(|e| {
+        let data = serde_json::from_str(&content).map_err(|e| {
             anyhow!(
                 "Failed to parse chart data from '{}': {}",
                 data_file_path,
@@ -52,127 +124,19 @@ pub(crate) async fn handle_generate_chart(
             )
         })?;
         log::info!("[generate_chart] Loaded data from file: {}", data_file_path);
+        Ok(data)
     } else if let Some(inline_data) = args.get("data") {
-        data = inline_data.clone();
+        Ok(inline_data.clone())
     } else {
-        return Err(anyhow!(
+        Err(anyhow!(
             "Missing chart data. Provide either:\n\
              1. 'data_file': path to a JSON file with chart data (recommended for large datasets)\n\
              2. 'data': inline chart data object"
-        ));
+        ))
     }
-
-    let options = args.get("options").cloned().unwrap_or(json!({}));
-
-    let chart_filename = format!(
-        "chart_{}.html",
-        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
-    );
-    let chart_dir = ctx.workspace_path.join("charts");
-    std::fs::create_dir_all(&chart_dir)?;
-    let output_path = chart_dir.join(&chart_filename);
-
-    // Write data and options to temp files (avoids triple-quote injection)
-    let temp_dir = ctx.workspace_path.join("temp");
-    std::fs::create_dir_all(&temp_dir)?;
-    let data_temp = temp_dir.join(format!(
-        "chart_data_{}.json",
-        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
-    ));
-    let options_temp = temp_dir.join(format!(
-        "chart_opts_{}.json",
-        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
-    ));
-    std::fs::write(
-        &data_temp,
-        serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()),
-    )?;
-    std::fs::write(
-        &options_temp,
-        serde_json::to_string(&options).unwrap_or_else(|_| "{}".into()),
-    )?;
-
-    let python_code = build_chart_python(
-        chart_type,
-        title,
-        &data_temp.to_string_lossy(),
-        &options_temp.to_string_lossy(),
-        &output_path.to_string_lossy(),
-    );
-
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
-    let result = runner.execute(&python_code).await?;
-
-    // Clean up temp files if Python didn't
-    let _ = std::fs::remove_file(&data_temp);
-    let _ = std::fs::remove_file(&options_temp);
-
-    if result.exit_code != 0 {
-        return Err(anyhow!(
-            "Chart generation failed (exit {}):\n{}",
-            result.exit_code,
-            if result.stderr.is_empty() {
-                &result.stdout
-            } else {
-                &result.stderr
-            }
-        ));
-    }
-
-    // Write the file info (the Python script already saved the HTML).
-    let stored_path = format!("charts/{}", chart_filename);
-    let file_size = std::fs::metadata(&output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-
-    let file_id = Uuid::new_v4().to_string();
-    if let Err(e) = ctx.storage.insert_generated_file(
-        &file_id,
-        &ctx.conversation_id,
-        None,
-        &chart_filename,
-        &stored_path,
-        "html",
-        file_size as i64,
-        "chart",
-        Some(title),
-        1,
-        true,
-        None,
-        None,
-        None,
-    ) {
-        let _ = std::fs::remove_file(&output_path);
-        return Err(e.into());
-    }
-
-    let content = serde_json::to_string_pretty(&json!({
-        "fileId": file_id,
-        "fileName": chart_filename,
-        "storedPath": stored_path,
-        "fileSize": file_size,
-        "chartType": chart_type,
-    }))?;
-
-    let file_meta = FileMeta {
-        file_id,
-        file_name: chart_filename,
-        requested_format: "html".to_string(),
-        actual_format: "html".to_string(),
-        file_size,
-        stored_path,
-        category: "chart".to_string(),
-    };
-
-    Ok(FileGenResult {
-        content,
-        file_meta,
-        is_degraded: false,
-        degradation_notice: None,
-    })
 }
 
-fn build_chart_python(
+pub(crate) fn build_chart_python(
     chart_type: &str,
     title: &str,
     data_file_path: &str,

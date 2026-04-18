@@ -31,6 +31,8 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "extract_with_pagination",
     "load_file",
     "execute_python",
+    "generate_report",
+    "generate_chart",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -366,6 +368,9 @@ impl ToolRegistry {
 
             let mut output = ToolOutput::success(result.content);
             output.data = result.data;
+            output.file_meta = result.file_meta;
+            output.is_degraded = result.is_degraded;
+            output.degradation_notice = result.degradation_notice;
             return Ok(output);
         }
 
@@ -399,19 +404,21 @@ impl ToolRegistry {
             .dispatch(name, input, runtime_ctx)
             .await
             .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
-        let (content, data) = match outcome {
+        match outcome {
             crate::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => {
-                (result.content, result.data)
+                let mut output = ToolOutput::success(result.content);
+                output.data = result.data;
+                output.file_meta = result.file_meta;
+                output.is_degraded = result.is_degraded;
+                output.degradation_notice = result.degradation_notice;
+                Ok(output)
             }
             crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
                 // Legacy path: surface Ask semantics to the caller.
                 // Callers that cannot show a UI prompt should treat this as deny.
-                return Err(ToolError::AskRequired(decision));
+                Err(ToolError::AskRequired(decision))
             }
-        };
-        let mut output = ToolOutput::success(content);
-        output.data = data;
-        Ok(output)
+        }
     }
 
     /// List all registered tools (for management UI).
@@ -571,6 +578,38 @@ impl ToolRegistry {
                         ctx.run_id.clone(),
                         ctx.model.clone(),
                     ),
+                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
+            "generate_report" => {
+                use crate::runtime::tools::builtin::report_capability::DefaultReportCapability;
+
+                let (python_binary, python_home) =
+                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let capability = Arc::new(DefaultReportCapability {
+                    storage: ctx.storage.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    auth_manager: ctx.auth_manager.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    python_binary,
+                    python_home,
+                });
+                Some(Arc::new(
+                    builtin::report::GenerateReportRuntimeTool::with_capability(capability),
+                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
+            "generate_chart" => {
+                use crate::runtime::tools::builtin::chart_capability::DefaultChartCapability;
+
+                let (python_binary, python_home) =
+                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let capability = Arc::new(DefaultChartCapability {
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    python_binary,
+                    python_home,
+                });
+                Some(Arc::new(
+                    builtin::chart::GenerateChartRuntimeTool::with_capability(capability),
                 ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             _ => None,

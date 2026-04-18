@@ -11,4 +11,6 @@ pub mod file;
 pub mod python;
 pub mod python_execution;
 pub mod report;
+pub mod report_capability;
 pub mod chart;
+pub mod chart_capability;

@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -10,6 +11,14 @@ use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
 use app_lib::runtime::tools::builtin::python_execution::{
     DefaultPythonExecution, PythonExecution,
+};
+use app_lib::runtime::tools::builtin::chart::GenerateChartRuntimeTool;
+use app_lib::runtime::tools::builtin::chart_capability::{
+    ChartCapability, ChartRunOutput, PersistedChartInfo,
+};
+use app_lib::runtime::tools::builtin::report::GenerateReportRuntimeTool;
+use app_lib::runtime::tools::builtin::report_capability::{
+    PersistedFileInfo, ReportCapability, ReportGenOutput,
 };
 use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext};
 use app_lib::storage::file_manager::FileManager;
@@ -161,5 +170,291 @@ async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
         err.to_string().contains("run_id"),
         "analysis error should mention missing run_id, got: {}",
         err
+    );
+}
+
+#[derive(Debug, Default)]
+struct MockReportCapability {
+    persisted_bytes: Mutex<Vec<u8>>,
+}
+
+#[async_trait]
+impl ReportCapability for MockReportCapability {
+    async fn generate_report_bytes(
+        &self,
+        _workspace_path: &Path,
+        _title: &str,
+        _sections: &[serde_json::Value],
+        _format: &str,
+        unmask_map: &HashMap<String, String>,
+        product_name: Option<&str>,
+    ) -> Result<ReportGenOutput> {
+        let mut html = "<html>AI小家 {{NAME}}</html>".to_string();
+        if let Some(name) = product_name {
+            html = html.replace("AI小家", name);
+        }
+        for (masked, original) in unmask_map {
+            html = html.replace(masked, original);
+        }
+        Ok(ReportGenOutput {
+            bytes: html.into_bytes(),
+            extension: "html".to_string(),
+            actual_format: "html".to_string(),
+            is_degraded: false,
+            degradation_notice: None,
+        })
+    }
+
+    fn get_pii_unmask_map(&self, _conversation_id: &str) -> HashMap<String, String> {
+        HashMap::from([(String::from("{{NAME}}"), String::from("张三"))])
+    }
+
+    async fn get_product_name(&self) -> Option<String> {
+        Some("Lotus".to_string())
+    }
+
+    async fn persist_file(
+        &self,
+        _conversation_id: &str,
+        bytes: &[u8],
+        _extension: &str,
+        _title: &str,
+        _actual_format: &str,
+    ) -> Result<PersistedFileInfo> {
+        *self.persisted_bytes.lock().expect("mutex poisoned") = bytes.to_vec();
+        Ok(PersistedFileInfo {
+            file_id: "report-file-1".to_string(),
+            file_name: "mock-report.html".to_string(),
+            stored_path: "reports/mock-report.html".to_string(),
+            file_size: bytes.len() as u64,
+        })
+    }
+}
+
+#[test]
+fn report_capability_trait_is_accessible() {
+    let _: Option<Box<dyn ReportCapability>> = None;
+}
+
+#[tokio::test]
+async fn generate_report_stub_returns_execution_failed() {
+    let tool = GenerateReportRuntimeTool::stub();
+    let result = tool
+        .execute(
+            json!({
+                "title": "stub",
+                "sections": [{"heading": "summary"}],
+            }),
+            ToolExecutionContext::for_test("plan-e-conv", "run-1", "tc-report-stub"),
+        )
+        .await;
+
+    assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
+}
+
+#[tokio::test]
+async fn generate_report_runtime_tool_with_mock_capability_persists_transformed_html() {
+    let tmp = TempDir::new().expect("TempDir::new should succeed");
+    let cap = Arc::new(MockReportCapability::default());
+    let tool = GenerateReportRuntimeTool::with_capability(cap.clone() as Arc<dyn ReportCapability>);
+
+    let result = tool
+        .execute(
+            json!({
+                "title": "Plan E Report",
+                "sections": [{"heading": "summary", "content": "body"}],
+            }),
+            build_exec_ctx(tmp.path()),
+        )
+        .await
+        .expect("runtime report tool should execute without PluginContext");
+
+    let persisted = String::from_utf8(
+        cap.persisted_bytes
+            .lock()
+            .expect("mutex poisoned")
+            .clone(),
+    )
+    .expect("persisted html should be utf-8");
+
+    assert!(
+        persisted.contains("Lotus"),
+        "product name should be substituted before persist: {persisted}"
+    );
+    assert!(
+        persisted.contains("张三"),
+        "PII placeholders should be unmasked before persist: {persisted}"
+    );
+    assert!(
+        result.content.contains("report-file-1"),
+        "result should contain persisted file id: {}",
+        result.content
+    );
+    assert_eq!(
+        result
+            .file_meta
+            .as_ref()
+            .expect("file meta should be preserved")
+            .stored_path,
+        "reports/mock-report.html"
+    );
+}
+
+#[tokio::test]
+async fn generate_report_runtime_tool_rejects_source_outside_workspace() {
+    let tmp = TempDir::new().expect("TempDir::new should succeed");
+    let outside = TempDir::new().expect("TempDir::new should succeed");
+    let source_path = outside.path().join("sections.json");
+    std::fs::write(
+        &source_path,
+        r#"[{"heading":"Outside","content":"should fail"}]"#,
+    )
+    .expect("outside source file should be written");
+
+    let tool =
+        GenerateReportRuntimeTool::with_capability(Arc::new(MockReportCapability::default()));
+
+    let err = tool
+        .execute(
+            json!({
+                "title": "Outside",
+                "source": source_path.to_string_lossy(),
+            }),
+            build_exec_ctx(tmp.path()),
+        )
+        .await
+        .expect_err("source outside workspace must be rejected");
+
+    assert!(
+        matches!(err, ToolError::ExecutionFailed(_)),
+        "source boundary should surface as execution failure: {err:?}"
+    );
+    assert!(
+        err.to_string().contains("outside"),
+        "error should mention outside workspace boundary, got: {err}"
+    );
+}
+
+#[derive(Debug, Default)]
+struct MockChartCapability;
+
+#[async_trait]
+impl ChartCapability for MockChartCapability {
+    async fn run_chart_python(
+        &self,
+        _workspace_path: &Path,
+        _chart_type: &str,
+        _title: &str,
+        _data: &serde_json::Value,
+        _options: &serde_json::Value,
+    ) -> Result<ChartRunOutput> {
+        Ok(ChartRunOutput {
+            html_bytes: b"<html>mock chart</html>".to_vec(),
+            chart_filename: "mock-chart.html".to_string(),
+        })
+    }
+
+    async fn persist_chart(
+        &self,
+        _conversation_id: &str,
+        bytes: &[u8],
+        filename: &str,
+        _chart_type: &str,
+        _title: &str,
+    ) -> Result<PersistedChartInfo> {
+        Ok(PersistedChartInfo {
+            file_id: "chart-file-1".to_string(),
+            file_name: filename.to_string(),
+            stored_path: format!("charts/{filename}"),
+            file_size: bytes.len() as u64,
+        })
+    }
+}
+
+#[test]
+fn chart_capability_trait_is_accessible() {
+    let _: Option<Box<dyn ChartCapability>> = None;
+}
+
+#[tokio::test]
+async fn generate_chart_stub_returns_execution_failed() {
+    let tool = GenerateChartRuntimeTool::stub();
+    let result = tool
+        .execute(
+            json!({
+                "chart_type": "bar",
+                "title": "stub chart",
+                "data": {"labels": ["Q1"], "values": [1]},
+            }),
+            ToolExecutionContext::for_test("plan-e-conv", "run-1", "tc-chart-stub"),
+        )
+        .await;
+
+    assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
+}
+
+#[tokio::test]
+async fn generate_chart_runtime_tool_with_mock_capability_returns_file_meta() {
+    let tmp = TempDir::new().expect("TempDir::new should succeed");
+    let tool = GenerateChartRuntimeTool::with_capability(Arc::new(MockChartCapability));
+
+    let result = tool
+        .execute(
+            json!({
+                "chart_type": "bar",
+                "title": "Plan E Chart",
+                "data": {"labels": ["Q1", "Q2"], "values": [10, 12]},
+            }),
+            build_exec_ctx(tmp.path()),
+        )
+        .await
+        .expect("runtime chart tool should execute without PluginContext");
+
+    assert!(
+        result.content.contains("chart-file-1"),
+        "result should contain persisted chart file id: {}",
+        result.content
+    );
+    assert_eq!(
+        result
+            .file_meta
+            .as_ref()
+            .expect("chart file meta should be preserved")
+            .stored_path,
+        "charts/mock-chart.html"
+    );
+}
+
+#[tokio::test]
+async fn generate_chart_runtime_tool_rejects_data_file_outside_workspace() {
+    let tmp = TempDir::new().expect("TempDir::new should succeed");
+    let outside = TempDir::new().expect("TempDir::new should succeed");
+    let data_file = outside.path().join("chart.json");
+    std::fs::write(
+        &data_file,
+        r#"{"labels":["Q1"],"values":[42]}"#,
+    )
+    .expect("outside chart file should be written");
+
+    let tool = GenerateChartRuntimeTool::with_capability(Arc::new(MockChartCapability));
+    let err = tool
+        .execute(
+            json!({
+                "chart_type": "bar",
+                "title": "Outside chart",
+                "data_file": data_file.to_string_lossy(),
+            }),
+            build_exec_ctx(tmp.path()),
+        )
+        .await
+        .expect_err("data_file outside workspace must be rejected");
+
+    assert!(
+        matches!(err, ToolError::ExecutionFailed(_)),
+        "outside chart file should surface as execution failure: {err:?}"
+    );
+    assert!(
+        err.to_string().contains("outside"),
+        "error should mention workspace boundary, got: {err}"
     );
 }

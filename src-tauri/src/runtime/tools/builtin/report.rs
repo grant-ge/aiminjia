@@ -1,13 +1,11 @@
 //! generate_report as RuntimeTool.
-//!
-//! This is the minimum migration skeleton for Phase 3:
-//! - `stub()` is available for tests and non-production wiring
-//! - `execute()` stays a placeholder until the report capability boundary lands
 
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::Arc;
 
+use crate::runtime::tools::builtin::report_capability::ReportCapability;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
@@ -16,11 +14,22 @@ use crate::runtime::tools::RuntimeTool;
 
 pub struct GenerateReportRuntimeTool {
     stub_mode: bool,
+    capability: Option<Arc<dyn ReportCapability>>,
 }
 
 impl GenerateReportRuntimeTool {
     pub fn stub() -> Self {
-        Self { stub_mode: true }
+        Self {
+            stub_mode: true,
+            capability: None,
+        }
+    }
+
+    pub fn with_capability(capability: Arc<dyn ReportCapability>) -> Self {
+        Self {
+            stub_mode: false,
+            capability: Some(capability),
+        }
     }
 }
 
@@ -35,8 +44,8 @@ impl RuntimeTool for GenerateReportRuntimeTool {
 
     async fn execute(
         &self,
-        _input: Value,
-        _ctx: ToolExecutionContext,
+        input: Value,
+        ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         if self.stub_mode {
             return Err(ToolError::ExecutionFailed(
@@ -44,8 +53,37 @@ impl RuntimeTool for GenerateReportRuntimeTool {
             ));
         }
 
-        Err(ToolError::ExecutionFailed(
-            "generate_report full migration pending".into(),
-        ))
+        let capability = self.capability.as_ref().ok_or_else(|| {
+            ToolError::ExecutionFailed("GenerateReportRuntimeTool: missing ReportCapability".into())
+        })?;
+        let storage_cap = ctx
+            .capability
+            .as_ref()
+            .and_then(|cap| cap.storage.as_ref())
+            .ok_or_else(|| {
+                ToolError::ExecutionFailed(
+                    "GenerateReportRuntimeTool: missing workspace capability".into(),
+                )
+            })?;
+
+        let params = crate::llm::tool_executor::ReportCoreParams {
+            workspace_path: &storage_cap.workspace_path,
+            authorized_workspace: storage_cap.authorized_workspace.as_ref(),
+            conversation_id: ctx.session_id.as_str(),
+        };
+
+        let generated = crate::llm::tool_executor::handle_generate_report_core(
+            &params,
+            &input,
+            capability.as_ref(),
+        )
+        .await
+        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+
+        let mut result = ToolResult::new("generate_report", generated.content, None);
+        result.file_meta = Some(generated.file_meta);
+        result.is_degraded = generated.is_degraded;
+        result.degradation_notice = generated.degradation_notice;
+        Ok(result)
     }
 }

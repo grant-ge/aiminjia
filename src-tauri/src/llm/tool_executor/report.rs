@@ -1,102 +1,62 @@
 //! generate_report handler and HTML/PDF/DOCX report construction.
 
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
+
 use anyhow::Result;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::plugin::context::PluginContext;
-use crate::plugin::tool_trait::FileMeta;
 use crate::python::runner::PythonRunner;
+use crate::runtime::store::AuthorizedWorkspaceRef;
+use crate::runtime::tools::builtin::report_capability::{
+    build_file_gen_result, DefaultReportCapability, ReportCapability, ReportGenOutput,
+};
 
-use super::file_load::{get_pii_unmask_map, unmask_text};
+use super::file_load::unmask_text;
 use super::optional_str;
-use super::util::{py_escape, slugify};
+use super::util::py_escape;
 use super::FileGenResult;
+
+pub(crate) struct ReportCoreParams<'a> {
+    pub workspace_path: &'a Path,
+    pub authorized_workspace: Option<&'a AuthorizedWorkspaceRef>,
+    pub conversation_id: &'a str,
+}
 
 /// 4. generate_report — build a structured HTML/PDF/DOCX/Markdown report.
 pub(crate) async fn handle_generate_report(
     ctx: &PluginContext,
     args: &Value,
 ) -> Result<FileGenResult> {
-    // Resolve sections: prefer `source` (file path) over inline `sections`.
-    let sections_value: Vec<Value>;
-    let sections: &[Value] = if let Some(source_path) = args.get("source").and_then(|v| v.as_str())
-    {
-        // Read sections from a JSON file written by execute_python.
-        let full_path = if std::path::Path::new(source_path).is_absolute() {
-            std::path::PathBuf::from(source_path)
-        } else {
-            ctx.workspace_path.join(source_path)
-        };
-        // Security: ensure resolved path is within the workspace directory.
-        let canonical = full_path.canonicalize().map_err(|e| {
-            anyhow::anyhow!("Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.", source_path, e)
-        })?;
-        let workspace_canonical = ctx
-            .workspace_path
-            .canonicalize()
-            .unwrap_or_else(|_| ctx.workspace_path.clone());
-        let in_workspace = canonical.starts_with(&workspace_canonical);
-        let in_authorized = ctx.authorized_workspace
-            .as_ref()
-            .map(|aw| canonical.starts_with(&aw.root_path))
-            .unwrap_or(false);
-        if !in_workspace && !in_authorized {
-            return Err(anyhow::anyhow!(
-                "Source file path '{}' is outside the workspace directory and outside the authorized workspace. \
-                 Only files within the workspace or the authorized local directory are allowed.",
-                source_path
-            ));
-        }
-        let content = std::fs::read_to_string(&canonical).map_err(|e| {
-            anyhow::anyhow!("Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.", source_path, e)
-        })?;
-        sections_value = serde_json::from_str::<Vec<Value>>(&content).map_err(|e| {
-            anyhow::anyhow!("Failed to parse sections from '{}': {}. The file must contain a JSON array of section objects.", source_path, e)
-        })?;
-        if sections_value.is_empty() {
-            return Err(anyhow::anyhow!(
-                "Source file '{}' contains an empty sections array.",
-                source_path
-            ));
-        }
-        log::info!(
-            "[generate_report] Loaded {} sections from source file: {}",
-            sections_value.len(),
-            source_path
-        );
-        &sections_value
-    } else {
-        // Fallback: inline sections parameter (original behavior).
-        // Support both array and string (LLM sometimes passes JSON as a string).
-        let inline_sections = if let Some(arr) = args.get("sections").and_then(|v| v.as_array()) {
-            arr.clone()
-        } else if let Some(s) = args.get("sections").and_then(|v| v.as_str()) {
-            serde_json::from_str::<Vec<Value>>(s).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to parse 'sections' string as JSON array: {}. \
-                     The 'sections' parameter must be a valid JSON array of section objects.",
-                    e
-                )
-            })?
-        } else {
-            return Err(anyhow::anyhow!(
-                "Missing report data. Provide either:\n\
-                 1. 'sections': array of section objects (preferred)\n\
-                 2. 'source': path to a JSON file with sections array"
-            ));
-        };
-        if inline_sections.is_empty() {
-            return Err(anyhow::anyhow!(
-                "'sections' array is empty. At least one section is required."
-            ));
-        }
-        sections_value = inline_sections;
-        &sections_value
+    let (python_binary, python_home) =
+        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let capability = DefaultReportCapability {
+        storage: ctx.storage.clone(),
+        file_manager: ctx.file_manager.clone(),
+        auth_manager: ctx.auth_manager.clone(),
+        workspace_path: ctx.workspace_path.clone(),
+        python_binary,
+        python_home,
     };
-    let format = optional_str(args, "format").unwrap_or("html");
+    let params = ReportCoreParams {
+        workspace_path: &ctx.workspace_path,
+        authorized_workspace: ctx.authorized_workspace.as_ref(),
+        conversation_id: &ctx.conversation_id,
+    };
+    handle_generate_report_core(&params, args, &capability).await
+}
 
-    // Title: use explicit value, or infer from first section heading, or default
+pub(crate) async fn handle_generate_report_core(
+    params: &ReportCoreParams<'_>,
+    args: &Value,
+    capability: &dyn ReportCapability,
+) -> Result<FileGenResult> {
+    let sections_value = resolve_report_sections(params, args)?;
+    let sections = sections_value.as_slice();
+    let format = optional_str(args, "format").unwrap_or("html");
     let title = optional_str(args, "title").unwrap_or_else(|| {
         sections
             .first()
@@ -105,146 +65,230 @@ pub(crate) async fn handle_generate_report(
             .unwrap_or("分析报告")
     });
 
-    // Collect PII unmask mapping for this conversation
-    let unmask_map = get_pii_unmask_map(&ctx.storage, &ctx.conversation_id);
-
-    // Always generate HTML first (it's the universal intermediate format)
-    let html_content = build_html_report(title, sections);
-    // Replace product name with custom branding if available
-    let html_content = if let Some(ref auth_mgr) = ctx.auth_manager {
-        let product_name = auth_mgr
-            .get_auth_info()
-            .await
-            .tenant
-            .and_then(|t| t.product_name.filter(|n| !n.is_empty()))
-            .unwrap_or_else(|| "AI小家".to_string());
-        html_content.replace("AI小家", &product_name)
-    } else {
-        html_content
-    };
-    // Unmask PII placeholders in report content so users see real values
-    let html_content = unmask_text(&html_content, &unmask_map);
-
-    let (final_content, extension, actual_format) = match format {
-        "markdown" => {
-            let md = build_markdown_report(title, sections);
-            let md = unmask_text(&md, &unmask_map);
-            (md.into_bytes(), "md", "markdown")
-        }
-        "pdf" => {
-            // Structured JSON → PDF via Python (reportlab)
-            match convert_sections_to_pdf(ctx, title, sections, &unmask_map).await {
-                Ok(pdf_bytes) => (pdf_bytes, "pdf", "pdf"),
-                Err(e) => {
-                    log::warn!(
-                        "[generate_report] PDF conversion failed: {}. Falling back to HTML.",
-                        e
-                    );
-                    (html_content.into_bytes(), "html", "html_fallback_from_pdf")
-                }
-            }
-        }
-        "docx" => {
-            // HTML → DOCX via Python (htmldocx)
-            match convert_html_to_docx(ctx, &html_content).await {
-                Ok(docx_bytes) => (docx_bytes, "docx", "docx"),
-                Err(e) => {
-                    log::warn!(
-                        "[generate_report] DOCX conversion failed: {}. Falling back to HTML.",
-                        e
-                    );
-                    (html_content.into_bytes(), "html", "html_fallback_from_docx")
-                }
-            }
-        }
-        _ => {
-            // Default: HTML
-            (html_content.into_bytes(), "html", "html")
-        }
-    };
-
-    let file_name = format!(
-        "report_{}_{}.{}",
-        slugify(title),
-        Uuid::new_v4().to_string().split('-').next().unwrap_or("x"),
-        extension,
-    );
-
-    let file_info = ctx
-        .file_manager
-        .write_file("reports", &file_name, &final_content)?;
-
-    // Record in the database. If this fails, clean up the orphaned physical file.
-    let file_id = Uuid::new_v4().to_string();
-    if let Err(e) = ctx.storage.insert_generated_file(
-        &file_id,
-        &ctx.conversation_id,
-        None, // message_id
-        &file_info.file_name,
-        &file_info.stored_path,
-        &file_info.file_type,
-        file_info.file_size as i64,
-        "report",    // category
-        Some(title), // description
-        1,           // version
-        true,        // is_latest
-        None,        // superseded_by
-        None,        // created_by_step
-        None,        // expires_at
-    ) {
-        let _ = std::fs::remove_file(ctx.file_manager.full_path(&file_info.stored_path));
-        return Err(e.into());
-    }
-
-    let is_degraded = actual_format.contains("fallback");
-    let requested_format_label = format.to_string();
-    let actual_format_label = if is_degraded {
-        "html".to_string()
-    } else {
-        format.to_string()
-    };
+    let unmask_map = capability.get_pii_unmask_map(params.conversation_id);
+    let product_name = capability.get_product_name().await;
+    let generated = capability
+        .generate_report_bytes(
+            params.workspace_path,
+            title,
+            sections,
+            format,
+            &unmask_map,
+            product_name.as_deref(),
+        )
+        .await?;
+    let persisted = capability
+        .persist_file(
+            params.conversation_id,
+            &generated.bytes,
+            &generated.extension,
+            title,
+            &generated.actual_format,
+        )
+        .await?;
 
     let mut result = json!({
-        "fileId": file_id,
-        "fileName": file_info.file_name,
-        "storedPath": file_info.stored_path,
-        "fileSize": file_info.file_size,
-        "format": actual_format,
+        "fileId": persisted.file_id,
+        "fileName": persisted.file_name,
+        "storedPath": persisted.stored_path,
+        "fileSize": persisted.file_size,
+        "format": generated.actual_format,
     });
 
-    let (content_str, degradation_notice) = if is_degraded {
-        let requested = if actual_format.contains("pdf") {
-            "PDF"
-        } else {
-            "DOCX"
-        };
-        let notice = format!(
-            "⚠️ {} 转换失败，已保存为 HTML 格式（{}）。请告知用户实际生成的是 HTML 而非 {}，可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 {}。",
-            requested, file_info.file_name, requested, requested
-        );
+    let degradation_notice = generated.degradation_notice.clone();
+    let content = if let Some(notice) = degradation_notice.clone() {
         result["notice"] = json!(&notice);
-        let json_str = serde_json::to_string_pretty(&result)?;
-        (format!("{}\n{}", notice, json_str), Some(notice))
+        format!("{}\n{}", notice, serde_json::to_string_pretty(&result)?)
     } else {
-        (serde_json::to_string_pretty(&result)?, None)
+        serde_json::to_string_pretty(&result)?
     };
 
-    let file_meta = FileMeta {
-        file_id,
-        file_name: file_info.file_name.clone(),
-        requested_format: requested_format_label,
-        actual_format: actual_format_label,
-        file_size: file_info.file_size,
-        stored_path: file_info.stored_path.clone(),
-        category: "report".to_string(),
-    };
-
-    Ok(FileGenResult {
-        content: content_str,
-        file_meta,
-        is_degraded,
+    Ok(build_file_gen_result(
+        content,
+        persisted,
+        format,
+        &generated.actual_format,
+        generated.is_degraded,
         degradation_notice,
-    })
+    ))
+}
+
+fn resolve_report_sections(params: &ReportCoreParams<'_>, args: &Value) -> Result<Vec<Value>> {
+    if let Some(source_path) = args.get("source").and_then(|v| v.as_str()) {
+        let full_path = if Path::new(source_path).is_absolute() {
+            PathBuf::from(source_path)
+        } else {
+            params.workspace_path.join(source_path)
+        };
+        let canonical = full_path.canonicalize().map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.",
+                source_path,
+                e
+            )
+        })?;
+        let workspace_canonical = params
+            .workspace_path
+            .canonicalize()
+            .unwrap_or_else(|_| params.workspace_path.to_path_buf());
+        let in_workspace = canonical.starts_with(&workspace_canonical);
+        let in_authorized = params
+            .authorized_workspace
+            .map(|aw| canonical.starts_with(&aw.root_path))
+            .unwrap_or(false);
+        if !in_workspace && !in_authorized {
+            anyhow::bail!(
+                "Source file path '{}' is outside the workspace directory and outside the authorized workspace. \
+                 Only files within the workspace or the authorized local directory are allowed.",
+                source_path
+            );
+        }
+        let content = std::fs::read_to_string(&canonical).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read source file '{}': {}. Use execute_python to generate the JSON file first.",
+                source_path,
+                e
+            )
+        })?;
+        let sections = serde_json::from_str::<Vec<Value>>(&content).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse sections from '{}': {}. The file must contain a JSON array of section objects.",
+                source_path,
+                e
+            )
+        })?;
+        if sections.is_empty() {
+            anyhow::bail!("Source file '{}' contains an empty sections array.", source_path);
+        }
+        log::info!(
+            "[generate_report] Loaded {} sections from source file: {}",
+            sections.len(),
+            source_path
+        );
+        Ok(sections)
+    } else if let Some(arr) = args.get("sections").and_then(|v| v.as_array()) {
+        if arr.is_empty() {
+            anyhow::bail!("'sections' array is empty. At least one section is required.");
+        }
+        Ok(arr.clone())
+    } else if let Some(text) = args.get("sections").and_then(|v| v.as_str()) {
+        let sections = serde_json::from_str::<Vec<Value>>(text).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse 'sections' string as JSON array: {}. \
+                 The 'sections' parameter must be a valid JSON array of section objects.",
+                e
+            )
+        })?;
+        if sections.is_empty() {
+            anyhow::bail!("'sections' array is empty. At least one section is required.");
+        }
+        Ok(sections)
+    } else {
+        anyhow::bail!(
+            "Missing report data. Provide either:\n\
+             1. 'sections': array of section objects (preferred)\n\
+             2. 'source': path to a JSON file with sections array"
+        );
+    }
+}
+
+pub(crate) async fn generate_report_bytes_core(
+    workspace_path: &Path,
+    title: &str,
+    sections: &[Value],
+    format: &str,
+    unmask_map: &HashMap<String, String>,
+    product_name: Option<&str>,
+    python_runtime: Option<(&PathBuf, Option<&PathBuf>)>,
+) -> Result<ReportGenOutput> {
+    let html_content = build_html_report(title, sections);
+    let html_content = match product_name {
+        Some(name) => html_content.replace("AI小家", name),
+        None => html_content,
+    };
+    let html_content = unmask_text(&html_content, unmask_map);
+
+    match format {
+        "markdown" => {
+            let markdown = unmask_text(&build_markdown_report(title, sections), unmask_map);
+            Ok(ReportGenOutput {
+                bytes: markdown.into_bytes(),
+                extension: "md".to_string(),
+                actual_format: "markdown".to_string(),
+                is_degraded: false,
+                degradation_notice: None,
+            })
+        }
+        "pdf" => match convert_sections_to_pdf_with_runtime(
+            workspace_path,
+            title,
+            sections,
+            unmask_map,
+            python_runtime,
+        )
+        .await
+        {
+            Ok(bytes) => Ok(ReportGenOutput {
+                bytes,
+                extension: "pdf".to_string(),
+                actual_format: "pdf".to_string(),
+                is_degraded: false,
+                degradation_notice: None,
+            }),
+            Err(e) => {
+                log::warn!(
+                    "[generate_report] PDF conversion failed: {}. Falling back to HTML.",
+                    e
+                );
+                Ok(ReportGenOutput {
+                    bytes: html_content.clone().into_bytes(),
+                    extension: "html".to_string(),
+                    actual_format: "html_fallback_from_pdf".to_string(),
+                    is_degraded: true,
+                    degradation_notice: Some(format!(
+                        "⚠️ PDF 转换失败，已保存为 HTML 格式。请告知用户实际生成的是 HTML 而非 PDF，可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 PDF。"
+                    )),
+                })
+            }
+        },
+        "docx" => match convert_html_to_docx_with_runtime(
+            workspace_path,
+            &html_content,
+            python_runtime,
+        )
+        .await
+        {
+            Ok(bytes) => Ok(ReportGenOutput {
+                bytes,
+                extension: "docx".to_string(),
+                actual_format: "docx".to_string(),
+                is_degraded: false,
+                degradation_notice: None,
+            }),
+            Err(e) => {
+                log::warn!(
+                    "[generate_report] DOCX conversion failed: {}. Falling back to HTML.",
+                    e
+                );
+                Ok(ReportGenOutput {
+                    bytes: html_content.into_bytes(),
+                    extension: "html".to_string(),
+                    actual_format: "html_fallback_from_docx".to_string(),
+                    is_degraded: true,
+                    degradation_notice: Some(format!(
+                        "⚠️ DOCX 转换失败，已保存为 HTML 格式。请告知用户实际生成的是 HTML 而非 DOCX，可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 PDF。"
+                    )),
+                })
+            }
+        },
+        _ => Ok(ReportGenOutput {
+            bytes: html_content.into_bytes(),
+            extension: "html".to_string(),
+            actual_format: "html".to_string(),
+            is_degraded: false,
+            degradation_notice: None,
+        }),
+    }
 }
 
 /// Convert structured report sections to PDF using Python reportlab.
@@ -252,15 +296,23 @@ pub(crate) async fn handle_generate_report(
 /// Instead of converting HTML→PDF (which requires C-dependent libraries like
 /// weasyprint/pycairo), this builds the PDF directly from the structured JSON
 /// data using reportlab (pure Python wheels, no C dependencies).
-async fn convert_sections_to_pdf(
-    ctx: &PluginContext,
+async fn convert_sections_to_pdf_with_runtime(
+    workspace_path: &Path,
     title: &str,
     sections: &[Value],
-    unmask_map: &std::collections::HashMap<String, String>,
+    unmask_map: &HashMap<String, String>,
+    python_runtime: Option<(&PathBuf, Option<&PathBuf>)>,
 ) -> Result<Vec<u8>> {
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let (python_binary, python_home) =
+        python_runtime.ok_or_else(|| anyhow::anyhow!("python runtime unavailable"))?;
+    let runner = PythonRunner::with_runtime(
+        workspace_path.to_path_buf(),
+        crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path.to_path_buf()),
+        python_binary.to_path_buf(),
+        python_home.cloned(),
+    );
 
-    let temp_dir = ctx.workspace_path.join("temp");
+    let temp_dir = workspace_path.join("temp");
     std::fs::create_dir_all(&temp_dir)?;
 
     // Write sections JSON to temp file (avoids string interpolation issues)
@@ -547,10 +599,21 @@ print("OK:" + output_path)
 ///
 /// Uses temp-file protocol: writes HTML to a temp file, Python reads it.
 /// This avoids string interpolation injection via triple-quote boundary breaking.
-async fn convert_html_to_docx(ctx: &PluginContext, html: &str) -> Result<Vec<u8>> {
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+async fn convert_html_to_docx_with_runtime(
+    workspace_path: &Path,
+    html: &str,
+    python_runtime: Option<(&PathBuf, Option<&PathBuf>)>,
+) -> Result<Vec<u8>> {
+    let (python_binary, python_home) =
+        python_runtime.ok_or_else(|| anyhow::anyhow!("python runtime unavailable"))?;
+    let runner = PythonRunner::with_runtime(
+        workspace_path.to_path_buf(),
+        crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path.to_path_buf()),
+        python_binary.to_path_buf(),
+        python_home.cloned(),
+    );
 
-    let temp_dir = ctx.workspace_path.join("temp");
+    let temp_dir = workspace_path.join("temp");
     std::fs::create_dir_all(&temp_dir)?;
 
     // Write HTML to temp file (safe: no string interpolation)

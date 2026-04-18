@@ -76,9 +76,9 @@ impl LegacyToolAdapter {
                         tool_name: plugin.name().to_string(),
                         content: output.content,
                         data: output.data,
-                        file_meta: None,
-                        is_degraded: false,
-                        degradation_notice: None,
+                        file_meta: output.file_meta,
+                        is_degraded: output.is_degraded,
+                        degradation_notice: output.degradation_notice,
                     })
                 }
                 .map(|result| result.map_err(ToolError::Other))

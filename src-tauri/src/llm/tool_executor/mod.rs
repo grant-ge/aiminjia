@@ -49,6 +49,9 @@ pub struct FileGenResult {
 // ─────────────────────────────────────────────────
 
 pub(crate) use chart::handle_generate_chart;
+pub(crate) use chart::ChartCoreParams;
+pub(crate) use chart::build_chart_python;
+pub(crate) use chart::handle_generate_chart_core;
 pub(crate) use export::handle_export_data;
 pub(crate) use file_load::handle_load_file;
 pub(crate) use internal_system::handle_browse_and_extract;
@@ -67,6 +70,9 @@ pub(crate) use progress::handle_update_progress;
 pub(crate) use python::ExecutePythonCoreParams;
 pub(crate) use python::handle_execute_python_core;
 pub(crate) use python::handle_execute_python;
+pub(crate) use report::ReportCoreParams;
+pub(crate) use report::generate_report_bytes_core;
+pub(crate) use report::handle_generate_report_core;
 pub(crate) use report::handle_generate_report;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
@@ -74,6 +80,7 @@ pub(crate) use slides::handle_generate_slides;
 pub(crate) use stats::handle_detect_anomalies;
 pub(crate) use stats::handle_hypothesis_test;
 pub(crate) use util::py_escape;
+pub(crate) use util::slugify;
 
 // ─────────────────────────────────────────────────
 // Argument extraction helpers (shared by submodules)

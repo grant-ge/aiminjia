@@ -31,7 +31,7 @@ pub(super) fn indent_python(code: &str, spaces: usize) -> String {
 }
 
 /// Create a URL-safe slug from a title string.
-pub(super) fn slugify(s: &str) -> String {
+pub(crate) fn slugify(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {

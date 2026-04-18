@@ -4,11 +4,11 @@
 
 **Goal:** 将 execute_python、generate_report、generate_chart 三个核心工具从 LegacyToolAdapter 完整迁移到 RuntimeTool，通过 capability trait 注入脱离 PluginContext 全局依赖。
 
-**Architecture:** 每个工具先定义 capability trait，再实现 RuntimeTool，最后在 registry 的 `try_build_request_scoped_tool` 中构建并注入。旧实现保留但标记 `dead_code`，确认 zero regression 后再删除。
+**Architecture:** 先抽出 legacy handler 可复用的 shared core，再用 capability trait / request-scoped runtime context 组装 `RuntimeTool`；`ToolExecutionContext` / `CapabilityContext` 承载 request-scoped 状态，registry 只负责注入稳定依赖与运行时工厂。
 
 **Tech Stack:** Rust, async_trait, tokio
 
-**Worktree branch:** `feat/core-tool-migration`
+**执行分支：** 当前分支 `pzc`（不创建 worktree，不切分支）
 
 ---
 
@@ -28,7 +28,24 @@
 新路径：RuntimeTool::execute(input, ToolExecutionContext) → 通过 capability trait 访问最小依赖
 ```
 
-**执行顺序**：E1（trait 定义）→ E2（execute_python）→ E3（generate_report）→ E4（generate_chart）→ E5（注册 + 回归）
+**执行顺序**：E0（runtime 暴露面 / 调度面校准）→ E1（shared core + trait 边界）→ E2（execute_python）→ E3（generate_report）→ E4（generate_chart）→ E5（runtime path 集成回归）→ E6（browse_data / subagent launcher）
+
+### 2026-04-18 对标校准（优先级高于下文旧草案）
+
+> 下文若仍保留早期草案描述，以本节为准执行。
+
+1. **先抽 shared core，再迁 RuntimeTool。**
+   - 不允许在 `runtime/tools/builtin/*.rs` 里重新抄一份 legacy 业务逻辑。
+   - `llm/tool_executor/python.rs` / `report.rs` / `chart.rs` 中需要先抽出 `PluginContext` free 的 core，legacy handler 与 runtime tool 共用同一份核心逻辑。
+2. **request-scoped 状态优先来自 `ToolExecutionContext` / `CapabilityContext`。**
+   - `run_id`、`agent_id`、`cancellation`、workspace capability、权限结果等不应固化成 tool struct 的常驻状态。
+   - tool struct 只持有稳定依赖（例如 capability trait 实现、固定服务对象、纯配置）。
+3. **E0 先校准 runtime 暴露面。**
+   - 先补齐 `REQUEST_SCOPED_RUNTIME_TOOL_NAMES`、schema source、dispatcher/runtime-path 集成测试，避免“代码实现了但运行面仍走 legacy”。
+4. **`execute_python` 必须保住 analysis 语义。**
+   - `auto-load uploaded files`、`loaded preamble`、`authorized workspace preamble`、analysis snapshot / user vars / step_state 等现有生产语义属于 Plan-E 范围，不接受“先切路径，语义以后补齐”。
+5. **E6 是 Plan-E 正式任务，不是附录。**
+   - `browse_data` / subagent launcher 的 cancel / run_id / agent_id 传播属于 request-scoped runtime abstraction 的关键缺口，必须在 Plan-E 内收口，Plan-H 直接依赖它完成。
 
 ---
 
@@ -1980,9 +1997,9 @@ feat(plan-e/E4): ChartCapability trait + GenerateChartRuntimeTool full implement
 
 ---
 
-## Task E5：模块注册 + 回归验证
+## Task E5：runtime path 集成回归
 
-**目标：** 确保所有新模块（`python_execution`、`report_capability`、`chart_capability`）正确注册到 `builtin/mod.rs`，并验证全量测试套件无回归。
+**目标：** 验证 runtime dispatcher / schema source / request-scoped factory 已真实接管 `execute_python`、`generate_report`、`generate_chart`，并跑完整体回归。模块暴露应在 E1/E3/E4 各自落地时同步完成，不再集中拖到 E5。
 
 ### 文件
 
@@ -2093,10 +2110,11 @@ test(plan-e/E5): module registration + full regression gate for Plan-E
 Plan-E 完成当且仅当：
 
 1. **E1 完成：** `python_execution.rs` 存在，`PythonExecution` trait 有 `execute_in_session` / `execute_oneshot` / `interrupt_session` 三个方法，`DefaultPythonExecution` 实现包装 `PythonSessionManager`。
-2. **E2 完成：** `ExecutePythonRuntimeTool` 不再持有 `Option<PluginContext>` 字段；`with_python` 构造函数接受 `Arc<dyn PythonExecution>`；`try_build_request_scoped_tool` 的 `execute_python` 分支注入 `DefaultPythonExecution`；旧 `python_exec.rs` 有 `#![allow(dead_code)]`。
+2. **E2 完成：** `ExecutePythonRuntimeTool` 不再持有 `Option<PluginContext>` 字段；`with_python` / 等价构造仅持有稳定依赖；`ToolExecutionContext` / `CapabilityContext` 能提供 request-scoped 状态；`try_build_request_scoped_tool` 的 `execute_python` 分支注入 runtime path；旧 `python_exec.rs` 有 `#![allow(dead_code)]`；且 analysis 语义无回退。
 3. **E3 完成：** `report_capability.rs` 存在，`ReportCapability` trait 有 `generate_report_bytes` / `get_pii_unmask_map` / `get_product_name` / `persist_file` 四个方法；`GenerateReportRuntimeTool` 不再是 stub；registry 有 `generate_report` 分支；旧 `report_gen.rs` 有 `#![allow(dead_code)]`。
 4. **E4 完成：** `chart_capability.rs` 存在，`ChartCapability` trait 有 `run_chart_python` / `persist_chart` 两个方法；`GenerateChartRuntimeTool` 不再是 stub；registry 有 `generate_chart` 分支；旧 `chart_gen.rs` 有 `#![allow(dead_code)]`。
-5. **E5 完成：** `plan_e_tool_migration_test.rs` 全部 12+ 个测试通过；`review_` 套件无新失败；`primitive_tools_migration_test` 中已有的 stub 测试继续通过。
+5. **E5 完成：** `plan_e_tool_migration_test.rs` 与 runtime/schema 集成测试全部通过；`review_` 套件无新失败；`primitive_tools_migration_test` 中已有的 stub / catalog 契约继续通过。
+6. **E6 完成：** `browse_data` / subagent launcher 不再丢失 parent cancel / run_id / agent_id；Plan-H/H5 不再依赖临时 bridge。
 
 ---
 
@@ -2116,8 +2134,75 @@ Plan-E 完成当且仅当：
 
 ### analysis mode 与 `get_step_state`
 
-E2 的 `execute()` 简化了 analysis mode 检测（暂用 capability.storage 是否存在判断）。完整的 `get_step_state` 检测需要 `Arc<AppStorage>` 通过 `CapabilityContext` 注入，这是后续 follow-up task（不在 Plan-E 范围内）。Plan-E 的 analysis preamble 注入（analysis_preamble 生成、epilogue、loaded_preamble 注入）同样是 follow-up。Plan-E 完成后 execute_python 基本执行路径（oneshot + session）正常工作，analysis mode 的完整语义在后续专项中补齐。
+这不是 follow-up，而是 Plan-E / E2 的正式验收项。`execute_python` 切到 runtime path 后，必须继续保有当前生产路径中的：
+
+- uploaded file auto-load；
+- loaded preamble 注入；
+- authorized workspace preamble；
+- analysis snapshot / user vars / step_state 恢复与保存；
+- analysis mode 缺失 `run_id` 时的失败语义。
+
+若某一项暂时无法通过 `CapabilityContext` 表达，应先扩展 shared core / capability boundary，再切换 runtime path；不要以“路径已迁完、语义后补”为 Plan-E 完成标准。
 
 ### `#[allow(deprecated)]` 传播
 
 registry 的 `try_build_request_scoped_tool` 会继续使用 `PluginContext`（`ctx: &PluginContext` 参数），因此 E2/E3/E4 对 registry 的修改仍在 `#![allow(deprecated)]` 作用范围内，无需额外处理。
+
+---
+
+## Task E6：迁移 `browse_data` / subagent launcher` 的高风险 legacy path
+
+**定位：** Plan-E 正式任务，直接为 Plan-H/H5 清除 request-scoped cancel / permission control-plane blocker。
+
+**复盘来源：**
+- `src-tauri/src/llm/tool_executor/internal_system.rs` 当前仍构造 `SubAgentConfig { cancel_token: None }`；这意味着 `browse_data` 派生出的子 agent 无法继承 parent turn 的 cancel。
+- `src-tauri/src/llm/sub_agent.rs` 仍通过 `PluginContext` / legacy tool path 执行；注释已经明确指出 `ToolExecutionContext`（及其 cancel token）会在桥接层丢失。
+- 对标 `claude-code-best`，subagent / agent tool 走统一的 abort / permission 控制面，而不是再造一条孤立 root token 路径。
+
+**目标状态：**
+- `browse_data` 不再丢失 `ToolExecutionContext.cancel_token`、`run_id`、`agent_id` 等 request-scoped 信息。
+- 子 agent 所需依赖通过 request-scoped capability / launcher trait 注入，而不是整个 `PluginContext`。
+- 在 E6 完成前后，`browse_data` 都不能继续成为 Plan-H（cancel reachability）与 Plan-F（permission control plane）的 blocker。
+
+**建议文件：**
+- Modify: `src-tauri/src/llm/tool_executor/internal_system.rs`
+- Modify: `src-tauri/src/llm/sub_agent.rs`
+- Modify: `src-tauri/src/plugin/registry.rs`
+- Create: `src-tauri/src/runtime/tools/builtin/browse_data_launcher.rs`（或同等 request-scoped capability trait）
+- Optional: `src-tauri/src/runtime/tools/builtin/browse_data.rs`（若直接迁成 RuntimeTool）
+
+**依赖关系：**
+- Plan-H 的 H5 直接依赖 E6 落地；若 E6 未完成，H5 只能做临时 bridge。
+- Plan-B 的 B5 可为 E6 提供 cancel reason API，但不是硬依赖。
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 2 项：放在 `B5` 之后、`H5` 之前。
+- 不建议跳过 E6 直接做 H5，否则大概率会先做一次临时 bridge，后续还要再拆回 request-scoped launcher。
+
+### Task E6：将 `browse_data` 迁到 request-scoped tool / launcher 边界
+
+- [ ] **E6-Step 1：写失败测试**
+  - 在 `src-tauri/tests/plan_e_tool_migration_test.rs` 追加 E6 测试：
+    1. parent cancel 触发时，`browse_data` 创建的 `SubAgentConfig.cancel_token` 不再是 `None`。
+    2. child launcher 能看到 parent `run_id` / `agent_id`。
+    3. 构造 migrated browse_data path 不需要导入 `PluginContext`。
+  - 运行：`cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test plan_e_tool_migration_test browse_data -- --nocapture`
+
+- [ ] **E6-Step 2：最小实现 request-scoped launcher**
+  - 设计 `BrowseDataLauncher` / `SubagentLauncher` trait，只暴露 `browse_data` 真正需要的字段：workspace、authorized workspace、cancel token、run_id、agent_id、background flag。
+  - 在 `plugin/registry.rs` 的 request-scoped 构造路径中注入该 trait 的生产实现。
+  - `internal_system.rs` 不再直接拼 `SubAgentConfig { cancel_token: None }`。
+
+- [ ] **E6-Step 3：收口 legacy path**
+  - `src-tauri/src/llm/sub_agent.rs` 不再依赖“ToolExecutionContext 被桥接层丢掉也没关系”的假设。
+  - 若短期仍需保留 legacy bridge，bridge 也必须把 `cancel_token`、`agent_id`、`run_id` 传到底；不能只桥接 `PluginContext`。
+  - `browse_data` 相关旧实现保留 `dead_code` 保护，确认回归全绿后再删除。
+
+- [ ] **E6-Step 4：回归验证**
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test plan_e_tool_migration_test browse_data -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test subagent_cancel -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_ --tests --no-fail-fast`
+
+- [ ] **E6-Step 5：Commit**
+  - `git add src-tauri/src/llm/tool_executor/internal_system.rs src-tauri/src/llm/sub_agent.rs src-tauri/src/plugin/registry.rs src-tauri/src/runtime/tools/builtin/`
+  - `git commit -m "feat(browse-data): migrate subagent launcher off legacy plugin path — E6"`
