@@ -153,7 +153,7 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
 
     let bus = RuntimeEventBus::new();
     let pending_store = Arc::new(PendingPermissionRequestStore::new());
-    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
+    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
         QueryEngine::with_dispatcher(dispatcher),
         bus.clone(),
         executor.clone(),

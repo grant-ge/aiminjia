@@ -27,8 +27,8 @@ pub use conversation_store::{ConversationStore, InMemoryConversationStore};
 pub use file_record_store::FileRecordStore;
 pub use memory_store::{InMemoryMemoryStore, MemoryEntry, MemoryStore};
 pub use pending_permission_request_store::{
-    PendingPermissionRequest, PendingPermissionRequestStore,
-    PendingPermissionResolution,
+    PendingPermissionControlPlane, PendingPermissionRequest,
+    PendingPermissionRequestStore, PendingPermissionResolution,
 };
 pub use persona_store::{PersonaRecord, PersonaStore, PersonaSummary};
 pub use permission_store::{PolicyDecision, PermissionStore};

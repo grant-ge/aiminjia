@@ -232,7 +232,7 @@ impl SessionRuntime {
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
         if let Some(ref executor) = self.llm_executor {
-            return RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
+            return RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
                 query_engine,
                 self.event_bus.clone(),
                 executor.clone(),

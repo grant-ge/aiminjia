@@ -161,7 +161,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
 
     let bus = RuntimeEventBus::new();
     let pending_store = Arc::new(PendingPermissionRequestStore::new());
-    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
+    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
         QueryEngine::with_dispatcher(dispatcher),
         bus.clone(),
         executor.clone(),
@@ -253,7 +253,7 @@ async fn approve_replays_original_tool_call_with_updated_input() {
 
     let bus = RuntimeEventBus::new();
     let pending_store = Arc::new(PendingPermissionRequestStore::new());
-    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
+    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
         QueryEngine::with_dispatcher(dispatcher),
         bus,
         executor.clone(),
@@ -334,7 +334,7 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
     ]));
 
     let pending_store = Arc::new(PendingPermissionRequestStore::new());
-    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
+    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
         QueryEngine::with_dispatcher(dispatcher),
         RuntimeEventBus::new(),
         executor.clone(),
@@ -385,4 +385,69 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
         .as_str()
         .unwrap_or_default()
         .contains("cancelled by user"));
+}
+
+#[test]
+fn review_driver_does_not_own_pending_permission_store_field() {
+    let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
+        .expect("read chat_turn_driver.rs");
+    let session_runtime_src = std::fs::read_to_string("src/runtime/session_runtime.rs")
+        .expect("read session_runtime.rs");
+    assert!(
+        !driver_src.contains("pending_permission_store:"),
+        "driver 不应再持有 pending_permission_store 字段，owner 应收敛到 SessionRuntime/runtime service"
+    );
+    assert!(
+        !driver_src.contains("PendingPermissionRequestStore::new()"),
+        "driver 不应再偷偷创建私有 PendingPermissionRequestStore"
+    );
+    assert!(
+        session_runtime_src.contains("with_llm_executor_and_permission_control_plane("),
+        "SessionRuntime 应负责把统一的 permission control plane 注入 driver"
+    );
+    assert!(
+        session_runtime_src.contains("self.pending_permission_store.clone()"),
+        "SessionRuntime 注入 driver 时应继续复用自己的 pending_permission_store 真源"
+    );
+}
+
+#[tokio::test]
+async fn driver_without_permission_control_plane_fails_fast_on_ask_required() {
+    let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AlwaysAskPermissionPipeline)));
+    dispatcher.register(Arc::new(EchoInputTool {
+        received_inputs: Arc::new(Mutex::new(Vec::new())),
+    }));
+
+    let executor = Arc::new(ToolCallExecutor::new(vec![LlmStepResult::ToolCalls {
+        assistant_content: "".to_string(),
+        tool_calls: vec![RuntimeToolCallRequest {
+            tool_call_id: "tc-ask-no-control-plane".to_string(),
+            tool_name: "echo_tool".to_string(),
+            args: json!({ "value": "original" }),
+            purpose: None,
+        }],
+        tokens_in: 2,
+        tokens_out: 3,
+    }]));
+
+    let driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::with_dispatcher(dispatcher),
+        RuntimeEventBus::new(),
+        executor,
+    );
+    let mut turn = make_test_turn("conv-ask-no-control-plane");
+    let request = ChatTurnRequest::new("conv-ask-no-control-plane", "hi", vec![]);
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(300),
+        driver.run_chat_turn(&mut turn, &request),
+    )
+    .await;
+
+    let run_outcome = result.expect("driver should fail fast instead of waiting forever");
+    let err = run_outcome.expect_err("missing permission control plane should return error");
+    assert!(
+        err.to_string().contains("permission control plane"),
+        "unexpected error: {err:#}"
+    );
 }

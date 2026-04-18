@@ -20,7 +20,7 @@ use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::store::{
-    PendingPermissionRequest, PendingPermissionRequestStore,
+    PendingPermissionControlPlane, PendingPermissionRequest,
     PendingPermissionResolution,
 };
 use crate::runtime::state::TurnState;
@@ -207,7 +207,7 @@ pub struct RuntimeChatTurnDriver {
     event_bus: RuntimeEventBus,
     /// S4 executor：只做 provider streaming adapter。
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
-    pending_permission_store: Arc<PendingPermissionRequestStore>,
+    pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -324,7 +324,7 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             llm_executor: None,
-            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            pending_permission_control_plane: None,
         }
     }
 
@@ -337,21 +337,21 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             llm_executor: Some(executor),
-            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            pending_permission_control_plane: None,
         }
     }
 
-    pub fn with_llm_executor_and_permission_store(
+    pub fn with_llm_executor_and_permission_control_plane(
         query_engine: QueryEngine,
         event_bus: RuntimeEventBus,
         executor: Arc<dyn RuntimeLlmExecutor>,
-        pending_permission_store: Arc<PendingPermissionRequestStore>,
+        pending_permission_control_plane: Arc<dyn PendingPermissionControlPlane>,
     ) -> Self {
         Self {
             query_engine,
             event_bus,
             llm_executor: Some(executor),
-            pending_permission_store,
+            pending_permission_control_plane: Some(pending_permission_control_plane),
         }
     }
 
@@ -370,12 +370,14 @@ impl RuntimeChatTurnDriver {
                 }
                 _ = tokio::time::sleep(Duration::from_millis(50)) => {
                     if cancel.is_cancelled() {
-                        let _ = self.pending_permission_store.resolve(
-                            &tool_call_id.into(),
-                            PendingPermissionResolution::Cancel {
-                                message: "Permission request cancelled because the turn was cancelled.".to_string(),
-                            },
-                        );
+                        if let Some(control_plane) = self.pending_permission_control_plane.as_ref() {
+                            let _ = control_plane.resolve_pending_request(
+                                &tool_call_id.into(),
+                                PendingPermissionResolution::Cancel {
+                                    message: "Permission request cancelled because the turn was cancelled.".to_string(),
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -405,6 +407,11 @@ impl RuntimeChatTurnDriver {
                 resolved_results.push(round_result);
                 continue;
             };
+            let Some(control_plane) = self.pending_permission_control_plane.as_ref() else {
+                return Err(anyhow::anyhow!(
+                    "permission control plane is required to handle AskRequired tool outcomes"
+                ));
+            };
 
             let pending_request = PendingPermissionRequest {
                 tool_call_id: tool_call_id.clone().into(),
@@ -415,7 +422,7 @@ impl RuntimeChatTurnDriver {
                 suggestions: suggestions.clone(),
                 original_request: original_request.clone(),
             };
-            let resolution_rx = self.pending_permission_store.insert(pending_request)?;
+            let resolution_rx = control_plane.insert_pending_request(pending_request)?;
 
             self.event_bus
                 .emit(RuntimeEvent::new(

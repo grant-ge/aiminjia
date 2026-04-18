@@ -37,6 +37,19 @@ struct PendingPermissionEntry {
     resolution_tx: oneshot::Sender<PendingPermissionResolution>,
 }
 
+pub trait PendingPermissionControlPlane: Send + Sync {
+    fn insert_pending_request(
+        &self,
+        request: PendingPermissionRequest,
+    ) -> Result<oneshot::Receiver<PendingPermissionResolution>>;
+
+    fn resolve_pending_request(
+        &self,
+        tool_call_id: &ToolCallId,
+        resolution: PendingPermissionResolution,
+    ) -> Result<()>;
+}
+
 #[derive(Default)]
 pub struct PendingPermissionRequestStore {
     inner: Mutex<HashMap<String, PendingPermissionEntry>>,
@@ -128,5 +141,22 @@ impl PendingPermissionRequestStore {
             }
         }
         cancelled
+    }
+}
+
+impl PendingPermissionControlPlane for PendingPermissionRequestStore {
+    fn insert_pending_request(
+        &self,
+        request: PendingPermissionRequest,
+    ) -> Result<oneshot::Receiver<PendingPermissionResolution>> {
+        self.insert(request)
+    }
+
+    fn resolve_pending_request(
+        &self,
+        tool_call_id: &ToolCallId,
+        resolution: PendingPermissionResolution,
+    ) -> Result<()> {
+        self.resolve(tool_call_id, resolution)
     }
 }
