@@ -1,7 +1,8 @@
 use app_lib::runtime::agent::message_bridge;
 use app_lib::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use app_lib::runtime::agent::subagent_result_envelope::{
-    SubAgentResultEnvelope, SubAgentTerminalToolResult, SubAgentTranscriptEntry,
+    build_subagent_transcript_ref, SubAgentResultEnvelope, SubAgentTerminalToolResult,
+    SubAgentTranscriptEntry,
 };
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::ids::{RunId, SessionId};
@@ -34,7 +35,7 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
                 tool_name: Some("extract_table_data".to_string()),
             },
         ],
-        transcript_ref: Some("run-child-1".to_string()),
+        transcript_ref: Some(build_subagent_transcript_ref("run-child-1")),
     };
 
     let summary = envelope.to_storage_summary();
@@ -45,7 +46,10 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
     assert_eq!(decoded.terminal_tool_results.len(), 1);
     assert_eq!(decoded.terminal_tool_results[0].tool_name, "extract_table_data");
     assert_eq!(decoded.transcript_snapshot.len(), 2);
-    assert_eq!(decoded.transcript_ref.as_deref(), Some("run-child-1"));
+    assert_eq!(
+        decoded.transcript_ref.as_deref(),
+        Some("subagent://run-child-1")
+    );
 }
 
 #[test]
@@ -68,7 +72,7 @@ fn message_bridge_formats_envelope_summary_payload() {
             tool_call_id: None,
             tool_name: None,
         }],
-        transcript_ref: Some("run-child-2".to_string()),
+        transcript_ref: Some(build_subagent_transcript_ref("run-child-2")),
     };
 
     let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);
@@ -78,7 +82,10 @@ fn message_bridge_formats_envelope_summary_payload() {
     assert_eq!(decoded.schema_version, 1);
     assert_eq!(decoded.generated_files, vec!["/tmp/output.json"]);
     assert_eq!(decoded.terminal_tool_results[0].summary, "ACCESS DENIED");
-    assert_eq!(decoded.transcript_ref.as_deref(), Some("run-child-2"));
+    assert_eq!(
+        decoded.transcript_ref.as_deref(),
+        Some("subagent://run-child-2")
+    );
 }
 
 #[tokio::test]
@@ -110,14 +117,16 @@ async fn background_run_persists_decodable_envelope_summary() {
             tool_call_id: None,
             tool_name: None,
         }],
-        transcript_ref: Some(handle.child_run_id().as_str().to_string()),
+        transcript_ref: Some(build_subagent_transcript_ref(handle.child_run_id().as_str())),
     };
 
     let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);
+    let transcript_ref = envelope.transcript_ref.clone();
     runtime
         .complete_background_run(
             handle.child_run_id(),
             Some(&summary),
+            transcript_ref.as_deref(),
             session_id,
             parent_run_id,
             bus,
@@ -137,6 +146,6 @@ async fn background_run_persists_decodable_envelope_summary() {
     assert_eq!(decoded.terminal_tool_results[0].summary, "saved 42 rows");
     assert_eq!(
         decoded.transcript_ref.as_deref(),
-        Some(handle.child_run_id().as_str())
+        Some(transcript_ref.as_deref().unwrap())
     );
 }

@@ -67,6 +67,7 @@ async fn background_run_complete_background_run_wires_summary_and_idle_event() {
         .complete_background_run(
             &child_run_id,
             Some(&summary),
+            None,
             session_id.clone(),
             parent_run_id.clone(),
             bus.clone(),
@@ -148,6 +149,7 @@ async fn background_run_unknown_child_run_is_noop() {
         .complete_background_run(
             &missing,
             Some("summary"),
+            None,
             SessionId::new("s"),
             RunId::new("p"),
             bus.clone(),

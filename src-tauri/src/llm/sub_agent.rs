@@ -18,9 +18,10 @@ use crate::plugin::registry::ToolRegistry;
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
 use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::subagent_result_envelope::{
-    SubAgentResultEnvelope, SubAgentTerminalToolResult, SubAgentTranscriptEntry,
+    build_subagent_transcript_ref, SubAgentResultEnvelope, SubAgentTerminalToolResult,
+    SubAgentTranscriptEntry,
 };
-use crate::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
+use crate::runtime::agent::{AgentRuntime, SpawnChildRunRequest, SubagentTranscriptEntryRecord};
 use crate::runtime::ids::RunId;
 use crate::runtime::tools::permission::PermissionDecision;
 
@@ -470,15 +471,29 @@ pub async fn run_sub_agent(
     generated_files.sort();
     generated_files.dedup();
 
-    let mut transcript_snapshot: Vec<SubAgentTranscriptEntry> = messages
+    let transcript_ref = build_subagent_transcript_ref(child_run_id.as_str());
+    let transcript_entries: Vec<SubagentTranscriptEntryRecord> = messages
+        .iter()
+        .map(|message| SubagentTranscriptEntryRecord {
+            role: message.role.clone(),
+            content: message.content.clone(),
+            tool_call_id: message.tool_call_id.clone(),
+            tool_name: message.name.clone(),
+        })
+        .collect();
+    agent_runtime
+        .store_transcript(&transcript_ref, &transcript_entries)
+        .map_err(LegacyToolError::Other)?;
+
+    let mut transcript_snapshot: Vec<SubAgentTranscriptEntry> = transcript_entries
         .iter()
         .rev()
         .take(16)
-        .map(|m| SubAgentTranscriptEntry {
-            role: m.role.clone(),
-            content: safe_truncate(&m.content, 800).to_string(),
-            tool_call_id: m.tool_call_id.clone(),
-            tool_name: m.name.clone(),
+        .map(|entry| SubAgentTranscriptEntry {
+            role: entry.role.clone(),
+            content: safe_truncate(&entry.content, 800).to_string(),
+            tool_call_id: entry.tool_call_id.clone(),
+            tool_name: entry.tool_name.clone(),
         })
         .collect();
     transcript_snapshot.reverse();
@@ -490,7 +505,7 @@ pub async fn run_sub_agent(
         generated_files: generated_files.clone(),
         terminal_tool_results,
         transcript_snapshot,
-        transcript_ref: Some(child_run_id.as_str().to_string()),
+        transcript_ref: Some(transcript_ref.clone()),
     };
 
     // Clean up gateway active task entry
@@ -512,6 +527,7 @@ pub async fn run_sub_agent(
                     .complete_background_run(
                         &child_run_id,
                         Some(&summary),
+                        Some(&transcript_ref),
                         plugin_ctx.session_id.clone(),
                         parent_run_id,
                         bus,

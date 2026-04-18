@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 
 const ENVELOPE_PREFIX: &str = "subagent-envelope:v1:";
 
+pub fn build_subagent_transcript_ref(child_run_id: &str) -> String {
+    format!("subagent://{child_run_id}")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SubAgentTerminalToolResult {

@@ -77,15 +77,17 @@ impl AgentInvocationStore for FileAgentInvocationStore {
         self.flush(&cache)
     }
 
-    fn update_invocation_summary(
+    fn update_invocation_result_metadata(
         &self,
         agent_id: &AgentId,
         summary: Option<String>,
+        transcript_ref: Option<String>,
     ) -> Result<()> {
         let mut cache = self.cache.lock().unwrap();
         for record in cache.iter_mut() {
             if record.agent_id == *agent_id {
                 record.summary_or_output_ref = summary;
+                record.transcript_ref = transcript_ref;
                 break;
             }
         }

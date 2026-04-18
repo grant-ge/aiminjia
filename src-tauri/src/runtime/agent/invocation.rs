@@ -18,6 +18,7 @@ pub struct AgentInvocation {
     pub status: AgentStatus,
     pub background: bool,
     pub summary_or_output_ref: Option<String>,
+    pub transcript_ref: Option<String>,
 }
 
 impl AgentInvocation {
@@ -29,6 +30,7 @@ impl AgentInvocation {
             status: AgentStatus::Pending,
             background: false,
             summary_or_output_ref: None,
+            transcript_ref: None,
         }
     }
 

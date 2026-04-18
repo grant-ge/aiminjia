@@ -7,7 +7,8 @@ use crate::runtime::agent::invocation::{
 };
 use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::subagent_transcript_store::{
-    FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptStore,
+    FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptEntryRecord,
+    SubagentTranscriptStore,
 };
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::RuntimeEvent;
@@ -120,6 +121,7 @@ impl AgentRuntime {
         &self,
         child_run_id: &RunId,
         summary: Option<&str>,
+        transcript_ref: Option<&str>,
         session_id: SessionId,
         parent_run_id: RunId,
         bus: RuntimeEventBus,
@@ -130,8 +132,11 @@ impl AgentRuntime {
                 target_agent_id = Some(record.agent_id.clone());
                 self.invocation_store
                     .update_invocation_status(&record.agent_id, AgentStatus::Completed)?;
-                self.invocation_store
-                    .update_invocation_summary(&record.agent_id, summary.map(str::to_owned))?;
+                self.invocation_store.update_invocation_result_metadata(
+                    &record.agent_id,
+                    summary.map(str::to_owned),
+                    transcript_ref.map(str::to_owned),
+                )?;
             }
         }
         if let Some(agent_id) = target_agent_id {
@@ -152,10 +157,29 @@ impl AgentRuntime {
         Ok(None)
     }
 
+    pub async fn get_transcript_ref(&self, child_run_id: &RunId) -> Result<Option<String>> {
+        for record in self.invocation_store.list_invocations()? {
+            if &record.child_run_id == child_run_id {
+                return Ok(record.transcript_ref.clone());
+            }
+        }
+        Ok(None)
+    }
+
+    pub async fn load_transcript(
+        &self,
+        child_run_id: &RunId,
+    ) -> Result<Option<Vec<SubagentTranscriptEntryRecord>>> {
+        let Some(transcript_ref) = self.get_transcript_ref(child_run_id).await? else {
+            return Ok(None);
+        };
+        self.transcript_store.get(&transcript_ref)
+    }
+
     pub fn store_transcript(
         &self,
         transcript_ref: &str,
-        entries: &[crate::runtime::agent::SubagentTranscriptEntryRecord],
+        entries: &[SubagentTranscriptEntryRecord],
     ) -> Result<()> {
         self.transcript_store.put(transcript_ref, entries)
     }

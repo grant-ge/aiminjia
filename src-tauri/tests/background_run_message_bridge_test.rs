@@ -43,6 +43,7 @@ async fn complete_background_run_stores_summary_and_emits_agent_idle() {
         .complete_background_run(
             &child_run_id,
             Some("analysis complete: 42 rows processed"),
+            None,
             session_id.clone(),
             parent_run_id.clone(),
             bus.clone(),

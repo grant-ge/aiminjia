@@ -15,6 +15,8 @@ pub struct AgentInvocationRecord {
     pub status: AgentStatus,
     pub background: bool,
     pub summary_or_output_ref: Option<String>,
+    #[serde(default)]
+    pub transcript_ref: Option<String>,
 }
 
 impl From<AgentInvocation> for AgentInvocationRecord {
@@ -26,6 +28,7 @@ impl From<AgentInvocation> for AgentInvocationRecord {
             status: value.status,
             background: value.background,
             summary_or_output_ref: value.summary_or_output_ref,
+            transcript_ref: value.transcript_ref,
         }
     }
 }
@@ -39,6 +42,7 @@ impl From<AgentInvocationRecord> for AgentInvocation {
             status: value.status,
             background: value.background,
             summary_or_output_ref: value.summary_or_output_ref,
+            transcript_ref: value.transcript_ref,
         }
     }
 }
@@ -48,7 +52,12 @@ pub trait AgentInvocationStore: Send + Sync {
     fn get_invocation(&self, agent_id: &AgentId) -> Result<Option<AgentInvocationRecord>>;
     fn list_invocations(&self) -> Result<Vec<AgentInvocationRecord>>;
     fn update_invocation_status(&self, agent_id: &AgentId, status: AgentStatus) -> Result<()>;
-    fn update_invocation_summary(&self, agent_id: &AgentId, summary: Option<String>) -> Result<()>;
+    fn update_invocation_result_metadata(
+        &self,
+        agent_id: &AgentId,
+        summary: Option<String>,
+        transcript_ref: Option<String>,
+    ) -> Result<()>;
 }
 
 #[derive(Default)]
@@ -71,6 +80,7 @@ impl InMemoryAgentInvocationStore {
                 status: AgentStatus::Running,
                 background: false,
                 summary_or_output_ref: None,
+                transcript_ref: None,
             })
             .expect("seed child run");
         store
@@ -106,9 +116,15 @@ impl AgentInvocationStore for InMemoryAgentInvocationStore {
         Ok(())
     }
 
-    fn update_invocation_summary(&self, agent_id: &AgentId, summary: Option<String>) -> Result<()> {
+    fn update_invocation_result_metadata(
+        &self,
+        agent_id: &AgentId,
+        summary: Option<String>,
+        transcript_ref: Option<String>,
+    ) -> Result<()> {
         if let Some(record) = self.invocations.lock().unwrap().get_mut(agent_id.as_str()) {
             record.summary_or_output_ref = summary;
+            record.transcript_ref = transcript_ref;
         }
         Ok(())
     }
