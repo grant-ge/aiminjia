@@ -12,6 +12,7 @@ use crate::runtime::tools::{
     CapabilityContext, FileOperations, FileStateCache, StorageCapability, ToolDispatcher,
     ToolExecutionContext,
 };
+use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
@@ -233,6 +234,38 @@ impl QueryEngine {
         bus: &RuntimeEventBus,
         call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
     ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
+        self.run_tool_call_with_bus_internal(turn, bus, call, None).await
+    }
+
+    pub async fn replay_tool_call_with_bus(
+        &self,
+        turn: &TurnState,
+        bus: &RuntimeEventBus,
+        mut call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
+        updated_input: Option<serde_json::Value>,
+    ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
+        if let Some(input) = updated_input {
+            call.args = input;
+        }
+        self.run_tool_call_with_bus_internal(
+            turn,
+            bus,
+            call,
+            Some(PermissionDecision::Allow {
+                updated_input: None,
+                reason: PermissionReason::Other("resolved_pending_permission".into()),
+            }),
+        )
+        .await
+    }
+
+    async fn run_tool_call_with_bus_internal(
+        &self,
+        turn: &TurnState,
+        bus: &RuntimeEventBus,
+        call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
+        permission_override: Option<PermissionDecision>,
+    ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
         use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 
         let dispatcher = self
@@ -251,7 +284,7 @@ impl QueryEngine {
             .workspace_path
             .clone()
             .or_else(|| self.authorized_workspace.as_ref().map(|aw| aw.root_path.clone()));
-        let ctx = if let Some(workspace_path) = capability_workspace {
+        let mut ctx = if let Some(workspace_path) = capability_workspace {
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
@@ -268,6 +301,9 @@ impl QueryEngine {
         } else {
             ctx
         };
+        if let Some(permission_override) = permission_override {
+            ctx = ctx.with_permission_override(permission_override);
+        }
 
         // Emit ToolCallExecuting before dispatching so the UI knows the tool
         // has started before any latency from the actual execution.
@@ -320,31 +356,16 @@ impl QueryEngine {
                 // S6 transition: Ask is now surfaced as a structured AskRequired variant
                 // instead of being flattened into a Completed(is_error=true) outcome.
                 // TurnDriver/transport can structurally distinguish Ask from Deny/error.
-                //
-                // FIXME(S6): route AskRequired to the UI (emit RuntimeEvent::PermissionAsk,
-                // await user response) instead of synthesizing a tool-result message.
-                // Until S6, callers convert AskRequired to a text tool-result for the LLM.
                 log::warn!(
                     "run_tool_call_with_bus: tool '{}' returned Ask — \
-                     surfacing as AskRequired outcome (S6 routing pending). Decision: {:?}",
+                     surfacing as AskRequired outcome for pending permission routing. Decision: {:?}",
                     call.tool_name, decision
                 );
-                bus.emit(RuntimeEvent::new(
-                    turn.session_id().clone(),
-                    turn.run_id().clone(),
-                    RuntimeEventKind::ToolCallCompleted {
-                        tool_call_id: crate::runtime::ids::ToolCallId::new(
-                            call.tool_call_id.clone(),
-                        ),
-                        tool_name: call.tool_name.clone(),
-                        is_error: true,
-                    },
-                ))
-                .await?;
 
                 Ok(RuntimeToolCallOutcome::AskRequired {
-                    tool_call_id: call.tool_call_id,
-                    tool_name: call.tool_name,
+                    tool_call_id: call.tool_call_id.clone(),
+                    tool_name: call.tool_name.clone(),
+                    original_request: call,
                     decision,
                 })
             }

@@ -61,6 +61,8 @@ pub enum RuntimeToolCallOutcome {
         tool_call_id: String,
         /// Name of the tool that needs confirmation.
         tool_name: String,
+        /// Original tool call request so the driver can replay it after user approval.
+        original_request: RuntimeToolCallRequest,
         /// The structured permission decision from the pipeline.
         decision: crate::runtime::tools::permission::PermissionDecision,
     },
@@ -101,22 +103,18 @@ impl RuntimeToolCallOutcome {
                 max_result_size_chars,
                 ..
             } => *max_result_size_chars,
-            Self::AskRequired { .. } => 8_000,
+            Self::AskRequired { .. } => 0,
         }
     }
 
     /// Returns the content string for this outcome.
     ///
-    /// For `AskRequired`, a synthetic "permission ask required" message is
-    /// returned so the LLM receives coherent feedback.
-    /// FIXME(S6): remove the synthetic text once S6 routes Ask to the UI.
+    /// `AskRequired` no longer synthesizes a fallback tool_result string; the
+    /// driver must route it through the pending permission control plane.
     pub fn content(&self) -> &str {
         match self {
             Self::Completed { content, .. } => content,
-            Self::AskRequired { .. } => {
-                "Tool requires user confirmation before it can run. \
-                 Please await user permission."
-            }
+            Self::AskRequired { .. } => "",
         }
     }
 

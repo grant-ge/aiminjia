@@ -5,6 +5,7 @@ pub mod audit_store;
 pub mod conversation_store;
 pub mod file_record_store;
 pub mod memory_store;
+pub mod pending_permission_request_store;
 pub mod persona_store;
 pub mod run_store;
 pub mod session_store;
@@ -25,6 +26,10 @@ pub use audit_store::{AuditRecord, AuditStore, InMemoryAuditStore};
 pub use conversation_store::{ConversationStore, InMemoryConversationStore};
 pub use file_record_store::FileRecordStore;
 pub use memory_store::{InMemoryMemoryStore, MemoryEntry, MemoryStore};
+pub use pending_permission_request_store::{
+    PendingPermissionRequest, PendingPermissionRequestStore,
+    PendingPermissionResolution,
+};
 pub use persona_store::{PersonaRecord, PersonaStore, PersonaSummary};
 pub use permission_store::{PolicyDecision, PermissionStore};
 pub use run_store::{InMemoryRunStore, RunRecord, RunStatus, RunStore};

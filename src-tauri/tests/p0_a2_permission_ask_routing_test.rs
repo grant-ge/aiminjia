@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
@@ -9,6 +10,9 @@ use app_lib::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::store::{
+    PendingPermissionRequestStore, PendingPermissionResolution,
+};
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use app_lib::runtime::tools::{
@@ -124,7 +128,7 @@ fn runtime_event_new_copies_tool_call_id_for_permission_ask_required() {
 }
 
 #[tokio::test]
-async fn driver_emits_permission_ask_runtime_event_before_text_fallback() {
+async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AlwaysAskPermissionPipeline)));
     dispatcher.register(Arc::new(EchoTool));
 
@@ -148,15 +152,24 @@ async fn driver_emits_permission_ask_runtime_event_before_text_fallback() {
     ]));
 
     let bus = RuntimeEventBus::new();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(
+    let pending_store = Arc::new(PendingPermissionRequestStore::new());
+    let driver = RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
         QueryEngine::with_dispatcher(dispatcher),
         bus.clone(),
         executor.clone(),
+        pending_store.clone(),
     );
 
     let mut turn = make_test_turn("conv-a2-ask");
     let request = ChatTurnRequest::new("conv-a2-ask", "hi", vec![]);
-    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+    let handle = tokio::spawn(async move { driver.run_chat_turn(&mut turn, &request).await });
+
+    for _ in 0..100 {
+        if pending_store.get(&ToolCallId::new("tc-a2-ask")).is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     let events = bus.recorded();
     let permission_event = events
@@ -195,7 +208,36 @@ async fn driver_emits_permission_ask_runtime_event_before_text_fallback() {
     }
 
     let all_messages = executor.all_messages();
-    assert!(all_messages.len() >= 2, "expected at least two llm steps");
+    assert_eq!(
+        all_messages.len(),
+        1,
+        "driver should pause after permission ask instead of immediately appending fallback tool_result"
+    );
+
+    assert!(
+        !events.iter().any(|event| {
+            matches!(
+                &event.kind,
+                RuntimeEventKind::ToolCallCompleted { tool_call_id, .. }
+                    if tool_call_id.as_str() == "tc-a2-ask"
+            )
+        }),
+        "AskRequired must not emit ToolCallCompleted before the user resolves the request"
+    );
+
+    pending_store
+        .resolve(
+            &ToolCallId::new("tc-a2-ask"),
+            PendingPermissionResolution::Deny {
+                message: "Denied by user".to_string(),
+            },
+        )
+        .expect("deny pending request");
+
+    handle.await.unwrap().unwrap();
+
+    let all_messages = executor.all_messages();
+    assert!(all_messages.len() >= 2, "expected second llm step after permission resolution");
     let second_step_messages = &all_messages[1];
     let tool_result_message = second_step_messages
         .iter()
@@ -206,9 +248,8 @@ async fn driver_emits_permission_ask_runtime_event_before_text_fallback() {
                     .and_then(|value| value.as_str())
                     == Some("tc-a2-ask")
         })
-        .expect("AskRequired should still produce text fallback tool result");
-    assert!(tool_result_message["content"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Please await user permission"));
+        .expect("resolved permission ask should produce a terminal tool result");
+    let content = tool_result_message["content"].as_str().unwrap_or_default();
+    assert!(content.contains("Denied by user"));
+    assert!(!content.contains("Please await user permission"));
 }

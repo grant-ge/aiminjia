@@ -16,7 +16,8 @@ use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::ToolRegistry;
 use crate::runtime::conversation_service;
-use crate::runtime::ids::SessionId;
+use crate::runtime::ids::{SessionId, ToolCallId};
+use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::{
     ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime,
@@ -1156,12 +1157,61 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {
-        conversation_service::stop_streaming(
+        let session_id = SessionId::new(conversation_id.clone());
+        let result = conversation_service::stop_streaming(
             self.services.gateway.clone(),
             self.services.session_mgr.clone(),
             conversation_id,
         )
-        .await
+        .await;
+        self.runtime.cancel_pending_permission_requests_for_session(
+            &session_id,
+            "Permission request cancelled because the session was stopped.",
+        );
+        result
+    }
+
+    pub async fn approve_permission_request(
+        &self,
+        tool_call_id: String,
+        updated_input: Option<serde_json::Value>,
+    ) -> Result<(), String> {
+        self.runtime
+            .resolve_permission_request(
+                &ToolCallId::new(tool_call_id),
+                PendingPermissionResolution::Allow { updated_input },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn deny_permission_request(
+        &self,
+        tool_call_id: String,
+        message: Option<String>,
+    ) -> Result<(), String> {
+        self.runtime
+            .resolve_permission_request(
+                &ToolCallId::new(tool_call_id),
+                PendingPermissionResolution::Deny {
+                    message: message.unwrap_or_else(|| "Permission request denied by user.".to_string()),
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn cancel_permission_request(
+        &self,
+        tool_call_id: String,
+        message: Option<String>,
+    ) -> Result<(), String> {
+        self.runtime
+            .resolve_permission_request(
+                &ToolCallId::new(tool_call_id),
+                PendingPermissionResolution::Cancel {
+                    message: message.unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
+                },
+            )
+            .map_err(|e| e.to_string())
     }
 
     pub async fn get_messages(

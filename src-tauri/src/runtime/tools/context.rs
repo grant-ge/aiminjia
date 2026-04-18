@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::tools::capability::SharedCapabilityContext;
+use crate::runtime::tools::permission::PermissionDecision;
 
 #[derive(Default)]
 pub struct EventCollectingSink {
@@ -45,6 +46,10 @@ pub struct ToolExecutionContext {
     /// workspace or storage info should declare their intent here rather than
     /// accepting a full `PluginContext`.
     pub capability: Option<SharedCapabilityContext>,
+    /// Optional permission override injected by the orchestration layer when a
+    /// pending permission ask has already been resolved and the original tool
+    /// call should be replayed without re-entering the permission pipeline.
+    pub permission_override: Option<PermissionDecision>,
 }
 
 impl ToolExecutionContext {
@@ -63,6 +68,7 @@ impl ToolExecutionContext {
             cancellation,
             event_sink: Arc::new(EventCollectingSink::default()),
             capability: None,
+            permission_override: None,
         }
     }
 
@@ -72,6 +78,11 @@ impl ToolExecutionContext {
     /// dispatching to tools that declare capability-scoped service needs.
     pub fn with_capability(mut self, cap: SharedCapabilityContext) -> Self {
         self.capability = Some(cap);
+        self
+    }
+
+    pub fn with_permission_override(mut self, decision: PermissionDecision) -> Self {
+        self.permission_override = Some(decision);
         self
     }
 

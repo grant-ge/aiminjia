@@ -375,8 +375,14 @@ async fn query_engine_run_tool_call_with_bus_ask_returns_ask_required_outcome() 
         outcome.is_error(),
         "AskRequired must report is_error()=true so downstream guards continue to apply"
     );
-    assert!(
-        !outcome.content().is_empty(),
-        "AskRequired must provide a non-empty synthetic content() for the LLM"
+    assert_eq!(
+        outcome.content(),
+        "",
+        "AskRequired must not synthesize fallback tool_result content once pending permission routing owns the lifecycle"
+    );
+    assert_eq!(
+        outcome.max_result_size_chars(),
+        0,
+        "AskRequired should not advertise tool_result truncation budget because no tool_result is produced before resolution"
     );
 }

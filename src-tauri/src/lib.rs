@@ -283,6 +283,9 @@ pub fn run() {
             // Chat commands
             chat::send_message,
             chat::stop_streaming,
+            chat::approve_permission_request,
+            chat::deny_permission_request,
+            chat::cancel_permission_request,
             chat::get_messages,
             chat::create_conversation,
             chat::delete_conversation,

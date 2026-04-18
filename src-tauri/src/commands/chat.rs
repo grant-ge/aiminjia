@@ -37,6 +37,39 @@ pub async fn stop_streaming(
 }
 
 #[tauri::command]
+pub async fn approve_permission_request(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    tool_call_id: String,
+    updated_input: Option<serde_json::Value>,
+) -> Result<(), String> {
+    adapter
+        .approve_permission_request(tool_call_id, updated_input)
+        .await
+}
+
+#[tauri::command]
+pub async fn deny_permission_request(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    tool_call_id: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    adapter
+        .deny_permission_request(tool_call_id, message)
+        .await
+}
+
+#[tauri::command]
+pub async fn cancel_permission_request(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    tool_call_id: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    adapter
+        .cancel_permission_request(tool_call_id, message)
+        .await
+}
+
+#[tauri::command]
 pub async fn get_messages(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,

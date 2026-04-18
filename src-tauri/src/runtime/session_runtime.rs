@@ -11,9 +11,12 @@ use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
-use crate::runtime::ids::RunId;
+use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::query_engine::QueryEngine;
-use crate::runtime::store::{AuthorizedWorkspaceRef, AuthorizedWorkspaceStore};
+use crate::runtime::store::{
+    AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequestStore,
+    PendingPermissionResolution,
+};
 use crate::runtime::state::TurnState;
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -36,6 +39,7 @@ pub struct SessionRuntime {
     /// hierarchy that `stop_streaming` / `RuntimeRunRegistry` uses, so that the
     /// runtime path and the legacy agent-loop path share one cancel tree.
     cancel_token: Option<CancellationToken>,
+    pending_permission_store: Arc<PendingPermissionRequestStore>,
 }
 
 impl SessionRuntime {
@@ -47,6 +51,7 @@ impl SessionRuntime {
             llm_executor: None,
             authorized_workspace_store: None,
             cancel_token: None,
+            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
     }
 
@@ -67,7 +72,16 @@ impl SessionRuntime {
             llm_executor: Some(executor),
             authorized_workspace_store: None,
             cancel_token: None,
+            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
+    }
+
+    pub fn with_pending_permission_store(
+        mut self,
+        pending_permission_store: Arc<PendingPermissionRequestStore>,
+    ) -> Self {
+        self.pending_permission_store = pending_permission_store;
+        self
     }
 
     pub fn with_authorized_workspace_store(
@@ -161,7 +175,28 @@ impl SessionRuntime {
         self.event_bus.recorded()
     }
 
-    pub fn clear_session_state(&self, session_id: &crate::runtime::ids::SessionId) {
+    pub fn resolve_permission_request(
+        &self,
+        tool_call_id: &ToolCallId,
+        resolution: PendingPermissionResolution,
+    ) -> Result<()> {
+        self.pending_permission_store.resolve(tool_call_id, resolution)
+    }
+
+    pub fn cancel_pending_permission_requests_for_session(
+        &self,
+        session_id: &SessionId,
+        message: &str,
+    ) -> usize {
+        self.pending_permission_store
+            .cancel_for_session(session_id, message)
+    }
+
+    pub fn clear_session_state(&self, session_id: &SessionId) {
+        self.cancel_pending_permission_requests_for_session(
+            session_id,
+            "Permission request cancelled because the session state was cleared.",
+        );
         let session_key = session_id.as_str().to_string();
         self.session_query_engines
             .lock()
@@ -171,7 +206,7 @@ impl SessionRuntime {
 
     fn query_engine_for_session(
         &self,
-        session_id: &crate::runtime::ids::SessionId,
+        session_id: &SessionId,
     ) -> QueryEngine {
         let authorized_workspace = self
             .authorized_workspace_store
@@ -197,10 +232,11 @@ impl SessionRuntime {
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
         if let Some(ref executor) = self.llm_executor {
-            return RuntimeChatTurnDriver::with_llm_executor(
+            return RuntimeChatTurnDriver::with_llm_executor_and_permission_store(
                 query_engine,
                 self.event_bus.clone(),
                 executor.clone(),
+                self.pending_permission_store.clone(),
             );
         }
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
@@ -342,5 +378,41 @@ mod tests {
             !Arc::ptr_eq(&read_state_before_clear, &read_state_after_clear),
             "cleared session must get a fresh read_file_state cache"
         );
+    }
+
+    #[test]
+    fn clear_session_state_cancels_pending_permission_requests_for_that_session() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone());
+        let session_id = SessionId::new("session-b2-clear-pending");
+        let tool_call_id = ToolCallId::new("tc-clear-pending");
+
+        let resolution_rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id: session_id.clone(),
+                run_id: RunId::new("run-clear-pending"),
+                tool_name: "echo_tool".to_string(),
+                message: "need permission".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "echo_tool".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+            })
+            .unwrap();
+
+        runtime.clear_session_state(&session_id);
+
+        assert!(pending_permission_store.get(&tool_call_id).is_none());
+        let resolution = resolution_rx.blocking_recv().unwrap();
+        assert!(matches!(
+            resolution,
+            PendingPermissionResolution::Cancel { ref message }
+                if message.contains("session state was cleared")
+        ));
     }
 }

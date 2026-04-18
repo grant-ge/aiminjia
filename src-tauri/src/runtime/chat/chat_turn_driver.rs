@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashSet;
+use std::time::Duration;
 
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::post_process;
@@ -18,6 +19,10 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::query_engine::QueryEngine;
+use crate::runtime::store::{
+    PendingPermissionRequest, PendingPermissionRequestStore,
+    PendingPermissionResolution,
+};
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::permission::PermissionDecision;
 
@@ -202,6 +207,7 @@ pub struct RuntimeChatTurnDriver {
     event_bus: RuntimeEventBus,
     /// S4 executor：只做 provider streaming adapter。
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
+    pending_permission_store: Arc<PendingPermissionRequestStore>,
 }
 
 const SYNTHETIC_CANCELLED_TOOL_RESULT: &str =
@@ -277,6 +283,7 @@ fn permission_ask_event_from_round_result(
         ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
             tool_call_id,
             tool_name,
+            original_request: _,
             decision:
                 PermissionDecision::Ask {
                     message,
@@ -299,6 +306,7 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             llm_executor: None,
+            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
     }
 
@@ -311,7 +319,147 @@ impl RuntimeChatTurnDriver {
             query_engine,
             event_bus,
             llm_executor: Some(executor),
+            pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
         }
+    }
+
+    pub fn with_llm_executor_and_permission_store(
+        query_engine: QueryEngine,
+        event_bus: RuntimeEventBus,
+        executor: Arc<dyn RuntimeLlmExecutor>,
+        pending_permission_store: Arc<PendingPermissionRequestStore>,
+    ) -> Self {
+        Self {
+            query_engine,
+            event_bus,
+            llm_executor: Some(executor),
+            pending_permission_store,
+        }
+    }
+
+    async fn await_permission_resolution(
+        &self,
+        cancel: &CancellationToken,
+        tool_call_id: &str,
+        mut rx: tokio::sync::oneshot::Receiver<PendingPermissionResolution>,
+    ) -> PendingPermissionResolution {
+        loop {
+            tokio::select! {
+                resolution = &mut rx => {
+                    return resolution.unwrap_or_else(|_| PendingPermissionResolution::Cancel {
+                        message: "Permission request was closed before it was resolved.".to_string(),
+                    });
+                }
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if cancel.is_cancelled() {
+                        let _ = self.pending_permission_store.resolve(
+                            &tool_call_id.into(),
+                            PendingPermissionResolution::Cancel {
+                                message: "Permission request cancelled because the turn was cancelled.".to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    async fn resolve_permission_asks(
+        &self,
+        turn: &TurnState,
+        cancel: &CancellationToken,
+        round_results: Vec<ToolRoundResult>,
+    ) -> Result<Vec<ToolRoundResult>> {
+        let mut resolved_results = Vec::with_capacity(round_results.len());
+
+        for round_result in round_results {
+            let ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+                tool_call_id,
+                tool_name,
+                original_request,
+                decision:
+                    PermissionDecision::Ask {
+                        message,
+                        suggestions,
+                        ..
+                    },
+            }) = &round_result else {
+                resolved_results.push(round_result);
+                continue;
+            };
+
+            let pending_request = PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone().into(),
+                session_id: turn.session_id().clone(),
+                run_id: turn.run_id().clone(),
+                tool_name: tool_name.clone(),
+                message: message.clone(),
+                suggestions: suggestions.clone(),
+                original_request: original_request.clone(),
+            };
+            let resolution_rx = self.pending_permission_store.insert(pending_request)?;
+
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    turn.session_id().clone(),
+                    turn.run_id().clone(),
+                    RuntimeEventKind::PermissionAskRequired {
+                        tool_call_id: tool_call_id.clone().into(),
+                        tool_name: tool_name.clone(),
+                        message: message.clone(),
+                        suggestions: suggestions.clone(),
+                    },
+                ))
+                .await?;
+
+            let resolution = self
+                .await_permission_resolution(cancel, tool_call_id, resolution_rx)
+                .await;
+
+            let resolved = match resolution {
+                PendingPermissionResolution::Allow { updated_input } => {
+                    ToolRoundResult::Ok(
+                        self.query_engine
+                            .replay_tool_call_with_bus(
+                                turn,
+                                &self.event_bus,
+                                original_request.clone(),
+                                updated_input,
+                            )
+                            .await
+                            .map_err(|err| anyhow::anyhow!("failed to replay approved tool call: {err}"))?,
+                    )
+                }
+                PendingPermissionResolution::Deny { message }
+                | PendingPermissionResolution::Cancel { message } => {
+                    self.event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::ToolCallCompleted {
+                                tool_call_id: tool_call_id.clone().into(),
+                                tool_name: tool_name.clone(),
+                                is_error: true,
+                            },
+                        ))
+                        .await?;
+                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        content: message,
+                        is_error: true,
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
+                        max_result_size_chars: 8_000,
+                    })
+                }
+            };
+
+            resolved_results.push(resolved);
+        }
+
+        Ok(resolved_results)
     }
 
     pub async fn run_chat_turn(
@@ -576,19 +724,9 @@ impl RuntimeChatTurnDriver {
                         break 'turn;
                     }
 
-                    for round_result in &round_results {
-                        if let Some(event_kind) =
-                            permission_ask_event_from_round_result(round_result)
-                        {
-                            self.event_bus
-                                .emit(RuntimeEvent::new(
-                                    session_id.clone(),
-                                    run_id.clone(),
-                                    event_kind,
-                                ))
-                                .await?;
-                        }
-                    }
+                    let round_results = self
+                        .resolve_permission_asks(turn, &cancel, round_results)
+                        .await?;
 
                     // Collect and merge results into state.
                     let results = tool_result_collector::collect_results(round_results);

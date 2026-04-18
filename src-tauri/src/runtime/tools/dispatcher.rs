@@ -89,8 +89,9 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
-        let permission_decision = if let Some(decision) = tool.check_permissions(&input, &ctx).await
-        {
+        let permission_decision = if let Some(decision) = ctx.permission_override.clone() {
+            decision
+        } else if let Some(decision) = tool.check_permissions(&input, &ctx).await {
             decision
         } else {
             self.permission_pipeline.authorize(&definition, &input, &ctx)
