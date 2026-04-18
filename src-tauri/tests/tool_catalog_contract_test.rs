@@ -144,3 +144,44 @@ fn tool_definition_with_max_result_size_chars_sets_field() {
     let def = ToolDefinition::new("execute_python", "desc").with_max_result_size_chars(32_000);
     assert_eq!(def.default_max_result_size_chars, 32_000);
 }
+
+#[test]
+fn catalog_execute_python_has_32000_limit() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    assert_eq!(def.default_max_result_size_chars, 32_000);
+}
+
+#[test]
+fn catalog_read_workspace_file_has_16000_limit() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+    let def = TOOL_CATALOG.get("read_workspace_file").unwrap();
+    assert_eq!(def.default_max_result_size_chars, 16_000);
+}
+
+#[test]
+fn catalog_list_directory_has_4000_limit() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+    let def = TOOL_CATALOG.get("list_directory").unwrap();
+    assert_eq!(def.default_max_result_size_chars, 4_000);
+}
+
+#[test]
+fn catalog_search_files_has_4000_limit() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+    let def = TOOL_CATALOG.get("search_files").unwrap();
+    assert_eq!(def.default_max_result_size_chars, 4_000);
+}
+
+#[test]
+fn catalog_other_tools_default_to_8000_when_not_overridden() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in ["web_search", "plan_update", "progress_update", "save_analysis_note"] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert_eq!(
+            def.default_max_result_size_chars, 8_000,
+            "{} should default to 8000", id
+        );
+    }
+}

@@ -73,6 +73,7 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new("list_directory", "列出授权工作目录中的文件和子目录")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
+            .with_max_result_size_chars(4_000)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -86,6 +87,7 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new("read_workspace_file", "读取授权工作目录中的文本文件内容")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
+            .with_max_result_size_chars(16_000)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -101,6 +103,7 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new("search_files", "在授权工作目录中搜索匹配 glob 模式的文件")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
+            .with_max_result_size_chars(4_000)
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
@@ -338,6 +341,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n【文件管理函数】_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件。\
             \n\n注意：Power 工具，有 session 状态和文件写出副作用。代码执行出错时直接修正重试。")
             .with_kind(ToolKind::Power)
+            .with_max_result_size_chars(32_000)
             .with_capability_scope(["python:exec", "workspace:write"]),
         json!({
             "type": "object",
