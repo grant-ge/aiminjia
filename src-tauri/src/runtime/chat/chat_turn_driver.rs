@@ -221,9 +221,10 @@ fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'stat
         Some(CancellationReason::BackgroundStop) => {
             "Tool execution was cancelled because the background run stopped."
         }
-        Some(CancellationReason::UserCancel) | None => {
+        Some(CancellationReason::UserCancel) => {
             "Tool execution was interrupted by user cancellation."
         }
+        None => "Tool execution was interrupted before completion.",
     }
 }
 
@@ -903,6 +904,37 @@ mod tests {
         assert!(
             content.contains("interrupted before completion"),
             "synthetic tool result should reflect the cancel reason"
+        );
+    }
+
+    #[test]
+    fn cancel_finalizer_defaults_missing_reason_to_generic_interrupt() {
+        let mut state = TurnIterationState::new(vec![json!({
+            "role": "assistant",
+            "content": "",
+            "toolCalls": [
+                {"id": "tc-b6-none", "name": "unknown_tool", "arguments": {}}
+            ]
+        })]);
+
+        mark_turn_cancelled_with_synthetic_results(&mut state, None);
+
+        let synthetic = state
+            .messages
+            .iter()
+            .find(|msg| {
+                msg.get("role").and_then(|v| v.as_str()) == Some("tool")
+                    && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-b6-none")
+            })
+            .expect("cancel finalizer should inject missing synthetic tool result");
+        let content = synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+
+        assert!(
+            content.contains("interrupted before completion"),
+            "missing cancel reason should fall back to generic interrupt wording"
         );
     }
 }

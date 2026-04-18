@@ -191,6 +191,33 @@ fn injects_reason_specific_synthetic_tool_result_for_interrupt() {
 }
 
 #[test]
+fn injects_generic_interrupt_tool_result_when_cancel_reason_is_missing() {
+    let mut messages = vec![json!({
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+            {"id": "tc-a1-missing-reason", "name": "unknown_tool", "arguments": {}}
+        ]
+    })];
+
+    let injected = inject_synthetic_tool_results_for_missing_calls(&mut messages, None);
+    assert_eq!(injected, 1, "must inject one synthetic tool result");
+
+    let synthetic = messages
+        .iter()
+        .find(|msg| {
+            msg.get("role").and_then(|v| v.as_str()) == Some("tool")
+                && msg.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-a1-missing-reason")
+        })
+        .expect("synthetic tool result should exist");
+
+    assert_eq!(
+        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        "Tool execution was interrupted before completion.",
+    );
+}
+
+#[test]
 fn injects_reason_specific_synthetic_tool_result_for_sibling_error() {
     let mut messages = vec![json!({
         "role": "assistant",
