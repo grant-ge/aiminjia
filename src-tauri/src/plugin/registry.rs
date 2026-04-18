@@ -405,7 +405,7 @@ impl ToolRegistry {
                     workspace_id: Some(ctx.conversation_id.clone()),
                     browser_available,
                     file_ops,
-                    read_file_state: None,
+                    read_file_state: ctx.read_file_state.clone(),
                     file_reading_limits: Some(
                         crate::runtime::tools::capability::FileReadingLimits::default(),
                     ),

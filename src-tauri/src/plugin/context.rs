@@ -44,6 +44,7 @@ use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
 use crate::python::session::PythonSessionManager;
 use crate::runtime::agent::AgentRuntime;
+use crate::runtime::tools::capability::FileStateCache;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::storage::file_manager::FileManager;
@@ -99,6 +100,9 @@ pub struct PluginContext {
     pub event_bus: Option<RuntimeEventBus>,
     /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    /// Transitional bridge for request-scoped runtime executions that still
+    /// enter through PluginContext (for example subagent tool loops).
+    pub read_file_state: Option<Arc<FileStateCache>>,
 }
 
 impl PluginContext {

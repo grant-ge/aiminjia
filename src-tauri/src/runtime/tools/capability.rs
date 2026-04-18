@@ -54,6 +54,26 @@ impl FileStateCache {
         }
     }
 
+    pub fn from_other(other: &FileStateCache) -> Self {
+        let mut cloned = lru::LruCache::new(
+            NonZeroUsize::new(100).expect("FileStateCache capacity must be non-zero"),
+        );
+        let guard = other
+            .cache
+            .lock()
+            .expect("FileStateCache mutex poisoned");
+        for (path, state) in guard.iter() {
+            cloned.put(path.clone(), state.clone());
+        }
+        Self {
+            cache: Mutex::new(cloned),
+        }
+    }
+
+    pub fn clone_for_child(&self) -> Arc<FileStateCache> {
+        Arc::new(Self::from_other(self))
+    }
+
     pub fn get(&self, path: &Path) -> Option<FileState> {
         self.cache
             .lock()

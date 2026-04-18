@@ -30,6 +30,11 @@ impl DefaultBrowseDataLauncher {
         ctx.session_id = launch_ctx.session_id.clone();
         ctx.run_id = launch_ctx.parent_run_id.clone();
         ctx.agent_id = launch_ctx.parent_agent_id.clone();
+        ctx.read_file_state = self
+            .base_ctx
+            .read_file_state
+            .as_ref()
+            .map(|cache| cache.clone_for_child());
         ctx
     }
 }
@@ -584,6 +589,111 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         url: optional_str(args, "url").map(str::to_string),
     };
     launch_browse_data_with_plugin_ctx(ctx, request, None, ctx.run_id.is_some()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::tools::capability::{FileState, FileStateCache};
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    #[allow(deprecated)]
+    fn make_plugin_ctx(
+        workspace: &std::path::Path,
+        read_file_state: Option<Arc<FileStateCache>>,
+    ) -> PluginContext {
+        let storage = Arc::new(AppStorage::new(workspace).expect("AppStorage::new failed"));
+        let file_manager = Arc::new(FileManager::new(workspace));
+        let session_manager = Arc::new(crate::python::session::PythonSessionManager::new(
+            workspace.to_path_buf(),
+            None,
+        ));
+
+        PluginContext {
+            storage,
+            file_manager,
+            workspace_path: workspace.to_path_buf(),
+            conversation_id: "parent-conv".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("parent-conv"),
+            run_id: Some(crate::runtime::ids::RunId::new("run-parent")),
+            agent_id: Some(crate::runtime::ids::AgentId::new("agent-parent")),
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: None,
+            session_manager,
+            auth_manager: None,
+            connector_engine: None,
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
+            authorized_workspace: None,
+            read_file_state,
+        }
+    }
+
+    #[test]
+    fn scoped_plugin_ctx_clones_read_file_state_for_child() {
+        let workspace = TempDir::new().expect("TempDir::new failed");
+        let target = PathBuf::from("/tmp/subagent-launcher-cache.txt");
+        let parent_cache = Arc::new(FileStateCache::new());
+        parent_cache.set(
+            target.clone(),
+            FileState {
+                content: "parent".to_string(),
+                mtime_secs: 1_000,
+                offset: None,
+                limit: None,
+            },
+        );
+
+        let launcher = DefaultBrowseDataLauncher::new(make_plugin_ctx(
+            workspace.path(),
+            Some(parent_cache.clone()),
+        ));
+
+        let child_ctx = launcher.scoped_plugin_ctx(&BrowseDataLaunchContext {
+            session_id: crate::runtime::ids::SessionId::new("child-conv"),
+            parent_run_id: Some(crate::runtime::ids::RunId::new("run-child-parent")),
+            parent_agent_id: Some(crate::runtime::ids::AgentId::new("agent-child-parent")),
+            cancellation: crate::runtime::cancellation::CancellationToken::new(),
+        });
+
+        let child_cache = child_ctx
+            .read_file_state
+            .expect("scoped subagent ctx should carry read_file_state");
+        assert!(
+            !Arc::ptr_eq(&parent_cache, &child_cache),
+            "child subagent context must receive a cloned file-state cache"
+        );
+        let inherited = child_cache
+            .get(&target)
+            .expect("child cache should inherit parent snapshot");
+        assert_eq!(inherited.content, "parent");
+
+        child_cache.set(
+            target.clone(),
+            FileState {
+                content: "child".to_string(),
+                mtime_secs: 2_000,
+                offset: None,
+                limit: None,
+            },
+        );
+
+        let parent_state = parent_cache
+            .get(&target)
+            .expect("parent cache should stay intact");
+        assert_eq!(parent_state.content, "parent");
+        assert_eq!(parent_state.mtime_secs, 1_000);
+    }
 }
 
 /// Handle extract_table_data — extract current page table data + pagination info.
