@@ -403,14 +403,15 @@ fn format_browse_data_subagent_result(
     ctx: &PluginContext,
     result: &crate::llm::sub_agent::SubAgentResult,
 ) -> String {
+    let envelope = &result.envelope;
     let mut output = format!(
         "Browser agent completed in {} iterations.\n\n",
-        result.iterations_used
+        envelope.iterations_used
     );
 
-    if !result.files.is_empty() {
+    if !envelope.generated_files.is_empty() {
         output.push_str("### Extracted Data Files\n");
-        for f in &result.files {
+        for f in &envelope.generated_files {
             let src = std::path::Path::new(f);
             if src.exists() {
                 let file_name = src
@@ -452,20 +453,20 @@ fn format_browse_data_subagent_result(
         );
     }
 
-    if !result.output.is_empty() {
+    if !envelope.output.is_empty() {
         output.push_str("### Agent Summary\n");
-        if result.output.len() > 2000 {
-            let end = result
+        if envelope.output.len() > 2000 {
+            let end = envelope
                 .output
                 .char_indices()
                 .take_while(|(i, _)| *i < 2000)
                 .last()
                 .map(|(i, c)| i + c.len_utf8())
                 .unwrap_or(0);
-            output.push_str(&result.output[..end]);
+            output.push_str(&envelope.output[..end]);
             output.push_str("\n...(truncated)");
         } else {
-            output.push_str(&result.output);
+            output.push_str(&envelope.output);
         }
     }
 
@@ -804,6 +805,16 @@ mod tests {
             output: "child completed analysis".to_string(),
             files: vec![child_file.display().to_string()],
             iterations_used: 3,
+            envelope:
+                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                    schema_version: 1,
+                    output: "child completed analysis".to_string(),
+                    iterations_used: 3,
+                    generated_files: vec![child_file.display().to_string()],
+                    terminal_tool_results: Vec::new(),
+                    transcript_snapshot: Vec::new(),
+                    transcript_ref: Some("child-run-1".to_string()),
+                },
         };
 
         let output = format_browse_data_subagent_result(&ctx, &result);
@@ -833,12 +844,53 @@ mod tests {
             output: String::new(),
             files: vec![missing.display().to_string()],
             iterations_used: 1,
+            envelope:
+                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                    schema_version: 1,
+                    output: String::new(),
+                    iterations_used: 1,
+                    generated_files: vec![missing.display().to_string()],
+                    terminal_tool_results: Vec::new(),
+                    transcript_snapshot: Vec::new(),
+                    transcript_ref: Some("child-run-2".to_string()),
+                },
         };
 
         let output = format_browse_data_subagent_result(&ctx, &result);
 
         assert!(output.contains("### Extracted Data Files"));
         assert!(output.contains(missing.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn format_browse_data_subagent_result_prefers_envelope_over_legacy_fields() {
+        let workspace = TempDir::new().expect("TempDir::new failed");
+        let ctx = make_plugin_ctx(workspace.path(), None);
+        let child_file = workspace.path().join("child-envelope-result.json");
+        std::fs::write(&child_file, br#"{"rows":[42]}"#).expect("write child file");
+
+        let result = crate::llm::sub_agent::SubAgentResult {
+            output: "legacy output should not be rendered".to_string(),
+            files: vec!["/tmp/legacy-only.json".to_string()],
+            iterations_used: 99,
+            envelope:
+                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                    schema_version: 1,
+                    output: "envelope output wins".to_string(),
+                    iterations_used: 2,
+                    generated_files: vec![child_file.display().to_string()],
+                    terminal_tool_results: Vec::new(),
+                    transcript_snapshot: Vec::new(),
+                    transcript_ref: Some("child-run-envelope".to_string()),
+                },
+        };
+
+        let output = format_browse_data_subagent_result(&ctx, &result);
+
+        assert!(output.contains("Browser agent completed in 2 iterations."));
+        assert!(output.contains("envelope output wins"));
+        assert!(!output.contains("legacy output should not be rendered"));
+        assert!(!output.contains("/tmp/legacy-only.json"));
     }
 
     #[test]

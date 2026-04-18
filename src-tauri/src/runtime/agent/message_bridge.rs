@@ -1,5 +1,6 @@
 use crate::runtime::events::{AgentIdleScope, RuntimeEventKind};
 use crate::runtime::ids::AgentId;
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 
 /// Build the `AgentIdle` event kind for a completed sub-agent.
 /// This event signals the UI that the background sub-agent has finished.
@@ -30,6 +31,11 @@ pub fn format_sub_agent_summary(output: &str, iterations_used: usize, files_coun
         "iterations={} files={} output={}",
         iterations_used, files_count, short
     )
+}
+
+/// Serialize a structured sub-agent envelope for parent-side storage/retrieval.
+pub fn format_sub_agent_envelope_summary(envelope: &SubAgentResultEnvelope) -> String {
+    envelope.to_storage_summary()
 }
 
 #[cfg(test)]

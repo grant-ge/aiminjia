@@ -17,6 +17,9 @@ use crate::plugin::context::PluginContext;
 use crate::plugin::registry::ToolRegistry;
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
 use crate::runtime::agent::message_bridge;
+use crate::runtime::agent::subagent_result_envelope::{
+    SubAgentResultEnvelope, SubAgentTerminalToolResult, SubAgentTranscriptEntry,
+};
 use crate::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use crate::runtime::ids::RunId;
 use crate::runtime::tools::permission::PermissionDecision;
@@ -108,6 +111,8 @@ pub struct SubAgentResult {
     pub files: Vec<String>,
     /// How many iterations were used.
     pub iterations_used: usize,
+    /// Structured result envelope shared by foreground/background parent flows.
+    pub envelope: SubAgentResultEnvelope,
 }
 
 /// Run a sub-agent loop: LLM + tool execution with isolated context.
@@ -152,6 +157,7 @@ pub async fn run_sub_agent(
     let mut files: Vec<String> = vec![];
     let mut iterations_used = 0;
     let mut pending_ask: Option<PermissionDecision> = None;
+    let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
 
     let agent_runtime = plugin_ctx
         .agent_runtime
@@ -261,7 +267,10 @@ pub async fn run_sub_agent(
 
         // If no tool calls, we're done
         if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
-            output = iter_content;
+            output = iter_content.clone();
+            if !iter_content.is_empty() {
+                messages.push(ChatMessage::text("assistant", iter_content));
+            }
             break;
         }
 
@@ -283,6 +292,13 @@ pub async fn run_sub_agent(
             // Check allowed
             if !config.allowed_tools.contains(&tc.name) {
                 let err_msg = format!("Tool '{}' not available in this sub-agent", tc.name);
+                terminal_tool_results.push(SubAgentTerminalToolResult {
+                    tool_call_id: tc.id.clone(),
+                    tool_name: tc.name.clone(),
+                    success: false,
+                    summary: err_msg.clone(),
+                    generated_files: Vec::new(),
+                });
                 messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
                 continue;
             }
@@ -315,6 +331,18 @@ pub async fn run_sub_agent(
 
             match result {
                 Ok(tool_output) => {
+                    let tool_summary = if tool_output.content.len() > 240 {
+                        format!("{}...", safe_truncate(&tool_output.content, 240))
+                    } else {
+                        tool_output.content.clone()
+                    };
+                    terminal_tool_results.push(SubAgentTerminalToolResult {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        success: !tool_output.is_error,
+                        summary: tool_summary,
+                        generated_files: tool_output.generated_files.clone(),
+                    });
                     // Emit tool:completed
                     if let Some(ref app) = config.app_handle {
                         let summary = if tool_output.content.len() > 100 {
@@ -388,6 +416,18 @@ pub async fn run_sub_agent(
                         &tc.id,
                         decision.clone(),
                     );
+                    terminal_tool_results.push(SubAgentTerminalToolResult {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        success: false,
+                        summary: "Permission Ask required".to_string(),
+                        generated_files: Vec::new(),
+                    });
+                    messages.push(ChatMessage::tool_result(
+                        &tc.id,
+                        &tc.name,
+                        "Permission Ask required".to_string(),
+                    ));
                     warn!(
                         "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
                         tc.name, bubbled
@@ -397,6 +437,13 @@ pub async fn run_sub_agent(
                 }
                 Err(e) => {
                     let err_msg = format!("Tool error: {}", e);
+                    terminal_tool_results.push(SubAgentTerminalToolResult {
+                        tool_call_id: tc.id.clone(),
+                        tool_name: tc.name.clone(),
+                        success: false,
+                        summary: err_msg.clone(),
+                        generated_files: Vec::new(),
+                    });
                     warn!("[SubAgent] Tool '{}' failed: {}", tc.name, err_msg);
                     if let Some(ref app) = config.app_handle {
                         let _ = app.emit(
@@ -419,6 +466,33 @@ pub async fn run_sub_agent(
         output = "Sub-agent reached iteration limit.".to_string();
     }
 
+    let mut generated_files = files.clone();
+    generated_files.sort();
+    generated_files.dedup();
+
+    let mut transcript_snapshot: Vec<SubAgentTranscriptEntry> = messages
+        .iter()
+        .rev()
+        .take(16)
+        .map(|m| SubAgentTranscriptEntry {
+            role: m.role.clone(),
+            content: safe_truncate(&m.content, 800).to_string(),
+            tool_call_id: m.tool_call_id.clone(),
+            tool_name: m.name.clone(),
+        })
+        .collect();
+    transcript_snapshot.reverse();
+
+    let envelope = SubAgentResultEnvelope {
+        schema_version: 1,
+        output: output.clone(),
+        iterations_used,
+        generated_files: generated_files.clone(),
+        terminal_tool_results,
+        transcript_snapshot,
+        transcript_ref: Some(child_run_id.as_str().to_string()),
+    };
+
     // Clean up gateway active task entry
     gateway.clear_task(&sub_conv_id);
     plugin_ctx.session_manager.destroy_run(&child_run_id).await;
@@ -433,7 +507,7 @@ pub async fn run_sub_agent(
                 (plugin_ctx.event_bus.clone(), config.parent_run_id.clone())
             {
                 let summary =
-                    message_bridge::format_sub_agent_summary(&output, iterations_used, files.len());
+                    message_bridge::format_sub_agent_envelope_summary(&envelope);
                 let _ = agent_runtime
                     .complete_background_run(
                         &child_run_id,
@@ -466,8 +540,9 @@ pub async fn run_sub_agent(
 
     Ok(SubAgentResult {
         output,
-        files,
+        files: generated_files,
         iterations_used,
+        envelope,
     })
 }
 

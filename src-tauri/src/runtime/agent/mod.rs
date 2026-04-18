@@ -6,6 +6,7 @@ pub mod invocation;
 pub mod message_bridge;
 pub mod python_recovery;
 pub mod resume;
+pub mod subagent_result_envelope;
 pub mod team;
 pub mod worktree;
 
