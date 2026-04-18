@@ -15,6 +15,15 @@ export interface ConversationTaskState {
   runId: string
 }
 
+export interface PendingAsk {
+  conversationId: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  message: string
+  suggestions: string[] | null
+}
+
 export interface ConversationStreamState {
   isStreaming: boolean
   streamingContent: string
@@ -26,6 +35,7 @@ export interface StreamingState {
   busyConversations: Set<string>
   streamStates: Record<string, ConversationStreamState>
   taskStates: Record<string, ConversationTaskState[]>
+  pendingAsks: Map<string, PendingAsk>
   isStreaming: boolean
   streamingContent: string
   toolExecutions: ToolExecution[]
@@ -41,6 +51,9 @@ export interface StreamingState {
   updateConversationToolExecution: (convId: string, toolId: string, update: Partial<ToolExecution>) => void
   setConversationAgentPhase: (convId: string, phase: AgentPhase | undefined) => void
   upsertConversationTaskState: (convId: string, task: ConversationTaskState) => void
+  addPendingAsk: (ask: PendingAsk) => void
+  removePendingAsk: (toolCallId: string) => void
+  clearConversationPendingAsks: (conversationId: string) => void
   setStreaming: (isStreaming: boolean) => void
   setStreamingContent: (content: string) => void
   appendStreamingContent: (delta: string) => void
@@ -119,6 +132,7 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
     busyConversations: new Set(),
     streamStates: {},
     taskStates: {},
+    pendingAsks: new Map(),
     isStreaming: false,
     streamingContent: '',
     toolExecutions: [],
@@ -249,6 +263,36 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
               )
             : [...existing, task]
         return { taskStates: { ...state.taskStates, [convId]: updated } }
+      }),
+
+    addPendingAsk: (ask) =>
+      set((state) => {
+        const next = new Map(state.pendingAsks)
+        next.set(ask.toolCallId, ask)
+        return { pendingAsks: next }
+      }),
+
+    removePendingAsk: (toolCallId) =>
+      set((state) => {
+        if (!state.pendingAsks.has(toolCallId)) {
+          return {}
+        }
+        const next = new Map(state.pendingAsks)
+        next.delete(toolCallId)
+        return { pendingAsks: next }
+      }),
+
+    clearConversationPendingAsks: (conversationId) =>
+      set((state) => {
+        const next = new Map(state.pendingAsks)
+        let changed = false
+        for (const [toolCallId, ask] of next) {
+          if (ask.conversationId === conversationId) {
+            next.delete(toolCallId)
+            changed = true
+          }
+        }
+        return changed ? { pendingAsks: next } : {}
       }),
 
     setStreaming: (isStreaming) => {

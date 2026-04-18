@@ -11,6 +11,7 @@ function resetChatStore() {
     busyConversations: new Set(),
     streamStates: {},
     taskStates: {},
+    pendingAsks: new Map(),
     isStreaming: false,
     streamingContent: '',
     toolExecutions: [],
@@ -56,5 +57,78 @@ describe('streamingStore view', () => {
 
     expect(useChatStore.getState().toolExecutions).toHaveLength(1)
     expect(useChatStore.getState().toolExecutions[0].toolId).toBe('tool-1')
+  })
+})
+
+describe('pendingAsks state', () => {
+  beforeEach(() => {
+    resetChatStore()
+  })
+
+  it('addPendingAsk stores ask keyed by toolCallId', () => {
+    const store = useStreamingStore.getState()
+    store.addPendingAsk({
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      toolCallId: 'tc-abc',
+      toolName: 'execute_python',
+      message: 'Run code?',
+      suggestions: null,
+    })
+
+    const next = useStreamingStore.getState()
+    expect(next.pendingAsks.get('tc-abc')).toBeDefined()
+    expect(next.pendingAsks.get('tc-abc')?.toolName).toBe('execute_python')
+  })
+
+  it('removePendingAsk removes by toolCallId', () => {
+    const store = useStreamingStore.getState()
+    store.addPendingAsk({
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      toolCallId: 'tc-abc',
+      toolName: 'execute_python',
+      message: 'Run code?',
+      suggestions: null,
+    })
+
+    store.removePendingAsk('tc-abc')
+
+    expect(useStreamingStore.getState().pendingAsks.has('tc-abc')).toBe(false)
+  })
+
+  it('clearConversationPendingAsks removes all asks for a given conversationId', () => {
+    const store = useStreamingStore.getState()
+    store.addPendingAsk({
+      conversationId: 'conv-1',
+      runId: 'r1',
+      toolCallId: 'tc-1',
+      toolName: 'a',
+      message: 'm',
+      suggestions: null,
+    })
+    store.addPendingAsk({
+      conversationId: 'conv-1',
+      runId: 'r1',
+      toolCallId: 'tc-2',
+      toolName: 'b',
+      message: 'm',
+      suggestions: null,
+    })
+    store.addPendingAsk({
+      conversationId: 'conv-2',
+      runId: 'r2',
+      toolCallId: 'tc-3',
+      toolName: 'c',
+      message: 'm',
+      suggestions: null,
+    })
+
+    store.clearConversationPendingAsks('conv-1')
+
+    const next = useStreamingStore.getState()
+    expect(next.pendingAsks.has('tc-1')).toBe(false)
+    expect(next.pendingAsks.has('tc-2')).toBe(false)
+    expect(next.pendingAsks.has('tc-3')).toBe(true)
   })
 })
