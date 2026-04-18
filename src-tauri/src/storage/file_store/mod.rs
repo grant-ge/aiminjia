@@ -27,6 +27,7 @@
 //!         ├── conv.json        # Metadata (title, mode, timestamps)
 //!         ├── file_index.json  # File records (uploads + generated)
 //!         ├── analysis.json    # Analysis state
+//!         ├── compact_boundaries.jsonl # Compact boundary records
 //!         ├── _current         # Shard metadata "{shard}:{seq}"
 //!         ├── messages.N.jsonl # Message shards (100 msgs each)
 //!         ├── notes/           # Analysis notes
@@ -38,6 +39,7 @@
 pub mod analysis;
 pub mod audit;
 pub mod cache;
+pub mod compact_boundaries;
 pub mod cognitive;
 pub mod config;
 pub mod conversations;
@@ -184,6 +186,25 @@ impl AppStorage {
 
     pub fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         Ok(messages::get_messages(&self.base_dir, conversation_id)?)
+    }
+
+    pub fn append_compact_boundary(
+        &self,
+        record: &crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        compact_boundaries::append_compact_boundary(&self.base_dir, record)?;
+        Ok(())
+    }
+
+    pub fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        Ok(compact_boundaries::list_compact_boundaries(
+            &self.base_dir,
+            conversation_id,
+        )?)
     }
 
     pub fn get_recent_messages(
@@ -957,6 +978,20 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
     fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         self.storage.get_messages(conversation_id)
     }
+
+    fn append_compact_boundary(
+        &self,
+        record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        self.storage.append_compact_boundary(&record)
+    }
+
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        self.storage.list_compact_boundaries(conversation_id)
+    }
 }
 
 impl crate::runtime::store::ConversationStore for AppStorage {
@@ -994,6 +1029,20 @@ impl crate::runtime::store::ConversationStore for AppStorage {
 
     fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         self.get_messages(conversation_id)
+    }
+
+    fn append_compact_boundary(
+        &self,
+        record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        self.append_compact_boundary(&record)
+    }
+
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        self.list_compact_boundaries(conversation_id)
     }
 }
 

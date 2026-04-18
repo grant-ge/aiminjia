@@ -2,6 +2,8 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use crate::runtime::chat::compaction::CompactBoundaryRecord;
+
 /// Domain trait for conversation lifecycle operations.
 ///
 /// Replaces direct `AppStorage` calls in runtime/command code, keeping the
@@ -23,6 +25,13 @@ pub trait ConversationStore: Send + Sync {
     fn remove_active_task(&self, conversation_id: &str) -> Result<()>;
     /// Retrieve all messages for a conversation as JSON values.
     fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>>;
+    /// Append a compact boundary record for a conversation.
+    fn append_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<()>;
+    /// List compact boundary records in insertion order for a conversation.
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<CompactBoundaryRecord>>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -34,6 +43,7 @@ pub struct InMemoryConversationStore {
     conversations: Mutex<HashMap<String, String>>,
     messages: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     active_tasks: Mutex<std::collections::HashSet<String>>,
+    compact_boundaries: Mutex<HashMap<String, Vec<CompactBoundaryRecord>>>,
 }
 
 impl InMemoryConversationStore {
@@ -103,6 +113,29 @@ impl ConversationStore for InMemoryConversationStore {
     fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         Ok(self
             .messages
+            .lock()
+            .unwrap()
+            .get(conversation_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn append_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<()> {
+        self.compact_boundaries
+            .lock()
+            .unwrap()
+            .entry(record.conversation_id.clone())
+            .or_default()
+            .push(record);
+        Ok(())
+    }
+
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<CompactBoundaryRecord>> {
+        Ok(self
+            .compact_boundaries
             .lock()
             .unwrap()
             .get(conversation_id)

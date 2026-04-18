@@ -16,6 +16,7 @@
 //!   `RuntimeLlmExecutor`).
 
 use crate::llm::streaming::ChatMessage;
+use serde::{Deserialize, Serialize};
 
 /// Non-destructive context decay: reduce token weight of older tool outputs.
 ///
@@ -29,6 +30,41 @@ use crate::llm::streaming::ChatMessage;
 /// Delegates to [`crate::llm::context_decay::apply_decay`].
 pub fn apply_decay(messages: &[ChatMessage], is_analysis: bool) -> Vec<ChatMessage> {
     crate::llm::context_decay::apply_decay(messages, is_analysis)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompactTrigger {
+    Auto,
+    Manual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactBoundaryRecord {
+    pub id: String,
+    pub conversation_id: String,
+    pub trigger: CompactTrigger,
+    pub pre_tokens: u64,
+    pub post_tokens: u64,
+    pub messages_summarized: usize,
+    pub created_at: String,
+}
+
+pub fn build_compact_boundary_record(
+    conversation_id: &str,
+    trigger: CompactTrigger,
+    pre_tokens: u64,
+    post_tokens: u64,
+    messages_summarized: usize,
+) -> CompactBoundaryRecord {
+    CompactBoundaryRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        conversation_id: conversation_id.to_string(),
+        trigger,
+        pre_tokens,
+        post_tokens,
+        messages_summarized,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    }
 }
 
 // TODO(T15): extract compress_context_if_needed here once LlmGateway is
