@@ -525,6 +525,10 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "read_workspace_file",
     "search_files",
     "get_file_info",
+    "write_file",
+    "edit_file",
+    "bash",
+    "grep_content",
     // Primitive: network
     "web_search",
     // Primitive: browser

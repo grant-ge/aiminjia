@@ -12,6 +12,10 @@ const WORKSPACE_TOOL_NAMES: &[&str] = &[
     "read_workspace_file",
     "search_files",
     "get_file_info",
+    "write_file",
+    "edit_file",
+    "bash",
+    "grep_content",
 ];
 
 pub(crate) async fn build_visible_tool_defs(

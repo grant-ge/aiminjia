@@ -27,6 +27,18 @@ fn browse_data_kind_is_composite() {
     assert!(matches!(def.kind, ToolKind::Composite));
 }
 
+#[test]
+fn all_new_plan_c_tools_are_in_catalog() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in &["write_file", "edit_file", "bash", "grep_content"] {
+        assert!(
+            TOOL_CATALOG.get(id).is_some(),
+            "Tool '{id}' should be registered in TOOL_CATALOG"
+        );
+    }
+}
+
 #[tokio::test]
 async fn get_all_schemas_returns_sorted_by_name() {
     use app_lib::plugin::registry::ToolRegistry;

@@ -6,22 +6,26 @@ use app_lib::runtime::tools::catalog::ToolCatalog;
 
 /// daily assistant skill 允许的工具集（需与 plugin/builtin/skills/daily_assistant.rs 同步）。
 const DAILY_ALLOWED_TOOLS: &[&str] = &[
-    "web_search",
-    "execute_python",
-    "load_file",
     "list_directory",
     "read_workspace_file",
     "search_files",
     "get_file_info",
+    "write_file",
+    "edit_file",
+    "bash",
+    "grep_content",
+    "web_search",
+    "browse_navigate",
+    "read_page_content",
+    "load_file",
+    "execute_python",
+    "browse_data",
     "generate_report",
     "generate_chart",
     "export_data",
-    "browse_navigate",
-    "read_page_content",
-    "browse_data",
-    "save_analysis_note",
     "plan_update",
     "progress_update",
+    "save_analysis_note",
     "save_memory",
     "search_memory",
 ];
@@ -37,6 +41,15 @@ fn daily_skill_allowed_tools_all_exist_in_catalog() {
         missing.is_empty(),
         "Tools referenced in daily skill but not in catalog: {:?}",
         missing
+    );
+}
+
+#[test]
+fn daily_skill_allowed_tools_match_runtime_constant() {
+    assert_eq!(
+        DAILY_ALLOWED_TOOLS,
+        app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS,
+        "tests/skill_tool_contract_test.rs must stay in sync with runtime catalog"
     );
 }
 
