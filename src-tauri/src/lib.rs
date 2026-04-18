@@ -108,8 +108,12 @@ pub fn run() {
             // Initialize runtime orchestration state
             let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
             let agent_store_path = app_data_dir.join("agent_invocations.json");
+            let subagent_transcript_store_dir = app_data_dir.join("subagent_transcripts");
             let agent_runtime = Arc::new(
-                runtime::agent::AgentRuntime::from_storage(agent_store_path)
+                runtime::agent::AgentRuntime::from_storage(
+                    agent_store_path,
+                    subagent_transcript_store_dir,
+                )
                     .unwrap_or_else(|e| {
                         log::warn!(
                             "Failed to create FileAgentInvocationStore: {e}, falling back to in-memory"

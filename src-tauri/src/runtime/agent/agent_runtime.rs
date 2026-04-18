@@ -6,6 +6,9 @@ use crate::runtime::agent::invocation::{
     AgentInvocation, AgentStatus, ChildRunHandle, ResumeChildRunRequest, SpawnChildRunRequest,
 };
 use crate::runtime::agent::message_bridge;
+use crate::runtime::agent::subagent_transcript_store::{
+    FileSubagentTranscriptStore, InMemorySubagentTranscriptStore, SubagentTranscriptStore,
+};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::RuntimeEvent;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
@@ -14,27 +17,45 @@ use crate::runtime::store::{
 };
 
 pub struct AgentRuntime {
-    store: Arc<dyn AgentInvocationStore>,
+    invocation_store: Arc<dyn AgentInvocationStore>,
+    transcript_store: Arc<dyn SubagentTranscriptStore>,
 }
 
 impl AgentRuntime {
-    pub fn new(store: Arc<dyn AgentInvocationStore>) -> Self {
-        Self { store }
+    pub fn new(
+        invocation_store: Arc<dyn AgentInvocationStore>,
+        transcript_store: Arc<dyn SubagentTranscriptStore>,
+    ) -> Self {
+        Self {
+            invocation_store,
+            transcript_store,
+        }
     }
 
     pub fn for_test() -> Self {
-        Self::new(Arc::new(InMemoryAgentInvocationStore::new()))
+        Self::new(
+            Arc::new(InMemoryAgentInvocationStore::new()),
+            Arc::new(InMemorySubagentTranscriptStore::new()),
+        )
     }
 
     pub fn for_resume_test(store: InMemoryAgentInvocationStore) -> Self {
-        Self::new(Arc::new(store))
+        Self::new(
+            Arc::new(store),
+            Arc::new(InMemorySubagentTranscriptStore::new()),
+        )
     }
 
-    pub fn from_storage(store_path: std::path::PathBuf) -> anyhow::Result<Self> {
-        let store =
+    pub fn from_storage(
+        store_path: std::path::PathBuf,
+        transcript_store_path: std::path::PathBuf,
+    ) -> anyhow::Result<Self> {
+        let invocation_store =
             super::file_agent_invocation_store::FileAgentInvocationStore::new(store_path)?;
+        let transcript_store = FileSubagentTranscriptStore::new(transcript_store_path)?;
         Ok(Self {
-            store: Arc::new(store),
+            invocation_store: Arc::new(invocation_store),
+            transcript_store: Arc::new(transcript_store),
         })
     }
 
@@ -45,15 +66,15 @@ impl AgentRuntime {
             AgentInvocation::new(agent_id.clone(), request.parent_run_id, child_run_id);
         invocation.status = AgentStatus::Running;
         invocation.background = request.background;
-        self.store
+        self.invocation_store
             .create_invocation(AgentInvocationRecord::from(invocation.clone()))?;
         Ok(ChildRunHandle::new(invocation))
     }
 
     pub async fn cancel_run(&self, child_run_id: RunId) -> Result<()> {
-        for record in self.store.list_invocations()? {
+        for record in self.invocation_store.list_invocations()? {
             if record.child_run_id == child_run_id {
-                self.store
+                self.invocation_store
                     .update_invocation_status(&record.agent_id, AgentStatus::Cancelled)?;
             }
         }
@@ -61,9 +82,9 @@ impl AgentRuntime {
     }
 
     pub async fn complete_run(&self, child_run_id: &RunId) -> Result<()> {
-        for record in self.store.list_invocations()? {
+        for record in self.invocation_store.list_invocations()? {
             if &record.child_run_id == child_run_id {
-                self.store
+                self.invocation_store
                     .update_invocation_status(&record.agent_id, AgentStatus::Completed)?;
             }
         }
@@ -71,7 +92,7 @@ impl AgentRuntime {
     }
 
     pub async fn status(&self, child_run_id: &RunId) -> Result<String> {
-        for record in self.store.list_invocations()? {
+        for record in self.invocation_store.list_invocations()? {
             if &record.child_run_id == child_run_id {
                 return Ok(match record.status {
                     AgentStatus::Pending => "pending",
@@ -87,7 +108,7 @@ impl AgentRuntime {
 
     pub async fn resume_child_run(&self, request: ResumeChildRunRequest) -> Result<ChildRunHandle> {
         let record = self
-            .store
+            .invocation_store
             .get_invocation(&request.agent_id)?
             .ok_or_else(|| anyhow::anyhow!("missing invocation"))?;
         Ok(ChildRunHandle::new(record.into()))
@@ -104,12 +125,12 @@ impl AgentRuntime {
         bus: RuntimeEventBus,
     ) -> Result<()> {
         let mut target_agent_id: Option<AgentId> = None;
-        for record in self.store.list_invocations()? {
+        for record in self.invocation_store.list_invocations()? {
             if &record.child_run_id == child_run_id {
                 target_agent_id = Some(record.agent_id.clone());
-                self.store
+                self.invocation_store
                     .update_invocation_status(&record.agent_id, AgentStatus::Completed)?;
-                self.store
+                self.invocation_store
                     .update_invocation_summary(&record.agent_id, summary.map(str::to_owned))?;
             }
         }
@@ -123,11 +144,19 @@ impl AgentRuntime {
 
     /// Return the stored summary/output-ref for a child run (if any).
     pub async fn get_summary(&self, child_run_id: &RunId) -> Result<Option<String>> {
-        for record in self.store.list_invocations()? {
+        for record in self.invocation_store.list_invocations()? {
             if &record.child_run_id == child_run_id {
                 return Ok(record.summary_or_output_ref);
             }
         }
         Ok(None)
+    }
+
+    pub fn store_transcript(
+        &self,
+        transcript_ref: &str,
+        entries: &[crate::runtime::agent::SubagentTranscriptEntryRecord],
+    ) -> Result<()> {
+        self.transcript_store.put(transcript_ref, entries)
     }
 }
