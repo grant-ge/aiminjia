@@ -3,215 +3,63 @@
 //! browse_data (sub-agent), extract_table_data.
 
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use log::{info, warn};
 use serde_json::Value;
-use tauri::Manager;
 
 use super::{optional_str, require_str};
 use crate::plugin::context::PluginContext;
+use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::tools::builtin::browse_data::{
+    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLauncher,
+};
 
-/// Handle browse_navigate tool invocations (V4 — open browsing mode).
-///
-/// Opens any URL in the CDP browser. No app lookup, no pre-configuration needed.
-pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let url = require_str(args, "url")?;
-
-    let engine = ctx
-        .connector_engine
-        .as_ref()
-        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
-
-    info!("[CONNECTOR] browse_navigate: url='{}'", url);
-
-    let result = engine.browser_navigate(url).await.map_err(|e| {
-        warn!(
-            "[CONNECTOR] browse_navigate failed: url='{}', error={}",
-            url, e
-        );
-        anyhow!(e)
-    })?;
-
-    let mut output = format!(
-        "Page ready: {} ({})\nThe browser window is now showing this page.",
-        result.title, result.url
-    );
-
-    if result.redirected_to_login {
-        let final_path = result.url.to_lowercase();
-        if final_path.contains("error")
-            || final_path.contains("forbidden")
-            || final_path.contains("no_resource")
-            || final_path.contains("no_permission")
-            || final_path.contains("/403")
-            || final_path.contains("/404")
-        {
-            return Err(anyhow!(
-                "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
-                result.url
-            ));
-        } else {
-            output.push_str("\n\n⚠️ The page was redirected (possibly to a login page). Please ask the user to log in in the Chrome browser window, then call browse_navigate again with the same URL.");
-        }
-    } else {
-        // Include auto-explored page profile
-        if let Some(ref profile) = result.page_profile {
-            output.push_str("\n\n");
-            output.push_str(&profile.format_detail());
-        } else {
-            output.push_str(
-                "\nUse read_page_content to extract data, or page_execute_js to interact.",
-            );
-        }
-    }
-
-    // Include screenshot path if available
-    if let Some(ref path) = result.screenshot_path {
-        output.push_str(&format!("\n\nScreenshot saved: {}", path.display()));
-    }
-
-    Ok(output)
+#[derive(Clone)]
+pub(crate) struct DefaultBrowseDataLauncher {
+    base_ctx: PluginContext,
 }
 
-/// Handle read_page_content tool invocations (V4 — open browsing mode).
-///
-/// Extracts tables + text from the active page in the CDP browser.
-pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let extract_script = optional_str(args, "extract_script");
+impl DefaultBrowseDataLauncher {
+    pub fn new(base_ctx: PluginContext) -> Self {
+        Self { base_ctx }
+    }
 
-    let engine = ctx
-        .connector_engine
-        .as_ref()
-        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+    fn scoped_plugin_ctx(&self, launch_ctx: &BrowseDataLaunchContext) -> PluginContext {
+        let mut ctx = self.base_ctx.clone();
+        ctx.conversation_id = launch_ctx.session_id.as_str().to_string();
+        ctx.session_id = launch_ctx.session_id.clone();
+        ctx.run_id = launch_ctx.parent_run_id.clone();
+        ctx.agent_id = launch_ctx.parent_agent_id.clone();
+        ctx
+    }
+}
 
-    info!("[CONNECTOR] read_page_content");
-
-    let result = engine
-        .browser_read_content(extract_script)
+#[async_trait]
+impl BrowseDataLauncher for DefaultBrowseDataLauncher {
+    async fn launch(
+        &self,
+        request: BrowseDataLaunchRequest,
+        context: BrowseDataLaunchContext,
+    ) -> Result<String> {
+        let scoped_ctx = self.scoped_plugin_ctx(&context);
+        launch_browse_data_with_plugin_ctx(
+            &scoped_ctx,
+            request,
+            Some(context.cancellation),
+            self.base_ctx.run_id.is_some(),
+        )
         .await
-        .map_err(|e| {
-            warn!("[CONNECTOR] read_page_content failed: error={}", e);
-            anyhow!(e)
-        })?;
-
-    info!(
-        "[CONNECTOR] read_page_content complete: tables={}, text_len={}",
-        result.tables.len(),
-        result.text.len()
-    );
-
-    // Format result for LLM
-    let mut output = format!("Page: {} ({})\n\n", result.title, result.url);
-
-    if !result.tables.is_empty() {
-        for (i, table) in result.tables.iter().enumerate() {
-            output.push_str(&format!(
-                "### Table {} ({} rows)\n",
-                i + 1,
-                table.rows.len()
-            ));
-            if !table.headers.is_empty() {
-                output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
-            }
-            for row in &table.rows {
-                let cells: Vec<String> = if !table.headers.is_empty() {
-                    table
-                        .headers
-                        .iter()
-                        .map(|h| row.get(h).cloned().unwrap_or_default())
-                        .collect()
-                } else {
-                    row.values().cloned().collect()
-                };
-                output.push_str(&format!("{}\n", cells.join(" | ")));
-            }
-            output.push('\n');
-        }
     }
-
-    if !result.text.is_empty() && result.tables.is_empty() {
-        output.push_str("### Page Text\n");
-        output.push_str(&result.text);
-        output.push('\n');
-    }
-
-    if !result.links.is_empty() {
-        output.push_str("\n### Navigation & Actions\n");
-        for link in &result.links {
-            match link.link_type.as_str() {
-                "menu" => {
-                    if !link.href.is_empty() {
-                        output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
-                    } else if !link.selector.is_empty() {
-                        output.push_str(&format!(
-                            "- [menu] {} (selector: {})\n",
-                            link.label, link.selector
-                        ));
-                    } else {
-                        output.push_str(&format!("- [menu] {}\n", link.label));
-                    }
-                }
-                "button" => {
-                    output.push_str(&format!("- [button] {}\n", link.label));
-                }
-                _ => {
-                    if !link.href.is_empty() {
-                        output.push_str(&format!("- {} → {}\n", link.label, link.href));
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(output)
 }
 
-/// Handle page_execute_js tool invocations (V4 — open browsing mode).
-///
-/// Executes custom JavaScript on the active page (click, fill, scroll, paginate).
-pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let script = require_str(args, "script")?;
-
-    let engine = ctx
-        .connector_engine
-        .as_ref()
-        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
-
-    info!("[CONNECTOR] page_execute_js: script_len={}", script.len());
-
-    let result = engine.browser_execute_js(script).await.map_err(|e| {
-        warn!("[CONNECTOR] page_execute_js failed: error={}", e);
-        anyhow!(e)
-    })?;
-
-    // Format result for LLM
-    let mut output = String::new();
-
-    if let Some(ref err) = result.error {
-        output.push_str(&format!("Script error: {}\n", err));
-    } else {
-        output.push_str("Script executed successfully.\n");
-        if !result.value.is_null() {
-            output.push_str(&format!("Return value: {}\n", result.value));
-        }
-    }
-
-    if let Some(ref new_url) = result.new_url {
-        output.push_str(&format!("Current URL: {}\n", new_url));
-    }
-    if let Some(ref new_title) = result.new_title {
-        output.push_str(&format!("Page title: {}\n", new_title));
-    }
-
-    output.push_str("Use read_page_content to see the updated page content.");
-
-    Ok(output)
-}
-
-/// Handle browse_and_extract tool invocations.
-/// Handle browse_data tool — delegate to browser sub-agent.
-pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let task = require_str(args, "task")?;
-    let url = optional_str(args, "url");
+async fn launch_browse_data_with_plugin_ctx(
+    ctx: &PluginContext,
+    request: BrowseDataLaunchRequest,
+    cancel_token: Option<CancellationToken>,
+    sub_agent_background: bool,
+) -> Result<String> {
+    let BrowseDataLaunchRequest { task, url } = request;
+    let url = url.as_deref();
 
     let gateway = ctx
         .gateway
@@ -423,10 +271,6 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         );
     }
 
-    // Browser sub-agents currently run in foreground by default.
-    // When the caller provides a background flag, this should be derived from it.
-    let sub_agent_background = ctx.run_id.is_some();
-
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
         system_prompt,
@@ -444,14 +288,7 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         parent_run_id: ctx.run_id.clone(),
         background: sub_agent_background,
         app_handle: ctx.app_handle.clone(),
-        // FIXME(S4/blocker): PluginContext does not carry a CancellationToken.
-        // The parent cancel token is not reachable here because
-        // `LegacyToolAdapter::from_plugin` drops the `ToolExecutionContext`
-        // (which does carry the token).  Wiring requires migrating `browse_data`
-        // from `ToolPlugin` to `RuntimeTool`, or plumbing the token through
-        // `PluginContext`.  Until then, `None` means the sub-agent uses isolated
-        // root tokens per tool call (no cancel cascade from parent run).
-        cancel_token: None,
+        cancel_token,
     };
 
     let result =
@@ -540,6 +377,213 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
     }
 
     Ok(output)
+}
+
+/// Handle browse_navigate tool invocations (V4 — open browsing mode).
+///
+/// Opens any URL in the CDP browser. No app lookup, no pre-configuration needed.
+pub(crate) async fn handle_browse_navigate(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let url = require_str(args, "url")?;
+
+    let engine = ctx
+        .connector_engine
+        .as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    info!("[CONNECTOR] browse_navigate: url='{}'", url);
+
+    let result = engine.browser_navigate(url).await.map_err(|e| {
+        warn!(
+            "[CONNECTOR] browse_navigate failed: url='{}', error={}",
+            url, e
+        );
+        anyhow!(e)
+    })?;
+
+    let mut output = format!(
+        "Page ready: {} ({})\nThe browser window is now showing this page.",
+        result.title, result.url
+    );
+
+    if result.redirected_to_login {
+        let final_path = result.url.to_lowercase();
+        if final_path.contains("error")
+            || final_path.contains("forbidden")
+            || final_path.contains("no_resource")
+            || final_path.contains("no_permission")
+            || final_path.contains("/403")
+            || final_path.contains("/404")
+        {
+            return Err(anyhow!(
+                "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL. STOP browsing this URL. Tell the user they lack permission and ask which page to try instead.",
+                result.url
+            ));
+        } else {
+            output.push_str("\n\n⚠️ The page was redirected (possibly to a login page). Please ask the user to log in in the Chrome browser window, then call browse_navigate again with the same URL.");
+        }
+    } else {
+        // Include auto-explored page profile
+        if let Some(ref profile) = result.page_profile {
+            output.push_str("\n\n");
+            output.push_str(&profile.format_detail());
+        } else {
+            output.push_str(
+                "\nUse read_page_content to extract data, or page_execute_js to interact.",
+            );
+        }
+    }
+
+    // Include screenshot path if available
+    if let Some(ref path) = result.screenshot_path {
+        output.push_str(&format!("\n\nScreenshot saved: {}", path.display()));
+    }
+
+    Ok(output)
+}
+
+/// Handle read_page_content tool invocations (V4 — open browsing mode).
+///
+/// Extracts tables + text from the active page in the CDP browser.
+pub(crate) async fn handle_read_page_content(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let extract_script = optional_str(args, "extract_script");
+
+    let engine = ctx
+        .connector_engine
+        .as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    info!("[CONNECTOR] read_page_content");
+
+    let result = engine
+        .browser_read_content(extract_script)
+        .await
+        .map_err(|e| {
+            warn!("[CONNECTOR] read_page_content failed: error={}", e);
+            anyhow!(e)
+        })?;
+
+    info!(
+        "[CONNECTOR] read_page_content complete: tables={}, text_len={}",
+        result.tables.len(),
+        result.text.len()
+    );
+
+    // Format result for LLM
+    let mut output = format!("Page: {} ({})\n\n", result.title, result.url);
+
+    if !result.tables.is_empty() {
+        for (i, table) in result.tables.iter().enumerate() {
+            output.push_str(&format!(
+                "### Table {} ({} rows)\n",
+                i + 1,
+                table.rows.len()
+            ));
+            if !table.headers.is_empty() {
+                output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
+            }
+            for row in &table.rows {
+                let cells: Vec<String> = if !table.headers.is_empty() {
+                    table
+                        .headers
+                        .iter()
+                        .map(|h| row.get(h).cloned().unwrap_or_default())
+                        .collect()
+                } else {
+                    row.values().cloned().collect()
+                };
+                output.push_str(&format!("{}\n", cells.join(" | ")));
+            }
+            output.push('\n');
+        }
+    }
+
+    if !result.text.is_empty() && result.tables.is_empty() {
+        output.push_str("### Page Text\n");
+        output.push_str(&result.text);
+        output.push('\n');
+    }
+
+    if !result.links.is_empty() {
+        output.push_str("\n### Navigation & Actions\n");
+        for link in &result.links {
+            match link.link_type.as_str() {
+                "menu" => {
+                    if !link.href.is_empty() {
+                        output.push_str(&format!("- [menu] {} → {}\n", link.label, link.href));
+                    } else if !link.selector.is_empty() {
+                        output.push_str(&format!(
+                            "- [menu] {} (selector: {})\n",
+                            link.label, link.selector
+                        ));
+                    } else {
+                        output.push_str(&format!("- [menu] {}\n", link.label));
+                    }
+                }
+                "button" => {
+                    output.push_str(&format!("- [button] {}\n", link.label));
+                }
+                _ => {
+                    if !link.href.is_empty() {
+                        output.push_str(&format!("- {} → {}\n", link.label, link.href));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(output)
+}
+
+/// Handle page_execute_js tool invocations (V4 — open browsing mode).
+///
+/// Executes custom JavaScript on the active page (click, fill, scroll, paginate).
+pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let script = require_str(args, "script")?;
+
+    let engine = ctx
+        .connector_engine
+        .as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    info!("[CONNECTOR] page_execute_js: script_len={}", script.len());
+
+    let result = engine.browser_execute_js(script).await.map_err(|e| {
+        warn!("[CONNECTOR] page_execute_js failed: error={}", e);
+        anyhow!(e)
+    })?;
+
+    // Format result for LLM
+    let mut output = String::new();
+
+    if let Some(ref err) = result.error {
+        output.push_str(&format!("Script error: {}\n", err));
+    } else {
+        output.push_str("Script executed successfully.\n");
+        if !result.value.is_null() {
+            output.push_str(&format!("Return value: {}\n", result.value));
+        }
+    }
+
+    if let Some(ref new_url) = result.new_url {
+        output.push_str(&format!("Current URL: {}\n", new_url));
+    }
+    if let Some(ref new_title) = result.new_title {
+        output.push_str(&format!("Page title: {}\n", new_title));
+    }
+
+    output.push_str("Use read_page_content to see the updated page content.");
+
+    Ok(output)
+}
+
+/// Handle browse_and_extract tool invocations.
+/// Handle browse_data tool — delegate to browser sub-agent.
+pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let request = BrowseDataLaunchRequest {
+        task: require_str(args, "task")?.to_string(),
+        url: optional_str(args, "url").map(str::to_string),
+    };
+    launch_browse_data_with_plugin_ctx(ctx, request, None, ctx.run_id.is_some()).await
 }
 
 /// Handle extract_table_data — extract current page table data + pagination info.

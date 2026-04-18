@@ -515,6 +515,40 @@ async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_bounda
     );
 }
 
+// ─── Test 12: browse_data survives legacy unregistration via runtime factory ──
+
+#[tokio::test]
+async fn browse_data_request_scoped_runtime_factory_requires_browser_capability_without_legacy_tool() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+    registry.unregister("browse_data").await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let err = registry
+        .execute(
+            "browse_data",
+            &ctx,
+            serde_json::json!({"task": "抓取订单列表"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect_err("browse_data should still route through request-scoped runtime factory");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("Permission denied") || message.contains("browser capability"),
+        "browse_data should be denied by runtime browser capability check, got: {}",
+        message
+    );
+    assert!(
+        !message.contains("Unknown tool"),
+        "browse_data must not fall through to unknown tool after legacy unregistration: {}",
+        message
+    );
+}
+
 // ─── Test 7: browser tools without connector_engine are denied by capability ─
 
 /// F8+F12: browser tools are now request-scoped RuntimeTools even when no

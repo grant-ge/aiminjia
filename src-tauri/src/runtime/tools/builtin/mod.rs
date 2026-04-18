@@ -3,6 +3,7 @@
 //! network.rs and browser.rs use narrow Deps structs injected at construction time.
 //! file.rs uses FileOperations via CapabilityContext.file_ops (no PluginContext bridge).
 pub mod bash;
+pub mod browse_data;
 pub mod grep;
 pub mod workspace;
 pub mod network;

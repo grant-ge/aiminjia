@@ -6,7 +6,12 @@ use std::time::Duration;
 use anyhow::Result;
 use app_lib::python::runner::ExecutionResult;
 use app_lib::python::sandbox::SandboxConfig;
-use app_lib::runtime::ids::RunId;
+use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::ids::{AgentId, RunId, SessionId};
+use app_lib::runtime::tools::builtin::browse_data::{
+    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLauncher,
+    BrowseDataRuntimeTool,
+};
 use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
 use app_lib::runtime::tools::builtin::python_execution::{
@@ -457,4 +462,140 @@ async fn generate_chart_runtime_tool_rejects_data_file_outside_workspace() {
         err.to_string().contains("outside"),
         "error should mention workspace boundary, got: {err}"
     );
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BrowseDataLaunchSnapshot {
+    task: String,
+    url: Option<String>,
+    session_id: String,
+    parent_run_id: Option<String>,
+    parent_agent_id: Option<String>,
+    cancelled: bool,
+}
+
+#[derive(Debug)]
+struct MockBrowseDataLauncher {
+    response: String,
+    snapshots: Arc<Mutex<Vec<BrowseDataLaunchSnapshot>>>,
+}
+
+#[async_trait]
+impl BrowseDataLauncher for MockBrowseDataLauncher {
+    async fn launch(
+        &self,
+        request: BrowseDataLaunchRequest,
+        context: BrowseDataLaunchContext,
+    ) -> Result<String> {
+        self.snapshots
+            .lock()
+            .expect("mutex poisoned")
+            .push(BrowseDataLaunchSnapshot {
+                task: request.task,
+                url: request.url,
+                session_id: context.session_id.as_str().to_string(),
+                parent_run_id: context
+                    .parent_run_id
+                    .as_ref()
+                    .map(|run_id| run_id.as_str().to_string()),
+                parent_agent_id: context
+                    .parent_agent_id
+                    .as_ref()
+                    .map(|agent_id| agent_id.as_str().to_string()),
+                cancelled: context.cancellation.is_cancelled(),
+            });
+        Ok(self.response.clone())
+    }
+}
+
+#[test]
+fn browse_data_runtime_tool_is_constructible_without_plugin_context() {
+    let tool = BrowseDataRuntimeTool::with_launcher(Arc::new(MockBrowseDataLauncher {
+        response: "ok".to_string(),
+        snapshots: Arc::new(Mutex::new(Vec::new())),
+    }));
+
+    assert_eq!(tool.definition().id, "browse_data");
+}
+
+#[tokio::test]
+async fn browse_data_runtime_tool_passes_parent_identity_to_launcher() {
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let tool = BrowseDataRuntimeTool::with_launcher(Arc::new(MockBrowseDataLauncher {
+        response: "browser agent ok".to_string(),
+        snapshots: snapshots.clone(),
+    }));
+    let parent_cancel = CancellationToken::new();
+    let ctx = ToolExecutionContext::new(
+        SessionId::new("plan-e-conv"),
+        RunId::new("run-e6"),
+        Some(AgentId::new("agent-e6")),
+        "tc-browse-data",
+        parent_cancel.child_token(),
+    );
+
+    let result = tool
+        .execute(
+            json!({
+                "task": "抓取订单列表",
+                "url": "https://example.com/orders",
+            }),
+            ctx,
+        )
+        .await
+        .expect("browse_data runtime tool should call launcher");
+
+    assert_eq!(result.content, "browser agent ok");
+
+    let captured = snapshots
+        .lock()
+        .expect("mutex poisoned")
+        .clone()
+        .pop()
+        .expect("launcher should record one request");
+    assert_eq!(captured.task, "抓取订单列表");
+    assert_eq!(
+        captured.url.as_deref(),
+        Some("https://example.com/orders")
+    );
+    assert_eq!(captured.session_id, "plan-e-conv");
+    assert_eq!(captured.parent_run_id.as_deref(), Some("run-e6"));
+    assert_eq!(captured.parent_agent_id.as_deref(), Some("agent-e6"));
+    assert!(!captured.cancelled, "fresh child token should not start cancelled");
+}
+
+#[tokio::test]
+async fn browse_data_runtime_tool_propagates_parent_cancellation_to_launcher() {
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let tool = BrowseDataRuntimeTool::with_launcher(Arc::new(MockBrowseDataLauncher {
+        response: "cancelled".to_string(),
+        snapshots: snapshots.clone(),
+    }));
+    let parent_cancel = CancellationToken::new();
+    let exec_cancel = parent_cancel.child_token();
+    parent_cancel.cancel();
+    let ctx = ToolExecutionContext::new(
+        SessionId::new("plan-e-conv"),
+        RunId::new("run-e6"),
+        None,
+        "tc-browse-data-cancelled",
+        exec_cancel,
+    );
+
+    let _ = tool
+        .execute(json!({"task": "抓取取消态任务"}), ctx)
+        .await
+        .expect("launcher should still be called for cancellation inspection");
+
+    let captured = snapshots
+        .lock()
+        .expect("mutex poisoned")
+        .clone()
+        .pop()
+        .expect("launcher should record one request");
+    assert!(
+        captured.cancelled,
+        "browse_data launcher must receive the parent-linked cancellation token"
+    );
+    assert_eq!(captured.parent_run_id.as_deref(), Some("run-e6"));
 }

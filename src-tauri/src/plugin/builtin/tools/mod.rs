@@ -57,7 +57,6 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(read_page_content::ReadPageContentTool),
         Arc::new(page_execute_js::PageExecuteJsTool),
         Arc::new(browse_and_extract::BrowseAndExtractTool),
-        Arc::new(browse_data::BrowseDataTool),
         Arc::new(extract_table_data::ExtractTableDataTool),
         Arc::new(extract_with_pagination::ExtractWithPaginationTool),
     ];

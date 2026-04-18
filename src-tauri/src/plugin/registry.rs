@@ -30,6 +30,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "extract_table_data",
     "extract_with_pagination",
     "load_file",
+    "browse_data",
     "execute_python",
     "generate_report",
     "generate_chart",
@@ -560,6 +561,11 @@ impl ToolRegistry {
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
+            "browse_data" => Some(Arc::new(
+                builtin::browse_data::BrowseDataRuntimeTool::with_launcher(Arc::new(
+                    crate::llm::tool_executor::DefaultBrowseDataLauncher::new(ctx.clone()),
+                )),
+            ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "execute_python" => {
                 use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
 
