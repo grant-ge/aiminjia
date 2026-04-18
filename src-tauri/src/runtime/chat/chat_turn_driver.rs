@@ -494,6 +494,7 @@ impl RuntimeChatTurnDriver {
                         is_degraded: false,
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
+                        context_modifier_message: None,
                     })
                 }
             };
@@ -802,8 +803,9 @@ impl RuntimeChatTurnDriver {
 
                     // Collect and merge results into state.
                     let results = tool_result_collector::collect_results(round_results);
-                    let mut history_batch =
-                        Vec::with_capacity(1 + results.tool_result_messages.len());
+                    let mut history_batch = Vec::with_capacity(
+                        1 + results.tool_result_messages.len() + results.context_modifier_messages.len(),
+                    );
                     history_batch.push(assistant_history_message);
 
                     for msg in results.tool_result_messages {
@@ -814,6 +816,9 @@ impl RuntimeChatTurnDriver {
                             mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                             break 'turn;
                         }
+                    }
+                    for msg in results.context_modifier_messages {
+                        history_batch.push(msg);
                     }
                     state.append_messages_batch(history_batch);
                     state.all_file_metas.extend(results.new_file_metas);

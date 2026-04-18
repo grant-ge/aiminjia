@@ -11,9 +11,11 @@
 use crate::runtime::chat::tool_round_types::{
     BlockedToolOutcome, RuntimeToolCallOutcome, RuntimeToolCallRequest,
 };
+use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
+use crate::runtime::tools::InterruptBehavior;
 
 /// Browser tool names that receive a special guidance message when blocked.
 const BROWSER_TOOLS: &[&str] = &[
@@ -113,6 +115,7 @@ impl ToolRoundDriver {
                                 is_degraded: false,
                                 degradation_notice: None,
                                 max_result_size_chars: 8_000,
+                                context_modifier_message: None,
                             }),
                         ));
                     }
@@ -120,31 +123,52 @@ impl ToolRoundDriver {
             }
         } else {
             // Concurrent dispatch.
+            let sibling_cancel = turn.cancellation().child_token();
             let futures: Vec<_> = permitted
                 .into_iter()
                 .map(|(idx, call)| {
                     let engine = self.query_engine.clone();
                     let turn_clone = turn.clone();
                     let bus_clone = bus.clone();
+                    let sibling_cancel_clone = sibling_cancel.clone();
+                    let interrupt_behavior =
+                        self.query_engine.tool_interrupt_behavior(&call.tool_name);
                     async move {
+                        let tool_cancel = match interrupt_behavior {
+                            InterruptBehavior::Cancel => sibling_cancel_clone.child_token(),
+                            InterruptBehavior::Block => sibling_cancel_clone
+                                .child_token_ignoring_reason(CancellationReason::Interrupt),
+                        };
+                        let tool_turn = turn_clone.with_cancellation(tool_cancel);
                         let outcome = engine
-                            .run_tool_call_with_bus(&turn_clone, &bus_clone, call)
+                            .run_tool_call_with_bus(&tool_turn, &bus_clone, call.clone())
                             .await;
                         match outcome {
-                            Ok(o) => (idx, ToolRoundResult::Ok(o)),
-                            Err(e) => (
-                                idx,
-                                ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
-                                    tool_call_id: String::new(),
-                                    tool_name: String::new(),
-                                    content: format!("Error: {}", e),
-                                    is_error: true,
-                                    file_meta: None,
-                                    is_degraded: false,
-                                    degradation_notice: None,
-                                    max_result_size_chars: 8_000,
-                                }),
-                            ),
+                            Ok(o) => {
+                                if o.is_error() {
+                                    sibling_cancel_clone
+                                        .cancel_with_reason(CancellationReason::SiblingError);
+                                }
+                                (idx, ToolRoundResult::Ok(o))
+                            }
+                            Err(e) => {
+                                sibling_cancel_clone
+                                    .cancel_with_reason(CancellationReason::SiblingError);
+                                (
+                                    idx,
+                                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                                        tool_call_id: call.tool_call_id,
+                                        tool_name: call.tool_name,
+                                        content: format!("Error: {}", e),
+                                        is_error: true,
+                                        file_meta: None,
+                                        is_degraded: false,
+                                        degradation_notice: None,
+                                        max_result_size_chars: 8_000,
+                                        context_modifier_message: None,
+                                    }),
+                                )
+                            }
                         }
                     }
                 })

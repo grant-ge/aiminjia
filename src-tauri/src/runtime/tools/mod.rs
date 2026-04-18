@@ -13,7 +13,7 @@ pub use capability::{
 };
 pub use context::{EventCollectingSink, ToolExecutionContext};
 pub use definition::ToolDefinition;
-pub use dispatcher::{RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
+pub use dispatcher::{InterruptBehavior, RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
 pub use executor::{ToolError, ToolResult};
 pub use legacy_adapter::LegacyToolAdapter;
 pub use permission::{AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionDecision, PermissionPipeline, PermissionReason};

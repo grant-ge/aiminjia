@@ -48,6 +48,8 @@ pub enum RuntimeToolCallOutcome {
         degradation_notice: Option<String>,
         /// Declared max result size for this tool.
         max_result_size_chars: usize,
+        /// Optional extra context message to append before the next LLM step.
+        context_modifier_message: Option<serde_json::Value>,
     },
 
     /// The permission pipeline returned `Ask` — user confirmation is required
@@ -115,6 +117,17 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { content, .. } => content,
             Self::AskRequired { .. } => "",
+        }
+    }
+
+    /// Returns the context modifier message if present (only `Completed` variant).
+    pub fn context_modifier_message(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::Completed {
+                context_modifier_message,
+                ..
+            } => context_modifier_message.as_ref(),
+            Self::AskRequired { .. } => None,
         }
     }
 

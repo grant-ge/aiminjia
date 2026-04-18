@@ -9,8 +9,8 @@ use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::{
-    CapabilityContext, FileOperations, FileStateCache, StorageCapability, ToolDispatcher,
-    ToolExecutionContext,
+    CapabilityContext, FileOperations, FileStateCache, InterruptBehavior, StorageCapability,
+    ToolDispatcher, ToolExecutionContext,
 };
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
@@ -123,6 +123,15 @@ impl QueryEngine {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    pub fn tool_interrupt_behavior(&self, tool_name: &str) -> InterruptBehavior {
+        let Some(dispatcher) = self.tool_dispatcher.as_ref() else {
+            return InterruptBehavior::Block;
+        };
+        dispatcher
+            .tool_interrupt_behavior(tool_name)
+            .unwrap_or(InterruptBehavior::Block)
     }
 
     pub fn accumulate_usage(&self, tokens_in: u64, tokens_out: u64) {
@@ -327,6 +336,7 @@ impl QueryEngine {
             Ok(crate::runtime::tools::ToolDispatchOutcome::Completed {
                 result: tool_result,
                 max_result_size_chars,
+                context_modifier_message,
                 ..
             }) => {
                 bus.emit(RuntimeEvent::new(
@@ -351,6 +361,7 @@ impl QueryEngine {
                     is_degraded: tool_result.is_degraded,
                     degradation_notice: tool_result.degradation_notice,
                     max_result_size_chars,
+                    context_modifier_message,
                 })
             }
             Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision)) => {
@@ -401,6 +412,7 @@ impl QueryEngine {
                     is_degraded: false,
                     degradation_notice: None,
                     max_result_size_chars: 8_000,
+                    context_modifier_message: None,
                 })
             }
         }

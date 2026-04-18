@@ -28,6 +28,9 @@ pub struct ToolRoundResults {
     /// `{ "role": "tool", "toolCallId": "...", "name": "...", "content": "..." }`
     pub tool_result_messages: Vec<JsonValue>,
 
+    /// Additional context messages requested by tool executions for the next LLM step.
+    pub context_modifier_messages: Vec<JsonValue>,
+
     /// `FileMeta` objects serialised to JSON, one per tool that produced a file.
     /// Consumers (e.g. `verify_file_claims`) receive these to cross-check LLM output.
     pub new_file_metas: Vec<JsonValue>,
@@ -62,6 +65,7 @@ fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> usize {
 /// * `round_results` — results returned by `ToolRoundDriver::execute_round`.
 pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults {
     let mut tool_result_messages: Vec<JsonValue> = Vec::with_capacity(round_results.len());
+    let mut context_modifier_messages: Vec<JsonValue> = Vec::new();
     let mut new_file_metas: Vec<JsonValue> = Vec::new();
     let mut new_generated_file_ids: Vec<String> = Vec::new();
     let mut success_count: usize = 0;
@@ -97,6 +101,9 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
                 if let Ok(v) = serde_json::to_value(meta) {
                     new_file_metas.push(v);
                 }
+            }
+            if let Some(modifier_message) = outcome.context_modifier_message() {
+                context_modifier_messages.push(modifier_message.clone());
             }
         }
 
@@ -162,6 +169,7 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
 
     ToolRoundResults {
         tool_result_messages,
+        context_modifier_messages,
         new_file_metas,
         new_generated_file_ids,
         success_count,
@@ -185,6 +193,7 @@ mod tests {
             is_degraded: false,
             degradation_notice: None,
             max_result_size_chars: 8_000,
+            context_modifier_message: None,
         })
     }
 
@@ -194,6 +203,7 @@ mod tests {
         assert_eq!(out.success_count, 0);
         assert_eq!(out.error_count, 0);
         assert!(out.tool_result_messages.is_empty());
+        assert!(out.context_modifier_messages.is_empty());
     }
 
     #[test]
@@ -229,6 +239,28 @@ mod tests {
         assert_eq!(msg["toolCallId"], "tc-42");
         assert_eq!(msg["name"], "my_tool");
         assert_eq!(msg["content"], "hello world");
+    }
+
+    #[test]
+    fn context_modifier_messages_are_collected() {
+        let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id: "tc1".to_string(),
+            tool_name: "edit_file".to_string(),
+            content: "done".to_string(),
+            is_error: false,
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
+            max_result_size_chars: 8_000,
+            context_modifier_message: Some(json!({
+                "role": "user",
+                "content": "<context-update>updated</context-update>",
+            })),
+        })];
+
+        let out = collect_results(results);
+        assert_eq!(out.context_modifier_messages.len(), 1);
+        assert_eq!(out.context_modifier_messages[0]["role"], "user");
     }
 
     #[test]

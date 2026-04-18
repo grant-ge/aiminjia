@@ -75,6 +75,27 @@ impl CancellationToken {
         child
     }
 
+    pub fn child_token_ignoring_reason(
+        &self,
+        ignored_reason: CancellationReason,
+    ) -> CancellationToken {
+        let child = CancellationToken::new();
+        *lock_or_recover(&child.inner.parent) = Some(Arc::downgrade(&self.inner));
+        let mut children = lock_or_recover(&self.inner.children);
+        children.push(Arc::downgrade(&child.inner));
+        self.compact_children_locked(&mut children);
+        let parent_reason =
+            CancellationReason::from_state(self.inner.cancel_state.load(Ordering::SeqCst));
+        drop(children);
+
+        if let Some(reason) = parent_reason {
+            if reason != ignored_reason {
+                child.cancel_with_reason(reason);
+            }
+        }
+        child
+    }
+
     pub fn cancel(&self) {
         self.cancel_with_reason(CancellationReason::UserCancel);
     }

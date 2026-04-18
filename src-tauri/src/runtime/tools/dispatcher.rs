@@ -14,6 +14,12 @@ use crate::runtime::tools::permission::{PermissionDecision, PermissionPipeline};
 #[cfg(test)]
 use crate::runtime::tools::permission::AllowAllPermissionPipeline;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterruptBehavior {
+    Cancel,
+    Block,
+}
+
 #[async_trait]
 pub trait RuntimeTool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
@@ -25,6 +31,12 @@ pub trait RuntimeTool: Send + Sync {
     }
     fn is_destructive(&self, _input: &Value) -> bool {
         self.definition().default_destructive
+    }
+    fn interrupt_behavior(&self) -> InterruptBehavior {
+        InterruptBehavior::Block
+    }
+    fn context_modifier(&self) -> Option<Value> {
+        None
     }
     fn validate_input(&self, _input: &Value) -> Option<ToolError> {
         None
@@ -52,6 +64,7 @@ pub enum ToolDispatchOutcome {
         max_result_size_chars: usize,
         prevent_continuation: bool,
         stop_reason: Option<String>,
+        context_modifier_message: Option<Value>,
     },
     /// The permission pipeline returned `Ask` — user confirmation is required.
     /// The decision is returned as-is so the TurnDriver can handle it.
@@ -81,6 +94,14 @@ impl ToolDispatcher {
             .write()
             .unwrap()
             .insert(tool.definition().id.clone(), tool);
+    }
+
+    pub fn tool_interrupt_behavior(&self, tool_name: &str) -> Option<InterruptBehavior> {
+        self.tools
+            .read()
+            .unwrap()
+            .get(tool_name)
+            .map(|tool| tool.interrupt_behavior())
     }
 
     pub async fn dispatch(
@@ -142,6 +163,11 @@ impl ToolDispatcher {
         if let Some(validation_err) = tool.validate_input(&input) {
             return Err(validation_err);
         }
+        let context_modifier_message = if !tool.is_concurrency_safe(&input) {
+            tool.context_modifier()
+        } else {
+            None
+        };
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;
         if let Err(ToolError::AskRequired(decision)) = result {
@@ -168,6 +194,7 @@ impl ToolDispatcher {
             max_result_size_chars: definition.default_max_result_size_chars,
             prevent_continuation,
             stop_reason,
+            context_modifier_message,
         })
     }
 
