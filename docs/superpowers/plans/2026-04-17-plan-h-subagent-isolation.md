@@ -4,12 +4,35 @@
 
 **Goal:** 实现 subagent 状态隔离：FileStateCache 共享读/隔离写，父子 cancel 级联，子结果隔离汇报，agentId 影响工具行为。通过 TDD 模式确保每个隔离边界清晰可验证。
 
-**对标参考：** `/Users/a20250311/github/claude-code-best/src/Task.ts` 中的 subagent state 隔离机制：
-- `cloneFileStateCache` — 子 agent 读取父 cache，写操作本地化
-- `AbortController cascade` — 父中止时子自动中止，子中止不影响父
-- `SubAgentResult` — 子结果作为工具输出返回，不直接写父 messages
+**对标参考：**
+- `/Users/a20250311/github/claude-code-best/src/tools/AgentTool/runAgent.ts`
+- `/Users/a20250311/github/claude-code-best/src/tools/AgentTool/forkSubagent.ts`
+- `/Users/a20250311/github/claude-code-best/src/utils/forkedAgent.ts`
+- 核心语义对标 `createSubagentContext(...)`：
+  - `readFileState` 默认 clone，而不是共享同一个可变 cache
+  - child abort 默认是 parent 的 child controller；只有特殊 interactive/bubble 场景才 share
+  - child 默认生成新的 `agentId`
+  - child 结果作为结构化结果返回给 parent，由 parent 决定是否/how to 注入 message
 
-**Architecture Dependency:** 依赖 Plan-B 的 `QueryEngine.read_file_state`（来自 `CapabilityContext.read_file_state: Arc<FileStateCache>`）；H1→H2→H3→H4 按此顺序实施，H3 与 H4 可并行。
+**Architecture Dependency:** 依赖 Plan-B 的 `QueryEngine.read_file_state` 与 Plan-E 的 request-scoped browse_data launcher；H1→H2→H3→H4 按此顺序实施，H5/H6 在 E6/F9 之后收口。
+
+### 0.0 对标校正（2026-04-18）
+
+- lotus 当前真实 subagent 执行链路不是 `runtime/agent/child_run.rs`，而是
+  `src-tauri/src/runtime/tools/builtin/browse_data.rs`
+  → `src-tauri/src/llm/tool_executor/internal_system.rs`
+  → `src-tauri/src/llm/sub_agent.rs`
+  → `src-tauri/src/plugin/registry.rs` / `src-tauri/src/runtime/tools/legacy_adapter.rs`。
+- 因此 H1/H2/H4 的第一落点必须是这条生产链路里的 child execution context 派生与 bridge，
+  而不是继续把隔离语义停留在空壳 `run_child()` 上。
+- H1 的 file-state 目标应对标 `cloneFileStateCache`：child 默认拿 parent cache 的快照；
+  后续写入只影响 child，不回写 parent。
+- H2 的 cancel 目标应对标 `createChildAbortController`：默认 parent→child 单向级联，
+  不做 child→parent 反向取消；只有特殊 interactive/bubble 场景才允许 share。
+- H3/H6 的结果与权限语义要对标 forked agent：child 只能返回结构化结果/ask 给 parent，
+  不允许直接修改 parent messages，也不允许把 `AskRequired` 伪装成 deny/error。
+- H4 的 `agent_id` / `is_subagent` 是 child execution context 的派生结果；若需要经过
+  `PluginContext` 过渡，也只能作为 bridge，不能把 `PluginContext` 变成新的语义真源。
 
 **Tech Stack:** Rust, tokio, async_trait, anyhow, serde_json
 
@@ -336,7 +359,7 @@ FileStateCache::clone_for_child() 保证子修改不回传。
 
 ### 单元 H2：Cancel 级联
 
-**目标**：父 cancel → 子同步 cancel；子 cancel 不影响父。已有 CancellationToken 机制，本单元验证连接。
+**目标**：父 cancel → 子同步 cancel；子 cancel 不影响父。已有 `CancellationToken` 机制，本单元验证 token 语义本身；真实生产链路里 cancel 到 subagent 内层工具执行的可达性由 H5 收口。
 
 #### H2-1：父子 CancellationToken 级联
 
@@ -413,46 +436,24 @@ CancellationToken 单向传播设计。
 
 ---
 
-#### H2-3：在 run_child 中应用 Cancel 级联
+#### H2-3：多级 parent → child → grandchild 级联
 
-**失败测试** `test_h2_3_run_child_cancel_cascade`
+**失败测试** `test_h2_3_parent_cancel_propagates_to_grandchild`
 ```rust
 #[test]
-async fn test_h2_3_run_child_cancel_cascade() {
-    let parent_cancel = CancellationToken::new();
-    let child_cancel = parent_cancel.child_token();
+fn test_h2_3_parent_cancel_propagates_to_grandchild() {
+    let parent = CancellationToken::new();
+    let child = parent.child_token();
+    let grandchild = child.child_token();
 
-    let parent_run_id = RunId::new("parent-run");
-    let request = SpawnChildRunRequest::for_test(parent_run_id.clone());
+    parent.cancel();
 
-    // 模拟 run_child 接收 parent_cancel，从而创建 child_cancel
-    // （实际在 spawn_child_run 和 run_child 的交互中体现）
-
-    // 父 cancel
-    parent_cancel.cancel();
-
-    // 预期：子也被 cancel
-    assert!(child_cancel.is_cancelled());
+    assert!(child.is_cancelled());
+    assert!(grandchild.is_cancelled());
 }
 ```
 
-**最小实现**：在 `child_run.rs::run_child()` 中正确使用 parent cancellation token 创建 child：
-```rust
-pub async fn run_child(
-    invocation: &AgentInvocation,
-    parent_cancellation: CancellationToken,
-) -> Result<SubAgentResult> {
-    // Child token 继承 parent cancellation
-    let child_cancellation = parent_cancellation.child_token();
-    
-    if child_cancellation.is_cancelled() {
-        anyhow::bail!("cancelled");
-    }
-    
-    // ... 执行子 agent 逻辑，使用 child_cancellation
-    Ok(SubAgentResult::default())
-}
-```
+**最小实现**：无需额外代码；`CancellationToken::child_token()` 已保证单向级联，生产链路只需在 `internal_system.rs` / `sub_agent.rs` / `plugin/registry.rs` 正确沿用 child token。
 
 **验证命令**：
 ```bash
@@ -470,182 +471,77 @@ parent cancellation → child token 继承。
 
 ### 单元 H3：子结果隔离汇报
 
-**目标**：子 agent 完成返回 `SubAgentResult`，父 agent 作为 tool_result 插入自己的 messages。
+**目标**：对齐 `claude-code-best` 的真实语义，child 只能把结构化结果返回给 parent；真正插入 parent tool_result 的动作发生在 parent 边界，而不是 child 直接写 parent messages。
 
-#### H3-1：定义 `SubAgentResult` 结构
+**2026-04-18 生产链路校正：**
+- lotus 当前真实落点不是 `runtime/agent/child_run.rs`，而是
+  `llm/sub_agent.rs::run_sub_agent()`
+  → `llm/tool_executor/internal_system.rs::launch_browse_data_with_plugin_ctx()`
+  → `runtime/tools/builtin/browse_data.rs`
+  → `runtime/query_engine.rs` / `chat_turn_driver.rs`。
+- 因此 H3 不应再围绕“给空壳 `run_child()` 增 JSON 结构”推进，而应锁定两件事：
+  1. child 的 `SubAgentResult` 只描述 child 自身产出（summary/files/iterations）
+  2. parent 在 `browse_data` 边界把 child 结果格式化成自己的 tool_result 内容，并在需要时把 child 文件重新注册到 parent workspace / storage
 
-**失败测试** `src-tauri/tests/subagent_result_isolation_test.rs::test_h3_1_subagent_result_serialization`
+#### H3-1：保留 child 结构化结果边界
+
+**失败测试**：`src-tauri/src/llm/tool_executor/internal_system.rs` 内联单测  
+`format_browse_data_subagent_result_registers_child_files_under_parent_workspace`
+
+测试意图：
+- 直接构造 `SubAgentResult { output, files, iterations_used }`
+- 验证 parent 侧格式化逻辑会：
+  - 生成 `Browser agent completed in ...` 的父工具输出
+  - 把 child 产物重新落到 parent 的 `generated/`
+  - 在 parent storage 记录 generated file，而不是让 child 直接污染 parent message/state
+
+**最小实现**：
+- 在 `src-tauri/src/llm/tool_executor/internal_system.rs` 提取纯 helper：
 ```rust
-#[test]
-fn test_h3_1_subagent_result_serialization() {
-    let result = SubAgentResult {
-        agent_id: AgentId::new("agent-1"),
-        content: "child completed task".to_string(),
-        file_metas: vec![
-            json!({"path": "/tmp/output.txt", "size": 1024}),
-        ],
-    };
-
-    // 应能序列化为 JSON（用于 tool_result）
-    let json_val = serde_json::to_value(&result).expect("serializable");
-    assert_eq!(json_val["content"], "child completed task");
-    assert_eq!(json_val["agent_id"], "agent-1");
-}
+fn format_browse_data_subagent_result(
+    ctx: &PluginContext,
+    result: &crate::llm::sub_agent::SubAgentResult,
+) -> String
 ```
-
-**最小实现**：在 `src-tauri/src/runtime/agent/subagent_result.rs` 中：
-```rust
-use serde::{Deserialize, Serialize};
-use crate::runtime::ids::AgentId;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SubAgentResult {
-    pub agent_id: AgentId,
-    pub content: String,
-    pub file_metas: Vec<serde_json::Value>,
-}
-
-impl SubAgentResult {
-    pub fn new(agent_id: AgentId, content: impl Into<String>) -> Self {
-        Self {
-            agent_id,
-            content: content.into(),
-            file_metas: Vec::new(),
-        }
-    }
-
-    pub fn with_file_metas(mut self, metas: Vec<serde_json::Value>) -> Self {
-        self.file_metas = metas;
-        self
-    }
-}
-```
+- `launch_browse_data_with_plugin_ctx()` 在 `run_sub_agent()` 成功后只调用该 helper 组装 parent 输出
 
 **验证命令**：
 ```bash
-cd src-tauri && cargo test --test subagent_result_isolation_test::test_h3_1_subagent_result_serialization -- --nocapture
+cd src-tauri && cargo test format_browse_data_subagent_result_registers_child_files_under_parent_workspace --lib -- --nocapture
 ```
 
-**Commit**：
-```
-feat(subagent-result): 定义 SubAgentResult struct
+#### H3-2：缺失 child 文件时仍保留 parent 可见结果
 
-包含 agent_id、content、file_metas，可序列化为 JSON。
-```
+**失败测试**：`src-tauri/src/llm/tool_executor/internal_system.rs` 内联单测  
+`format_browse_data_subagent_result_keeps_missing_file_path_visible`
 
----
+测试意图：
+- 当 child 返回的某个文件路径已不存在 / 无法重新注册时，parent 输出仍必须保留该路径文本
+- 这样 child 结果仍然是“通过 parent tool_result 汇报”，而不是静默丢失
 
-#### H3-2：run_child 返回 SubAgentResult
-
-**失败测试** `test_h3_2_run_child_returns_result`
-```rust
-#[test]
-async fn test_h3_2_run_child_returns_result() {
-    let parent_run_id = RunId::new("parent-run");
-    let parent_cancel = CancellationToken::new();
-    let request = SpawnChildRunRequest::for_test(parent_run_id.clone());
-
-    // Mock invocation
-    let invocation = AgentInvocation::new(
-        AgentId::new("child-agent"),
-        parent_run_id,
-        RunId::new("child-run"),
-    );
-
-    // run_child 应返回 SubAgentResult
-    let result = run_child(&invocation, parent_cancel)
-        .await
-        .expect("should succeed");
-
-    assert_eq!(result.agent_id.as_str(), "child-agent");
-    assert!(!result.content.is_empty());
-}
-```
-
-**最小实现**：在 `child_run.rs::run_child()` 中：
-```rust
-pub async fn run_child(
-    invocation: &AgentInvocation,
-    parent_cancellation: CancellationToken,
-) -> Result<SubAgentResult> {
-    let child_cancellation = parent_cancellation.child_token();
-    
-    if child_cancellation.is_cancelled() {
-        anyhow::bail!("cancelled");
-    }
-
-    // 返回 SubAgentResult（包含 agent_id）
-    Ok(SubAgentResult::new(
-        invocation.agent_id.clone(),
-        "child agent completed",
-    ))
-}
-```
+**最小实现**：
+- 沿用 `format_browse_data_subagent_result(...)`
+- 当文件不存在或注册失败时，fallback 为把原路径追加到 `### Extracted Data Files`
 
 **验证命令**：
 ```bash
-cd src-tauri && cargo test --test subagent_result_isolation_test::test_h3_2_run_child_returns_result -- --nocapture
+cd src-tauri && cargo test format_browse_data_subagent_result_keeps_missing_file_path_visible --lib -- --nocapture
 ```
 
-**Commit**：
-```
-feat(child-run): run_child() 返回 SubAgentResult
+#### H3-3：真实生产链路回归
 
-包含执行完成的 agent_id 和 content。
-```
-
----
-
-#### H3-3：父 Agent 将子结果作为 Tool Result 插入
-
-**失败测试** `test_h3_3_parent_inserts_child_result_as_tool_output`
-```rust
-#[test]
-async fn test_h3_3_parent_inserts_child_result_as_tool_output() {
-    // 模拟：parent agent 执行工具"spawn_subagent"
-    // 工具返回 SubAgentResult（代表子 agent 完成）
-    
-    let subagent_result = SubAgentResult::new(
-        AgentId::new("child-1"),
-        "subagent completed analysis",
-    );
-
-    // 父 agent 应将结果包装为 tool_result message
-    let tool_result_json = json!({
-        "agent_id": subagent_result.agent_id.as_str(),
-        "content": subagent_result.content,
-        "file_metas": subagent_result.file_metas,
-    });
-
-    // 验证：result 中包含了子结果
-    assert_eq!(
-        tool_result_json["content"],
-        "subagent completed analysis"
-    );
-}
-```
-
-**最小实现**：示例代码（实际在 query_engine 或 chat_turn_driver 中）：
-```rust
-// 当工具返回 SubAgentResult 时
-let tool_result_json = serde_json::to_value(&subagent_result)?;
-// 插入为 tool_result message（而非直接融合）
-turn.append_message(Message::ToolResult {
-    tool_call_id: tool_call_id.clone(),
-    content: tool_result_json,
-});
-```
+**目标**：确认 H3 helper 抽取不打坏 E6/H6 已落地的 request-scoped launcher / ask 语义。
 
 **验证命令**：
 ```bash
-cd src-tauri && cargo test --test subagent_result_isolation_test::test_h3_3_parent_inserts_child_result_as_tool_output -- --nocapture
+cd src-tauri && cargo test --test plan_e_tool_migration_test browse_data_runtime_tool_ -- --nocapture
+cd src-tauri && cargo test --test subagent_permission_ask_preservation_test -- --nocapture
 ```
 
-**Commit**：
-```
-test(result-isolation): H3-3 验证父 agent 隔离汇报子结果
-
-子结果通过 tool_result message 返回，不直接融合。
+**提交建议**：
+```bash
+git add src-tauri/src/llm/tool_executor/internal_system.rs
+git commit -m "refactor(subagent): keep child results isolated at browse_data parent boundary - H3"
 ```
 
 ---
@@ -705,45 +601,28 @@ feat(capability): CapabilityContext::is_subagent 标志
 
 ---
 
-#### H4-2：子 Agent 执行时设置 is_subagent=true
+#### H4-2：生产 child context 注入 `is_subagent=true`
 
-**失败测试** `test_h4_2_child_execution_sets_is_subagent`
+**失败测试** `test_h4_2_registry_injects_is_subagent_for_child_contexts`
 ```rust
-#[test]
-async fn test_h4_2_child_execution_sets_is_subagent() {
-    let parent_cap = CapabilityContext::with_workspace(
-        PathBuf::from("/tmp"),
-        "test-ws",
-    );
+#[tokio::test]
+async fn test_h4_2_registry_injects_is_subagent_for_child_contexts() {
+    let parent_ctx = make_plugin_ctx(tmp.path(), None);
+    registry.execute("capture_subagent_context", &parent_ctx, json!({}), CancellationToken::new()).await?;
 
-    // 模拟：run_child 为自己的 QueryEngine 组装 CapabilityContext
-    let child_cap = parent_cap.clone().with_subagent(true);
+    let child_ctx = make_plugin_ctx(tmp.path(), Some(AgentId::new("child-agent")));
+    registry.execute("capture_subagent_context", &child_ctx, json!({}), CancellationToken::new()).await?;
 
-    // 验证
-    assert!(!parent_cap.is_subagent);
-    assert!(child_cap.is_subagent);
+    // parent -> is_subagent=false, child -> is_subagent=true
 }
 ```
 
-**最小实现**：在 `child_run.rs::run_child()` 中组装 capability 时：
+**最小实现**：在 `plugin/registry.rs::ToolRegistry::execute()` 里根据 `PluginContext.agent_id.is_some()` 构造 `CapabilityContext.is_subagent`；`QueryEngine` 主路径默认保持 `false`。
 ```rust
-pub async fn run_child(
-    invocation: &AgentInvocation,
-    parent_query_engine: &QueryEngine,
-    parent_cancellation: CancellationToken,
-) -> Result<SubAgentResult> {
-    let child_cancellation = parent_cancellation.child_token();
-    
-    // Clone parent capability，标记为 subagent
-    let mut child_cap = parent_query_engine.capability_context().clone();
-    child_cap.is_subagent = true;
-
-    // 创建子 QueryEngine with updated capability
-    let mut child_engine = parent_query_engine.clone();
-    child_engine.set_capability_context(Arc::new(child_cap));
-
-    // ... 执行子 agent
-}
+let cap = CapabilityContext {
+    // ...
+    is_subagent: ctx.agent_id.is_some(),
+};
 ```
 
 **验证命令**：
@@ -1122,3 +1001,117 @@ Plan-H Subagent Isolation Architecture
 **Status:** Ready for implementation
 **Estimated effort:** 3-4 sessions (12-16 hours)
 **Next:** Start with worktree, implement H1-1 failing test
+
+---
+
+## 7. 追加差异复盘（2026-04-17，对齐 claude-code-best）
+
+### H5：让 parent cancel 真正到达 subagent 内层工具执行
+
+**复盘来源：**
+- 现有 H2 只验证 `CancellationToken::child_token()` 机制本身，不验证 cancel 是否真的到达 legacy/plugin tool path。
+- `src-tauri/src/llm/sub_agent.rs` 的注释已经指出：即使 `SubAgentConfig.cancel_token` 有值，`LegacyToolAdapter::from_plugin` 仍可能把 `ToolExecutionContext`（及其 cancel token）丢掉。
+- `src-tauri/src/llm/tool_executor/internal_system.rs` 当前还会构造 `SubAgentConfig { cancel_token: None }`，使 `browse_data` 这类 path 从一开始就没有 parent cancel reachability。
+
+**2026-04-18 增量校正：**
+- 这批工作的真实主战场不是 `runtime/agent/child_run.rs`，而是
+  `runtime/tools/builtin/browse_data.rs`
+  → `llm/tool_executor/internal_system.rs`
+  → `llm/sub_agent.rs`
+  → `plugin/registry.rs`
+  → `runtime/tools/legacy_adapter.rs`。
+- 因此 H5 的最小实现应优先修复 execution context bridge，而不是继续在空壳 `run_child()` 上堆逻辑。
+
+**目标状态：**
+- parent turn cancel 能贯穿到 child loop 和 child tool execution 两层，而不是只停留在子循环外壳。
+- E6 完成前若必须保留 bridge，bridge 也必须传递 `cancel_token`、`run_id`、`agent_id`；E6 完成后删除临时 bridge。
+- 不再允许出现“子 loop 已取消，但内部工具还在继续跑”的语义分叉。
+
+**建议文件：**
+- Modify: `src-tauri/src/llm/sub_agent.rs`
+- Modify: `src-tauri/src/llm/tool_executor/internal_system.rs`
+- Modify: `src-tauri/src/plugin/context.rs`
+- Modify: `src-tauri/src/plugin/registry.rs`
+- Modify: `src-tauri/src/runtime/tools/legacy_adapter.rs`
+- Create: `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs`
+
+**依赖关系：**
+- 最优路径：先做 Plan-E 的 E6，再做 H5。
+- 若 H5 先做，只能接受临时 bridge，但 bridge 也必须以最终可删除为目标。
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 3 项，完成第一批链路：`B5 → E6 → H5`。
+- 目标是先把 parent cancel 到 child tool execution 的 reachability 补通，再进入单主循环 / permission control plane 的第二批改造。
+
+### Task H5：subagent legacy cancel reachability
+
+- [ ] **H5-1 写失败测试**
+  - 新建 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs`。
+  - 至少覆盖两个断言：
+    1. parent cancel 触发后，subagent 内部 mock long-running tool 能观察到 cancel，而不是继续跑到完成。
+    2. `browse_data` / `internal_system` 创建的 `SubAgentConfig.cancel_token` 不再是 `None`。
+  - 运行：`cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test subagent_legacy_cancel_reachability -- --nocapture`
+
+- [ ] **H5-2 最小实现**
+  - 在 `sub_agent.rs` 中把 parent cancel 真正接到底层工具执行路径。
+  - 在 `internal_system.rs` 中删除 `cancel_token: None` 的默认做法；至少传递 parent child token。
+  - 在 `plugin/context.rs` 增加过渡桥接字段后，`legacy_adapter.rs` / `plugin/registry.rs` 必须把 `ToolExecutionContext.cancellation`、`run_id`、`agent_id` 注入 legacy plugin path。
+
+- [ ] **H5-3 回归验证**
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test subagent_cancel -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test cancel_cascade -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_ --tests --no-fail-fast`
+
+- [ ] **H5-4 Commit**
+  - `git add src-tauri/src/llm/sub_agent.rs src-tauri/src/llm/tool_executor/internal_system.rs src-tauri/src/plugin/context.rs src-tauri/src/plugin/registry.rs src-tauri/src/runtime/tools/legacy_adapter.rs src-tauri/tests/subagent_legacy_cancel_reachability_test.rs`
+  - `git commit -m "fix(subagent): make parent cancel reach inner tool executions — H5"`
+
+### H6：Subagent 不再把 `AskRequired` 降级成 deny / error
+
+**复盘来源：**
+- `src-tauri/src/llm/sub_agent.rs` 当前把 `ToolError::AskRequired` 直接当 deny / error 处理，并发出 `tool:completed(success=false)` 之类的降级信号。
+- 这样会让 child path 与 main path 的 permission 语义持续分叉：主路径已有 `PermissionAskRequired` 事件，子路径却把 Ask 伪装成普通失败。
+
+**目标状态：**
+- child path 保留 Ask 的结构化语义：
+  - **优先方案：** 冒泡到 Plan-F/F9 的 pending permission control plane。
+  - **退而求其次：** 返回 `SubAgentResult::AskRequired` / `SubAgentOutcome::AskRequired` 这样的结构化结果，明确告诉 parent“这是 ask，不是 deny”。
+- 不再生成误导性的 deny/error 文本，不再把 Ask 伪装成 `tool:completed(success=false)`。
+
+**建议文件：**
+- Modify: `src-tauri/src/llm/sub_agent.rs`
+- Modify: `src-tauri/src/runtime/tools/executor.rs`
+- Modify: `src-tauri/src/runtime/tools/dispatcher.rs`
+- Modify: `src-tauri/src/runtime/tools/builtin/browse_data.rs`
+- Modify: `src-tauri/src/llm/tool_executor/internal_system.rs`
+- Create: `src-tauri/tests/subagent_permission_ask_preservation_test.rs`
+
+**依赖关系：**
+- 推荐在 Plan-F 的 F9 之后实施；若 F9 尚未落地，则先采用结构化 `SubAgentOutcome::AskRequired` 过渡。
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 6 项，也是这轮收尾项：`F8 → F9 → H6`。
+- 若在 F9 之前先做 H6，只能先实现过渡型 ask 结构，后续仍要再接回 pending permission control plane，返工概率最高。
+
+### Task H6：保留 subagent permission ask 语义
+
+- [ ] **H6-1 写失败测试**
+  - 新建 `src-tauri/tests/subagent_permission_ask_preservation_test.rs`。
+  - 覆盖两个断言：
+    1. mock tool 返回 `AskRequired` 时，child result 是结构化 ask，而不是错误字符串。
+    2. parent 侧至少能拿到 `tool_call_id`、`tool_name`、`message`、`suggestions`。
+  - 运行：`cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test subagent_permission_ask_preservation -- --nocapture`
+
+- [ ] **H6-2 最小实现**
+  - 让 runtime path 中的 Ask 保持为一等结构化结果：`dispatcher` / `executor` 不把 Ask 扁平成普通错误。
+  - `sub_agent.rs` 遇到 `ToolError::AskRequired` 时不再降级成 deny/error；改为返回结构化 ask outcome。
+  - `browse_data` / `internal_system` 把 child ask 重新上浮给 parent，而不是注入误导性的失败文本。
+
+- [ ] **H6-3 回归验证**
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test subagent_permission_ask_preservation -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test p0_a2_permission_ask_routing_test -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_ --tests --no-fail-fast`
+
+- [ ] **H6-4 Commit**
+  - `git add src-tauri/src/llm/sub_agent.rs src-tauri/src/runtime/agent/subagent_result.rs src-tauri/src/runtime/agent/child_run.rs src-tauri/tests/subagent_permission_ask_preservation_test.rs`
+  - `git commit -m "feat(subagent): preserve ask-required semantics instead of denying — H6"`

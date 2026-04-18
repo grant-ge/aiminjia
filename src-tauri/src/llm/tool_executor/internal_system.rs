@@ -312,7 +312,15 @@ async fn launch_browse_data_with_plugin_ctx(
         result.output.len()
     );
 
-    // Format result for main agent
+    Ok(BrowseDataLaunchResult::completed(
+        format_browse_data_subagent_result(ctx, &result),
+    ))
+}
+
+fn format_browse_data_subagent_result(
+    ctx: &PluginContext,
+    result: &crate::llm::sub_agent::SubAgentResult,
+) -> String {
     let mut output = format!(
         "Browser agent completed in {} iterations.\n\n",
         result.iterations_used
@@ -321,7 +329,6 @@ async fn launch_browse_data_with_plugin_ctx(
     if !result.files.is_empty() {
         output.push_str("### Extracted Data Files\n");
         for f in &result.files {
-            // Try to register each file into the conversation
             let src = std::path::Path::new(f);
             if src.exists() {
                 let file_name = src
@@ -329,10 +336,7 @@ async fn launch_browse_data_with_plugin_ctx(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "data.json".to_string());
                 if let Ok(content) = std::fs::read(src) {
-                    match ctx
-                        .file_manager
-                        .write_file("generated", &file_name, &content)
-                    {
+                    match ctx.file_manager.write_file("generated", &file_name, &content) {
                         Ok(file_info) => {
                             let file_id = uuid::Uuid::new_v4().to_string();
                             let _ = ctx.storage.insert_generated_file(
@@ -361,12 +365,13 @@ async fn launch_browse_data_with_plugin_ctx(
             }
             output.push_str(&format!("- {}\n", f));
         }
-        output.push_str("\nUse `execute_python` to load these JSON files (e.g. `pd.read_json(path)` or `json.load`).\n\n");
+        output.push_str(
+            "\nUse `execute_python` to load these JSON files (e.g. `pd.read_json(path)` or `json.load`).\n\n",
+        );
     }
 
     if !result.output.is_empty() {
         output.push_str("### Agent Summary\n");
-        // Truncate if too long (safe UTF-8 boundary)
         if result.output.len() > 2000 {
             let end = result
                 .output
@@ -382,7 +387,7 @@ async fn launch_browse_data_with_plugin_ctx(
         }
     }
 
-    Ok(BrowseDataLaunchResult::completed(output))
+    output
 }
 
 /// Handle browse_navigate tool invocations (V4 — open browsing mode).
@@ -705,6 +710,54 @@ mod tests {
             .expect("parent cache should stay intact");
         assert_eq!(parent_state.content, "parent");
         assert_eq!(parent_state.mtime_secs, 1_000);
+    }
+
+    #[test]
+    fn format_browse_data_subagent_result_registers_child_files_under_parent_workspace() {
+        let workspace = TempDir::new().expect("TempDir::new failed");
+        let ctx = make_plugin_ctx(workspace.path(), None);
+        let child_file = workspace.path().join("child-result.json");
+        std::fs::write(&child_file, br#"{"rows":[1,2,3]}"#).expect("write child file");
+
+        let result = crate::llm::sub_agent::SubAgentResult {
+            output: "child completed analysis".to_string(),
+            files: vec![child_file.display().to_string()],
+            iterations_used: 3,
+        };
+
+        let output = format_browse_data_subagent_result(&ctx, &result);
+        let registered = workspace.path().join("generated").join("child-result.json");
+
+        assert!(registered.exists(), "parent workspace should register child artifact");
+        assert!(output.contains("Browser agent completed in 3 iterations."));
+        assert!(output.contains("### Extracted Data Files"));
+        assert!(output.contains(registered.to_string_lossy().as_ref()));
+        assert!(output.contains("### Agent Summary"));
+        assert!(output.contains("child completed analysis"));
+
+        let generated = ctx
+            .storage
+            .get_generated_files_for_conversation("parent-conv")
+            .expect("query generated files");
+        assert_eq!(generated.len(), 1, "registered artifact should be recorded in storage");
+    }
+
+    #[test]
+    fn format_browse_data_subagent_result_keeps_missing_file_path_visible() {
+        let workspace = TempDir::new().expect("TempDir::new failed");
+        let ctx = make_plugin_ctx(workspace.path(), None);
+        let missing = workspace.path().join("missing-child-result.json");
+
+        let result = crate::llm::sub_agent::SubAgentResult {
+            output: String::new(),
+            files: vec![missing.display().to_string()],
+            iterations_used: 1,
+        };
+
+        let output = format_browse_data_subagent_result(&ctx, &result);
+
+        assert!(output.contains("### Extracted Data Files"));
+        assert!(output.contains(missing.to_string_lossy().as_ref()));
     }
 }
 
