@@ -27,6 +27,7 @@ pub struct ToolDefinition {
     pub kind: ToolKind,
     pub default_read_only: bool,
     pub default_destructive: bool,
+    pub default_max_result_size_chars: usize,
 }
 
 impl ToolDefinition {
@@ -40,6 +41,7 @@ impl ToolDefinition {
             kind: ToolKind::default(),
             default_read_only: false,
             default_destructive: false,
+            default_max_result_size_chars: 8_000,
         }
     }
 
@@ -56,6 +58,12 @@ impl ToolDefinition {
 
     pub fn with_destructive(mut self, destructive: bool) -> Self {
         self.default_destructive = destructive;
+        self
+    }
+
+    /// 设置工具结果默认最大字符数。
+    pub fn with_max_result_size_chars(mut self, limit: usize) -> Self {
+        self.default_max_result_size_chars = limit;
         self
     }
 

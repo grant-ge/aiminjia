@@ -130,3 +130,17 @@ fn runtime_tool_default_predicates_follow_definition_flags() {
     assert!(flagged_tool.is_read_only(&json!({})));
     assert!(flagged_tool.is_destructive(&json!({})));
 }
+
+// ── Plan-D1: ToolDefinition.default_max_result_size_chars ─────────────────
+
+#[test]
+fn tool_definition_default_max_result_size_chars_is_8000() {
+    let def = ToolDefinition::new("some_tool", "desc");
+    assert_eq!(def.default_max_result_size_chars, 8_000);
+}
+
+#[test]
+fn tool_definition_with_max_result_size_chars_sets_field() {
+    let def = ToolDefinition::new("execute_python", "desc").with_max_result_size_chars(32_000);
+    assert_eq!(def.default_max_result_size_chars, 32_000);
+}
