@@ -145,7 +145,52 @@
       "search": "搜索配置",
       "general": "通用设置",
       "persona": "角色",
-      "skills": "技能管理"
+      "skills": "技能管理",
+      "mcp": "MCP"
+    },
+    "mcp": {
+      "title": "MCP 服务器",
+      "description": "MCP（Model Context Protocol）允许 AI 调用外部工具和服务。先在这里配置 MCP server，再按需连接，让它提供的工具进入对话。",
+      "addServer": "添加服务器",
+      "loadFailed": "加载 MCP 服务器失败",
+      "addSuccess": "MCP 服务器已添加",
+      "connectSuccess": "MCP 服务器已连接",
+      "disconnectSuccess": "MCP 服务器已断开",
+      "deleteSuccess": "MCP 服务器已删除",
+      "addFailed": "添加 MCP 服务器失败",
+      "connectFailed": "连接 MCP 服务器失败",
+      "disconnectFailed": "断开 MCP 服务器失败",
+      "deleteFailed": "删除 MCP 服务器失败",
+      "confirmDelete": "确认删除 MCP 服务器「{{name}}」？如已连接会先断开工具连接。",
+      "form": {
+        "name": "服务器名称",
+        "nameDesc": "用于区分不同 MCP server 的唯一标识，建议使用字母、数字和下划线。",
+        "namePlaceholder": "my-mcp-server",
+        "nameNoSpaces": "服务器名称不能包含空格，请改用下划线。",
+        "transportType": "传输类型",
+        "endpoint": "命令 / URL",
+        "endpointDescStdio": "stdio 类型填写可执行命令路径。",
+        "endpointDescHttp": "http / sse 类型填写服务地址 URL。",
+        "endpointPlaceholder": "/path/to/mcp-server 或 http://localhost:3000/mcp",
+        "envVars": "环境变量（可选）",
+        "envVarsDesc": "每行一条，格式为 KEY=VALUE。",
+        "envVarsPlaceholder": "API_KEY=xxx\nSOME_VAR=value",
+        "submit": "添加",
+        "submitting": "正在添加...",
+        "cancel": "取消"
+      },
+      "list": {
+        "empty": "还没有配置 MCP 服务器",
+        "emptyHint": "点击「添加服务器」配置第一个 MCP server。",
+        "statusConnected": "已连接",
+        "statusDisconnected": "未连接",
+        "connect": "连接",
+        "connecting": "连接中...",
+        "disconnect": "断开",
+        "disconnecting": "断开中...",
+        "delete": "删除",
+        "tools": "{{count}} 个工具"
+      }
     },
     "skills": {
       "description": "安装和管理自定义技能包。技能安装后需重启应用生效。",

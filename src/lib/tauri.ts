@@ -1163,3 +1163,42 @@ export function installMarketplaceSkill(
     pluginId,
   })
 }
+
+// ---------------------------------------------------------------------------
+// MCP Server Commands
+// ---------------------------------------------------------------------------
+
+export interface McpServerConfig {
+  name: string
+  transportType: string
+  endpoint: string
+  envVars?: Record<string, string>
+}
+
+export interface McpServerStatus {
+  name: string
+  transportType: string
+  endpoint: string
+  connected: boolean
+  registeredToolIds: string[]
+}
+
+export function listMcpServers(): Promise<McpServerStatus[]> {
+  return invoke<McpServerStatus[]>('list_mcp_servers')
+}
+
+export function addMcpServer(config: McpServerConfig): Promise<void> {
+  return invoke<void>('add_mcp_server', { config })
+}
+
+export function removeMcpServer(serverName: string): Promise<void> {
+  return invoke<void>('remove_mcp_server', { serverName })
+}
+
+export function connectMcpServer(serverName: string): Promise<string[]> {
+  return invoke<string[]>('connect_mcp_server', { serverName })
+}
+
+export function disconnectMcpServer(serverName: string): Promise<void> {
+  return invoke<void>('disconnect_mcp_server', { serverName })
+}

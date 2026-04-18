@@ -145,7 +145,52 @@
       "search": "Search",
       "general": "General",
       "persona": "Persona",
-      "skills": "Skills"
+      "skills": "Skills",
+      "mcp": "MCP"
+    },
+    "mcp": {
+      "title": "MCP Servers",
+      "description": "MCP (Model Context Protocol) lets AI call external tools and services. Add an MCP server here, then connect it when you want its tools to become available.",
+      "addServer": "Add Server",
+      "loadFailed": "Failed to load MCP servers",
+      "addSuccess": "MCP server added",
+      "connectSuccess": "MCP server connected",
+      "disconnectSuccess": "MCP server disconnected",
+      "deleteSuccess": "MCP server deleted",
+      "addFailed": "Failed to add MCP server",
+      "connectFailed": "Failed to connect MCP server",
+      "disconnectFailed": "Failed to disconnect MCP server",
+      "deleteFailed": "Failed to delete MCP server",
+      "confirmDelete": "Delete MCP server \"{{name}}\"? Connected tools will be disconnected first.",
+      "form": {
+        "name": "Server Name",
+        "nameDesc": "A unique identifier for this MCP server. Use letters, numbers, or underscores.",
+        "namePlaceholder": "my-mcp-server",
+        "nameNoSpaces": "Server names cannot contain spaces. Use underscores instead.",
+        "transportType": "Transport Type",
+        "endpoint": "Command / URL",
+        "endpointDescStdio": "For stdio servers, enter the executable command path.",
+        "endpointDescHttp": "For http / sse servers, enter the server URL.",
+        "endpointPlaceholder": "/path/to/mcp-server or http://localhost:3000/mcp",
+        "envVars": "Environment Variables (Optional)",
+        "envVarsDesc": "One per line in KEY=VALUE format.",
+        "envVarsPlaceholder": "API_KEY=xxx\nSOME_VAR=value",
+        "submit": "Add",
+        "submitting": "Adding...",
+        "cancel": "Cancel"
+      },
+      "list": {
+        "empty": "No MCP servers configured yet",
+        "emptyHint": "Click \"Add Server\" to configure your first MCP server.",
+        "statusConnected": "Connected",
+        "statusDisconnected": "Offline",
+        "connect": "Connect",
+        "connecting": "Connecting...",
+        "disconnect": "Disconnect",
+        "disconnecting": "Disconnecting...",
+        "delete": "Delete",
+        "tools": "{{count}} tools"
+      }
     },
     "skills": {
       "description": "Install and manage custom skill packs. Restart required after changes.",

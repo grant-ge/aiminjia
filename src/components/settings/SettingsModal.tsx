@@ -29,6 +29,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
 import { SkillsTab } from '@/components/settings/SkillsTab'
+import { McpTab } from '@/components/settings/McpTab'
 import { WorkspaceAuthPanel } from '@/components/settings/WorkspaceAuthPanel'
 import { useChatStore } from '@/stores/chatStore'
 import type { AppLanguage } from '@/i18n'
@@ -38,7 +39,7 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills' | 'mcp'
 
 const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
   { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
@@ -295,6 +296,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('skills')}
         >
           {t('settings.tabs.skills')}
+        </TabButton>
+        <TabButton
+          active={mainTab === 'mcp'}
+          onClick={() => setMainTab('mcp')}
+        >
+          {t('settings.tabs.mcp')}
         </TabButton>
       </div>
 
@@ -755,6 +762,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
       {mainTab === 'skills' && (
         <SkillsTab />
+      )}
+
+      {mainTab === 'mcp' && (
+        <McpTab />
       )}
 
     </Modal>
