@@ -16,7 +16,7 @@ use crate::runtime::chat::turn_config::{
 };
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
-use crate::runtime::ids::{AgentId, RunId};
+use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::permission::PermissionDecision;
@@ -25,7 +25,7 @@ use crate::runtime::tools::permission::PermissionDecision;
 /// `session_runtime` and `chat`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChatTurnRequest {
-    pub conversation_id: String,
+    pub conversation_id: SessionId,
     pub content: String,
     pub file_ids: Vec<String>,
     /// The run_id assigned by `SessionRuntime` for this turn.
@@ -39,7 +39,7 @@ pub struct ChatTurnRequest {
 
 impl ChatTurnRequest {
     pub fn new(
-        conversation_id: impl Into<String>,
+        conversation_id: impl Into<SessionId>,
         content: impl Into<String>,
         file_ids: Vec<String>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl ChatTurnRequest {
 
     /// Convenience constructor for analysis mode turns.
     pub fn new_analysis(
-        conversation_id: impl Into<String>,
+        conversation_id: impl Into<SessionId>,
         content: impl Into<String>,
         file_ids: Vec<String>,
     ) -> Self {
@@ -370,7 +370,7 @@ impl RuntimeChatTurnDriver {
 
         // Build the system prompt via the executor (reads DB/persona/auth).
         let system_prompt = executor
-            .build_system_prompt(&request.conversation_id, request.is_analysis)
+            .build_system_prompt(request.conversation_id.as_str(), request.is_analysis)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -392,7 +392,7 @@ impl RuntimeChatTurnDriver {
             workspace_path: std::path::PathBuf::new(),
             llm_settings,
             conversation_id: request.conversation_id.clone(),
-            run_id: request.run_id.as_str().to_string(),
+            run_id: request.run_id.clone(),
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
@@ -410,7 +410,7 @@ impl RuntimeChatTurnDriver {
 
         let llm_user_content = executor
             .build_user_message_content(
-                &request.conversation_id,
+                request.conversation_id.as_str(),
                 &request.content,
                 &request.file_ids,
             )
@@ -419,7 +419,7 @@ impl RuntimeChatTurnDriver {
 
         // 加载历史对话；失败时直接返回错误，避免静默丢失上下文。
         let history = executor
-            .load_history(&request.conversation_id)
+            .load_history(request.conversation_id.as_str())
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -440,7 +440,7 @@ impl RuntimeChatTurnDriver {
         // The driver must do the same so the frontend message list is durable.
         let _user_msg_id = executor
             .persist_user_message(
-                &request.conversation_id,
+                request.conversation_id.as_str(),
                 &request.content,
                 &request.file_ids,
             )
@@ -469,7 +469,7 @@ impl RuntimeChatTurnDriver {
 
         // 获取会话级环境信息（整个 turn 内稳定）
         let env_info = executor
-            .get_env_info(&request.conversation_id)
+            .get_env_info(request.conversation_id.as_str())
             .await
             .unwrap_or_else(|e| {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
@@ -499,8 +499,8 @@ impl RuntimeChatTurnDriver {
                 masking_level: &config.masking_level,
                 force_no_tools: state.force_no_tools,
                 llm_settings: &config.llm_settings,
-                conversation_id: &config.conversation_id,
-                run_id: &config.run_id,
+                conversation_id: config.conversation_id.as_str(),
+                run_id: config.run_id.as_str(),
             };
 
             // CP-1: check cancellation before invoking provider.
@@ -665,7 +665,7 @@ impl RuntimeChatTurnDriver {
         // ── Step 7: Persist assistant message ─────────────────────────────────
         let message_id = executor
             .persist_assistant_message(
-                &config.conversation_id,
+                config.conversation_id.as_str(),
                 &state.full_content,
                 &state.generated_file_ids,
                 &state.all_file_metas,

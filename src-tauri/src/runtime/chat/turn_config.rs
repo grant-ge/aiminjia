@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde_json::Value as JsonValue;
 
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+use crate::runtime::ids::{RunId, SessionId};
 
 /// LLM provider/routing settings resolved once per turn.
 ///
@@ -37,8 +38,8 @@ pub struct TurnConfig {
     pub masking_level: String,
     pub workspace_path: PathBuf,
     pub llm_settings: ResolvedLlmSettings,
-    pub conversation_id: String,
-    pub run_id: String,
+    pub conversation_id: SessionId,
+    pub run_id: RunId,
 }
 
 /// Turn 级可变状态。Driver 是唯一修改者。
