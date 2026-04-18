@@ -289,6 +289,7 @@ impl QueryEngine {
         match dispatch_result {
             Ok(crate::runtime::tools::ToolDispatchOutcome::Completed {
                 result: tool_result,
+                max_result_size_chars,
                 ..
             }) => {
                 bus.emit(RuntimeEvent::new(
@@ -312,6 +313,7 @@ impl QueryEngine {
                     file_meta: tool_result.file_meta,
                     is_degraded: tool_result.is_degraded,
                     degradation_notice: tool_result.degradation_notice,
+                    max_result_size_chars,
                 })
             }
             Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision)) => {
@@ -368,6 +370,7 @@ impl QueryEngine {
                     file_meta: None,
                     is_degraded: false,
                     degradation_notice: None,
+                    max_result_size_chars: 8_000,
                 })
             }
         }

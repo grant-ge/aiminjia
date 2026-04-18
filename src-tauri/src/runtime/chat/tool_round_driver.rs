@@ -112,6 +112,7 @@ impl ToolRoundDriver {
                                 file_meta: None,
                                 is_degraded: false,
                                 degradation_notice: None,
+                                max_result_size_chars: 8_000,
                             }),
                         ));
                     }
@@ -141,6 +142,7 @@ impl ToolRoundDriver {
                                     file_meta: None,
                                     is_degraded: false,
                                     degradation_notice: None,
+                                    max_result_size_chars: 8_000,
                                 }),
                             ),
                         }

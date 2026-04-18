@@ -46,6 +46,8 @@ pub enum RuntimeToolCallOutcome {
         is_degraded: bool,
         /// Human-readable notice when degradation occurred.
         degradation_notice: Option<String>,
+        /// Declared max result size for this tool.
+        max_result_size_chars: usize,
     },
 
     /// The permission pipeline returned `Ask` — user confirmation is required
@@ -89,6 +91,17 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { is_error, .. } => *is_error,
             Self::AskRequired { .. } => true,
+        }
+    }
+
+    /// Returns the declared max result size for this outcome.
+    pub fn max_result_size_chars(&self) -> usize {
+        match self {
+            Self::Completed {
+                max_result_size_chars,
+                ..
+            } => *max_result_size_chars,
+            Self::AskRequired { .. } => 8_000,
         }
     }
 

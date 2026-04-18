@@ -167,6 +167,7 @@ fn collect_results_counts_success_and_error() {
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
+            max_result_size_chars: 8_000,
         }),
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
             tool_call_id: "tc2".to_string(),
@@ -176,12 +177,29 @@ fn collect_results_counts_success_and_error() {
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
+            max_result_size_chars: 8_000,
         }),
     ];
     let collected = collect_results(results, 8000);
     assert_eq!(collected.success_count, 1);
     assert_eq!(collected.error_count, 1);
     assert_eq!(collected.tool_result_messages.len(), 2);
+}
+
+#[test]
+fn runtime_tool_call_outcome_exposes_declared_max_result_size_chars() {
+    let outcome = RuntimeToolCallOutcome::Completed {
+        tool_call_id: "tc1".to_string(),
+        tool_name: "echo".to_string(),
+        content: "ok".to_string(),
+        is_error: false,
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
+        max_result_size_chars: 12_345,
+    };
+
+    assert_eq!(outcome.max_result_size_chars(), 12_345);
 }
 
 // ── S4-T13: driver_s4 core loop ──────────────────────────────────────────────

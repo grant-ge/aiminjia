@@ -43,6 +43,7 @@ pub enum ToolDispatchOutcome {
     Completed {
         result: ToolResult,
         event_names: Vec<String>,
+        max_result_size_chars: usize,
     },
     /// The permission pipeline returned `Ask` — user confirmation is required.
     /// The decision is returned as-is so the TurnDriver can handle it.
@@ -114,6 +115,7 @@ impl ToolDispatcher {
         Ok(ToolDispatchOutcome::Completed {
             result,
             event_names: ctx.event_sink.snapshot(),
+            max_result_size_chars: definition.default_max_result_size_chars,
         })
     }
 

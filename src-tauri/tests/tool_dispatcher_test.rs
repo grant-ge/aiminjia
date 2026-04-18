@@ -182,3 +182,47 @@ async fn dispatch_batch_serial_tool_runs_after_concurrent_batch() {
     assert_eq!(execution_order[0], "read_a");
     assert_eq!(execution_order[1], "write_b");
 }
+
+#[tokio::test]
+async fn dispatch_completed_outcome_carries_declared_max_result_size_chars() {
+    use app_lib::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatchOutcome,
+        ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
+    };
+    use async_trait::async_trait;
+    use serde_json::Value;
+    use std::sync::Arc;
+
+    struct EchoTool;
+
+    #[async_trait]
+    impl RuntimeTool for EchoTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("echo", "echo").with_max_result_size_chars(12_345)
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new("echo", "ok", None))
+        }
+    }
+
+    let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
+    dispatcher.register(Arc::new(EchoTool));
+
+    let ctx = ToolExecutionContext::for_test("conv", "run", "tc");
+    let result = dispatcher.dispatch("echo", json!({}), ctx).await;
+
+    match result.expect("dispatch ok") {
+        ToolDispatchOutcome::Completed {
+            max_result_size_chars,
+            ..
+        } => {
+            assert_eq!(max_result_size_chars, 12_345);
+        }
+        _ => panic!("expected Completed outcome"),
+    }
+}
