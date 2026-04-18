@@ -163,6 +163,89 @@ pub fn microcompact(
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AutoCompactConfig {
+    pub threshold_chars: usize,
+    pub max_output_chars: usize,
+    pub consecutive_failure_limit: u32,
+}
+
+impl Default for AutoCompactConfig {
+    fn default() -> Self {
+        Self {
+            threshold_chars: 480_000,
+            max_output_chars: 80_000,
+            consecutive_failure_limit: 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CompactLlmOutput {
+    pub new_messages: Vec<serde_json::Value>,
+    pub pre_tokens: u64,
+    pub post_tokens: u64,
+    pub messages_summarized: usize,
+}
+
+pub fn should_auto_compact(
+    messages: &[serde_json::Value],
+    config: &AutoCompactConfig,
+) -> bool {
+    estimate_total_chars(messages) >= config.threshold_chars
+}
+
+pub fn compact_messages_via_llm(
+    messages: Vec<serde_json::Value>,
+    summary_text: String,
+) -> CompactLlmOutput {
+    let pre_tokens = (estimate_total_chars(&messages) / 4) as u64;
+
+    let latest_user = messages
+        .iter()
+        .rev()
+        .find(|message| {
+            message.get("role").and_then(|value| value.as_str()) == Some("user")
+                && message
+                    .get("isCompactSummary")
+                    .and_then(|value| value.as_bool())
+                    != Some(true)
+        })
+        .cloned();
+
+    let boundary = serde_json::json!({
+        "role": "system",
+        "subtype": "compact_boundary",
+        "content": "Conversation compacted",
+        "compactMetadata": {
+            "trigger": "auto",
+            "preTokens": pre_tokens,
+            "messagesSummarized": messages.len(),
+        },
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let summary_message = serde_json::json!({
+        "role": "user",
+        "content": format!("<context>\n{}\n</context>", summary_text),
+        "isCompactSummary": true,
+    });
+
+    let mut new_messages = vec![boundary, summary_message];
+    if let Some(latest_user) = latest_user {
+        new_messages.push(latest_user);
+    }
+
+    let post_tokens = (estimate_total_chars(&new_messages) / 4) as u64;
+
+    CompactLlmOutput {
+        new_messages,
+        pre_tokens,
+        post_tokens,
+        messages_summarized: messages.len(),
+    }
+}
+
 // TODO(T15): extract compress_context_if_needed here once LlmGateway is
 // injectable via RuntimeLlmExecutor or a similar seam. For now the
 // implementation lives in transport/tauri_commands/chat.rs (the legacy agent

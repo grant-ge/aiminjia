@@ -186,6 +186,14 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         let _ = conversation_id;
         Ok(String::new())
     }
+
+    async fn compact_summary(
+        &self,
+        _conversation_id: &str,
+        _messages: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok(String::new())
+    }
 }
 
 /// Runtime-owned chat turn driver.
