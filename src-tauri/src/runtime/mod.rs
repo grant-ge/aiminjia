@@ -6,6 +6,7 @@ pub mod event_bus;
 pub mod events;
 pub mod identity;
 pub mod ids;
+pub mod mcp;
 pub mod query_engine;
 pub mod run_registry;
 pub mod session_runtime;
