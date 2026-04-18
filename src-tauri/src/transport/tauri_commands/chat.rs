@@ -1158,17 +1158,14 @@ impl TauriChatCommandAdapter {
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {
         let session_id = SessionId::new(conversation_id.clone());
-        let result = conversation_service::stop_streaming(
+        self.runtime
+            .cancel_session(&session_id, crate::runtime::cancellation::CancellationReason::Interrupt);
+        conversation_service::stop_streaming(
             self.services.gateway.clone(),
             self.services.session_mgr.clone(),
             conversation_id,
         )
-        .await;
-        self.runtime.cancel_pending_permission_requests_for_session(
-            &session_id,
-            "Permission request cancelled because the session was stopped.",
-        );
-        result
+        .await
     }
 
     pub async fn approve_permission_request(

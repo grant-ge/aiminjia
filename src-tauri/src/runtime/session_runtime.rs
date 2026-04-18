@@ -169,6 +169,10 @@ impl SessionRuntime {
         if let Some(root) = self.current_session_cancel_root(session_id) {
             root.cancel_with_reason(reason);
         }
+        self.cancel_pending_permission_requests_for_session(
+            session_id,
+            "Permission request cancelled because the session was stopped.",
+        );
     }
 
     pub fn clear_session_state(&self, session_id: &SessionId) {
