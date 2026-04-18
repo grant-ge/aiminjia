@@ -44,6 +44,7 @@ use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
 use crate::python::session::PythonSessionManager;
 use crate::runtime::agent::AgentRuntime;
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::tools::capability::FileStateCache;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
@@ -103,6 +104,9 @@ pub struct PluginContext {
     /// Transitional bridge for request-scoped runtime executions that still
     /// enter through PluginContext (for example subagent tool loops).
     pub read_file_state: Option<Arc<FileStateCache>>,
+    /// Transitional bridge for request-scoped runtime executions that still
+    /// enter through PluginContext but need the per-call cancellation token.
+    pub cancellation: Option<CancellationToken>,
 }
 
 impl PluginContext {

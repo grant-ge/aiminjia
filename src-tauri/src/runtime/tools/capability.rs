@@ -183,6 +183,8 @@ pub struct CapabilityContext {
     pub file_reading_limits: Option<FileReadingLimits>,
     /// Optional sink for user-visible notifications emitted by runtime tools.
     pub notification_sink: Option<Arc<dyn NotificationSink>>,
+    /// Whether this execution is running inside a subagent / child context.
+    pub is_subagent: bool,
 }
 
 impl std::fmt::Debug for CapabilityContext {
@@ -201,6 +203,7 @@ impl std::fmt::Debug for CapabilityContext {
                 "notification_sink",
                 &self.notification_sink.as_ref().map(|_| "<NotificationSink>"),
             )
+            .field("is_subagent", &self.is_subagent)
             .finish()
     }
 }
@@ -219,6 +222,7 @@ impl CapabilityContext {
             read_file_state: None,
             file_reading_limits: None,
             notification_sink: None,
+            is_subagent: false,
         }
     }
 
@@ -243,6 +247,11 @@ impl CapabilityContext {
         notification_sink: Arc<dyn NotificationSink>,
     ) -> Self {
         self.notification_sink = Some(notification_sink);
+        self
+    }
+
+    pub fn with_subagent(mut self, is_subagent: bool) -> Self {
+        self.is_subagent = is_subagent;
         self
     }
 

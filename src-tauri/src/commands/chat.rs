@@ -242,6 +242,7 @@ pub mod testsupport {
             event_bus: None,
             authorized_workspace,
             read_file_state: None,
+            cancellation: None,
         };
 
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()

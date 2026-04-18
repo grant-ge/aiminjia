@@ -30,6 +30,7 @@ impl DefaultBrowseDataLauncher {
         ctx.session_id = launch_ctx.session_id.clone();
         ctx.run_id = launch_ctx.parent_run_id.clone();
         ctx.agent_id = launch_ctx.parent_agent_id.clone();
+        ctx.cancellation = Some(launch_ctx.cancellation.clone());
         ctx.read_file_state = self
             .base_ctx
             .read_file_state
@@ -588,7 +589,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         task: require_str(args, "task")?.to_string(),
         url: optional_str(args, "url").map(str::to_string),
     };
-    launch_browse_data_with_plugin_ctx(ctx, request, None, ctx.run_id.is_some()).await
+    launch_browse_data_with_plugin_ctx(ctx, request, ctx.cancellation.clone(), ctx.run_id.is_some())
+        .await
 }
 
 #[cfg(test)]
@@ -636,6 +638,7 @@ mod tests {
             event_bus: None,
             authorized_workspace: None,
             read_file_state,
+            cancellation: None,
         }
     }
 

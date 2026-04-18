@@ -296,6 +296,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                is_subagent: turn.agent_id().is_some(),
             });
             ctx.with_capability(capability)
         } else {
@@ -429,6 +430,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                is_subagent: turn.agent_id().is_some(),
             });
             ctx.with_capability(capability)
         } else {

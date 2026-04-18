@@ -291,6 +291,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         event_bus: None,
         authorized_workspace: None,
         read_file_state: None,
+        cancellation: None,
     };
 
     let result = registry

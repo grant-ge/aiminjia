@@ -60,6 +60,7 @@ fn build_test_plugin_ctx(
         event_bus: None,
         authorized_workspace: None,
         read_file_state: None,
+        cancellation: None,
     }
 }
 

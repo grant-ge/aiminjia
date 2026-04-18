@@ -93,6 +93,7 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         event_bus: None,
         authorized_workspace: None,
         read_file_state: None,
+        cancellation: None,
     }
 }
 

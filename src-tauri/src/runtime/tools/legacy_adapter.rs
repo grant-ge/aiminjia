@@ -64,10 +64,14 @@ impl LegacyToolAdapter {
         let definition = ToolDefinition::new(plugin.name(), plugin.description());
         Self::new(
             definition,
-            Arc::new(move |input, _ctx| {
+            Arc::new(move |input, exec_ctx| {
                 let plugin = plugin.clone();
-                let plugin_ctx = plugin_ctx.clone();
+                let mut plugin_ctx = plugin_ctx.clone();
                 async move {
+                    plugin_ctx.session_id = exec_ctx.session_id.clone();
+                    plugin_ctx.run_id = Some(exec_ctx.run_id.clone());
+                    plugin_ctx.agent_id = exec_ctx.agent_id.clone();
+                    plugin_ctx.cancellation = Some(exec_ctx.cancellation.clone());
                     let output = plugin
                         .execute(&plugin_ctx, input)
                         .await

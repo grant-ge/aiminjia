@@ -91,6 +91,7 @@ fn make_plugin_ctx(
         event_bus: None,
         authorized_workspace: None,
         read_file_state: cache,
+        cancellation: None,
     }
 }
 

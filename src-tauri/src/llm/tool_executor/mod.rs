@@ -161,6 +161,7 @@ pub(crate) mod tests {
             event_bus: None,
             authorized_workspace: None,
             read_file_state: None,
+            cancellation: None,
         }
     }
 

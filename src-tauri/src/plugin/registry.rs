@@ -410,6 +410,7 @@ impl ToolRegistry {
                         crate::runtime::tools::capability::FileReadingLimits::default(),
                     ),
                     notification_sink: None,
+                    is_subagent: ctx.agent_id.is_some(),
                 };
                 std::sync::Arc::new(cap)
             };
