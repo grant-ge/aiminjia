@@ -88,6 +88,13 @@ impl DynamicToolCatalog {
             .insert(entry.definition.id.clone(), entry);
     }
 
+    /// 移除一条动态目录记录。
+    ///
+    /// 主要供 MCP 这类运行时注册工具在 disconnect / refresh 时清理使用。
+    pub fn remove_entry(&self, id: &str) -> Option<CatalogEntry> {
+        self.entries.write().unwrap().remove(id)
+    }
+
     /// 按 ID 查找工具定义。
     pub fn get(&self, id: &str) -> Option<ToolDefinition> {
         self.entries

@@ -122,6 +122,53 @@ impl ToolRegistry {
         }
     }
 
+    /// 移除 runtime-first 路径下已注册的工具。
+    ///
+    /// 用于动态 MCP server 在 disconnect / refresh 时清理其工具池。
+    pub async fn unregister_runtime_tools(&self, ids: &[String]) {
+        use crate::runtime::tools::catalog::TOOL_CATALOG;
+
+        let mut runtime_tools = self.runtime_tools.write().await;
+        for id in ids {
+            runtime_tools.remove(id);
+            let _ = TOOL_CATALOG.remove_entry(id);
+        }
+    }
+
+    /// Register all tools exposed by an MCP server connection.
+    ///
+    /// Returns the fully-qualified tool ids so a caller can later unregister
+    /// the exact dynamic tool set on disconnect / refresh.
+    pub async fn register_mcp_server(
+        &self,
+        connection: Arc<dyn crate::runtime::mcp::McpConnection>,
+    ) -> Result<Vec<String>, String> {
+        use crate::runtime::mcp::McpRuntimeTool;
+        use crate::runtime::tools::catalog::TOOL_CATALOG;
+
+        if !connection.is_connected() {
+            connection
+                .connect()
+                .await
+                .map_err(|err| format!("Failed to connect MCP server: {err}"))?;
+        }
+
+        let mcp_tools = connection
+            .list_tools()
+            .await
+            .map_err(|err| format!("Failed to list MCP tools: {err}"))?;
+
+        let mut registered_ids = Vec::with_capacity(mcp_tools.len());
+        for tool in mcp_tools {
+            TOOL_CATALOG.register_entry(tool.to_catalog_entry());
+            registered_ids.push(tool.qualified_name());
+            self.register_runtime(Arc::new(McpRuntimeTool::new(tool, connection.clone())))
+                .await;
+        }
+
+        Ok(registered_ids)
+    }
+
     fn infer_json_schema() -> serde_json::Value {
         serde_json::json!({
             "type": "object",
