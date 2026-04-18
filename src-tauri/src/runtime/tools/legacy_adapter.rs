@@ -75,7 +75,15 @@ impl LegacyToolAdapter {
                     let output = plugin
                         .execute(&plugin_ctx, input)
                         .await
-                        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+                        .map_err(|err| match err {
+                            crate::plugin::tool_trait::ToolError::AskRequired(decision) => {
+                                ToolError::AskRequired(decision)
+                            }
+                            crate::plugin::tool_trait::ToolError::PermissionDenied(message) => {
+                                ToolError::PermissionDenied(message)
+                            }
+                            other => ToolError::Other(anyhow::anyhow!(other.to_string())),
+                        })?;
                     Ok(ToolResult {
                         tool_name: plugin.name().to_string(),
                         content: output.content,
@@ -85,7 +93,6 @@ impl LegacyToolAdapter {
                         degradation_notice: output.degradation_notice,
                     })
                 }
-                .map(|result| result.map_err(ToolError::Other))
                 .boxed()
             }),
         )

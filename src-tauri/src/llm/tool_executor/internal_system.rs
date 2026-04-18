@@ -11,7 +11,7 @@ use super::{optional_str, require_str};
 use crate::plugin::context::PluginContext;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::tools::builtin::browse_data::{
-    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLauncher,
+    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLaunchResult, BrowseDataLauncher,
 };
 
 #[derive(Clone)]
@@ -46,7 +46,7 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
         &self,
         request: BrowseDataLaunchRequest,
         context: BrowseDataLaunchContext,
-    ) -> Result<String> {
+    ) -> Result<BrowseDataLaunchResult> {
         let scoped_ctx = self.scoped_plugin_ctx(&context);
         launch_browse_data_with_plugin_ctx(
             &scoped_ctx,
@@ -63,7 +63,7 @@ async fn launch_browse_data_with_plugin_ctx(
     request: BrowseDataLaunchRequest,
     cancel_token: Option<CancellationToken>,
     sub_agent_background: bool,
-) -> Result<String> {
+) -> Result<BrowseDataLaunchResult> {
     let BrowseDataLaunchRequest { task, url } = request;
     let url = url.as_deref();
 
@@ -220,7 +220,7 @@ async fn launch_browse_data_with_plugin_ctx(
                             ));
                         }
                         output.push_str("Please ask the user which page to extract data from, then call browse_data again with the specific URL.");
-                        return Ok(output);
+                        return Ok(BrowseDataLaunchResult::completed(output));
                     }
                 }
             }
@@ -382,7 +382,7 @@ async fn launch_browse_data_with_plugin_ctx(
         }
     }
 
-    Ok(output)
+    Ok(BrowseDataLaunchResult::completed(output))
 }
 
 /// Handle browse_navigate tool invocations (V4 — open browsing mode).
@@ -589,8 +589,17 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
         task: require_str(args, "task")?.to_string(),
         url: optional_str(args, "url").map(str::to_string),
     };
-    launch_browse_data_with_plugin_ctx(ctx, request, ctx.cancellation.clone(), ctx.run_id.is_some())
-        .await
+    let result = launch_browse_data_with_plugin_ctx(
+        ctx,
+        request,
+        ctx.cancellation.clone(),
+        ctx.run_id.is_some(),
+    )
+    .await?;
+    if let Some(decision) = result.ask_decision {
+        return Err(anyhow!("Permission Ask required: {}", decision));
+    }
+    Ok(result.content)
 }
 
 #[cfg(test)]

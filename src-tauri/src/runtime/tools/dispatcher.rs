@@ -111,6 +111,9 @@ impl ToolDispatcher {
         }
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;
+        if let Err(ToolError::AskRequired(decision)) = result {
+            return Ok(ToolDispatchOutcome::AskRequired(decision));
+        }
         ctx.event_sink.emit("tool:completed");
         let result = result?;
         Ok(ToolDispatchOutcome::Completed {

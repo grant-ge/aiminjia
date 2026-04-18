@@ -32,13 +32,35 @@ pub struct BrowseDataLaunchContext {
     pub cancellation: CancellationToken,
 }
 
+#[derive(Clone, Debug)]
+pub struct BrowseDataLaunchResult {
+    pub content: String,
+    pub ask_decision: Option<crate::runtime::tools::permission::PermissionDecision>,
+}
+
+impl BrowseDataLaunchResult {
+    pub fn completed(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            ask_decision: None,
+        }
+    }
+
+    pub fn ask(decision: crate::runtime::tools::permission::PermissionDecision) -> Self {
+        Self {
+            content: String::new(),
+            ask_decision: Some(decision),
+        }
+    }
+}
+
 #[async_trait]
 pub trait BrowseDataLauncher: Send + Sync {
     async fn launch(
         &self,
         request: BrowseDataLaunchRequest,
         context: BrowseDataLaunchContext,
-    ) -> Result<String>;
+    ) -> Result<BrowseDataLaunchResult>;
 }
 
 pub struct BrowseDataRuntimeTool {
@@ -82,11 +104,14 @@ impl RuntimeTool for BrowseDataRuntimeTool {
             cancellation: ctx.cancellation.clone(),
         };
 
-        let content = self
+        let launch_result = self
             .launcher
             .launch(request, launch_ctx)
             .await
             .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
-        Ok(ToolResult::new("browse_data", content, None))
+        if let Some(decision) = launch_result.ask_decision {
+            return Err(ToolError::AskRequired(decision));
+        }
+        Ok(ToolResult::new("browse_data", launch_result.content, None))
     }
 }

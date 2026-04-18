@@ -33,6 +33,8 @@ impl ToolResult {
 pub enum ToolError {
     #[error("permission denied: {0}")]
     PermissionDenied(String),
+    #[error("permission ask required: {0}")]
+    AskRequired(crate::runtime::tools::permission::PermissionDecision),
     #[error("tool execution failed: {0}")]
     ExecutionFailed(String),
     #[error(transparent)]

@@ -9,7 +9,7 @@ use app_lib::python::sandbox::SandboxConfig;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
 use app_lib::runtime::tools::builtin::browse_data::{
-    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLauncher,
+    BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLaunchResult, BrowseDataLauncher,
     BrowseDataRuntimeTool,
 };
 use app_lib::runtime::tools::capability::CapabilityContext;
@@ -486,7 +486,7 @@ impl BrowseDataLauncher for MockBrowseDataLauncher {
         &self,
         request: BrowseDataLaunchRequest,
         context: BrowseDataLaunchContext,
-    ) -> Result<String> {
+    ) -> Result<BrowseDataLaunchResult> {
         self.snapshots
             .lock()
             .expect("mutex poisoned")
@@ -504,7 +504,7 @@ impl BrowseDataLauncher for MockBrowseDataLauncher {
                     .map(|agent_id| agent_id.as_str().to_string()),
                 cancelled: context.cancellation.is_cancelled(),
             });
-        Ok(self.response.clone())
+        Ok(BrowseDataLaunchResult::completed(self.response.clone()))
     }
 }
 

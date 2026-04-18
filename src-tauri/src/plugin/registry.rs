@@ -454,10 +454,21 @@ impl ToolRegistry {
                 }
             }
 
-            let result = tool
-                .execute(input, exec_ctx)
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+            let result = match tool.execute(input, exec_ctx).await {
+                Ok(result) => result,
+                Err(crate::runtime::tools::ToolError::AskRequired(decision)) => {
+                    return Err(ToolError::AskRequired(decision));
+                }
+                Err(crate::runtime::tools::ToolError::PermissionDenied(message)) => {
+                    return Err(ToolError::PermissionDenied(message));
+                }
+                Err(crate::runtime::tools::ToolError::ExecutionFailed(message)) => {
+                    return Err(ToolError::ExecutionFailed(message));
+                }
+                Err(crate::runtime::tools::ToolError::Other(err)) => {
+                    return Err(ToolError::Other(err));
+                }
+            };
 
             let mut output = ToolOutput::success(result.content);
             output.data = result.data;

@@ -5,7 +5,6 @@
 // Suppress the deprecation lint here; migrate when this module is refactored.
 #![allow(deprecated)]
 
-use anyhow::Result;
 use futures::StreamExt;
 use log::{info, warn};
 use std::sync::Arc;
@@ -16,9 +15,11 @@ use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition
 use crate::models::settings::AppSettings;
 use crate::plugin::context::PluginContext;
 use crate::plugin::registry::ToolRegistry;
+use crate::plugin::tool_trait::ToolError as LegacyToolError;
 use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use crate::runtime::ids::RunId;
+use crate::runtime::tools::permission::PermissionDecision;
 
 use tauri::Emitter;
 
@@ -32,6 +33,36 @@ fn safe_truncate(s: &str, max_bytes: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+#[cfg(test)]
+fn take_ask_required_decision(err: &LegacyToolError) -> Option<PermissionDecision> {
+    match err {
+        LegacyToolError::AskRequired(decision) => Some(decision.clone()),
+        _ => None,
+    }
+}
+
+fn annotate_subagent_ask_decision(
+    tool_name: &str,
+    tool_call_id: &str,
+    decision: PermissionDecision,
+) -> PermissionDecision {
+    match decision {
+        PermissionDecision::Ask {
+            message,
+            suggestions,
+            reason,
+        } => PermissionDecision::Ask {
+            message: format!(
+                "Subagent tool '{}' (tool_call_id={}) requires confirmation: {}",
+                tool_name, tool_call_id, message
+            ),
+            suggestions,
+            reason,
+        },
+        other => other,
+    }
 }
 
 /// Configuration for a sub-agent run.
@@ -89,7 +120,7 @@ pub async fn run_sub_agent(
     plugin_ctx: &PluginContext,
     config: SubAgentConfig,
     settings: &AppSettings,
-) -> Result<SubAgentResult> {
+) -> std::result::Result<SubAgentResult, LegacyToolError> {
     info!(
         "[SubAgent] Starting: task_len={}, tools={:?}, max_iter={}",
         config.task.len(),
@@ -101,7 +132,8 @@ pub async fn run_sub_agent(
     if config.allowed_tools.contains(&"browse_data".to_string()) {
         return Err(anyhow::anyhow!(
             "Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"
-        ));
+        )
+        .into());
     }
 
     // Build filtered tool schemas
@@ -119,6 +151,7 @@ pub async fn run_sub_agent(
     let mut output = String::new();
     let mut files: Vec<String> = vec![];
     let mut iterations_used = 0;
+    let mut pending_ask: Option<PermissionDecision> = None;
 
     let agent_runtime = plugin_ctx
         .agent_runtime
@@ -133,7 +166,8 @@ pub async fn run_sub_agent(
                     background: config.background,
                     allowed_tools: config.allowed_tools.clone(),
                 })
-                .await?,
+                .await
+                .map_err(LegacyToolError::Other)?,
         )
     } else {
         None
@@ -157,7 +191,7 @@ pub async fn run_sub_agent(
         Some(config.dynamic_context.as_str())
     };
 
-    for iteration in 0..config.max_iterations {
+    'agent_loop: for iteration in 0..config.max_iterations {
         iterations_used = iteration + 1;
 
         info!(
@@ -349,22 +383,17 @@ pub async fn run_sub_agent(
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, content));
                 }
                 Err(crate::plugin::tool_trait::ToolError::AskRequired(ref decision)) => {
-                    // FIXME(S6): sub-agent cannot surface a UI prompt; treat Ask as deny
-                    // until the permission-request flow is wired up end-to-end.
-                    let err_msg = format!("Tool '{}' requires user confirmation: {}", tc.name, decision);
-                    warn!("[SubAgent] Tool '{}' returned AskRequired (treated as deny): {}", tc.name, decision);
-                    if let Some(ref app) = config.app_handle {
-                        let _ = app.emit(
-                            "tool:completed",
-                            serde_json::json!({
-                                "conversationId": config.conversation_id,
-                                "toolId": tc.id,
-                                "success": false,
-                                "summary": err_msg.clone(),
-                            }),
-                        );
-                    }
-                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
+                    let bubbled = annotate_subagent_ask_decision(
+                        &tc.name,
+                        &tc.id,
+                        decision.clone(),
+                    );
+                    warn!(
+                        "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
+                        tc.name, bubbled
+                    );
+                    pending_ask = Some(bubbled);
+                    break 'agent_loop;
                 }
                 Err(e) => {
                     let err_msg = format!("Tool error: {}", e);
@@ -431,9 +460,45 @@ pub async fn run_sub_agent(
         files.len()
     );
 
+    if let Some(decision) = pending_ask {
+        return Err(LegacyToolError::AskRequired(decision));
+    }
+
     Ok(SubAgentResult {
         output,
         files,
         iterations_used,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::tool_trait::ToolError as LegacyToolError;
+    use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+
+    #[test]
+    fn take_ask_required_decision_preserves_structured_permission_request() {
+        let decision = PermissionDecision::Ask {
+            message: "need approval".to_string(),
+            suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            reason: PermissionReason::Other("subagent-inner".to_string()),
+        };
+
+        let extracted =
+            take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))
+                .expect("AskRequired must stay structured");
+
+        match extracted {
+            PermissionDecision::Ask {
+                message,
+                suggestions,
+                ..
+            } => {
+                assert_eq!(message, "need approval");
+                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+            }
+            other => panic!("expected ask decision, got: {:?}", other),
+        }
+    }
 }
