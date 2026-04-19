@@ -16,7 +16,7 @@ use crate::runtime::ids::{RunId, SessionId};
 /// This keeps runtime code independent from the transport/database layer while
 /// still giving the executor everything it needs to call `LlmGateway` without
 /// re-reading settings on every iteration.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLlmSettings {
     pub primary_model: String,
     pub primary_api_key: String,
@@ -26,6 +26,25 @@ pub struct ResolvedLlmSettings {
     pub use_cloud: bool,
     pub cloud_model: String,
     pub cloud_model_type: String,
+    pub thinking_type: String,
+    pub thinking_budget_tokens: u32,
+}
+
+impl Default for ResolvedLlmSettings {
+    fn default() -> Self {
+        Self {
+            primary_model: String::new(),
+            primary_api_key: String::new(),
+            auto_model_routing: false,
+            custom_model_endpoint: String::new(),
+            custom_model_name: String::new(),
+            use_cloud: false,
+            cloud_model: String::new(),
+            cloud_model_type: String::new(),
+            thinking_type: "disabled".to_string(),
+            thinking_budget_tokens: 8000,
+        }
+    }
 }
 
 /// Turn 级不可变配置。在 run_chat_turn 入口处构建一次，之后只读。
@@ -97,7 +116,7 @@ impl TurnIterationState {
 pub struct LlmStepInput<'a> {
     pub system_prompt: &'a str,
     pub dynamic_context: &'a str,
-    pub messages: Vec<JsonValue>,  // decayed 副本，非原始 messages 引用
+    pub messages: Vec<JsonValue>, // decayed 副本，非原始 messages 引用
     pub tool_defs: &'a [JsonValue],
     pub token_budget: usize,
     pub chunk_timeout_secs: u64,
@@ -106,6 +125,7 @@ pub struct LlmStepInput<'a> {
     pub llm_settings: &'a ResolvedLlmSettings,
     pub conversation_id: &'a str,
     pub run_id: &'a str,
+    pub estimated_tokens: usize,
 }
 
 /// Executor 的结构化返回。Executor 只产出数据，不修改外部状态。

@@ -42,6 +42,8 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             use_cloud: false,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
+            thinking_type: "disabled".to_string(),
+            thinking_budget_tokens: 8000,
         })
     }
 
@@ -56,11 +58,7 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             .unwrap()
             .push(input.llm_settings.primary_api_key.clone());
 
-        Ok(self
-            .responses
-            .lock()
-            .unwrap()
-            .remove(0))
+        Ok(self.responses.lock().unwrap().remove(0))
     }
 
     async fn persist_assistant_message(

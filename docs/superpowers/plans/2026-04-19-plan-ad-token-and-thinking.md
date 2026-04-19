@@ -21,7 +21,7 @@
 
 ### Token 计算缺口（AD1-AD3）
 
-当前唯一的 context 压缩机制是 `src-tauri/src/llm/context_decay.rs` 中的 `apply_decay()`，它基于字符数对旧 tool result 做截断（`RECENT_LIMIT=2000`, `OLD_LIMIT=500`）。这可以继续作为观测/退化策略，但不能等同于 `claude-code-best` 的 overflow/recovery 设计。当前缺口是：
+lotus 现状并非“完全没有上下文保护”：`src-tauri/src/runtime/chat/compaction.rs` 已有 `microcompact()`（约 120k chars 触发）和 `should_auto_compact()` + `compact_messages_via_llm()`（约 480k chars 触发），`src-tauri/src/llm/context_decay.rs` 也保留了基于字符数的旧 tool result decay。真正缺口在于这些机制仍是 chars-based，且缺少统一的 token 观测与 provider-aware thinking 接口。当前缺口是：
 
 - 没有全局 token 估算——不知道整个 messages + system prompt 总共占多少 context window
 - `TurnConfig.token_budget` 字段含义是 `max_tokens`（LLM 输出预算），不是 context window 保护阈值
@@ -81,9 +81,9 @@ pub fn estimate_context_tokens(system_prompt: &str, messages: &[ChatMessage]) ->
 
 ---
 
-### AD2 — context overflow 保护（超 80% 时触发 compact/decay）
+### AD2 — context window 风险观测（统一 token 估算 + 阈值日志）
 
-**文件：** `src-tauri/src/runtime/chat/chat_turn_driver.rs`，在构建 `LlmStepInput` 之前插入检查点
+**文件：** `src-tauri/src/runtime/chat/chat_turn_driver.rs`，在构建 `LlmStepInput` 之前插入估算点；只做观测与日志，不在本计划新增第二套恢复流程
 
 **模型 context window 常量（新增到 `turn_config.rs` 或 `context_decay.rs`）：**
 
@@ -94,34 +94,30 @@ pub const CONTEXT_WINDOW_CLAUDE: usize = 200_000;
 pub const CONTEXT_WINDOW_DEEPSEEK: usize = 128_000;
 pub const CONTEXT_WINDOW_DEFAULT: usize = 100_000;
 
-/// 触发 compact 的负载比例（80%）。
+/// 触发风险告警的负载比例（80%）。
 pub const CONTEXT_OVERFLOW_THRESHOLD: f64 = 0.8;
 ```
 
 **实现位置：** `chat_turn_driver.rs` 中 `build LlmStepInput` 之前（约 713 行附近）
 
 ```rust
-// AD2: overflow 保护 — 在组装 LlmStepInput 之前检查 token 估算
+// AD2: context 风险观测 — 在组装 LlmStepInput 之前检查 token 估算
 let estimated = estimate_context_tokens(&config.system_prompt, &state.messages);
 let window = context_window_for_model(&config.llm_settings.primary_model);
 if estimated as f64 > window as f64 * CONTEXT_OVERFLOW_THRESHOLD {
     warn!(
-        "[AD2] Context overflow risk: estimated {} tokens > {}% of {} window. Triggering decay.",
+        "[AD2] Context overflow risk: estimated {} tokens > {}% of {} window.",
         estimated,
         (CONTEXT_OVERFLOW_THRESHOLD * 100.0) as u32,
         window
     );
-    // 已有 apply_decay 做 tool result 截断；必要时升级为 compaction
-    // 当前 phase：直接调用 apply_decay（is_analysis=true 触发截断逻辑）
-    // 后续可接 compaction.rs 中的 auto-compact
-    let messages_json = state.messages.clone(); // JsonValue vec
-    // NOTE: apply_decay 操作 ChatMessage，需先转换；见 AD2 实现细节
-    state.compact_state.mark_overflow_triggered();
+    // 本计划只记录风险并把 estimated_tokens 透传给 executor / 日志。
+    // 真正的 overflow 恢复、prompt-too-long 分类与重试留给 Plan-W。
 }
 ```
 
 **实现细节：**
-- `context_window_for_model(model: &str) -> usize`：简单字符串匹配（`contains("claude")` → 200k，`contains("deepseek")` → 128k，默认 100k）
+- `context_window_for_provider(provider: &str) -> usize`：基于 lotus 现有 provider 标识精确匹配（如 `claude` / `deepseek-v3` / `deepseek-r1`），不再使用字符串包含判断
 - `chat_turn_driver.rs` 中 `state.messages` 类型是 `Vec<JsonValue>`（非 `Vec<ChatMessage>`），需在 `estimate_context_tokens` 中增加 `JsonValue` 重载，或在调用侧用 `serde_json::to_string` 累计字符数
 - 建议新增 `estimate_tokens_from_json(messages: &[serde_json::Value]) -> usize`，避免反序列化开销：
 
@@ -135,7 +131,7 @@ pub fn estimate_tokens_from_json(messages: &[serde_json::Value]) -> usize {
 }
 ```
 
-- overflow 保护触发后，记录 `warn!` 日志即可（AD3 补充 estimated_tokens 到 input）；compact 调用可 no-op 先行，后续迭代升级为 `compaction.rs` 的 auto-compact
+- 风险阈值触发后只记录 `warn!` 日志即可（AD3 补充 estimated_tokens 到 input）；不在本计划追加新的 compact 分支，避免和现有 `microcompact + auto_compact` 产生双轨行为
 
 ---
 
@@ -174,7 +170,7 @@ debug!(
 
 ---
 
-### AD4 — `ThinkingConfig` 类型 + `LlmRequest` 新增字段
+### AD4 — `ThinkingConfig` 类型 + request 装配入口接通
 
 **文件：** `src-tauri/src/llm/streaming.rs`
 
@@ -210,34 +206,33 @@ pub struct LlmRequest {
 
 **Settings 集成（前端 → 后端）：**
 
-当前 Settings 持久化在前端 Zustand store 中，通过 Tauri IPC 传入 `ResolvedLlmSettings`（`turn_config.rs`）。`ResolvedLlmSettings` 新增：
+当前 Settings 持久化在前端 Zustand store 中，通过 Tauri IPC 传入 `ResolvedLlmSettings`（`turn_config.rs`）。`AppSettings` / `ResolvedLlmSettings` 采用两段式配置承载：
 
 ```rust
 pub struct ResolvedLlmSettings {
     // ... 现有字段 ...
-    /// 是否启用 extended thinking，以及 budget_tokens。
-    pub thinking_enabled: bool,
-    pub thinking_budget_tokens: u32, // 默认 8000
+    pub thinking_type: String,          // "disabled" | "enabled" | "adaptive"
+    pub thinking_budget_tokens: u32,    // 默认 8000
 }
 ```
 
-`ResolvedLlmSettings::Default` → `thinking_enabled: false`, `thinking_budget_tokens: 8000`
+`ResolvedLlmSettings::Default` / `AppSettings::default` → `thinking_type = "disabled"`，`thinking_budget_tokens = 8000`。
 
-executor 的 `run_llm_step` 据此构造 `LlmRequest.thinking_config`：
+**关键对齐点：** thinking 的 provider gate 放在 `llm/gateway.rs::build_request()`，因为这里只有这里同时知道 lotus 的 `RouteResult.provider` 与最终发往 provider 的 `LlmRequest`。
 
 ```rust
-let thinking_config = if input.llm_settings.thinking_enabled {
-    Some(ThinkingConfig::Enabled {
-        budget_tokens: input.llm_settings.thinking_budget_tokens,
-    })
-} else {
-    None
-};
+let thinking_config = thinking_config_for_route(&route, settings);
 ```
+
+其中：
+- 非 `claude` provider 一律返回 `None`
+- `claude` + `thinking_type = "disabled"` 返回 `Some(ThinkingConfig::Disabled)`（供 provider 层决定是否省略 body 字段）
+- `claude` + `thinking_type = "enabled"` 返回 `Some(ThinkingConfig::Enabled { budget_tokens })`
+- `claude` + `thinking_type = "adaptive"` 返回 `Some(ThinkingConfig::Adaptive)`；若模型不支持 adaptive，由 Claude provider 降级为 enabled budget 模式
 
 ---
 
-### AD5 — `ClaudeProvider::build_request_body()` 发送 thinking 参数
+### AD5 — `ClaudeProvider::build_request_body()` / HTTP header 发送 thinking 参数
 
 **文件：** `src-tauri/src/llm/providers/claude.rs`
 
@@ -258,10 +253,9 @@ match &request.thinking_config {
         body.as_object_mut().unwrap().remove("temperature");
         // betas header 在 HTTP 请求层注入（见下）
     }
-    Some(ThinkingConfig::Disabled) => {
-        body["thinking"] = json!({ "type": "disabled" });
+    Some(ThinkingConfig::Disabled) | None => {
+        // 对齐 claude-code-best：disabled 只保留内部状态，不发送 `thinking` body。
     }
-    None => {}
 }
 
 body
@@ -286,8 +280,9 @@ req_builder.json(&body).send().await?
 
 **API 约束备注：**
 - `budget_tokens` 必须 `< max_tokens`，代码已做 `min(budget, max_tokens - 1)` 限制
-- 启用 thinking 时 temperature 必须为 1.0（Anthropic 硬性约束），`build_request_body` 必须移除 temperature 字段而非设置为 1.0（防止 f32 精度问题触发现有的非默认判断）
-- beta header 字符串 `"interleaved-thinking-2025-05-14"` 定义为常量 `ANTHROPIC_BETA_THINKING`
+- 启用 thinking 时 temperature 必须为 1.0（Anthropic 硬性约束），`build_request_body` 必须移除 temperature 字段而非设置为 1.0
+- `adaptive` 只在 provider 实际模型支持时下发；不支持时自动降级为 enabled + 默认 budget
+- beta header 字符串 `"interleaved-thinking-2025-05-14"` 定义为常量 `ANTHROPIC_BETA_THINKING`，仅当最终 body 含 `thinking` 时发送
 
 ---
 
@@ -306,9 +301,9 @@ fn ad1_estimate_tokens_from_json() { ... }
 
 // AD2 tests
 #[test]
-fn ad2_context_window_for_claude_model() { ... } // 200_000
+fn ad2_context_window_for_claude_provider() { ... } // 200_000
 #[test]
-fn ad2_context_window_for_deepseek_model() { ... } // 128_000
+fn ad2_context_window_for_deepseek_provider() { ... } // 128_000
 #[test]
 fn ad2_context_window_default() { ... } // 100_000
 #[test]
@@ -335,7 +330,8 @@ fn ad5_build_request_body_with_thinking_enabled() {
 }
 #[test]
 fn ad5_build_request_body_with_thinking_disabled() {
-    // 验证 body["thinking"]["type"] == "disabled"
+    // 验证 body.get("thinking") == None（对齐 claude-code-best）
+    // 验证非默认 temperature 仍被保留
 }
 #[test]
 fn ad5_build_request_body_no_thinking_config() {
@@ -351,11 +347,11 @@ fn ad5_budget_tokens_clamped_below_max_tokens() {
 
 ## 实施顺序
 
-1. **AD1**：新增 `estimate_tokens` / `estimate_tokens_from_json` 到 `context_decay.rs`，写单测
-2. **AD4**：新增 `ThinkingConfig` 枚举和 `LlmRequest.thinking_config` 字段，更新 `Default`，写单测
-3. **AD3**：`LlmStepInput` 新增 `estimated_tokens` 字段（breaking change，需更新所有构建点和测试中的字段初始化）
-4. **AD2**：在 `chat_turn_driver.rs` 插入 overflow 保护检查点，调用 AD1 工具函数填充 AD3 字段
-5. **AD5**：`ClaudeProvider::build_request_body()` + HTTP 请求层注入 beta header，写单测
+1. **AD4**：先接通 `ThinkingConfig` / `LlmRequest.thinking_config` / gateway provider gate，这是本计划最小主线
+2. **AD5**：实现 Claude body/header 发送逻辑，并补齐 disabled/adaptive/budget clamp 单测
+3. **AD1**：新增 `estimate_tokens` / `estimate_tokens_from_json` 到 `context_decay.rs`，写单测
+4. **AD3**：`LlmStepInput` 新增 `estimated_tokens` 字段（仅日志/观测）
+5. **AD2**：在 `chat_turn_driver.rs` 插入风险估算与 `warn!` 日志，调用 AD1 工具函数填充 AD3 字段
 
 ---
 
@@ -365,4 +361,4 @@ fn ad5_budget_tokens_clamped_below_max_tokens() {
 - **不引入 API 调用**：token 估算全部 chars/4 本地计算
 - **backward compatible**：`LlmRequest.thinking_config = None` 时 `build_request_body` 行为与现在完全一致
 - **extended thinking 仅限 Claude provider**：其他 provider（DeepSeek、Custom、Volcano）不受影响，`thinking_config` 字段在非 Claude provider 中被忽略
-- **AD4 Settings 集成**：`ResolvedLlmSettings.thinking_enabled` 默认 `false`，不影响现有任何会话的 LLM 行为；前端 Settings UI 改动不在本 plan 范围内（可在 `TurnConfig` 构建处 hardcode false 直至 UI 就绪）
+- **AD4 Settings 集成**：`ResolvedLlmSettings.thinking_type = "disabled"` 默认关闭，不影响现有任何会话；前端 Settings UI 改动不在本 plan 范围内，但底层字段与 IPC 已预留

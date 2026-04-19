@@ -11,6 +11,9 @@ use crate::runtime::chat::compaction::{
     build_compact_boundary_record, compact_messages_via_llm, microcompact, should_auto_compact,
     AutoCompactConfig, CompactTrigger, MicrocompactConfig,
 };
+use crate::llm::context_decay::{
+    context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
+};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
@@ -814,6 +817,18 @@ impl RuntimeChatTurnDriver {
             );
 
             // Build the read-only executor input.
+            let estimated_tokens = estimate_tokens_from_json(&state.messages);
+            let context_window = context_window_for_provider(&config.llm_settings.primary_model);
+            if (estimated_tokens as f64) > (context_window as f64 * CONTEXT_OVERFLOW_THRESHOLD) {
+                log::warn!(
+                    "[AD2] Context overflow risk: estimated {} tokens > {}% of {} window for provider {}",
+                    estimated_tokens,
+                    (CONTEXT_OVERFLOW_THRESHOLD * 100.0) as u32,
+                    context_window,
+                    config.llm_settings.primary_model
+                );
+            }
+
             let input = LlmStepInput {
                 system_prompt: &config.system_prompt,
                 dynamic_context: &dynamic_context,
@@ -828,6 +843,7 @@ impl RuntimeChatTurnDriver {
                 llm_settings: &config.llm_settings,
                 conversation_id: config.conversation_id.as_str(),
                 run_id: config.run_id.as_str(),
+                estimated_tokens,
             };
 
             // CP-1: check cancellation before invoking provider.

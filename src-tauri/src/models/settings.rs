@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+fn default_thinking_budget_tokens() -> u32 {
+    8000
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
@@ -53,6 +57,12 @@ pub struct AppSettings {
     /// Whether persona onboarding has been completed.
     #[serde(default)]
     pub persona_onboarding_done: bool,
+    /// Provider-aware extended thinking mode: disabled | enabled | adaptive.
+    #[serde(default)]
+    pub thinking_type: String,
+    /// Budget tokens used when thinking_type == enabled.
+    #[serde(default = "default_thinking_budget_tokens")]
+    pub thinking_budget_tokens: u32,
 }
 
 impl Default for AppSettings {
@@ -80,6 +90,8 @@ impl Default for AppSettings {
             cloud_model: String::new(),
             cloud_model_type: String::new(),
             persona_onboarding_done: false,
+            thinking_type: "disabled".to_string(),
+            thinking_budget_tokens: default_thinking_budget_tokens(),
         }
     }
 }
@@ -134,6 +146,11 @@ impl AppSettings {
             persona_onboarding_done: get_bool(
                 "personaOnboardingDone",
                 defaults.persona_onboarding_done,
+            ),
+            thinking_type: get_str("thinkingType", &defaults.thinking_type),
+            thinking_budget_tokens: get_u32(
+                "thinkingBudgetTokens",
+                defaults.thinking_budget_tokens,
             ),
         }
     }

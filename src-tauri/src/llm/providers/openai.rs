@@ -349,6 +349,7 @@ pub(super) async fn validate_key_openai_compat(
         max_tokens: 5,
         temperature: 0.0,
         stream: false,
+        thinking_config: None,
     };
 
     let body = build_request_body(&request, model, false, false);

@@ -14,6 +14,43 @@
 
 use crate::llm::streaming::ChatMessage;
 
+
+pub const CONTEXT_WINDOW_CLAUDE: usize = 200_000;
+pub const CONTEXT_WINDOW_DEEPSEEK: usize = 128_000;
+pub const CONTEXT_WINDOW_DEFAULT: usize = 100_000;
+pub const CONTEXT_OVERFLOW_THRESHOLD: f64 = 0.8;
+
+pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
+    messages
+        .iter()
+        .map(|message| {
+            let mut chars = message.content.len();
+            if let Some(tool_calls) = &message.tool_calls {
+                chars += serde_json::to_string(tool_calls).map(|s| s.len()).unwrap_or(0);
+            }
+            chars
+        })
+        .sum::<usize>()
+        / 4
+}
+
+pub fn estimate_context_tokens(system_prompt: &str, messages: &[ChatMessage]) -> usize {
+    (system_prompt.len() + estimate_tokens(messages) * 4) / 4
+}
+
+pub fn estimate_tokens_from_json(messages: &[serde_json::Value]) -> usize {
+    messages.iter().map(|value| value.to_string().len()).sum::<usize>() / 4
+}
+
+pub fn context_window_for_provider(provider: &str) -> usize {
+    match provider {
+        "claude" => CONTEXT_WINDOW_CLAUDE,
+        "deepseek-v3" | "deepseek-r1" => CONTEXT_WINDOW_DEEPSEEK,
+        _ => CONTEXT_WINDOW_DEFAULT,
+    }
+}
+
+
 /// Max chars for tool results in the second-most-recent iteration.
 const RECENT_LIMIT: usize = 2000;
 

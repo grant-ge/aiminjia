@@ -40,6 +40,26 @@ const MAX_RETRIES: u32 = 3;
 /// Initial backoff delay in milliseconds (doubles each retry: 1s → 2s → 4s).
 const INITIAL_BACKOFF_MS: u64 = 1000;
 
+
+pub fn thinking_config_for_route(
+    route: &RouteResult,
+    settings: &AppSettings,
+) -> Option<ThinkingConfig> {
+    if route.provider != "claude" {
+        return None;
+    }
+
+    match settings.thinking_type.as_str() {
+        "adaptive" => Some(ThinkingConfig::Adaptive),
+        "enabled" => Some(ThinkingConfig::Enabled {
+            budget_tokens: settings.thinking_budget_tokens,
+        }),
+        "disabled" => Some(ThinkingConfig::Disabled),
+        _ => Some(ThinkingConfig::Disabled),
+    }
+}
+
+
 /// Check if an error is retryable (rate limit, server error, or network timeout).
 ///
 /// Parses the error message for HTTP status codes and known error patterns.
@@ -142,6 +162,7 @@ impl LlmGateway {
         context_message: Option<&str>,
         tool_defs_override: Option<Vec<ToolDefinition>>,
         max_tokens: u32,
+        settings: &AppSettings,
     ) -> LlmRequest {
         // Prepend system prompt if provided (stable prefix for KV cache)
         if let Some(prompt) = system_prompt {
@@ -168,6 +189,7 @@ impl LlmGateway {
             max_tokens,
             temperature: 0.7,
             stream,
+            thinking_config: thinking_config_for_route(route, settings),
         }
     }
 
@@ -236,6 +258,7 @@ impl LlmGateway {
             context_message,
             tool_defs_override,
             max_tokens,
+            settings,
         );
 
         // Log request summary for debugging LLM quality
@@ -325,6 +348,7 @@ impl LlmGateway {
             context_message,
             tool_defs_override,
             4096,
+            settings,
         );
 
         // 4. Dispatch to provider with retry on transient errors

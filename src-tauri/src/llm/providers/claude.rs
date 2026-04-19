@@ -21,6 +21,7 @@ use super::LlmProviderTrait;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const ANTHROPIC_BETA_THINKING: &str = "interleaved-thinking-2025-05-14";
 
 /// Anthropic Claude provider.
 pub struct ClaudeProvider {
@@ -66,6 +67,22 @@ impl ClaudeProvider {
             api_key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
         }
+    }
+
+
+    fn build_request_headers(&self, request: &LlmRequest) -> std::collections::HashMap<String, String> {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-api-key".to_string(), self.api_key.clone());
+        headers.insert("anthropic-version".to_string(), ANTHROPIC_VERSION.to_string());
+        headers.insert("content-type".to_string(), "application/json".to_string());
+        match request.thinking_config {
+            Some(crate::llm::streaming::ThinkingConfig::Adaptive)
+            | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
+                headers.insert("anthropic-beta".to_string(), ANTHROPIC_BETA_THINKING.to_string());
+            }
+            _ => {}
+        }
+        headers
     }
 
     /// Build the JSON request body for Anthropic Messages API.
@@ -188,12 +205,30 @@ impl ClaudeProvider {
             body["stream"] = json!(true);
         }
 
+        match &request.thinking_config {
+            Some(crate::llm::streaming::ThinkingConfig::Adaptive) => {
+                body["thinking"] = json!({ "type": "adaptive" });
+                if let Some(obj) = body.as_object_mut() { obj.remove("temperature"); }
+            }
+            Some(crate::llm::streaming::ThinkingConfig::Enabled { budget_tokens }) => {
+                let budget = (*budget_tokens).min(request.max_tokens.saturating_sub(1));
+                body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
+                if let Some(obj) = body.as_object_mut() { obj.remove("temperature"); }
+            }
+            Some(crate::llm::streaming::ThinkingConfig::Disabled) | None => {}
+        }
+
         body
     }
 
     #[doc(hidden)]
     pub fn build_request_body_for_test(&self, request: &LlmRequest) -> Value {
         self.build_request_body(request)
+    }
+
+    #[doc(hidden)]
+    pub fn build_request_headers_for_test(&self, request: &LlmRequest) -> std::collections::HashMap<String, String> {
+        self.build_request_headers(request)
     }
 
     /// Parse the non-streaming response into `LlmResponse`.
@@ -281,15 +316,12 @@ impl LlmProviderTrait for ClaudeProvider {
 
         debug!("Claude send request to model: {}", self.model);
 
-        let response = self
-            .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let headers = self.build_request_headers(&request);
+        let mut req = self.client.post(ANTHROPIC_API_URL);
+        for (key, value) in headers {
+            req = req.header(key, value);
+        }
+        let response = req.json(&body).send().await?;
 
         let status = response.status();
         let response_text = response.text().await?;
@@ -315,15 +347,12 @@ impl LlmProviderTrait for ClaudeProvider {
 
         debug!("Claude stream request to model: {}", self.model);
 
-        let response = self
-            .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let headers = self.build_request_headers(&stream_request);
+        let mut req = self.client.post(ANTHROPIC_API_URL);
+        for (key, value) in headers {
+            req = req.header(key, value);
+        }
+        let response = req.json(&body).send().await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -682,6 +711,7 @@ mod tests {
             max_tokens: 1024,
             temperature: 1.0,
             stream: false,
+            thinking_config: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -708,6 +738,7 @@ mod tests {
             max_tokens: 4096,
             temperature: 0.7,
             stream: true,
+            thinking_config: None,
         };
 
         let body = provider.build_request_body(&request);

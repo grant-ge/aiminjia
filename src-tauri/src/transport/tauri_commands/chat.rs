@@ -218,6 +218,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 input.conversation_id,
                 input.run_id,
             );
+            log::debug!(
+                "[AD3] LLM step estimated_tokens={} token_budget={} conv={}",
+                input.estimated_tokens,
+                input.token_budget,
+                input.conversation_id,
+            );
 
             // --- Block 15: call gateway.stream_message ---
             let stream_result = self
@@ -525,6 +531,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             use_cloud: settings.use_cloud,
             cloud_model: settings.cloud_model,
             cloud_model_type: settings.cloud_model_type,
+            thinking_type: settings.thinking_type,
+            thinking_budget_tokens: settings.thinking_budget_tokens,
         })
     }
 
@@ -1112,6 +1120,8 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
         use_cloud: settings.use_cloud,
         cloud_model: settings.cloud_model.clone(),
         cloud_model_type: settings.cloud_model_type.clone(),
+        thinking_type: settings.thinking_type.clone(),
+        thinking_budget_tokens: settings.thinking_budget_tokens,
         ..AppSettings::default()
     }
 }
