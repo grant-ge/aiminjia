@@ -146,6 +146,7 @@ struct TauriChatServices {
 
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
+    claude_md_loader: Arc<tokio::sync::Mutex<crate::runtime::claude_md::ClaudeMdLoader>>,
 }
 
 #[async_trait]
@@ -987,6 +988,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
+    async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {
+        Ok(self.services.file_mgr.workspace_path().to_path_buf())
+    }
+
+    async fn load_claude_md(
+        &self,
+        workspace_path: &std::path::Path,
+    ) -> Result<Vec<crate::runtime::claude_md::ClaudeMdFile>, TurnError> {
+        let mut loader = self.claude_md_loader.lock().await;
+        Ok(loader.load(workspace_path).await)
+    }
+
     async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok(self.services.db.load_core_memory())
     }
@@ -1200,6 +1213,9 @@ impl TauriChatCommandAdapter {
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
             services: services.clone(),
+            claude_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::claude_md::ClaudeMdLoader::new(),
+            )),
         });
         let mut runtime = SessionRuntime::with_llm_executor(
             QueryEngine::new()

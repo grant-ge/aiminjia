@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -192,6 +193,19 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
+    /// 加载 turn 对应的 workspace 路径。
+    async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
+        Ok(PathBuf::new())
+    }
+
+    /// 加载 CLAUDE.md user-context 文件。
+    async fn load_claude_md(
+        &self,
+        _workspace_path: &Path,
+    ) -> Result<Vec<crate::runtime::claude_md::ClaudeMdFile>, TurnError> {
+        Ok(vec![])
+    }
+
     /// 加载跨对话共享的 core memory。
     ///
     /// 默认返回空字符串，便于旧测试 executor 无需感知此能力。
@@ -346,6 +360,29 @@ fn permission_ask_event_from_round_result(
         }),
         _ => None,
     }
+}
+
+fn build_claude_md_context_message(
+    claude_md_files: &[crate::runtime::claude_md::ClaudeMdFile],
+) -> Option<serde_json::Value> {
+    if claude_md_files.is_empty() {
+        return None;
+    }
+
+    let claude_md_section = claude_md_files
+        .iter()
+        .map(|file| format!("{}:\n{}", file.path.display(), file.content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    Some(serde_json::json!({
+        "role": "user",
+        "content": format!(
+            "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# claudeMd\n{}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n",
+            claude_md_section
+        ),
+        "isMeta": true,
+    }))
 }
 
 impl RuntimeChatTurnDriver {
@@ -584,6 +621,10 @@ impl RuntimeChatTurnDriver {
             .get_tool_defs(request.is_analysis)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let workspace_path = executor
+            .load_workspace_path()
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let config = TurnConfig {
             system_prompt,
@@ -594,7 +635,7 @@ impl RuntimeChatTurnDriver {
             chunk_timeout_secs: 90,
             is_analysis: request.is_analysis,
             masking_level: "strict".to_string(),
-            workspace_path: std::path::PathBuf::new(),
+            workspace_path: workspace_path.clone(),
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
@@ -602,7 +643,7 @@ impl RuntimeChatTurnDriver {
         };
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        // messages 顺序：[system-reminder, ...history, current-user-content]
+        // messages 顺序：[system-reminder, claude-md-meta?, ...history, current-user-content]
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日");
         let today_iso = now.format("%Y-%m-%d");
@@ -613,6 +654,18 @@ impl RuntimeChatTurnDriver {
                 today, today_iso
             ),
         });
+        let claude_md_files = executor
+            .load_claude_md(&config.workspace_path)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "[run_chat_turn_s4] load_claude_md failed for workspace '{}': {}",
+                    config.workspace_path.display(),
+                    e
+                );
+                Vec::new()
+            });
+        let claude_md_context_message = build_claude_md_context_message(&claude_md_files);
 
         let llm_user_content = executor
             .build_user_message_content(
@@ -634,8 +687,11 @@ impl RuntimeChatTurnDriver {
             "content": llm_user_content,
         });
 
-        let mut initial_messages = Vec::with_capacity(1 + history.len() + 1);
+        let mut initial_messages = Vec::with_capacity(2 + history.len() + 1);
         initial_messages.push(system_reminder_message);
+        if let Some(claude_md_context_message) = claude_md_context_message {
+            initial_messages.push(claude_md_context_message);
+        }
         initial_messages.extend(history);
         initial_messages.push(user_message);
 

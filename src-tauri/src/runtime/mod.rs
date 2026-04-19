@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod cancellation;
 pub mod chat;
+pub mod claude_md;
 pub mod conversation_service;
 pub mod event_bus;
 pub mod events;

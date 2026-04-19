@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 启动时和每次 turn 前按 `claude-code-best` 的 `getMemoryFiles -> getUserContext -> prependUserContext` 主线读取工作目录及父目录链的 CLAUDE.md 文件，并将其注入首条 user 上下文消息，使 LLM 感知项目级指令。
+**Goal:** 启动时和每次 turn 前按 `claude-code-best` 的 `getMemoryFiles -> getUserContext -> prependUserContext` 主线读取工作目录及父目录链的 CLAUDE.md 文件，并将其注入一条独立的 meta user message（位于日期 `system-reminder` 之后、业务 user message 之前），使 LLM 感知项目级指令。
 
-**Architecture:** 新建 `runtime/claude_md.rs` 实现目录遍历与文件读取；首阶段仅覆盖 `~/.claude/CLAUDE.md`、父目录链上的 `CLAUDE.md` / `.claude/CLAUDE.md` / `CLAUDE.local.md`；`chat_turn_driver.rs` 在组装首条 user meta/context message 时注入该内容，而不是塞进 generic dynamic_context。mtime-based 缓存是 lotus 的简化实现，用于避免重复 IO。
+**Architecture:** 新建 `runtime/claude_md.rs` 实现目录遍历与文件读取；首阶段仅覆盖 `~/.claude/CLAUDE.md`、父目录链上的 `CLAUDE.md` / `.claude/CLAUDE.md` / `CLAUDE.local.md`；`chat_turn_driver.rs` 在组装初始消息列表时插入一条独立的 meta user message，而不是塞进 generic dynamic_context，也不是直接并入现有日期 `system_reminder_message`。mtime-based 缓存是 lotus 的简化实现，用于避免重复 IO。
 
 **Tech Stack:** Rust, tokio, std::fs
 
@@ -56,28 +56,32 @@
 
 ---
 
-### AC3：注入 dynamic context
+### AC3：注入独立 meta user message
 
-**当前状态**：`chat_turn_driver.rs` L596-602 只注入日期到 `system_reminder_message`。
+**当前状态**：`chat_turn_driver.rs` L596-602 只注入日期到 `system_reminder_message`，`initial_messages` 顺序为 `[system-reminder, ...history, current-user-content]`。
 
-**目标状态**：在日期注入的同一 `system_reminder_message` 中追加 CLAUDE.md 内容，格式与 claude-code-best 对齐：
+**目标状态**：保留日期 `system_reminder_message` 不变，额外插入一条独立的 meta user message，格式与 claude-code-best 的 `prependUserContext` 思路对齐：
 
 ```
 <system-reminder>
-今天是 2026年04月19日（2026-04-19）。
-{file_path}:
-{content}
+As you answer the user's questions, you can use the following context:
+# claudeMd
+/abs/path/to/CLAUDE.md:
+...
 
-{file_path_2}:
-{content_2}
+/abs/path/to/.claude/CLAUDE.md:
+...
+
+IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.
 </system-reminder>
 ```
 
 **调用链**：
-1. `chat_turn_driver.rs` 在构建 `system_reminder_message` 前，通过 `executor`（`TauriLegacyTurnExecutor`）拿到 `workspace_path`（需在 `TurnConfig` 中填充，目前是 `PathBuf::new()`，见 L584）
+1. `chat_turn_driver.rs` 在构建 `initial_messages` 时，通过 `executor`（`TauriLegacyTurnExecutor`）拿到 `workspace_path`（需在 `TurnConfig` 中填充，目前是 `PathBuf::new()`，见 L584）
 2. 调用 `ClaudeMdLoader::load(workspace_path)` — loader 通过 Arc 注入到 executor 或 QueryEngine
-3. 把有内容的文件按顺序追加到 system_reminder 字符串
-4. 若未找到任何 CLAUDE.md，不注入（只有日期）
+3. 构造一条 meta user message，并将有内容的文件按顺序追加到该 message
+4. `initial_messages` 顺序改为 `[system-reminder, claude-md-meta?, ...history, current-user-content]`
+5. 若未找到任何 CLAUDE.md，仅保留日期 message；不要把 CLAUDE.md 并入日期 reminder
 
 **依赖修复**：`TurnConfig::workspace_path` 当前值为 `PathBuf::new()`（空路径，见 `chat_turn_driver.rs` L584）。需在 `TauriChatCommandAdapter::send_message` 中从 `AppStorage` / `FileManager` 读取实际 workspace_path 并填入 `TurnConfig`。此 gap 在 env_info 改造中已记录，本任务一并修复（若 Plan-AC 执行时仍未修复）。
 
@@ -91,7 +95,7 @@
 1. 验证 `ClaudeMdLoader` 不 `use tauri::*`（架构约束）
 2. 验证目录遍历逻辑（给定 temp 目录结构，断言加载顺序和内容）
 3. 验证 mtime 缓存命中（同一文件第二次 `load` 不重新读磁盘）
-4. 验证注入格式（`<system-reminder>` 包裹、路径前缀）
+4. 验证注入格式（独立 meta user message、路径前缀、消息顺序）
 
 ---
 
@@ -108,8 +112,9 @@
 ### claude-code-best 对标分析
 
 claude-code-best 的注入路径：
-- `getMemoryFiles()` 收集所有文件，结果注入第一条 user message 的 `<system-reminder>` block
-- 注入格式：每个文件独立 `{file_path}:\n{content}` 段落，多个文件换行分隔
+- `getMemoryFiles()` 收集所有文件，`getUserContext()` 组装文本
+- `prependUserContext()` 将其作为独立 user message prepend 到正式消息列表前缀
+- 日期与 CLAUDE.md 都通过 prepend 的 meta user message 注入，但不是并入业务 user message，也不是直接塞进 generic dynamic context
 - 缓存：通过 `memoize` 包装，内部按 mtime 失效
 
 lotus-app 差异：
@@ -351,7 +356,7 @@ lotus-app 差异：
 
 ---
 
-## Task AC3：注入 dynamic context
+## Task AC3：注入独立 meta user message
 
 ### 步骤
 
@@ -383,47 +388,36 @@ lotus-app 差异：
 
   若 executor 是每次 turn 新建的（而非长期持有），则由 `TauriChatCommandAdapter` 或 `SessionRuntime` 持有 loader 并注入。选择与 `FileStateCache` 相同的持有层级（见 Plan-B B1 的设计）。
 
-- [ ] **AC3-3 在 `chat_turn_driver.rs` 注入 CLAUDE.md 到 system_reminder**
+- [ ] **AC3-3 在 `chat_turn_driver.rs` 注入独立 user context message**
 
-  定位 L596-602 的 `system_reminder_message` 构建。
+  定位 L596-640 的初始消息组装逻辑。
 
-  **修改**：在构建 `system_reminder_message` 之前，调用 loader 加载 CLAUDE.md 文件，并将内容追加到 system_reminder 字符串：
+  **修改**：
+  1. 保持 `system_reminder_message` 只负责日期；
+  2. 新增 `executor.load_claude_md(&config.workspace_path)`；
+  3. 由 driver 构造独立的 meta user message；
+  4. `initial_messages` 顺序改为 `[system-reminder, claude-md-meta?, ...history, user_message]`。
+
+  伪代码：
 
   ```rust
-  // 加载 CLAUDE.md 文件
-  let claude_md_section = if !config.workspace_path.as_os_str().is_empty() {
-      let files = executor.load_claude_md(&config.workspace_path).await;
-      if files.is_empty() {
-          String::new()
-      } else {
-          let mut s = String::new();
-          for f in &files {
-              s.push('\n');
-              s.push_str(&f.path.display().to_string());
-              s.push_str(":\n");
-              s.push_str(&f.content);
-              s.push('\n');
-          }
-          s
-      }
-  } else {
-      String::new()
-  };
+  let claude_md_files = executor.load_claude_md(&config.workspace_path).await?;
+  let user_context_message = build_claude_md_context_message(&claude_md_files);
 
-  let system_reminder_message = serde_json::json!({
-      "role": "user",
-      "content": format!(
-          "<system-reminder>\n今天是 {}（{}）。{}\n</system-reminder>",
-          today, today_iso, claude_md_section
-      ),
-  });
+  let mut initial_messages = Vec::with_capacity(2 + history.len() + 1);
+  initial_messages.push(system_reminder_message);
+  if let Some(user_context_message) = user_context_message {
+      initial_messages.push(user_context_message);
+  }
+  initial_messages.extend(history);
+  initial_messages.push(user_message);
   ```
 
-  `executor.load_claude_md(path)` 是在 `TauriLegacyTurnExecutor` 上新增的方法，内部 lock `claude_md_loader` 并调用 `load`。
+  `executor.load_claude_md(path)` 在 `TauriLegacyTurnExecutor` 上新增，内部 lock `claude_md_loader` 并调用 `load`；meta message 文案对齐 `prependUserContext()` 的最小结构。
 
 - [ ] **AC3-4 集成验证**
 
-  在 temp workspace 下创建 `CLAUDE.md`，启动 Tauri dev 并发送消息，通过日志确认 `system_reminder_message` 中包含 CLAUDE.md 内容：
+  在 temp workspace 下创建 `CLAUDE.md`，通过单测或日志确认 `messages` 中新增独立 meta user message，且位于 `system_reminder_message` 之后：
 
   ```bash
   # 快速 smoke test（仅编译 + Rust 单测）
@@ -453,7 +447,7 @@ lotus-app 差异：
       let _ = files;
   }
 
-  /// 验证注入格式：每个文件以 "{path}:\n{content}" 格式出现。
+  /// 验证注入格式：存在独立 meta user message，且包含 path / content。
   #[tokio::test]
   async fn review_claude_md_injection_format() {
       let tmp = tempfile::tempdir().unwrap();
