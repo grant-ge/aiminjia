@@ -140,7 +140,15 @@ impl ClaudeProvider {
 
         if let Some(system) = system_content {
             if !system.is_empty() {
-                body["system"] = json!(system);
+                if self.supports_prompt_caching() {
+                    body["system"] = json!([{
+                        "type": "text",
+                        "text": system,
+                        "cache_control": { "type": "ephemeral" },
+                    }]);
+                } else {
+                    body["system"] = json!(system);
+                }
             }
         }
 
@@ -151,7 +159,7 @@ impl ClaudeProvider {
 
         // Anthropic uses `input_schema` instead of OpenAI's `parameters`
         if !request.tools.is_empty() {
-            let tools: Vec<Value> = request
+            let mut tools: Vec<Value> = request
                 .tools
                 .iter()
                 .map(|t| {
@@ -162,6 +170,17 @@ impl ClaudeProvider {
                     })
                 })
                 .collect();
+
+            if self.supports_prompt_caching() {
+                if let Some(last) = tools.last_mut() {
+                    if let Some(obj) = last.as_object_mut() {
+                        obj.insert(
+                            "cache_control".to_string(),
+                            json!({ "type": "ephemeral" }),
+                        );
+                    }
+                }
+            }
             body["tools"] = json!(tools);
         }
 
@@ -170,6 +189,11 @@ impl ClaudeProvider {
         }
 
         body
+    }
+
+    #[doc(hidden)]
+    pub fn build_request_body_for_test(&self, request: &LlmRequest) -> Value {
+        self.build_request_body(request)
     }
 
     /// Parse the non-streaming response into `LlmResponse`.
@@ -245,6 +269,10 @@ impl LlmProviderTrait for ClaudeProvider {
     }
 
     fn supports_streaming(&self) -> bool {
+        true
+    }
+
+    fn supports_prompt_caching(&self) -> bool {
         true
     }
 
