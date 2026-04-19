@@ -24,12 +24,9 @@ use serde::{Deserialize, Serialize};
 /// iterations older than the most recent one. The caller's original slice is
 /// never mutated, so checkpoint / auto-capture logic still sees full data.
 ///
-/// When `is_analysis` is `false` (daily mode) the messages are returned
-/// unchanged — decay only applies inside analysis step loops.
-///
 /// Delegates to [`crate::llm::context_decay::apply_decay`].
-pub fn apply_decay(messages: &[ChatMessage], is_analysis: bool) -> Vec<ChatMessage> {
-    crate::llm::context_decay::apply_decay(messages, is_analysis)
+pub fn apply_decay(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    crate::llm::context_decay::apply_decay(messages)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

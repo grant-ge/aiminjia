@@ -1,6 +1,6 @@
 //! P1: Intra-step context decay — reduce older tool outputs to save LLM context.
 //!
-//! During analysis steps, the agent may iterate 10+ times, producing tool results
+//! During long tool-using turns, the agent may iterate 10+ times, producing tool results
 //! (execute_python stdout, etc.) that accumulate in the message history. Older results
 //! are less relevant to the current iteration, so we apply progressive truncation:
 //!
@@ -126,9 +126,8 @@ fn find_iterations(messages: &[ChatMessage]) -> Vec<Iteration> {
 /// Returns a **new** Vec with truncated tool results for older iterations.
 /// The original `messages` slice is not modified.
 ///
-/// Only applies when `is_analysis` is true; daily mode messages are returned as-is.
-pub fn apply_decay(messages: &[ChatMessage], is_analysis: bool) -> Vec<ChatMessage> {
-    if !is_analysis || messages.is_empty() {
+pub fn apply_decay(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    if messages.is_empty() {
         return messages.to_vec();
     }
 
@@ -229,13 +228,13 @@ mod tests {
     }
 
     #[test]
-    fn decay_skipped_in_daily_mode() {
+    fn decay_noop_for_empty_or_single_iteration_history() {
         let messages = vec![
             make_user("hello"),
             make_assistant_with_tools("running"),
             make_tool_result(&"x".repeat(10000)),
         ];
-        let result = apply_decay(&messages, false);
+        let result = apply_decay(&messages);
         assert_eq!(result.len(), messages.len());
         assert_eq!(result[2].content, messages[2].content);
     }
@@ -247,7 +246,7 @@ mod tests {
             make_assistant_with_tools("running"),
             make_tool_result(&"x".repeat(10000)),
         ];
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
         // Single iteration → no decay
         assert_eq!(result[2].content.len(), messages[2].content.len());
     }
@@ -268,7 +267,7 @@ mod tests {
             make_tool_result(&big_content),
         ];
 
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
 
         // Iteration 2 (most recent, idx=6) — full
         assert_eq!(result[6].content.len(), big_content.len());
@@ -293,7 +292,7 @@ mod tests {
             make_tool_result(&big_content),
         ];
 
-        let _ = apply_decay(&messages, true);
+        let _ = apply_decay(&messages);
 
         // Original messages should be unchanged
         assert_eq!(messages[2].content.len(), big_content.len());
@@ -311,7 +310,7 @@ mod tests {
             make_tool_result("short"),
         ];
 
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
         // Assistant messages (indices 1, 3) should not be truncated
         assert_eq!(result[1].content.len(), big.len());
         assert_eq!(result[3].content.len(), big.len());

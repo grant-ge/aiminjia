@@ -58,12 +58,12 @@ pub fn build_iteration_context(
         ctx.push_str("\n[/内部系统浏览]");
     }
 
-    // 7. Analysis-mode context prompt (AnalysisContext::format_for_prompt())
+    // 7. Optional step context prompt (AnalysisContext::format_for_prompt())
     //    and step plan are injected by the caller and forwarded here as a single
     //    pre-formatted string.
     //
-    //    NOTE: The original Block 13 also reads `_plan.md` from disk inline when
-    //    `is_analysis` is true (workspace_path/analysis/{conversation_id}/_plan.md).
+    //    NOTE: The original Block 13 also reads `_plan.md` from disk inline when a
+    //    step/workflow context is active (workspace_path/analysis/{conversation_id}/_plan.md).
     //    That file-I/O is kept in the call-site for now so this function stays pure.
     //    TODO(S4-T5): lift plan-file reading into this function once the workspace-path
     //    is threaded through the ChatTurnRequest / TurnConfig.

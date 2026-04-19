@@ -24,7 +24,7 @@
 //! │   └── cache/               # Search cache (per-query JSON)
 //! └── conversations/           # Per-conversation isolation
 //!     └── {id}/
-//!         ├── conv.json        # Metadata (title, mode, timestamps)
+//!         ├── conv.json        # Metadata (title, timestamps)
 //!         ├── file_index.json  # File records (uploads + generated)
 //!         ├── analysis.json    # Analysis state
 //!         ├── compact_boundaries.jsonl # Compact boundary records
@@ -142,18 +142,12 @@ impl AppStorage {
         Ok(())
     }
 
-    pub fn get_conversation_mode(&self, id: &str) -> Result<String> {
-        Ok(conversations::get_conversation_mode(&self.base_dir, id)?)
-    }
-
-    pub fn set_conversation_mode(&self, id: &str, mode: &str) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        conversations::set_conversation_mode(&self.base_dir, id, mode)?;
-        Ok(())
-    }
-
     pub fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
         Ok(conversations::get_conversations(&self.base_dir)?)
+    }
+
+    pub fn get_conversation(&self, id: &str) -> Result<crate::storage::file_store::types::ConversationMeta> {
+        Ok(conversations::get_conversation(&self.base_dir, id)?)
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<()> {

@@ -46,13 +46,6 @@ const MAX_STREAM_RETRIES: u32 = 2;
 /// Delay before retrying a failed stream (seconds).
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
 
-fn resolve_request_is_analysis(db: &AppStorage, conversation_id: &str) -> bool {
-    matches!(
-        db.get_conversation_mode(conversation_id).ok().as_deref(),
-        Some("confirming" | "analyzing")
-    )
-}
-
 fn build_history_message_content(
     role: &str,
     content_value: &serde_json::Value,
@@ -648,13 +641,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         _state: &mut TurnIterationState,
     ) -> Result<Option<String>, TurnError> {
         // TODO(S4-T12/future): full precompute requires StepConfig.precompute, which is not yet
-        // carried by TurnConfig. TurnConfig only has is_analysis:bool, not the full StepConfig.
+        // carried by TurnConfig.
         // When S4-T13 wires the driver loop, TurnConfig should be extended with:
         //   pub step_config: Option<StepConfig>,
         // at which point this body can be extracted from chat_runtime_impl.rs Block 6 (L1795-L2034).
-        // For daily mode (is_analysis == false) Ok(None) is always correct.
-        // For analysis mode without the step_config, falling back to no-precompute is safe
-        // (the agent will do the computation itself in the tool loop).
+        // Until then, falling back to no-precompute is safe (the agent can do the
+        // computation itself in the tool loop).
         Ok(None)
     }
 
@@ -737,12 +729,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         }
 
         // Check that the conversation still exists (might have been deleted while the agent ran).
-        if self
-            .services
-            .db
-            .get_conversation_mode(conversation_id)
-            .is_err()
-        {
+        if self.services.db.get_conversation(conversation_id).is_err() {
             log::warn!(
                 "[persist_assistant_message] Conversation {} deleted during agent run, skipping save",
                 conversation_id
@@ -865,25 +852,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         state: &TurnIterationState,
         config: &TurnConfig,
     ) -> Result<(), TurnError> {
-        // TODO(S4-T12/future): full finalize_step requires StepConfig.step (u32), which is not yet
-        // carried by TurnConfig. TurnConfig only has is_analysis:bool.
-        // When S4-T13 wires the driver loop, TurnConfig should be extended with:
-        //   pub step_config: Option<StepConfig>,
-        // at which point this body can be extracted from chat_runtime_impl.rs Block 34 (L3300-L3372):
-        //   - auto_capture_step_context(&db, &conversation_id, step_num, &messages)
-        //   - validate analysis notes (warn if missing)
-        //   - orchestrator::advance_step(&db, &conversation_id, step_num, "completed")
-        // For daily mode (is_analysis == false) the no-op is always correct.
-        if !config.is_analysis {
-            return Ok(());
-        }
-        // analysis mode: log that we skipped finalize (until step_config is available)
-        log::debug!(
-            "[finalize_step] Analysis mode but step_config not in TurnConfig — skipping \
-             auto_capture and advance_step for conv={}. full_content_len={}",
-            config.conversation_id,
-            state.full_content.len()
-        );
+        let _ = state;
+        let _ = config;
         Ok(())
     }
 
@@ -891,11 +861,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     /// 精确移植 agent_loop Block 4 的逻辑：
     ///   - 从 DB 读取 active persona
     ///   - 从 auth_manager 获取 product_name（租户品牌名）
-    ///   - 根据 is_analysis 路由 PromptMode::Daily / PromptMode::Analysis
     async fn build_system_prompt(
         &self,
         _conversation_id: &str,
-        is_analysis: bool,
     ) -> Result<String, TurnError> {
         let persona = self.services.db.get_active_persona().ok();
 
@@ -907,14 +875,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .tenant
             .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
 
-        let mode = if is_analysis {
-            prompts::PromptMode::Analysis
-        } else {
-            prompts::PromptMode::Daily
-        };
-
-        let parts =
-            prompts::build_system_prompt_parts(mode, persona.as_ref(), product_name.as_deref());
+        let parts = prompts::build_system_prompt_parts(
+            prompts::PromptMode::Daily,
+            persona.as_ref(),
+            product_name.as_deref(),
+        );
         let prompt = if parts.dynamic_section.is_empty() {
             parts.static_section
         } else {
@@ -922,8 +887,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         };
 
         log::info!(
-            "[build_system_prompt] mode={:?} len={} persona={} product_name={}",
-            mode,
+            "[build_system_prompt] mode=daily len={} persona={} product_name={}",
             prompt.len(),
             persona
                 .as_ref()
@@ -963,14 +927,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         ))
     }
 
-    async fn get_tool_defs(&self, is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
         use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 
-        let filter = if is_analysis {
-            ToolFilter::All
-        } else {
-            ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect())
-        };
+        let filter = ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect());
 
         let tool_definitions: Vec<crate::llm::streaming::ToolDefinition> = self
             .services
@@ -995,8 +955,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .collect();
 
         log::info!(
-            "[get_tool_defs] is_analysis={} returned {} tool definitions",
-            is_analysis,
+            "[get_tool_defs] returned {} tool definitions",
             json_defs.len(),
         );
 
@@ -1241,35 +1200,6 @@ mod tests {
         ) -> anyhow::Result<()> {
             Ok(())
         }
-    }
-
-    #[test]
-    fn resolve_request_is_analysis_follows_conversation_mode() {
-        let (storage, _dir) = test_storage();
-        storage.create_conversation("c1", "Conv").unwrap();
-
-        assert!(
-            !resolve_request_is_analysis(&storage, "c1"),
-            "daily conversations must stay in daily mode"
-        );
-
-        storage.set_conversation_mode("c1", "confirming").unwrap();
-        assert!(
-            resolve_request_is_analysis(&storage, "c1"),
-            "confirming conversations must use analysis mode"
-        );
-
-        storage.set_conversation_mode("c1", "analyzing").unwrap();
-        assert!(
-            resolve_request_is_analysis(&storage, "c1"),
-            "analyzing conversations must use analysis mode"
-        );
-
-        storage.set_conversation_mode("c1", "daily").unwrap();
-        assert!(
-            !resolve_request_is_analysis(&storage, "c1"),
-            "daily conversations must not use analysis mode"
-        );
     }
 
     #[test]
@@ -1548,9 +1478,7 @@ impl TauriChatCommandAdapter {
         content: String,
         file_ids: Vec<String>,
     ) -> Result<(), String> {
-        let is_analysis = resolve_request_is_analysis(&self.services.db, &conversation_id);
-        let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
-        request.is_analysis = is_analysis;
+        let request = ChatTurnRequest::new(conversation_id, content, file_ids);
         self.runtime.run_chat_request(request).await
     }
 

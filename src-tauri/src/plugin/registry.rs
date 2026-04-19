@@ -357,19 +357,17 @@ impl ToolRegistry {
         partition_sort_tool_schemas(schemas)
     }
 
-    /// Execute a tool by name.
+    /// DEPRECATED: PluginContext 桥接入口，不与 claude-code-best 架构对齐。
     ///
-    /// Runtime-first: if the tool is registered as a `RuntimeTool`, it is
-    /// executed via `CapabilityPermissionPipeline` using a `ToolExecutionContext`
-    /// built from `PluginContext`.  Falls back to legacy `ToolPlugin` if no
-    /// runtime tool is found.
+    /// 正确路径：`ToolDispatcher::dispatch()` → `RuntimeTool::execute(input, ToolExecutionContext)`
+    /// 所有走此路径的 ToolPlugin 工具均为过期工具，等待删除。
     ///
-    /// The read lock is released before calling `execute()` so that
-    /// long-running tools (Python subprocess, web search) do not block
-    /// concurrent `register()`/`unregister()` calls.
-    ///
-    /// `cancel_token` should be a child of the call-site's parent token so that
-    /// cancellation cascades correctly through the session→turn→tool_call hierarchy.
+    /// 此方法保留仅为测试辅助路径（`commands/chat.rs` 的 `WorkspaceFirstToolTrace`），
+    /// 生产代码禁止新增调用。
+    #[deprecated(
+        since = "0.0.0",
+        note = "Use ToolDispatcher::dispatch() instead. This path bridges PluginContext and will be removed with legacy ToolPlugin tools."
+    )]
     pub async fn execute(
         &self,
         name: &str,

@@ -30,12 +30,7 @@ fn review_get_system_prompt_is_a_compatibility_shim_over_parts() {
         daily_parts.static_section, daily_parts.dynamic_section
     );
     assert_eq!(get_system_prompt(None, None, None), expected_daily);
-
-    let analysis_parts = build_system_prompt_parts(PromptMode::Analysis, None, None);
-    assert_eq!(
-        get_system_prompt(Some(0), None, None),
-        analysis_parts.static_section,
-    );
+    assert_eq!(get_system_prompt(Some(0), None, None), expected_daily);
 }
 
 #[test]

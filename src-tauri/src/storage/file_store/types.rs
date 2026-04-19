@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 pub struct ConversationMeta {
     pub id: String,
     pub title: String,
-    pub mode: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,

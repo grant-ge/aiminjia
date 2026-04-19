@@ -49,8 +49,6 @@ pub struct ChatTurnRequest {
     /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
     /// with the single authoritative id generated for this turn.
     pub run_id: RunId,
-    /// true = analysis 步骤模式；false = daily 日常模式（默认）
-    pub is_analysis: bool,
     pub hook_registry: Option<Arc<HookRegistry>>,
 }
 
@@ -65,20 +63,8 @@ impl ChatTurnRequest {
             content: content.into(),
             file_ids,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
-            is_analysis: false,
             hook_registry: None,
         }
-    }
-
-    /// Convenience constructor for analysis mode turns.
-    pub fn new_analysis(
-        conversation_id: impl Into<SessionId>,
-        content: impl Into<String>,
-        file_ids: Vec<String>,
-    ) -> Self {
-        let mut r = Self::new(conversation_id, content, file_ids);
-        r.is_analysis = true;
-        r
     }
 }
 
@@ -110,7 +96,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         self.load_llm_settings().await
     }
 
-    /// Precompute 执行（analysis 模式专用）。默认 no-op。
+    /// Precompute 执行钩子。默认 no-op。
     async fn run_precompute(
         &self,
         _config: &TurnConfig,
@@ -139,7 +125,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
-    /// Step 后处理（analysis 模式专用）。默认 no-op。
+    /// Step 后处理。默认 no-op。
     async fn finalize_step(
         &self,
         _state: &TurnIterationState,
@@ -154,7 +140,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     async fn build_system_prompt(
         &self,
         _conversation_id: &str,
-        _is_analysis: bool,
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
@@ -174,12 +159,9 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 
     /// 返回本次 Turn 使用的 tool definitions（JSON schema）。
     ///
-    /// - `is_analysis=false`（daily）：从 registry 按 DAILY_ALLOWED_TOOLS 白名单过滤
-    /// - `is_analysis=true`（analysis）：全量工具
-    ///
     /// 默认实现返回空 vec（向后兼容旧 mock executor）。
     /// 生产 executor（TauriLegacyTurnExecutor）必须 override。
-    async fn get_tool_defs(&self, _is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
         Ok(vec![])
     }
 
@@ -568,7 +550,7 @@ impl RuntimeChatTurnDriver {
     /// ## Flow
     /// 1. Build `TurnConfig` with defaults (executor reads settings/tool_registry internally).
     /// 2. Initialize `TurnIterationState`.
-    /// 3. `executor.run_precompute` (analysis mode; no-op in daily mode).
+    /// 3. `executor.run_precompute` (currently a no-op extension hook).
     /// 4. Emit `StreamStarted`.
     /// 5. Iteration loop (up to `config.max_iterations`):
     ///    a. Build `LlmStepInput` (read-only view).
@@ -599,13 +581,13 @@ impl RuntimeChatTurnDriver {
 
         // Build the system prompt via the executor (reads DB/persona/auth).
         let system_prompt = executor
-            .build_system_prompt(request.conversation_id.as_str(), request.is_analysis)
+            .build_system_prompt(request.conversation_id.as_str())
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Build the tool definitions via the executor (daily: whitelist, analysis: all).
+        // Build the tool definitions via the executor.
         let tool_defs = executor
-            .get_tool_defs(request.is_analysis)
+            .get_tool_defs()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         let workspace_path = executor
@@ -620,7 +602,6 @@ impl RuntimeChatTurnDriver {
             max_iterations: 30,
             token_budget: 4096,
             chunk_timeout_secs: 90,
-            is_analysis: request.is_analysis,
             masking_level: "strict".to_string(),
             workspace_path: workspace_path.clone(),
             llm_settings,
@@ -696,7 +677,7 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // ── Step 3: Precompute (analysis mode; no-op in daily mode) ──────────
+        // ── Step 3: Precompute hook (currently no-op) ────────────────────────
         let precompute_result = executor.run_precompute(&config, &mut state).await?;
 
         // ── Step 4: Emit StreamStarted ────────────────────────────────────────
@@ -1080,18 +1061,10 @@ impl RuntimeChatTurnDriver {
                         .extend(results.new_generated_file_ids);
 
                     // Safeguard check.
-                    let has_saved_note = state.messages.iter().any(|m| {
-                        m.get("role").and_then(|v| v.as_str()) == Some("tool")
-                            && m.get("name").and_then(|v| v.as_str()) == Some("save_analysis_note")
-                    });
                     match safeguard::check_iteration(
                         iteration,
                         config.max_iterations,
                         &state.full_content,
-                        config.is_analysis,
-                        has_saved_note,
-                        &mut state.safeguard_phase1_injected,
-                        state.force_no_tools,
                     ) {
                         SafeguardAction::Continue => {}
                         SafeguardAction::InjectPromptAndContinue(msg) => {
@@ -1099,13 +1072,6 @@ impl RuntimeChatTurnDriver {
                                 "role": "user",
                                 "content": msg,
                             }));
-                        }
-                        SafeguardAction::ForceNoToolsAndContinue(msg) => {
-                            state.messages.push(serde_json::json!({
-                                "role": "user",
-                                "content": msg,
-                            }));
-                            state.force_no_tools = true;
                         }
                     }
                 }

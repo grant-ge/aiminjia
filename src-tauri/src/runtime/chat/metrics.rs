@@ -29,8 +29,8 @@ use crate::runtime::chat::turn_config::{TurnConfig, TurnIterationState};
 /// Log a baseline snapshot of the LLM context before the iteration loop.
 ///
 /// `file_context` and `notes_context` are strings whose lengths are logged;
-/// `mode` should be `"analysis"` or `"daily"`; `step_label` is the
-/// `Debug`-formatted step identifier (e.g. `"Some(1)"` or `"None"`).
+/// `step_label` is the `Debug`-formatted step identifier (e.g. `"Some(1)"` or
+/// `"None"`).
 ///
 /// Precision: mirrors the `[CTX_METRICS]` log line in Block 11 verbatim.
 pub fn log_context_baseline(
@@ -64,11 +64,7 @@ pub fn log_context_baseline(
          file_context={}chars | notes_context={}chars | \
          analysis_ctx={}chars",
         config.conversation_id,
-        if config.is_analysis {
-            "analysis"
-        } else {
-            "daily"
-        },
+        "daily",
         step_label,
         config.system_prompt.len(),
         messages.len(),

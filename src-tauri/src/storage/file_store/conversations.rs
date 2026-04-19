@@ -47,7 +47,6 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
     let meta = ConversationMeta {
         id: id.to_string(),
         title: title.to_string(),
-        mode: "daily".to_string(),
         created_at: now.clone(),
         updated_at: now.clone(),
         is_archived: false,
@@ -90,13 +89,6 @@ pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> Stor
     Ok(())
 }
 
-/// Get the current mode of a conversation.
-pub fn get_conversation_mode(base_dir: &Path, id: &str) -> StorageResult<String> {
-    let meta_path = conv_meta_path(base_dir, id);
-    let meta: ConversationMeta = read_json_safe(&meta_path)?;
-    Ok(meta.mode)
-}
-
 /// Get the configured model override for a conversation.
 pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResult<Option<String>> {
     let meta_path = conv_meta_path(base_dir, id);
@@ -109,17 +101,6 @@ pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResu
             Some(trimmed.to_string())
         }
     }))
-}
-
-/// Set the mode of a conversation.
-pub fn set_conversation_mode(base_dir: &Path, id: &str, mode: &str) -> StorageResult<()> {
-    let meta_path = conv_meta_path(base_dir, id);
-    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
-    let now = Utc::now().to_rfc3339();
-    meta.mode = mode.to_string();
-    meta.updated_at = now;
-    atomic_write_json(&meta_path, &meta)?;
-    Ok(())
 }
 
 /// Persist the optional model override for a conversation.
@@ -162,7 +143,6 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
                 "createdAt": e.created_at,
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
-                "mode": get_conversation_mode_safe(base_dir, &e.id),
             })
         })
         .collect();
@@ -292,8 +272,8 @@ fn read_global_index(base_dir: &Path) -> StorageResult<GlobalIndex> {
 }
 
 /// Get conversation mode, defaulting to "daily" on error (for index reads).
-fn get_conversation_mode_safe(base_dir: &Path, id: &str) -> String {
-    get_conversation_mode(base_dir, id).unwrap_or_else(|_| "daily".to_string())
+pub fn get_conversation(base_dir: &Path, id: &str) -> StorageResult<ConversationMeta> {
+    Ok(read_json_safe(&conv_meta_path(base_dir, id))?)
 }
 
 #[cfg(test)]
@@ -316,7 +296,7 @@ mod tests {
         let convs = get_conversations(&base).unwrap();
         assert_eq!(convs.len(), 1);
         assert_eq!(convs[0]["title"], "Test Conv");
-        assert_eq!(convs[0]["mode"], "daily");
+        assert!(convs[0].get("mode").is_none());
     }
 
     #[test]
@@ -340,17 +320,6 @@ mod tests {
 
         let convs = get_conversations(&base).unwrap();
         assert_eq!(convs[0]["title"], "Updated");
-    }
-
-    #[test]
-    fn test_conversation_mode() {
-        let (base, _dir) = setup();
-
-        create_conversation(&base, "c1", "Conv").unwrap();
-        assert_eq!(get_conversation_mode(&base, "c1").unwrap(), "daily");
-
-        set_conversation_mode(&base, "c1", "analyzing").unwrap();
-        assert_eq!(get_conversation_mode(&base, "c1").unwrap(), "analyzing");
     }
 
     #[test]
@@ -385,7 +354,6 @@ mod tests {
         let meta = ConversationMeta {
             id: "c2".to_string(),
             title: "Orphan".to_string(),
-            mode: "daily".to_string(),
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,

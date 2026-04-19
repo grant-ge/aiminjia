@@ -22,19 +22,17 @@ const PROMPT_NAMES: &[&str] = &["base", "daily", "browser_agent"];
 const TOOL_PREFERENCE_SECTION: &str = r#"
 
 【工具选择偏好】
-- 优先使用专用工具：有专用工具时，不要改用 execute_python 模拟
-- 文件操作：读文件用 load_file/read_workspace_file，不要用 execute_python 读文件
-- 搜索：信息查询用 web_search，不要伪造搜索结果
-- 内存：需要记忆时用 save_memory/search_memory，不要依赖对话历史
-- 分析：数据分析用 execute_python，结果必须来自实际执行"#;
+- 优先使用专用能力：遇到文件读取、搜索、分析等任务时，优先使用当前可用的专门能力，不要用脚本能力硬凑流程
+- 文件操作：描述文件内容时先基于实际读取结果；需要批量计算、转换或生成衍生结果时，再使用脚本或计算能力
+- 搜索：涉及外部事实、法规、政策、行情、时事或产品信息时，必须先执行真实搜索，不要伪造搜索结果
+- 记忆：不要假设系统一定提供长期记忆能力；若上下文里没有明确事实，就基于当前对话和已加载内容作答
+- 分析：任何数据分析、统计或结论都必须来自实际执行结果，不得编造"#;
 
 /// System prompt 构建模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptMode {
     /// 日常助手模式（base + 工具偏好 + daily.md + persona）
     Daily,
-    /// 分析步骤模式（base + 工具偏好，无 daily.md，无 persona）
-    Analysis,
     /// 浏览器子代理模式（base + 工具偏好 + browser_agent.md）
     BrowserAgent,
 }
@@ -273,9 +271,6 @@ pub fn build_system_prompt_parts(
                 }
             }
         }
-        PromptMode::Analysis => {
-            // analysis 模式不加 daily.md
-        }
         PromptMode::BrowserAgent => {
             let browser = guard.get("browser_agent");
             if !browser.is_empty() {
@@ -297,18 +292,13 @@ pub fn build_system_prompt_parts(
 /// 调用 `build_system_prompt_parts` 后拼接 static + dynamic。
 /// **不再注入当前日期**——日期改为 `run_chat_turn_s4` 的首条 user message 注入。
 ///
-/// - `step = None` → PromptMode::Daily
-/// - `step = Some(_)` → PromptMode::Analysis
+/// `step` 参数保留仅为兼容旧调用点；现在所有调用都走统一 daily prompt。
 pub fn get_system_prompt(
-    step: Option<u32>,
+    _step: Option<u32>,
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
 ) -> String {
-    let mode = match step {
-        None => PromptMode::Daily,
-        Some(_) => PromptMode::Analysis,
-    };
-    let parts = build_system_prompt_parts(mode, persona, product_name);
+    let parts = build_system_prompt_parts(PromptMode::Daily, persona, product_name);
     if parts.dynamic_section.is_empty() {
         parts.static_section
     } else {
@@ -464,15 +454,15 @@ mod tests {
         // Daily mode works
         assert!(get_system_prompt(None, None, None).contains("日常工作助手"));
 
-        // Step variants return base + date only (step prompts are in plugins now)
+        // Step variants now reuse the same unified daily prompt.
         let step0 = get_system_prompt(Some(0), None, None);
         assert!(step0.contains("AI小家 base"));
-        assert!(!step0.contains("日常工作助手"));
+        assert!(step0.contains("日常工作助手"));
 
-        // Invalid step also returns base only
+        // Invalid step also returns the same unified prompt
         let step99 = get_system_prompt(Some(99), None, None);
         assert!(step99.contains("AI小家 base"));
-        assert!(!step99.contains("日常工作助手"));
+        assert!(step99.contains("日常工作助手"));
 
         // Base always included
         for step in [None, Some(0), Some(1), Some(5)] {
@@ -542,22 +532,30 @@ mod tests {
     }
 
     #[test]
-    fn test_build_system_prompt_parts_analysis_no_daily() {
+    fn test_build_system_prompt_parts_browser_agent_no_daily() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
         setup_prompts(
             &bundled,
-            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+            &[
+                ("base", "AI小家 base"),
+                ("daily", "日常工作助手"),
+                ("browser_agent", "浏览器代理"),
+            ],
         );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
-        let parts = build_system_prompt_parts(PromptMode::Analysis, None, None);
+        let parts = build_system_prompt_parts(PromptMode::BrowserAgent, None, None);
         assert!(
             !parts.dynamic_section.contains("日常工作助手"),
-            "Analysis dynamic_section must NOT contain daily prompt"
+            "BrowserAgent dynamic_section must NOT contain daily prompt"
+        );
+        assert!(
+            parts.dynamic_section.contains("浏览器代理"),
+            "BrowserAgent dynamic_section must contain browser prompt"
         );
     }
 
@@ -650,8 +648,8 @@ mod tests {
             "shim: base must be present for step"
         );
         assert!(
-            !prompt_step.contains("日常工作助手"),
-            "shim: daily must be absent for step=Some"
+            prompt_step.contains("日常工作助手"),
+            "shim: step=Some must reuse unified daily prompt"
         );
         assert!(
             !prompt.contains("今天是"),
@@ -671,20 +669,47 @@ mod tests {
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
         assert!(
-            parts.static_section.contains("优先使用专用工具"),
-            "must mention prefer dedicated tools"
+            parts.static_section.contains("优先使用专用能力"),
+            "must mention dedicated capabilities in context"
         );
         assert!(
-            parts.static_section.contains("execute_python"),
-            "must mention execute_python in context"
+            parts.static_section.contains("真实搜索"),
+            "must mention real search in context"
         );
         assert!(
-            parts.static_section.contains("web_search"),
-            "must mention web_search in context"
+            parts.static_section.contains("长期记忆能力"),
+            "must mention memory capability limits in context"
         );
-        assert!(
-            parts.static_section.contains("save_memory"),
-            "must mention save_memory in context"
-        );
+    }
+
+
+    #[test]
+    fn test_tool_preference_section_omits_retired_tool_names() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        for retired_tool in [
+            "save_memory",
+            "search_memory",
+            "plan_update",
+            "progress_update",
+            "save_analysis_note",
+            "hypothesis_test",
+            "detect_anomalies",
+            "slides_gen",
+            "export_data",
+        ] {
+            assert!(
+                !parts.static_section.contains(retired_tool),
+                "system prompt must not mention retired tool name {}",
+                retired_tool
+            );
+        }
     }
 }

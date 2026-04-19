@@ -603,36 +603,24 @@ fn build_default_catalog() -> ToolCatalog {
 /// （browse_data、generate_report、generate_chart、export_data）。
 /// 不包含 browse_and_extract / generate_slides 等纯分析流程专属的 Composite 工具。
 ///
-/// 需与 `tests/skill_tool_contract_test.rs` 中的 DAILY_ALLOWED_TOOLS 保持同步。
+/// 对齐 claude-code-best 原子工具模型：只包含有 register_runtime 注册的 RuntimeTool。
+///
+/// 以下工具已移除（无 register_runtime 注册，或 ToolPlugin 路径已关闭）：
+///   - web_search, browse_navigate, read_page_content（request-scoped，未全局注册）
+///   - load_file, execute_python（request-scoped，未全局注册）
+///   - browse_data, generate_report, generate_chart（request-scoped，未全局注册）
+///   - export_data, plan_update, progress_update, save_analysis_note（ToolPlugin 已关闭）
+///   - save_memory, search_memory（ToolPlugin 已关闭）
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
-    // Primitive: workspace
-    "list_directory",
+    // 以下 8 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
+    "bash",
     "read_workspace_file",
-    "search_files",
-    "get_file_info",
     "write_file",
     "edit_file",
-    "bash",
+    "list_directory",
+    "search_files",
+    "get_file_info",
     "grep_content",
-    // Primitive: network
-    "web_search",
-    // Primitive: browser
-    "browse_navigate",
-    "read_page_content",
-    // Power
-    "load_file",
-    "execute_python",
-    // Composite（daily 常用）
-    "browse_data",
-    "generate_report",
-    "generate_chart",
-    "export_data",
-    // Support
-    "plan_update",
-    "progress_update",
-    "save_analysis_note",
-    "save_memory",
-    "search_memory",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

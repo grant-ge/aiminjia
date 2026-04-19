@@ -244,7 +244,6 @@ pub fn run() {
                             "Cleaning up orphaned agent task for conversation: {}",
                             conv_id
                         );
-                        db.reset_stuck_analysis_state(conv_id).ok();
                     }
                     if !orphaned.is_empty() {
                         log::info!(

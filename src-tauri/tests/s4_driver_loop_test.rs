@@ -101,31 +101,16 @@ use app_lib::runtime::chat::safeguard::{check_iteration, SafeguardAction};
 
 #[test]
 fn safeguard_continues_when_not_near_limit() {
-    let mut injected = false;
-    // iteration=0, max=10, has_saved_note=false, force_no_tools=false
-    let action = check_iteration(0, 10, "some content", false, false, &mut injected, false);
+    let action = check_iteration(0, 10, "some content");
     assert!(matches!(action, SafeguardAction::Continue));
 }
 
 #[test]
 fn safeguard_daily_injects_when_near_limit_no_content() {
-    let mut injected = false;
-    // Daily mode: iteration 7 >= max_iterations(10) - 3 = 7, empty full_content
-    let action = check_iteration(7, 10, "", false, false, &mut injected, false);
+    let action = check_iteration(7, 10, "");
     assert!(matches!(
         action,
         SafeguardAction::InjectPromptAndContinue(_)
-    ));
-}
-
-#[test]
-fn safeguard_analysis_forces_no_tools_at_final_phase() {
-    let mut injected = true; // phase 1 already injected
-                             // iteration=12, max=15 → remaining = 15-13 = 2 (<= 3), no content, has_saved_note=true
-    let action = check_iteration(12, 15, "", true, true, &mut injected, false);
-    assert!(matches!(
-        action,
-        SafeguardAction::ForceNoToolsAndContinue(_)
     ));
 }
 
@@ -761,7 +746,7 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     );
 }
 
-// ── S4-T3-Task3: is_analysis 传递测试 ────────────────────────────────────────
+// ── S4-T3-Task3: 统一 system prompt 传递测试 ───────────────────────────────
 
 struct CapturingMockExecutor {
     responses: std::sync::Mutex<Vec<LlmStepResult>>,
@@ -769,7 +754,7 @@ struct CapturingMockExecutor {
 }
 
 impl CapturingMockExecutor {
-    fn new_analysis() -> Self {
+    fn new() -> Self {
         Self {
             responses: std::sync::Mutex::new(vec![LlmStepResult::ContentComplete {
                 content: "ok".to_string(),
@@ -810,13 +795,8 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
     async fn build_system_prompt(
         &self,
         _conversation_id: &str,
-        is_analysis: bool,
     ) -> Result<String, TurnError> {
-        if is_analysis {
-            Ok("[ANALYSIS-SYSTEM-PROMPT]".to_string())
-        } else {
-            Ok("[DAILY-SYSTEM-PROMPT]".to_string())
-        }
+        Ok("[UNIFIED-SYSTEM-PROMPT]".to_string())
     }
 
     async fn persist_assistant_message(
@@ -831,21 +811,21 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
 }
 
 #[tokio::test]
-async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
-    let executor = Arc::new(CapturingMockExecutor::new_analysis());
+async fn driver_s4_uses_unified_system_prompt() {
+    let executor = Arc::new(CapturingMockExecutor::new());
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
     let mut turn = make_test_turn("conv-analysis");
-    let request = ChatTurnRequest::new_analysis("conv-analysis", "analyze data", vec![]);
+    let request = ChatTurnRequest::new("conv-analysis", "analyze data", vec![]);
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let prompts = executor.received_system_prompts.lock().unwrap();
     assert!(!prompts.is_empty());
     assert_eq!(
-        prompts[0], "[ANALYSIS-SYSTEM-PROMPT]",
-        "analysis mode must use analysis system prompt, got: {}",
+        prompts[0], "[UNIFIED-SYSTEM-PROMPT]",
+        "driver must use unified system prompt, got: {}",
         prompts[0]
     );
 }
@@ -853,14 +833,12 @@ async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
 // ── S4-T4: tool_defs 精确传递测试 ─────────────────────────────────────────────
 
 struct ToolDefsCapturingExecutor {
-    seen_is_analysis: std::sync::Mutex<Vec<bool>>,
     captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
 }
 
 impl ToolDefsCapturingExecutor {
     fn new() -> Self {
         Self {
-            seen_is_analysis: std::sync::Mutex::new(Vec::new()),
             captured_tool_defs: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -886,14 +864,9 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         })
     }
 
-    async fn get_tool_defs(&self, is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
-        self.seen_is_analysis.lock().unwrap().push(is_analysis);
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
         use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
-        let names: Vec<String> = if is_analysis {
-            vec!["all_tool_a".to_string(), "all_tool_b".to_string()]
-        } else {
-            DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
-        };
+        let names: Vec<String> = DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
         Ok(names
             .iter()
             .map(|n| serde_json::json!({"name": n, "description": ""}))
@@ -962,35 +935,6 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
             allowed
         );
     }
-}
-
-#[tokio::test]
-async fn driver_s4_analysis_tool_defs_use_analysis_flag() {
-    let executor = Arc::new(ToolDefsCapturingExecutor::new());
-    let bus = RuntimeEventBus::new();
-    let qe = QueryEngine::default();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
-    let mut turn = make_test_turn("conv-tool-defs-analysis");
-    let request = ChatTurnRequest::new_analysis("conv-tool-defs-analysis", "analyze", vec![]);
-
-    driver.run_chat_turn(&mut turn, &request).await.unwrap();
-
-    let seen = executor.seen_is_analysis.lock().unwrap();
-    assert_eq!(
-        &*seen,
-        &[true],
-        "analysis turn must request analysis tool defs"
-    );
-    let captured = executor.captured_tool_defs.lock().unwrap();
-    let names: std::collections::HashSet<String> = captured[0]
-        .iter()
-        .filter_map(|v| v["name"].as_str())
-        .map(|s| s.to_string())
-        .collect();
-    assert_eq!(
-        names,
-        std::collections::HashSet::from(["all_tool_a".to_string(), "all_tool_b".to_string(),])
-    );
 }
 
 // ── S4-T5: 多轮历史加载测试 ──────────────────────────────────────────────────
