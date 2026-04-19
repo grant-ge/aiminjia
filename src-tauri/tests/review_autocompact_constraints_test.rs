@@ -34,7 +34,10 @@ fn review_k_compact_boundary_subtype_is_compact_boundary() {
         boundary.get("subtype").and_then(|v| v.as_str()),
         Some("compact_boundary")
     );
-    assert_eq!(boundary.get("role").and_then(|v| v.as_str()), Some("system"));
+    assert_eq!(
+        boundary.get("role").and_then(|v| v.as_str()),
+        Some("system")
+    );
 }
 
 #[test]
@@ -100,6 +103,7 @@ fn review_k_microcompact_never_deletes_messages() {
         &MicrocompactConfig {
             trigger_chars: 1,
             keep_recent_tool_results: 1,
+            preserved_tool_names: std::collections::HashSet::new(),
         },
     );
     assert_eq!(result.messages.len(), original_len);

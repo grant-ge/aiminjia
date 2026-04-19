@@ -93,7 +93,10 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     builtin_sorted.sort();
     let mut mcp_sorted = mcp.clone();
     mcp_sorted.sort();
-    assert_eq!(builtin, builtin_sorted, "filtered built-in partition must be sorted");
+    assert_eq!(
+        builtin, builtin_sorted,
+        "filtered built-in partition must be sorted"
+    );
     assert_eq!(mcp, mcp_sorted, "filtered MCP partition must be sorted");
 }
 

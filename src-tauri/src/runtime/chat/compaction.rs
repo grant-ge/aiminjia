@@ -77,13 +77,25 @@ pub fn build_compact_boundary_record(
 pub struct MicrocompactConfig {
     pub trigger_chars: usize,
     pub keep_recent_tool_results: usize,
+    pub preserved_tool_names: std::collections::HashSet<String>,
 }
 
 impl Default for MicrocompactConfig {
     fn default() -> Self {
+        let preserved_tool_names = crate::runtime::tools::catalog::TOOL_CATALOG
+            .all_ids()
+            .into_iter()
+            .filter(|id| {
+                crate::runtime::tools::catalog::TOOL_CATALOG
+                    .get(id)
+                    .map(|def| def.preserve_tool_use_results)
+                    .unwrap_or(false)
+            })
+            .collect();
         Self {
             trigger_chars: 120_000,
             keep_recent_tool_results: 2,
+            preserved_tool_names,
         }
     }
 }
@@ -96,7 +108,10 @@ pub struct MicrocompactResult {
 }
 
 fn estimate_total_chars(messages: &[serde_json::Value]) -> usize {
-    messages.iter().map(|message| message.to_string().len()).sum()
+    messages
+        .iter()
+        .map(|message| message.to_string().len())
+        .sum()
 }
 
 pub fn microcompact(
@@ -135,12 +150,48 @@ pub fn microcompact(
         .copied()
         .collect();
 
+    let mut tool_call_name_by_id = std::collections::HashMap::new();
+    for message in messages {
+        if message.get("role").and_then(|value| value.as_str()) != Some("assistant") {
+            continue;
+        }
+        if let Some(tool_calls) = message.get("toolCalls").and_then(|value| value.as_array()) {
+            for tool_call in tool_calls {
+                if let (Some(id), Some(name)) = (
+                    tool_call.get("id").and_then(|value| value.as_str()),
+                    tool_call.get("name").and_then(|value| value.as_str()),
+                ) {
+                    tool_call_name_by_id.insert(id.to_string(), name.to_string());
+                }
+            }
+        }
+    }
+
     let mut freed_chars = 0usize;
     let rewritten_messages = messages
         .iter()
         .enumerate()
         .map(|(index, message)| {
             if !indices_to_clear.contains(&index) {
+                return message.clone();
+            }
+
+            let tool_name = message
+                .get("name")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+                .or_else(|| {
+                    message
+                        .get("toolCallId")
+                        .or_else(|| message.get("tool_call_id"))
+                        .and_then(|value| value.as_str())
+                        .and_then(|id| tool_call_name_by_id.get(id).cloned())
+                });
+            if tool_name
+                .as_ref()
+                .map(|name| config.preserved_tool_names.contains(name))
+                .unwrap_or(false)
+            {
                 return message.clone();
             }
 
@@ -225,10 +276,7 @@ impl AutoCompactState {
     }
 }
 
-pub fn should_auto_compact(
-    messages: &[serde_json::Value],
-    config: &AutoCompactConfig,
-) -> bool {
+pub fn should_auto_compact(messages: &[serde_json::Value], config: &AutoCompactConfig) -> bool {
     estimate_total_chars(messages) >= config.threshold_chars
 }
 

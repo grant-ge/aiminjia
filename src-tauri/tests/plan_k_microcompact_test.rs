@@ -32,6 +32,7 @@ fn k2_microcompact_noop_when_below_threshold() {
     let config = MicrocompactConfig {
         trigger_chars: 100_000,
         keep_recent_tool_results: 2,
+        preserved_tool_names: std::collections::HashSet::new(),
     };
     let result = microcompact(&messages, &config);
     assert!(!result.executed);
@@ -53,6 +54,7 @@ fn k2_microcompact_clears_old_tool_results_above_threshold() {
     let config = MicrocompactConfig {
         trigger_chars: 10_000,
         keep_recent_tool_results: 1,
+        preserved_tool_names: std::collections::HashSet::new(),
     };
     let result = microcompact(&messages, &config);
     assert!(result.executed);
@@ -96,7 +98,80 @@ fn k2_microcompact_preserves_message_count() {
     let config = MicrocompactConfig {
         trigger_chars: 5_000,
         keep_recent_tool_results: 1,
+        preserved_tool_names: std::collections::HashSet::new(),
     };
     let result = microcompact(&messages, &config);
     assert_eq!(result.messages.len(), messages.len());
+}
+
+#[test]
+fn x2_microcompact_config_default_includes_preserved_tool_names() {
+    let config = MicrocompactConfig::default();
+    assert!(
+        config.preserved_tool_names.contains("execute_python"),
+        "execute_python should be preserved during microcompact"
+    );
+    assert!(
+        config.preserved_tool_names.contains("generate_report"),
+        "generate_report should be preserved during microcompact"
+    );
+}
+
+#[test]
+fn x2_microcompact_skips_preserved_tool_results() {
+    let big_content = "z".repeat(50_000);
+    let messages = vec![
+        make_user("analyze"),
+        make_assistant_with_tools("iter0", &["tc-old"]),
+        make_tool_result("tc-old", &big_content),
+        json!({
+            "role": "assistant",
+            "content": "iter1",
+            "toolCalls": [{ "id": "tc-non-preserved", "name": "web_search", "arguments": {} }]
+        }),
+        json!({
+            "role": "tool",
+            "toolCallId": "tc-non-preserved",
+            "name": "web_search",
+            "content": big_content,
+        }),
+        make_assistant_with_tools("iter2", &["tc-new"]),
+        make_tool_result("tc-new", "short result"),
+    ];
+    let config = MicrocompactConfig {
+        trigger_chars: 10_000,
+        keep_recent_tool_results: 1,
+        preserved_tool_names: ["execute_python".to_string(), "generate_report".to_string()]
+            .into_iter()
+            .collect(),
+    };
+    let result = microcompact(&messages, &config);
+
+    let preserved = result
+        .messages
+        .iter()
+        .find(|m| m.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-old"))
+        .expect("preserved result should exist");
+    assert_eq!(
+        preserved
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+        big_content,
+        "preserved tools must not be replaced by [microcompacted]"
+    );
+
+    let non_preserved = result
+        .messages
+        .iter()
+        .find(|m| m.get("toolCallId").and_then(|v| v.as_str()) == Some("tc-non-preserved"))
+        .expect("non-preserved result should exist");
+    assert!(
+        non_preserved
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("[microcompacted]"),
+        "non-preserved tool results should still be compacted"
+    );
 }

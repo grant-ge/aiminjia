@@ -21,7 +21,10 @@ pub struct CatalogEntry {
 
 impl CatalogEntry {
     pub fn new(definition: ToolDefinition, json_schema: Value) -> Self {
-        Self { definition, json_schema }
+        Self {
+            definition,
+            json_schema,
+        }
     }
 }
 
@@ -127,7 +130,9 @@ impl DynamicToolCatalog {
 }
 
 fn build_default_catalog() -> ToolCatalog {
-    let mut c = ToolCatalog { entries: HashMap::new() };
+    let mut c = ToolCatalog {
+        entries: HashMap::new(),
+    };
 
     // ── Primitive: workspace tools ──────────────────────────────────
     c.insert(CatalogEntry::new(
@@ -403,6 +408,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n注意：Power 工具，有 session 状态和文件写出副作用。代码执行出错时直接修正重试。")
             .with_kind(ToolKind::Power)
             .with_max_result_size_chars(32_000)
+            .with_preserve_tool_use_results(true)
             .with_capability_scope(["python:exec", "workspace:write"]),
         json!({
             "type": "object",
@@ -416,16 +422,18 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Composite tools ───────────────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("browse_data",
+        ToolDefinition::new(
+            "browse_data",
             "【Composite 工具】从内部业务系统抽取数据。\
             \n\n内部固定三步流程：\
             1. browse_and_extract(url) — 打开数据页面，查看表格和菜单；\
             2. extract_with_pagination() — 自动翻页提取全量数据并保存为 JSON；\
             3. 报告文件路径、总行数、列名。\
             \n\n返回文件路径，请用 execute_python 进一步处理。\
-            ACCESS DENIED 时立即停止。一次只提取一个数据表。")
-            .with_kind(ToolKind::Composite)
-            .with_capability_scope(["browser", "network", "workspace:write"]),
+            ACCESS DENIED 时立即停止。一次只提取一个数据表。",
+        )
+        .with_kind(ToolKind::Composite)
+        .with_capability_scope(["browser", "network", "workspace:write"]),
         json!({
             "type": "object",
             "required": ["task"],
@@ -437,13 +445,15 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("browse_and_extract",
+        ToolDefinition::new(
+            "browse_and_extract",
             "【Composite 工具】导航到 URL 并抽取结构化数据（navigate + read + extract 三步合一）。\
             \n\n用于一次性提取页面数据。\
             如需分页全量抽取，改用 extract_with_pagination()，它自动处理分页且无需手动翻页参数。\
-            禁止用 page_execute_js 提取表格数据——用本工具或 extract_table_data 替代。")
-            .with_kind(ToolKind::Composite)
-            .with_capability_scope(["browser"]),
+            禁止用 page_execute_js 提取表格数据——用本工具或 extract_table_data 替代。",
+        )
+        .with_kind(ToolKind::Composite)
+        .with_capability_scope(["browser"]),
         json!({
             "type": "object",
             "required": ["url"],
@@ -463,6 +473,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n内部包含：渲染 → 写文件 → 按需格式转换，多阶段操作。\
             用于分析末尾生成最终报告，不适合中间步骤。")
             .with_kind(ToolKind::Composite)
+            .with_preserve_tool_use_results(true)
             .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
@@ -494,12 +505,14 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("export_data",
+        ToolDefinition::new(
+            "export_data",
             "【Composite 工具】将数据导出为文件（数据转换 + 写文件）。\
             \n\n【使用方式】在 execute_python 中用 _export_detail(_df, filename, format) 直接导出，\
-            禁止在 data 参数中传入原始数据数组（会超出 token 限制）。")
-            .with_kind(ToolKind::Composite)
-            .with_capability_scope(["workspace:write"]),
+            禁止在 data 参数中传入原始数据数组（会超出 token 限制）。",
+        )
+        .with_kind(ToolKind::Composite)
+        .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
             "required": ["data","format","filename"],
@@ -512,10 +525,12 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("generate_slides",
-            "【Composite 工具】生成演示文稿（多页渲染 + 写文件）。")
-            .with_kind(ToolKind::Composite)
-            .with_capability_scope(["workspace:write"]),
+        ToolDefinition::new(
+            "generate_slides",
+            "【Composite 工具】生成演示文稿（多页渲染 + 写文件）。",
+        )
+        .with_kind(ToolKind::Composite)
+        .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
             "required": ["title"],

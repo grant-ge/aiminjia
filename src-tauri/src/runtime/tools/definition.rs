@@ -28,6 +28,8 @@ pub struct ToolDefinition {
     pub default_read_only: bool,
     pub default_destructive: bool,
     pub default_max_result_size_chars: usize,
+    pub preserve_tool_use_results: bool,
+    pub default_timeout_secs: Option<u64>,
 }
 
 impl ToolDefinition {
@@ -42,6 +44,8 @@ impl ToolDefinition {
             default_read_only: false,
             default_destructive: false,
             default_max_result_size_chars: 8_000,
+            preserve_tool_use_results: false,
+            default_timeout_secs: None,
         }
     }
 
@@ -67,8 +71,21 @@ impl ToolDefinition {
         self
     }
 
+    pub fn with_preserve_tool_use_results(mut self, preserve: bool) -> Self {
+        self.preserve_tool_use_results = preserve;
+        self
+    }
+
+    pub fn with_default_timeout_secs(mut self, timeout_secs: u64) -> Self {
+        self.default_timeout_secs = Some(timeout_secs);
+        self
+    }
+
     /// 设置能力域列表（用于权限管线校验）。
-    pub fn with_capability_scope(mut self, scopes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn with_capability_scope(
+        mut self,
+        scopes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         self.capability_scope = scopes.into_iter().map(Into::into).collect();
         self
     }
