@@ -119,7 +119,7 @@ pub fn insert_message(
     let current_count = count_jsonl_lines(&current_shard_path).unwrap_or(0) as u64;
     if current_count >= SHARD_CAPACITY {
         meta.shard += 1;
-        write_shard_meta(base_dir, conversation_id, &meta);
+        write_shard_meta(base_dir, conversation_id, &meta)?;
     }
 
     let shard_path = shard_path(base_dir, conversation_id, meta.shard);
@@ -138,7 +138,7 @@ pub fn insert_message(
     };
 
     append_jsonl(&shard_path, &record)?;
-    write_shard_meta(base_dir, conversation_id, &meta);
+    write_shard_meta(base_dir, conversation_id, &meta)?;
 
     // Update conversation's updatedAt
     let conv_meta_path = conv_dir(base_dir, conversation_id).join("conv.json");
@@ -429,5 +429,44 @@ mod tests {
 
         assert!(ShardMeta::parse("invalid").is_none());
         assert!(ShardMeta::parse("").is_none());
+    }
+
+    #[test]
+    fn insert_message_returns_error_when_rollover_shard_meta_write_fails() {
+        let (base, _dir) = setup();
+
+        for i in 0..SHARD_CAPACITY {
+            insert_message(
+                &base,
+                &format!("m{}", i),
+                "c1",
+                "user",
+                &format!(r#"{{"text":"msg {}"}}"#, i),
+            )
+            .unwrap();
+        }
+
+        let blocked_tmp = current_path(&base, "c1").with_extension("tmp");
+        fs::create_dir_all(&blocked_tmp).unwrap();
+
+        let err = insert_message(&base, "m-overflow", "c1", "user", r#"{"text":"overflow"}"#)
+            .expect_err("rollover must surface shard metadata write failure");
+        assert!(matches!(err, StorageError::Io(_)));
+        assert!(
+            !shard_path(&base, "c1", 2).exists(),
+            "next shard should not be created when rollover metadata write fails"
+        );
+    }
+
+    #[test]
+    fn insert_message_returns_error_when_final_shard_meta_write_fails() {
+        let (base, _dir) = setup();
+
+        let blocked_tmp = current_path(&base, "c1").with_extension("tmp");
+        fs::create_dir_all(&blocked_tmp).unwrap();
+
+        let err = insert_message(&base, "m1", "c1", "user", r#"{"text":"hello"}"#)
+            .expect_err("final shard metadata write failure must be surfaced");
+        assert!(matches!(err, StorageError::Io(_)));
     }
 }
