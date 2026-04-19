@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::mcp::{McpConnection, McpError, McpServerConfig, McpToolDefinition};
+use app_lib::runtime::store::permission_store::{PermissionStore, PolicyDecision};
+use app_lib::runtime::tools::permission::PermissionDecision;
 use app_lib::runtime::tools::{ToolDispatchOutcome, ToolExecutionContext, TOOL_CATALOG};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -97,6 +99,8 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
 #[tokio::test]
 async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them() {
     let registry = ToolRegistry::new();
+    let store = Arc::new(PermissionStore::in_memory());
+    registry.set_permission_store(store.clone()).await;
 
     let connection = Arc::new(MockMcpServerWithTools {
         config: McpServerConfig {
@@ -159,19 +163,42 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
     let dispatcher = registry
         .to_runtime_dispatcher(make_test_plugin_ctx("conv-mcp"))
         .await;
-    let outcome = dispatcher
+    let ask = dispatcher
         .dispatch(
             "mcp__test-mcp__lookup",
             json!({ "query": "hello" }),
             ToolExecutionContext::for_test("conv-mcp", "run-mcp", "tc-mcp"),
         )
         .await
-        .expect("dispatch should succeed");
+        .expect("first MCP dispatch should surface a permission decision");
+
+    match ask {
+        ToolDispatchOutcome::AskRequired(PermissionDecision::Ask { message, .. }) => {
+            assert!(message.contains("MCP") || message.contains("external server"));
+        }
+        other => panic!("expected AskRequired for first MCP dispatch, got: {:?}", other),
+    }
+
+    store.record(
+        "mcp__test-mcp__lookup:mcp".to_string(),
+        PolicyDecision::Allow,
+    );
+
+    let outcome = dispatcher
+        .dispatch(
+            "mcp__test-mcp__lookup",
+            json!({ "query": "hello" }),
+            ToolExecutionContext::for_test("conv-mcp", "run-mcp", "tc-mcp-allowed"),
+        )
+        .await
+        .expect("MCP dispatch should succeed after allow-once decision");
 
     match outcome {
         ToolDispatchOutcome::Completed { result, .. } => {
             assert!(result.content.contains("ok"));
         }
-        ToolDispatchOutcome::AskRequired(_) => panic!("unexpected AskRequired for MCP tool"),
+        ToolDispatchOutcome::AskRequired(other) => {
+            panic!("unexpected AskRequired after allow-once decision: {:?}", other)
+        }
     }
 }

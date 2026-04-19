@@ -5,6 +5,8 @@ use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::mcp::{
     McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpToolDefinition,
 };
+use app_lib::runtime::store::permission_store::{PermissionStore, PolicyDecision};
+use app_lib::runtime::tools::permission::PermissionDecision;
 use app_lib::runtime::tools::{ToolDispatchOutcome, ToolExecutionContext, TOOL_CATALOG};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -99,6 +101,8 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
 #[tokio::test]
 async fn mcp_end_to_end_workflow_register_execute_disconnect() {
     let registry = Arc::new(ToolRegistry::new());
+    let store = Arc::new(PermissionStore::in_memory());
+    registry.set_permission_store(store.clone()).await;
     let manager = McpServerManager::new(registry.clone());
 
     let connection = Arc::new(FullMockMcpServer {
@@ -132,21 +136,44 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
     let dispatcher = registry
         .to_runtime_dispatcher(make_test_plugin_ctx("conv-e2e"))
         .await;
-    let outcome = dispatcher
+    let ask = dispatcher
         .dispatch(
             "mcp__e2e-server__lookup",
             json!({ "query": "hello" }),
             ToolExecutionContext::for_test("conv-e2e", "run-e2e", "tc-e2e"),
         )
         .await
-        .unwrap();
+        .expect("first MCP dispatch should surface a permission decision");
+
+    match ask {
+        ToolDispatchOutcome::AskRequired(PermissionDecision::Ask { message, .. }) => {
+            assert!(message.contains("MCP") || message.contains("external server"));
+        }
+        other => panic!("expected AskRequired for first MCP dispatch, got: {:?}", other),
+    }
+
+    store.record(
+        "mcp__e2e-server__lookup:mcp".to_string(),
+        PolicyDecision::Allow,
+    );
+
+    let outcome = dispatcher
+        .dispatch(
+            "mcp__e2e-server__lookup",
+            json!({ "query": "hello" }),
+            ToolExecutionContext::for_test("conv-e2e", "run-e2e", "tc-e2e-allowed"),
+        )
+        .await
+        .expect("MCP dispatch should succeed after allow-once decision");
 
     match outcome {
         ToolDispatchOutcome::Completed { result, .. } => {
             assert!(result.content.contains("items"));
             assert!(result.content.contains("a"));
         }
-        ToolDispatchOutcome::AskRequired(_) => panic!("unexpected AskRequired"),
+        ToolDispatchOutcome::AskRequired(other) => {
+            panic!("unexpected AskRequired after allow-once decision: {:?}", other)
+        }
     }
 
     manager.disconnect("e2e-server").await.unwrap();
