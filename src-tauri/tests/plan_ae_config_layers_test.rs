@@ -60,6 +60,7 @@ impl RuntimeLlmExecutor for CapturingSettingsExecutor {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -75,7 +76,10 @@ impl RuntimeLlmExecutor for CapturingSettingsExecutor {
 }
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().expect("repo root").to_path_buf()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
 }
 
 fn setup_storage() -> (AppStorage, TempDir) {
@@ -172,7 +176,10 @@ fn ae4_workspace_settings_loaded() {
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
-    assert_eq!(settings.get("primaryModel").map(String::as_str), Some("claude"));
+    assert_eq!(
+        settings.get("primaryModel").map(String::as_str),
+        Some("claude")
+    );
 }
 
 #[test]
@@ -187,7 +194,10 @@ fn ae4_workspace_settings_absent() {
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
-    assert_eq!(settings.get("primaryModel").map(String::as_str), Some("deepseek-v3"));
+    assert_eq!(
+        settings.get("primaryModel").map(String::as_str),
+        Some("deepseek-v3")
+    );
 }
 
 #[test]
@@ -206,8 +216,14 @@ fn ae4_workspace_settings_partial_override() {
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
-    assert_eq!(settings.get("primaryModel").map(String::as_str), Some("claude"));
-    assert_eq!(settings.get("autoModelRouting").map(String::as_str), Some("true"));
+    assert_eq!(
+        settings.get("primaryModel").map(String::as_str),
+        Some("claude")
+    );
+    assert_eq!(
+        settings.get("autoModelRouting").map(String::as_str),
+        Some("true")
+    );
 }
 
 #[test]
@@ -224,7 +240,10 @@ fn ae4_workspace_settings_malformed() {
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
-    assert_eq!(settings.get("primaryModel").map(String::as_str), Some("deepseek-v3"));
+    assert_eq!(
+        settings.get("primaryModel").map(String::as_str),
+        Some("deepseek-v3")
+    );
 }
 
 #[test]
@@ -249,7 +268,10 @@ fn ae4_workspace_settings_ignores_sensitive_keys() {
     let settings = storage
         .get_effective_settings(Some(&workspace))
         .expect("load effective settings");
-    assert_eq!(settings.get("primaryModel").map(String::as_str), Some("claude"));
+    assert_eq!(
+        settings.get("primaryModel").map(String::as_str),
+        Some("claude")
+    );
     assert_eq!(
         settings.get("primaryApiKey").map(String::as_str),
         Some("encrypted-global-key")
@@ -461,5 +483,8 @@ fn review_ae_runtime_does_not_import_tauri() {
 
     let mut violations = Vec::new();
     visit(&repo_root().join("src-tauri/src/runtime"), &mut violations);
-    assert!(violations.is_empty(), "runtime imported tauri in: {violations:?}");
+    assert!(
+        violations.is_empty(),
+        "runtime imported tauri in: {violations:?}"
+    );
 }

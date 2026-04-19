@@ -49,6 +49,9 @@ pub enum RuntimeEventKind {
     StopHookPreventedContinuation {
         reason: Option<String>,
     },
+    OrphanedPermissionDetected {
+        count: usize,
+    },
     MessagePersisted {
         message_id: String,
         role: String,

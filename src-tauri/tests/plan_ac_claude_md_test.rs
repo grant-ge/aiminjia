@@ -1,6 +1,6 @@
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::path::Path;
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::{
@@ -34,16 +34,12 @@ async fn ac1_load_project_claude_md_from_workspace() {
     let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    let project_file = files
-        .iter()
-        .find(|f| f.path == workspace.join("CLAUDE.md"));
+    let project_file = files.iter().find(|f| f.path == workspace.join("CLAUDE.md"));
     assert!(project_file.is_some(), "should find workspace CLAUDE.md");
-    assert!(
-        project_file
-            .expect("project file")
-            .content
-            .contains("project instructions")
-    );
+    assert!(project_file
+        .expect("project file")
+        .content
+        .contains("project instructions"));
 }
 
 #[tokio::test]
@@ -84,10 +80,9 @@ async fn ac1_load_dot_claude_and_local_claude_md() {
     let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    assert!(
-        files.iter()
-            .any(|f| f.content.contains("dot-claude instructions"))
-    );
+    assert!(files
+        .iter()
+        .any(|f| f.content.contains("dot-claude instructions")));
     assert!(files.iter().any(|f| f.content.contains("local override")));
 }
 
@@ -161,6 +156,7 @@ impl RuntimeLlmExecutor for ClaudeMdContextExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -208,7 +204,10 @@ async fn ac3_driver_inserts_separate_claude_md_context_message_after_system_remi
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let messages = executor.all_messages();
-    assert!(!messages.is_empty(), "executor must receive initial messages");
+    assert!(
+        !messages.is_empty(),
+        "executor must receive initial messages"
+    );
     let first_call_messages = &messages[0];
     assert!(
         first_call_messages.len() >= 3,

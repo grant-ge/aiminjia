@@ -6,9 +6,9 @@
 **Goal:** Tool pool 分区排序保证 prompt cache stability；同时为 lotus 补上 compact 保留位与默认超时声明，但明确只有排序项是直接对标 `claude-code-best`，其余为 lotus 扩展。
 
 **Architecture:**
-- X1 在 `get_schemas_filtered`（`plugin/registry.rs`）层按 built-in/MCP 分区各自字母序排序再合并，built-in 在前、MCP 在后，不改变 `get_all_schemas`；
-- X2 在 `runtime/tools/definition.rs` 的 `ToolDefinition` 新增 `preserve_tool_use_results: bool`（default false），`runtime/chat/compaction.rs` 的 `microcompact` 函数读取该标志跳过对应工具结果；
-- X3 在 `ToolDefinition` 新增 `default_timeout_secs: Option<u64>`，`builtin/bash.rs` 和 `builtin/python.rs` 的执行层在没有 input 级 timeout 时回落到 definition 级默认值。
+- X1 在 `plugin/registry.rs` 的 `get_schemas_filtered` **和** `get_all_schemas` 中都按 built-in/MCP 分区各自字母序排序再合并，built-in 在前、MCP 在后；
+- X2 在 `runtime/tools/definition.rs` 的 `ToolDefinition` 新增 `preserve_tool_use_results: bool`（default false），其语义明确限定为“microcompact 时保护工具结果”，不是 claude-code-best 的 subagent transcript 可见性开关；`runtime/chat/compaction.rs` 的 `microcompact` 函数读取该标志跳过对应工具结果；
+- X3 在 `ToolDefinition` 新增 `default_timeout_secs: Option<u64>`；`builtin/bash.rs` 在没有 input 级 timeout 时回落到 definition 级默认值，`execute_python` 的 catalog timeout 先只覆盖 analysis/runtime tool 路径，daily oneshot 若未接入需在计划中显式注明。
 
 **Tech Stack:** Rust
 
@@ -21,7 +21,8 @@
 - X1（built-in/MCP 分区排序）是本计划中唯一直接 1:1 对标 `claude-code-best` 的部分。
 - X2 若继续沿用 `preserve_tool_use_results` 字段名，文档必须明确它在 lotus 中表示“compact 时保护工具结果”，不是 `claude-code-best` 的 subagent transcript 可见性语义。
 - X3 的 catalog 级默认超时属于 lotus 统一化增强，不应在文档中表述为对标仓库已有同构机制。
-- `get_schemas_filtered` 与 UI/Schema 列表若都要排序，需要分别说明；不要在计划中同时写“只改 query-visible tool pool”和“顺带改全部 schema”两种口径。
+- 当前 lotus-app 的 subagent 路径会走 `get_all_schemas()` 再筛选，因此若只改 `get_schemas_filtered()`，子代理 prompt 仍不稳定；计划必须明确两条路径都改。
+- `microcompact` 当前消费的 tool message 真实字段是 `name` / `toolCallId`（camelCase 优先，个别兼容 snake_case），计划里的示例不能假设只有 `tool_calls` / `tool_call_id`。
 
 ---
 
@@ -71,8 +72,8 @@ preserveToolUseResults?: boolean
 ### X3：工具执行超时只靠 input 参数传入
 
 **现状：**
-- `bash.rs` L311-315：从 input `timeout_secs` 字段取值，缺省 `DEFAULT_TIMEOUT_SECS=120`，上限 `MAX_TIMEOUT_SECS=600`。
-- `python.rs` execute 方法（L168 调用 `handle_execute_python_core`）→ `llm/tool_executor/python.rs` L217：硬编码 `let timeout = Duration::from_secs(600)`，完全忽略 input。
+- `bash.rs`：从 input `timeout_secs` 字段取值，缺省 `DEFAULT_TIMEOUT_SECS=120`，上限 `MAX_TIMEOUT_SECS=600`。
+- `execute_python`：analysis/runtime tool 路径存在硬编码 600 秒；daily oneshot 路径不一定走同一套 timeout 注入，因此计划需要明确本轮先覆盖哪条路径。
 
 两者的默认值都以魔法数字散落在实现文件中，没有在 `ToolDefinition` 层统一声明，导致：
 1. 调用方（未来的 dispatcher）无法在路由层为工具应用一致的超时策略；
@@ -86,13 +87,13 @@ preserveToolUseResults?: boolean
 
 **变更描述：**
 
-将 `get_schemas_filtered`（和 `get_all_schemas`）中的最终排序从单次全局字母序改为分区排序：
+将 `get_schemas_filtered` 与 `get_all_schemas` 中的最终排序从单次全局字母序改为分区排序：
 1. 先收集所有条目，为每条打 partition 标记：若工具名以 `mcp__` 开头则为 MCP 分区，否则为 built-in 分区；
 2. built-in 分区内字母序排序；
 3. MCP 分区内字母序排序；
 4. 合并为 `[built-ins sorted] ++ [mcp sorted]`。
 
-`get_all_schemas` 也采用相同逻辑保持一致性（虽然该函数目前仅用于管理 UI，不影响 LLM 请求）。
+`get_all_schemas` 也采用相同逻辑保持一致性：虽然它不是主聊天入口，但当前 subagent 路径会先取全量 schema，再做后续过滤，因此这里也必须改。
 
 **实现草稿（`get_schemas_filtered` 结尾处，替换原 sort 调用）：**
 
@@ -178,7 +179,7 @@ pub fn with_preserve_tool_use_results(mut self, preserve: bool) -> Self {
 
 ### X2-c：microcompact 感知 preserve 标志
 
-**问题：** `microcompact` 函数签名为 `fn microcompact(messages: &[serde_json::Value], config: &MicrocompactConfig) -> MicrocompactResult`，messages 是 JSON Value，无法直接访问 `ToolDefinition`。
+**问题：** `microcompact` 函数签名为 `fn microcompact(messages: &[serde_json::Value], config: &MicrocompactConfig) -> MicrocompactResult`，messages 是 JSON Value，无法直接访问 `ToolDefinition`；同时 lotus 内部 tool result message 真实字段是 `name` / `toolCallId`，不能直接照搬 claude-code-best 的 tool-use/result 结构假设。
 
 **方案：** 在 `MicrocompactConfig` 中新增一个工具名集合，列出所有需要保留结果的工具 ID：
 
@@ -218,7 +219,7 @@ impl Default for MicrocompactConfig {
 
 `microcompact` 函数在决定是否清空工具结果时，先检查该条消息是否携带 `tool_name`（或 `name`）字段，若工具名在 `preserved_tool_names` 中则跳过。
 
-**工具结果消息格式：** 当前 messages 是 `serde_json::Value`，工具结果的 `role` 为 `"tool"`，工具名字段视上层序列化结果而定；需在 `microcompact` 内部从 `tool_call_id` 或 `name` 字段提取，或通过 tool_use 消息（role=assistant）的 tool_calls 数组反查。如果消息中没有直接的工具名字段，则退化为：保留所有被标注为 preserve 的工具的 tool_result（通过查找 assistant 消息中 tool_calls 的 name 字段，建立 `tool_call_id → tool_name` 映射）。
+**工具结果消息格式：** 当前 messages 是 `serde_json::Value`，工具结果的 `role` 为 `"tool"`，多数路径直接带 `name` 和 `toolCallId`；`microcompact` 应优先读 `name`，其次兼容 `toolCallId` / `tool_call_id` 反查 assistant 消息中的 `toolCalls`。不要把实现写死为只识别 snake_case。
 
 **microcompact 修改逻辑摘要：**
 

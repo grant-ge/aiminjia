@@ -6,13 +6,13 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::llm::context_decay::{
+    context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
+};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compaction::{
     build_compact_boundary_record, compact_messages_via_llm, microcompact, should_auto_compact,
     AutoCompactConfig, CompactTrigger, MicrocompactConfig,
-};
-use crate::llm::context_decay::{
-    context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
 };
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
@@ -22,6 +22,7 @@ use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use crate::runtime::chat::turn_config::{
     LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError, TurnIterationState,
+    MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
 };
 use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -865,6 +866,79 @@ impl RuntimeChatTurnDriver {
                 .await
             {
                 Ok(result) => result,
+                Err(TurnError::PromptTooLong(message)) => {
+                    let auto_compact_config = AutoCompactConfig::default();
+                    if !state.stop_hook_active
+                        && !state.compact_state.is_circuit_broken(&auto_compact_config)
+                    {
+                        match executor
+                            .compact_summary(config.conversation_id.as_str(), &state.messages)
+                            .await
+                        {
+                            Ok(summary_text) if !summary_text.is_empty() => {
+                                let tail_message_id =
+                                    state.messages.iter().rev().find_map(|message| {
+                                        if message
+                                            .get("isCompactSummary")
+                                            .and_then(|value| value.as_bool())
+                                            == Some(true)
+                                        {
+                                            return None;
+                                        }
+                                        message
+                                            .get("id")
+                                            .and_then(|value| value.as_str())
+                                            .map(str::to_owned)
+                                    });
+                                let output = compact_messages_via_llm(
+                                    std::mem::take(&mut state.messages),
+                                    summary_text.clone(),
+                                );
+                                let mut boundary_record = build_compact_boundary_record(
+                                    config.conversation_id.as_str(),
+                                    CompactTrigger::Auto,
+                                    output.pre_tokens,
+                                    output.post_tokens,
+                                    output.messages_summarized,
+                                );
+                                boundary_record.summary_text = summary_text;
+                                boundary_record.tail_message_id = tail_message_id;
+                                state.messages = output.new_messages;
+                                if let Err(err) =
+                                    executor.save_compact_boundary(boundary_record).await
+                                {
+                                    log::warn!(
+                                        "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                                        err
+                                    );
+                                }
+                                state.compact_state.record_success();
+                                state.stop_hook_active = true;
+                                continue 'turn;
+                            }
+                            Ok(_) => {}
+                            Err(_) => {
+                                state.compact_state.record_failure();
+                            }
+                        }
+                    }
+
+                    self.event_bus
+                        .emit(RuntimeEvent::new(
+                            session_id.clone(),
+                            run_id.clone(),
+                            RuntimeEventKind::StreamError {
+                                error: message.clone(),
+                                raw_error: Some("prompt_too_long".to_string()),
+                            },
+                        ))
+                        .await?;
+                    inject_synthetic_tool_results_for_missing_calls(
+                        &mut state.messages,
+                        cancel.reason(),
+                    );
+                    return Err(anyhow::anyhow!(message));
+                }
                 Err(err) => {
                     inject_synthetic_tool_results_for_missing_calls(
                         &mut state.messages,
@@ -880,11 +954,74 @@ impl RuntimeChatTurnDriver {
                     content,
                     tokens_in,
                     tokens_out,
+                    stop_reason,
                 } => {
                     state.full_content.push_str(&content);
                     state.step_tokens_in += tokens_in;
                     state.step_tokens_out += tokens_out;
                     state.iteration_count = iteration + 1;
+
+                    if stop_reason.as_deref() == Some("max_tokens") {
+                        if state.max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT
+                        {
+                            state.max_output_tokens_recovery_count += 1;
+                            state.messages.push(serde_json::json!({
+                                "role": "assistant",
+                                "content": content,
+                            }));
+                            state.messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.",
+                                "isMeta": true,
+                            }));
+                            continue 'turn;
+                        }
+
+                        state.full_content.push_str(
+                            "
+
+[输出 token 上限已达到，系统已停止自动续写；以上为当前已生成内容。]",
+                        );
+                        turn_completed_normally = true;
+                        break 'turn;
+                    }
+
+                    if let Some(registry) = config.hook_registry.as_ref() {
+                        if !state.stop_hook_active {
+                            let stop_hooks = registry.hooks_for(HookEvent::Stop, "__stop__");
+                            if !stop_hooks.is_empty() {
+                                let stop_input = serde_json::json!({
+                                    "stop_reason": if state.stream_cancelled { "cancelled" } else { "content_complete" },
+                                    "content": &state.full_content,
+                                });
+                                let runner = HookRunner::new();
+                                if let Ok(outcome) =
+                                    runner.run_hooks(&stop_hooks, "__stop__", &stop_input).await
+                                {
+                                    state.stop_hook_prevent_continuation =
+                                        outcome.prevent_continuation;
+                                    state.stop_hook_reason = outcome.stop_reason;
+                                    if !outcome.blocking_errors.is_empty() {
+                                        state.stop_hook_active = true;
+                                        state.max_output_tokens_recovery_count = 0;
+                                        for error_msg in outcome.blocking_errors {
+                                            state.messages.push(serde_json::json!({
+                                                "role": "user",
+                                                "content": error_msg,
+                                                "isMeta": true,
+                                            }));
+                                        }
+                                        continue 'turn;
+                                    }
+                                    if state.stop_hook_prevent_continuation {
+                                        turn_completed_normally = true;
+                                        break 'turn;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     turn_completed_normally = true;
                     break 'turn;
                 }
@@ -1050,18 +1187,23 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        if let Some(registry) = config.hook_registry.as_ref() {
-            let stop_hooks = registry.hooks_for(HookEvent::Stop, "__stop__");
-            if !stop_hooks.is_empty() {
-                let stop_input = serde_json::json!({
-                    "stop_reason": if state.stream_cancelled { "cancelled" } else { "content_complete" },
-                    "content": &state.full_content,
-                });
-                let runner = HookRunner::new();
-                if let Ok(outcome) = runner.run_hooks(&stop_hooks, "__stop__", &stop_input).await {
-                    state.stop_hook_prevent_continuation = outcome.prevent_continuation;
-                    state.stop_hook_reason = outcome.stop_reason;
-                }
+        if let Some(control_plane) = self.pending_permission_control_plane.as_ref() {
+            let orphaned_count = control_plane.pending_count_for_session(&session_id);
+            if orphaned_count > 0 {
+                state.orphaned_permission_count = orphaned_count;
+                control_plane.cancel_for_session(
+                    &session_id,
+                    "Permission request was not resolved before the turn ended (orphaned).",
+                );
+                self.event_bus
+                    .emit(RuntimeEvent::new(
+                        session_id.clone(),
+                        run_id.clone(),
+                        RuntimeEventKind::OrphanedPermissionDetected {
+                            count: orphaned_count,
+                        },
+                    ))
+                    .await?;
             }
         }
 

@@ -10,10 +10,8 @@ use app_lib::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::store::{
-    PendingPermissionRequestStore, PendingPermissionResolution,
-};
 use app_lib::runtime::state::TurnState;
+use app_lib::runtime::store::{PendingPermissionRequestStore, PendingPermissionResolution};
 use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
@@ -148,6 +146,7 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -237,16 +236,16 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
     handle.await.unwrap().unwrap();
 
     let all_messages = executor.all_messages();
-    assert!(all_messages.len() >= 2, "expected second llm step after permission resolution");
+    assert!(
+        all_messages.len() >= 2,
+        "expected second llm step after permission resolution"
+    );
     let second_step_messages = &all_messages[1];
     let tool_result_message = second_step_messages
         .iter()
         .find(|message| {
             message.get("role").and_then(|value| value.as_str()) == Some("tool")
-                && message
-                    .get("toolCallId")
-                    .and_then(|value| value.as_str())
-                    == Some("tc-a2-ask")
+                && message.get("toolCallId").and_then(|value| value.as_str()) == Some("tc-a2-ask")
         })
         .expect("resolved permission ask should produce a terminal tool result");
     let content = tool_result_message["content"].as_str().unwrap_or_default();

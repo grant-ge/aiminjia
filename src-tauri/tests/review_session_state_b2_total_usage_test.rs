@@ -1,9 +1,12 @@
-use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::{ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor, TurnError};
+use app_lib::runtime::chat::{
+    ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
+    TurnError,
+};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
+use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -82,6 +85,7 @@ async fn review_session_state_b2_driver_turn_accumulates_step_tokens_into_query_
             content: "b2 done".to_string(),
             tokens_in: 13,
             tokens_out: 21,
+            stop_reason: Some("end_turn".to_string()),
         })),
     });
     let driver = RuntimeChatTurnDriver::with_llm_executor(query_engine, bus, executor);

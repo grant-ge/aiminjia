@@ -269,18 +269,20 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         continue;
                     }
 
-                    let user_error = classify_llm_error_str(&err_str);
-                    let _ = bus
-                        .emit(RuntimeEvent::new(
-                            session_id.clone(),
-                            run_id.clone(),
-                            RuntimeEventKind::StreamError {
-                                error: user_error.clone(),
-                                raw_error: Some(truncate_str(&err_str, 200)),
-                            },
-                        ))
-                        .await;
-                    return Err(TurnError::LlmError(user_error));
+                    let classified = classify_llm_error(&err_str);
+                    if let TurnError::LlmError(user_error) = &classified {
+                        let _ = bus
+                            .emit(RuntimeEvent::new(
+                                session_id.clone(),
+                                run_id.clone(),
+                                RuntimeEventKind::StreamError {
+                                    error: user_error.clone(),
+                                    raw_error: Some(truncate_str(&err_str, 200)),
+                                },
+                            ))
+                            .await;
+                    }
+                    return Err(classified);
                 }
             };
 
@@ -411,18 +413,20 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                     stream_needs_retry = true;
                                     break;
                                 }
-                                let user_error = classify_llm_error_str(&error);
-                                let _ = bus
-                                    .emit(RuntimeEvent::new(
-                                        session_id.clone(),
-                                        run_id.clone(),
-                                        RuntimeEventKind::StreamError {
-                                            error: user_error.clone(),
-                                            raw_error: Some(truncate_str(&error, 200)),
-                                        },
-                                    ))
-                                    .await;
-                                return Err(TurnError::LlmError(user_error));
+                                let classified = classify_llm_error(&error);
+                                if let TurnError::LlmError(user_error) = &classified {
+                                    let _ = bus
+                                        .emit(RuntimeEvent::new(
+                                            session_id.clone(),
+                                            run_id.clone(),
+                                            RuntimeEventKind::StreamError {
+                                                error: user_error.clone(),
+                                                raw_error: Some(truncate_str(&error, 200)),
+                                            },
+                                        ))
+                                        .await;
+                                }
+                                return Err(classified);
                             }
                             None => {
                                 log::info!(
@@ -473,6 +477,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     content: iter_content,
                     tokens_in,
                     tokens_out,
+                    stop_reason: Some(
+                        match stop_reason {
+                            StopReason::EndTurn => "end_turn",
+                            StopReason::ToolUse => "tool_use",
+                            StopReason::MaxTokens => "max_tokens",
+                            StopReason::StopSequence => "stop_sequence",
+                        }
+                        .to_string(),
+                    ),
                 });
             }
 
@@ -526,10 +539,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             AppSettings::from_string_map(&global_settings_map)
         };
 
-        let workspace_path = global_settings
-            .workspace_path
-            .trim()
-            .to_string();
+        let workspace_path = global_settings.workspace_path.trim().to_string();
         let effective_settings_map = if workspace_path.is_empty() {
             global_settings_map
         } else {
@@ -1183,29 +1193,39 @@ fn is_retryable_stream_error_str(error: &str) -> bool {
 }
 
 /// Classify an LLM error into a user-friendly Chinese message.
-fn classify_llm_error_str(error: &str) -> String {
+fn classify_llm_error(error: &str) -> TurnError {
     let lower = error.to_lowercase();
-    if lower.contains("429") || lower.contains("rate limit") {
-        "AI 服务请求频率超限，请稍等片刻后重试。".to_string()
+    if lower.contains("prompt too long")
+        || lower.contains("prompt is too long")
+        || lower.contains("context length")
+        || lower.contains("maximum context length")
+        || lower.contains("too many tokens")
+        || lower.contains("input is too long")
+        || (lower.contains("413")
+            && (lower.contains("token") || lower.contains("context") || lower.contains("prompt")))
+    {
+        TurnError::PromptTooLong("上下文过长，请压缩后重试。".to_string())
+    } else if lower.contains("429") || lower.contains("rate limit") {
+        TurnError::LlmError("AI 服务请求频率超限，请稍等片刻后重试。".to_string())
     } else if lower.contains("401")
         || lower.contains("unauthorized")
         || lower.contains("authentication")
     {
-        "API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string()
+        TurnError::LlmError("API 密钥无效或已过期，请在设置中检查 API Key 配置。".to_string())
     } else if lower.contains("402") || lower.contains("insufficient") || lower.contains("quota") {
-        "API 额度不足，请检查账户余额。".to_string()
+        TurnError::LlmError("API 额度不足，请检查账户余额。".to_string())
     } else if lower.contains("timeout") || lower.contains("timed out") {
-        "AI 服务连接超时，请检查网络连接后重试。".to_string()
+        TurnError::LlmError("AI 服务连接超时，请检查网络连接后重试。".to_string())
     } else if lower.contains("connection") || lower.contains("network") {
-        "网络连接异常，请检查网络后重试。".to_string()
+        TurnError::LlmError("网络连接异常，请检查网络后重试。".to_string())
     } else if lower.contains("500")
         || lower.contains("502")
         || lower.contains("503")
         || lower.contains("504")
     {
-        "AI 服务暂时不可用，请稍后重试。".to_string()
+        TurnError::LlmError("AI 服务暂时不可用，请稍后重试。".to_string())
     } else {
-        format!("服务异常：{}。请重试。", truncate_str(error, 100))
+        TurnError::LlmError(format!("服务异常：{}。请重试。", truncate_str(error, 100)))
     }
 }
 

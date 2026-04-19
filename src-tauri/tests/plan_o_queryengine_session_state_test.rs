@@ -5,10 +5,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::identity::IdentityMapping;
@@ -202,6 +202,7 @@ impl RuntimeLlmExecutor for ImmediateContentExecutor {
             content: "done".to_string(),
             tokens_in: 500_000,
             tokens_out: 500_000,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -254,7 +255,10 @@ async fn o5_budget_exceeded_emits_turn_completed_event() {
             total_cost_usd,
             ..
         } => {
-            assert!(matches!(outcome, app_lib::runtime::chat::ChatTurnOutcome::BudgetExceeded { .. }));
+            assert!(matches!(
+                outcome,
+                app_lib::runtime::chat::ChatTurnOutcome::BudgetExceeded { .. }
+            ));
             assert_eq!(total_input_tokens, 500_000);
             assert_eq!(total_output_tokens, 500_000);
             assert_eq!(total_cost_usd, Some(1.0));

@@ -11,9 +11,7 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::{RunId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
-use app_lib::runtime::store::{
-    PendingPermissionRequestStore, PendingPermissionResolution,
-};
+use app_lib::runtime::store::{PendingPermissionRequestStore, PendingPermissionResolution};
 use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
@@ -156,6 +154,7 @@ async fn ask_request_is_recorded_without_completed_error_event() {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -248,6 +247,7 @@ async fn approve_replays_original_tool_call_with_updated_input() {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -295,9 +295,7 @@ async fn approve_replays_original_tool_call_with_updated_input() {
         .iter()
         .find(|message| {
             message.get("role").and_then(|value| value.as_str()) == Some("tool")
-                && message
-                    .get("toolCallId")
-                    .and_then(|value| value.as_str())
+                && message.get("toolCallId").and_then(|value| value.as_str())
                     == Some("tc-approve-updated-input")
         })
         .expect("approved ask must replay as a normal tool result");
@@ -330,6 +328,7 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -375,9 +374,7 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
         .iter()
         .find(|message| {
             message.get("role").and_then(|value| value.as_str()) == Some("tool")
-                && message
-                    .get("toolCallId")
-                    .and_then(|value| value.as_str())
+                && message.get("toolCallId").and_then(|value| value.as_str())
                     == Some("tc-cancel-request")
         })
         .expect("cancelled ask must resume with a terminal tool result");
@@ -391,8 +388,8 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
 fn review_driver_does_not_own_pending_permission_store_field() {
     let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
         .expect("read chat_turn_driver.rs");
-    let session_runtime_src = std::fs::read_to_string("src/runtime/session_runtime.rs")
-        .expect("read session_runtime.rs");
+    let session_runtime_src =
+        std::fs::read_to_string("src/runtime/session_runtime.rs").expect("read session_runtime.rs");
     assert!(
         !driver_src.contains("pending_permission_store:"),
         "driver 不应再持有 pending_permission_store 字段，owner 应收敛到 SessionRuntime/runtime service"

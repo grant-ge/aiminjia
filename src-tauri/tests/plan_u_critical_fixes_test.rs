@@ -114,6 +114,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -151,10 +152,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         Ok("压缩摘要：保留最后一个 user 问题。".to_string())
     }
 
-    async fn save_compact_boundary(
-        &self,
-        record: CompactBoundaryRecord,
-    ) -> Result<(), TurnError> {
+    async fn save_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<(), TurnError> {
         self.boundaries.lock().unwrap().push(record);
         Ok(())
     }
@@ -171,11 +169,7 @@ async fn u2_turnerror_path_injects_synthetic_results_before_returning_error() {
     })];
     let executor = Arc::new(ErrorAfterHistoryExecutor { history });
     let bus = RuntimeEventBus::new();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(
-        QueryEngine::default(),
-        bus,
-        executor,
-    );
+    let driver = RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor);
 
     let mut turn = make_test_turn("conv-u2");
     let request = ChatTurnRequest::new("conv-u2", "trigger", vec![]);
@@ -205,18 +199,19 @@ fn u2_inject_synthetic_results_repairs_orphan_tool_calls() {
 async fn u3_compact_success_persists_boundary_record_with_anchor() {
     let executor = Arc::new(CompactingExecutor::new());
     let bus = RuntimeEventBus::new();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(
-        QueryEngine::default(),
-        bus,
-        executor.clone(),
-    );
+    let driver =
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone());
 
     let mut turn = make_test_turn("conv-u3");
     let request = ChatTurnRequest::new("conv-u3", "current question", vec![]);
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let boundaries = executor.saved_boundaries();
-    assert_eq!(boundaries.len(), 1, "compact success should persist one boundary");
+    assert_eq!(
+        boundaries.len(),
+        1,
+        "compact success should persist one boundary"
+    );
     let boundary = &boundaries[0];
     assert_eq!(boundary.conversation_id, "conv-u3");
     assert_eq!(boundary.trigger, CompactTrigger::Auto);
@@ -261,7 +256,10 @@ fn u4_history_builder_restarts_from_boundary_anchor_and_prepends_summary() {
     let rebuilt = build_history_from_compact_boundary(raw_messages, Some(&boundary), false);
     assert_eq!(rebuilt.len(), 3);
     assert_eq!(rebuilt[0]["role"], "user");
-    assert!(rebuilt[0]["content"].as_str().unwrap().contains("summary body"));
+    assert!(rebuilt[0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("summary body"));
     assert_eq!(rebuilt[1]["content"], "tail question");
     assert_eq!(rebuilt[2]["content"], "tail answer");
 }
@@ -297,9 +295,12 @@ fn u4_history_builder_without_matching_anchor_falls_back_to_recent_history() {
 fn u3_app_storage_persists_boundary_summary_and_anchor_fields() {
     let dir = TempDir::new().unwrap();
     let storage = AppStorage::new(dir.path()).unwrap();
-    storage.create_conversation("conv-u3-store", "Conv").unwrap();
+    storage
+        .create_conversation("conv-u3-store", "Conv")
+        .unwrap();
 
-    let mut record = build_compact_boundary_record("conv-u3-store", CompactTrigger::Auto, 88, 22, 5);
+    let mut record =
+        build_compact_boundary_record("conv-u3-store", CompactTrigger::Auto, 88, 22, 5);
     record.summary_text = "persisted summary".to_string();
     record.tail_message_id = Some("tail-user".to_string());
     storage.append_compact_boundary(&record).unwrap();

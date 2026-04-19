@@ -51,6 +51,7 @@ impl RuntimeLlmExecutor for CoreMemoryCapturingExecutor {
                 content: "ok".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -81,6 +82,7 @@ async fn ab1_core_memory_appears_in_dynamic_context() {
             content: "done".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         }],
     ));
     let bus = RuntimeEventBus::new();
@@ -120,6 +122,7 @@ async fn ab1_load_core_memory_called_once_per_turn() {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             },
         ],
     ));

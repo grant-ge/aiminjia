@@ -21,6 +21,7 @@ pub struct HookOutcome {
     pub updated_input: Option<Value>,
     pub prevent_continuation: bool,
     pub stop_reason: Option<String>,
+    pub blocking_errors: Vec<String>,
 }
 
 impl HookOutcome {
@@ -30,6 +31,7 @@ impl HookOutcome {
             updated_input: None,
             prevent_continuation: false,
             stop_reason: None,
+            blocking_errors: Vec::new(),
         }
     }
 }
@@ -45,6 +47,8 @@ struct HookOutput {
     prevent_continuation: bool,
     #[serde(rename = "stopReason")]
     stop_reason: Option<String>,
+    #[serde(rename = "blockingErrors", default)]
+    blocking_errors: Vec<String>,
 }
 
 fn default_behavior() -> String {
@@ -228,6 +232,7 @@ impl HookRunner {
             updated_input,
             prevent_continuation: parsed.prevent_continuation,
             stop_reason: parsed.stop_reason,
+            blocking_errors: parsed.blocking_errors,
         })
     }
 
@@ -260,7 +265,7 @@ impl HookRunner {
             if let Some(updated_input) = outcome.updated_input.clone() {
                 current_input = updated_input;
             }
-            if outcome.prevent_continuation {
+            if outcome.prevent_continuation || !outcome.blocking_errors.is_empty() {
                 return Ok(HookOutcome {
                     updated_input: Some(current_input),
                     ..outcome

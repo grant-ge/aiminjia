@@ -2,8 +2,7 @@ use app_lib::runtime::tools::definition::{ToolDefinition, ToolKind};
 
 #[test]
 fn tool_definition_has_kind_field() {
-    let def = ToolDefinition::new("web_search", "Search the web")
-        .with_kind(ToolKind::Primitive);
+    let def = ToolDefinition::new("web_search", "Search the web").with_kind(ToolKind::Primitive);
     assert!(matches!(def.kind, ToolKind::Primitive));
 }
 
@@ -15,8 +14,7 @@ fn tool_kind_default_is_primitive() {
 
 #[test]
 fn execute_python_kind_is_power() {
-    let def = ToolDefinition::new("execute_python", "Run Python")
-        .with_kind(ToolKind::Power);
+    let def = ToolDefinition::new("execute_python", "Run Python").with_kind(ToolKind::Power);
     assert!(matches!(def.kind, ToolKind::Power));
 }
 
@@ -40,14 +38,27 @@ fn all_new_plan_c_tools_are_in_catalog() {
 }
 
 #[tokio::test]
-async fn get_all_schemas_returns_sorted_by_name() {
+async fn get_all_schemas_returns_builtin_then_mcp_partitions() {
     use app_lib::plugin::registry::ToolRegistry;
     let registry = ToolRegistry::new();
     let schemas = registry.get_all_schemas().await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
-    let mut sorted = names.clone();
-    sorted.sort();
-    assert_eq!(names, sorted, "get_all_schemas must return tools sorted by name");
+    let builtin: Vec<_> = names
+        .iter()
+        .filter(|name| !name.starts_with("mcp__"))
+        .cloned()
+        .collect();
+    let mcp: Vec<_> = names
+        .iter()
+        .filter(|name| name.starts_with("mcp__"))
+        .cloned()
+        .collect();
+    let mut builtin_sorted = builtin.clone();
+    builtin_sorted.sort();
+    let mut mcp_sorted = mcp.clone();
+    mcp_sorted.sort();
+    assert_eq!(builtin, builtin_sorted, "built-in partition must be sorted");
+    assert_eq!(mcp, mcp_sorted, "MCP partition must be sorted");
 }
 
 #[tokio::test]
@@ -60,7 +71,7 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
             "web_search".to_string(),
             "browse_navigate".to_string(),
             "list_directory".to_string(),
-    ]))
+        ]))
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
     assert_eq!(
@@ -68,9 +79,22 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
         vec!["browse_navigate".to_string(), "web_search".to_string()],
         "get_schemas_filtered must return the expected filtered tool set"
     );
-    let mut sorted = names.clone();
-    sorted.sort();
-    assert_eq!(names, sorted, "get_schemas_filtered must return tools sorted by name");
+    let builtin: Vec<_> = names
+        .iter()
+        .filter(|name| !name.starts_with("mcp__"))
+        .cloned()
+        .collect();
+    let mcp: Vec<_> = names
+        .iter()
+        .filter(|name| name.starts_with("mcp__"))
+        .cloned()
+        .collect();
+    let mut builtin_sorted = builtin.clone();
+    builtin_sorted.sort();
+    let mut mcp_sorted = mcp.clone();
+    mcp_sorted.sort();
+    assert_eq!(builtin, builtin_sorted, "filtered built-in partition must be sorted");
+    assert_eq!(mcp, mcp_sorted, "filtered MCP partition must be sorted");
 }
 
 // Task 2.1 tests
@@ -177,11 +201,17 @@ fn catalog_search_files_has_4000_limit() {
 fn catalog_other_tools_default_to_8000_when_not_overridden() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for id in ["web_search", "plan_update", "progress_update", "save_analysis_note"] {
+    for id in [
+        "web_search",
+        "plan_update",
+        "progress_update",
+        "save_analysis_note",
+    ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
             def.default_max_result_size_chars, 8_000,
-            "{} should default to 8000", id
+            "{} should default to 8000",
+            id
         );
     }
 }

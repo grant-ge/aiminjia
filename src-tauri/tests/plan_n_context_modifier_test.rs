@@ -12,11 +12,11 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
+use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
     ToolResult,
 };
-use app_lib::runtime::tools::dispatcher::{RuntimeTool, ToolDispatchOutcome};
 
 struct ModifyingTool;
 
@@ -77,10 +77,16 @@ async fn dispatch_outcome_includes_context_modifier_message() {
     dispatcher.register(tool);
 
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
-    let outcome = dispatcher.dispatch("modifying_tool", json!({}), ctx).await.unwrap();
+    let outcome = dispatcher
+        .dispatch("modifying_tool", json!({}), ctx)
+        .await
+        .unwrap();
 
     match outcome {
-        ToolDispatchOutcome::Completed { context_modifier_message, .. } => {
+        ToolDispatchOutcome::Completed {
+            context_modifier_message,
+            ..
+        } => {
             assert!(context_modifier_message.is_some());
             let msg = context_modifier_message.unwrap();
             assert_eq!(msg.get("role").and_then(|v| v.as_str()), Some("user"));
@@ -107,7 +113,11 @@ async fn concurrent_safe_tool_modifier_ignored() {
             Some(json!({"role": "user", "content": "should not appear"}))
         }
 
-        async fn execute(&self, _: Value, _: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+        async fn execute(
+            &self,
+            _: Value,
+            _: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
             Ok(ToolResult::new("conc_mod", "ok", None))
         }
     }
@@ -116,10 +126,16 @@ async fn concurrent_safe_tool_modifier_ignored() {
     dispatcher.register(Arc::new(ConcurrentModifyingTool));
 
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
-    let outcome = dispatcher.dispatch("conc_mod", json!({}), ctx).await.unwrap();
+    let outcome = dispatcher
+        .dispatch("conc_mod", json!({}), ctx)
+        .await
+        .unwrap();
 
     match outcome {
-        ToolDispatchOutcome::Completed { context_modifier_message, .. } => {
+        ToolDispatchOutcome::Completed {
+            context_modifier_message,
+            ..
+        } => {
             assert!(context_modifier_message.is_none());
         }
         _ => panic!("expected Completed"),
@@ -132,10 +148,16 @@ async fn plain_tool_no_context_modifier_in_outcome() {
     dispatcher.register(Arc::new(PlainTool));
 
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
-    let outcome = dispatcher.dispatch("plain_tool", json!({}), ctx).await.unwrap();
+    let outcome = dispatcher
+        .dispatch("plain_tool", json!({}), ctx)
+        .await
+        .unwrap();
 
     match outcome {
-        ToolDispatchOutcome::Completed { context_modifier_message, .. } => {
+        ToolDispatchOutcome::Completed {
+            context_modifier_message,
+            ..
+        } => {
             assert!(context_modifier_message.is_none());
         }
         _ => panic!("expected Completed"),
@@ -183,6 +205,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -221,6 +244,7 @@ async fn driver_appends_context_modifier_message_after_tool_result() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 

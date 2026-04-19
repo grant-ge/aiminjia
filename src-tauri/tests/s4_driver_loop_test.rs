@@ -33,11 +33,11 @@ fn stream_error_maps_to_legacy_event() {
 
 // ── S4-T3: MockLlmExecutor ─────────────────────────────────────────────────
 
-use std::sync::Arc;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::RuntimeLlmExecutor;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 struct MockLlmExecutor {
     responses: std::sync::Mutex<Vec<LlmStepResult>>,
@@ -65,6 +65,7 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -84,13 +85,12 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
 
 #[test]
 fn mock_executor_implements_trait() {
-    let executor = MockLlmExecutor::new(vec![
-        LlmStepResult::ContentComplete {
-            content: "hello".to_string(),
-            tokens_in: 10,
-            tokens_out: 5,
-        },
-    ]);
+    let executor = MockLlmExecutor::new(vec![LlmStepResult::ContentComplete {
+        content: "hello".to_string(),
+        tokens_in: 10,
+        tokens_out: 5,
+        stop_reason: Some("end_turn".to_string()),
+    }]);
     let _arc: Arc<dyn RuntimeLlmExecutor> = Arc::new(executor);
     // 编译通过即为成功
 }
@@ -112,15 +112,21 @@ fn safeguard_daily_injects_when_near_limit_no_content() {
     let mut injected = false;
     // Daily mode: iteration 7 >= max_iterations(10) - 3 = 7, empty full_content
     let action = check_iteration(7, 10, "", false, false, &mut injected, false);
-    assert!(matches!(action, SafeguardAction::InjectPromptAndContinue(_)));
+    assert!(matches!(
+        action,
+        SafeguardAction::InjectPromptAndContinue(_)
+    ));
 }
 
 #[test]
 fn safeguard_analysis_forces_no_tools_at_final_phase() {
     let mut injected = true; // phase 1 already injected
-    // iteration=12, max=15 → remaining = 15-13 = 2 (<= 3), no content, has_saved_note=true
+                             // iteration=12, max=15 → remaining = 15-13 = 2 (<= 3), no content, has_saved_note=true
     let action = check_iteration(12, 15, "", true, true, &mut injected, false);
-    assert!(matches!(action, SafeguardAction::ForceNoToolsAndContinue(_)));
+    assert!(matches!(
+        action,
+        SafeguardAction::ForceNoToolsAndContinue(_)
+    ));
 }
 
 // ── S4-T7: post_process 模块 ──────────────────────────────────────────────
@@ -153,8 +159,8 @@ fn finalize_no_change_for_normal_content() {
 // ── S4-T8: tool_result_collector 模块 ────────────────────────────────────────
 
 use app_lib::runtime::chat::tool_result_collector::collect_results;
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use app_lib::runtime::chat::tool_round_driver::ToolRoundResult;
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 
 #[test]
 fn collect_results_counts_success_and_error() {
@@ -271,25 +277,28 @@ fn collect_results_keeps_content_within_declared_limit() {
 
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver};
 use app_lib::runtime::identity::IdentityMapping;
-use app_lib::runtime::state::TurnState;
 use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::state::TurnState;
 
 fn make_test_turn(conversation_id: &str) -> TurnState {
     let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
-    TurnState::new(mapping, app_lib::runtime::ids::RunId::new("test-run"), "hi".to_string())
+    TurnState::new(
+        mapping,
+        app_lib::runtime::ids::RunId::new("test-run"),
+        "hi".to_string(),
+    )
 }
 
 #[tokio::test]
 async fn driver_s4_loop_content_complete() {
     // Single ContentComplete response: driver should emit StreamStarted,
     // MessagePersisted, StreamDone, AgentIdle.
-    let executor = Arc::new(MockLlmExecutor::new(vec![
-        LlmStepResult::ContentComplete {
-            content: "Hello world".to_string(),
-            tokens_in: 10,
-            tokens_out: 5,
-        },
-    ]));
+    let executor = Arc::new(MockLlmExecutor::new(vec![LlmStepResult::ContentComplete {
+        content: "Hello world".to_string(),
+        tokens_in: 10,
+        tokens_out: 5,
+        stop_reason: Some("end_turn".to_string()),
+    }]));
 
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -303,19 +312,31 @@ async fn driver_s4_loop_content_complete() {
 
     let events = bus.recorded();
     assert!(
-        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamStarted)),
+        events.iter().any(|e| matches!(
+            e.kind,
+            app_lib::runtime::events::RuntimeEventKind::StreamStarted
+        )),
         "missing StreamStarted"
     );
     assert!(
-        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        events.iter().any(|e| matches!(
+            e.kind,
+            app_lib::runtime::events::RuntimeEventKind::StreamDone
+        )),
         "missing StreamDone"
     );
     assert!(
-        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })),
+        events.iter().any(|e| matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. }
+        )),
         "missing MessagePersisted"
     );
     assert!(
-        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::AgentIdle { .. })),
+        events.iter().any(|e| matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::AgentIdle { .. }
+        )),
         "missing AgentIdle"
     );
     assert!(
@@ -330,9 +351,7 @@ async fn driver_s4_loop_content_complete() {
 #[tokio::test]
 async fn driver_s4_loop_cancelled() {
     // Cancelled result: driver should still emit StreamStarted and StreamDone.
-    let executor = Arc::new(MockLlmExecutor::new(vec![
-        LlmStepResult::Cancelled,
-    ]));
+    let executor = Arc::new(MockLlmExecutor::new(vec![LlmStepResult::Cancelled]));
 
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -346,11 +365,17 @@ async fn driver_s4_loop_cancelled() {
 
     let events = bus.recorded();
     assert!(
-        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamStarted)),
+        events.iter().any(|e| matches!(
+            e.kind,
+            app_lib::runtime::events::RuntimeEventKind::StreamStarted
+        )),
         "missing StreamStarted on cancel"
     );
     assert!(
-        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        events.iter().any(|e| matches!(
+            e.kind,
+            app_lib::runtime::events::RuntimeEventKind::StreamDone
+        )),
         "missing StreamDone on cancel"
     );
     assert!(
@@ -373,7 +398,7 @@ async fn driver_s4_loop_tool_calls_then_content() {
     let executor = Arc::new(MockLlmExecutor::new(vec![
         LlmStepResult::ToolCalls {
             assistant_content: "Let me check that.".to_string(),
-            tool_calls: vec![],  // empty: no real dispatcher needed
+            tool_calls: vec![], // empty: no real dispatcher needed
             tokens_in: 20,
             tokens_out: 10,
         },
@@ -381,6 +406,7 @@ async fn driver_s4_loop_tool_calls_then_content() {
             content: "Done.".to_string(),
             tokens_in: 5,
             tokens_out: 3,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -396,11 +422,17 @@ async fn driver_s4_loop_tool_calls_then_content() {
 
     let events = bus.recorded();
     assert!(
-        events.iter().any(|e| matches!(e.kind, app_lib::runtime::events::RuntimeEventKind::StreamDone)),
+        events.iter().any(|e| matches!(
+            e.kind,
+            app_lib::runtime::events::RuntimeEventKind::StreamDone
+        )),
         "missing StreamDone in tool-then-content path"
     );
     assert!(
-        events.iter().any(|e| matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })),
+        events.iter().any(|e| matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. }
+        )),
         "missing MessagePersisted in tool-then-content path"
     );
 }
@@ -408,13 +440,12 @@ async fn driver_s4_loop_tool_calls_then_content() {
 #[tokio::test]
 async fn driver_s4_message_persisted_carries_content() {
     // Verify the MessagePersisted event contains the LLM's text.
-    let executor = Arc::new(MockLlmExecutor::new(vec![
-        LlmStepResult::ContentComplete {
-            content: "The answer is 42.".to_string(),
-            tokens_in: 8,
-            tokens_out: 4,
-        },
-    ]));
+    let executor = Arc::new(MockLlmExecutor::new(vec![LlmStepResult::ContentComplete {
+        content: "The answer is 42.".to_string(),
+        tokens_in: 8,
+        tokens_out: 4,
+        stop_reason: Some("end_turn".to_string()),
+    }]));
 
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
@@ -427,7 +458,10 @@ async fn driver_s4_message_persisted_carries_content() {
 
     let events = bus.recorded();
     let persisted = events.iter().find(|e| {
-        matches!(&e.kind, app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. })
+        matches!(
+            &e.kind,
+            app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. }
+        )
     });
     assert!(persisted.is_some(), "no MessagePersisted event");
     if let app_lib::runtime::events::RuntimeEventKind::MessagePersisted { content, role, .. } =
@@ -525,13 +559,17 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.received_messages.lock().unwrap().push(input.messages.clone());
+        self.received_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
         let mut responses = self.responses.lock().unwrap();
         if responses.is_empty() {
             Ok(LlmStepResult::ContentComplete {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -556,6 +594,7 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -568,18 +607,30 @@ async fn driver_s4_injects_system_reminder_as_first_user_message() {
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let all_messages = executor.all_messages();
-    assert!(!all_messages.is_empty(), "executor must have received messages");
+    assert!(
+        !all_messages.is_empty(),
+        "executor must have received messages"
+    );
     let first_call_messages = &all_messages[0];
 
     let first_msg = &first_call_messages[0];
     assert_eq!(first_msg["role"], "user", "first message must be user role");
     let content = first_msg["content"].as_str().unwrap_or("");
-    assert!(content.contains("<system-reminder>"),
-        "first user message must contain <system-reminder> tag, got: {}", content);
-    assert!(content.contains("今天是"),
-        "system-reminder must contain date info, got: {}", content);
-    assert!(content.contains("</system-reminder>"),
-        "system-reminder must have closing tag, got: {}", content);
+    assert!(
+        content.contains("<system-reminder>"),
+        "first user message must contain <system-reminder> tag, got: {}",
+        content
+    );
+    assert!(
+        content.contains("今天是"),
+        "system-reminder must contain date info, got: {}",
+        content
+    );
+    assert!(
+        content.contains("</system-reminder>"),
+        "system-reminder must have closing tag, got: {}",
+        content
+    );
 }
 
 #[tokio::test]
@@ -589,6 +640,7 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
 
@@ -601,16 +653,25 @@ async fn driver_s4_system_reminder_precedes_user_content_message() {
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let first_call_messages = &executor.all_messages()[0];
-    assert!(first_call_messages.len() >= 2,
-        "must have at least system-reminder + user content");
+    assert!(
+        first_call_messages.len() >= 2,
+        "must have at least system-reminder + user content"
+    );
 
     let first = &first_call_messages[0];
     let second = &first_call_messages[1];
 
-    assert!(first["content"].as_str().unwrap_or("").contains("<system-reminder>"),
-        "index 0 must be system-reminder");
-    assert_eq!(second["content"], "what is today?",
-        "index 1 must be the actual user content");
+    assert!(
+        first["content"]
+            .as_str()
+            .unwrap_or("")
+            .contains("<system-reminder>"),
+        "index 0 must be system-reminder"
+    );
+    assert_eq!(
+        second["content"], "what is today?",
+        "index 1 must be the actual user content"
+    );
 }
 
 struct EnrichedUserMessageExecutor {
@@ -637,11 +698,15 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.received_messages.lock().unwrap().push(input.messages.clone());
+        self.received_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
         Ok(LlmStepResult::ContentComplete {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -676,11 +741,7 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
     let mut turn = make_test_turn("conv-upload");
-    let request = ChatTurnRequest::new(
-        "conv-upload",
-        "请分析这个文件",
-        vec!["file-1".to_string()],
-    );
+    let request = ChatTurnRequest::new("conv-upload", "请分析这个文件", vec!["file-1".to_string()]);
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
@@ -688,10 +749,16 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     let last = first_call_messages.last().unwrap();
     let content = last["content"].as_str().unwrap_or("");
     assert_eq!(last["role"], "user");
-    assert!(content.contains("[已上传文件]"),
-        "user content sent to LLM must include uploaded-file hints, got: {}", content);
-    assert!(content.contains("file-1"),
-        "user content sent to LLM must include file_id, got: {}", content);
+    assert!(
+        content.contains("[已上传文件]"),
+        "user content sent to LLM must include uploaded-file hints, got: {}",
+        content
+    );
+    assert!(
+        content.contains("file-1"),
+        "user content sent to LLM must include file_id, got: {}",
+        content
+    );
 }
 
 // ── S4-T3-Task3: is_analysis 传递测试 ────────────────────────────────────────
@@ -704,13 +771,12 @@ struct CapturingMockExecutor {
 impl CapturingMockExecutor {
     fn new_analysis() -> Self {
         Self {
-            responses: std::sync::Mutex::new(vec![
-                LlmStepResult::ContentComplete {
-                    content: "ok".to_string(),
-                    tokens_in: 0,
-                    tokens_out: 0,
-                },
-            ]),
+            responses: std::sync::Mutex::new(vec![LlmStepResult::ContentComplete {
+                content: "ok".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
+            }]),
             received_system_prompts: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -724,7 +790,9 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.received_system_prompts.lock().unwrap()
+        self.received_system_prompts
+            .lock()
+            .unwrap()
             .push(input.system_prompt.to_string());
         let mut responses = self.responses.lock().unwrap();
         if responses.is_empty() {
@@ -732,6 +800,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -774,8 +843,11 @@ async fn driver_s4_passes_is_analysis_true_to_build_system_prompt() {
 
     let prompts = executor.received_system_prompts.lock().unwrap();
     assert!(!prompts.is_empty());
-    assert_eq!(prompts[0], "[ANALYSIS-SYSTEM-PROMPT]",
-        "analysis mode must use analysis system prompt, got: {}", prompts[0]);
+    assert_eq!(
+        prompts[0], "[ANALYSIS-SYSTEM-PROMPT]",
+        "analysis mode must use analysis system prompt, got: {}",
+        prompts[0]
+    );
 }
 
 // ── S4-T4: tool_defs 精确传递测试 ─────────────────────────────────────────────
@@ -802,19 +874,19 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.captured_tool_defs.lock().unwrap()
+        self.captured_tool_defs
+            .lock()
+            .unwrap()
             .push(input.tool_defs.to_vec());
         Ok(LlmStepResult::ContentComplete {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
-    async fn get_tool_defs(
-        &self,
-        is_analysis: bool,
-    ) -> Result<Vec<serde_json::Value>, TurnError> {
+    async fn get_tool_defs(&self, is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
         self.seen_is_analysis.lock().unwrap().push(is_analysis);
         use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
         let names: Vec<String> = if is_analysis {
@@ -822,7 +894,10 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         } else {
             DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
         };
-        Ok(names.iter().map(|n| serde_json::json!({"name": n, "description": ""})).collect())
+        Ok(names
+            .iter()
+            .map(|n| serde_json::json!({"name": n, "description": ""}))
+            .collect())
     }
 
     async fn persist_assistant_message(
@@ -849,8 +924,10 @@ async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
 
     let captured = executor.captured_tool_defs.lock().unwrap();
     assert!(!captured.is_empty(), "must have captured tool defs");
-    assert!(!captured[0].is_empty(),
-        "tool_defs must be non-empty for daily mode (was vec![] before fix)");
+    assert!(
+        !captured[0].is_empty(),
+        "tool_defs must be non-empty for daily mode (was vec![] before fix)"
+    );
 }
 
 #[tokio::test]
@@ -874,11 +951,16 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
 
     let expected_names: std::collections::HashSet<String> =
         DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
-    assert_eq!(received_names, expected_names,
-        "daily tool_defs must exactly match whitelist");
+    assert_eq!(
+        received_names, expected_names,
+        "daily tool_defs must exactly match whitelist"
+    );
     for allowed in DAILY_ALLOWED_TOOLS {
-        assert!(received_names.contains(*allowed),
-            "daily whitelist tool '{}' must be in tool_defs", allowed);
+        assert!(
+            received_names.contains(*allowed),
+            "daily whitelist tool '{}' must be in tool_defs",
+            allowed
+        );
     }
 }
 
@@ -894,17 +976,21 @@ async fn driver_s4_analysis_tool_defs_use_analysis_flag() {
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
     let seen = executor.seen_is_analysis.lock().unwrap();
-    assert_eq!(&*seen, &[true], "analysis turn must request analysis tool defs");
+    assert_eq!(
+        &*seen,
+        &[true],
+        "analysis turn must request analysis tool defs"
+    );
     let captured = executor.captured_tool_defs.lock().unwrap();
     let names: std::collections::HashSet<String> = captured[0]
         .iter()
         .filter_map(|v| v["name"].as_str())
         .map(|s| s.to_string())
         .collect();
-    assert_eq!(names, std::collections::HashSet::from([
-        "all_tool_a".to_string(),
-        "all_tool_b".to_string(),
-    ]));
+    assert_eq!(
+        names,
+        std::collections::HashSet::from(["all_tool_a".to_string(), "all_tool_b".to_string(),])
+    );
 }
 
 // ── S4-T5: 多轮历史加载测试 ──────────────────────────────────────────────────
@@ -939,6 +1025,7 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
             content: "response".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -978,12 +1065,24 @@ async fn driver_s4_loads_history_into_messages() {
     let captured = executor.captured_initial_messages.lock().unwrap();
     assert!(!captured.is_empty(), "must have captured messages");
 
-    let has_prev_question = captured.iter().any(|m| m["content"].as_str() == Some("previous question"));
-    let has_prev_answer = captured.iter().any(|m| m["content"].as_str() == Some("previous answer"));
-    assert!(has_prev_question, "history: 'previous question' must be in messages");
-    assert!(has_prev_answer, "history: 'previous answer' must be in messages");
+    let has_prev_question = captured
+        .iter()
+        .any(|m| m["content"].as_str() == Some("previous question"));
+    let has_prev_answer = captured
+        .iter()
+        .any(|m| m["content"].as_str() == Some("previous answer"));
+    assert!(
+        has_prev_question,
+        "history: 'previous question' must be in messages"
+    );
+    assert!(
+        has_prev_answer,
+        "history: 'previous answer' must be in messages"
+    );
 
-    let has_current = captured.iter().any(|m| m["content"].as_str() == Some("current question"));
+    let has_current = captured
+        .iter()
+        .any(|m| m["content"].as_str() == Some("current question"));
     assert!(has_current, "current user content must be in messages");
 }
 
@@ -1004,19 +1103,31 @@ async fn driver_s4_message_order_is_reminder_history_current() {
 
     let captured = executor.captured_initial_messages.lock().unwrap();
     assert!(
-        captured[0]["content"].as_str().unwrap_or("").contains("<system-reminder>"),
-        "messages[0] must be system-reminder, got: {:?}", captured[0]
+        captured[0]["content"]
+            .as_str()
+            .unwrap_or("")
+            .contains("<system-reminder>"),
+        "messages[0] must be system-reminder, got: {:?}",
+        captured[0]
     );
     let last = captured.last().unwrap();
-    assert_eq!(last["content"], "new msg",
-        "last message must be current user content");
+    assert_eq!(
+        last["content"], "new msg",
+        "last message must be current user content"
+    );
 
-    let middle_contents: Vec<&str> = captured[1..captured.len()-1]
+    let middle_contents: Vec<&str> = captured[1..captured.len() - 1]
         .iter()
         .filter_map(|m| m["content"].as_str())
         .collect();
-    assert!(middle_contents.contains(&"past user msg"), "history user msg must be in middle");
-    assert!(middle_contents.contains(&"past assistant msg"), "history assistant msg must be in middle");
+    assert!(
+        middle_contents.contains(&"past user msg"),
+        "history user msg must be in middle"
+    );
+    assert!(
+        middle_contents.contains(&"past assistant msg"),
+        "history assistant msg must be in middle"
+    );
 }
 
 #[tokio::test]
@@ -1032,8 +1143,11 @@ async fn driver_s4_empty_history_works_normally() {
     assert!(result.is_ok(), "must work without history");
 
     let captured = executor.captured_initial_messages.lock().unwrap();
-    assert_eq!(captured.len(), 2,
-        "without history: messages must be [system-reminder, user-content]");
+    assert_eq!(
+        captured.len(),
+        2,
+        "without history: messages must be [system-reminder, user-content]"
+    );
 }
 
 struct FailingHistoryExecutor;
@@ -1081,8 +1195,11 @@ async fn driver_s4_returns_error_when_history_loading_fails() {
     let result = driver.run_chat_turn(&mut turn, &request).await;
     assert!(result.is_err(), "history loading failure must be surfaced");
     let err_text = format!("{:?}", result.err().unwrap());
-    assert!(err_text.contains("history backend unavailable"),
-        "error should mention history loading failure, got: {}", err_text);
+    assert!(
+        err_text.contains("history backend unavailable"),
+        "error should mention history loading failure, got: {}",
+        err_text
+    );
 }
 
 struct EnvInfoCapturingExecutor {
@@ -1115,6 +1232,7 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 
@@ -1215,6 +1333,7 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
             content: "ok".to_string(),
             tokens_in: 0,
             tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 

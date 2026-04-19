@@ -11,12 +11,12 @@ use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
 use crate::runtime::store::permission_store::PermissionStore;
+use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
+use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::permission::StorePolicyPipeline;
 use crate::runtime::tools::{
     CapabilityPermissionPipeline, LegacyToolAdapter, PermissionPipeline, ToolDispatcher,
 };
-use crate::runtime::tools::permission::PermissionDecision;
-use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
-use crate::runtime::tools::permission::StorePolicyPipeline;
 
 use super::context::PluginContext;
 use super::skill_trait::{Skill, ToolFilter};
@@ -80,6 +80,16 @@ pub struct ToolRegistry {
     permission_store: RwLock<Option<Arc<PermissionStore>>>,
 }
 
+fn partition_sort_tool_schemas(mut schemas: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
+    let (mut builtin_schemas, mut mcp_schemas): (Vec<_>, Vec<_>) = schemas
+        .drain(..)
+        .partition(|schema| !schema.name.starts_with("mcp__"));
+    builtin_schemas.sort_by(|a, b| a.name.cmp(&b.name));
+    mcp_schemas.sort_by(|a, b| a.name.cmp(&b.name));
+    builtin_schemas.extend(mcp_schemas);
+    builtin_schemas
+}
+
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
@@ -115,10 +125,7 @@ impl ToolRegistry {
         self.runtime_tools.write().await.insert(id, tool);
 
         if TOOL_CATALOG.get_entry(&def.id).is_none() {
-            TOOL_CATALOG.register_entry(CatalogEntry::new(
-                def,
-                Self::infer_json_schema(),
-            ));
+            TOOL_CATALOG.register_entry(CatalogEntry::new(def, Self::infer_json_schema()));
         }
     }
 
@@ -279,8 +286,7 @@ impl ToolRegistry {
             }
         }
 
-        schemas.sort_by(|a, b| a.name.cmp(&b.name));
-        schemas
+        partition_sort_tool_schemas(schemas)
     }
 
     /// Get tool definitions filtered by a ToolFilter.
@@ -348,8 +354,7 @@ impl ToolRegistry {
             }
         }
 
-        schemas.sort_by(|a, b| a.name.cmp(&b.name));
-        schemas
+        partition_sort_tool_schemas(schemas)
     }
 
     /// Execute a tool by name.
@@ -402,7 +407,8 @@ impl ToolRegistry {
                         run_id: ctx.run_id.clone(),
                         python_binary: Some(python_binary),
                         python_home,
-                    }) as Arc<dyn crate::runtime::tools::capability::FileOperations>
+                    })
+                        as Arc<dyn crate::runtime::tools::capability::FileOperations>
                 });
                 let cap = CapabilityContext {
                     storage: Some(storage),
@@ -432,18 +438,18 @@ impl ToolRegistry {
             .with_capability(capability);
 
             // Permission check: prefer StorePolicyPipeline if permission_store is available
-            let pipeline: Box<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
-                Some(store) => Box::new(StorePolicyPipeline::new(store.clone())),
-                None => Box::new(CapabilityPermissionPipeline),
-            };
+            let pipeline: Box<dyn PermissionPipeline> =
+                match self.permission_store.read().await.as_ref() {
+                    Some(store) => Box::new(StorePolicyPipeline::new(store.clone())),
+                    None => Box::new(CapabilityPermissionPipeline),
+                };
             let def = tool.definition();
-            let permission_decision = if let Some(decision) =
-                tool.check_permissions(&input, &exec_ctx).await
-            {
-                decision
-            } else {
-                pipeline.authorize(&def, &input, &exec_ctx)
-            };
+            let permission_decision =
+                if let Some(decision) = tool.check_permissions(&input, &exec_ctx).await {
+                    decision
+                } else {
+                    pipeline.authorize(&def, &input, &exec_ctx)
+                };
 
             match permission_decision {
                 PermissionDecision::Allow { .. } => {}
@@ -469,7 +475,10 @@ impl ToolRegistry {
                 Err(crate::runtime::tools::ToolError::ExecutionFailed(message)) => {
                     return Err(ToolError::ExecutionFailed(message));
                 }
-                Err(crate::runtime::tools::ToolError::InputValidationError { tool_name, message }) => {
+                Err(crate::runtime::tools::ToolError::InputValidationError {
+                    tool_name,
+                    message,
+                }) => {
                     return Err(ToolError::ExecutionFailed(format!(
                         "input validation error for tool '{tool_name}': {message}"
                     )));
@@ -495,10 +504,11 @@ impl ToolRegistry {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("Unknown tool: {}", name)))?;
             rt.plugin.clone() // Arc::clone is cheap — release lock before executing
         };
-        let pipeline: Arc<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
-            Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
-            None => Arc::new(CapabilityPermissionPipeline),
-        };
+        let pipeline: Arc<dyn PermissionPipeline> =
+            match self.permission_store.read().await.as_ref() {
+                Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
+                None => Arc::new(CapabilityPermissionPipeline),
+            };
         let dispatcher = ToolDispatcher::new(pipeline);
         dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
             plugin,
@@ -551,10 +561,11 @@ impl ToolRegistry {
     /// behind an adapter. This is the bridge point for incrementally moving the
     /// production query path onto the new runtime contract.
     pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
-        let pipeline: Arc<dyn PermissionPipeline> = match self.permission_store.read().await.as_ref() {
-            Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
-            None => Arc::new(CapabilityPermissionPipeline),
-        };
+        let pipeline: Arc<dyn PermissionPipeline> =
+            match self.permission_store.read().await.as_ref() {
+                Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
+                None => Arc::new(CapabilityPermissionPipeline),
+            };
         let dispatcher = Arc::new(ToolDispatcher::new(pipeline));
         let runtime_tools = self.runtime_tools.read().await;
         let legacy_tools = self.tools.read().await;
@@ -625,8 +636,10 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                 };
-                Some(Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "read_page_content" => {
                 let deps = builtin::browser::BrowserDeps {
@@ -636,8 +649,10 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                 };
-                Some(Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "page_execute_js" => {
                 let deps = builtin::browser::BrowserDeps {
@@ -647,8 +662,10 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                 };
-                Some(Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "extract_table_data" => {
                 let deps = builtin::browser::BrowserDeps {
@@ -658,8 +675,10 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                 };
-                Some(Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "extract_with_pagination" => {
                 let deps = builtin::browser::BrowserDeps {
@@ -669,8 +688,11 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     conversation_id: ctx.conversation_id.clone(),
                 };
-                Some(Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(deps))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(
+                        deps,
+                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
             "browse_data" => Some(Arc::new(
@@ -698,7 +720,8 @@ impl ToolRegistry {
                         python_binary,
                         python_home,
                     ),
-                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                )
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             "generate_report" => {
                 use crate::runtime::tools::builtin::report_capability::DefaultReportCapability;
@@ -713,9 +736,11 @@ impl ToolRegistry {
                     python_binary,
                     python_home,
                 });
-                Some(Arc::new(
-                    builtin::report::GenerateReportRuntimeTool::with_capability(capability),
-                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::report::GenerateReportRuntimeTool::with_capability(
+                        capability,
+                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             "generate_chart" => {
                 use crate::runtime::tools::builtin::chart_capability::DefaultChartCapability;
@@ -728,9 +753,11 @@ impl ToolRegistry {
                     python_binary,
                     python_home,
                 });
-                Some(Arc::new(
-                    builtin::chart::GenerateChartRuntimeTool::with_capability(capability),
-                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::chart::GenerateChartRuntimeTool::with_capability(
+                        capability,
+                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             _ => None,
         }

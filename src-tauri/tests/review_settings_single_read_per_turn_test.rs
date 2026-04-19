@@ -85,6 +85,7 @@ async fn review_driver_loads_llm_settings_once_per_turn_and_reuses_them_each_ste
             content: "done".to_string(),
             tokens_in: 4,
             tokens_out: 2,
+            stop_reason: Some("end_turn".to_string()),
         },
     ]));
     let driver = RuntimeChatTurnDriver::with_llm_executor(

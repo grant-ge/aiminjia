@@ -42,7 +42,11 @@ async fn hook_runner_deny_decision() {
         timeout_secs: Some(10),
     };
     let result = runner
-        .run_hook(&config, "bash_tool", &serde_json::json!({"command": "rm -rf /"}))
+        .run_hook(
+            &config,
+            "bash_tool",
+            &serde_json::json!({"command": "rm -rf /"}),
+        )
         .await
         .unwrap();
     assert!(matches!(result.decision, HookDecision::Deny { .. }));
@@ -59,13 +63,20 @@ async fn hook_runner_updated_input() {
         timeout_secs: Some(10),
     };
     let result = runner
-        .run_hook(&config, "bash_tool", &serde_json::json!({"command": "dangerous_cmd"}))
+        .run_hook(
+            &config,
+            "bash_tool",
+            &serde_json::json!({"command": "dangerous_cmd"}),
+        )
         .await
         .unwrap();
     assert!(matches!(result.decision, HookDecision::Allow));
     assert!(result.updated_input.is_some());
     let updated = result.updated_input.unwrap();
-    assert_eq!(updated.get("command").and_then(serde_json::Value::as_str), Some("echo safe"));
+    assert_eq!(
+        updated.get("command").and_then(serde_json::Value::as_str),
+        Some("echo safe")
+    );
 }
 
 #[tokio::test]
@@ -73,8 +84,9 @@ async fn hook_runner_prevent_continuation() {
     let runner = HookRunner::new();
     let config = HookConfig {
         event: HookEvent::PostToolUse,
-        command: "echo '{\"behavior\":\"allow\",\"preventContinuation\":true,\"stopReason\":\"done\"}'"
-            .to_string(),
+        command:
+            "echo '{\"behavior\":\"allow\",\"preventContinuation\":true,\"stopReason\":\"done\"}'"
+                .to_string(),
         tool_filter: None,
         timeout_secs: Some(10),
     };

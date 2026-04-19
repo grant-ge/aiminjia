@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError, TurnIterationState};
+use app_lib::runtime::chat::turn_config::{
+    LlmStepInput, LlmStepResult, TurnError, TurnIterationState,
+};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
@@ -23,7 +25,8 @@ async fn stop_hook_prevent_continuation() {
         tool_filter: None,
         timeout_secs: Some(10),
     };
-    let input = serde_json::json!({"stop_reason": "content_complete", "content": "Final response."});
+    let input =
+        serde_json::json!({"stop_reason": "content_complete", "content": "Final response."});
     let result = runner.run_hook(&config, "__stop__", &input).await.unwrap();
     assert!(result.prevent_continuation);
     assert_eq!(result.stop_reason.as_deref(), Some("stop signal received"));
@@ -91,6 +94,7 @@ impl RuntimeLlmExecutor for StopHookExecutor {
             content: "done".to_string(),
             tokens_in: 1,
             tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
         })
     }
 

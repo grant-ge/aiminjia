@@ -81,6 +81,9 @@ pub struct TurnIterationState {
     pub compact_state: AutoCompactState,
     pub stop_hook_prevent_continuation: bool,
     pub stop_hook_reason: Option<String>,
+    pub stop_hook_active: bool,
+    pub max_output_tokens_recovery_count: usize,
+    pub orphaned_permission_count: usize,
 }
 
 impl TurnIterationState {
@@ -99,6 +102,9 @@ impl TurnIterationState {
             compact_state: AutoCompactState::new(),
             stop_hook_prevent_continuation: false,
             stop_hook_reason: None,
+            stop_hook_active: false,
+            max_output_tokens_recovery_count: 0,
+            orphaned_permission_count: 0,
         }
     }
 
@@ -143,6 +149,7 @@ pub enum LlmStepResult {
         content: String,
         tokens_in: u64,
         tokens_out: u64,
+        stop_reason: Option<String>,
     },
     /// 用户取消
     Cancelled,
@@ -153,6 +160,8 @@ pub enum LlmStepResult {
 pub enum TurnError {
     #[error("LLM error: {0}")]
     LlmError(String),
+    #[error("Prompt too long: {0}")]
+    PromptTooLong(String),
     #[error("Cancelled")]
     Cancelled,
     #[error("Max retries exceeded")]
@@ -160,3 +169,5 @@ pub enum TurnError {
     #[error("Persistence error: {0}")]
     PersistenceError(String),
 }
+
+pub const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT: usize = 3;

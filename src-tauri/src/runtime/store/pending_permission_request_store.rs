@@ -21,15 +21,9 @@ pub struct PendingPermissionRequest {
 
 #[derive(Clone, Debug)]
 pub enum PendingPermissionResolution {
-    Allow {
-        updated_input: Option<Value>,
-    },
-    Deny {
-        message: String,
-    },
-    Cancel {
-        message: String,
-    },
+    Allow { updated_input: Option<Value> },
+    Deny { message: String },
+    Cancel { message: String },
 }
 
 struct PendingPermissionEntry {
@@ -48,6 +42,10 @@ pub trait PendingPermissionControlPlane: Send + Sync {
         tool_call_id: &ToolCallId,
         resolution: PendingPermissionResolution,
     ) -> Result<()>;
+
+    fn cancel_for_session(&self, session_id: &SessionId, message: &str) -> usize;
+
+    fn pending_count_for_session(&self, session_id: &SessionId) -> usize;
 }
 
 #[derive(Default)]
@@ -142,6 +140,15 @@ impl PendingPermissionRequestStore {
         }
         cancelled
     }
+
+    pub fn pending_count_for_session(&self, session_id: &SessionId) -> usize {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|entry| entry.request.session_id == *session_id)
+            .count()
+    }
 }
 
 impl PendingPermissionControlPlane for PendingPermissionRequestStore {
@@ -158,5 +165,13 @@ impl PendingPermissionControlPlane for PendingPermissionRequestStore {
         resolution: PendingPermissionResolution,
     ) -> Result<()> {
         self.resolve(tool_call_id, resolution)
+    }
+
+    fn cancel_for_session(&self, session_id: &SessionId, message: &str) -> usize {
+        PendingPermissionRequestStore::cancel_for_session(self, session_id, message)
+    }
+
+    fn pending_count_for_session(&self, session_id: &SessionId) -> usize {
+        PendingPermissionRequestStore::pending_count_for_session(self, session_id)
     }
 }

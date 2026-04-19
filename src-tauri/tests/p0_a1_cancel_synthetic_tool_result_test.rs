@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::chat::chat_turn_driver::inject_synthetic_tool_results_for_missing_calls;
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
@@ -10,7 +11,6 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use async_trait::async_trait;
 use serde_json::{json, Value as JsonValue};
 
@@ -57,6 +57,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
                 content: "done".to_string(),
                 tokens_in: 0,
                 tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
             })
         } else {
             Ok(responses.remove(0))
@@ -98,17 +99,15 @@ async fn driver_carries_assistant_tool_calls_into_next_llm_input() {
                 content: "ok".to_string(),
                 tokens_in: 3,
                 tokens_out: 2,
+                stop_reason: Some("end_turn".to_string()),
             },
         ],
         vec![],
     ));
 
     let bus = RuntimeEventBus::new();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(
-        QueryEngine::default(),
-        bus,
-        executor.clone(),
-    );
+    let driver =
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus, executor.clone());
 
     let mut turn = make_test_turn("conv-a1-preserve");
     let request = ChatTurnRequest::new("conv-a1-preserve", "hi", vec![]);
@@ -119,10 +118,14 @@ async fn driver_carries_assistant_tool_calls_into_next_llm_input() {
     let second_step_messages = &all_messages[1];
 
     let assistant_with_tool_call = second_step_messages.iter().find(|msg| {
-        msg.get("role").and_then(|v| v.as_str()) == Some("assistant") && msg.get("toolCalls").is_some()
+        msg.get("role").and_then(|v| v.as_str()) == Some("assistant")
+            && msg.get("toolCalls").is_some()
     });
 
-    assert!(assistant_with_tool_call.is_some(), "second llm call should include assistant message with toolCalls");
+    assert!(
+        assistant_with_tool_call.is_some(),
+        "second llm call should include assistant message with toolCalls"
+    );
     let msg = assistant_with_tool_call.unwrap();
     let actual_id = msg["toolCalls"][0]["id"].as_str().unwrap_or_default();
     assert_eq!(actual_id, tool_call_id);
@@ -130,15 +133,13 @@ async fn driver_carries_assistant_tool_calls_into_next_llm_input() {
 
 #[test]
 fn injects_synthetic_tool_result_for_unmatched_assistant_tool_call() {
-    let mut messages = vec![
-        json!({
-            "role": "assistant",
-            "content": "",
-            "toolCalls": [
-                {"id": "tc-a1-missing", "name": "unknown_tool", "arguments": {}}
-            ]
-        }),
-    ];
+    let mut messages = vec![json!({
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+            {"id": "tc-a1-missing", "name": "unknown_tool", "arguments": {}}
+        ]
+    })];
 
     let injected = inject_synthetic_tool_results_for_missing_calls(
         &mut messages,
@@ -155,7 +156,10 @@ fn injects_synthetic_tool_result_for_unmatched_assistant_tool_call() {
         .expect("synthetic tool result should exist");
 
     assert_eq!(
-        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
         "Tool execution was interrupted by user cancellation.",
     );
 }
@@ -185,7 +189,10 @@ fn injects_reason_specific_synthetic_tool_result_for_interrupt() {
         .expect("synthetic tool result should exist");
 
     assert_eq!(
-        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
         "Tool execution was interrupted before completion.",
     );
 }
@@ -212,7 +219,10 @@ fn injects_generic_interrupt_tool_result_when_cancel_reason_is_missing() {
         .expect("synthetic tool result should exist");
 
     assert_eq!(
-        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
         "Tool execution was interrupted before completion.",
     );
 }
@@ -242,7 +252,10 @@ fn injects_reason_specific_synthetic_tool_result_for_sibling_error() {
         .expect("synthetic tool result should exist");
 
     assert_eq!(
-        synthetic.get("content").and_then(|v| v.as_str()).unwrap_or_default(),
+        synthetic
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
         "Tool execution was cancelled because another tool call failed.",
     );
 }
@@ -261,11 +274,8 @@ async fn cancelled_turn_still_emits_stream_done() {
     ));
 
     let bus = RuntimeEventBus::new();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(
-        QueryEngine::default(),
-        bus.clone(),
-        executor,
-    );
+    let driver =
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::default(), bus.clone(), executor);
 
     let mut turn = make_test_turn("conv-a1-cancel");
     let request = ChatTurnRequest::new("conv-a1-cancel", "cancel", vec![]);
