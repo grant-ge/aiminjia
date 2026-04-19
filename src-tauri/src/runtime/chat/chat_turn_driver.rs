@@ -8,30 +8,28 @@ use std::time::Duration;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compaction::{
     build_compact_boundary_record, compact_messages_via_llm, microcompact, should_auto_compact,
-    AutoCompactConfig, CompactTrigger,
-    MicrocompactConfig,
+    AutoCompactConfig, CompactTrigger, MicrocompactConfig,
 };
-use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
+use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use crate::runtime::chat::turn_config::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError,
-    TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError, TurnIterationState,
 };
+use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::query_engine::QueryEngine;
-use crate::runtime::store::{
-    PendingPermissionControlPlane, PendingPermissionRequest,
-    PendingPermissionResolution,
-};
 use crate::runtime::state::TurnState;
+use crate::runtime::store::{
+    PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
+};
 use crate::runtime::tools::permission::PermissionDecision;
 
 /// The chat turn request type.  Defined here to avoid circular imports between
@@ -169,10 +167,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     ///
     /// 默认实现返回空 vec（向后兼容旧 mock executor）。
     /// 生产 executor（TauriLegacyTurnExecutor）必须 override。
-    async fn get_tool_defs(
-        &self,
-        _is_analysis: bool,
-    ) -> Result<Vec<serde_json::Value>, TurnError> {
+    async fn get_tool_defs(&self, _is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
         Ok(vec![])
     }
 
@@ -194,6 +189,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 生产 executor 必须 override。
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
         let _ = conversation_id;
+        Ok(String::new())
+    }
+
+    /// 加载跨对话共享的 core memory。
+    ///
+    /// 默认返回空字符串，便于旧测试 executor 无需感知此能力。
+    async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok(String::new())
     }
 
@@ -238,9 +240,7 @@ pub struct RuntimeChatTurnDriver {
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
     match reason {
-        Some(CancellationReason::Interrupt) => {
-            "Tool execution was interrupted before completion."
-        }
+        Some(CancellationReason::Interrupt) => "Tool execution was interrupted before completion.",
         Some(CancellationReason::SiblingError) => {
             "Tool execution was cancelled because another tool call failed."
         }
@@ -265,7 +265,10 @@ pub fn inject_synthetic_tool_results_for_missing_calls(
     let mut existing_tool_result_ids: HashSet<String> = HashSet::new();
 
     for message in messages.iter() {
-        let role = message.get("role").and_then(|v| v.as_str()).unwrap_or_default();
+        let role = message
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if role == "assistant" {
             if let Some(tool_calls) = message.get("toolCalls").and_then(|v| v.as_array()) {
                 for tc in tool_calls {
@@ -430,7 +433,8 @@ impl RuntimeChatTurnDriver {
                         suggestions,
                         ..
                     },
-            }) = &round_result else {
+            }) = &round_result
+            else {
                 resolved_results.push(round_result);
                 continue;
             };
@@ -469,19 +473,19 @@ impl RuntimeChatTurnDriver {
                 .await;
 
             let resolved = match resolution {
-                PendingPermissionResolution::Allow { updated_input } => {
-                    ToolRoundResult::Ok(
-                        self.query_engine
-                            .replay_tool_call_with_bus(
-                                turn,
-                                &self.event_bus,
-                                original_request.clone(),
-                                updated_input,
-                            )
-                            .await
-                            .map_err(|err| anyhow::anyhow!("failed to replay approved tool call: {err}"))?,
-                    )
-                }
+                PendingPermissionResolution::Allow { updated_input } => ToolRoundResult::Ok(
+                    self.query_engine
+                        .replay_tool_call_with_bus(
+                            turn,
+                            &self.event_bus,
+                            original_request.clone(),
+                            updated_input,
+                        )
+                        .await
+                        .map_err(|err| {
+                            anyhow::anyhow!("failed to replay approved tool call: {err}")
+                        })?,
+                ),
                 PendingPermissionResolution::Deny { message }
                 | PendingPermissionResolution::Cancel { message } => {
                     self.event_bus
@@ -678,10 +682,16 @@ impl RuntimeChatTurnDriver {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
                 String::new()
             });
+        let core_memory_str = executor
+            .load_core_memory(request.conversation_id.as_str())
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("[run_chat_turn_s4] load_core_memory failed: {}", e);
+                String::new()
+            });
 
         'turn: for iteration in 0..config.max_iterations {
-            let microcompact_result =
-                microcompact(&state.messages, &MicrocompactConfig::default());
+            let microcompact_result = microcompact(&state.messages, &MicrocompactConfig::default());
             if microcompact_result.executed {
                 state.messages = microcompact_result.messages;
             }
@@ -737,14 +747,15 @@ impl RuntimeChatTurnDriver {
                 }
             }
 
-            let precompute_ctx = precompute_result.as_deref().unwrap_or_default();
-            let dynamic_context = if env_info.is_empty() {
-                precompute_ctx.to_string()
-            } else if precompute_ctx.is_empty() {
-                env_info.clone()
-            } else {
-                format!("{}\n\n{}", env_info, precompute_ctx)
-            };
+            let dynamic_context = build_iteration_context(
+                &core_memory_str,
+                &env_info,
+                "",
+                "",
+                precompute_result.as_deref(),
+                None,
+                None,
+            );
 
             // Build the read-only executor input.
             let input = LlmStepInput {
@@ -853,7 +864,8 @@ impl RuntimeChatTurnDriver {
                     // Collect and merge results into state.
                     let results = tool_result_collector::collect_results(round_results);
                     let mut history_batch = Vec::with_capacity(
-                        1 + results.tool_result_messages.len() + results.context_modifier_messages.len(),
+                        1 + results.tool_result_messages.len()
+                            + results.context_modifier_messages.len(),
                     );
                     history_batch.push(assistant_history_message);
 
@@ -878,8 +890,7 @@ impl RuntimeChatTurnDriver {
                     // Safeguard check.
                     let has_saved_note = state.messages.iter().any(|m| {
                         m.get("role").and_then(|v| v.as_str()) == Some("tool")
-                            && m.get("name").and_then(|v| v.as_str())
-                                == Some("save_analysis_note")
+                            && m.get("name").and_then(|v| v.as_str()) == Some("save_analysis_note")
                     });
                     match safeguard::check_iteration(
                         iteration,
@@ -989,7 +1000,10 @@ impl RuntimeChatTurnDriver {
             ))
             .await?;
         self.event_bus
-            .emit(RuntimeEvent::stream_done(session_id.clone(), run_id.clone()))
+            .emit(RuntimeEvent::stream_done(
+                session_id.clone(),
+                run_id.clone(),
+            ))
             .await?;
         self.event_bus
             .emit(RuntimeEvent::new(
@@ -999,7 +1013,8 @@ impl RuntimeChatTurnDriver {
                     outcome: final_outcome,
                     total_input_tokens: state.step_tokens_in,
                     total_output_tokens: state.step_tokens_out,
-                    total_cost_usd: self.query_engine
+                    total_cost_usd: self
+                        .query_engine
                         .max_budget_usd()
                         .map(|_| self.query_engine.estimated_cost_usd()),
                     permission_denial_count: self.query_engine.get_permission_denials().len(),
@@ -1047,12 +1062,12 @@ mod tests {
             ]
         })]);
 
-        mark_turn_cancelled_with_synthetic_results(
-            &mut state,
-            Some(CancellationReason::Interrupt),
-        );
+        mark_turn_cancelled_with_synthetic_results(&mut state, Some(CancellationReason::Interrupt));
 
-        assert!(state.stream_cancelled, "cancel finalizer must mark stream_cancelled");
+        assert!(
+            state.stream_cancelled,
+            "cancel finalizer must mark stream_cancelled"
+        );
         let synthetic = state
             .messages
             .iter()

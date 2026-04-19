@@ -17,23 +17,21 @@ use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
-use crate::runtime::conversation_service;
-use crate::runtime::ids::{SessionId, ToolCallId};
-use crate::runtime::store::PendingPermissionResolution;
-use crate::runtime::store::conversation_store::ConversationStore;
-use crate::runtime::{
-    ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime,
-};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig,
-    TurnError, TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig, TurnError,
+    TurnIterationState,
 };
-use crate::transport::tauri_event_adapter::TauriEventAdapter;
-use crate::transport::tauri_runtime_host::TauriRuntimeHost;
+use crate::runtime::conversation_service;
+use crate::runtime::ids::{SessionId, ToolCallId};
+use crate::runtime::store::conversation_store::ConversationStore;
+use crate::runtime::store::PendingPermissionResolution;
+use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
+use crate::transport::tauri_event_adapter::TauriEventAdapter;
+use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 
 mod chat_runtime_impl;
 
@@ -120,11 +118,8 @@ pub fn build_history_from_compact_boundary(
 
     chat_messages.extend(filtered_messages.into_iter().filter_map(|msg| {
         let role = msg["role"].as_str()?.to_string();
-        let content = build_history_message_content(
-            &role,
-            msg.get("content")?,
-            has_authorized_workspace,
-        )?;
+        let content =
+            build_history_message_content(&role, msg.get("content")?, has_authorized_workspace)?;
         if content.trim().is_empty() {
             return None;
         }
@@ -161,8 +156,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         bus: &RuntimeEventBus,
         cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::llm::masking::MaskingLevel;
+        use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
         use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
         use crate::runtime::ids::{RunId, SessionId};
         use futures::StreamExt;
@@ -246,7 +241,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 }
                 Err(e) => {
                     let err_str = e.to_string();
-                    log::error!("[run_llm_step] gateway.stream_message() FAILED: {}", err_str);
+                    log::error!(
+                        "[run_llm_step] gateway.stream_message() FAILED: {}",
+                        err_str
+                    );
 
                     // Retry transient errors
                     if stream_retry_count < MAX_STREAM_RETRIES
@@ -255,7 +253,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         stream_retry_count += 1;
                         log::warn!(
                             "[run_llm_step] Gateway error retryable (attempt {}/{}) conv={}",
-                            stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
+                            stream_retry_count,
+                            MAX_STREAM_RETRIES,
+                            input.conversation_id
                         );
                         tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
                             .await;
@@ -295,9 +295,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     return Ok(LlmStepResult::Cancelled);
                 }
 
-                let chunk_timeout = tokio::time::sleep(std::time::Duration::from_secs(
-                    input.chunk_timeout_secs,
-                ));
+                let chunk_timeout =
+                    tokio::time::sleep(std::time::Duration::from_secs(input.chunk_timeout_secs));
                 tokio::select! {
                     // Legacy cancel_rx from gateway run-registry
                     _ = cancel_rx.changed() => {
@@ -434,11 +433,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             if stream_needs_retry {
                 log::info!(
                     "[run_llm_step] Retrying after {}s (retry {}/{}) conv={}",
-                    STREAM_RETRY_DELAY_SECS, stream_retry_count, MAX_STREAM_RETRIES,
+                    STREAM_RETRY_DELAY_SECS,
+                    stream_retry_count,
+                    MAX_STREAM_RETRIES,
                     input.conversation_id
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
-                    .await;
+                tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS)).await;
                 continue;
             }
 
@@ -458,7 +458,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 if stop_reason != StopReason::EndTurn && stop_reason != StopReason::MaxTokens {
                     log::warn!(
                         "[run_llm_step] Unexpected stop_reason={:?} with no tool calls conv={}",
-                        stop_reason, input.conversation_id
+                        stop_reason,
+                        input.conversation_id
                     );
                 }
                 return Ok(LlmStepResult::ContentComplete {
@@ -473,7 +474,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 log::warn!(
                     "[run_llm_step] stop_reason={:?} but {} tool calls received — \
                      proceeding with tool execution (possible SSE chunk loss) conv={}",
-                    stop_reason, tool_calls.len(), input.conversation_id
+                    stop_reason,
+                    tool_calls.len(),
+                    input.conversation_id
                 );
             }
 
@@ -481,12 +484,14 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             let requests: Vec<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest> =
                 tool_calls
                     .into_iter()
-                    .map(|tc| crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
-                        tool_call_id: tc.id,
-                        tool_name: tc.name,
-                        args: tc.arguments,
-                        purpose: None,
-                    })
+                    .map(
+                        |tc| crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                            tool_call_id: tc.id,
+                            tool_name: tc.name,
+                            args: tc.arguments,
+                            purpose: None,
+                        },
+                    )
                     .collect();
 
             return Ok(LlmStepResult::ToolCalls {
@@ -561,10 +566,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .to_string()
         };
 
-        if let Err(e) = self
-            .services
-            .db
-            .insert_message(&msg_id, conversation_id, "user", &content_json)
+        if let Err(e) =
+            self.services
+                .db
+                .insert_message(&msg_id, conversation_id, "user", &content_json)
         {
             log::error!(
                 "[persist_user_message] Failed to save user message: {:#}",
@@ -617,7 +622,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         }
 
         // Check that the conversation still exists (might have been deleted while the agent ran).
-        if self.services.db.get_conversation_mode(conversation_id).is_err() {
+        if self
+            .services
+            .db
+            .get_conversation_mode(conversation_id)
+            .is_err()
+        {
             log::warn!(
                 "[persist_assistant_message] Conversation {} deleted during agent run, skipping save",
                 conversation_id
@@ -629,7 +639,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         // --- Build content JSON, attaching generated files when present ---
         let content_value = if !generated_file_ids.is_empty() {
-            match self.services.db.get_generated_files_by_ids(generated_file_ids) {
+            match self
+                .services
+                .db
+                .get_generated_files_by_ids(generated_file_ids)
+            {
                 Ok(file_records) if !file_records.is_empty() => {
                     let gen_files: Vec<serde_json::Value> = file_records
                         .iter()
@@ -799,11 +813,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             prompts::PromptMode::Daily
         };
 
-        let parts = prompts::build_system_prompt_parts(
-            mode,
-            persona.as_ref(),
-            product_name.as_deref(),
-        );
+        let parts =
+            prompts::build_system_prompt_parts(mode, persona.as_ref(), product_name.as_deref());
         let prompt = if parts.dynamic_section.is_empty() {
             parts.static_section
         } else {
@@ -814,7 +825,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             "[build_system_prompt] mode={:?} len={} persona={} product_name={}",
             mode,
             prompt.len(),
-            persona.as_ref().map(|p| p.identity.as_str()).unwrap_or("(none)"),
+            persona
+                .as_ref()
+                .map(|p| p.identity.as_str())
+                .unwrap_or("(none)"),
             product_name.as_deref().unwrap_or("(none)"),
         );
 
@@ -840,10 +854,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     ))
                 })?
         };
-        let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
-            &self.services.app,
-            conversation_id,
-        );
+        let authorized_workspace =
+            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
         Ok(chat_runtime_impl::build_llm_content(
             content,
             &file_attachments,
@@ -851,21 +863,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         ))
     }
 
-    async fn get_tool_defs(
-        &self,
-        is_analysis: bool,
-    ) -> Result<Vec<serde_json::Value>, TurnError> {
+    async fn get_tool_defs(&self, is_analysis: bool) -> Result<Vec<serde_json::Value>, TurnError> {
         use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 
         let filter = if is_analysis {
             ToolFilter::All
         } else {
-            ToolFilter::Only(
-                DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
-            )
+            ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect())
         };
 
-        let tool_definitions: Vec<crate::llm::streaming::ToolDefinition> = self.services.tool_registry
+        let tool_definitions: Vec<crate::llm::streaming::ToolDefinition> = self
+            .services
+            .tool_registry
             .get_schemas_filtered(&filter)
             .await;
 
@@ -874,7 +883,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .into_iter()
             .filter_map(|td| {
                 serde_json::to_value(&td)
-                    .map_err(|e| log::warn!("[get_tool_defs] Failed to serialize tool '{}': {}", td.name, e))
+                    .map_err(|e| {
+                        log::warn!(
+                            "[get_tool_defs] Failed to serialize tool '{}': {}",
+                            td.name,
+                            e
+                        )
+                    })
                     .ok()
             })
             .collect();
@@ -894,25 +909,22 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ) -> Result<Vec<serde_json::Value>, TurnError> {
         const HISTORY_LIMIT: u32 = 50;
 
-        let raw_messages = self.services.db
+        let raw_messages = self
+            .services
+            .db
             .get_recent_messages(conversation_id, HISTORY_LIMIT)
-            .map_err(|e| TurnError::PersistenceError(format!(
-                "Failed to load conversation history: {}", e
-            )))?;
-        let has_authorized_workspace = chat_runtime_impl::load_authorized_workspace(
-            &self.services.app,
-            conversation_id,
-        )
-        .is_some();
+            .map_err(|e| {
+                TurnError::PersistenceError(format!("Failed to load conversation history: {}", e))
+            })?;
+        let has_authorized_workspace =
+            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id)
+                .is_some();
         let latest_boundary = self
             .services
             .db
             .list_compact_boundaries(conversation_id)
             .map_err(|e| {
-                TurnError::PersistenceError(format!(
-                    "Failed to load compact boundaries: {}",
-                    e
-                ))
+                TurnError::PersistenceError(format!("Failed to load compact boundaries: {}", e))
             })?
             .into_iter()
             .last();
@@ -941,10 +953,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .db
             .append_compact_boundary(&record)
             .map_err(|e| {
-                TurnError::PersistenceError(format!(
-                    "Failed to persist compact boundary: {}",
-                    e
-                ))
+                TurnError::PersistenceError(format!("Failed to persist compact boundary: {}", e))
             })
     }
 
@@ -953,10 +962,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
-        let authorized = chat_runtime_impl::load_authorized_workspace(
-            &self.services.app,
-            conversation_id,
-        );
+        let authorized =
+            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
         let authorized_tuple = authorized.as_ref().map(|aw| {
             (
                 aw.root_path.to_string_lossy().into_owned(),
@@ -978,6 +985,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         );
 
         Ok(env_info)
+    }
+
+    async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        Ok(self.services.db.load_core_memory())
     }
 }
 
@@ -1191,7 +1202,8 @@ impl TauriChatCommandAdapter {
             services: services.clone(),
         });
         let mut runtime = SessionRuntime::with_llm_executor(
-            QueryEngine::new().with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
+            QueryEngine::new()
+                .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             llm_executor,
         );
@@ -1199,9 +1211,8 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
         {
-            runtime = runtime.with_authorized_workspace_store(
-                facade.inner().clone_authorized_workspace_store(),
-            );
+            runtime = runtime
+                .with_authorized_workspace_store(facade.inner().clone_authorized_workspace_store());
         } else {
             log::warn!(
                 "[TauriChatCommandAdapter] RuntimeRepositoryFacade not registered when \
@@ -1222,9 +1233,7 @@ impl TauriChatCommandAdapter {
         let is_analysis = resolve_request_is_analysis(&self.services.db, &conversation_id);
         let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
         request.is_analysis = is_analysis;
-        self.runtime
-            .run_chat_request(request)
-            .await
+        self.runtime.run_chat_request(request).await
     }
 
     pub fn is_agent_busy(&self) -> Vec<String> {
@@ -1233,8 +1242,10 @@ impl TauriChatCommandAdapter {
 
     pub async fn stop_streaming(&self, conversation_id: String) -> Result<(), String> {
         let session_id = SessionId::new(conversation_id.clone());
-        self.runtime
-            .cancel_session(&session_id, crate::runtime::cancellation::CancellationReason::Interrupt);
+        self.runtime.cancel_session(
+            &session_id,
+            crate::runtime::cancellation::CancellationReason::Interrupt,
+        );
         conversation_service::stop_streaming(
             self.services.gateway.clone(),
             self.services.session_mgr.clone(),
@@ -1265,7 +1276,8 @@ impl TauriChatCommandAdapter {
             .resolve_permission_request(
                 &ToolCallId::new(tool_call_id),
                 PendingPermissionResolution::Deny {
-                    message: message.unwrap_or_else(|| "Permission request denied by user.".to_string()),
+                    message: message
+                        .unwrap_or_else(|| "Permission request denied by user.".to_string()),
                 },
             )
             .map_err(|e| e.to_string())
@@ -1280,7 +1292,8 @@ impl TauriChatCommandAdapter {
             .resolve_permission_request(
                 &ToolCallId::new(tool_call_id),
                 PendingPermissionResolution::Cancel {
-                    message: message.unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
+                    message: message
+                        .unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
                 },
             )
             .map_err(|e| e.to_string())
@@ -1314,7 +1327,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn create_conversation(&self) -> Result<String, String> {
         conversation_service::create_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db.clone() as Arc<dyn ConversationStore>
         )
         .await
     }
@@ -1374,7 +1387,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_conversations(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db.clone() as Arc<dyn ConversationStore>
         )
         .await
     }
