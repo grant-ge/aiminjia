@@ -19,6 +19,7 @@ import type {
   ExecSummary,
   ReportCard,
   GeneratedFile,
+  SubAgentEnvelopeContent,
 } from '@/types/message'
 import { MESSAGE_CONTENT_RENDER_ORDER } from '@/types/message'
 import { Avatar } from '@/components/common/Avatar'
@@ -36,6 +37,7 @@ import {
   ExecSummaryCard,
   ReportCards,
   GeneratedFileCard,
+  SubAgentResultCard,
 } from '@/components/rich-content'
 import { TypingIndicator } from './TypingIndicator'
 import { useChatStore } from '@/stores/chatStore'
@@ -305,6 +307,9 @@ function ContentRenderer({
           ))}
         </>
       )
+
+    case 'subagentEnvelope':
+      return <SubAgentResultCard envelope={value as SubAgentEnvelopeContent} />
 
     default:
       return null

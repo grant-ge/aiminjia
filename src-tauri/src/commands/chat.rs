@@ -78,6 +78,14 @@ pub async fn get_messages(
 }
 
 #[tauri::command]
+pub async fn get_subagent_transcript(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    transcript_ref: String,
+) -> Result<Vec<crate::models::message::SubAgentTranscriptEntryFrontend>, String> {
+    adapter.get_subagent_transcript(transcript_ref).await
+}
+
+#[tauri::command]
 pub async fn create_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
 ) -> Result<String, String> {

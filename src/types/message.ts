@@ -56,6 +56,7 @@ export interface MessageContent {
   execSummary?: ExecSummary
   reports?: ReportCard[]
   generatedFiles?: GeneratedFile[]
+  subagentEnvelope?: SubAgentEnvelopeContent
 }
 
 /** The fixed rendering order for MessageContent fields */
@@ -75,6 +76,7 @@ export const MESSAGE_CONTENT_RENDER_ORDER: (keyof MessageContent)[] = [
   'searchSources',
   'execSummary',
   'confirmations',
+  'subagentEnvelope',
 ]
 
 // --- File Attachment ---
@@ -276,4 +278,18 @@ export interface FileAction {
   type: 'open' | 'preview' | 'download' | 'delete' | 'reveal'
   label: string
   enabled: boolean
+}
+
+export interface SubAgentEnvelopeContent {
+  schemaVersion: number
+  output: string
+  iterationsUsed: number
+  generatedFiles: string[]
+  transcriptRef?: string
+}
+
+export interface SubAgentTranscriptEntry {
+  role: string
+  content: string
+  toolName?: string
 }

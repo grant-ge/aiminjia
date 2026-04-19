@@ -12,9 +12,11 @@ use crate::auth::AuthManager;
 use crate::llm::gateway::LlmGateway;
 use crate::llm::prompt_guard;
 use crate::llm::prompts;
+use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::ToolRegistry;
+use crate::runtime::agent::AgentRuntime;
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
 use crate::runtime::store::PendingPermissionResolution;
@@ -1220,6 +1222,21 @@ impl TauriChatCommandAdapter {
             conversation_id,
         )
         .await
+    }
+
+    pub async fn get_subagent_transcript(
+        &self,
+        transcript_ref: String,
+    ) -> Result<Vec<SubAgentTranscriptEntryFrontend>, String> {
+        let agent_runtime = self
+            .services
+            .app
+            .try_state::<Arc<AgentRuntime>>()
+            .ok_or_else(|| "AgentRuntime state is not registered".to_string())?
+            .inner()
+            .clone();
+
+        conversation_service::get_subagent_transcript(agent_runtime, transcript_ref).await
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {

@@ -97,7 +97,9 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "messageId": message_id,
                 "id": message_id,
                 "role": role,
-                "content": content,
+                "content": crate::runtime::conversation_service::transform_message_json_for_frontend(json!({
+                    "content": content,
+                }))["content"].clone(),
                 "createdAt": chrono::Utc::now().to_rfc3339(),
                 "runId": event.run_id.as_str(),
             }),

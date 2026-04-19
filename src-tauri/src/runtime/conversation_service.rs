@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use crate::models::message::SubAgentTranscriptEntryFrontend;
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+use crate::runtime::agent::AgentRuntime;
 use crate::llm::gateway::LlmGateway;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
@@ -36,7 +39,53 @@ pub async fn get_messages(
     db: Arc<dyn ConversationStore>,
     conversation_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    db.get_messages(&conversation_id).map_err(|e| e.to_string())
+    let messages = db.get_messages(&conversation_id).map_err(|e| e.to_string())?;
+    Ok(messages
+        .into_iter()
+        .map(transform_message_json_for_frontend)
+        .collect())
+}
+
+pub async fn get_subagent_transcript(
+    runtime: Arc<AgentRuntime>,
+    transcript_ref: String,
+) -> Result<Vec<SubAgentTranscriptEntryFrontend>, String> {
+    let entries = runtime
+        .transcript_store_get(&transcript_ref)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("missing subagent transcript: {transcript_ref}"))?;
+
+    Ok(entries
+        .into_iter()
+        .map(SubAgentTranscriptEntryFrontend::from)
+        .collect())
+}
+
+pub fn transform_message_json_for_frontend(mut message: serde_json::Value) -> serde_json::Value {
+    let Some(content) = message.get_mut("content").and_then(|value| value.as_object_mut()) else {
+        return message;
+    };
+
+    let Some(raw_text) = content
+        .get("text")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+    else {
+        return message;
+    };
+
+    let Some(envelope) = SubAgentResultEnvelope::from_storage_summary(&raw_text) else {
+        return message;
+    };
+
+    content.remove("text");
+    content.insert(
+        "subagentEnvelope".to_string(),
+        serde_json::to_value(crate::models::message::SubAgentEnvelopePayload::from(envelope))
+            .unwrap_or(serde_json::Value::Null),
+    );
+
+    message
 }
 
 pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<String, String> {

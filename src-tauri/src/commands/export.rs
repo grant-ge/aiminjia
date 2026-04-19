@@ -501,6 +501,10 @@ pub fn render_conversation_html(
 
     // Messages
     for msg in messages {
+        let msg = crate::runtime::conversation_service::transform_message_json_for_frontend(
+            msg.clone(),
+        );
+
         let role = msg
             .get("role")
             .and_then(|v| v.as_str())
@@ -559,6 +563,11 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
             html.push_str(&simple_markdown_to_html(text));
             html.push_str("</div>");
         }
+    }
+
+    // Structured subagent result
+    if let Some(envelope) = content.get("subagentEnvelope") {
+        render_subagent_envelope(html, envelope);
     }
 
     // File attachments
@@ -819,6 +828,60 @@ fn render_content(html: &mut String, content: &serde_json::Value) {
     }
 }
 
+fn render_subagent_envelope(html: &mut String, envelope: &serde_json::Value) {
+    let output = envelope
+        .get("output")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let iterations_used = envelope
+        .get("iterationsUsed")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let transcript_ref = envelope
+        .get("transcriptRef")
+        .and_then(|value| value.as_str());
+
+    html.push_str(
+        r#"<div style="margin:12px 0;border:1px solid #e0e0e8;border-radius:10px;overflow:hidden;background:#fcfcfe">"#,
+    );
+    html.push_str(&format!(
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f5f5fa;border-bottom:1px solid #e0e0e8"><strong>Subagent Result</strong><span style="font-size:12px;color:#666">{}</span></div>"#,
+        html_escape(&format!("{iterations_used} iterations"))
+    ));
+
+    if !output.trim().is_empty() {
+        html.push_str(r#"<div class="msg-text" style="padding:12px 14px 4px 14px">"#);
+        html.push_str(&simple_markdown_to_html(output));
+        html.push_str("</div>");
+    }
+
+    if let Some(files) = envelope.get("generatedFiles").and_then(|value| value.as_array()) {
+        if !files.is_empty() {
+            html.push_str(
+                r#"<div style="padding:0 14px 10px 14px"><div style="font-size:12px;font-weight:600;color:#666;margin-bottom:6px">Generated Files</div>"#,
+            );
+            for file in files {
+                if let Some(name) = file.as_str() {
+                    html.push_str(&format!(
+                        r#"<div class="file-ref">📄 {}</div>"#,
+                        html_escape(name)
+                    ));
+                }
+            }
+            html.push_str("</div>");
+        }
+    }
+
+    if let Some(transcript_ref) = transcript_ref {
+        html.push_str(&format!(
+            r#"<div style="padding:0 14px 14px 14px"><div class="file-ref">🧾 Execution Trace Ref: <code>{}</code></div></div>"#,
+            html_escape(transcript_ref)
+        ));
+    }
+
+    html.push_str("</div>");
+}
+
 /// Render a data table.
 fn render_table(html: &mut String, table: &serde_json::Value) {
     let title = table.get("title").and_then(|v| v.as_str());
@@ -1016,4 +1079,50 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::render_conversation_html;
+    use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+
+    #[test]
+    fn render_conversation_html_formats_subagent_storage_summary_without_leaking_raw_prefix() {
+        let envelope = SubAgentResultEnvelope {
+            schema_version: 1,
+            output: "Child agent finished analysis".to_string(),
+            iterations_used: 3,
+            generated_files: vec!["report.csv".to_string()],
+            terminal_tool_results: Vec::new(),
+            transcript_snapshot: Vec::new(),
+            transcript_ref: Some("subagent://child-run-1".to_string()),
+        };
+        let messages = vec![json!({
+            "role": "assistant",
+            "content": {
+                "text": envelope.to_storage_summary(),
+            }
+        })];
+
+        let html = render_conversation_html(
+            "Subagent Export",
+            &messages,
+            "2026-04-18T00:00:00Z",
+        );
+
+        assert!(
+            html.contains("Subagent Result"),
+            "exports should render a structured subagent section instead of a raw storage blob"
+        );
+        assert!(html.contains("Child agent finished analysis"));
+        assert!(html.contains("3 iterations"));
+        assert!(html.contains("report.csv"));
+        assert!(html.contains("subagent://child-run-1"));
+        assert!(
+            !html.contains("subagent-envelope:v1:"),
+            "exports should not leak the raw storage prefix"
+        );
+    }
 }

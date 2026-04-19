@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+use crate::runtime::agent::subagent_transcript_store::SubagentTranscriptEntryRecord;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
@@ -84,6 +87,51 @@ pub struct MessageContent {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<serde_json::Value>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent_envelope: Option<SubAgentEnvelopePayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentEnvelopePayload {
+    pub schema_version: u32,
+    pub output: String,
+    pub iterations_used: usize,
+    pub generated_files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_ref: Option<String>,
+}
+
+impl From<SubAgentResultEnvelope> for SubAgentEnvelopePayload {
+    fn from(value: SubAgentResultEnvelope) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            output: value.output,
+            iterations_used: value.iterations_used,
+            generated_files: value.generated_files,
+            transcript_ref: value.transcript_ref,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentTranscriptEntryFrontend {
+    pub role: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl From<SubagentTranscriptEntryRecord> for SubAgentTranscriptEntryFrontend {
+    fn from(value: SubagentTranscriptEntryRecord) -> Self {
+        Self {
+            role: value.role,
+            content: value.content,
+            tool_name: value.tool_name,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

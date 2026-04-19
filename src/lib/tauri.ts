@@ -13,7 +13,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-import type { Message } from '@/types/message'
+import type { Message, SubAgentTranscriptEntry } from '@/types/message'
 import type { Settings } from '@/types/settings'
 
 // ---------------------------------------------------------------------------
@@ -210,6 +210,14 @@ export function cancelPermissionRequest(
 export function getMessages(conversationId: string): Promise<Message[]> {
   return invoke<Message[]>('get_messages', {
     conversationId,
+  })
+}
+
+export function getSubagentTranscript(
+  transcriptRef: string,
+): Promise<SubAgentTranscriptEntry[]> {
+  return invoke<SubAgentTranscriptEntry[]>('get_subagent_transcript', {
+    transcriptRef,
   })
 }
 

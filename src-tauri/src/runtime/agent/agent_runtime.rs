@@ -183,4 +183,11 @@ impl AgentRuntime {
     ) -> Result<()> {
         self.transcript_store.put(transcript_ref, entries)
     }
+
+    pub fn transcript_store_get(
+        &self,
+        transcript_ref: &str,
+    ) -> Result<Option<Vec<SubagentTranscriptEntryRecord>>> {
+        self.transcript_store.get(transcript_ref)
+    }
 }

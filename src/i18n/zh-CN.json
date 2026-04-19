@@ -137,6 +137,19 @@
       "5": "行动方案 + 管理层材料"
     }
   },
+  "subagent": {
+    "resultCard": {
+      "header": "子代理结果",
+      "iterations": "{{count}} 轮迭代",
+      "filesGenerated": "生成文件"
+    },
+    "transcript": {
+      "expand": "查看执行轨迹",
+      "collapse": "隐藏执行轨迹",
+      "loading": "正在加载执行轨迹...",
+      "error": "加载执行轨迹失败"
+    }
+  },
   "settings": {
     "title": "设置",
     "tabs": {

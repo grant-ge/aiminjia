@@ -326,6 +326,7 @@ pub fn run() {
             chat::deny_permission_request,
             chat::cancel_permission_request,
             chat::get_messages,
+            chat::get_subagent_transcript,
             chat::create_conversation,
             chat::delete_conversation,
             chat::rename_conversation,

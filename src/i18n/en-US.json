@@ -137,6 +137,19 @@
       "5": "Action Plan & Executive Materials"
     }
   },
+  "subagent": {
+    "resultCard": {
+      "header": "Subagent Result",
+      "iterations": "{{count}} iterations",
+      "filesGenerated": "Files generated"
+    },
+    "transcript": {
+      "expand": "View execution trace",
+      "collapse": "Hide execution trace",
+      "loading": "Loading execution trace...",
+      "error": "Failed to load execution trace"
+    }
+  },
   "settings": {
     "title": "Settings",
     "tabs": {
