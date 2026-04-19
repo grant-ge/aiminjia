@@ -820,6 +820,7 @@ def _ws_merge(file_paths, output_name='merged', output_format='excel'):
 "###;
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

@@ -861,20 +861,6 @@ pub(crate) async fn handle_load_file_core(
     Ok(serde_json::to_string_pretty(&output)?)
 }
 
-/// Build Python preamble code that auto-loads files previously loaded via `load_file`.
-///
-/// Reads `loaded:{conversation_id}:*` from DB and generates Python code that
-/// loads each file into `_df` / `_text` variables before user code runs.
-/// If multiple files are loaded, also creates `_dfs` dict keyed by file_id
-/// (not original_name, to avoid collision when two files share the same name).
-pub(crate) fn build_loaded_files_preamble(
-    db: &std::sync::Arc<crate::storage::file_store::AppStorage>,
-    conversation_id: &str,
-    workspace_path: &std::path::Path,
-) -> String {
-    build_loaded_files_preamble_for_scope(db, conversation_id, workspace_path)
-}
-
 pub(crate) fn build_loaded_files_preamble_for_scope(
     db: &std::sync::Arc<crate::storage::file_store::AppStorage>,
     scope_id: &str,

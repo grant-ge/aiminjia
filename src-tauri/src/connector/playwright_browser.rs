@@ -17,8 +17,8 @@ use tokio::sync::Mutex;
 
 use super::site_map::{PageProfile, SiteMap, TableSchema};
 use super::types::{
-    ApiFetchResult, BrowseNavigateResult, BrowseResult, DiscoveredApi, ExecuteJsResult, FormData,
-    FormField, FullPageResult, LinkData, TableData,
+    ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult, FormData, FormField,
+    FullPageResult, LinkData, TableData,
 };
 
 // ── Internal types ──────────────────────────────────────────────
@@ -589,7 +589,7 @@ impl PlaywrightBrowser {
 
     /// Ensure Node.js sidecar is running, launch if needed.
     async fn ensure_running(&self) -> Result<(), String> {
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if state.process.is_some() {
             return Ok(());
         }

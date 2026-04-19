@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 /// Phase 2 Task 4 Step 3 — legacy ToolPlugin deprecation regression tests.
 ///
 /// Verifies that:

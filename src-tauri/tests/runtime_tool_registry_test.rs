@@ -2,7 +2,7 @@ use app_lib::runtime::tools::builtin::workspace::{
     GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
     SearchFilesRuntimeTool,
 };
-use app_lib::runtime::tools::capability::{CapabilityContext, StorageCapability};
+use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 use serde_json::json;
 use std::sync::Arc;

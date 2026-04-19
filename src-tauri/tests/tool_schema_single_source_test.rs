@@ -1,4 +1,4 @@
-use app_lib::runtime::tools::catalog::{ToolCatalog, TOOL_CATALOG};
+use app_lib::runtime::tools::catalog::ToolCatalog;
 use app_lib::runtime::tools::definition::ToolKind;
 
 #[test]

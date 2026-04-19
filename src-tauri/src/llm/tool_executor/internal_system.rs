@@ -927,7 +927,10 @@ mod tests {
 
 /// Handle extract_table_data — extract current page table data + pagination info.
 /// Does NOT auto-paginate. LLM decides how to flip pages.
-pub(crate) async fn handle_extract_table_data(ctx: &PluginContext, args: &Value) -> Result<String> {
+pub(crate) async fn handle_extract_table_data(
+    ctx: &PluginContext,
+    _args: &Value,
+) -> Result<String> {
     let engine = ctx
         .connector_engine
         .as_ref()

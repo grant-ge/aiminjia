@@ -5,6 +5,7 @@
 
 use app_lib::runtime::events::RuntimeEventKind;
 
+#[allow(dead_code)]
 pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
     match kind {
         RuntimeEventKind::RunStarted => "RunStarted",
@@ -26,6 +27,7 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 pub fn event_labels(events: &[app_lib::runtime::events::RuntimeEvent]) -> Vec<&'static str> {
     events.iter().map(|e| kind_label(&e.kind)).collect()
 }

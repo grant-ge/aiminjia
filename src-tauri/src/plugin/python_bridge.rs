@@ -22,7 +22,6 @@ use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 /// A Python-based tool plugin.
 pub struct PythonToolBridge {
     id: String,
-    name: String,
     description: String,
     schema: Value,
     plugin_dir: PathBuf,
@@ -47,7 +46,6 @@ impl PythonToolBridge {
         // For now, use a placeholder — actual schema loading happens at registration time
         Ok(Self {
             id: manifest.plugin.id.clone(),
-            name: manifest.plugin.name.clone(),
             description: String::new(),
             schema: Value::Object(serde_json::Map::new()),
             plugin_dir,

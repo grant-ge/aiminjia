@@ -30,9 +30,6 @@ const MAX_SESSIONS: usize = 3;
 /// Idle timeout before a session is automatically reaped (15 minutes).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
-/// Seconds to wait for graceful __DONE__ after SIGINT before force-killing.
-const INTERRUPT_GRACE_SECS: u64 = 5;
-
 // ---------------------------------------------------------------------------
 // Embedded Python scripts (source files alongside this module)
 // ---------------------------------------------------------------------------

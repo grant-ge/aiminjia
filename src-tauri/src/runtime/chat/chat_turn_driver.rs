@@ -349,30 +349,6 @@ fn mark_turn_cancelled_with_synthetic_results(
     state.stream_cancelled = true;
 }
 
-fn permission_ask_event_from_round_result(
-    round_result: &ToolRoundResult,
-) -> Option<RuntimeEventKind> {
-    match round_result {
-        ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
-            tool_call_id,
-            tool_name,
-            original_request: _,
-            decision:
-                PermissionDecision::Ask {
-                    message,
-                    suggestions,
-                    ..
-                },
-        }) => Some(RuntimeEventKind::PermissionAskRequired {
-            tool_call_id: tool_call_id.clone().into(),
-            tool_name: tool_name.clone(),
-            message: message.clone(),
-            suggestions: suggestions.clone(),
-        }),
-        _ => None,
-    }
-}
-
 fn build_claude_md_context_message(
     claude_md_files: &[crate::runtime::claude_md::ClaudeMdFile],
 ) -> Option<serde_json::Value> {

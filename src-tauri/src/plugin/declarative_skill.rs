@@ -19,7 +19,6 @@ pub struct DeclarativeSkill {
     description: String,
     priority_val: u32,
     keywords: Vec<String>,
-    file_keywords: Vec<String>,
     requires_files: bool,
     model_pref: Option<ModelPreference>,
     max_iter: usize,
@@ -44,7 +43,6 @@ pub struct DeclarativeSkill {
 
 struct StepToolConfig {
     tools_only: Option<Vec<String>>,
-    tools_exclude: Option<Vec<String>>,
     max_iterations: Option<usize>,
     token_budget: Option<u32>,
     advance_on: AdvanceMode,
@@ -61,7 +59,6 @@ impl DeclarativeSkill {
     pub fn load(manifest: &PluginManifest, plugin_dir: &Path) -> Result<Self, String> {
         let trigger = manifest.trigger.as_ref();
         let keywords = trigger.map(|t| t.keywords.clone()).unwrap_or_default();
-        let file_keywords = trigger.map(|t| t.file_keywords.clone()).unwrap_or_default();
         let requires_files = trigger.map(|t| t.requires_files).unwrap_or(false);
 
         let priority_val = manifest.plugin.priority.unwrap_or(0);
@@ -170,7 +167,6 @@ impl DeclarativeSkill {
                     step.id.clone(),
                     StepToolConfig {
                         tools_only: step.tools_only.clone(),
-                        tools_exclude: step.tools_exclude.clone(),
                         max_iterations: step.max_iterations,
                         token_budget: step.token_budget,
                         advance_on: advance_on.clone(),
@@ -203,7 +199,6 @@ impl DeclarativeSkill {
             description,
             priority_val,
             keywords,
-            file_keywords,
             requires_files,
             model_pref,
             max_iter,
