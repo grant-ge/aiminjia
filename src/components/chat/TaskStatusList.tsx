@@ -73,10 +73,13 @@ export function TaskStatusList({ tasks }: TaskStatusListProps) {
         {summaryText}
       </summary>
       <ul className="mt-1 flex flex-col gap-0.5 pl-1">
-        {tasks.map((task) => (
+        {tasks.map((task, index) => (
           <li key={task.taskId} className="flex items-center gap-1.5">
             <StatusIcon status={task.status} />
-            <span className="font-mono opacity-70">{task.taskId.slice(-8)}</span>
+            <span>子任务 #{index + 1}</span>
+            <span className="opacity-50" title={task.taskId} aria-label={`task-id-hint-${index + 1}`}>
+              ({task.taskId.slice(-8)})
+            </span>
           </li>
         ))}
       </ul>

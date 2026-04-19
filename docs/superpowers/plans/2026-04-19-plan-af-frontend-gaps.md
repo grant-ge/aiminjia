@@ -203,11 +203,17 @@ feat(sidebar): add real-time conversation search with match highlighting - AF1
 const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 ```
 
-使用 `useEffect` 注册全局 `mousedown` 关闭菜单（点击菜单外部时关闭）：
+使用 `useEffect + ref.contains(e.target)` 注册点击外部关闭菜单，避免“点击菜单项时先关闭再卸载导致事件丢失”的竞态：
 ```tsx
+const menuRef = useRef<HTMLDivElement | null>(null)
+
 useEffect(() => {
   if (!menuOpenId) return
-  const close = () => setMenuOpenId(null)
+  const close = (event: MouseEvent) => {
+    if (!menuRef.current?.contains(event.target as Node)) {
+      setMenuOpenId(null)
+    }
+  }
   document.addEventListener('mousedown', close)
   return () => document.removeEventListener('mousedown', close)
 }, [menuOpenId])

@@ -1019,11 +1019,6 @@ export function onAuthExpired(
   })
 }
 
-/** Show the CDP browser window (bring active tab to front). */
-export function showBrowseView(): Promise<void> {
-  return invoke<void>('show_browse_view')
-}
-
 // ---------------------------------------------------------------------------
 // Browser Events (WebView → Frontend)
 // ---------------------------------------------------------------------------

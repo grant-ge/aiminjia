@@ -11,7 +11,8 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { usePersonaStore } from '@/stores/personaStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useProductName } from '@/hooks/useProductName'
-import { updateSettings, getSettings } from '@/lib/tauri'
+import { updateSettings, getSettings, exportConversation } from '@/lib/tauri'
+import { useNotificationStore } from '@/stores/notificationStore'
 import type { Conversation } from '@/types/message'
 
 interface SidebarProps {
@@ -50,6 +51,34 @@ function groupConversations(
   return order.filter((g) => groups.has(g)).map((g) => ({ group: g, items: groups.get(g)! }))
 }
 
+function highlightMatch(text: string, query: string) {
+  const trimmed = query.trim()
+  if (!trimmed) return text
+
+  const lowerText = text.toLowerCase()
+  const lowerQuery = trimmed.toLowerCase()
+  const matchIndex = lowerText.indexOf(lowerQuery)
+  if (matchIndex === -1) return text
+
+  const matchEnd = matchIndex + trimmed.length
+  return (
+    <>
+      {text.slice(0, matchIndex)}
+      <mark
+        style={{
+          background: 'var(--color-accent-light)',
+          color: 'inherit',
+          borderRadius: '2px',
+          padding: '0 1px',
+        }}
+      >
+        {text.slice(matchIndex, matchEnd)}
+      </mark>
+      {text.slice(matchEnd)}
+    </>
+  )
+}
+
 export function Sidebar({ onOpenSettings }: SidebarProps) {
   const { t } = useTranslation()
   const {
@@ -76,9 +105,23 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
-  const grouped = useMemo(() => groupConversations(conversations), [conversations])
+  const filteredConversations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return conversations
+    return conversations.filter((conversation) =>
+      conversation.title.toLowerCase().includes(query),
+    )
+  }, [conversations, searchQuery])
+
+  const grouped = useMemo(
+    () => groupConversations(filteredConversations),
+    [filteredConversations],
+  )
 
   const [appVersion, setAppVersion] = useState('...')
   useEffect(() => {
@@ -86,6 +129,45 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
       getVersion().then(setAppVersion)
     ).catch(() => setAppVersion('0.0.0'))
   }, [])
+
+  useEffect(() => {
+    if (!menuOpenId) return
+
+    const closeMenu = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpenId(null)
+      }
+    }
+
+    document.addEventListener('mousedown', closeMenu)
+    return () => document.removeEventListener('mousedown', closeMenu)
+  }, [menuOpenId])
+
+  const handleExport = async (conversationId: string, format: 'html' | 'pdf') => {
+    setMenuOpenId(null)
+    try {
+      const result = await exportConversation(conversationId, format)
+      useNotificationStore.getState().push({
+        level: 'success',
+        title: t('topBar.exportSuccess'),
+        message: result.fileName,
+        actions: [],
+        dismissible: true,
+        autoHide: 5,
+        context: 'toast',
+      })
+    } catch (err) {
+      useNotificationStore.getState().push({
+        level: 'error',
+        title: t('topBar.exportFailed'),
+        message: String(err),
+        actions: [],
+        dismissible: true,
+        autoHide: 8,
+        context: 'toast',
+      })
+    }
+  }
 
   return (
     <aside
@@ -225,6 +307,29 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
           </svg>
           {t('sidebar.newChat')}
         </button>
+
+        <div className="relative mt-2">
+          <input
+            type="search"
+            className="w-full rounded-md border py-1.5 pl-8 pr-3 text-sm outline-none transition-colors"
+            style={{
+              background: 'var(--color-bg-main)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-primary)',
+            }}
+            placeholder={t('sidebar.searchPlaceholder')}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          <svg
+            className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 opacity-40"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+          </svg>
+        </div>
       </div>
 
       {/* Chat history list */}
@@ -235,6 +340,13 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
             style={{ color: 'var(--color-text-muted)' }}
           >
             {t('sidebar.noConversations')}
+          </p>
+        ) : filteredConversations.length === 0 && searchQuery.trim() ? (
+          <p
+            className="px-3 py-8 text-center text-sm"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {t('sidebar.noSearchResults')}
           </p>
         ) : (
           grouped.map(({ group, items }) => (
@@ -343,36 +455,92 @@ export function Sidebar({ onOpenSettings }: SidebarProps) {
                         fontWeight: conv.id === activeConversationId ? 500 : 400,
                       }}
                     >
-                      {conv.title}
+                      {highlightMatch(conv.title, searchQuery)}
                     </span>
                     )}
                   </button>
-                  <button
-                    className="mr-2 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border-none opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                    style={{
-                      background: 'transparent',
-                      color: 'var(--color-text-muted)',
-                    }}
-                    title={t('sidebar.deleteConversation')}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteConversation(conv.id)
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = 'var(--color-semantic-red)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = 'var(--color-text-muted)'
-                    }}
+                  <div
+                    className="relative mr-2 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                    ref={menuOpenId === conv.id ? menuRef : null}
                   >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
+                    {/*
+                      Keep each actions trigger uniquely named so screen readers and tests
+                      can target the intended conversation even when multiple rows are visible.
+                    */}
+                    <button
+                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border-none"
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--color-text-muted)',
+                      }}
+                      aria-label={`${t('sidebar.conversationActions')} ${conv.title}`}
+                      title={`${t('sidebar.conversationActions')} ${conv.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setMenuOpenId((current) => current === conv.id ? null : conv.id)
+                      }}
                     >
-                      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                    </svg>
-                  </button>
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M12 7a2 2 0 110-4 2 2 0 010 4zm0 7a2 2 0 110-4 2 2 0 010 4zm0 7a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+
+                    {menuOpenId === conv.id && (
+                      <div
+                        className="absolute right-0 top-full z-10 mt-1 min-w-[160px] overflow-hidden rounded-lg border py-1"
+                        style={{
+                          background: 'var(--color-bg-card)',
+                          borderColor: 'var(--color-border)',
+                          boxShadow: 'var(--shadow-modal)',
+                        }}
+                      >
+                        <button
+                          className="flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-sm transition-colors"
+                          style={{
+                            background: 'transparent',
+                            color: 'var(--color-text-secondary)',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleExport(conv.id, 'html')
+                          }}
+                        >
+                          {t('topBar.exportAsHtml')}
+                        </button>
+                        <button
+                          className="flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-sm transition-colors"
+                          style={{
+                            background: 'transparent',
+                            color: 'var(--color-text-secondary)',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleExport(conv.id, 'pdf')
+                          }}
+                        >
+                          {t('topBar.exportAsPdf')}
+                        </button>
+                        <button
+                          className="flex w-full cursor-pointer items-center gap-2 border-none px-3 py-2 text-sm transition-colors"
+                          style={{
+                            background: 'transparent',
+                            color: 'var(--color-semantic-red)',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setMenuOpenId(null)
+                            deleteConversation(conv.id)
+                          }}
+                        >
+                          {t('sidebar.deleteConversation')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

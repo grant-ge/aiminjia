@@ -70,13 +70,17 @@ describe('TaskStatusList', () => {
     expect(details?.hasAttribute('open')).toBe(false)
   })
 
-  it('displays the last 8 characters of the task id', () => {
+  it('displays semantic subtask labels and keeps full task id as weak hint', () => {
     const tasks: ConversationTaskState[] = [
       { taskId: 'task-abcd1234', status: 'pending', runId: 'run-1' },
+      { taskId: 'task-efgh5678', status: 'pending', runId: 'run-2' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)
 
-    expect(screen.getByText(/abcd1234/)).toBeTruthy()
+    expect(screen.getByText('子任务 #1')).toBeTruthy()
+    expect(screen.getByText('子任务 #2')).toBeTruthy()
+    expect(screen.getByTitle('task-abcd1234')).toBeTruthy()
+    expect(screen.queryByText('task-abcd1234')).toBeNull()
   })
 })

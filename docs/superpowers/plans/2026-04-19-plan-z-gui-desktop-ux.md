@@ -281,7 +281,7 @@ pnpm exec vitest run src/components/chat/UserBubble.test.tsx src/lib/formatRelat
 
 **文件：** `src/components/layout/Sidebar.tsx`
 
-在 conversations 列表顶部（新对话按钮下方）新增搜索框，过滤 `conversations` 列表（按 `title` 或 `preview` 字段匹配，大小写不敏感），匹配文字高亮（`<mark>`）。
+在 conversations 列表顶部（新对话按钮下方）新增搜索框，过滤 `conversations` 列表（本轮只按 `title` 匹配，大小写不敏感），匹配文字高亮（`<mark>`）。`preview` 搜索需先补后端/前端数据链路，单列后续任务。
 
 **关键实现片段：**
 
@@ -293,9 +293,7 @@ const filteredConversations = useMemo(() => {
   if (!searchQuery.trim()) return conversations
   const q = searchQuery.toLowerCase()
   return conversations.filter(
-    (c) =>
-      c.title?.toLowerCase().includes(q) ||
-      c.preview?.toLowerCase().includes(q),
+    (c) => c.title?.toLowerCase().includes(q),
   )
 }, [conversations, searchQuery])
 

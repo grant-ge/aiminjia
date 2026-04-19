@@ -6,6 +6,9 @@
 import type { Message } from '@/types/message'
 import { Avatar } from '@/components/common/Avatar'
 import { FileAttachmentChip } from './FileAttachmentChip'
+import { sendMessage } from '@/lib/tauri'
+import { useChatStore } from '@/stores/chatStore'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface UserBubbleProps {
@@ -15,11 +18,23 @@ interface UserBubbleProps {
 export function UserBubble({ message }: UserBubbleProps) {
   const { t } = useTranslation()
   const { content, sender } = message
+  const conversationId = useChatStore((s) => s.activeConversationId)
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(content.text ?? '')
   const hasFiles = content.files && content.files.length > 0
 
   // Display sender name: use sender.name if available, fallback to "我"
   const displayName = sender?.name || t('userBubble.me')
   const isLoggedIn = sender?.isLoggedIn ?? false
+  const canEdit = Boolean(content.text?.trim())
+
+  const handleResend = useCallback(() => {
+    const text = draft.trim()
+    if (!conversationId || !text) return
+    sendMessage(conversationId, text).finally(() => {
+      setIsEditing(false)
+    })
+  }, [conversationId, draft])
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">
@@ -46,15 +61,59 @@ export function UserBubble({ message }: UserBubbleProps) {
         )}
 
         {/* Text bubble */}
-        {content.text && (
-          <div
-            className="inline-block max-w-[88%] rounded-xl rounded-br-[4px] px-4 py-2.5 text-base leading-relaxed"
-            style={{
-              background: 'var(--color-bg-msg-user)',
-              color: 'var(--color-text-primary)',
-            }}
-          >
-            {content.text}
+        {content.text && !isEditing && (
+          <div className="flex max-w-[88%] flex-col items-end gap-1.5">
+            <div
+              className="inline-block rounded-xl rounded-br-[4px] px-4 py-2.5 text-base leading-relaxed"
+              style={{
+                background: 'var(--color-bg-msg-user)',
+                color: 'var(--color-text-primary)',
+              }}
+            >
+              {content.text}
+            </div>
+            {canEdit && (
+              <button
+                className="text-xs"
+                style={{ color: 'var(--color-text-muted)' }}
+                onClick={() => setIsEditing(true)}
+              >
+                {t('userBubble.editResend', '编辑并重发')}
+              </button>
+            )}
+          </div>
+        )}
+
+        {content.text && isEditing && (
+          <div className="w-full max-w-[88%] rounded-xl border p-2.5" style={{ borderColor: 'var(--color-border)' }}>
+            <textarea
+              className="w-full resize-y rounded-md border px-2 py-1.5 text-sm"
+              style={{ borderColor: 'var(--color-border)', minHeight: '72px' }}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                className="rounded-md px-2.5 py-1 text-xs"
+                style={{ border: '1px solid var(--color-border)' }}
+                onClick={() => {
+                  setDraft(content.text ?? '')
+                  setIsEditing(false)
+                }}
+              >
+                {t('common.cancel', '取消')}
+              </button>
+              <button
+                className="rounded-md px-2.5 py-1 text-xs"
+                style={{
+                  background: 'var(--color-accent)',
+                  color: 'var(--color-text-inverse)',
+                }}
+                onClick={handleResend}
+              >
+                {t('userBubble.resend', '重发')}
+              </button>
+            </div>
           </div>
         )}
       </div>

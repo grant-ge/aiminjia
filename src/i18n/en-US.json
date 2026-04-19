@@ -51,6 +51,9 @@
   "sidebar": {
     "newChat": "New Chat",
     "noConversations": "No conversations yet",
+    "searchPlaceholder": "Search conversations...",
+    "noSearchResults": "No conversations match",
+    "conversationActions": "Conversation actions",
     "deleteConversation": "Delete conversation",
     "selectPersona": "Select persona",
     "settings": "Settings",

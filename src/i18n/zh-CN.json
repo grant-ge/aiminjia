@@ -51,6 +51,9 @@
   "sidebar": {
     "newChat": "新对话",
     "noConversations": "暂无对话记录",
+    "searchPlaceholder": "搜索对话...",
+    "noSearchResults": "没有匹配的对话",
+    "conversationActions": "对话操作",
     "deleteConversation": "删除对话",
     "selectPersona": "选择角色",
     "settings": "设置",

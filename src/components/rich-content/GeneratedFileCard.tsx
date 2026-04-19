@@ -27,6 +27,8 @@ const FILE_TYPE_ICON: Record<string, { label: string; bg: string; color: string 
   md: { label: 'MD', bg: 'var(--color-filetype-gray-bg)', color: 'var(--color-text-muted)' },
 }
 
+const IMAGE_FILE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -35,6 +37,10 @@ function formatFileSize(bytes: number): string {
 
 export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
   const icon = FILE_TYPE_ICON[file.fileType] ?? FILE_TYPE_ICON.json
+  const fileExtension = file.fileName.split('.').pop()?.toLowerCase() ?? ''
+  const isImageFile =
+    IMAGE_FILE_TYPES.has(file.fileType.toLowerCase()) || IMAGE_FILE_TYPES.has(fileExtension)
+  const previewSrc = `file://${encodeURI(file.filePath)}`
 
   return (
     <div
@@ -142,6 +148,18 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
               {' '}(requested: {file.requestedFormat.toUpperCase()})
             </span>
           )}
+        </div>
+      )}
+
+      {isImageFile && (
+        <div className="border-t px-3.5 py-2.5" style={{ borderColor: 'var(--color-border)' }}>
+          <img
+            src={previewSrc}
+            alt={`${file.fileName} 预览图`}
+            className="max-h-56 w-auto rounded-md border object-contain"
+            style={{ borderColor: 'var(--color-border)' }}
+            loading="lazy"
+          />
         </div>
       )}
     </div>
