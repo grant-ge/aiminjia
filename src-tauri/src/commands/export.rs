@@ -135,12 +135,16 @@ except Exception as e:
     std::fs::write(&script_path, &python_code)
         .map_err(|e| format!("Failed to write export script: {}", e))?;
 
-    let py_output = tokio::process::Command::new("python3")
-        .arg("-u")
+    let mut py_cmd = tokio::process::Command::new("python3");
+    py_cmd.arg("-u")
         .arg(&script_path)
-        .env("PYTHONIOENCODING", "utf-8")
-        .output()
-        .await
+        .env("PYTHONIOENCODING", "utf-8");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        py_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let py_output = py_cmd.output().await
         .map_err(|e| format!("Failed to run python3: {}", e))?;
 
     // Cleanup script

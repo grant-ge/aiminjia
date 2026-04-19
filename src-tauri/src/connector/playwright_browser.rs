@@ -521,14 +521,19 @@ impl PlaywrightBrowser {
 
         info!("[Playwright] Launching sidecar: node={:?}, script={:?}", node_path, script_path);
 
-        let mut child = tokio::process::Command::new(&node_path)
-            .arg(&script_path)
+        let mut node_cmd = tokio::process::Command::new(&node_path);
+        node_cmd.arg(&script_path)
             .env("PLAYWRIGHT_BROWSERS_PATH", &browsers_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit()) // stderr goes to app log
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            node_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let mut child = node_cmd.spawn()
             .map_err(|e| format!("Failed to launch Playwright sidecar: {}", e))?;
 
         let stdin = child.stdin.take().ok_or("Failed to get stdin")?;

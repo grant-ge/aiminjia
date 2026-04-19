@@ -215,10 +215,14 @@ impl PythonRunner {
 
     /// Check if the configured Python binary is available.
     pub async fn check_python_available(&self) -> Result<String> {
-        let output = Command::new(&self.python_binary)
-            .arg("--version")
-            .output()
-            .await
+        let mut cmd = Command::new(&self.python_binary);
+        cmd.arg("--version");
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let output = cmd.output().await
             .context(format!("Python not found: {}", self.python_binary.display()))?;
 
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();

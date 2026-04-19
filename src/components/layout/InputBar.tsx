@@ -250,7 +250,7 @@ export function InputBar() {
         )}
 
         {/* Input row */}
-        <div className="flex items-end gap-2 px-4 py-3">
+        <div className="flex items-center gap-2 px-4 py-3">
           {/* Upload button */}
           <button
             className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-none outline-none transition-all duration-150"

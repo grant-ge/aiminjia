@@ -396,9 +396,13 @@ pub fn process_alive(pid: u32) -> bool {
     // if we can't verify. This is safe because the worst case is re-acquiring
     // a lock that's actually still held, which the gateway prevents anyway.
     use std::process::Command;
-    Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {}", pid)])
-        .output()
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+    let mut cmd = Command::new("tasklist");
+    cmd.args(["/FI", &format!("PID eq {}", pid)]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd.output()
         .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
         .unwrap_or(false)
 }
