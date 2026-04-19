@@ -94,6 +94,27 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build
 
+      - name: Upload Windows installer to Aliyun OSS
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v',''
+          python -m pip install --quiet oss2
+          python scripts/ci-upload-windows.py $version
+
+      - name: Upload macOS arm64 bundles to Aliyun OSS
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 -m pip install --quiet --user --break-system-packages oss2
+          python3 scripts/ci-upload-macos.py "$version"
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
