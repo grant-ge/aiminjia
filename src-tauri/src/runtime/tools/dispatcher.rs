@@ -10,9 +10,11 @@ use crate::runtime::hooks::{HookDecision, HookRunner};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
-use crate::runtime::tools::permission::{PermissionDecision, PermissionPipeline};
 #[cfg(test)]
 use crate::runtime::tools::permission::AllowAllPermissionPipeline;
+use crate::runtime::tools::permission::{
+    apply_permission_mode, PermissionDecision, PermissionPipeline,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptBehavior {
@@ -123,10 +125,17 @@ impl ToolDispatcher {
             let runner = HookRunner::new();
             let hooks = registry.hooks_for(HookEvent::PreToolUse, tool_name);
             if !hooks.is_empty() {
+                let workspace_root = ctx
+                    .capability
+                    .as_ref()
+                    .and_then(|cap| cap.storage.as_ref())
+                    .map(|storage| storage.workspace_path.as_path());
                 let outcome = runner
-                    .run_hooks(&hooks, tool_name, &input)
+                    .run_hooks_in_workspace(&hooks, tool_name, &input, workspace_root)
                     .await
-                    .map_err(|err| ToolError::ExecutionFailed(format!("pre-tool hook error: {err}")))?;
+                    .map_err(|err| {
+                        ToolError::ExecutionFailed(format!("pre-tool hook error: {err}"))
+                    })?;
                 match outcome.decision {
                     HookDecision::Deny { message } => {
                         return Err(ToolError::PermissionDenied(message));
@@ -145,8 +154,11 @@ impl ToolDispatcher {
         } else if let Some(decision) = tool.check_permissions(&input, &ctx).await {
             decision
         } else {
-            self.permission_pipeline.authorize(&definition, &input, &ctx)
+            self.permission_pipeline
+                .authorize(&definition, &input, &ctx)
         };
+        let permission_decision =
+            apply_permission_mode(permission_decision, &definition.id, ctx.permission_mode);
 
         // Map PermissionDecision to ToolError / AskRequired.
         // Deny → Err(PermissionDenied)
@@ -171,7 +183,18 @@ impl ToolDispatcher {
         ctx.event_sink.emit("tool:executing");
         let result = tool.execute(input, ctx.clone()).await;
         if let Err(ToolError::AskRequired(decision)) = result {
-            return Ok(ToolDispatchOutcome::AskRequired(decision));
+            let decision = apply_permission_mode(decision, &definition.id, ctx.permission_mode);
+            return match decision {
+                PermissionDecision::Allow { .. } => Err(ToolError::ExecutionFailed(
+                    "tool returned AskRequired transformed into Allow unexpectedly".into(),
+                )),
+                PermissionDecision::Deny { message, .. } => {
+                    Err(ToolError::PermissionDenied(message))
+                }
+                decision @ PermissionDecision::Ask { .. } => {
+                    Ok(ToolDispatchOutcome::AskRequired(decision))
+                }
+            };
         }
         ctx.event_sink.emit("tool:completed");
         let result = result?;
@@ -182,7 +205,15 @@ impl ToolDispatcher {
             let hooks = registry.hooks_for(HookEvent::PostToolUse, tool_name);
             if !hooks.is_empty() {
                 let result_value = serde_json::to_value(&result.content).unwrap_or(Value::Null);
-                if let Ok(outcome) = runner.run_hooks(&hooks, tool_name, &result_value).await {
+                let workspace_root = ctx
+                    .capability
+                    .as_ref()
+                    .and_then(|cap| cap.storage.as_ref())
+                    .map(|storage| storage.workspace_path.as_path());
+                if let Ok(outcome) = runner
+                    .run_hooks_in_workspace(&hooks, tool_name, &result_value, workspace_root)
+                    .await
+                {
                     prevent_continuation = outcome.prevent_continuation;
                     stop_reason = outcome.stop_reason;
                 }
@@ -232,11 +263,7 @@ impl ToolDispatcher {
                     calls: vec![(name, input, ctx)],
                 });
             } else {
-                batches
-                    .last_mut()
-                    .unwrap()
-                    .calls
-                    .push((name, input, ctx));
+                batches.last_mut().unwrap().calls.push((name, input, ctx));
             }
         }
 
@@ -245,9 +272,9 @@ impl ToolDispatcher {
         for batch in batches {
             if batch.concurrent {
                 for chunk in batch.calls.chunks(MAX_CONCURRENCY) {
-                    let futures = chunk.iter().map(|(name, input, ctx)| {
-                        self.dispatch(name, input.clone(), ctx.clone())
-                    });
+                    let futures = chunk
+                        .iter()
+                        .map(|(name, input, ctx)| self.dispatch(name, input.clone(), ctx.clone()));
                     results.extend(futures::future::join_all(futures).await);
                 }
             } else {

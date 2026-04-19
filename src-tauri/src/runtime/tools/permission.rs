@@ -33,6 +33,13 @@ impl std::fmt::Display for PermissionDecision {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PermissionMode {
+    #[default]
+    Default,
+    DontAsk,
+}
+
 /// Why the permission decision was made.
 #[derive(Debug, Clone)]
 pub enum PermissionReason {
@@ -50,6 +57,23 @@ pub trait PermissionPipeline: Send + Sync {
         input: &Value,
         ctx: &ToolExecutionContext,
     ) -> PermissionDecision;
+}
+
+pub fn apply_permission_mode(
+    decision: PermissionDecision,
+    tool_name: &str,
+    mode: PermissionMode,
+) -> PermissionDecision {
+    match (mode, decision) {
+        (PermissionMode::DontAsk, PermissionDecision::Ask { .. }) => PermissionDecision::Deny {
+            message: format!(
+                "Tool '{}' requires permission, but current mode is dontAsk.",
+                tool_name
+            ),
+            reason: PermissionReason::Mode("dontAsk".into()),
+        },
+        (_, decision) => decision,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,7 +112,7 @@ fn check_scope_capability(
                 Some(ScopeCapabilityFailure::MissingBrowser)
             }
         }
-        "network" | "mcp" => None,
+        "network" => None,
         _ => Some(ScopeCapabilityFailure::UnknownScope),
     }
 }
@@ -118,7 +142,7 @@ impl PermissionPipeline for AllowAllPermissionPipeline {
 /// - 含 `browser` → 需要 `ctx.capability.has_browser_capability()` = true（目前默认 false）
 /// - 含 `python:exec` → 需要 `ctx.capability.storage` 存在
 /// - 含 `network` → 始终允许（网络访问不在本地 capability 层校验）
-/// - 含 `mcp` → 始终允许（具体权限与 server 侧策略由 MCP server 自行处理）
+/// - 含 `mcp` → 视作 unknown scope（由上层 store / ask 流程决定）
 /// - unknown scope → Deny（fail-closed）
 #[derive(Clone, Default)]
 pub struct CapabilityPermissionPipeline;
@@ -267,12 +291,20 @@ impl PermissionPipeline for StorePolicyPipeline {
                     // This is the key difference from CapabilityPermissionPipeline which
                     // uses fail-closed Deny. StorePolicyPipeline escalates to Ask so the
                     // user gets a chance to grant or deny persistently.
-                    return PermissionDecision::Ask {
-                        message: format!(
+                    let message = if scope == "mcp" {
+                        format!(
+                            "Tool '{}' is an MCP tool and will call an external server. Do you want to allow it?",
+                            definition.id
+                        )
+                    } else {
+                        format!(
                             "Tool '{}' requests capability scope '{}' which is not recognized. \
                             Do you want to allow it?",
                             definition.id, scope
-                        ),
+                        )
+                    };
+                    return PermissionDecision::Ask {
+                        message,
                         suggestions: vec![
                             "Allow once".into(),
                             "Always allow".into(),
@@ -305,8 +337,7 @@ mod tests {
     fn ctx_with_workspace() -> ToolExecutionContext {
         let tmp = TempDir::new().expect("tempdir");
         let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws");
-        ToolExecutionContext::for_test("conv", "run", "tool-call")
-            .with_capability(Arc::new(cap))
+        ToolExecutionContext::for_test("conv", "run", "tool-call").with_capability(Arc::new(cap))
     }
 
     #[test]

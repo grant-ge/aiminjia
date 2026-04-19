@@ -23,14 +23,49 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
 static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
-    ("rm -rf /", "Refusing: rm -rf / would destroy the entire filesystem"),
-    ("rm -rf /*", "Refusing: rm -rf /* would destroy the entire filesystem"),
+    (
+        "rm -rf /",
+        "Refusing: rm -rf / would destroy the entire filesystem",
+    ),
+    (
+        "rm -rf /*",
+        "Refusing: rm -rf /* would destroy the entire filesystem",
+    ),
+    ("sudo ", "Refusing: sudo escalation is not allowed"),
+    ("| sh", "Refusing: pipe-to-shell execution is not allowed"),
+    ("| bash", "Refusing: pipe-to-shell execution is not allowed"),
+    (
+        "<(curl",
+        "Refusing: process substitution remote execution is not allowed",
+    ),
+    (
+        "<(wget",
+        "Refusing: process substitution remote execution is not allowed",
+    ),
     ("> /etc/", "Refusing: writing to /etc/ is not allowed"),
     (">> /etc/", "Refusing: writing to /etc/ is not allowed"),
     ("> /bin/", "Refusing: writing to /bin/ is not allowed"),
-    ("> /usr/bin/", "Refusing: writing to /usr/bin/ is not allowed"),
+    (
+        "> /usr/bin/",
+        "Refusing: writing to /usr/bin/ is not allowed",
+    ),
+    (
+        "of=/dev/sd",
+        "Refusing: writing raw block devices is not allowed",
+    ),
+    (
+        "> /dev/sd",
+        "Refusing: writing raw block devices is not allowed",
+    ),
+    (
+        "dd of=/dev/",
+        "Refusing: writing raw block devices is not allowed",
+    ),
     ("mkfs", "Refusing: mkfs formats filesystems"),
-    ("dd if=", "Refusing: dd with if= can be dangerous; use with caution"),
+    (
+        "dd if=",
+        "Refusing: dd with if= can be dangerous; use with caution",
+    ),
 ];
 
 struct CommandSemantics {

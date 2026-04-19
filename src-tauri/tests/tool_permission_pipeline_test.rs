@@ -1,16 +1,15 @@
-use app_lib::runtime::tools::{
-    ToolExecutionContext,
-};
-use app_lib::runtime::tools::permission::{CapabilityPermissionPipeline, PermissionDecision, PermissionPipeline};
-use app_lib::runtime::tools::definition::ToolDefinition;
 use app_lib::runtime::tools::capability::CapabilityContext;
+use app_lib::runtime::tools::definition::ToolDefinition;
+use app_lib::runtime::tools::permission::{
+    CapabilityPermissionPipeline, PermissionDecision, PermissionPipeline,
+};
+use app_lib::runtime::tools::ToolExecutionContext;
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
 
 fn def_with_scope(id: &str, scopes: &[&str]) -> ToolDefinition {
-    ToolDefinition::new(id, "test")
-        .with_capability_scope(scopes.iter().copied())
+    ToolDefinition::new(id, "test").with_capability_scope(scopes.iter().copied())
 }
 
 fn ctx_no_capability() -> ToolExecutionContext {
@@ -44,11 +43,15 @@ fn workspace_read_tool_rejected_without_capability() {
     let def = def_with_scope("list_directory", &["workspace:read"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
-    assert!(is_deny(&result), "workspace:read tool must be rejected without capability");
+    assert!(
+        is_deny(&result),
+        "workspace:read tool must be rejected without capability"
+    );
     if let PermissionDecision::Deny { message, .. } = &result {
         assert!(
             message.contains("workspace") || message.contains("capability"),
-            "Error should mention workspace/capability: {}", message
+            "Error should mention workspace/capability: {}",
+            message
         );
     }
 }
@@ -68,7 +71,10 @@ fn browser_tool_rejected_without_browser_capability() {
     let def = def_with_scope("browse_navigate", &["browser"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
-    assert!(is_deny(&result), "browser tool must be rejected without browser capability");
+    assert!(
+        is_deny(&result),
+        "browser tool must be rejected without browser capability"
+    );
 }
 
 #[test]
@@ -77,10 +83,8 @@ fn browser_tool_allowed_with_browser_available_capability() {
     let pipeline = CapabilityPermissionPipeline;
     let def = def_with_scope("browse_navigate", &["browser"]);
     // 构建带 browser_available=true 的 context
-    let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws")
-        .with_browser();
-    let ctx = ToolExecutionContext::for_test("conv", "run", "tc")
-        .with_capability(Arc::new(cap));
+    let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws").with_browser();
+    let ctx = ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
     assert!(
         is_allow(&pipeline.authorize(&def, &json!({}), &ctx)),
         "browser tool must be allowed when browser_available=true"
@@ -94,21 +98,23 @@ fn browser_tool_still_rejected_when_browser_available_false() {
     let def = def_with_scope("browse_navigate", &["browser"]);
     // 普通 workspace context，不调用 with_browser()
     let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws");
-    let ctx = ToolExecutionContext::for_test("conv", "run", "tc")
-        .with_capability(Arc::new(cap));
+    let ctx = ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
     let result = pipeline.authorize(&def, &json!({}), &ctx);
-    assert!(is_deny(&result), "browser tool must be rejected when browser_available=false");
+    assert!(
+        is_deny(&result),
+        "browser tool must be rejected when browser_available=false"
+    );
 }
 
 #[test]
-fn mcp_tool_allowed_without_local_capability() {
+fn mcp_tool_denied_without_store_policy() {
     let pipeline = CapabilityPermissionPipeline;
     let def = def_with_scope("mcp__demo__search", &["mcp"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
     assert!(
-        is_allow(&result),
-        "mcp tool should bypass local capability gating because permission is handled by the MCP server, got: {:?}",
+        is_deny(&result),
+        "mcp tool should fail closed in capability pipeline until a stored policy or ask flow authorizes it, got: {:?}",
         result
     );
 }
@@ -117,11 +123,10 @@ fn mcp_tool_allowed_without_local_capability() {
 
 #[tokio::test]
 async fn tool_check_permissions_overrides_pipeline_when_some() {
-    use app_lib::runtime::tools::{
-        AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolError,
-        ToolResult,
-    };
     use app_lib::runtime::tools::permission::PermissionReason;
+    use app_lib::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDispatcher, ToolError, ToolResult,
+    };
     use async_trait::async_trait;
     use serde_json::Value;
 

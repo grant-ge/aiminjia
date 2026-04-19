@@ -16,7 +16,10 @@ pub use definition::ToolDefinition;
 pub use dispatcher::{InterruptBehavior, RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
 pub use executor::{ToolError, ToolResult};
 pub use legacy_adapter::LegacyToolAdapter;
-pub use permission::{AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionDecision, PermissionPipeline, PermissionReason};
+pub use permission::{
+    AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionDecision, PermissionMode,
+    PermissionPipeline, PermissionReason,
+};
 
 pub mod catalog;
 pub use catalog::{CatalogEntry, DynamicToolCatalog, ToolCatalog, TOOL_CATALOG};

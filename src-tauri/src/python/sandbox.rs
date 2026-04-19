@@ -89,7 +89,10 @@ impl SandboxConfig {
     /// 创建支持授权工作目录读取的 sandbox 配置。
     /// allowed_read_paths = 旧 7 个路径 + extra_read_paths（授权目录）
     /// allowed_write_paths = 旧 7 个路径（不变）
-    pub fn for_workspace_with_authorized(workspace: &PathBuf, extra_read_paths: Vec<PathBuf>) -> Self {
+    pub fn for_workspace_with_authorized(
+        workspace: &PathBuf,
+        extra_read_paths: Vec<PathBuf>,
+    ) -> Self {
         let mut config = Self::for_workspace(workspace);
         config.allowed_read_paths.extend(extra_read_paths);
         config
@@ -207,10 +210,11 @@ impl SandboxConfig {
                     .map(|p| {
                         let s = p.display().to_string();
                         // Escape backslashes and single quotes to prevent Python injection
-                        let escaped = s.replace('\\', "\\\\")
-                               .replace('\'', "\\'")
-                               .replace('\n', "\\n")
-                               .replace('\r', "\\r");
+                        let escaped = s
+                            .replace('\\', "\\\\")
+                            .replace('\'', "\\'")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r");
                         format!("'{}'", escaped)
                     })
                     .collect::<Vec<_>>()
@@ -267,36 +271,86 @@ if _ALLOWED_WRITE_PATHS:
         let file_write_hook = r#"
 # ── File write restriction (path enforcement layer) ──
 # Wraps builtins.open to block writes outside _ALLOWED_WRITE_PATHS.
-# Read operations are unrestricted (pandas/numpy read from site-packages, /tmp, etc.).
+# Read operations are restricted only when _ALLOWED_READ_PATHS is non-empty.
 # Also tracks all write paths in _written_files for file lifecycle management.
 if '_written_files' not in dir():
     _written_files = []
 _original_open = builtins.open
+
+def _is_allowed_path(abs_path, roots):
+    return any(
+        (lambda real_root: abs_path == real_root or abs_path.startswith(real_root + os.sep))(os.path.realpath(p))
+        for p in roots
+    )
+
+def _normalize_path_arg(path_like):
+    if isinstance(path_like, bytes):
+        return path_like.decode('utf-8', errors='replace')
+    if hasattr(path_like, '__fspath__'):
+        path_like = os.fspath(path_like)
+    if isinstance(path_like, str):
+        return path_like
+    return None
+
+def _ensure_read_path(path_like, op='read'):
+    file_str = _normalize_path_arg(path_like)
+    if file_str is None:
+        return None
+    abs_path = os.path.realpath(os.path.abspath(file_str))
+    if _ALLOWED_READ_PATHS and not _is_allowed_path(abs_path, _ALLOWED_READ_PATHS):
+        raise PermissionError(
+            f"{op} source '{file_str}' is blocked (outside allowed read paths). "
+            f"Allowed read directories: {', '.join(_ALLOWED_READ_PATHS)}"
+        )
+    return abs_path
+
+def _ensure_write_path(path_like, op='write'):
+    file_str = _normalize_path_arg(path_like)
+    if file_str is None:
+        return None
+    abs_path = os.path.realpath(os.path.abspath(file_str))
+    allowed = _is_allowed_path(abs_path, _ALLOWED_WRITE_PATHS) if _ALLOWED_WRITE_PATHS else False
+    if not allowed:
+        raise PermissionError(
+            f"{op} destination '{file_str}' is blocked (outside workspace). "
+            f"Allowed write directories: {', '.join(_ALLOWED_WRITE_PATHS)}"
+        )
+    return abs_path
+
 def _safe_open(file, mode='r', *args, **kwargs):
-    if isinstance(file, (str, bytes)):
-        file_str = file if isinstance(file, str) else file.decode('utf-8', errors='replace')
-        # Check write operations: 'w', 'a', 'x' (create)
-        if any(m in str(mode) for m in ('w', 'a', 'x')):
-            try:
-                # Resolve to absolute path for comparison
-                abs_path = os.path.realpath(os.path.abspath(file_str))
-                allowed = any(
-                    (lambda real_root: abs_path == real_root or abs_path.startswith(real_root + os.sep))(os.path.realpath(p))
-                    for p in _ALLOWED_WRITE_PATHS
-                ) if _ALLOWED_WRITE_PATHS else False
-                if not allowed:
-                    raise PermissionError(
-                        f"Writing to '{file_str}' is blocked (outside workspace). "
-                        f"Allowed directories: {', '.join(_ALLOWED_WRITE_PATHS)}"
-                    )
-                # Track write path for file lifecycle management
+    try:
+        if any(m in str(mode) for m in ('w', 'a', 'x', '+')):
+            abs_path = _ensure_write_path(file, op='open')
+            if abs_path is not None:
                 _wf = globals().get('_written_files') or (getattr(builtins, '_written_files', None))
                 if _wf is not None and isinstance(_wf, list):
                     _wf.append(abs_path)
-            except (TypeError, ValueError):
-                pass  # Non-path argument (e.g. file descriptor) — let through
+        else:
+            _ensure_read_path(file, op='open')
+    except (TypeError, ValueError):
+        pass  # Non-path argument (e.g. file descriptor) — let through
     return _original_open(file, mode, *args, **kwargs)
 builtins.open = _safe_open
+
+def _patch_shutil_write_apis():
+    try:
+        import shutil as _shutil_mod
+    except Exception:
+        return
+
+    def _wrap_copy_like(func, name):
+        def _wrapped(src, dst, *args, **kwargs):
+            _ensure_read_path(src, op=name)
+            _ensure_write_path(dst, op=name)
+            return func(src, dst, *args, **kwargs)
+        return _wrapped
+
+    for _name in ('copy', 'copy2', 'copyfile', 'move'):
+        _fn = getattr(_shutil_mod, _name, None)
+        if callable(_fn):
+            setattr(_shutil_mod, _name, _wrap_copy_like(_fn, _name))
+
+_patch_shutil_write_apis()
 "#;
 
         // Part 4: Checkpoint HMAC helpers (static — no Rust format! needed)
