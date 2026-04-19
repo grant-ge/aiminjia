@@ -119,12 +119,12 @@ pub fn run() {
                     agent_store_path,
                     subagent_transcript_store_dir,
                 )
-                    .unwrap_or_else(|e| {
-                        log::warn!(
-                            "Failed to create FileAgentInvocationStore: {e}, falling back to in-memory"
-                        );
-                        runtime::agent::AgentRuntime::for_test()
-                    }),
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "Failed to create FileAgentInvocationStore: {e}, falling back to in-memory"
+                    );
+                    runtime::agent::AgentRuntime::for_test()
+                }),
             );
 
             // Initialize LLM gateway
@@ -163,9 +163,8 @@ pub fn run() {
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
-            let mcp_server_manager = Arc::new(runtime::mcp::McpServerManager::new(
-                tool_registry.clone(),
-            ));
+            let mcp_server_manager =
+                Arc::new(runtime::mcp::McpServerManager::new(tool_registry.clone()));
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
                 app_config_dir.join("mcp_servers.json"),
             ));
@@ -259,14 +258,25 @@ pub fn run() {
                 }
             }
 
+            match storage::upload_gc::gc_orphan_upload_files(&db, &file_mgr) {
+                Ok(deleted) => {
+                    if deleted > 0 {
+                        log::info!("Cleaned up {} orphaned upload files", deleted);
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Failed to cleanup orphaned upload files: {}", err);
+                }
+            }
+
             // Initialize runtime repository facade (routes settings/persona/file/export
             // commands through domain traits instead of direct AppStorage access).
             // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
             // called, because new() calls try_state::<RuntimeRepositoryFacade>() to wire
             // authorized_workspace_store. Registering it here ensures try_state succeeds.
-            let facade = Arc::new(
-                storage::file_store::RuntimeRepositoryFacade::from_storage(db.clone()),
-            );
+            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage(
+                db.clone(),
+            ));
             app.manage(facade);
 
             // Initialize Python session manager for persistent REPL sessions
@@ -328,6 +338,8 @@ pub fn run() {
             chat::get_messages,
             chat::get_subagent_transcript,
             chat::create_conversation,
+            chat::get_conversation_model_override,
+            chat::set_conversation_model_override,
             chat::delete_conversation,
             chat::rename_conversation,
             chat::get_conversations,
@@ -405,6 +417,16 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
+                if let Some(chat_adapter) = app_handle
+                    .try_state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                {
+                    if let Err(err) = chat_adapter.flush_pending_message_writes() {
+                        log::warn!(
+                            "Failed to flush pending assistant message writes on exit: {err}"
+                        );
+                    }
+                }
+
                 // Graceful shutdown: checkpoint all Python sessions before exit.
                 // block_on is safe here — the event loop is already shutting down.
                 let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();

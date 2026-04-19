@@ -89,6 +89,7 @@ impl ConversationStore for InMemoryConversationStore {
         self.conversations.lock().unwrap().remove(id);
         self.messages.lock().unwrap().remove(id);
         self.active_tasks.lock().unwrap().remove(id);
+        self.compact_boundaries.lock().unwrap().remove(id);
         Ok(())
     }
 
@@ -179,5 +180,33 @@ mod tests {
         let store = InMemoryConversationStore::new();
         let result = store.rename_conversation("nonexistent", "Title");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn delete_conversation_clears_compact_boundaries() {
+        let store = InMemoryConversationStore::new();
+        store.create_conversation("c1", "Title").unwrap();
+        store
+            .append_compact_boundary(CompactBoundaryRecord {
+                id: "cb-1".to_string(),
+                conversation_id: "c1".to_string(),
+                trigger: crate::runtime::chat::compaction::CompactTrigger::Auto,
+                pre_tokens: 1000,
+                post_tokens: 100,
+                messages_summarized: 5,
+                created_at: "2026-04-19T00:00:00Z".to_string(),
+                summary_text: String::new(),
+                tail_message_id: None,
+            })
+            .unwrap();
+
+        assert_eq!(store.list_compact_boundaries("c1").unwrap().len(), 1);
+
+        store.delete_conversation("c1").unwrap();
+
+        assert!(
+            store.list_compact_boundaries("c1").unwrap().is_empty(),
+            "delete_conversation should clear compact boundaries for that conversation"
+        );
     }
 }

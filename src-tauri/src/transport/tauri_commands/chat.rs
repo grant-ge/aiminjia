@@ -30,6 +30,7 @@ use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRunti
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
+use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 
@@ -137,6 +138,7 @@ struct TauriChatServices {
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
     file_mgr: Arc<FileManager>,
+    assistant_write_queue: Arc<MessageWriteQueue>,
     crypto: Option<Arc<SecureStorage>>,
     tool_registry: Arc<ToolRegistry>,
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
@@ -147,6 +149,61 @@ struct TauriChatServices {
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
     claude_md_loader: Arc<tokio::sync::Mutex<crate::runtime::claude_md::ClaudeMdLoader>>,
+}
+
+async fn wait_for_message_write_completion(
+    completion: MessageWriteCompletion,
+) -> Result<(), TurnError> {
+    tokio::task::spawn_blocking(move || completion.wait())
+        .await
+        .map_err(|err| {
+            TurnError::PersistenceError(format!(
+                "Assistant persistence worker join failed: {}",
+                err
+            ))
+        })?
+        .map_err(|err| {
+            TurnError::PersistenceError(format!("Failed to save assistant message: {}", err))
+        })
+}
+
+async fn persist_assistant_content_json(
+    db: Arc<AppStorage>,
+    assistant_write_queue: Arc<MessageWriteQueue>,
+    message_id: String,
+    conversation_id: String,
+    content_json: String,
+) -> Result<(), TurnError> {
+    match assistant_write_queue.enqueue_insert_with_ack(
+        message_id.clone(),
+        conversation_id.clone(),
+        "assistant".to_string(),
+        content_json.clone(),
+    ) {
+        Ok(completion) => wait_for_message_write_completion(completion).await,
+        Err(queue_err) => {
+            log::warn!(
+                "[persist_assistant_message] Failed to enqueue assistant message id={} conv={}: {}. Falling back to direct write.",
+                message_id,
+                conversation_id,
+                queue_err
+            );
+
+            tokio::task::spawn_blocking(move || {
+                db.insert_message(&message_id, &conversation_id, "assistant", &content_json)
+            })
+            .await
+            .map_err(|err| {
+                TurnError::PersistenceError(format!(
+                    "Assistant direct persistence worker join failed: {}",
+                    err
+                ))
+            })?
+            .map_err(|err| {
+                TurnError::PersistenceError(format!("Failed to save assistant message: {}", err))
+            })
+        }
+    }
 }
 
 #[async_trait]
@@ -781,34 +838,19 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // --- Persist to AppStorage ---
         let content_json = content_value.to_string();
         log::info!(
-            "[persist_assistant_message] Saving id={} conv={} content_len={}",
+            "[persist_assistant_message] Queueing save id={} conv={} content_len={}",
             message_id,
             conversation_id,
             content_json.len()
         );
-        match self.services.db.insert_message(
-            &message_id,
-            conversation_id,
-            "assistant",
-            &content_json,
-        ) {
-            Ok(_) => {
-                log::info!(
-                    "[persist_assistant_message] Message saved successfully id={}",
-                    message_id
-                );
-            }
-            Err(e) => {
-                log::error!(
-                    "[persist_assistant_message] Failed to save message to DB: {:#}",
-                    e
-                );
-                return Err(TurnError::PersistenceError(format!(
-                    "Failed to save assistant message: {}",
-                    e
-                )));
-            }
-        }
+        persist_assistant_content_json(
+            self.services.db.clone(),
+            self.services.assistant_write_queue.clone(),
+            message_id.clone(),
+            conversation_id.to_string(),
+            content_json,
+        )
+        .await?;
 
         // NOTE: message:updated event is NOT emitted here — that is the driver's
         // responsibility via bus.emit(RuntimeEventKind::MessagePersisted { ... }).
@@ -1065,12 +1107,140 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+
+    use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
 
     fn test_storage() -> (AppStorage, TempDir) {
         let dir = TempDir::new().unwrap();
         let storage = AppStorage::new(dir.path()).unwrap();
         (storage, dir)
+    }
+
+    struct Gate {
+        open: Mutex<bool>,
+        cv: Condvar,
+    }
+
+    impl Gate {
+        fn new() -> Self {
+            Self {
+                open: Mutex::new(false),
+                cv: Condvar::new(),
+            }
+        }
+
+        fn wait(&self) {
+            let mut open = self.open.lock().unwrap();
+            while !*open {
+                open = self.cv.wait(open).unwrap();
+            }
+        }
+
+        fn open(&self) {
+            let mut open = self.open.lock().unwrap();
+            *open = true;
+            self.cv.notify_all();
+        }
+    }
+
+    struct Signal {
+        fired: Mutex<bool>,
+        cv: Condvar,
+    }
+
+    impl Signal {
+        fn new() -> Self {
+            Self {
+                fired: Mutex::new(false),
+                cv: Condvar::new(),
+            }
+        }
+
+        fn fire(&self) {
+            let mut fired = self.fired.lock().unwrap();
+            *fired = true;
+            self.cv.notify_all();
+        }
+
+        fn wait(&self) {
+            let mut fired = self.fired.lock().unwrap();
+            while !*fired {
+                fired = self.cv.wait(fired).unwrap();
+            }
+        }
+    }
+
+    struct BlockingInsertTarget {
+        db: Arc<AppStorage>,
+        started: Signal,
+        release: Gate,
+        first_insert: AtomicBool,
+    }
+
+    impl BlockingInsertTarget {
+        fn new(db: Arc<AppStorage>) -> Self {
+            Self {
+                db,
+                started: Signal::new(),
+                release: Gate::new(),
+                first_insert: AtomicBool::new(true),
+            }
+        }
+    }
+
+    impl MessageWriteTarget for BlockingInsertTarget {
+        fn insert_message(
+            &self,
+            id: &str,
+            conversation_id: &str,
+            role: &str,
+            content_json: &str,
+        ) -> anyhow::Result<()> {
+            if self.first_insert.swap(false, Ordering::SeqCst) {
+                self.started.fire();
+                self.release.wait();
+            }
+            self.db
+                .insert_message(id, conversation_id, role, content_json)
+                .map_err(Into::into)
+        }
+
+        fn update_message_content(
+            &self,
+            id: &str,
+            conversation_id: &str,
+            content_json: &str,
+        ) -> anyhow::Result<()> {
+            self.db
+                .update_message_content(id, conversation_id, content_json)
+                .map_err(Into::into)
+        }
+    }
+
+    struct FailingInsertTarget;
+
+    impl MessageWriteTarget for FailingInsertTarget {
+        fn insert_message(
+            &self,
+            _id: &str,
+            _conversation_id: &str,
+            _role: &str,
+            _content_json: &str,
+        ) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("synthetic write failure"))
+        }
+
+        fn update_message_content(
+            &self,
+            _id: &str,
+            _conversation_id: &str,
+            _content_json: &str,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]
@@ -1133,6 +1303,67 @@ mod tests {
             build_history_message_content("assistant", &content, false).expect("assistant text");
 
         assert_eq!(llm_content, "这是上一轮助手回复");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn persist_assistant_content_json_waits_until_db_write_becomes_visible() {
+        let (storage, _dir) = test_storage();
+        storage.create_conversation("c1", "Conv").unwrap();
+
+        let storage = Arc::new(storage);
+        let target = Arc::new(BlockingInsertTarget::new(storage.clone()));
+        let queue = Arc::new(MessageWriteQueue::new(target.clone()));
+        let content_json = r#"{"text":"hello from assistant"}"#.to_string();
+
+        let task = tokio::spawn(async move {
+            persist_assistant_content_json(
+                storage.clone(),
+                queue,
+                "msg-1".to_string(),
+                "c1".to_string(),
+                content_json,
+            )
+            .await
+        });
+
+        target.started.wait();
+
+        let finished_before_release = task.is_finished();
+        target.release.open();
+
+        task.await.unwrap().unwrap();
+        let persisted = target.db.get_messages("c1").unwrap();
+
+        assert!(
+            !finished_before_release,
+            "assistant persistence helper must not return before the message is durably visible"
+        );
+        assert_eq!(persisted.len(), 1, "assistant message should be persisted");
+        assert_eq!(
+            persisted[0].get("id").and_then(|value| value.as_str()),
+            Some("msg-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn persist_assistant_content_json_surfaces_worker_write_failures() {
+        let (storage, _dir) = test_storage();
+        storage.create_conversation("c1", "Conv").unwrap();
+
+        let err = persist_assistant_content_json(
+            Arc::new(storage),
+            Arc::new(MessageWriteQueue::new(Arc::new(FailingInsertTarget))),
+            "msg-fail".to_string(),
+            "c1".to_string(),
+            r#"{"text":"boom"}"#.to_string(),
+        )
+        .await
+        .expect_err("assistant persistence helper must surface worker failures");
+
+        assert!(
+            err.to_string().contains("synthetic write failure"),
+            "worker error text should be preserved for the caller"
+        );
     }
 }
 
@@ -1266,10 +1497,12 @@ impl TauriChatCommandAdapter {
         auth_manager: Arc<AuthManager>,
         app: tauri::AppHandle,
     ) -> Self {
+        let assistant_write_queue = Arc::new(MessageWriteQueue::new(db.clone()));
         let services = TauriChatServices {
             db,
             gateway,
             file_mgr,
+            assistant_write_queue,
             crypto,
             tool_registry,
             session_mgr,
@@ -1319,6 +1552,13 @@ impl TauriChatCommandAdapter {
         let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
         request.is_analysis = is_analysis;
         self.runtime.run_chat_request(request).await
+    }
+
+    pub fn flush_pending_message_writes(&self) -> Result<(), String> {
+        self.services
+            .assistant_write_queue
+            .flush()
+            .map_err(|err| err.to_string())
     }
 
     pub fn is_agent_busy(&self) -> Vec<String> {
