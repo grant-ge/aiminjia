@@ -95,38 +95,64 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 
 ---
 
-## 进行中计划（2026-04-18）
+## 2026-04-19 计划批次（已关闭）
 
 ### 后端计划（Rust）
 
-| 计划文件 | 目标 | 状态 | 依赖 |
-|---------|------|------|------|
-| [2026-04-18-plan-i-runtime-parity.md](./2026-04-18-plan-i-runtime-parity.md) | I：SessionRuntime cancel root owner + subagent transcript parity | 🔄 未执行 | — |
-| [2026-04-18-plan-j-python-analysis-parity.md](./2026-04-18-plan-j-python-analysis-parity.md) | J：ExecutePythonRuntimeTool analysis 模式 Python binary 缺口 | 🔄 未执行 | — |
-| [2026-04-18-plan-k-autocompact.md](./2026-04-18-plan-k-autocompact.md) | K：LLM 辅助自动 compact + compact_boundary 持久化 | 🔄 未执行 | — |
-| [2026-04-18-plan-l-input-schema-validation.md](./2026-04-18-plan-l-input-schema-validation.md) | L：执行时 Input Schema Validation（safeParse + validateInput） | 🔄 未执行（reviewed 2026-04-18） | — |
-| [2026-04-18-plan-m-hook-system.md](./2026-04-18-plan-m-hook-system.md) | M：Hook 系统（PreToolUse / PostToolUse / Stop hooks） | 🔄 未执行（reviewed 2026-04-18） | — |
-| [2026-04-18-plan-n-tool-execution.md](./2026-04-18-plan-n-tool-execution.md) | N：工具执行改进（sibling cascade + interruptBehavior + contextModifier） | 🔄 未执行（reviewed 2026-04-18） | — |
-| [2026-04-18-plan-o-queryengine-session-state.md](./2026-04-18-plan-o-queryengine-session-state.md) | O：QueryEngine 跨 turn 会话状态 + Turn 终态枚举 + maxBudgetUsd | 🔄 未执行（reviewed 2026-04-18） | — |
+| 计划文件 | 目标 | 状态 | 优先级 |
+|---------|------|------|--------|
+| [2026-04-19-plan-u-critical-fixes.md](./2026-04-19-plan-u-critical-fixes.md) | U：TurnError 消息链完整性 + compact_boundary 写入/读取接通 | ✅ 已关闭（2026-04-19） | 🔴 Critical |
+| [2026-04-19-plan-v-security-hardening.md](./2026-04-19-plan-v-security-hardening.md) | V：安全加固（Hook 沙箱 + MCP 权限 + Python read + Bash + dontAsk） | ✅ 已关闭（2026-04-19） | 🔴 Critical |
+| [2026-04-19-plan-aa-prompt-caching.md](./2026-04-19-plan-aa-prompt-caching.md) | AA：Prompt Caching（system prompt + tools list 添加 cache_control breakpoint） | ✅ 已关闭（2026-04-19） | 🔴 P0（成本） |
+| [2026-04-19-plan-ab-small-fixes.md](./2026-04-19-plan-ab-small-fixes.md) | AB：小修复包（core_memory 接通 S4 路径 + SSE error 不静默 + sub_agent 迁 RuntimeTool） | ✅ 已关闭（2026-04-19） | 🔴 P0 |
+| [2026-04-19-plan-ac-claude-md-loading.md](./2026-04-19-plan-ac-claude-md-loading.md) | AC：CLAUDE.md 项目记忆文件读取（目录遍历 + mtime 缓存 + dynamic context 注入） | ✅ 已关闭（2026-04-19） | 🟠 P1 |
+| [2026-04-19-plan-ad-token-and-thinking.md](./2026-04-19-plan-ad-token-and-thinking.md) | AD：Token 感知 + Extended Thinking 主动启用（chars/4 估算 + ThinkingConfig） | ✅ 已关闭（2026-04-19） | 🟠 P1-P2 |
+| [2026-04-19-plan-ae-config-layers.md](./2026-04-19-plan-ae-config-layers.md) | AE：配置分层 + Per-conversation 模型 Override（.lotus/settings.json + ConversationMeta.model_override） | ✅ 已关闭（2026-04-19） | 🟠 P2 |
+| [2026-04-19-plan-w-runtime-recovery.md](./2026-04-19-plan-w-runtime-recovery.md) | W：运行时恢复语义（错误分类 + max_output_tokens 循环 + stop_hook 前移） | ✅ 已关闭（2026-04-19） | 🟠 Important |
+| [2026-04-19-plan-x-tool-system.md](./2026-04-19-plan-x-tool-system.md) | X：工具系统改进（Tool Pool 分区排序 + preserveToolUseResults + 超时声明） | ✅ 已关闭（2026-04-19） | 🟠 Important |
+| [2026-04-19-plan-y-storage-improvements.md](./2026-04-19-plan-y-storage-improvements.md) | Y：存储层改进（async write + 级联清理 + 孤儿文件 GC） | ✅ 已关闭（2026-04-19） | 🟠 Important |
 
 ### 前端计划（TypeScript/React）
 
-| 计划文件 | 目标 | 状态 | 依赖 |
-|---------|------|------|------|
-| [2026-04-18-plan-p-permission-ask-frontend.md](./2026-04-18-plan-p-permission-ask-frontend.md) | P：Permission Ask 全链路前端（弹窗 + approve/deny/cancel） | 🔄 未执行 | 后端 A2 ✅ 已就绪 |
-| [2026-04-18-plan-q-turn-outcome-frontend.md](./2026-04-18-plan-q-turn-outcome-frontend.md) | Q：Turn 终态 + token 用量前端展示（`turn:completed` 消费） | 🔄 未执行 | Plan-O 后端 |
-| [2026-04-18-plan-r-mcp-config-panel.md](./2026-04-18-plan-r-mcp-config-panel.md) | R：MCP 服务器配置面板（含后端 R0 配置持久化 + Tauri commands） | 🔄 未执行 | Plan-G ✅ 后端已就绪；需 R0 后端前置 |
-| [2026-04-18-plan-s-frontend-tool-visibility.md](./2026-04-18-plan-s-frontend-tool-visibility.md) | S：前端工具状态可视化（Tool Error 展示 + Task Status 子任务列表） | 🔄 未执行 | 无 |
-| [2026-04-18-plan-t-subagent-transcript-frontend.md](./2026-04-18-plan-t-subagent-transcript-frontend.md) | T：Subagent Transcript 前端展示（SubAgentResultCard + 折叠 transcript viewer） | 🔄 未执行 | Plan-I 后端 |
+| 计划文件 | 目标 | 状态 | 优先级 |
+|---------|------|------|--------|
+| [2026-04-19-plan-z-gui-desktop-ux.md](./2026-04-19-plan-z-gui-desktop-ux.md) | Z：GUI 体验改进（时间戳 + 重新生成 + 侧边栏搜索 + TaskStatus 语义标签 + 图片预览） | ✅ 已关闭（2026-04-19） | 🟡 P1-P2 |
+| [2026-04-19-plan-af-frontend-gaps.md](./2026-04-19-plan-af-frontend-gaps.md) | AF：前端缺口修复（对话搜索 + export 入口 + 孤儿 invoke 清理；AF4 已确认无需修改） | ✅ 已关闭（2026-04-19） | 🟡 P2 |
 
-### 小缺口（合并进对应计划执行）
+> **已取消**：Z1（Permission Ask 非模态重设计）、Z4（代码语法高亮）— 维持现状。
 
-| 缺口 | 合并目标 | 说明 |
+## 2026-04-18 计划批次（已关闭）
+
+### 后端计划（Rust）
+
+| 计划文件 | 目标 | 状态 |
+|---------|------|------|
+| [2026-04-18-plan-i-runtime-parity.md](./2026-04-18-plan-i-runtime-parity.md) | I：SessionRuntime cancel root owner + subagent transcript parity | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-j-python-analysis-parity.md](./2026-04-18-plan-j-python-analysis-parity.md) | J：ExecutePythonRuntimeTool analysis 模式 Python binary 缺口 | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-k-autocompact.md](./2026-04-18-plan-k-autocompact.md) | K：LLM 辅助自动 compact + compact_boundary 持久化 | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-l-input-schema-validation.md](./2026-04-18-plan-l-input-schema-validation.md) | L：执行时 Input Schema Validation（safeParse + validateInput） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-m-hook-system.md](./2026-04-18-plan-m-hook-system.md) | M：Hook 系统（PreToolUse / PostToolUse / Stop hooks） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-n-tool-execution.md](./2026-04-18-plan-n-tool-execution.md) | N：工具执行改进（sibling cascade + interruptBehavior + contextModifier） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-o-queryengine-session-state.md](./2026-04-18-plan-o-queryengine-session-state.md) | O：QueryEngine 跨 turn 会话状态 + Turn 终态枚举 + maxBudgetUsd | ✅ 已关闭（2026-04-19） |
+
+### 前端计划（TypeScript/React）
+
+| 计划文件 | 目标 | 状态 |
+|---------|------|------|
+| [2026-04-18-plan-p-permission-ask-frontend.md](./2026-04-18-plan-p-permission-ask-frontend.md) | P：Permission Ask 全链路前端（弹窗 + approve/deny/cancel） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-q-turn-outcome-frontend.md](./2026-04-18-plan-q-turn-outcome-frontend.md) | Q：Turn 终态 + token 用量前端展示（`turn:completed` 消费） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-r-mcp-config-panel.md](./2026-04-18-plan-r-mcp-config-panel.md) | R：MCP 服务器配置面板（含后端 R0 配置持久化 + Tauri commands） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-s-frontend-tool-visibility.md](./2026-04-18-plan-s-frontend-tool-visibility.md) | S：前端工具状态可视化（Tool Error 展示 + Task Status 子任务列表） | ✅ 已关闭（2026-04-19） |
+| [2026-04-18-plan-t-subagent-transcript-frontend.md](./2026-04-18-plan-t-subagent-transcript-frontend.md) | T：Subagent Transcript 前端展示（SubAgentResultCard + 折叠 transcript viewer） | ✅ 已关闭（2026-04-19） |
+
+### 已并入并关闭的小缺口
+
+| 缺口 | 合并目标 | 状态 |
 |------|---------|------|
-| `streaming:error` errorType 扩展（budget/iterations） | Plan-Q 前端联调节 | 扩展 TypeScript 联合类型 + toast 路由 |
-| Compact 状态反馈前端 | Plan-K 前端联调节 | `compact:started` 事件监听 + toast |
-| Hook deny 前端反馈 | Plan-M 前端联调节 | 复用 `tool:completed` error 路径 |
-| Permission dontAsk 持久化 | Plan-P P5 节 | 依赖 Plan-P 弹窗先完成 |
+| `streaming:error` errorType 扩展（budget/iterations） | Plan-Q 前端联调节 | ✅ 已随 Plan-Q 关闭 |
+| Compact 状态反馈前端 | Plan-K 前端联调节 | ✅ 已随 Plan-K 关闭 |
+| Hook deny 前端反馈 | Plan-M 前端联调节 | ✅ 已随 Plan-M 关闭 |
+| Permission dontAsk 持久化 | Plan-P P5 节 | ✅ 已随 Plan-P 关闭 |
 
 ---
 
