@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:test-driven-development` — each task must have a failing test before implementation. REQUIRED SUB-SKILL: `superpowers:verification-before-completion` — run `cargo test` and confirm output before marking any task done.
 
-**Goal:** 接通 core_memory 注入、修复 SSE error 静默丢弃、sub_agent 迁移到 RuntimeTool + ToolDispatcher 路径
+**Goal:** 接通 core_memory 注入、修复 SSE error 静默丢弃、sub_agent 从混合桥接执行收敛到 RuntimeTool + ToolDispatcher batch 主路径
 **Tech Stack:** Rust, tokio
 **Worktree branch:** pzc
 
@@ -14,7 +14,7 @@
 |---|------|-----------|------|
 | AB1 | `build_iteration_context()` 第一个参数 `core_memory` 在 S4 路径始终传空字符串 | `chat_turn_driver.rs:703-710` | 跨对话记忆永远不注入 LLM |
 | AB2 | `process_sse_data()` 的 `"error"` event type 走 `_ => None` 静默丢弃 | `providers/claude.rs:492-495` | API 返回流式错误时调用方收不到通知 |
-| AB3 | `sub_agent.rs:292` 用 `for tc in &tool_calls` 串行执行，且走旧 `PluginRegistry` 路径，与主路径 `ToolDispatcher::dispatch_batch()` 不一致 | `sub_agent.rs:292` | 浏览器 sub-agent 工具调用不走 RuntimeTool 路径，无并发，架构不对齐 |
+| AB3 | `sub_agent.rs:292` 用 `for tc in &tool_calls` 串行执行，且直接走 `ToolRegistry::execute()` 混合桥接路径，与主路径 `ToolDispatcher::dispatch_batch()` 不一致 | `sub_agent.rs:292` | 浏览器 sub-agent 工具调用无法复用 runtime batch 调度/并发语义，架构不对齐 |
 
 ---
 
@@ -248,7 +248,7 @@ fix(claude-provider): surface SSE error events as StreamEvent::Error instead of 
 
 ### 目标
 
-将 `sub_agent.rs` 中通过 `PluginRegistry`（旧 plugin 路径）串行执行工具的循环，迁移到通过 `ToolDispatcher::dispatch_batch()` 并发执行（RuntimeTool 路径），与主路径 `tool_round_driver.rs` 完全一致。这是真实架构迁移，而非权宜之计。
+将 `sub_agent.rs` 中通过 `ToolRegistry::execute()` 串行执行工具的循环，迁移为先基于 request-scoped `PluginContext` 构造 runtime dispatcher，再通过 `ToolDispatcher::dispatch_batch()` 执行，与主路径 `tool_round_driver.rs` 的批量调度语义一致。这是真实架构迁移，而非权宜之计。
 
 ### 现状分析
 
@@ -265,7 +265,7 @@ for tc in &tool_calls {
 }
 ```
 
-- `tool_registry` 类型是 `&ToolRegistry`（`plugin::registry::ToolRegistry`），旧 `PluginRegistry` 路径
+- `tool_registry` 类型是 `&ToolRegistry`（`plugin::registry::ToolRegistry`），当前承担 schema 查询 + dispatcher 构造桥接
 - event emit 走 `tauri::Emitter`（直接持有 `app_handle`）
 - cancel token 来自 `config.cancel_token`
 - `AskRequired` 会 `break 'agent_loop`（这个语义必须保留）
@@ -309,26 +309,22 @@ pub enum ToolDispatchOutcome {
 
 ### 依赖注入方式
 
-`sub_agent.rs` 当前不持有 `ToolDispatcher`，需要通过**函数参数**传入：
+`sub_agent.rs` 不额外扩展 `PluginContext` 字段，也不把 `ToolDispatcher` 再往调用链上透传；改为在子 agent 内部使用：
 
 ```rust
-pub async fn run_sub_agent(
-    gateway: &LlmGateway,
-    tool_registry: &ToolRegistry,          // 保留：用于 get_all_schemas()
-    dispatcher: Arc<ToolDispatcher>,        // 新增：RuntimeTool 执行路径
-    plugin_ctx: &PluginContext,
-    config: SubAgentConfig,
-    settings: &AppSettings,
-) -> std::result::Result<SubAgentResult, LegacyToolError>
+let dispatcher = tool_registry.to_runtime_dispatcher(sub_plugin_ctx.clone()).await;
 ```
 
-调用方 `internal_system.rs`（`browse_data` 工具实现，第 383 行）同样需要从 `PluginContext` 或 `CapabilityContext` 获取 `Arc<ToolDispatcher>`。需确认调用方能否拿到 `ToolDispatcher`；若 `PluginContext` 未携带，需在调用链上传入（见 Step 2 说明）。
+这样：
+- `tool_registry` 仍负责 `get_all_schemas()`
+- `sub_plugin_ctx` 继续提供 request-scoped 依赖（`connector_engine`、`conversation_id`、`run_id`、`agent_id`、`read_file_state`）
+- 真实执行统一走 runtime dispatcher batch 主路径
 
 ### 修改文件
 
 - **Modify:** `src-tauri/src/llm/sub_agent.rs`
-- **Modify:** `src-tauri/src/llm/tool_executor/internal_system.rs`（更新 `run_sub_agent` 调用点）
-- 可能需要调整 `PluginContext`，为 `browse_data` 调用链补充 `Arc<ToolDispatcher>`（视调用方现状决定）
+- **Modify:** `src-tauri/src/llm/sub_agent.rs`
+- **Modify:** `src-tauri/tests/plan_ab_small_fixes_test.rs`
 
 ### TDD 步骤
 
@@ -387,15 +383,19 @@ async fn ab3_dispatch_batch_runs_tools_concurrently() {
 }
 ```
 
-此时测试编译失败（`run_sub_agent` 新签名不存在，`dispatch` 路径未接通）。
+此时测试失败（`sub_agent.rs` 尚未调用 `dispatch_batch()`，且仍直接使用 `ToolRegistry::execute()`）。
 
 **Step 2 — 实现**
 
 **2a. 修改 `sub_agent.rs`：**
 
-1. 在函数签名新增 `dispatcher: Arc<crate::runtime::tools::ToolDispatcher>` 参数（在 `tool_registry` 之后）。
+1. 在 `sub_agent.rs` 中基于 `sub_plugin_ctx` 构造 request-scoped dispatcher：
 
-2. 删除 `use tauri::Emitter;`（tool event 改由 `ToolDispatcher::dispatch` 的 `EventCollectingSink` 内部 emit，不再需要直接 emit）。保留 `config.app_handle` 用于其他 Tauri events（如 watchdog heartbeat）——如果 tool:executing/completed 事件仍需通过 app_handle 发出，可保留；否则可去除。
+```rust
+let dispatcher = tool_registry.to_runtime_dispatcher(sub_plugin_ctx.clone()).await;
+```
+
+2. 保留 `use tauri::Emitter;` 和现有 `tool:executing` / `tool:completed` 直接 emit，避免这一步误伤 frontend watchdog 语义。
 
 3. 将工具执行循环（第 292-463 行）替换为：
 

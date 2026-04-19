@@ -137,3 +137,22 @@ async fn ab1_load_core_memory_called_once_per_turn() {
         "load_core_memory must be called once per turn"
     );
 }
+
+#[test]
+fn ab3_sub_agent_uses_runtime_dispatcher_batch_path() {
+    let source = include_str!("../src/llm/sub_agent.rs");
+    assert!(
+        source.contains("dispatch_batch("),
+        "sub_agent.rs must route tool calls through ToolDispatcher::dispatch_batch()"
+    );
+}
+
+#[test]
+fn ab3_sub_agent_no_longer_calls_tool_registry_execute_directly() {
+    let source = include_str!("../src/llm/sub_agent.rs");
+    assert!(
+        !source.contains("tool_registry\n                .execute(")
+            && !source.contains("tool_registry.execute("),
+        "sub_agent.rs must not keep the old ToolRegistry::execute() loop"
+    );
+}

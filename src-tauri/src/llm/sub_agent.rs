@@ -23,7 +23,12 @@ use crate::runtime::agent::subagent_result_envelope::{
 };
 use crate::runtime::agent::{AgentRuntime, SpawnChildRunRequest, SubagentTranscriptEntryRecord};
 use crate::runtime::ids::RunId;
+use crate::runtime::tools::capability::DefaultFileOperations;
 use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::{
+    CapabilityContext, FileReadingLimits, StorageCapability, ToolDispatchOutcome,
+    ToolExecutionContext,
+};
 
 use tauri::Emitter;
 
@@ -67,6 +72,82 @@ fn annotate_subagent_ask_decision(
         },
         other => other,
     }
+}
+
+fn build_subagent_capability(
+    tool_name: &str,
+    plugin_ctx: &PluginContext,
+    is_subagent: bool,
+) -> Arc<CapabilityContext> {
+    let storage = StorageCapability {
+        workspace_path: plugin_ctx.workspace_path.clone(),
+        authorized_workspace: plugin_ctx.authorized_workspace.clone(),
+    };
+    let file_ops = (tool_name == "load_file").then(|| {
+        let (python_binary, python_home) =
+            crate::python::runner::resolve_python_path(plugin_ctx.app_handle.as_ref());
+        Arc::new(DefaultFileOperations {
+            storage: plugin_ctx.storage.clone(),
+            file_manager: plugin_ctx.file_manager.clone(),
+            workspace_path: plugin_ctx.workspace_path.clone(),
+            conversation_id: plugin_ctx.conversation_id.clone(),
+            run_id: plugin_ctx.run_id.clone(),
+            python_binary: Some(python_binary),
+            python_home,
+        }) as Arc<dyn crate::runtime::tools::capability::FileOperations>
+    });
+
+    Arc::new(CapabilityContext {
+        storage: Some(storage),
+        workspace_id: Some(plugin_ctx.conversation_id.clone()),
+        browser_available: plugin_ctx.connector_engine.is_some(),
+        file_ops,
+        read_file_state: plugin_ctx.read_file_state.clone(),
+        file_reading_limits: Some(FileReadingLimits::default()),
+        notification_sink: None,
+        is_subagent,
+    })
+}
+
+fn collect_generated_files(
+    plugin_ctx: &PluginContext,
+    tool_result: &crate::runtime::tools::ToolResult,
+) -> Vec<String> {
+    let mut files = Vec::new();
+
+    if let Some(meta) = tool_result.file_meta.as_ref() {
+        let full_path = plugin_ctx.file_manager.full_path(&meta.stored_path);
+        files.push(full_path.display().to_string());
+    }
+
+    for line in tool_result.content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed
+            .strip_prefix("File: ")
+            .or_else(|| trimmed.strip_prefix("**File**: "))
+            .or_else(|| trimmed.strip_prefix("- **File**: "))
+        {
+            let path = rest.trim();
+            if path.starts_with('/') && !files.iter().any(|existing| existing == path) {
+                files.push(path.to_string());
+            }
+        }
+        if trimmed.contains("/generated/") && trimmed.contains(".json") {
+            for word in trimmed.split_whitespace() {
+                let clean = word.trim_matches(|c: char| {
+                    !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-'
+                });
+                if clean.starts_with('/')
+                    && clean.contains("/generated/")
+                    && !files.iter().any(|existing| existing == clean)
+                {
+                    files.push(clean.to_string());
+                }
+            }
+        }
+    }
+
+    files
 }
 
 /// Configuration for a sub-agent run.
@@ -191,6 +272,7 @@ pub async fn run_sub_agent(
     let mut sub_plugin_ctx = plugin_ctx.clone();
     sub_plugin_ctx.run_id = Some(child_run_id.clone());
     sub_plugin_ctx.agent_id = child_agent_id.clone();
+    let dispatcher = tool_registry.to_runtime_dispatcher(sub_plugin_ctx.clone()).await;
 
     let dynamic_ctx = if config.dynamic_context.is_empty() {
         None
@@ -288,25 +370,25 @@ pub async fn run_sub_agent(
                 .collect(),
         ));
 
-        // Execute tool calls
-        for tc in &tool_calls {
-            // Check allowed
-            if !config.allowed_tools.contains(&tc.name) {
-                let err_msg = format!("Tool '{}' not available in this sub-agent", tc.name);
-                terminal_tool_results.push(SubAgentTerminalToolResult {
-                    tool_call_id: tc.id.clone(),
-                    tool_name: tc.name.clone(),
-                    success: false,
-                    summary: err_msg.clone(),
-                    generated_files: Vec::new(),
-                });
-                messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
-                continue;
-            }
+        let (permitted_tool_calls, denied_tool_calls): (Vec<_>, Vec<_>) = tool_calls
+            .iter()
+            .cloned()
+            .partition(|tc| config.allowed_tools.contains(&tc.name));
 
+        for tc in denied_tool_calls {
+            let err_msg = format!("Tool '{}' not available in this sub-agent", tc.name);
+            terminal_tool_results.push(SubAgentTerminalToolResult {
+                tool_call_id: tc.id.clone(),
+                tool_name: tc.name.clone(),
+                success: false,
+                summary: err_msg.clone(),
+                generated_files: Vec::new(),
+            });
+            messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
+        }
+
+        for tc in &permitted_tool_calls {
             info!("[SubAgent] Executing tool '{}' (id={})", tc.name, tc.id);
-
-            // Emit tool:executing event to keep frontend watchdog alive
             if let Some(ref app) = config.app_handle {
                 let _ = app.emit(
                     "tool:executing",
@@ -318,38 +400,54 @@ pub async fn run_sub_agent(
                     }),
                 );
             }
+        }
 
-            // Derive a child token from the parent when available so that cancelling
-            // the parent turn (e.g. user stop_streaming) propagates into this tool call.
-            // Falls back to an isolated root token when no parent is provided.
-            let sub_cancel = match config.cancel_token.as_ref() {
-                Some(parent) => parent.child_token(),
-                None => crate::runtime::cancellation::CancellationToken::new(),
-            };
-            let result = tool_registry
-                .execute(&tc.name, &sub_plugin_ctx, tc.arguments.clone(), sub_cancel)
-                .await;
+        let dispatch_calls: Vec<_> = permitted_tool_calls
+            .iter()
+            .map(|tc| {
+                let sub_cancel = match config.cancel_token.as_ref() {
+                    Some(parent) => parent.child_token(),
+                    None => crate::runtime::cancellation::CancellationToken::new(),
+                };
+                let capability = build_subagent_capability(
+                    &tc.name,
+                    &sub_plugin_ctx,
+                    child_agent_id.is_some(),
+                );
+                let exec_ctx = ToolExecutionContext::new(
+                    sub_plugin_ctx.session_id.clone(),
+                    child_run_id.clone(),
+                    child_agent_id.clone(),
+                    tc.id.clone(),
+                    sub_cancel,
+                )
+                .with_capability(capability);
+                (tc.name.clone(), tc.arguments.clone(), exec_ctx)
+            })
+            .collect();
+        let dispatch_results = dispatcher.dispatch_batch(dispatch_calls).await;
 
-            match result {
-                Ok(tool_output) => {
-                    let tool_summary = if tool_output.content.len() > 240 {
-                        format!("{}...", safe_truncate(&tool_output.content, 240))
+        for (tc, dispatch_result) in permitted_tool_calls.into_iter().zip(dispatch_results) {
+            match dispatch_result {
+                Ok(ToolDispatchOutcome::Completed { result, .. }) => {
+                    let tool_summary = if result.content.len() > 240 {
+                        format!("{}...", safe_truncate(&result.content, 240))
                     } else {
-                        tool_output.content.clone()
+                        result.content.clone()
                     };
+                    let generated_files = collect_generated_files(&sub_plugin_ctx, &result);
                     terminal_tool_results.push(SubAgentTerminalToolResult {
                         tool_call_id: tc.id.clone(),
                         tool_name: tc.name.clone(),
-                        success: !tool_output.is_error,
+                        success: true,
                         summary: tool_summary,
-                        generated_files: tool_output.generated_files.clone(),
+                        generated_files: generated_files.clone(),
                     });
-                    // Emit tool:completed
                     if let Some(ref app) = config.app_handle {
-                        let summary = if tool_output.content.len() > 100 {
-                            format!("{}...", safe_truncate(&tool_output.content, 100))
+                        let summary = if result.content.len() > 100 {
+                            format!("{}...", safe_truncate(&result.content, 100))
                         } else {
-                            tool_output.content.clone()
+                            result.content.clone()
                         };
                         let _ = app.emit(
                             "tool:completed",
@@ -361,62 +459,16 @@ pub async fn run_sub_agent(
                             }),
                         );
                     }
-                    // Collect file paths from tool output
-                    for f in &tool_output.generated_files {
-                        files.push(f.clone());
-                    }
-
-                    // Detect file paths in content (various formats)
-                    for line in tool_output.content.lines() {
-                        let trimmed = line.trim();
-                        // Match: "File: /path", "**File**: /path", "- **File**: /path"
-                        if let Some(rest) = trimmed
-                            .strip_prefix("File: ")
-                            .or_else(|| trimmed.strip_prefix("**File**: "))
-                            .or_else(|| trimmed.strip_prefix("- **File**: "))
-                        {
-                            let path = rest.trim();
-                            if path.starts_with('/') && !files.contains(&path.to_string()) {
-                                files.push(path.to_string());
-                            }
-                        }
-                        // Match paths in generated/ directory
-                        if trimmed.contains("/generated/") && trimmed.contains(".json") {
-                            for word in trimmed.split_whitespace() {
-                                let clean = word.trim_matches(|c: char| {
-                                    !c.is_alphanumeric()
-                                        && c != '/'
-                                        && c != '.'
-                                        && c != '_'
-                                        && c != '-'
-                                });
-                                if clean.starts_with('/')
-                                    && clean.contains("/generated/")
-                                    && !files.contains(&clean.to_string())
-                                {
-                                    files.push(clean.to_string());
-                                }
-                            }
-                        }
-                    }
-
-                    let content = if tool_output.content.len() > 8000 {
-                        format!(
-                            "{}...(truncated)",
-                            safe_truncate(&tool_output.content, 8000)
-                        )
+                    files.extend(generated_files);
+                    let content = if result.content.len() > 8000 {
+                        format!("{}...(truncated)", safe_truncate(&result.content, 8000))
                     } else {
-                        tool_output.content
+                        result.content
                     };
-
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, content));
                 }
-                Err(crate::plugin::tool_trait::ToolError::AskRequired(ref decision)) => {
-                    let bubbled = annotate_subagent_ask_decision(
-                        &tc.name,
-                        &tc.id,
-                        decision.clone(),
-                    );
+                Ok(ToolDispatchOutcome::AskRequired(decision)) => {
+                    let bubbled = annotate_subagent_ask_decision(&tc.name, &tc.id, decision);
                     terminal_tool_results.push(SubAgentTerminalToolResult {
                         tool_call_id: tc.id.clone(),
                         tool_name: tc.name.clone(),
@@ -521,8 +573,7 @@ pub async fn run_sub_agent(
             if let (Some(bus), Some(parent_run_id)) =
                 (plugin_ctx.event_bus.clone(), config.parent_run_id.clone())
             {
-                let summary =
-                    message_bridge::format_sub_agent_envelope_summary(&envelope);
+                let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);
                 let _ = agent_runtime
                     .complete_background_run(
                         &child_run_id,
@@ -576,9 +627,8 @@ mod tests {
             reason: PermissionReason::Other("subagent-inner".to_string()),
         };
 
-        let extracted =
-            take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))
-                .expect("AskRequired must stay structured");
+        let extracted = take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))
+            .expect("AskRequired must stay structured");
 
         match extracted {
             PermissionDecision::Ask {
@@ -587,7 +637,10 @@ mod tests {
                 ..
             } => {
                 assert_eq!(message, "need approval");
-                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+                assert_eq!(
+                    suggestions,
+                    vec!["Allow once".to_string(), "Deny".to_string()]
+                );
             }
             other => panic!("expected ask decision, got: {:?}", other),
         }
