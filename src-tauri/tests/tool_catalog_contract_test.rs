@@ -218,3 +218,35 @@ fn catalog_other_tools_default_to_8000_when_not_overridden() {
         );
     }
 }
+
+#[test]
+fn catalog_long_running_tools_have_declared_default_timeouts() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for (id, expected) in [
+        ("bash", Some(120)),
+        ("load_file", Some(120)),
+        ("execute_python", Some(600)),
+        ("generate_report", Some(300)),
+        ("generate_chart", Some(300)),
+    ] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert_eq!(
+            def.default_timeout_secs, expected,
+            "{id} should declare the expected default timeout"
+        );
+    }
+}
+
+#[test]
+fn catalog_non_long_running_tools_keep_timeout_unset() {
+    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
+
+    for id in ["list_directory", "read_workspace_file", "web_search", "plan_update"] {
+        let def = TOOL_CATALOG.get(id).unwrap();
+        assert_eq!(
+            def.default_timeout_secs, None,
+            "{id} should keep timeout declaration unset"
+        );
+    }
+}

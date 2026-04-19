@@ -49,6 +49,13 @@ impl<'a> ExecutePythonCoreParams<'a> {
     }
 }
 
+fn default_execute_python_timeout_secs() -> u64 {
+    crate::runtime::tools::catalog::TOOL_CATALOG
+        .get("execute_python")
+        .and_then(|def| def.default_timeout_secs)
+        .unwrap_or(600)
+}
+
 /// 2. execute_python — run arbitrary Python code.
 pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> Result<String> {
     let (python_binary, python_home) =
@@ -97,10 +104,14 @@ pub(crate) async fn handle_execute_python_core(
                 &workspace_path_buf,
                 vec![aw.root_path.clone()],
             );
-            let p = crate::llm::tool_executor::file_load::build_local_workspace_preamble(&aw.root_path);
+            let p =
+                crate::llm::tool_executor::file_load::build_local_workspace_preamble(&aw.root_path);
             (s, p)
         }
-        None => (SandboxConfig::for_workspace(&workspace_path_buf), String::new()),
+        None => (
+            SandboxConfig::for_workspace(&workspace_path_buf),
+            String::new(),
+        ),
     };
     #[allow(deprecated)]
     if let Err(e) = sandbox.validate_code(code) {
@@ -125,8 +136,18 @@ pub(crate) async fn handle_execute_python_core(
             }
             let loaded_key = params.loaded_key(file_id);
             let failed_key = params.load_failed_key(file_id);
-            if params.storage.get_memory(&loaded_key).ok().flatten().is_none()
-                && params.storage.get_memory(&failed_key).ok().flatten().is_none()
+            if params
+                .storage
+                .get_memory(&loaded_key)
+                .ok()
+                .flatten()
+                .is_none()
+                && params
+                    .storage
+                    .get_memory(&failed_key)
+                    .ok()
+                    .flatten()
+                    .is_none()
             {
                 info!(
                     "[TOOL:execute_python] Auto-loading file '{}' for conversation {}",
@@ -142,7 +163,9 @@ pub(crate) async fn handle_execute_python_core(
                     python_binary: params.python_binary.clone(),
                     python_home: params.python_home.clone(),
                 };
-                if let Err(e) = super::file_load::handle_load_file_core(&load_params, &load_args).await {
+                if let Err(e) =
+                    super::file_load::handle_load_file_core(&load_params, &load_args).await
+                {
                     warn!(
                         "[TOOL:execute_python] Auto-load failed for '{}': {}",
                         file_id, e
@@ -214,13 +237,13 @@ pub(crate) async fn handle_execute_python_core(
         // Analysis mode: use persistent session (warm process, no cold-start overhead).
         // The session reuses a long-running Python REPL, eliminating process spawn,
         // pandas/numpy import, and _analysis_utils.py compilation on every call.
-        let timeout = Duration::from_secs(600);
+        let timeout = Duration::from_secs(default_execute_python_timeout_secs());
         let run_id = params.requested_run_id.ok_or_else(|| {
-            anyhow::anyhow!(
-                "analysis mode requires run_id for execute_python persistent session"
-            )
+            anyhow::anyhow!("analysis mode requires run_id for execute_python persistent session")
         })?;
-        python.execute_for_run(run_id, &final_code, timeout, &sandbox).await?
+        python
+            .execute_for_run(run_id, &final_code, timeout, &sandbox)
+            .await?
     } else {
         // Daily mode: use one-shot PythonRunner (no persistent state needed)
         python
@@ -940,4 +963,11 @@ mod tests {
         assert!(params.python_home.is_none());
     }
 
+    #[test]
+    fn default_execute_python_timeout_secs_comes_from_catalog() {
+        let expected = crate::runtime::tools::catalog::TOOL_CATALOG
+            .get("execute_python")
+            .and_then(|def| def.default_timeout_secs);
+        assert_eq!(Some(default_execute_python_timeout_secs()), expected);
+    }
 }

@@ -240,6 +240,7 @@ fn build_default_catalog() -> ToolCatalog {
         )
         .with_kind(ToolKind::Primitive)
         .with_destructive(true)
+        .with_default_timeout_secs(120)
         .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
@@ -300,6 +301,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n_df 包含完整数据（非 sampleData 样本），分析时先用 len(_df) 确认规模，基于全量数据统计。\
             \n\n注意：Power 工具，执行 Python 解析、PII 脱敏、session 缓存写入等副作用。")
             .with_kind(ToolKind::Power)
+            .with_default_timeout_secs(120)
             .with_capability_scope(["workspace:read", "workspace:write", "python:exec"]),
         json!({
             "type": "object",
@@ -409,6 +411,7 @@ fn build_default_catalog() -> ToolCatalog {
             .with_kind(ToolKind::Power)
             .with_max_result_size_chars(32_000)
             .with_preserve_tool_use_results(true)
+            .with_default_timeout_secs(600)
             .with_capability_scope(["python:exec", "workspace:write"]),
         json!({
             "type": "object",
@@ -474,6 +477,7 @@ fn build_default_catalog() -> ToolCatalog {
             用于分析末尾生成最终报告，不适合中间步骤。")
             .with_kind(ToolKind::Composite)
             .with_preserve_tool_use_results(true)
+            .with_default_timeout_secs(300)
             .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
@@ -492,6 +496,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n【数据传递规则】数据点超过 50 个时必须使用 data_file 参数（先用 execute_python 准备数据并写入 JSON 文件，再传入文件路径），\
             不得在 data 参数中直接内联大量数据点。")
             .with_kind(ToolKind::Composite)
+            .with_default_timeout_secs(300)
             .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",

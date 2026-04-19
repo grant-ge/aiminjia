@@ -81,6 +81,21 @@ enum ExitKind {
 
 pub struct BashTool;
 
+fn default_bash_timeout_secs() -> u64 {
+    TOOL_CATALOG
+        .get("bash")
+        .and_then(|def| def.default_timeout_secs)
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+}
+
+fn resolve_timeout_secs(input: &Value) -> u64 {
+    input
+        .get("timeout_secs")
+        .and_then(Value::as_u64)
+        .unwrap_or_else(default_bash_timeout_secs)
+        .min(MAX_TIMEOUT_SECS)
+}
+
 fn tool_result_bash(content: String, data: Value) -> ToolResult {
     ToolResult {
         tool_name: "bash".to_string(),
@@ -343,11 +358,7 @@ impl RuntimeTool for BashTool {
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: command".into()))?
             .to_string();
-        let timeout_secs = input
-            .get("timeout_secs")
-            .and_then(Value::as_u64)
-            .unwrap_or(DEFAULT_TIMEOUT_SECS)
-            .min(MAX_TIMEOUT_SECS);
+        let timeout_secs = resolve_timeout_secs(&input);
         let wrapped_command = format!("exec 2>&1; {command}");
 
         let mut shell = Command::new("/bin/sh");
@@ -428,5 +439,31 @@ impl RuntimeTool for BashTool {
                 &combined_output,
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn resolve_timeout_secs_prefers_input_override() {
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 5 })), 5);
+    }
+
+    #[test]
+    fn resolve_timeout_secs_falls_back_to_catalog_default() {
+        let expected = TOOL_CATALOG
+            .get("bash")
+            .and_then(|def| def.default_timeout_secs)
+            .expect("bash should declare default timeout");
+        assert_eq!(default_bash_timeout_secs(), expected);
+        assert_eq!(resolve_timeout_secs(&json!({})), expected);
+    }
+
+    #[test]
+    fn resolve_timeout_secs_caps_large_values() {
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
     }
 }
