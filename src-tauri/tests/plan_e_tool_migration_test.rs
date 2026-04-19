@@ -12,19 +12,17 @@ use app_lib::runtime::tools::builtin::browse_data::{
     BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLaunchResult, BrowseDataLauncher,
     BrowseDataRuntimeTool,
 };
-use app_lib::runtime::tools::capability::CapabilityContext;
-use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
-use app_lib::runtime::tools::builtin::python_execution::{
-    DefaultPythonExecution, PythonExecution,
-};
 use app_lib::runtime::tools::builtin::chart::GenerateChartRuntimeTool;
 use app_lib::runtime::tools::builtin::chart_capability::{
     ChartCapability, ChartRunOutput, PersistedChartInfo,
 };
+use app_lib::runtime::tools::builtin::python::ExecutePythonRuntimeTool;
+use app_lib::runtime::tools::builtin::python_execution::{DefaultPythonExecution, PythonExecution};
 use app_lib::runtime::tools::builtin::report::GenerateReportRuntimeTool;
 use app_lib::runtime::tools::builtin::report_capability::{
     PersistedFileInfo, ReportCapability, ReportGenOutput,
 };
+use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolError, ToolExecutionContext};
 use app_lib::storage::file_manager::FileManager;
 use app_lib::storage::file_store::AppStorage;
@@ -56,6 +54,42 @@ impl PythonExecution for MockPythonExecution {
         _code: &str,
         _sandbox: &SandboxConfig,
     ) -> Result<ExecutionResult> {
+        Ok(self.result.clone())
+    }
+
+    async fn execute_for_run(
+        &self,
+        _run_id: &RunId,
+        _code: &str,
+        _timeout: Duration,
+        _sandbox: &SandboxConfig,
+    ) -> Result<ExecutionResult> {
+        Ok(self.result.clone())
+    }
+
+    async fn interrupt_run(&self, _run_id: &RunId) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct TimeoutCapturingPythonExecution {
+    result: ExecutionResult,
+    oneshot_timeouts: Arc<Mutex<Vec<u32>>>,
+}
+
+#[async_trait]
+impl PythonExecution for TimeoutCapturingPythonExecution {
+    async fn execute_oneshot(
+        &self,
+        _workspace_path: &Path,
+        _code: &str,
+        sandbox: &SandboxConfig,
+    ) -> Result<ExecutionResult> {
+        self.oneshot_timeouts
+            .lock()
+            .expect("mutex poisoned")
+            .push(sandbox.timeout_seconds);
         Ok(self.result.clone())
     }
 
@@ -167,7 +201,10 @@ async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
     );
 
     let err = tool
-        .execute(json!({"code": "print('analysis')"}), build_exec_ctx(tmp.path()))
+        .execute(
+            json!({"code": "print('analysis')"}),
+            build_exec_ctx(tmp.path()),
+        )
         .await
         .expect_err("analysis runtime path without requested run_id must fail");
 
@@ -180,6 +217,50 @@ async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
         "analysis error should mention missing run_id, got: {}",
         err
     );
+}
+
+#[tokio::test]
+async fn execute_python_runtime_tool_daily_mode_uses_catalog_timeout_for_oneshot() {
+    let tmp = TempDir::new().expect("TempDir::new should succeed");
+    let storage = Arc::new(AppStorage::new(tmp.path()).expect("AppStorage::new should succeed"));
+    storage
+        .create_conversation("plan-e-conv", "Plan E")
+        .expect("conversation should be created");
+    let file_manager = Arc::new(FileManager::new(tmp.path()));
+    let oneshot_timeouts = Arc::new(Mutex::new(Vec::new()));
+    let mock = Arc::new(TimeoutCapturingPythonExecution {
+        result: ExecutionResult {
+            stdout: "daily ok\n".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+            execution_time_ms: 10,
+            timed_out: false,
+        },
+        oneshot_timeouts: oneshot_timeouts.clone(),
+    });
+    let tool = ExecutePythonRuntimeTool::with_runtime_deps(
+        mock as Arc<dyn PythonExecution>,
+        storage,
+        file_manager,
+        None,
+        "test-model".to_string(),
+        std::path::PathBuf::from("python3"),
+        None,
+    );
+
+    let _result = tool
+        .execute(
+            json!({
+                "code": "print('daily mode')",
+                "purpose": "timeout contract",
+            }),
+            build_exec_ctx(tmp.path()),
+        )
+        .await
+        .expect("daily runtime tool should execute");
+
+    let seen = oneshot_timeouts.lock().expect("mutex poisoned").clone();
+    assert_eq!(seen, vec![600], "daily oneshot should inherit catalog timeout");
 }
 
 #[derive(Debug, Default)]
@@ -278,13 +359,8 @@ async fn generate_report_runtime_tool_with_mock_capability_persists_transformed_
         .await
         .expect("runtime report tool should execute without PluginContext");
 
-    let persisted = String::from_utf8(
-        cap.persisted_bytes
-            .lock()
-            .expect("mutex poisoned")
-            .clone(),
-    )
-    .expect("persisted html should be utf-8");
+    let persisted = String::from_utf8(cap.persisted_bytes.lock().expect("mutex poisoned").clone())
+        .expect("persisted html should be utf-8");
 
     assert!(
         persisted.contains("Lotus"),
@@ -439,11 +515,8 @@ async fn generate_chart_runtime_tool_rejects_data_file_outside_workspace() {
     let tmp = TempDir::new().expect("TempDir::new should succeed");
     let outside = TempDir::new().expect("TempDir::new should succeed");
     let data_file = outside.path().join("chart.json");
-    std::fs::write(
-        &data_file,
-        r#"{"labels":["Q1"],"values":[42]}"#,
-    )
-    .expect("outside chart file should be written");
+    std::fs::write(&data_file, r#"{"labels":["Q1"],"values":[42]}"#)
+        .expect("outside chart file should be written");
 
     let tool = GenerateChartRuntimeTool::with_capability(Arc::new(MockChartCapability));
     let err = tool
@@ -580,14 +653,14 @@ async fn browse_data_runtime_tool_passes_parent_identity_to_launcher() {
         .pop()
         .expect("launcher should record one request");
     assert_eq!(captured.task, "抓取订单列表");
-    assert_eq!(
-        captured.url.as_deref(),
-        Some("https://example.com/orders")
-    );
+    assert_eq!(captured.url.as_deref(), Some("https://example.com/orders"));
     assert_eq!(captured.session_id, "plan-e-conv");
     assert_eq!(captured.parent_run_id.as_deref(), Some("run-e6"));
     assert_eq!(captured.parent_agent_id.as_deref(), Some("agent-e6"));
-    assert!(!captured.cancelled, "fresh child token should not start cancelled");
+    assert!(
+        !captured.cancelled,
+        "fresh child token should not start cancelled"
+    );
 }
 
 #[tokio::test]
@@ -651,7 +724,10 @@ async fn browse_data_runtime_tool_preserves_structured_ask_required() {
             ..
         }) => {
             assert_eq!(message, "browse_data needs confirmation");
-            assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+            assert_eq!(
+                suggestions,
+                vec!["Allow once".to_string(), "Deny".to_string()]
+            );
         }
         other => panic!("expected ask-required error, got: {other:?}"),
     }

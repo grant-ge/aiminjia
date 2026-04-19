@@ -98,7 +98,7 @@ pub(crate) async fn handle_execute_python_core(
     // Validate user code early (before assembling system preamble/epilogue).
     // System-injected code bypasses validation via execute_raw().
     let workspace_path_buf = params.workspace_path.to_path_buf();
-    let (sandbox, workspace_root_preamble) = match params.authorized_workspace {
+    let (mut sandbox, workspace_root_preamble) = match params.authorized_workspace {
         Some(aw) => {
             let s = SandboxConfig::for_workspace_with_authorized(
                 &workspace_path_buf,
@@ -113,6 +113,7 @@ pub(crate) async fn handle_execute_python_core(
             String::new(),
         ),
     };
+    sandbox.timeout_seconds = default_execute_python_timeout_secs() as u32;
     #[allow(deprecated)]
     if let Err(e) = sandbox.validate_code(code) {
         log::warn!(
