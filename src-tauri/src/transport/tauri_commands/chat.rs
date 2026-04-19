@@ -511,15 +511,54 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
-        let settings_map = self.services.db.get_all_settings().unwrap_or_default();
-        let mut settings = if settings_map.is_empty() {
+        self.load_llm_settings_for_turn(&ChatTurnRequest::new("", "", vec![]))
+            .await
+    }
+
+    async fn load_llm_settings_for_turn(
+        &self,
+        request: &ChatTurnRequest,
+    ) -> Result<ResolvedLlmSettings, TurnError> {
+        let global_settings_map = self.services.db.get_all_settings().unwrap_or_default();
+        let global_settings = if global_settings_map.is_empty() {
             AppSettings::default()
         } else {
-            AppSettings::from_string_map(&settings_map)
+            AppSettings::from_string_map(&global_settings_map)
+        };
+
+        let workspace_path = global_settings
+            .workspace_path
+            .trim()
+            .to_string();
+        let effective_settings_map = if workspace_path.is_empty() {
+            global_settings_map
+        } else {
+            self.services
+                .db
+                .get_effective_settings(Some(std::path::Path::new(&workspace_path)))
+                .unwrap_or(global_settings_map)
+        };
+
+        let mut settings = if effective_settings_map.is_empty() {
+            AppSettings::default()
+        } else {
+            AppSettings::from_string_map(&effective_settings_map)
         };
 
         if let Some(ss) = self.services.crypto.as_ref() {
             settings.primary_api_key = decrypt_api_key(ss, &settings.primary_api_key);
+        }
+
+        let model_override = if request.conversation_id.as_str().is_empty() {
+            None
+        } else {
+            self.services
+                .db
+                .get_conversation_model_override(request.conversation_id.as_str())
+                .unwrap_or(None)
+        };
+        if let Some(override_model) = model_override {
+            settings.primary_model = override_model;
         }
 
         Ok(ResolvedLlmSettings {
@@ -1354,6 +1393,30 @@ impl TauriChatCommandAdapter {
     pub async fn create_conversation(&self) -> Result<String, String> {
         conversation_service::create_conversation(
             self.services.db.clone() as Arc<dyn ConversationStore>
+        )
+        .await
+    }
+
+    pub async fn get_conversation_model_override(
+        &self,
+        conversation_id: String,
+    ) -> Result<Option<String>, String> {
+        conversation_service::get_conversation_model_override(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+        )
+        .await
+    }
+
+    pub async fn set_conversation_model_override(
+        &self,
+        conversation_id: String,
+        model: Option<String>,
+    ) -> Result<(), String> {
+        conversation_service::set_conversation_model_override(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+            model,
         )
         .await
     }

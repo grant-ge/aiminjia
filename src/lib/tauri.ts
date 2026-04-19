@@ -230,6 +230,19 @@ export function createConversation(): Promise<string> {
   return invoke<string>('create_conversation')
 }
 
+export function getConversationModelOverride(conversationId: string): Promise<string | null> {
+  return invoke<string | null>('get_conversation_model_override', {
+    conversationId,
+  })
+}
+
+export function setConversationModelOverride(conversationId: string, model: string | null): Promise<void> {
+  return invoke<void>('set_conversation_model_override', {
+    conversationId,
+    model,
+  })
+}
+
 /**
  * Get all conversations.
  *

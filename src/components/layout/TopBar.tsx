@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { exportConversation, openGeneratedFile } from '@/lib/tauri'
+import { ModelOverrideSelector } from '@/components/chat/ModelOverrideSelector'
 
 export function TopBar() {
   const { t } = useTranslation()
@@ -86,7 +87,10 @@ export function TopBar() {
         {title}
       </h2>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-3">
+        {activeConversationId && (
+          <ModelOverrideSelector conversationId={activeConversationId} />
+        )}
         {showExportButton && (
           <div className="relative" ref={exportDropdownRef}>
             <button

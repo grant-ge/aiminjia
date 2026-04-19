@@ -59,6 +59,7 @@
     "cloud": "☁ 云端",
     "local": "⚡ 本地",
     "maxConcurrent": "已达最大并发数，请等待",
+    "useGlobalModel": "使用全局设置",
     "timeGroup": {
       "today": "今天",
       "yesterday": "昨天",

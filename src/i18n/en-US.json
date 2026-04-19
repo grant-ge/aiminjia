@@ -59,6 +59,7 @@
     "cloud": "☁ Cloud",
     "local": "⚡ Local",
     "maxConcurrent": "Max concurrent chats reached, please wait",
+    "useGlobalModel": "Use global setting",
     "timeGroup": {
       "today": "Today",
       "yesterday": "Yesterday",

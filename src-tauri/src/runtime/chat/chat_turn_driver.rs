@@ -102,6 +102,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(ResolvedLlmSettings::default())
     }
 
+    async fn load_llm_settings_for_turn(
+        &self,
+        _request: &ChatTurnRequest,
+    ) -> Result<ResolvedLlmSettings, TurnError> {
+        self.load_llm_settings().await
+    }
+
     /// Precompute 执行（analysis 模式专用）。默认 no-op。
     async fn run_precompute(
         &self,
@@ -609,7 +616,7 @@ impl RuntimeChatTurnDriver {
         // so repeated iterations do not re-read DB state.
 
         let llm_settings = executor
-            .load_llm_settings()
+            .load_llm_settings_for_turn(request)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 

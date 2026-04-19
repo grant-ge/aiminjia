@@ -28,10 +28,15 @@ pub trait ConversationStore: Send + Sync {
     /// Append a compact boundary record for a conversation.
     fn append_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<()>;
     /// List compact boundary records in insertion order for a conversation.
-    fn list_compact_boundaries(
+    fn list_compact_boundaries(&self, conversation_id: &str) -> Result<Vec<CompactBoundaryRecord>>;
+    /// Read the persisted model override for a conversation.
+    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>>;
+    /// Persist the model override for a conversation.
+    fn set_conversation_model_override(
         &self,
         conversation_id: &str,
-    ) -> Result<Vec<CompactBoundaryRecord>>;
+        model_override: Option<String>,
+    ) -> Result<()>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -130,10 +135,7 @@ impl ConversationStore for InMemoryConversationStore {
         Ok(())
     }
 
-    fn list_compact_boundaries(
-        &self,
-        conversation_id: &str,
-    ) -> Result<Vec<CompactBoundaryRecord>> {
+    fn list_compact_boundaries(&self, conversation_id: &str) -> Result<Vec<CompactBoundaryRecord>> {
         Ok(self
             .compact_boundaries
             .lock()
@@ -141,6 +143,18 @@ impl ConversationStore for InMemoryConversationStore {
             .get(conversation_id)
             .cloned()
             .unwrap_or_default())
+    }
+
+    fn get_conversation_model_override(&self, _conversation_id: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn set_conversation_model_override(
+        &self,
+        _conversation_id: &str,
+        _model_override: Option<String>,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

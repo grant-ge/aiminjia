@@ -51,6 +51,7 @@ pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageRes
         created_at: now.clone(),
         updated_at: now.clone(),
         is_archived: false,
+        model_override: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -96,12 +97,53 @@ pub fn get_conversation_mode(base_dir: &Path, id: &str) -> StorageResult<String>
     Ok(meta.mode)
 }
 
+/// Get the configured model override for a conversation.
+pub fn get_conversation_model_override(
+    base_dir: &Path,
+    id: &str,
+) -> StorageResult<Option<String>> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let meta: ConversationMeta = read_json_safe(&meta_path)?;
+    Ok(meta
+        .model_override
+        .and_then(|value| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }))
+}
+
 /// Set the mode of a conversation.
 pub fn set_conversation_mode(base_dir: &Path, id: &str, mode: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     let now = Utc::now().to_rfc3339();
     meta.mode = mode.to_string();
+    meta.updated_at = now;
+    atomic_write_json(&meta_path, &meta)?;
+    Ok(())
+}
+
+/// Persist the optional model override for a conversation.
+pub fn set_conversation_model_override(
+    base_dir: &Path,
+    id: &str,
+    model_override: Option<String>,
+) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    let now = Utc::now().to_rfc3339();
+    meta.model_override = model_override.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
     meta.updated_at = now;
     atomic_write_json(&meta_path, &meta)?;
     Ok(())
@@ -317,6 +359,23 @@ mod tests {
     }
 
     #[test]
+    fn test_conversation_model_override_roundtrip() {
+        let (base, _dir) = setup();
+
+        create_conversation(&base, "c1", "Conv").unwrap();
+        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
+
+        set_conversation_model_override(&base, "c1", Some("claude".to_string())).unwrap();
+        assert_eq!(
+            get_conversation_model_override(&base, "c1").unwrap().as_deref(),
+            Some("claude")
+        );
+
+        set_conversation_model_override(&base, "c1", None).unwrap();
+        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
+    }
+
+    #[test]
     fn test_reconcile_adds_missing_entries() {
         let (base, _dir) = setup();
 
@@ -333,6 +392,7 @@ mod tests {
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,
+            model_override: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

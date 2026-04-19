@@ -17,6 +17,8 @@ pub struct ConversationMeta {
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_override: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
