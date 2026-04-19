@@ -95,6 +95,41 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 
 ---
 
+## 进行中计划（2026-04-18）
+
+### 后端计划（Rust）
+
+| 计划文件 | 目标 | 状态 | 依赖 |
+|---------|------|------|------|
+| [2026-04-18-plan-i-runtime-parity.md](./2026-04-18-plan-i-runtime-parity.md) | I：SessionRuntime cancel root owner + subagent transcript parity | 🔄 未执行 | — |
+| [2026-04-18-plan-j-python-analysis-parity.md](./2026-04-18-plan-j-python-analysis-parity.md) | J：ExecutePythonRuntimeTool analysis 模式 Python binary 缺口 | 🔄 未执行 | — |
+| [2026-04-18-plan-k-autocompact.md](./2026-04-18-plan-k-autocompact.md) | K：LLM 辅助自动 compact + compact_boundary 持久化 | 🔄 未执行 | — |
+| [2026-04-18-plan-l-input-schema-validation.md](./2026-04-18-plan-l-input-schema-validation.md) | L：执行时 Input Schema Validation（safeParse + validateInput） | 🔄 未执行（reviewed 2026-04-18） | — |
+| [2026-04-18-plan-m-hook-system.md](./2026-04-18-plan-m-hook-system.md) | M：Hook 系统（PreToolUse / PostToolUse / Stop hooks） | 🔄 未执行（reviewed 2026-04-18） | — |
+| [2026-04-18-plan-n-tool-execution.md](./2026-04-18-plan-n-tool-execution.md) | N：工具执行改进（sibling cascade + interruptBehavior + contextModifier） | 🔄 未执行（reviewed 2026-04-18） | — |
+| [2026-04-18-plan-o-queryengine-session-state.md](./2026-04-18-plan-o-queryengine-session-state.md) | O：QueryEngine 跨 turn 会话状态 + Turn 终态枚举 + maxBudgetUsd | 🔄 未执行（reviewed 2026-04-18） | — |
+
+### 前端计划（TypeScript/React）
+
+| 计划文件 | 目标 | 状态 | 依赖 |
+|---------|------|------|------|
+| [2026-04-18-plan-p-permission-ask-frontend.md](./2026-04-18-plan-p-permission-ask-frontend.md) | P：Permission Ask 全链路前端（弹窗 + approve/deny/cancel） | 🔄 未执行 | 后端 A2 ✅ 已就绪 |
+| [2026-04-18-plan-q-turn-outcome-frontend.md](./2026-04-18-plan-q-turn-outcome-frontend.md) | Q：Turn 终态 + token 用量前端展示（`turn:completed` 消费） | 🔄 未执行 | Plan-O 后端 |
+| [2026-04-18-plan-r-mcp-config-panel.md](./2026-04-18-plan-r-mcp-config-panel.md) | R：MCP 服务器配置面板（含后端 R0 配置持久化 + Tauri commands） | 🔄 未执行 | Plan-G ✅ 后端已就绪；需 R0 后端前置 |
+| [2026-04-18-plan-s-frontend-tool-visibility.md](./2026-04-18-plan-s-frontend-tool-visibility.md) | S：前端工具状态可视化（Tool Error 展示 + Task Status 子任务列表） | 🔄 未执行 | 无 |
+| [2026-04-18-plan-t-subagent-transcript-frontend.md](./2026-04-18-plan-t-subagent-transcript-frontend.md) | T：Subagent Transcript 前端展示（SubAgentResultCard + 折叠 transcript viewer） | 🔄 未执行 | Plan-I 后端 |
+
+### 小缺口（合并进对应计划执行）
+
+| 缺口 | 合并目标 | 说明 |
+|------|---------|------|
+| `streaming:error` errorType 扩展（budget/iterations） | Plan-Q 前端联调节 | 扩展 TypeScript 联合类型 + toast 路由 |
+| Compact 状态反馈前端 | Plan-K 前端联调节 | `compact:started` 事件监听 + toast |
+| Hook deny 前端反馈 | Plan-M 前端联调节 | 复用 `tool:completed` error 路径 |
+| Permission dontAsk 持久化 | Plan-P P5 节 | 依赖 Plan-P 弹窗先完成 |
+
+---
+
 ## 历史计划（已关闭）
 
 | 计划文件 | 内容 | 状态 |

@@ -8,7 +8,7 @@
 
 ## 总目标
 
-- 按计划文件顺序持续执行：`Plan-C -> Plan-D -> Plan-E -> Plan-F -> Plan-G -> Plan-H`，直到全部执行完。
+- 按计划文件顺序持续执行：`Plan-J -> Plan-K -> Plan-L -> Plan-M -> Plan-N -> Plan-O -> Plan-P -> Plan-Q -> Plan-R -> Plan-S -> Plan-T`，直到全部执行完。
 - 如果某个计划在执行过程中已经不合理，可以先直接修改对应计划文件，再继续执行修改后的计划。
 - 不要随意跳过计划顺序；如果要调整执行顺序，必须先把计划本身改清楚。
 
@@ -22,4 +22,7 @@
 
 - 当前仓库：`/Users/a20250311/IdeaProjects/lotus-app`
 - 当前主线目标：严格按计划顺序推进，而不是按临时优先级插入其他 Plan。
-- 当前已在执行：`Plan-C / Task 1 (write_file)`
+- 当前架构对标基线：`/Users/a20250311/github/claude-code-best`
+- 当前执行要求：持续使用 superpowers 相关 skill，在当前分支 `pzc` 连续推进；如发现计划边界与对标实现不一致，先修计划再落地实现。
+- 当前已完成：`Plan-I`、`Plan-J`、`Plan-K`、`Plan-L`、`Plan-M`、`Plan-N`
+- 当前已在执行：`Plan-O`

@@ -1115,3 +1115,39 @@ Plan-H Subagent Isolation Architecture
 - [ ] **H6-4 Commit**
   - `git add src-tauri/src/llm/sub_agent.rs src-tauri/src/runtime/agent/subagent_result.rs src-tauri/src/runtime/agent/child_run.rs src-tauri/tests/subagent_permission_ask_preservation_test.rs`
   - `git commit -m "feat(subagent): preserve ask-required semantics instead of denying — H6"`
+
+### H7：Subagent result envelope / transcript parity
+
+**复盘来源（2026-04-18，对齐 `claude-code-best`）：**
+- lotus 当前 `src-tauri/src/llm/sub_agent.rs::SubAgentResult` 仅保留：
+  - `output`
+  - `files`
+  - `iterations_used`
+- foreground `browse_data` 路径在 `src-tauri/src/llm/tool_executor/internal_system.rs::format_browse_data_subagent_result(...)`
+  把 child 结果重新格式化成 summary + file list；background 路径也只保存
+  `message_bridge::format_sub_agent_summary(...)`。
+- 对标 `claude-code-best`：
+  - `src/tools/AgentTool/runAgent.ts` 提供 `preserveToolUseResults?: boolean`
+  - `src/utils/forkedAgent.ts` / `recordSidechainTranscript(...)` 持续记录 child transcript
+  - parent 不只拿到摘要，还能保留 child transcript / tool_result 级别的信息供展示、resume、审计和后续恢复。
+
+**目标状态：**
+- lotus 的 child completion 不再只剩 browse_data-specific summary/files，而是形成通用 `SubAgentResultEnvelope`：
+  - `summary`
+  - `generated_files`
+  - `tool_results`（至少结构化保留 child 的 terminal tool results）
+  - `transcript_ref` 或等价 transcript snapshot
+  - `iterations_used`
+- parent 侧决定“如何注入消息”和“展示多少 transcript”，而不是 child 在执行链路里直接丢弃中间结果。
+- foreground / background 两条路径共享同一 result envelope，避免一条只存 summary、一条只存 tool_result 摘要。
+
+**建议文件：**
+- Modify: `src-tauri/src/llm/sub_agent.rs`
+- Modify: `src-tauri/src/llm/tool_executor/internal_system.rs`
+- Modify: `src-tauri/src/runtime/agent/message_bridge.rs`
+- Optional Create: `src-tauri/src/runtime/agent/subagent_result_envelope.rs`
+- Create tests: `src-tauri/tests/subagent_result_envelope_test.rs`
+
+**建议顺序：**
+- 放在 H6 之后，作为 Plan-H 下一批收尾债。
+- 优先级低于 cancel / ask / isolation 主线，但高于新增 subagent 能力开发。

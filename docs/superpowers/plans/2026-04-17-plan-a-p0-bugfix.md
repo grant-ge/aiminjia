@@ -1,401 +1,231 @@
 # P0 Bug 修复计划（Plan-A）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans`（或 `superpowers:subagent-driven-development`）按 Task 顺序逐个执行。本计划已按 `claude-code-best` 实际源码语义校准。
 
-**Goal:** 修复 6 项 P0 级 bug，消除对话 cancel 崩溃、权限 Ask 路径断路、Mutex poison 全进程崩溃等正确性问题。
+**Goal:** 修复 6 项 P0 级正确性问题，消除 cancel 后对话历史不合法、权限 Ask 无法到达前端、registry poison panic、Python session 串扰、sandbox 路径边界绕过、`build_env_info` 阻塞 tokio 线程等风险。
 
-**Architecture:** 各修复点互相独立，每个 Task 独立可测试可 commit。A1-A2 修复 Runtime 层，A3 修复并发安全，A4-A5 修复 Python 子系统，A6 修复异步阻塞。
+**Architecture:**
+- A1 修复 S4 driver 的“assistant tool call / tool result”轨迹完整性
+- A2 修复 Ask 事件从 runtime 到前端的路由，但本期仍不做阻塞式等待用户响应
+- A3 仅修复 `RuntimeRunRegistry` 的 poison panic，保持同步 API，不做高扩散 async 化
+- A4 收敛 Python 会话作用域到 `run_id`，移除生产路径的 conversation 级 fallback
+- A5 修复 embedded Python sandbox 的路径前缀绕过
+- A6 将 `build_env_info` 改成异步 git 子进程，避免阻塞运行时
 
-**Tech Stack:** Rust, tokio, async_trait, Python（sandbox.py）
+**Tech Stack:** Rust, tokio, async_trait, embedded Python sandbox preamble（`src-tauri/src/python/sandbox.rs`）
 
 **Worktree branch:** `fix/p0-bugfix`
 
 ---
 
+## 对标校准纪要
+
+### 参考来源
+- Cancel / abort 语义：`/Users/a20250311/github/claude-code-best/src/query.ts`
+- Ask 路由语义：`/Users/a20250311/github/claude-code-best/src/services/tools/toolExecution.ts`
+- AbortController / run 生命周期：`/Users/a20250311/github/claude-code-best/src/QueryEngine.ts`
+- lotus 旧的正确消息形态：`/Users/a20250311/IdeaProjects/lotus-app/src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
+
+### 对齐原则
+- `claude-code-best` 的核心不变量不是“某个分支里补一条字符串消息”，而是：**只要 assistant 发出了 tool request，后续历史里就必须有与之配对的 tool result，才能安全进入下一轮模型调用。**
+- lotus S4 路径当前使用的是归一化 `ChatMessage` 形态，而不是直接存 Anthropic `content[].tool_use` block。因此 A1 的修复必须以 lotus 当前消息模型为准：`assistant.toolCalls[*].id` ↔ `tool.toolCallId` 配对。
+- `AskRequired` 在当前 runtime 中已经是结构化 outcome；本期缺的是 **driver emit runtime event + adapter 映射**，不是把 UI 逻辑塞回 `QueryEngine`。
+- `RuntimeRunRegistry` 当前锁不跨 `await`，P0 在于 poison panic，不在于必须换成 async mutex。为避免调用链大爆炸，A3 采用最小 blast radius 修法。
+- Python session 的主路径已经大量采用 `run_id`；A4 重点是消灭剩余 production fallback，而不是重写整个 session manager。
+
+---
+
+## 执行约束
+
+- 严格按 A1 → A2 → A3 → A4 → A5 → A6 执行，一次只做一个 Task。
+- 每个 Task 必须遵循 TDD：先写失败测试 → 确认失败 → 最小实现 → 确认通过 → commit。
+- 每个 Task 完成后立即停下汇报，不得连续推进到下一个 Task。
+- `runtime/` 内禁止引入 `tauri::*` 依赖；事件桥接只放在 transport 层。
+- 若实现过程中发现与本计划或 `claude-code-best` 仍有偏差，以 `claude-code-best` 的真实语义为准，并先更新计划再继续编码。
+
+---
+
 ## 改造视角
 
-> 本节说明每个修复点的"现状 → 目标"，帮助执行者理解改造意图，而非只是机械执行测试步骤。
+### A1：Cancel 后补齐缺失的 tool result，并保留 assistant tool call 轨迹
 
-### A1：Cancel 后 synthetic tool_result 注入
+**当前状态**：
+- `src-tauri/src/runtime/chat/chat_turn_driver.rs` 在 `LlmStepResult::ToolCalls` 分支只在 `assistant_content` 非空时推入纯文本 assistant message，没有把 `tool_calls` 一并写入 `state.messages`。
+- 因此下一轮 LLM 输入里可能出现“tool result 没有前序 assistant tool call”或“cancel 后 assistant tool call 没有匹配 tool result”的残缺轨迹。
+- 这与 `claude-code-best` 在 abort 时通过 `yieldMissingToolResultBlocks(...)` 维持轨迹完整性的设计不一致。
 
-**当前状态**：`chat_turn_driver.rs` 的 `LlmStepResult::Cancelled` 分支（L418-421）仅设置 `stream_cancelled = true` 并 break，不对已发出但未收到结果的 `tool_use` 补充对应的 `tool_result`。下次调用 Anthropic API 时消息历史中 `tool_use` 无对应 `tool_result`，返回 HTTP 400。
-
-**目标状态**：cancel 发生后，在 break 前遍历 `state.messages`，为所有未配对的 `tool_use` 块注入 synthetic `tool_result`（内容："Tool execution was interrupted by user cancellation"）。下次继续对话时 API 调用正常。
-
-**迁移路径**：只改 `chat_turn_driver.rs` 的 Cancelled 分支，不影响正常 ToolCalls 路径。
-
-**回归验证**：`cargo test review_ --tests --no-fail-fast`
-
----
-
-### A2：权限 Ask 路径接通
-
-**当前状态**：`query_engine.rs` L264-290 的 `AskRequired` 分支有 FIXME(S6) 注释，将 Ask 转为 warn log + 文字 tool_result 返回给 LLM，用户永远看不到权限确认。`RuntimeEventKind` 无 `PermissionAskRequired` variant，前端无对应事件处理。
-
-**目标状态**：`AskRequired` → emit `RuntimeEvent::PermissionAskRequired` → `tauri_event_adapter` 映射为 `"permission:ask"` 前端事件 → 前端收到后显示确认提示。本期实现"通知到前端"，不实现阻塞等待用户响应（完整交互式等待在 Φ1 专项）。
+**目标状态**：
+- 每次 `ToolCalls` 结果都要把 assistant 的 `toolCalls` 写入 `state.messages`，对齐 lotus 旧路径的 `ChatMessage::assistant_with_tool_calls(...)`。
+- cancel 或迭代末尾检测到取消时，补齐所有缺失的 synthetic tool result，保证每个 assistant tool call 都有匹配的 `tool.toolCallId`。
+- synthetic 文案统一为：`Tool execution was interrupted by user cancellation.`
 
 **迁移路径**：
-1. `events.rs` 新增 `PermissionAskRequired` variant
-2. `tauri_event_adapter.rs` 新增映射
-3. `query_engine.rs` FIXME 处改为 emit 事件
+1. 在 ToolCalls 分支先把 assistant + `toolCalls` 轨迹写入 `state.messages`
+2. 提取纯函数/小 helper 扫描消息历史并注入缺失的 synthetic tool result
+3. 在 `LlmStepResult::Cancelled` 和轮次末尾 cancel 检查处都调用该 helper
+4. 保持正常 tool result 收集逻辑不变
 
-**回归验证**：`cargo test review_permission --tests`
-
----
-
-### A3：std::Mutex → tokio::sync::Mutex
-
-**当前状态**：`run_registry.rs` 全部 `std::sync::Mutex::lock().unwrap()`，在 async 上下文持有 std Mutex 会阻塞 tokio 工作线程；若持锁线程 panic，Mutex 进入 poisoned 状态，后续所有 `unwrap()` 全部 panic。
-
-**目标状态**：改为 `tokio::sync::Mutex`（不会 poison），所有方法改为 `async fn`，`.unwrap()` 改为 `.map_err(...)`。
-
-**迁移路径**：纯机械替换，不改业务逻辑。注意所有调用方要加 `.await`。
-
-**回归验证**：`cargo test --tests --no-fail-fast 2>&1 | grep -E "FAILED|error\["`
+**回归验证**：
+- `cargo test --test p0_a1_cancel_synthetic_tool_result_test -- --nocapture`
+- `cargo test --test s4_driver_loop_test -- --nocapture`
 
 ---
 
-### A4：Python session key 改为 per-run
+### A2：权限 Ask 路径接通到前端
 
-**当前状态**：部分调用路径仍用 `conversation_id` 作为 Python session key，导致同一 conversation 的多个 run 共享 Python 进程状态（全局变量、已导入包、`_written_files` 列表互相污染）。
+**当前状态**：
+- `src-tauri/src/runtime/query_engine.rs` 已经把权限 Ask 保留为 `RuntimeToolCallOutcome::AskRequired`，这一步本身没有丢语义。
+- 真正丢语义的是 `src-tauri/src/runtime/chat/tool_result_collector.rs`：它把 `AskRequired` 通过 `outcome.content()` 降级成普通 tool result 文本。
+- `RuntimeEventKind` 里没有 `PermissionAskRequired`，`src-tauri/src/transport/tauri_event_adapter.rs` 也没有 `permission:ask` 的映射，所以前端看不到 Ask。
 
-**目标状态**：所有调用路径统一走 `session_key_for_run(run_id)`，每个 run 有独立 Python session。
+**目标状态**：
+- driver 在收集 tool results 之前，先为每个 `AskRequired` outcome emit `RuntimeEventKind::PermissionAskRequired`。
+- adapter 把该 runtime event 映射为 legacy 事件 `permission:ask`，payload 至少包含 `conversationId`、`runId`、`toolCallId`、`toolName`、`message`、`suggestions`。
+- 本期仍保留 tool result 的文本 fallback 让 LLM 继续收到反馈；阻塞式“等用户点 Allow/Deny 再继续”留到后续专项。
 
-**迁移路径**：grep 找出所有直接传 `conversation_id` 给 session manager 的调用点，逐一改为传 `run_id`。
+**迁移路径**：
+1. `events.rs` 新增 `PermissionAskRequired`
+2. `tauri_event_adapter.rs` 新增 `permission:ask` 映射
+3. `chat_turn_driver.rs` 在 `collect_results(...)` 之前发 Ask 事件
+4. `query_engine.rs` 只保留结构化 outcome，不承担前端事件职责
 
-**回归验证**：`cargo test python --tests`
-
----
-
-### A5：Sandbox path 边界绕过修复
-
-**当前状态**：`sandbox.py` 的 `_safe_open` 用 `abs_path.startswith(realpath(p))` 做白名单检查，`/workspace.backup/file` 能通过 `/workspace` 白名单（字符串前缀匹配而非路径前缀匹配）。
-
-**目标状态**：改为 `abs_path == realpath(p) or abs_path.startswith(realpath(p) + os.sep)`，确保路径边界正确。
-
-**迁移路径**：单行修改。
-
-**回归验证**：Python sandbox 单元测试
-
----
-
-### A6：build_env_info 阻塞 tokio 线程
-
-**当前状态**：`context_builder.rs` 的 `build_env_info` 调用 `std::process::Command::new("git").output()`（同步阻塞系统调用），在 async 上下文中执行会阻塞整个 tokio 工作线程。
-
-**目标状态**：改为 `tokio::process::Command`，`build_env_info` 改为 `async fn`，调用方加 `.await`。
-
-**迁移路径**：修改 `context_builder.rs`，更新所有调用方的 await 链。
-
-**回归验证**：`cargo test context_builder --tests`
+**回归验证**：
+- `cargo test --test p0_a2_permission_ask_routing_test -- --nocapture`
+- `cargo test --test tauri_event_adapter_test -- --nocapture`
 
 ---
 
-## Task A1：Cancel 后 synthetic tool_result 注入
+### A3：消除 RuntimeRunRegistry 的 poison panic，保持同步 API
 
-**问题根因：** `chat_turn_driver.rs` 的 `LlmStepResult::Cancelled` 分支在工具执行中途被取消时，直接 `break 'turn`。此时 `state.messages` 里已追加了带 `tool_use` 块的 assistant message，但没有对应的 `tool_result`（role=tool）消息。下一轮用户发消息时 Anthropic API 拿到残缺对话历史，返回 400 "messages: final assistant content must end in a human turn"。
+**当前状态**：
+- `src-tauri/src/runtime/run_registry.rs` 全部使用 `std::sync::Mutex::lock().unwrap()`。
+- 一旦某个持锁路径 panic，mutex 进入 poisoned，后续所有 `.unwrap()` 都会再次 panic，造成进程级连锁崩溃。
+- 但该 registry 当前的锁并不跨 `await`，若强行改成 `tokio::sync::Mutex + async fn`，会把改动扩散到 `gateway.rs` 等整条调用链，超出本 Task 的最小修复面。
 
-**修复位置：** `src-tauri/src/runtime/chat/chat_turn_driver.rs`，`LlmStepResult::Cancelled` 分支——在 break 前为所有已发出但未收到结果的 tool_use 注入 synthetic tool_result。
+**目标状态**：
+- registry 对 poison 可恢复：后续操作记录告警并继续使用 `into_inner()` 恢复，不再 panic。
+- 保持 `reserve / attach_stream / cancel / clear / is_busy ...` 现有同步签名，避免高扩散重构。
+
+**迁移路径**：
+1. 在 `run_registry.rs` 增加统一的私有加锁 helper，封装 poison recovery
+2. 替换所有 `.lock().unwrap()`
+3. 新增单元测试直接制造 poison，验证后续操作不 panic
+4. 跑现有 `runtime_run_registry_test` 保证外部语义不变
+
+**回归验证**：
+- `cargo test run_registry -- --nocapture`
+- `cargo test --test runtime_run_registry_test -- --nocapture`
+
+---
+
+### A4：Python session 生产路径强制 per-run
+
+**当前状态**：
+- `src-tauri/src/python/session.rs` 已提供 `session_key_for_run(...)`、`execute_for_run(...)`、`interrupt_run(...)`、`destroy_run(...)`。
+- 主分析路径已经大量使用 per-run API，例如 `chat_runtime_impl.rs` 的 precompute 执行。
+- 仍残留的风险点是 `src-tauri/src/llm/tool_executor/python.rs`：在 analysis 模式下若 `ctx.run_id` 缺失，会 fallback 到 `session_manager.execute(&ctx.conversation_id, ...)`，重新退化为 conversation scope。
+
+**目标状态**：
+- analysis 模式的生产路径必须显式要求 `run_id`，不能再悄悄退回到 conversation scope。
+- conversation-scope 的 `execute / interrupt / destroy` 仅保留给 legacy / 非 run-aware 调用者，不再被分析主路径依赖。
+
+**迁移路径**：
+1. 先审计所有 callsite，确认真正的 production 漏口
+2. 将 `llm/tool_executor/python.rs` 中 analysis 分支的 conversation fallback 改为显式错误或等价硬保护
+3. 保留 `session.rs` 的 legacy API，但补注释明确其非主路径定位
+4. 用测试锁死“analysis 必须有 run_id”的语义
+
+**回归验证**：
+- `cargo test --test python_run_scope_test -- --nocapture`
+- `cargo test python --tests -- --nocapture`
+
+---
+
+### A5：Sandbox 路径边界绕过修复
+
+**当前状态**：
+- 漏洞实际位于 `src-tauri/src/python/sandbox.rs` 生成的 embedded Python preamble 中，不是独立 `sandbox.py` 文件。
+- `_safe_open` 目前用 `abs_path.startswith(os.path.realpath(p))` 判断是否落在白名单内，会把 `/workspace.backup/...` 错当成 `/workspace/...` 子路径。
+
+**目标状态**：
+- 白名单判断必须要求“等于根目录”或“以 `root + os.sep` 开头”。
+- 保持 workspace 根目录本身、以及其真实子目录仍可写。
+
+**迁移路径**：
+1. 修改 `sandbox.rs` 中 preamble 里的 `_safe_open`
+2. 增加测试锁定生成代码必须包含 path-separator 边界判断
+3. 跑已有 sandbox 相关测试回归
+
+**回归验证**：
+- `cargo test --test p0_a5_sandbox_path_boundary_test -- --nocapture`
+- `cargo test sandbox -- --nocapture`
+
+---
+
+### A6：`build_env_info` 改成异步 git 子进程
+
+**当前状态**：
+- `src-tauri/src/runtime/chat/context_builder.rs` 的 `build_env_info(...)` 仍用 `std::process::Command::new("git").output()`。
+- 该函数已经被 async 调用链间接调用（`TauriLegacyTurnExecutor::get_env_info` 本身就是 async），同步子进程会阻塞 tokio worker 线程。
+
+**目标状态**：
+- `build_env_info(...)` 改成 `async fn`
+- git status 改用 `tokio::process::Command`
+- 所有调用方和单测统一加 `.await`
+
+**迁移路径**：
+1. 先把 `context_builder.rs` 的函数签名升级为 async
+2. 再更新 `transport/tauri_commands/chat.rs` 的调用点
+3. 最后更新 `context_builder.rs` 现有单测和新增回归测试
+
+**回归验证**：
+- `cargo test --test p0_a6_env_info_async_test -- --nocapture`
+- `cargo test build_env_info -- --nocapture`
+
+---
+
+## Task A1：补齐 tool-call 轨迹与 cancel synthetic tool_result
 
 **Files:**
 - Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
 - Add tests: `src-tauri/tests/p0_a1_cancel_synthetic_tool_result_test.rs`
 
----
-
-- [ ] **Step A1-1: 写失败测试**
-
-创建 `src-tauri/tests/p0_a1_cancel_synthetic_tool_result_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a1_cancel_synthetic_tool_result_test.rs
-//
-// P0-A1 回归测试：取消时已发出 tool_use 的对话历史必须有对应 tool_result。
-// 验证 driver 在 Cancelled 分支不会留下裸 tool_use 消息。
-
-use std::sync::Arc;
-use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
-use app_lib::runtime::event_bus::RuntimeEventBus;
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
-use app_lib::runtime::identity::IdentityMapping;
-use app_lib::runtime::state::TurnState;
-use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::ids::RunId;
-use async_trait::async_trait;
-
-/// Executor：先返回 ToolCalls，再返回 Cancelled——模拟工具执行到一半被取消。
-struct CancelAfterToolCallsExecutor {
-    iteration: std::sync::Mutex<u32>,
-    /// 收集每次迭代开始时 driver 传入的 messages（快照）
-    recorded_messages: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
-}
-
-impl CancelAfterToolCallsExecutor {
-    fn new() -> Self {
-        Self {
-            iteration: std::sync::Mutex::new(0),
-            recorded_messages: std::sync::Mutex::new(Vec::new()),
-        }
-    }
-
-    fn messages_at_second_iteration(&self) -> Option<Vec<serde_json::Value>> {
-        let msgs = self.recorded_messages.lock().unwrap();
-        msgs.get(1).cloned()
-    }
-}
-
-#[async_trait]
-impl RuntimeLlmExecutor for CancelAfterToolCallsExecutor {
-    async fn run_llm_step(
-        &self,
-        input: &LlmStepInput<'_>,
-        _bus: &RuntimeEventBus,
-        _cancel: &CancellationToken,
-    ) -> Result<LlmStepResult, TurnError> {
-        let mut it = self.iteration.lock().unwrap();
-        let current = *it;
-        *it += 1;
-        self.recorded_messages.lock().unwrap().push(input.messages.clone());
-        match current {
-            0 => Ok(LlmStepResult::ToolCalls {
-                assistant_content: String::new(),
-                tool_calls: vec![
-                    RuntimeToolCallRequest {
-                        tool_call_id: "tc-cancel-1".to_string(),
-                        tool_name: "some_tool".to_string(),
-                        args: serde_json::json!({}),
-                        purpose: None,
-                    },
-                ],
-                tokens_in: 10,
-                tokens_out: 5,
-            }),
-            _ => Ok(LlmStepResult::Cancelled),
-        }
-    }
-
-    async fn persist_assistant_message(
-        &self,
-        _conversation_id: &str,
-        _content: &str,
-        _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value],
-    ) -> Result<String, TurnError> {
-        Ok("cancelled-msg-id".to_string())
-    }
-}
-
-fn make_turn(conversation_id: &str) -> TurnState {
-    let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
-    TurnState::new(mapping, RunId::new("run-a1"), "test input".to_string())
-}
-
-/// 核心回归：取消后追加的 tool_result 消息数量必须 >= tool_use 数量。
-/// 若不修复，下一个 LLM 迭代（或下次 Turn）会看到裸 tool_use，
-/// 与 Anthropic API 约定不符，导致 400 错误。
-#[tokio::test]
-async fn cancelled_after_tool_calls_messages_have_matching_tool_results() {
-    let executor = Arc::new(CancelAfterToolCallsExecutor::new());
-    let bus = RuntimeEventBus::new();
-    let qe = QueryEngine::default();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
-
-    let mut turn = make_turn("conv-a1-cancel");
-    let request = ChatTurnRequest::new("conv-a1-cancel", "do something", vec![]);
-
-    let result = driver.run_chat_turn(&mut turn, &request).await;
-    // Turn 可能返回 Ok（cancel 后正常结束）或 Err——两者均可接受；
-    // 关键在于：若第二次迭代真的被调用，messages 中必须有对应的 tool_result。
-    let _ = result;
-
-    // 如果 executor 被调用了两次（即 driver 确实发起第二轮 LLM），
-    // 第二次迭代看到的 messages 中不应出现「有 tool_use 但无 tool_result」的情况。
-    if let Some(msgs) = executor.messages_at_second_iteration() {
-        // 找出所有 role=assistant 消息中包含的 tool_use id
-        let mut tool_use_ids: Vec<String> = Vec::new();
-        for m in &msgs {
-            if m.get("role").and_then(|v| v.as_str()) == Some("assistant") {
-                // content 可能是数组（Anthropic format）或字符串
-                if let Some(content_arr) = m.get("content").and_then(|c| c.as_array()) {
-                    for block in content_arr {
-                        if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                            if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
-                                tool_use_ids.push(id.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // 找出所有 role=tool 消息中对应的 tool_call_id（或 tool_use_id）
-        let mut tool_result_ids: Vec<String> = Vec::new();
-        for m in &msgs {
-            if m.get("role").and_then(|v| v.as_str()) == Some("tool") {
-                if let Some(id) = m.get("toolCallId").and_then(|v| v.as_str())
-                    .or_else(|| m.get("tool_use_id").and_then(|v| v.as_str()))
-                {
-                    tool_result_ids.push(id.to_string());
-                }
-            }
-        }
-        for id in &tool_use_ids {
-            assert!(
-                tool_result_ids.contains(id),
-                "tool_use id '{}' has no matching tool_result in messages after cancel. \
-                 Messages: {:?}",
-                id,
-                msgs
-            );
-        }
-    }
-    // 若 executor 只被调用了一次（driver 在 Cancelled 之后未再进行 LLM 迭代），
-    // 则 messages 断言天然成立——无第二轮就无需检查。
-}
-
-/// 辅助验证：cancelled 后 StreamDone 仍然要发出（保证前端不挂起）。
-#[tokio::test]
-async fn cancelled_after_tool_calls_still_emits_stream_done() {
-    let executor = Arc::new(CancelAfterToolCallsExecutor::new());
-    let bus = RuntimeEventBus::new();
-    let qe = QueryEngine::default();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
-
-    let mut turn = make_turn("conv-a1-stream-done");
-    let request = ChatTurnRequest::new("conv-a1-stream-done", "cancel test", vec![]);
-    let _ = driver.run_chat_turn(&mut turn, &request).await;
-
-    let events = bus.recorded();
-    assert!(
-        events.iter().any(|e| matches!(
-            e.kind,
-            app_lib::runtime::events::RuntimeEventKind::StreamDone
-        )),
-        "StreamDone must be emitted even after cancel, events: {:?}",
-        events.iter().map(|e| format!("{:?}", e.kind)).collect::<Vec<_>>()
-    );
-}
-```
+- [ ] **Step A1-1: 先写失败测试**
+  - 测试 1：第一轮返回 `ToolCalls` 后，第二轮 `run_llm_step(...)` 收到的 `input.messages` 中必须出现 assistant message，且其 `toolCalls[0].id == tool_call_id`
+  - 测试 2：对“assistant 已发 tool call、tool result 尚未写回”场景执行 cancel helper，必须补出 `role=tool` + `toolCallId=<id>` 的 synthetic result
+  - 测试 3：driver cancel 后仍发出 `StreamDone`
 
 - [ ] **Step A1-2: 验证测试失败**
-
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a1_cancel_synthetic_tool_result_test -- --nocapture 2>&1 | tail -20
+  cargo test --test p0_a1_cancel_synthetic_tool_result_test -- --nocapture
 ```
 
-预期：`cancelled_after_tool_calls_messages_have_matching_tool_results` 失败或编译失败（tool_result 未注入时，第二次迭代若确实发生，断言因 tool_use 没有对应 tool_result 而失败）。
+- [ ] **Step A1-3: 最小实现**
+  - 在 `LlmStepResult::ToolCalls` 分支里，无论 `assistant_content` 是否为空，都写入一个归一化 assistant message：`role=assistant`，`content=<assistant_content>`，`toolCalls=[...]`
+  - 提取 helper，扫描 `state.messages` 里 assistant 的 `toolCalls[*].id`，找出尚无匹配 `tool.toolCallId` 的 id，并补写 synthetic tool result
+  - 该 helper 至少在两处调用：
+    - `LlmStepResult::Cancelled` 分支
+    - 每轮末尾 `if cancel.is_cancelled()` 的 break 之前
 
-- [ ] **Step A1-3: 实现修复**
-
-在 `src-tauri/src/runtime/chat/chat_turn_driver.rs` 的 `LlmStepResult::Cancelled` 分支中，**在 `break 'turn` 之前**，为 `state.messages` 里所有已有 `tool_use` 但还没有对应 `tool_result` 的 tool_call_id 注入 synthetic tool_result。
-
-找到如下代码段（约第 417-421 行）：
-
-```rust
-// ── 5d: user / token cancellation ────────────────────────────
-LlmStepResult::Cancelled => {
-    state.stream_cancelled = true;
-    break 'turn;
-}
-```
-
-替换为：
-
-```rust
-// ── 5d: user / token cancellation ────────────────────────────
-LlmStepResult::Cancelled => {
-    state.stream_cancelled = true;
-    // A1 修复：为已发出但未收到结果的 tool_use 注入 synthetic tool_result。
-    // Anthropic API 要求每个 tool_use block 必须有对应的 tool_result，
-    // 否则下次 API 调用会返回 400。
-    let tool_result_ids: std::collections::HashSet<String> = state.messages.iter()
-        .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("tool"))
-        .filter_map(|m| {
-            m.get("toolCallId")
-                .or_else(|| m.get("tool_use_id"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
-
-    let mut synthetic_results: Vec<serde_json::Value> = Vec::new();
-    for msg in &state.messages {
-        if msg.get("role").and_then(|v| v.as_str()) != Some("assistant") {
-            continue;
-        }
-        if let Some(content_arr) = msg.get("content").and_then(|c| c.as_array()) {
-            for block in content_arr {
-                if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                    if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
-                        if !tool_result_ids.contains(id) {
-                            let tool_name = block
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown");
-                            synthetic_results.push(serde_json::json!({
-                                "role": "tool",
-                                "toolCallId": id,
-                                "name": tool_name,
-                                "content": "Tool execution was interrupted by user cancellation.",
-                            }));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    state.messages.extend(synthetic_results);
-    break 'turn;
-}
-```
-
-- [ ] **Step A1-4: 验证测试通过**
-
+- [ ] **Step A1-4: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a1_cancel_synthetic_tool_result_test -- --nocapture 2>&1 | tail -20
+  cargo test --test p0_a1_cancel_synthetic_tool_result_test -- --nocapture && \
+  cargo test --test s4_driver_loop_test -- --nocapture
 ```
 
-预期：两个测试均 `test ... ok`。
-
-- [ ] **Step A1-5: 运行 S4 回归测试确保未破坏现有逻辑**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test s4_driver_loop_test -- --nocapture 2>&1 | tail -20
-```
-
-- [ ] **Step A1-6: Commit**
-
+- [ ] **Step A1-5: Commit**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/runtime/chat/chat_turn_driver.rs \
-        src-tauri/tests/p0_a1_cancel_synthetic_tool_result_test.rs && \
-git commit -m "$(cat <<'EOF'
-fix(runtime): inject synthetic tool_result on cancel to prevent Anthropic API 400
-
-When a turn is cancelled mid-tool-execution, assistant messages with tool_use
-blocks had no corresponding tool_result, causing 400 errors on subsequent turns.
-Now injects synthetic tool_result("Tool execution was interrupted...") for every
-orphaned tool_use before breaking the turn loop.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/runtime/chat/chat_turn_driver.rs \
+          src-tauri/tests/p0_a1_cancel_synthetic_tool_result_test.rs && \
+  git commit -m "fix(runtime): preserve assistant tool calls and inject synthetic tool results on cancel"
 ```
 
 ---
 
-## Task A2：权限 Ask 路径接通
-
-**问题根因：** `query_engine.rs` 的 `run_tool_call_with_bus` 在收到 `ToolDispatchOutcome::AskRequired` 时已正确返回 `RuntimeToolCallOutcome::AskRequired`，但 `chat_turn_driver.rs` 的 `tool_result_collector::collect_results` 直接把它降级为一段文字 `tool_result`，前端看不到权限确认请求。`RuntimeEventKind` 中没有 `PermissionAskRequired` variant，`tauri_event_adapter` 也没有对应映射。
-
-**修复：**
-1. `src-tauri/src/runtime/events.rs` 新增 `RuntimeEventKind::PermissionAskRequired`
-2. `src-tauri/src/transport/tauri_event_adapter.rs` 新增映射 → `"permission:ask"` 前端事件
-3. `chat_turn_driver.rs`（ToolCalls 分支）检测 `AskRequired` 结果并 emit `PermissionAskRequired` 事件（完整交互式等待在 Φ1/S6 专项实现；此处将 Ask 转为 tool_result 并继续，确保 LLM 得到反馈且前端已收到事件）
+## Task A2：把 AskRequired 路由到 runtime event 与前端 adapter
 
 **Files:**
 - Modify: `src-tauri/src/runtime/events.rs`
@@ -403,1205 +233,246 @@ EOF
 - Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
 - Add tests: `src-tauri/tests/p0_a2_permission_ask_routing_test.rs`
 
----
-
-- [ ] **Step A2-1: 写失败测试**
-
-创建 `src-tauri/tests/p0_a2_permission_ask_routing_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a2_permission_ask_routing_test.rs
-//
-// P0-A2 回归测试：AskRequired 必须 emit PermissionAskRequired 事件，
-// 且前端 event adapter 必须将其映射为 "permission:ask"。
-
-use app_lib::runtime::events::{RuntimeEvent, RuntimeEventKind};
-use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
-use app_lib::transport::tauri_event_adapter::map_runtime_event;
-
-/// A2-T1: RuntimeEventKind 包含 PermissionAskRequired variant（编译即通过）。
-#[test]
-fn permission_ask_required_variant_exists() {
-    let event = RuntimeEvent::new(
-        SessionId::new("conv-a2"),
-        RunId::new("run-a2"),
-        RuntimeEventKind::PermissionAskRequired {
-            tool_call_id: ToolCallId::new("tc-ask-1".to_string()),
-            tool_name: "dangerous_tool".to_string(),
-            message: "This tool will delete files. Allow?".to_string(),
-            suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
-        },
-    );
-    // ToolCallId field population check
-    assert!(event.tool_call_id.is_some(), "tool_call_id must be set for PermissionAskRequired");
-}
-
-/// A2-T2: map_runtime_event 将 PermissionAskRequired → "permission:ask" 前端事件。
-#[test]
-fn permission_ask_required_maps_to_permission_ask_legacy_event() {
-    let event = RuntimeEvent::new(
-        SessionId::new("conv-a2"),
-        RunId::new("run-a2"),
-        RuntimeEventKind::PermissionAskRequired {
-            tool_call_id: ToolCallId::new("tc-ask-1".to_string()),
-            tool_name: "delete_files".to_string(),
-            message: "This action is irreversible. Confirm?".to_string(),
-            suggestions: vec!["Allow".to_string(), "Deny".to_string()],
-        },
-    );
-    let mapped = map_runtime_event(&event);
-    assert!(mapped.is_some(), "PermissionAskRequired must map to a legacy event");
-    let legacy = mapped.unwrap();
-    assert_eq!(legacy.name, "permission:ask",
-        "must map to 'permission:ask' event, got '{}'", legacy.name);
-}
-
-/// A2-T3: permission:ask payload 包含必要字段。
-#[test]
-fn permission_ask_payload_has_required_fields() {
-    let event = RuntimeEvent::new(
-        SessionId::new("conv-payload"),
-        RunId::new("run-payload"),
-        RuntimeEventKind::PermissionAskRequired {
-            tool_call_id: ToolCallId::new("tc-payload".to_string()),
-            tool_name: "write_file".to_string(),
-            message: "Allow writing to /etc?".to_string(),
-            suggestions: vec!["Yes".to_string(), "No".to_string()],
-        },
-    );
-    let legacy = map_runtime_event(&event).unwrap();
-    let payload = &legacy.payload;
-
-    assert!(payload.get("toolCallId").is_some(), "payload must have toolCallId");
-    assert!(payload.get("toolName").is_some(), "payload must have toolName");
-    assert!(payload.get("message").is_some(), "payload must have message");
-    assert!(payload.get("conversationId").is_some(), "payload must have conversationId");
-    assert!(payload.get("runId").is_some(), "payload must have runId");
-
-    assert_eq!(payload["toolName"].as_str().unwrap(), "write_file");
-    assert_eq!(payload["toolCallId"].as_str().unwrap(), "tc-payload");
-}
-
-/// A2-T4: driver 在处理 AskRequired 结果时发出 PermissionAskRequired 事件。
-/// 使用带有 AskRequired 结果的 tool_round 来验证事件发射。
-use std::sync::Arc;
-use app_lib::runtime::cancellation::CancellationToken;
-use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExecutor};
-use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
-use app_lib::runtime::event_bus::RuntimeEventBus;
-use app_lib::runtime::chat::tool_round_types::{RuntimeToolCallOutcome, RuntimeToolCallRequest};
-use app_lib::runtime::chat::tool_round_driver::ToolRoundResult;
-use app_lib::runtime::identity::IdentityMapping;
-use app_lib::runtime::state::TurnState;
-use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::ids::RunId;
-use app_lib::runtime::tools::{
-    AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
-    ToolExecutionContext, ToolResult,
-};
-use app_lib::runtime::tools::permission::{PermissionDecision, PermissionOutcome};
-use async_trait::async_trait;
-
-/// Tool 总是返回 AskRequired（通过 PermissionDecision 模拟）。
-/// 注：ToolDispatcher 内部通过 PermissionPipeline 来决定 Ask/Allow/Deny。
-/// 为方便测试，我们直接在 MockExecutor 里造一个含 AskRequired 的 round_result
-/// 并验证 driver 的事件发射行为。
-struct AskRequiredExecutor {
-    iteration: std::sync::Mutex<u32>,
-}
-
-impl AskRequiredExecutor {
-    fn new() -> Self {
-        Self { iteration: std::sync::Mutex::new(0) }
-    }
-}
-
-#[async_trait]
-impl RuntimeLlmExecutor for AskRequiredExecutor {
-    async fn run_llm_step(
-        &self,
-        _input: &LlmStepInput<'_>,
-        _bus: &RuntimeEventBus,
-        _cancel: &CancellationToken,
-    ) -> Result<LlmStepResult, TurnError> {
-        let mut it = self.iteration.lock().unwrap();
-        let current = *it;
-        *it += 1;
-        match current {
-            0 => Ok(LlmStepResult::ToolCalls {
-                assistant_content: String::new(),
-                tool_calls: vec![
-                    RuntimeToolCallRequest {
-                        tool_call_id: "tc-ask-driver".to_string(),
-                        tool_name: "ask_tool".to_string(),
-                        args: serde_json::json!({}),
-                        purpose: None,
-                    },
-                ],
-                tokens_in: 5,
-                tokens_out: 3,
-            }),
-            _ => Ok(LlmStepResult::ContentComplete {
-                content: "done after ask".to_string(),
-                tokens_in: 3,
-                tokens_out: 2,
-            }),
-        }
-    }
-
-    async fn persist_assistant_message(
-        &self,
-        _conversation_id: &str,
-        _content: &str,
-        _generated_file_ids: &[String],
-        _file_metas: &[serde_json::Value],
-    ) -> Result<String, TurnError> {
-        Ok("ask-msg-id".to_string())
-    }
-}
-
-/// AskPipeline：对所有工具调用返回 Ask。
-struct AskPermissionPipeline;
-
-#[async_trait]
-impl app_lib::runtime::tools::permission::PermissionPipeline for AskPermissionPipeline {
-    async fn check(
-        &self,
-        _tool_name: &str,
-        _input: &serde_json::Value,
-        _ctx: &ToolExecutionContext,
-    ) -> PermissionDecision {
-        PermissionDecision::Ask {
-            tool_call_id: _ctx.tool_call_id.clone(),
-            tool_name: _tool_name.to_string(),
-            message: "Requires confirmation".to_string(),
-            suggestions: vec!["Allow".to_string(), "Deny".to_string()],
-        }
-    }
-}
-
-struct AlwaysOkTool;
-
-#[async_trait]
-impl RuntimeTool for AlwaysOkTool {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("ask_tool", "A tool that needs permission")
-    }
-    async fn execute(&self, _input: serde_json::Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult::new("ask_tool".to_string(), "executed".to_string(), None))
-    }
-}
-
-#[tokio::test]
-async fn driver_emits_permission_ask_required_when_tool_returns_ask() {
-    let pipeline = Arc::new(AskPermissionPipeline);
-    let dispatcher = Arc::new(ToolDispatcher::new(pipeline));
-    dispatcher.register(Arc::new(AlwaysOkTool));
-
-    let executor = Arc::new(AskRequiredExecutor::new());
-    let bus = RuntimeEventBus::new();
-    let qe = QueryEngine::with_dispatcher(dispatcher);
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor);
-
-    let mapping = IdentityMapping::from_legacy_conversation_id("conv-ask-driver");
-    let mut turn = TurnState::new(mapping, RunId::new("run-ask"), "test".to_string());
-    let request = ChatTurnRequest::new("conv-ask-driver", "do something restricted", vec![]);
-
-    let _ = driver.run_chat_turn(&mut turn, &request).await;
-
-    let events = bus.recorded();
-    let has_permission_ask = events.iter().any(|e| {
-        matches!(&e.kind, RuntimeEventKind::PermissionAskRequired { .. })
-    });
-    assert!(
-        has_permission_ask,
-        "driver must emit PermissionAskRequired when tool returns Ask. \
-         Events: {:?}",
-        events.iter().map(|e| format!("{:?}", e.kind)).collect::<Vec<_>>()
-    );
-}
-```
+- [ ] **Step A2-1: 先写失败测试**
+  - `RuntimeEventKind::PermissionAskRequired` 存在，且会自动填充 `event.tool_call_id`
+  - `map_runtime_event(...)` 把它映射到 `permission:ask`
+  - driver 在 tool round 返回 `AskRequired` 时会发出该 runtime event
 
 - [ ] **Step A2-2: 验证测试失败**
-
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a2_permission_ask_routing_test -- --nocapture 2>&1 | head -30
+  cargo test --test p0_a2_permission_ask_routing_test -- --nocapture
 ```
 
-预期：编译失败，`RuntimeEventKind::PermissionAskRequired` 不存在。
+- [ ] **Step A2-3: 最小实现**
+  - `events.rs` 新增 `PermissionAskRequired { tool_call_id, tool_name, message, suggestions }`
+  - `tauri_event_adapter.rs` 映射为 `permission:ask`
+  - `chat_turn_driver.rs` 在 `collect_results(...)` 前遍历 `round_results`，遇到 `AskRequired` 就 emit 事件
+  - `tool_result_collector.rs` 的文本 fallback 暂时保留，不做阻塞式等待
 
-- [ ] **Step A2-3: 实现 — events.rs 新增 variant**
-
-在 `src-tauri/src/runtime/events.rs` 的 `RuntimeEventKind` 枚举中新增：
-
-```rust
-    PermissionAskRequired {
-        tool_call_id: ToolCallId,
-        tool_name: String,
-        /// Human-readable message explaining what permission is needed.
-        message: String,
-        /// Suggested response options (e.g. ["Allow once", "Always allow", "Deny"]).
-        suggestions: Vec<String>,
-    },
-```
-
-同时在 `RuntimeEvent::new` 的 `tool_call_id` match arm 中增加：
-
-```rust
-            RuntimeEventKind::PermissionAskRequired { tool_call_id, .. } => {
-                Some(tool_call_id.clone())
-            }
-```
-
-- [ ] **Step A2-4: 实现 — tauri_event_adapter.rs 新增映射**
-
-在 `src-tauri/src/transport/tauri_event_adapter.rs` 的 `map_runtime_event` 函数中，在 `_ => None` 之前插入：
-
-```rust
-        RuntimeEventKind::PermissionAskRequired {
-            tool_call_id,
-            tool_name,
-            message,
-            suggestions,
-        } => Some(LegacyEvent {
-            name: "permission:ask".to_string(),
-            payload: json!({
-                "conversationId": conversation_id,
-                "toolCallId": tool_call_id.as_str(),
-                "toolName": tool_name,
-                "message": message,
-                "suggestions": suggestions,
-                "runId": event.run_id.as_str(),
-            }),
-        }),
-```
-
-- [ ] **Step A2-5: 实现 — chat_turn_driver.rs 检测 AskRequired 并发射事件**
-
-在 `run_chat_turn_s4` 的 `LlmStepResult::ToolCalls` 分支中，找到 `collect_results` 调用之后、`safeguard::check_iteration` 之前的位置，新增对 `RuntimeToolCallOutcome::AskRequired` 的检测：
-
-找到以下代码：
-
-```rust
-                    // Collect and merge results into state.
-                    let results =
-                        tool_result_collector::collect_results(round_results, 8000);
-                    for msg in results.tool_result_messages {
-                        state.messages.push(msg);
-                    }
-```
-
-替换为：
-
-```rust
-                    // A2 修复：检测 AskRequired 结果并发射 PermissionAskRequired 事件。
-                    // 完整的交互式等待（暂停 turn、等待前端响应）在 S6 专项实现。
-                    // 当前实现：emit 事件通知前端，继续执行（tool_result 内容为权限说明）。
-                    for round_result in &round_results {
-                        if let crate::runtime::chat::tool_round_driver::ToolRoundResult::Ok(
-                            crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome::AskRequired {
-                                tool_call_id, tool_name, decision,
-                            }
-                        ) = round_result {
-                            let (ask_message, ask_suggestions) = match decision {
-                                crate::runtime::tools::permission::PermissionDecision::Ask {
-                                    message,
-                                    suggestions,
-                                    ..
-                                } => (message.clone(), suggestions.clone()),
-                                _ => (
-                                    format!("Tool '{}' requires user confirmation.", tool_name),
-                                    vec!["Allow".to_string(), "Deny".to_string()],
-                                ),
-                            };
-                            let _ = self.event_bus.emit(RuntimeEvent::new(
-                                session_id.clone(),
-                                run_id.clone(),
-                                RuntimeEventKind::PermissionAskRequired {
-                                    tool_call_id: crate::runtime::ids::ToolCallId::new(
-                                        tool_call_id.clone(),
-                                    ),
-                                    tool_name: tool_name.clone(),
-                                    message: ask_message,
-                                    suggestions: ask_suggestions,
-                                },
-                            )).await;
-                        }
-                    }
-
-                    // Collect and merge results into state.
-                    let results =
-                        tool_result_collector::collect_results(round_results, 8000);
-                    for msg in results.tool_result_messages {
-                        state.messages.push(msg);
-                    }
-```
-
-- [ ] **Step A2-6: 验证测试通过**
-
+- [ ] **Step A2-4: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a2_permission_ask_routing_test -- --nocapture 2>&1 | tail -20
+  cargo test --test p0_a2_permission_ask_routing_test -- --nocapture && \
+  cargo test --test tauri_event_adapter_test -- --nocapture
 ```
 
-预期：所有测试通过。
-
-- [ ] **Step A2-7: 运行 event adapter 回归测试**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test tauri_event_adapter_test -- --nocapture 2>&1 | tail -10
-```
-
-- [ ] **Step A2-8: Commit**
-
+- [ ] **Step A2-5: Commit**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/runtime/events.rs \
-        src-tauri/src/transport/tauri_event_adapter.rs \
-        src-tauri/src/runtime/chat/chat_turn_driver.rs \
-        src-tauri/tests/p0_a2_permission_ask_routing_test.rs && \
-git commit -m "$(cat <<'EOF'
-feat(permissions): add PermissionAskRequired event + permission:ask adapter mapping
-
-Adds RuntimeEventKind::PermissionAskRequired, maps it to "permission:ask" legacy
-event in TauriEventAdapter, and makes the S4 driver emit it when a tool returns
-AskRequired. Full interactive wait (pause turn, await frontend response) deferred
-to S6; this patch ensures the frontend receives the event signal immediately.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/runtime/events.rs \
+          src-tauri/src/transport/tauri_event_adapter.rs \
+          src-tauri/src/runtime/chat/chat_turn_driver.rs \
+          src-tauri/tests/p0_a2_permission_ask_routing_test.rs && \
+  git commit -m "feat(permissions): route AskRequired to runtime event and legacy adapter"
 ```
 
 ---
 
-## Task A3：std::Mutex → tokio::sync::Mutex（防 poison panic）
-
-**问题根因：** `run_registry.rs` 所有 `self.active_runs.lock().unwrap()` 使用 `std::sync::Mutex`。若某个 lock holder panic（在 async 上下文中极易发生），mutex 进入 poison 状态，后续所有 `.unwrap()` 调用直接 panic，导致全进程崩溃。虽然 `active_runs` 的同步锁在技术上不跨 await，但 `attach_stream`、`reserve` 等方法本身是同步的而被 async 调用者持有，且 `PythonSessionManager` 的 std Mutex 注释已解释过为何在 sync 路径可用——registry 的锁粒度更细，poison 风险更高。
-
-**修复方案：** 改为 `tokio::sync::Mutex`，所有 `.lock().unwrap()` 改为 `.lock().await`（`tokio::sync::Mutex` 不支持 poison），把所有公有方法改为 `async`。
+## Task A3：修复 RuntimeRunRegistry 的 poison panic
 
 **Files:**
 - Modify: `src-tauri/src/runtime/run_registry.rs`
-- Add tests: `src-tauri/tests/p0_a3_run_registry_tokio_mutex_test.rs`
+- Reuse tests: `src-tauri/tests/runtime_run_registry_test.rs`
+- Add unit tests in: `src-tauri/src/runtime/run_registry.rs`
 
----
-
-- [ ] **Step A3-1: 写失败测试**
-
-创建 `src-tauri/tests/p0_a3_run_registry_tokio_mutex_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a3_run_registry_tokio_mutex_test.rs
-//
-// P0-A3 回归测试：RuntimeRunRegistry 使用 tokio::sync::Mutex，
-// poison 情形不会导致全进程崩溃；接口为 async。
-
-use app_lib::runtime::{RunId, RuntimeRunRegistry};
-
-/// A3-T1: registry 基本 reserve/cancel/clear 在 async 上下文正常工作。
-#[tokio::test]
-async fn registry_reserve_and_clear_async() {
-    let registry = RuntimeRunRegistry::new();
-    registry.reserve("conv-a3", RunId::new("run-a3")).await.unwrap();
-
-    assert!(registry.is_session_busy("conv-a3").await);
-    assert_eq!(
-        registry.run_id_for_session("conv-a3").await.unwrap().as_str(),
-        "run-a3"
-    );
-
-    registry.cancel("conv-a3").await;
-    assert!(registry.is_cancelled("conv-a3").await);
-
-    let cleared = registry.clear("conv-a3").await.unwrap();
-    assert_eq!(cleared.as_str(), "run-a3");
-    assert!(!registry.is_session_busy("conv-a3").await);
-}
-
-/// A3-T2: 同一 session 重复 reserve 返回错误（不崩溃）。
-#[tokio::test]
-async fn registry_double_reserve_returns_error() {
-    let registry = RuntimeRunRegistry::new();
-    registry.reserve("conv-a3-dup", RunId::new("run-1")).await.unwrap();
-    let result = registry.reserve("conv-a3-dup", RunId::new("run-2")).await;
-    assert!(result.is_err(), "double reserve must fail with error, not panic");
-    assert!(result.unwrap_err().contains("already processing"));
-}
-
-/// A3-T3: 并发 reserve 不死锁。
-#[tokio::test]
-async fn registry_concurrent_reserves_do_not_deadlock() {
-    use std::sync::Arc;
-    let registry = Arc::new(RuntimeRunRegistry::new());
-
-    let handles: Vec<_> = (0..10)
-        .map(|i| {
-            let r = registry.clone();
-            tokio::spawn(async move {
-                let session = format!("conv-concurrent-{}", i);
-                let _ = r.reserve(&session, RunId::new(format!("run-{}", i))).await;
-                let _ = r.clear(&session).await;
-            })
-        })
-        .collect();
-
-    for h in handles {
-        h.await.expect("task must not panic");
-    }
-    // 全部 session 应已被清理
-    assert!(!registry.is_busy().await, "all sessions must be cleared after concurrent ops");
-}
-
-/// A3-T4: is_busy 在 async 上下文返回正确结果。
-#[tokio::test]
-async fn registry_is_busy_reflects_active_runs() {
-    let registry = RuntimeRunRegistry::new();
-    assert!(!registry.is_busy().await);
-    registry.reserve("conv-busy", RunId::new("run-busy")).await.unwrap();
-    assert!(registry.is_busy().await);
-    registry.clear("conv-busy").await;
-    assert!(!registry.is_busy().await);
-}
-```
+- [ ] **Step A3-1: 先写失败测试**
+  - 在 `run_registry.rs` 的单元测试里故意 poison `active_runs`
+  - 断言 poison 之后 `reserve / cancel / clear / is_busy` 不再 panic，而是恢复继续工作
 
 - [ ] **Step A3-2: 验证测试失败**
-
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a3_run_registry_tokio_mutex_test -- --nocapture 2>&1 | head -20
+  cargo test run_registry -- --nocapture
 ```
 
-预期：编译失败，`registry.reserve(...)` 等方法不是 async，无法 `.await`。
+- [ ] **Step A3-3: 最小实现**
+  - 给 `RuntimeRunRegistry` 增加统一的 `lock_active_runs()` 私有 helper
+  - `match self.active_runs.lock()`：
+    - `Ok(guard)` 正常返回
+    - `Err(poisoned)` 记录告警后 `poisoned.into_inner()`
+  - 替换所有 `.lock().unwrap()`
+  - 不修改 public API 签名，不引入 `tokio::sync::Mutex`
 
-- [ ] **Step A3-3: 实现修复**
-
-修改 `src-tauri/src/runtime/run_registry.rs`：
-
-1. 将 `use std::sync::Mutex` 改为 `use tokio::sync::Mutex`（已有 `use tokio::sync::watch`，同一 import 块）。
-2. 将所有公有方法（`reserve`、`attach_stream`、`cancel`、`clear`、`is_busy`、`is_session_busy`、`busy_sessions`、`run_id_for_session`、`is_cancelled`）改为 `async fn`。
-3. 所有 `self.active_runs.lock().unwrap()` 改为 `self.active_runs.lock().await`（tokio Mutex 不会 poison，lock 返回 `MutexGuard` 而非 `Result`）。
-
-完整替换后的文件内容：
-
-```rust
-use std::collections::HashMap;
-use std::time::Instant;
-
-use tokio::sync::watch;
-use tokio::sync::Mutex;
-
-use crate::llm::gateway::MAX_CONCURRENT_AGENTS;
-use crate::runtime::ids::RunId;
-
-struct ActiveRun {
-    task_id: String,
-    run_id: RunId,
-    cancel: watch::Sender<bool>,
-    started_at: Instant,
-}
-
-#[derive(Default)]
-pub struct RuntimeRunRegistry {
-    active_runs: Mutex<HashMap<String, ActiveRun>>,
-}
-
-impl RuntimeRunRegistry {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub async fn reserve(&self, session_id: &str, run_id: RunId) -> Result<(), String> {
-        let mut active_runs = self.active_runs.lock().await;
-        if active_runs.contains_key(session_id) {
-            return Err("This conversation is already processing.".to_string());
-        }
-        if active_runs.len() >= MAX_CONCURRENT_AGENTS {
-            return Err(format!(
-                "Maximum concurrent conversations reached ({}). Please wait.",
-                MAX_CONCURRENT_AGENTS
-            ));
-        }
-        let (cancel_tx, _) = watch::channel(false);
-        active_runs.insert(
-            session_id.to_string(),
-            ActiveRun {
-                task_id: format!("pre-{}", uuid::Uuid::new_v4()),
-                run_id,
-                cancel: cancel_tx,
-                started_at: Instant::now(),
-            },
-        );
-        Ok(())
-    }
-
-    pub async fn attach_stream(
-        &self,
-        session_id: &str,
-        task_id: String,
-    ) -> anyhow::Result<watch::Receiver<bool>> {
-        let mut active_runs = self.active_runs.lock().await;
-        if let Some(existing) = active_runs.get_mut(session_id) {
-            if *existing.cancel.borrow() {
-                anyhow::bail!("Conversation cancelled before stream started");
-            }
-            existing.task_id = task_id;
-            existing.started_at = Instant::now();
-            return Ok(existing.cancel.subscribe());
-        }
-
-        let (cancel_tx, cancel_rx) = watch::channel(false);
-        active_runs.insert(
-            session_id.to_string(),
-            ActiveRun {
-                task_id,
-                run_id: RunId::new(format!("legacy-{session_id}")),
-                cancel: cancel_tx,
-                started_at: Instant::now(),
-            },
-        );
-        Ok(cancel_rx)
-    }
-
-    pub async fn cancel(&self, session_id: &str) {
-        let active_runs = self.active_runs.lock().await;
-        if let Some(run) = active_runs.get(session_id) {
-            let _ = run.cancel.send_replace(true);
-        }
-    }
-
-    pub async fn clear(&self, session_id: &str) -> Option<RunId> {
-        self.active_runs
-            .lock()
-            .await
-            .remove(session_id)
-            .map(|run| run.run_id)
-    }
-
-    pub async fn is_busy(&self) -> bool {
-        !self.active_runs.lock().await.is_empty()
-    }
-
-    pub async fn is_session_busy(&self, session_id: &str) -> bool {
-        self.active_runs.lock().await.contains_key(session_id)
-    }
-
-    pub async fn busy_sessions(&self) -> Vec<String> {
-        self.active_runs.lock().await.keys().cloned().collect()
-    }
-
-    pub async fn run_id_for_session(&self, session_id: &str) -> Option<RunId> {
-        self.active_runs
-            .lock()
-            .await
-            .get(session_id)
-            .map(|run| run.run_id.clone())
-    }
-
-    pub async fn is_cancelled(&self, session_id: &str) -> bool {
-        self.active_runs
-            .lock()
-            .await
-            .get(session_id)
-            .map(|run| *run.cancel.borrow())
-            .unwrap_or(false)
-    }
-}
-```
-
-- [ ] **Step A3-4: 修复调用方（所有调用 registry 方法的地方加 .await）**
-
-搜索所有调用 `RuntimeRunRegistry` 方法的位置：
-
+- [ ] **Step A3-4: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  grep -rn "\.reserve\|\.attach_stream\|registry\.cancel\|registry\.clear\|\.is_busy\|\.is_session_busy\|\.busy_sessions\|\.run_id_for_session\|\.is_cancelled" \
-  src/ --include="*.rs" | grep -v "run_registry.rs"
+  cargo test run_registry -- --nocapture && \
+  cargo test --test runtime_run_registry_test -- --nocapture
 ```
 
-对每个调用点添加 `.await`（若在 async fn 中）或使用 `block_on`（若在 sync 上下文，但应转为 async）。
-
-- [ ] **Step A3-5: 验证测试通过**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a3_run_registry_tokio_mutex_test -- --nocapture 2>&1 | tail -20
-```
-
-- [ ] **Step A3-6: 运行现有 registry 测试（也需要改为 async）**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test runtime_run_registry_test -- --nocapture 2>&1 | tail -10
-```
-
-注意：`runtime_run_registry_test.rs` 中的测试也需更新为 `#[tokio::test]` 并加 `.await`。
-
-- [ ] **Step A3-7: 完整编译验证**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo build 2>&1 | grep -E "^error" | head -20
-```
-
-- [ ] **Step A3-8: Commit**
-
+- [ ] **Step A3-5: Commit**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/runtime/run_registry.rs \
-        src-tauri/tests/p0_a3_run_registry_tokio_mutex_test.rs \
-        src-tauri/tests/runtime_run_registry_test.rs && \
-git commit -m "$(cat <<'EOF'
-fix(registry): replace std::Mutex with tokio::sync::Mutex in RuntimeRunRegistry
-
-std::Mutex panics on poison in async contexts, causing process-wide crashes.
-tokio::sync::Mutex never poisons and is the correct choice for async code.
-All public methods are now async. Callers updated with .await at all call sites.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/runtime/run_registry.rs \
+          src-tauri/tests/runtime_run_registry_test.rs && \
+  git commit -m "fix(runtime): recover poisoned run registry mutex without panicking"
 ```
 
 ---
 
-## Task A4：Python session key 改为 per-run
-
-**问题根因：** `session.rs` 中 `execute()` 方法用 `conversation_id` 作为 session key，多个并发 run 在同一 conversation 中会共享 Python 进程状态（全局变量、已加���的 DataFrame 等），导致 run 间数据污染。`session_key_for_run()` 函数已存在（第 61-63 行），但 `execute()` 方法的调用者（`llm/tool_executor/python.rs`）有时仍走旧的 `conversation_id` 路径。
-
-**修复：** 确认 `execute_for_run()` 是唯一被 S4 路径调用的入口，并为 legacy 调用者添加迁移路径。同时添加测试验证 session key 包含 run_id 而非 raw conversation_id。
+## Task A4：analysis 模式强制使用 run-scoped Python session
 
 **Files:**
-- Modify: `src-tauri/src/python/session.rs`（确保 `execute()` 不被生产路径调用；若有旧调用，导向 `execute_for_run()`）
-- Add tests: `src-tauri/tests/p0_a4_python_session_per_run_test.rs`
+- Modify: `src-tauri/src/llm/tool_executor/python.rs`
+- Optional docs tweak: `src-tauri/src/python/session.rs`
+- Reuse/add tests: `src-tauri/tests/python_run_scope_test.rs`，必要时补充 `python.rs` 内部单测
 
----
-
-- [ ] **Step A4-1: 确认调用点现状**
-
+- [ ] **Step A4-1: 先审计调用点并记录结论**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  grep -rn "session_manager\.execute\b\|\.execute(" src/ --include="*.rs" | \
-  grep -v "execute_for_run\|execute_python\|#\[" | head -20
+  rg -n "execute_for_run|\.execute\(&ctx\.conversation_id|interrupt_run|destroy_run|session_key_for_run" src tests
 ```
+  - 预期结论：主路径基本已走 per-run，风险点集中在 `llm/tool_executor/python.rs`
 
-记录所有使用 `execute(conversation_id, ...)` 的调用点。
+- [ ] **Step A4-2: 先写失败测试**
+  - 测试 1：`session_key_for_run(...)` 与已有 `python_run_scope_test` 继续锁住 run scope
+  - 测试 2：analysis 模式下若缺少 `run_id`，不允许再静默回退到 conversation-scoped session
 
-- [ ] **Step A4-2: 写失败测试**
-
-创建 `src-tauri/tests/p0_a4_python_session_per_run_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a4_python_session_per_run_test.rs
-//
-// P0-A4 回归测试：Python session key 必须包含 run_id，不得用裸 conversation_id。
-
-use app_lib::python::session::session_key_for_run;
-use app_lib::runtime::ids::RunId;
-
-/// A4-T1: session_key_for_run 输出格式为 "python-run:{run_id}"。
-#[test]
-fn session_key_for_run_format() {
-    let run_id = RunId::new("abc-123");
-    let key = session_key_for_run(&run_id);
-    assert_eq!(key, "python-run:abc-123");
-    // 绝对不能是裸 conversation_id
-    assert!(!key.starts_with("conv-"), "session key must not be a raw conversation_id");
-}
-
-/// A4-T2: 不同 run_id 产生不同 session key（多 run 隔离）。
-#[test]
-fn different_run_ids_produce_different_session_keys() {
-    let key1 = session_key_for_run(&RunId::new("run-aaa"));
-    let key2 = session_key_for_run(&RunId::new("run-bbb"));
-    assert_ne!(key1, key2, "different runs must have different session keys");
-}
-
-/// A4-T3: 同一 conversation 的不同 run 产生不同 session key（核心隔离保证）。
-#[test]
-fn same_conversation_different_runs_are_isolated() {
-    // 两个 run 属于同一 conversation，但 run_id 不同
-    let run1 = RunId::new("conv-x-run-1");
-    let run2 = RunId::new("conv-x-run-2");
-    let key1 = session_key_for_run(&run1);
-    let key2 = session_key_for_run(&run2);
-    // session key 必须不同，不能退化为 "conv-x"
-    assert_ne!(key1, key2);
-    assert!(key1.contains("conv-x-run-1"), "key must embed run_id");
-    assert!(key2.contains("conv-x-run-2"), "key must embed run_id");
-}
-
-/// A4-T4: execute_for_run 方法存在且签名正确（编译即通过）。
-/// 验证 PythonSessionManager 暴露了 per-run 入口。
-#[test]
-fn execute_for_run_method_exists_on_session_manager() {
-    // 此测试通过编译验证接口存在。
-    // 实际执行需要真实 Python 环境，仅做类型检查。
-    fn _assert_signature<F, Fut>(_f: F)
-    where
-        F: Fn(
-            &app_lib::python::session::PythonSessionManager,
-            &RunId,
-            &str,
-            std::time::Duration,
-            &app_lib::python::sandbox::SandboxConfig,
-        ) -> Fut,
-        Fut: std::future::Future,
-    {}
-    // 若 execute_for_run 存在且签名匹配，此函数编译通过（不调用）
-}
-```
-
-- [ ] **Step A4-3: 验证测试状态**
-
+- [ ] **Step A4-3: 验证测试失败**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a4_python_session_per_run_test -- --nocapture 2>&1 | tail -20
+  cargo test python_run_scope -- --nocapture
 ```
 
-若 A4-T1~T3 已通过（`session_key_for_run` 已正确实现），则此步骤确认测试全绿。若有失败（如 `execute_for_run` 签名不匹配），进行下一步修复。
+- [ ] **Step A4-4: 最小实现**
+  - 修改 `src-tauri/src/llm/tool_executor/python.rs`
+  - 在 analysis 分支中：
+    - `Some(run_id)` → `execute_for_run(run_id, ...)`
+    - `None` → 返回显式错误，禁止 fallback 到 `execute(&ctx.conversation_id, ...)`
+  - 如需要，给 `session.rs` 的 conversation-scope API 补注释：仅 legacy / 非 run-aware 路径使用
 
-- [ ] **Step A4-4: 确保所有生产路径使用 execute_for_run**
-
-搜索并修复仍使用 `execute(conversation_id, ...)` 的调用点：
-
+- [ ] **Step A4-5: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  grep -rn "\.execute(" src/llm/tool_executor/ --include="*.rs" | head -20
-```
-
-对每个使用旧接口的调用点，改为 `execute_for_run(run_id, ...)` 并从调用上下文中获取 `run_id`（通过 `ToolExecutionContext` 的 `run_id` 字段）。
-
-- [ ] **Step A4-5: 验证测试全通过**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a4_python_session_per_run_test -- --nocapture && \
-  cargo test --test python_run_scope_test -- --nocapture 2>&1 | tail -20
+  cargo test --test python_run_scope_test -- --nocapture && \
+  cargo test python --tests -- --nocapture
 ```
 
 - [ ] **Step A4-6: Commit**
-
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/python/session.rs \
-        src-tauri/tests/p0_a4_python_session_per_run_test.rs && \
-git commit -m "$(cat <<'EOF'
-fix(python): enforce per-run Python session isolation via session_key_for_run
-
-Using conversation_id as session key allowed multiple concurrent runs to share
-Python process state (globals, DataFrames), causing data pollution between runs.
-All production call sites now use execute_for_run() which keys by RunId.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/llm/tool_executor/python.rs \
+          src-tauri/src/python/session.rs \
+          src-tauri/tests/python_run_scope_test.rs && \
+  git commit -m "fix(python): require run-scoped sessions for analysis execution"
 ```
 
 ---
 
-## Task A5：Sandbox path 边界绕过修复
-
-**问题根因：** `sandbox.rs` 的 Python preamble 中 `_safe_open` 用 `abs_path.startswith(os.path.realpath(p))` 检查写路径。若 workspace 是 `/workspace`，则路径 `/workspace.backup/evil.txt` 也会通过检查（因为 `"/workspace.backup/evil.txt".startswith("/workspace")` 为 `True`）。正确做法是要求路径等于 workspace 根或以 `<workspace>/` 开头。
-
-**修复位置：** `sandbox.rs` 的 `preamble()` 方法中生成的 Python `_safe_open` 函数——修改路径检查逻辑。
+## Task A5：修复 sandbox 路径前缀绕过
 
 **Files:**
 - Modify: `src-tauri/src/python/sandbox.rs`
 - Add tests: `src-tauri/tests/p0_a5_sandbox_path_boundary_test.rs`
 
----
-
-- [ ] **Step A5-1: 写失败测试**
-
-创建 `src-tauri/tests/p0_a5_sandbox_path_boundary_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a5_sandbox_path_boundary_test.rs
-//
-// P0-A5 回归测试：sandbox preamble 的路径检查不得被前缀欺骗。
-
-use app_lib::python::sandbox::SandboxConfig;
-
-/// A5-T1: preamble 中不含有漏洞性的纯 startswith 检查（Rust 层验证）。
-/// 确认生成的 Python 代码包含正确的路径分隔符检查。
-#[test]
-fn preamble_path_check_requires_separator_after_workspace_root() {
-    let workspace = std::path::PathBuf::from("/workspace");
-    let config = SandboxConfig::for_workspace(&workspace);
-    let preamble = config.preamble();
-
-    // 修复后的代码应包含对路径分隔符的检查
-    // 正确形式：path == root or path.startswith(root + '/')
-    // 或等价：startswith(root + os.sep)
-    let has_separator_check = preamble.contains("+ os.sep")
-        || preamble.contains("+ '/'")
-        || preamble.contains("+ \"/\"")
-        || preamble.contains("os.path.sep");
-    assert!(
-        has_separator_check,
-        "preamble path check must include path separator to prevent prefix bypass attacks. \
-         Got preamble snippet:\n{}",
-        // 只打印 _safe_open 相关段落
-        preamble.lines()
-            .skip_while(|l| !l.contains("_safe_open"))
-            .take(30)
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-}
-
-/// A5-T2: Python inline 测试——验证修复后 /workspace.backup 无法写入。
-/// 直接在 Rust 中通过 assert! 校验 preamble 字符串语义（无需运行 Python）。
-#[test]
-fn preamble_does_not_allow_prefix_bypass_path() {
-    let workspace = std::path::PathBuf::from("/workspace");
-    let config = SandboxConfig::for_workspace(&workspace);
-    let preamble = config.preamble();
-
-    // 旧的漏洞代码：abs_path.startswith(os.path.realpath(p))
-    // 修复后不应有纯 startswith 而没有分隔符追加
-    // 简单检查：如果 preamble 里 startswith 紧跟着 realpath(p)) 且没有 os.sep 拼接，则有漏洞
-    let lines: Vec<&str> = preamble.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        if line.contains("startswith(os.path.realpath(p))") {
-            panic!(
-                "Found vulnerable path check at line {}: '{}'\n\
-                 Must use 'startswith(os.path.realpath(p) + os.sep)' or equivalent",
-                i + 1,
-                line
-            );
-        }
-        if line.contains("startswith(os.path.realpath(p))") {
-            panic!(
-                "Vulnerable startswith without separator at line {}: '{}'",
-                i + 1,
-                line
-            );
-        }
-    }
-}
-
-/// A5-T3: 正确路径（workspace 子目录）仍然被允许。
-/// 验证修复没有过度收紧——workspace 本身和子目录仍可写。
-#[test]
-fn preamble_allows_exact_workspace_and_subdirectories() {
-    let workspace = std::path::PathBuf::from("/workspace");
-    let config = SandboxConfig::for_workspace(&workspace);
-    let preamble = config.preamble();
-
-    // workspace 本身和其子目录应在 _ALLOWED_WRITE_PATHS 中
-    assert!(preamble.contains("'/workspace'"), "workspace root must be in allowed paths");
-    assert!(preamble.contains("'/workspace/uploads'"), "uploads subdir must be in allowed paths");
-}
-```
+- [ ] **Step A5-1: 先写失败测试**
+  - preamble 中必须包含 `abs_path == root` 或 `abs_path.startswith(root + os.sep)` 语义
+  - 禁止继续出现裸 `startswith(os.path.realpath(p))`
+  - workspace 根目录和真实子目录仍然被允许
 
 - [ ] **Step A5-2: 验证测试失败**
-
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a5_sandbox_path_boundary_test -- --nocapture 2>&1 | tail -20
+  cargo test --test p0_a5_sandbox_path_boundary_test -- --nocapture
 ```
 
-预期：`preamble_path_check_requires_separator_after_workspace_root` 失败，因为旧代码使用纯 `startswith` 而无 separator 拼接。
+- [ ] **Step A5-3: 最小实现**
+  - 修改 `src-tauri/src/python/sandbox.rs` 中 preamble 的 `_safe_open`
+  - 将：
+    - `abs_path.startswith(os.path.realpath(p))`
+  - 改为：
+    - `abs_path == os.path.realpath(p) or abs_path.startswith(os.path.realpath(p) + os.sep)`
 
-- [ ] **Step A5-3: 实现修复**
-
-在 `src-tauri/src/python/sandbox.rs` 的 `preamble()` 方法中，找到 `file_write_hook` 字符串里的路径检查代码（约第 283-286 行）：
-
-```python
-                allowed = any(
-                    abs_path.startswith(os.path.realpath(p))
-                    for p in _ALLOWED_WRITE_PATHS
-                ) if _ALLOWED_WRITE_PATHS else False
-```
-
-替换为：
-
-```python
-                allowed = any(
-                    abs_path == os.path.realpath(p) or
-                    abs_path.startswith(os.path.realpath(p) + os.sep)
-                    for p in _ALLOWED_WRITE_PATHS
-                ) if _ALLOWED_WRITE_PATHS else False
-```
-
-注意：这段 Python 代码在 Rust 的 raw string `r#"..."#` 内，修改时要保持缩进一致。
-
-- [ ] **Step A5-4: 验证测试通过**
-
+- [ ] **Step A5-4: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a5_sandbox_path_boundary_test -- --nocapture 2>&1 | tail -20
+  cargo test --test p0_a5_sandbox_path_boundary_test -- --nocapture && \
+  cargo test sandbox -- --nocapture
 ```
 
-- [ ] **Step A5-5: 运行 sandbox 相关测试**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test sandbox -- --nocapture 2>&1 | tail -20
-```
-
-- [ ] **Step A5-6: Commit**
-
+- [ ] **Step A5-5: Commit**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/python/sandbox.rs \
-        src-tauri/tests/p0_a5_sandbox_path_boundary_test.rs && \
-git commit -m "$(cat <<'EOF'
-fix(sandbox): prevent path prefix bypass in _safe_open write restriction
-
-Pure startswith('/workspace') allows '/workspace.backup/evil.txt' through.
-Fixed to require path == root OR path.startswith(root + os.sep), closing the
-directory traversal bypass vector in the Python sandbox write gate.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/python/sandbox.rs \
+          src-tauri/tests/p0_a5_sandbox_path_boundary_test.rs && \
+  git commit -m "fix(sandbox): enforce path boundary checks in safe_open"
 ```
 
 ---
 
-## Task A6：build_env_info 阻塞 tokio 线程修复
-
-**问题根因：** `context_builder.rs` 的 `build_env_info()` 调用 `std::process::Command::new("git").output()` 在 async 上下文（`run_chat_turn_s4` 通过 `get_env_info()` 间接调用），会阻塞当前 tokio worker 线程直到 git 命令完成。若 git 仓库很大或网络文件系统延迟，会饿死其他 async 任务。
-
-**修复：** 改为 `tokio::process::Command`（async 版本），并将 `build_env_info` 改为 `async fn`。由于此函数被 `TauriLegacyTurnExecutor::get_env_info` 调用（已是 async），改为 async 不影响调用链。
+## Task A6：将 build_env_info 改成 async + tokio::process::Command
 
 **Files:**
 - Modify: `src-tauri/src/runtime/chat/context_builder.rs`
-- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`（若 `get_env_info` 调用 `build_env_info`）
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
 - Add tests: `src-tauri/tests/p0_a6_env_info_async_test.rs`
 
----
+- [ ] **Step A6-1: 先写失败测试**
+  - 编译期测试：`build_env_info(...).await` 成立，证明它已是 async fn
+  - 实现检查：源码必须使用 `tokio::process::Command`
+  - 运行时测试：非 git 目录下静默跳过 git 仍返回 `[当前环境]`
+  - 不做易抖动的“固定 2 秒内完成”时间断言
 
-- [ ] **Step A6-1: 确认调用链**
-
+- [ ] **Step A6-2: 验证测试失败**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  grep -rn "build_env_info" src/ --include="*.rs" | head -20
+  cargo test --test p0_a6_env_info_async_test -- --nocapture
 ```
 
-记录所有调用 `build_env_info` 的位置和上下文（sync/async）。
+- [ ] **Step A6-3: 最小实现**
+  - `context_builder.rs`：`build_env_info(...) -> async fn`
+  - git 子进程改用 `tokio::process::Command::new("git").output().await`
+  - `transport/tauri_commands/chat.rs` 的 `get_env_info(...)` 调用处加 `.await`
+  - `context_builder.rs` 现有同步单测改为 `#[tokio::test]` 或等价 async 测试
 
-- [ ] **Step A6-2: 写失败测试**
-
-创建 `src-tauri/tests/p0_a6_env_info_async_test.rs`：
-
-```rust
-// src-tauri/tests/p0_a6_env_info_async_test.rs
-//
-// P0-A6 回归测试：build_env_info 必须是 async fn（使用 tokio::process::Command）。
-
-use app_lib::runtime::chat::context_builder::build_env_info;
-
-/// A6-T1: build_env_info 是 async fn，可以在 tokio 上下文中 .await。
-/// 编译通过即验证函数签名为 async。
-#[tokio::test]
-async fn build_env_info_is_async_and_returns_env_section() {
-    let workspace_path = std::path::PathBuf::from("/tmp");
-    // 若此函数是 sync，此处编译失败；若是 async，必须 .await
-    let result = build_env_info(&workspace_path, None).await;
-    assert!(result.contains("[当前环境]"), "must contain env section, got: {}", result);
-    assert!(result.contains("Platform:"), "must contain platform info");
-}
-
-/// A6-T2: async build_env_info 在非 git 目录中静默跳过 git（不阻塞、不崩溃）。
-#[tokio::test]
-async fn build_env_info_async_skips_git_in_non_git_dir() {
-    let temp_dir = tempfile::tempdir().expect("create temp dir");
-    let workspace_path = temp_dir.path().to_path_buf();
-
-    let result = build_env_info(&workspace_path, None).await;
-
-    assert!(result.contains("[当前环境]"), "must have env section header");
-    assert!(result.contains("工作目录:"), "must include working dir");
-    // 非 git 目录不应崩溃，git 段静默省略
-}
-
-/// A6-T3: tokio::process::Command 被使用（Rust 代码层面验证）。
-/// 通过读取源文件检查实现细节。
-#[test]
-fn context_builder_uses_tokio_process_command() {
-    let source = std::fs::read_to_string("src/runtime/chat/context_builder.rs")
-        .expect("read context_builder.rs");
-    assert!(
-        source.contains("tokio::process::Command"),
-        "build_env_info must use tokio::process::Command (not std::process::Command) \
-         to avoid blocking the async executor"
-    );
-    assert!(
-        !source.contains("std::process::Command::new(\"git\")"),
-        "must not use blocking std::process::Command for git in async context"
-    );
-}
-
-/// A6-T4: build_env_info 调用耗时不超过 2 秒（验证非阻塞行为）。
-/// 在正常系统上 git status 应该很快；超时说明实现仍在阻塞。
-#[tokio::test]
-async fn build_env_info_completes_within_reasonable_time() {
-    let workspace_path = std::path::PathBuf::from("/tmp");
-    let start = std::time::Instant::now();
-    let _ = build_env_info(&workspace_path, None).await;
-    let elapsed = start.elapsed();
-    assert!(
-        elapsed.as_secs() < 2,
-        "build_env_info must complete within 2s, took {:?}ms",
-        elapsed.as_millis()
-    );
-}
-```
-
-- [ ] **Step A6-3: 验证测试失败**
-
+- [ ] **Step A6-4: 验证通过**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a6_env_info_async_test -- --nocapture 2>&1 | head -30
+  cargo test --test p0_a6_env_info_async_test -- --nocapture && \
+  cargo test build_env_info -- --nocapture
 ```
 
-预期：编译失败，`build_env_info` 是 sync fn，无法 `.await`。或 `context_builder_uses_tokio_process_command` 断言失败（仍是 std::process::Command）。
-
-- [ ] **Step A6-4: 实现修复**
-
-修改 `src-tauri/src/runtime/chat/context_builder.rs` 中的 `build_env_info` 函数：
-
-1. 函数签名改为 `async fn`
-2. `std::process::Command::new("git")` 改为 `tokio::process::Command::new("git")`
-3. `.output()` 改为 `.output().await`（tokio::process::Command::output 返回 Future）
-
-将如下代码：
-
-```rust
-pub fn build_env_info(
-    workspace_path: &std::path::PathBuf,
-    authorized: Option<(&str, &str)>,
-) -> String {
-    // ... 前半部分不变 ...
-
-    if let Ok(output) = std::process::Command::new("git")
-        .args([
-            "-C",
-            &effective_path.to_string_lossy(),
-            "status",
-            "--short",
-            "--branch",
-        ])
-        .output()
-    {
-```
-
-替换为：
-
-```rust
-pub async fn build_env_info(
-    workspace_path: &std::path::PathBuf,
-    authorized: Option<(&str, &str)>,
-) -> String {
-    // ... 前半部分不变 ...
-
-    if let Ok(output) = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &effective_path.to_string_lossy(),
-            "status",
-            "--short",
-            "--branch",
-        ])
-        .output()
-        .await
-    {
-```
-
-- [ ] **Step A6-5: 更新调用方**
-
-所有调用 `build_env_info(...)` 的地方加 `.await`：
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  grep -rn "build_env_info" src/ --include="*.rs" | grep -v "context_builder.rs"
-```
-
-对每个调用点加 `.await`（调用方本身应已是 async）。
-
-同时更新 `context_builder.rs` 的测试模块——旧的同步单测需改为 `#[tokio::test]` 并加 `.await`：
-
-在 `context_builder.rs` 中找到所有 `build_env_info` 测试，将 `#[test]` 改为 `#[tokio::test]`，函数改为 `async fn`，调用处加 `.await`。
-
-- [ ] **Step A6-6: 验证测试通过**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test --test p0_a6_env_info_async_test -- --nocapture 2>&1 | tail -20
-```
-
-- [ ] **Step A6-7: 运行 context_builder 单元测试**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test build_env_info -- --nocapture 2>&1 | tail -20
-```
-
-- [ ] **Step A6-8: 全量编译确认**
-
-```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo build 2>&1 | grep -E "^error" | head -20
-```
-
-- [ ] **Step A6-9: Commit**
-
+- [ ] **Step A6-5: Commit**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-git add src-tauri/src/runtime/chat/context_builder.rs \
-        src-tauri/tests/p0_a6_env_info_async_test.rs && \
-git commit -m "$(cat <<'EOF'
-fix(context-builder): use tokio::process::Command in build_env_info to avoid blocking
-
-std::process::Command::output() blocks the tokio worker thread for the duration
-of the git subprocess. Switched to tokio::process::Command which is non-blocking
-and plays nicely with the async executor. build_env_info is now async fn.
-
-Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
+  git add src-tauri/src/runtime/chat/context_builder.rs \
+          src-tauri/src/transport/tauri_commands/chat.rs \
+          src-tauri/tests/p0_a6_env_info_async_test.rs && \
+  git commit -m "fix(context-builder): make build_env_info async and non-blocking"
 ```
 
 ---
 
 ## 最终验证
 
-- [ ] **全量 Rust 测试**
-
+- [ ] **Rust 测试总回归**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test 2>&1 | tail -30
+  cargo test --tests --no-fail-fast 2>&1 | grep -E "FAILED|^error" || true
 ```
 
-- [ ] **review_ 系列回归测试（架构约束）**
-
+- [ ] **review_ 系列架构约束回归**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
-  cargo test review_ --tests --no-fail-fast 2>&1 | tail -30
+  cargo test review_ --tests --no-fail-fast
 ```
 
-- [ ] **前端测试**
-
+- [ ] **前端关键事件回归**
 ```bash
 cd /Users/a20250311/IdeaProjects/lotus-app && \
-  pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -20
+  pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts
 ```
 
 ---
 
 ## 修复点汇总
 
-| Task | 文件 | 问题 | 修复 |
-|------|------|------|------|
-| A1 | `chat_turn_driver.rs` | Cancel 后裸 tool_use 导致下次 API 400 | Cancelled 分支注入 synthetic tool_result |
-| A2 | `events.rs`, `tauri_event_adapter.rs`, `chat_turn_driver.rs` | AskRequired 路径断路，前端看不到权限请求 | 新增 PermissionAskRequired event + permission:ask 映射 + driver 发射 |
-| A3 | `run_registry.rs` | std::Mutex poison 导致全进程崩溃 | 改为 tokio::sync::Mutex，所有方法改为 async |
-| A4 | `python/session.rs` | conversation 级 session 导致多 run 数据污染 | 所有生产路径走 execute_for_run()，key 含 run_id |
-| A5 | `python/sandbox.rs` | startswith 路径检查被前缀欺骗（/workspace.backup 绕过） | 改为 `path == root or path.startswith(root + os.sep)` |
-| A6 | `runtime/chat/context_builder.rs` | std::process::Command 阻塞 tokio worker | 改为 tokio::process::Command + async fn |
+| Task | 主要文件 | 核心修复 | 关键风险控制 |
+|------|----------|----------|--------------|
+| A1 | `runtime/chat/chat_turn_driver.rs` | 保留 assistant `toolCalls` 并在 cancel 时补齐缺失 tool result | 防止进入下一轮时出现残缺 tool trajectory |
+| A2 | `runtime/events.rs` / `transport/tauri_event_adapter.rs` / `runtime/chat/chat_turn_driver.rs` | AskRequired 到前端事件桥接 | 本期只通知，不阻塞等待用户点击 |
+| A3 | `runtime/run_registry.rs` | poison recovery，避免 `.unwrap()` 连锁 panic | 保持同步 API，避免 async 化 blast radius |
+| A4 | `llm/tool_executor/python.rs` | analysis 模式禁止退回 conversation-scoped session | 强制主路径 run 隔离 |
+| A5 | `python/sandbox.rs` | `_safe_open` 增加路径边界判断 | 防止 `/workspace.backup` 前缀绕过 |
+| A6 | `runtime/chat/context_builder.rs` / `transport/tauri_commands/chat.rs` | git 子进程异步化 | 避免阻塞 tokio worker |

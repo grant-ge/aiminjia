@@ -730,3 +730,96 @@ cd /Users/a20250311/IdeaProjects/lotus-app && pnpm test 2>&1 | tail -20
 ## 实施顺序建议
 
 B1 → B2 → B3 → B4，每个子任务独立可 commit，互不依赖。B3 和 B4 都改 `chat_turn_driver.rs`，建议在同一 branch 上顺序实施，避免冲突。若并行实施需注意 B3 增加的 CP-2 和 B4 对同一代码块的修改应在 B4 时保留 B3 的 checkpoint。
+
+---
+
+## 追加差异复盘（2026-04-17，对齐 claude-code-best）
+
+### B5：`CancellationToken` 补齐 reason / cleanup 语义（对标 `AbortController`）
+
+**复盘来源：**
+- 当前 `src-tauri/src/runtime/cancellation.rs` 只有 `cancelled: AtomicBool` + `children: Mutex<Vec<Weak<_>>>`，调用方只能知道“已取消”，不知道“为什么取消”。
+- 对标 `claude-code-best`：`/Users/a20250311/github/claude-code-best/src/utils/abortController.ts` 提供 parent → child 传播、child 结束后的 listener cleanup；上层 `/Users/a20250311/github/claude-code-best/src/query.ts` 与 `/Users/a20250311/github/claude-code-best/src/services/tools/StreamingToolExecutor.ts` 明确依赖 abort reason 区分 `user-cancel`、`interrupt`、`sibling_error` 等语义。
+- Plan-B 的 B3 解决的是“何时检查 cancel”，还没有解决“为什么 cancel”与“child 生命周期结束后如何清理挂接关系”。
+
+**目标状态：**
+- `CancellationToken` 记录一次性 cancel reason，并向 child token 传播。
+- API 至少包含：`cancel_with_reason(reason)`、`reason()`；现有 `cancel()` 保留，作为兼容入口（可映射到默认 reason）。
+- test-only 或内部 helper 支持验证 child 挂接关系不会无界增长；避免长期积累 dead weak refs。
+- `chat_turn_driver` / subagent / 后续并发工具执行路径只在真正需要时解释 reason，避免继续把所有取消都压平为同一布尔状态。
+
+**建议文件：**
+- Modify: `src-tauri/src/runtime/cancellation.rs`
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Reuse later: `src-tauri/src/llm/sub_agent.rs`（供 Plan-H 使用）
+
+**依赖关系：**
+- 建议在 B3 之后实施，避免先扩 reason API 再被 checkpoint 改动冲掉。
+- Plan-H 的 H5/H6 直接复用本 task 的 reason API。
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 1 项：`B5 → E6 → H5 → F8 → F9 → H6`。
+- 本 task 属于 cancellation 基础设施层，先完成可减少后续在 subagent / permission 路径上重复补 reason 语义的返工。
+
+### Task B5：reason-aware cancellation 基础设施
+
+- [ ] **B5-T1 写失败测试**
+  - 新建 `src-tauri/tests/review_session_state_b5_cancel_reason_test.rs`
+  - 覆盖四个断言：
+    1. `cancel_with_reason(UserCancel)` 后 `reason()` 可读。
+    2. parent → child 传播相同 reason。
+    3. child cancel 不覆盖 parent reason。
+    4. child drop / 完成后不会让 parent 的 child tracking 无界增长（可通过 `#[cfg(test)]` helper 暴露调试计数）。
+  - 运行：`cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_session_state_b5 -- --nocapture`
+
+- [ ] **B5-T2 最小实现**
+  - 在 `src-tauri/src/runtime/cancellation.rs` 新增 `CancellationReason` enum（至少覆盖 `UserCancel`、`Interrupt`、`SiblingError`、`BackgroundStop`）。
+  - `TokenInner` 新增 reason 存储；`cancel()` 调用 `cancel_with_reason(CancellationReason::UserCancel)` 或等价默认原因。
+  - 实现 `cancel_with_reason`、`reason`，并保持 parent → child reason 传播一致。
+  - 增加 test-only cleanup / debug helper，确保 child 生命周期结束后可验证挂接关系被收敛。
+
+- [ ] **B5-T3 接入关键调用点（只扩主路径，不做全量扩散）**
+  - `src-tauri/src/runtime/chat/chat_turn_driver.rs` 的 checkpoint 改为读取 reason API，而不是未来继续新增裸 `is_cancelled()` 分支。
+  - `src-tauri/src/runtime/session_runtime.rs`、`src-tauri/src/llm/sub_agent.rs` 保持兼容调用；需要表达具体原因的地方改用 `cancel_with_reason(...)`。
+  - **约束：** 本 task 不引入 `use tauri::*` 到 `runtime/`。
+
+- [ ] **B5-T4 回归验证**
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_session_state_b5 -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test cancel_cascade -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_ --tests --no-fail-fast`
+
+- [ ] **B5-T5 Commit**
+  - `git add src-tauri/src/runtime/cancellation.rs src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/tests/review_session_state_b5_cancel_reason_test.rs`
+  - `git commit -m "feat(cancellation): add reason-aware token semantics — B5"`
+
+---
+
+### B6：让 turn finalizer / synthetic tool_result 真正消费 cancel reason
+
+**复盘来源（2026-04-18，对齐 `claude-code-best`）：**
+- lotus 已有 `CancellationReason`，但 `src-tauri/src/runtime/chat/chat_turn_driver.rs` 仍用固定文案
+  `SYNTHETIC_CANCELLED_TOOL_RESULT = "Tool execution was interrupted by user cancellation."`
+  和 `mark_turn_cancelled_with_synthetic_results(...)` 统一收口，未读取 `token.reason()`。
+- 对标 `claude-code-best`：
+  - `src/query.ts` 会根据 `abortController.signal.reason` 决定是否跳过 interruption message 等后续语义
+  - `src/services/tools/StreamingToolExecutor.ts` 会区分 `user_interrupted` / `sibling_error` / `streaming_fallback`
+    生成不同 synthetic tool_result
+- 也就是说 lotus 的 B5 目前只完成了“token 知道 reason”，还没有完成“turn/tool 最终结果语义知道 reason”。
+
+**目标状态：**
+- turn finalizer 注入的 synthetic tool_result 不再一律写死为 user cancellation。
+- `chat_turn_driver` / 未来并发 tool executor 能区分：
+  - `Interrupt`
+  - `SiblingError`
+  - `BackgroundStop`
+  - 默认 `UserCancel`
+- 上层 event / message 文案与实际 cancel 原因一致，避免再次把多种中断语义压平成一种。
+
+**建议文件：**
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/runtime/chat/tool_round_types.rs`
+- Reuse: `src-tauri/src/runtime/cancellation.rs`
+- Reuse pattern: `src-tauri/src/runtime/tools/builtin/bash.rs`
+
+**建议顺序：**
+- 放在当前 B5/H6 之后单独收口；这是 cancellation 基础设施的“最后一公里”。

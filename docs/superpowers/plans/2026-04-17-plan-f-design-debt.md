@@ -600,10 +600,11 @@ let settings: AppSettings = {
 2. **流式/工具执行状态**：`streamStates`、`busyConversations`、`taskStates`、所有 per-conv streaming actions
 
 **修复目标：**
-- 新建 `src/stores/sessionStore.ts`：仅包含会话/消息 CRUD 状态和 actions
-- 新建 `src/stores/streamingStore.ts`：仅包含流式状态、busy 状态、task 状态和对应 actions
-- `src/stores/chatStore.ts` 变为薄的组合层，re-export 两个 store 的全部内容，向后兼容（现有消费方无需修改）
-- `deriveLegacy` 移入 `streamingStore.ts`
+- 保持 `useChatStore` 作为**唯一真实 Zustand store owner**，避免现有 `useChatStore((s) => ...)` / `useChatStore.getState()` / `useChatStore.setState()` 调用方全部重写
+- 新建 `src/stores/sessionStore.ts`：导出会话/消息 CRUD slice 的类型与同源视图（底层仍指向 `useChatStore`）
+- 新建 `src/stores/streamingStore.ts`：导出流式状态/busy/task slice 的类型与同源视图（底层仍指向 `useChatStore`）
+- `src/stores/chatStore.ts` 变为薄的组合层：组装 session slice + streaming slice，保留全部现有导出与行为
+- `deriveLegacy` 移入 `streamingStore` 相关模块，使流式兼容逻辑只在一处维护
 
 **测试文件：** `src/stores/sessionStore.test.ts`、`src/stores/streamingStore.test.ts`
 
@@ -677,71 +678,35 @@ let settings: AppSettings = {
   pnpm exec vitest run src/stores/sessionStore.test.ts src/stores/streamingStore.test.ts 2>&1 | tail -20
   ```
 
-- [ ] **F5-2 创建 `src/stores/sessionStore.ts`**
+- [ ] **F5-2 提取 session slice**
 
-  ```typescript
-  /**
-   * sessionStore — 会话列表与消息 CRUD 状态。
-   * 职责：conversations、messages、activeConversationId 的增删改查。
-   * 不包含流式状态（见 streamingStore）。
-   */
-  import { create } from 'zustand'
-  import type { Conversation, Message } from '@/types/message'
+-  提取会话/消息相关 state + actions 为独立 slice creator（例如 `createSessionSlice`），并在 `sessionStore.ts` 暴露同源视图 `useSessionStore`。
 
-  interface SessionState {
-    conversations: Conversation[]
-    activeConversationId: string | null
-    messages: Message[]
-    setConversations: (conversations: Conversation[]) => void
-    setActiveConversation: (id: string | null) => void
-    setMessages: (messages: Message[]) => void
-    addMessage: (message: Message) => void
-    updateMessage: (id: string, updates: Partial<Message>) => void
-  }
+- [ ] **F5-3 提取 streaming slice**
 
-  export const useSessionStore = create<SessionState>((set) => ({
-    conversations: [],
-    activeConversationId: null,
-    messages: [],
-    setConversations: (conversations) => set({ conversations }),
-    setActiveConversation: (id) => set({ activeConversationId: id }),
-    setMessages: (messages) => set({ messages }),
-    addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
-    updateMessage: (id, updates) =>
-      set((s) => ({
-        messages: s.messages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
-      })),
-  }))
-  ```
-
-- [ ] **F5-3 创建 `src/stores/streamingStore.ts`**
-
-  将 `chatStore.ts` 中的 streaming/busy/task 相关状态和 actions 移入此文件。保留 `deriveLegacy` 逻辑（用于为 `chatStore.ts` 向后兼容层派生 `isStreaming`、`streamingContent`、`toolExecutions` 字段）。
+  将 `chatStore.ts` 中的 streaming/busy/task 相关状态和 actions 提取为独立 slice creator（例如 `createStreamingSlice`），并在 `streamingStore.ts` 暴露同源视图 `useStreamingStore`。保留 `deriveLegacy` 逻辑（用于为 `chatStore.ts` 向后兼容层派生 `isStreaming`、`streamingContent`、`toolExecutions` 字段）。
 
   核心 state：`streamStates`、`busyConversations`、`taskStates`
   核心 actions：所有 `setConversationStreaming`、`appendConversationStreamingContent`、`clearConversationStreamState` 等 per-conv actions，以及 `addBusyConversation`、`removeBusyConversation` 等。
 
 - [ ] **F5-4 重构 `src/stores/chatStore.ts` 为薄组合层**
 
-  `chatStore.ts` 改为从两个 store 导入并组合，保留所有原有导出（向后兼容）：
+  `chatStore.ts` 改为从两个 slice creator 导入并组合，保留所有原有导出（向后兼容）：
 
   ```typescript
   // chatStore.ts — 向后兼容的组合层
-  // 新代码应直接使用 sessionStore 或 streamingStore
+  // 新代码可直接从 sessionStore / streamingStore 读取分层视图，
+  // 但底层真实 store 仍是 useChatStore
   export { useSessionStore } from './sessionStore'
   export { useStreamingStore } from './streamingStore'
 
-  // useChatStore 保持向后兼容：组合两个 store 的状态
-  export const useChatStore = {
-    getState: () => ({
-      ...useSessionStore.getState(),
-      ...useStreamingStore.getState(),
-    }),
-    // ... 向后兼容实现
-  }
+  export const useChatStore = create<ChatState>((set, get) => ({
+    ...createSessionSlice(set, get),
+    ...createStreamingSlice(set, get),
+  }))
   ```
 
-  **重要：** `useChatStore` 必须保持向后兼容，`useStreaming.ts` 等现有消费方无需修改。使用 Zustand 的 `create` 组合或简单 re-export 均可，以不破坏现有测试为准。
+  **重要：** `useChatStore` 必须保持向后兼容，`useStreaming.ts` 等现有消费方无需修改。不要引入两个彼此独立、不同步的真实 store。
 
 - [ ] **F5-5 运行所有前端测试验证无破坏**
 
@@ -782,7 +747,7 @@ setup().then((fn) => {
 
 **修复目标：**
 1. 在 `useTauriEvent.ts` 中添加 `.catch` 处理，至少做 `console.error` 记录
-2. 在 `useStreaming.ts` 中，将 11 个独立 `useTauriEvent` 改为单个批量注册的 `useTauriEvent`，用 `Promise.all` 等待所有 listener 就绪，任一失败时整体 error boundary 报告
+2. 保持 `useStreaming.ts` 现有 11 个独立 listener 结构不变；只要确保 `setup()` 的 reject 能被 `useTauriEvent` 统一捕获并记录，不额外引入批量注册重构
 
 **测试文件：** `src/hooks/useTauriEvent.test.ts`
 
@@ -860,16 +825,12 @@ setup().then((fn) => {
   }
   ```
 
-- [ ] **F6-3 在 `useStreaming.ts` 中添加整体 error boundary**
+- [ ] **F6-3 保持 `useStreaming.ts` 不重构，只验证调用点语义**
 
-  `useStreaming.ts` 中 11 个 `useTauriEvent` 调用无法统一为单个 `useTauriEvent`（每个 listener 的回调不同，且 Tauri 的 unlisten 需要分别管理）。合理的修复是：保持 11 个 `useTauriEvent` 调用，但新增一个统一的错误上报机制。
-
-  更实际的改进：在 `useStreaming` 顶部增加一个 `useEffect`，用 `Promise.allSettled` 验证所有 listener 能正常注册（以测试 mock 的方式），并在生产环境中依赖 `useTauriEvent` 的 `.catch` 记录。
-
-  **实际修复步骤：**
+  `useStreaming.ts` 中 11 个 `useTauriEvent` 调用不需要强行合并。最小风险做法是：
   1. 保持 `useTauriEvent.ts` 的修复（已在 F6-2 完成）
-  2. 在 `useStreaming.ts` 的每个 `useTauriEvent` 调用的 setup 函数中，确保内部的 Tauri listen 错误被 `useTauriEvent` 的 catch 捕获（通过 `throw` 或 Promise reject 传播）
-  3. 验证 Tauri 的 `listen()` 返回的 Promise 在失败时确实 reject（查阅 `@tauri-apps/api/event` 的类型定义确认）
+  2. 验证这些 setup 函数本身没有吞掉 Promise reject
+  3. 通过 `useTauriEvent.test.ts` 与 `useStreaming.integration.test.tsx` 证明 reject 会被记录且不会导致组件崩溃
 
 - [ ] **F6-4 验证测试通过**
 
@@ -1054,3 +1015,147 @@ F3（注释 + 约束测试，最安全）
 3. **F5** 的 `chatStore.ts` 重构必须保证 `useChatStore.getState()` 返回的对象接口不变，因为 `useStreaming.ts` 直接调用 `useChatStore.getState().appendConversationStreamingContent()` 等方法。
 
 4. **F7** 中 `LlmStepInput.conversation_id` 保持 `&'a str` 类型，不替换为 `&'a SessionId`。原因：`LlmStepInput` 是跨层接口（`RuntimeLlmExecutor` trait 的参数），保持 `&str` 避免 executor 实现依赖 `runtime::ids` 模块。边界处 `TurnConfig.conversation_id.as_str()` 提供转换。
+
+---
+
+## 追加差异复盘（2026-04-17，对齐 claude-code-best）
+
+> 下列两项是 A1-A6 完成后的新增架构债。其中 F8 是纯结构收敛；F9 虽然会带来权限交互语义对齐，但本质上是为了解决 runtime 边界分裂问题，故作为 Plan-F 的追加批次记录在此。
+
+### F8：收敛 `RuntimeChatTurnDriver` / legacy `agent_loop` 双主循环
+
+**复盘来源：**
+- 当前生产入口已经是 `TauriChatCommandAdapter::send_message -> SessionRuntime::run_chat_request -> RuntimeChatTurnDriver::run_chat_turn`。
+- 但 `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs` 仍保留整套历史 `legacy_send_message_impl` / `agent_loop` / `finish_agent` 实现，只是现在不再被生产路径调用。
+- A1-A6 中的多个修复点都暴露出“双修复面”问题：runtime driver 是真实 owner，但 transport 目录里仍躺着一份旧 loop，未来很容易被误读或误复用。
+- 对标 `claude-code-best`，`QueryEngine` 才是 query/tool loop 的单一 owner，transport/REPL 只负责 adapter / UI / bridge。
+
+**目标状态：**
+- `RuntimeChatTurnDriver` 继续作为唯一的 query/tool loop owner。
+- `chat_runtime_impl.rs` 收敛为 helper 模块，只保留仍被 transport/executor 使用的纯 helper（如 tool schema 过滤、authorized workspace 解析、LLM content 拼装）。
+- 历史 `legacy_send_message_impl` / `agent_loop` / `finish_agent` 等 orchestrator 符号从源码中删除，避免继续形成“名义上的第二 owner”。
+- 未来所有 cancel checkpoint、Ask routing、message batch merge、tool round orchestration 只需改 runtime driver 一处。
+
+**建议文件：**
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/runtime/session_runtime.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs`
+- Create: `src-tauri/tests/review_single_loop_owner_test.rs`
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 4 项，开启第二批：`F8 → F9 → H6`。
+- 在 `B5 → E6 → H5` 这条 cancellation 链稳定之后，再做单主循环收敛，能明显降低同时改 runtime / subagent 两条大线的风险。
+
+### Task F8：单主循环收敛
+
+- [ ] **F8-1 写架构回归测试**
+  - 新建 `src-tauri/tests/review_single_loop_owner_test.rs`。
+  - 约束两件事：
+    1. 生产路径通过 `SessionRuntime -> RuntimeChatTurnDriver` 进入主循环。
+    2. `chat_runtime_impl.rs` 不再保留历史 owner 符号（至少扫 `legacy_send_message_impl(`、`agent_loop(`、`finish_agent(`）。
+
+- [ ] **F8-2 分阶段抽离 legacy loop**
+  - 先确认生产路径所需逻辑已经在 `RuntimeChatTurnDriver` / `RuntimeLlmExecutor` 上有等价实现。
+  - 再删除 `chat_runtime_impl.rs` 中未被生产路径调用的历史 loop / persistence / finish helpers。
+  - transport 层只保留 Tauri bridge、settings/history/file access、executor 适配所需 helper。
+
+- [ ] **F8-3 验证结构收敛后行为不变**
+  - `cargo test review_single_loop_owner -- --nocapture`
+  - `cargo test s4_driver -- --nocapture`
+  - `cargo test review_ --tests --no-fail-fast`
+
+- [ ] **F8-4 Commit**
+  - `git add src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/src/runtime/session_runtime.rs src-tauri/src/transport/tauri_commands/chat.rs src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs src-tauri/tests/review_single_loop_owner_test.rs`
+  - `git commit -m "refactor(runtime): converge legacy agent loop into single driver owner — F8"`
+
+### F9：Permission Ask 控制流收敛（pending request / response / cancel）
+
+**复盘来源：**
+- A2 已把 `AskRequired` 桥接到 runtime event，但 `src-tauri/src/runtime/chat/tool_round_types.rs` 仍给 LLM 生成 synthetic ask 文本，`src-tauri/src/runtime/query_engine.rs` 仍会发 `ToolCallCompleted { is_error: true }`。
+- 这意味着 Ask 目前还是“通知事件”，不是“可恢复控制流”。
+- 对标 `claude-code-best`：`/Users/a20250311/github/claude-code-best/src/remote/RemoteSessionManager.ts` 已有 pending request、response、cancel 的完整生命周期；tool execution path 还能接住 `updatedInput`。
+
+**目标状态：**
+- Ask 成为 runtime 的 pending state，而不是 error completion + synthetic tool_result fallback。
+- runtime 持有 pending permission request store；transport 暴露 `approve / deny / cancel` 命令。
+- allow 时恢复原 tool call（可携带 `updated_input`），deny/cancel 时产出结构化 outcome。
+- `ToolCallCompleted` 只用于真正完成的调用；Ask 不再伪装成 completed-with-error。
+
+**建议文件：**
+- Modify: `src-tauri/src/runtime/events.rs`
+- Modify: `src-tauri/src/runtime/chat/tool_round_types.rs`
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/runtime/query_engine.rs`
+- Modify: `src-tauri/src/transport/tauri_event_adapter.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
+- Create: `src-tauri/src/runtime/store/pending_permission_request_store.rs`
+- Create tests: `src-tauri/tests/p0_permission_control_plane_test.rs`
+
+**依赖关系：**
+- F8 完成后实施最稳，因为 pending ask 应只挂在单一主循环 owner 上。
+- Plan-H 的 H6 直接依赖 F9，避免子路径继续把 Ask 降级为 deny/error。
+
+**跨计划推荐顺序：**
+- 推荐作为新增批次的第 5 项：必须放在 `F8` 之后、`H6` 之前。
+- 不建议提前于 F8 实施，否则 pending permission request 很容易挂到错误 owner 上，后续仍需再搬迁一次。
+
+### Task F9：Permission Ask 变成可恢复控制流
+
+- [ ] **F9-1 写失败测试**
+  - 新建 `src-tauri/tests/p0_permission_control_plane_test.rs`。
+  - 覆盖四个断言：
+    1. Ask 不再发 `ToolCallCompleted(is_error=true)`。
+    2. runtime 记录 pending permission request（含 `tool_call_id`、`tool_name`、`message`、`suggestions`）。
+    3. `approve / deny / cancel` 命令能清理 pending request。
+    4. allow 可恢复原 tool call，并支持 `updated_input`。
+
+- [ ] **F9-2 最小实现**
+  - 引入 `pending_permission_request_store`。
+  - `RuntimeToolCallOutcome::AskRequired` 不再自动生成 synthetic text content；改由 driver/transport 走 pending request 流程。
+  - transport 提供响应命令；event adapter 追加 resolved/cancelled 事件映射（若前端需要 legacy 事件）。
+
+- [ ] **F9-3 收敛旧 fallback**
+  - 删除 main path 中 Ask → `ToolCallCompleted(is_error=true)` 的伪装逻辑。
+  - 删除或 gated 掉 synthetic ask tool_result fallback；以新测试为唯一真相源。
+
+- [ ] **F9-4 回归验证**
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test p0_permission_control_plane -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test p0_a2_permission_ask_routing_test -- --nocapture`
+  - `cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test review_ --tests --no-fail-fast`
+
+- [ ] **F9-5 Commit**
+  - `git add src-tauri/src/runtime/events.rs src-tauri/src/runtime/chat/tool_round_types.rs src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/src/runtime/query_engine.rs src-tauri/src/transport/tauri_event_adapter.rs src-tauri/src/transport/tauri_commands/chat.rs src-tauri/src/runtime/store/pending_permission_request_store.rs src-tauri/tests/p0_permission_control_plane_test.rs`
+  - `git commit -m "feat(permission): add resumable ask control plane — F9"`
+
+---
+
+### F10：把 pending permission request 从 driver-local 收敛到 session/runtime 真源
+
+**复盘来源（2026-04-18，对齐 `claude-code-best`）：**
+- lotus 已经做完了一半：`src-tauri/src/runtime/session_runtime.rs` 现在确实持有
+  `pending_permission_store`，transport / commands 也已经通过 `SessionRuntime`
+  读写 pending ask。
+- 但 `src-tauri/src/runtime/chat/chat_turn_driver.rs` 仍然把 store 作为自己的私有字段，
+  并且 `new()` / `with_llm_executor()` 仍会各自 `PendingPermissionRequestStore::new()`。
+  这意味着 driver 仍保留“自带一份私有 pending store”的 fallback owner 语义。
+- 对标 `claude-code-best`，pending request / response / cancel 生命周期的真源应稳定挂在
+  session/runtime service；query/tool loop 只消费该控制平面，而不再偷偷创建自己的私有 store。
+
+**目标状态：**
+- `SessionRuntime` 继续作为 pending permission request 的真源；production path 不再存在
+  “driver 自己 new 一份 store”的 fallback owner。
+- transport / commands / future remote adapter 继续面向统一真源读写 pending ask。
+- driver 若要处理 Ask，只能消费外部注入的 store / control-plane handle；未注入时应显式失败，
+  而不是隐式创建私有 store。
+
+**建议文件：**
+- Modify: `src-tauri/src/runtime/session_runtime.rs`
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/runtime/store/pending_permission_request_store.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
+- Optional: `src-tauri/src/runtime/events.rs`
+
+**建议顺序：**
+- 放在 F9 之后单独执行。
+- 若未来要补 remote / background / resume 级权限交互，这项应优先于新增 UI 细节。
