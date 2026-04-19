@@ -96,6 +96,32 @@ curl -sI https://lotus.renlijia.com/aijia/vX.Y.Z/AIjia_X.Y.Z_x64-setup.exe      
 curl -s  https://lotus.renlijia.com/aijia/update.json | jq '.version, .platforms | keys'
 ```
 
+## 三平台完整发版时序（Windows + macOS arm + macOS Intel）
+
+CI 管 Windows + macOS arm，本地补 Intel。两条线并行跑，总耗时 ~25min：
+
+```
+t=0    git tag vX.Y.Z && git push origin vX.Y.Z
+       │
+       ├── [CI 线] (25min)                         [本地 Intel 线] (~15min)
+       │   ├ build windows  ─┐                    ├ 切软链到 Intel runtime
+       │   ├ build macos-arm ─┤→ finalize          ├ pnpm tauri build --target x86_64
+       │   │                  │  (update.json)     ├ hdiutil create DMG
+       │   │                  ▼                    │
+       │   └ update.json in OSS ✓ (~25min)         └ DMG + .app.tar.gz 就绪 ✓ (~15min)
+       │                                           │
+       ▼                                           ▼
+t≈25   两条线必须都就绪 ─────────────────────────────┘
+       │
+       ▼
+       python3 scripts/upload-x64.py X.Y.Z        # 读 OSS 现有 update.json → merge darwin-x86_64 → 写回
+       切软链回 ARM
+       python3 scripts/bump-homebrew.py X.Y.Z
+       curl update.json 验证 3 平台全在
+```
+
+**⚠️ 关键时序**：`upload-x64.py` 必须在 **CI 的 finalize job 完成后**才跑，否则 CI 的 update.json（只含 2 平台）会覆盖掉 Intel 的条目。
+
 ## 可选：macOS Intel 本地补包
 
 CI 不打 Intel（GitHub 已下线 native Intel runner）。Intel 用户少，仅需要时在本机补：
