@@ -24,6 +24,7 @@ interface SessionSliceBridge {
 
 type SetState<T> = StoreApi<T>['setState']
 type GetState<T> = StoreApi<T>['getState']
+type SliceUpdate<T> = T | Partial<T> | ((state: T) => T | Partial<T>)
 
 type SessionStoreHook = UseBoundStore<StoreApi<SessionState>>
 
@@ -49,7 +50,10 @@ export const useSessionStore = ((selector?: (state: SessionState) => unknown) =>
 
 useSessionStore.getState = () => requireSessionStore().getState()
 useSessionStore.setState = (partial, replace) =>
-  requireSessionStore().setState(partial as Parameters<SessionStoreHook['setState']>[0], replace)
+  requireSessionStore().setState(
+    partial as Parameters<SessionStoreHook['setState']>[0],
+    replace as Parameters<SessionStoreHook['setState']>[1],
+  )
 useSessionStore.subscribe = ((...args: unknown[]) => {
   const store = requireSessionStore()
   return (store.subscribe as (...args: unknown[]) => unknown)(...args)
@@ -59,23 +63,28 @@ export function createSessionSlice<T extends SessionState & SessionSliceBridge>(
   set: SetState<T>,
   get: GetState<T>,
 ): SessionState {
+  const apply = (update: SliceUpdate<T>) => set(update)
+
   return {
     conversations: [],
     activeConversationId: null,
     messages: [],
-    setConversations: (conversations) => set({ conversations }),
+    setConversations: (conversations) => apply({ conversations } as Partial<T>),
     setActiveConversation: (id) => {
       const legacy = deriveLegacy(id, get().streamStates)
-      set({ activeConversationId: id, ...legacy })
+      apply({ activeConversationId: id, ...legacy } as Partial<T>)
     },
-    setMessages: (messages) => set({ messages }),
+    setMessages: (messages) => apply({ messages } as Partial<T>),
     addMessage: (message) =>
-      set((state) => ({ messages: [...state.messages, message] })),
+      apply((state) => ({ messages: [...state.messages, message] } as Partial<T>)),
     updateMessage: (id, updates) =>
-      set((state) => ({
-        messages: state.messages.map((message) =>
-          message.id === id ? { ...message, ...updates } : message,
-        ),
-      })),
+      apply(
+        (state) =>
+          ({
+            messages: state.messages.map((message) =>
+              message.id === id ? { ...message, ...updates } : message,
+            ),
+          }) as Partial<T>,
+      ),
   }
 }

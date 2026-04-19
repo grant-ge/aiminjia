@@ -80,6 +80,7 @@ interface StreamingSliceBridge {
 
 type SetState<T> = StoreApi<T>['setState']
 type GetState<T> = StoreApi<T>['getState']
+type SliceUpdate<T> = T | Partial<T> | ((state: T) => T | Partial<T>)
 
 type StreamingStoreHook = UseBoundStore<StoreApi<StreamingState>>
 
@@ -105,7 +106,10 @@ export const useStreamingStore = ((selector?: (state: StreamingState) => unknown
 
 useStreamingStore.getState = () => requireStreamingStore().getState()
 useStreamingStore.setState = (partial, replace) =>
-  requireStreamingStore().setState(partial as Parameters<StreamingStoreHook['setState']>[0], replace)
+  requireStreamingStore().setState(
+    partial as Parameters<StreamingStoreHook['setState']>[0],
+    replace as Parameters<StreamingStoreHook['setState']>[1],
+  )
 useStreamingStore.subscribe = ((...args: unknown[]) => {
   const store = requireStreamingStore()
   return (store.subscribe as (...args: unknown[]) => unknown)(...args)
@@ -143,6 +147,8 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
   set: SetState<T>,
   get: GetState<T>,
 ): StreamingState {
+  const apply = (update: SliceUpdate<T>) => set(update)
+
   return {
     busyConversations: new Set(),
     streamStates: {},
@@ -153,51 +159,52 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
     toolExecutions: [],
 
     addBusyConversation: (id) =>
-      set((state) => {
+      apply((state) => {
         const next = new Set(state.busyConversations)
         next.add(id)
-        return { busyConversations: next }
+        return { busyConversations: next } as Partial<T>
       }),
 
     removeBusyConversation: (id) =>
-      set((state) => {
+      apply((state) => {
         const next = new Set(state.busyConversations)
         next.delete(id)
-        return { busyConversations: next }
+        return { busyConversations: next } as Partial<T>
       }),
 
-    setBusyConversations: (ids) => set({ busyConversations: new Set(ids) }),
+    setBusyConversations: (ids) =>
+      apply({ busyConversations: new Set(ids) } as Partial<T>),
 
     setConversationStreaming: (convId, isStreaming) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, isStreaming },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     appendConversationStreamingContent: (convId, delta) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, streamingContent: previous.streamingContent + delta },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     clearConversationStreamState: (convId) =>
-      set((state) => {
+      apply((state) => {
         const previous = state.streamStates[convId]
         if (!previous) {
-          return {}
+          return {} as Partial<T>
         }
         if (!previous.isStreaming && previous.streamingContent === '' && !previous.agentPhase) {
-          return {}
+          return {} as Partial<T>
         }
         const streamStates = {
           ...state.streamStates,
@@ -210,40 +217,40 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
           },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     resetConversationStreamContent: (convId) =>
-      set((state) => {
+      apply((state) => {
         const streamStates = {
           ...state.streamStates,
           [convId]: { isStreaming: true, streamingContent: '', toolExecutions: [] },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     deleteConversationStreamState: (convId) =>
-      set((state) => {
+      apply((state) => {
         const rest = { ...state.streamStates }
         delete rest[convId]
         const legacy = deriveLegacy(state.activeConversationId, rest)
-        return { streamStates: rest, ...legacy }
+        return { streamStates: rest, ...legacy } as Partial<T>
       }),
 
     addConversationToolExecution: (convId, exec) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, toolExecutions: [...previous.toolExecutions, exec] },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     updateConversationToolExecution: (convId, toolId, update) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
@@ -255,21 +262,21 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
           },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     setConversationAgentPhase: (convId, phase) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, agentPhase: phase },
         }
-        return { streamStates }
+        return { streamStates } as Partial<T>
       }),
 
     upsertConversationTaskState: (convId, task) =>
-      set((state) => {
+      apply((state) => {
         const existing = state.taskStates[convId] ?? []
         const index = existing.findIndex((value) => value.taskId === task.taskId)
         const updated =
@@ -278,28 +285,28 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
                 currentIndex === index ? { ...value, ...task } : value,
               )
             : [...existing, task]
-        return { taskStates: { ...state.taskStates, [convId]: updated } }
+        return { taskStates: { ...state.taskStates, [convId]: updated } } as Partial<T>
       }),
 
     addPendingAsk: (ask) =>
-      set((state) => {
+      apply((state) => {
         const next = new Map(state.pendingAsks)
         next.set(ask.toolCallId, ask)
-        return { pendingAsks: next }
+        return { pendingAsks: next } as Partial<T>
       }),
 
     removePendingAsk: (toolCallId) =>
-      set((state) => {
+      apply((state) => {
         if (!state.pendingAsks.has(toolCallId)) {
-          return {}
+          return {} as Partial<T>
         }
         const next = new Map(state.pendingAsks)
         next.delete(toolCallId)
-        return { pendingAsks: next }
+        return { pendingAsks: next } as Partial<T>
       }),
 
     clearConversationPendingAsks: (conversationId) =>
-      set((state) => {
+      apply((state) => {
         const next = new Map(state.pendingAsks)
         let changed = false
         for (const [toolCallId, ask] of next) {
@@ -308,18 +315,20 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
             changed = true
           }
         }
-        return changed ? { pendingAsks: next } : {}
+        return changed
+          ? ({ pendingAsks: next } as Partial<T>)
+          : ({} as Partial<T>)
       }),
 
     setLastTurnSummary: (convId, summary) =>
-      set((state) => {
+      apply((state) => {
         const previous = getStreamState(state.streamStates, convId)
         const streamStates = {
           ...state.streamStates,
           [convId]: { ...previous, lastTurnSummary: summary },
         }
         const legacy = deriveLegacy(state.activeConversationId, streamStates)
-        return { streamStates, ...legacy }
+        return { streamStates, ...legacy } as Partial<T>
       }),
 
     setStreaming: (isStreaming) => {
@@ -338,7 +347,7 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
           [activeConversationId]: { ...previous, streamingContent: content },
         }
         const legacy = deriveLegacy(activeConversationId, next)
-        set({ streamStates: next, ...legacy })
+        apply({ streamStates: next, ...legacy } as Partial<T>)
       }
     },
 
