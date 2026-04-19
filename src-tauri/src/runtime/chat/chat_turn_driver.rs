@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::compaction::{
-    compact_messages_via_llm, microcompact, should_auto_compact, AutoCompactConfig,
+    build_compact_boundary_record, compact_messages_via_llm, microcompact, should_auto_compact,
+    AutoCompactConfig, CompactTrigger,
     MicrocompactConfig,
 };
 use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
@@ -202,6 +203,14 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _messages: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok(String::new())
+    }
+
+    /// Persist a compact boundary record after successful compaction.
+    async fn save_compact_boundary(
+        &self,
+        _record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<(), TurnError> {
+        Ok(())
     }
 }
 
@@ -686,11 +695,39 @@ impl RuntimeChatTurnDriver {
                     .await
                 {
                     Ok(summary_text) if !summary_text.is_empty() => {
+                        let tail_message_id = state.messages.iter().rev().find_map(|message| {
+                            if message
+                                .get("isCompactSummary")
+                                .and_then(|value| value.as_bool())
+                                == Some(true)
+                            {
+                                return None;
+                            }
+                            message
+                                .get("id")
+                                .and_then(|value| value.as_str())
+                                .map(str::to_owned)
+                        });
                         let output = compact_messages_via_llm(
                             std::mem::take(&mut state.messages),
-                            summary_text,
+                            summary_text.clone(),
                         );
+                        let mut boundary_record = build_compact_boundary_record(
+                            config.conversation_id.as_str(),
+                            CompactTrigger::Auto,
+                            output.pre_tokens,
+                            output.post_tokens,
+                            output.messages_summarized,
+                        );
+                        boundary_record.summary_text = summary_text;
+                        boundary_record.tail_message_id = tail_message_id;
                         state.messages = output.new_messages;
+                        if let Err(err) = executor.save_compact_boundary(boundary_record).await {
+                            log::warn!(
+                                "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                                err
+                            );
+                        }
                         state.compact_state.record_success();
                     }
                     Ok(_) => {}
@@ -733,10 +770,19 @@ impl RuntimeChatTurnDriver {
             }
 
             // ── Step 5b: single LLM step ─────────────────────────────────────
-            let step_result = executor
+            let step_result = match executor
                 .run_llm_step(&input, &self.event_bus, &cancel)
                 .await
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    inject_synthetic_tool_results_for_missing_calls(
+                        &mut state.messages,
+                        cancel.reason(),
+                    );
+                    return Err(anyhow::anyhow!("{}", err));
+                }
+            };
 
             match step_result {
                 // ── 5c: pure content response — done ─────────────────────────

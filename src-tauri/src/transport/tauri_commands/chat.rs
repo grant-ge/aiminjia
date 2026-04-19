@@ -77,6 +77,66 @@ fn build_history_message_content(
     content_value.as_str().map(|text| text.to_string())
 }
 
+fn tail_message_id_from_boundary(
+    boundary: &crate::runtime::chat::compaction::CompactBoundaryRecord,
+) -> Option<&str> {
+    boundary
+        .tail_message_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+}
+
+pub fn build_history_from_compact_boundary(
+    raw_messages: Vec<serde_json::Value>,
+    boundary: Option<&crate::runtime::chat::compaction::CompactBoundaryRecord>,
+    has_authorized_workspace: bool,
+) -> Vec<serde_json::Value> {
+    let filtered_messages: Vec<serde_json::Value> = if let Some(boundary) = boundary {
+        if let Some(tail_id) = tail_message_id_from_boundary(boundary) {
+            let start_idx = raw_messages
+                .iter()
+                .position(|msg| msg.get("id").and_then(|v| v.as_str()) == Some(tail_id));
+            match start_idx {
+                Some(idx) => raw_messages.into_iter().skip(idx).collect(),
+                None => raw_messages,
+            }
+        } else {
+            raw_messages
+        }
+    } else {
+        raw_messages
+    };
+
+    let mut chat_messages = Vec::new();
+    if let Some(boundary) = boundary {
+        if !boundary.summary_text.is_empty() {
+            chat_messages.push(serde_json::json!({
+                "role": "user",
+                "content": format!("<context>\n{}\n</context>", boundary.summary_text),
+                "isCompactSummary": true,
+            }));
+        }
+    }
+
+    chat_messages.extend(filtered_messages.into_iter().filter_map(|msg| {
+        let role = msg["role"].as_str()?.to_string();
+        let content = build_history_message_content(
+            &role,
+            msg.get("content")?,
+            has_authorized_workspace,
+        )?;
+        if content.trim().is_empty() {
+            return None;
+        }
+        Some(serde_json::json!({
+            "role": role,
+            "content": content,
+        }))
+    }));
+
+    chat_messages
+}
+
 #[derive(Clone)]
 struct TauriChatServices {
     db: Arc<AppStorage>,
@@ -844,26 +904,24 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             conversation_id,
         )
         .is_some();
-
-        // 转换格式：content 可能是 {"text": "...", "files": [...]} 或直接字符串
-        let chat_messages: Vec<serde_json::Value> = raw_messages
+        let latest_boundary = self
+            .services
+            .db
+            .list_compact_boundaries(conversation_id)
+            .map_err(|e| {
+                TurnError::PersistenceError(format!(
+                    "Failed to load compact boundaries: {}",
+                    e
+                ))
+            })?
             .into_iter()
-            .filter_map(|msg| {
-                let role = msg["role"].as_str()?.to_string();
-                let content = build_history_message_content(
-                    &role,
-                    msg.get("content")?,
-                    has_authorized_workspace,
-                )?;
-                if content.trim().is_empty() {
-                    return None;
-                }
-                Some(serde_json::json!({
-                    "role": role,
-                    "content": content,
-                }))
-            })
-            .collect();
+            .last();
+
+        let chat_messages = build_history_from_compact_boundary(
+            raw_messages,
+            latest_boundary.as_ref(),
+            has_authorized_workspace,
+        );
 
         log::info!(
             "[load_history] conv={} loaded {} messages (limit={})",
@@ -873,6 +931,21 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         );
 
         Ok(chat_messages)
+    }
+
+    async fn save_compact_boundary(
+        &self,
+        record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<(), TurnError> {
+        self.services
+            .db
+            .append_compact_boundary(&record)
+            .map_err(|e| {
+                TurnError::PersistenceError(format!(
+                    "Failed to persist compact boundary: {}",
+                    e
+                ))
+            })
     }
 
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {

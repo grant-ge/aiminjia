@@ -47,6 +47,10 @@ pub struct CompactBoundaryRecord {
     pub post_tokens: u64,
     pub messages_summarized: usize,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary_text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_message_id: Option<String>,
 }
 
 pub fn build_compact_boundary_record(
@@ -64,6 +68,8 @@ pub fn build_compact_boundary_record(
         post_tokens,
         messages_summarized,
         created_at: chrono::Utc::now().to_rfc3339(),
+        summary_text: String::new(),
+        tail_message_id: None,
     }
 }
 
