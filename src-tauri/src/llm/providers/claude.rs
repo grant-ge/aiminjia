@@ -516,6 +516,24 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
             }])
         }
 
+        "error" => {
+            let message = parsed["error"]["message"]
+                .as_str()
+                .unwrap_or("unknown SSE error")
+                .to_string();
+            let error_type = parsed["error"]["type"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string();
+            warn!(
+                "SSE error event from provider: type={} message={}",
+                error_type, message
+            );
+            Some(vec![StreamEvent::Error {
+                error: format!("{}: {}", error_type, message),
+            }])
+        }
+
         // ping, message_stop, etc.
         _ => {
             debug!("Ignored SSE event type: {}", event_type);
@@ -778,6 +796,24 @@ mod tests {
                 assert_eq!(usage.output_tokens, 50);
             }
             _ => panic!("Expected Done"),
+        }
+    }
+
+    #[test]
+    fn test_process_sse_data_error_event_emits_stream_error() {
+        let mut state = SseState::new();
+        let data =
+            r#"{"type":"error","error":{"type":"overloaded_error","message":"API overloaded"}}"#;
+        let result = process_sse_data(data, &mut state);
+        assert!(result.is_some(), "error event must not be silently discarded");
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::Error { error } => {
+                assert!(error.contains("overloaded_error"));
+                assert!(error.contains("API overloaded"));
+            }
+            other => panic!("Expected Error event, got {:?}", other),
         }
     }
 
