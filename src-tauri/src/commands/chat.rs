@@ -53,9 +53,7 @@ pub async fn deny_permission_request(
     tool_call_id: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    adapter
-        .deny_permission_request(tool_call_id, message)
-        .await
+    adapter.deny_permission_request(tool_call_id, message).await
 }
 
 #[tauri::command]
@@ -90,6 +88,27 @@ pub async fn create_conversation(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
 ) -> Result<String, String> {
     adapter.create_conversation().await
+}
+
+#[tauri::command]
+pub async fn get_conversation_model_override(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<Option<String>, String> {
+    adapter
+        .get_conversation_model_override(conversation_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_conversation_model_override(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+    model: Option<String>,
+) -> Result<(), String> {
+    adapter
+        .set_conversation_model_override(conversation_id, model)
+        .await
 }
 
 #[tauri::command]
@@ -135,8 +154,8 @@ pub mod testsupport {
     use crate::runtime::identity::IdentityMapping;
     use crate::runtime::ids::RunId;
     use crate::runtime::query_engine::QueryEngine;
-    use crate::runtime::store::{AuthorizedWorkspace, AuthorizedWorkspaceRef};
     use crate::runtime::state::TurnState;
+    use crate::runtime::store::{AuthorizedWorkspace, AuthorizedWorkspaceRef};
     use crate::runtime::tools::testing::single_legacy_tool_dispatcher;
     use crate::runtime::SessionRuntime;
     use crate::runtime_audit::trace_capture::CapturedTrace;
@@ -189,8 +208,8 @@ pub mod testsupport {
         tool_name: &str,
         input: Value,
     ) -> Result<WorkspaceFirstToolTrace> {
-        let workspace_path = std::env::temp_dir()
-            .join(format!("lotus-workspace-first-{}", uuid::Uuid::new_v4()));
+        let workspace_path =
+            std::env::temp_dir().join(format!("lotus-workspace-first-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&workspace_path)?;
         let storage = Arc::new(AppStorage::new(&workspace_path)?);
         let file_manager = Arc::new(FileManager::new(&workspace_path));
@@ -200,17 +219,19 @@ pub mod testsupport {
 
         let facade = RuntimeRepositoryFacade::for_test();
         let session_id = crate::runtime::ids::SessionId::new(session_id.to_string());
-        facade.authorized_workspace_store().replace_for_session(&AuthorizedWorkspace {
-            id: "aw-test".to_string(),
-            session_id: session_id.clone(),
-            root_path: authorized_root.to_path_buf(),
-            display_name: authorized_root
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| authorized_root.display().to_string()),
-            authorized_at: chrono::Utc::now().to_rfc3339(),
-        })?;
+        facade
+            .authorized_workspace_store()
+            .replace_for_session(&AuthorizedWorkspace {
+                id: "aw-test".to_string(),
+                session_id: session_id.clone(),
+                root_path: authorized_root.to_path_buf(),
+                display_name: authorized_root
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| authorized_root.display().to_string()),
+                authorized_at: chrono::Utc::now().to_rfc3339(),
+            })?;
 
         let authorized_workspace = facade
             .authorized_workspace_store()

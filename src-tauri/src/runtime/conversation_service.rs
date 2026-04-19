@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::llm::gateway::LlmGateway;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::AgentRuntime;
-use crate::llm::gateway::LlmGateway;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
@@ -39,7 +39,9 @@ pub async fn get_messages(
     db: Arc<dyn ConversationStore>,
     conversation_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let messages = db.get_messages(&conversation_id).map_err(|e| e.to_string())?;
+    let messages = db
+        .get_messages(&conversation_id)
+        .map_err(|e| e.to_string())?;
     Ok(messages
         .into_iter()
         .map(transform_message_json_for_frontend)
@@ -62,7 +64,10 @@ pub async fn get_subagent_transcript(
 }
 
 pub fn transform_message_json_for_frontend(mut message: serde_json::Value) -> serde_json::Value {
-    let Some(content) = message.get_mut("content").and_then(|value| value.as_object_mut()) else {
+    let Some(content) = message
+        .get_mut("content")
+        .and_then(|value| value.as_object_mut())
+    else {
         return message;
     };
 
@@ -81,8 +86,10 @@ pub fn transform_message_json_for_frontend(mut message: serde_json::Value) -> se
     content.remove("text");
     content.insert(
         "subagentEnvelope".to_string(),
-        serde_json::to_value(crate::models::message::SubAgentEnvelopePayload::from(envelope))
-            .unwrap_or(serde_json::Value::Null),
+        serde_json::to_value(crate::models::message::SubAgentEnvelopePayload::from(
+            envelope,
+        ))
+        .unwrap_or(serde_json::Value::Null),
     );
 
     message
@@ -93,6 +100,23 @@ pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<Strin
     db.create_conversation(&id, "New Conversation")
         .map_err(|e| e.to_string())?;
     Ok(id)
+}
+
+pub async fn get_conversation_model_override(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+) -> Result<Option<String>, String> {
+    db.get_conversation_model_override(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn set_conversation_model_override(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+    model_override: Option<String>,
+) -> Result<(), String> {
+    db.set_conversation_model_override(&conversation_id, model_override)
+        .map_err(|e| e.to_string())
 }
 
 pub async fn delete_conversation(
@@ -171,6 +195,8 @@ pub async fn rename_conversation(
     })
 }
 
-pub async fn get_conversations(db: Arc<dyn ConversationStore>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn get_conversations(
+    db: Arc<dyn ConversationStore>,
+) -> Result<Vec<serde_json::Value>, String> {
     db.get_conversations().map_err(|e| e.to_string())
 }

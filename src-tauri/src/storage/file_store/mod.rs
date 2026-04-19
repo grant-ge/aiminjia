@@ -39,8 +39,8 @@
 pub mod analysis;
 pub mod audit;
 pub mod cache;
-pub mod compact_boundaries;
 pub mod cognitive;
+pub mod compact_boundaries;
 pub mod config;
 pub mod conversations;
 pub mod error;
@@ -51,6 +51,7 @@ pub mod messages;
 pub mod notes;
 pub mod persona;
 pub mod types;
+pub mod workspace_settings;
 
 use std::collections::HashMap;
 use std::fs;
@@ -246,6 +247,42 @@ impl AppStorage {
 
     pub fn get_all_settings(&self) -> Result<HashMap<String, String>> {
         Ok(config::get_all_settings(&self.base_dir)?)
+    }
+
+    pub fn get_effective_settings(
+        &self,
+        workspace_path: Option<&Path>,
+    ) -> Result<HashMap<String, String>> {
+        let mut settings = config::get_all_settings(&self.base_dir)?;
+        if let Some(workspace_path) = workspace_path {
+            let workspace_settings = workspace_settings::load_workspace_settings(workspace_path);
+            if let Some(primary_model) = workspace_settings
+                .primary_model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                settings.insert("primaryModel".to_string(), primary_model.to_string());
+            }
+        }
+        Ok(settings)
+    }
+
+    pub fn get_conversation_model_override(&self, id: &str) -> Result<Option<String>> {
+        Ok(conversations::get_conversation_model_override(
+            &self.base_dir,
+            id,
+        )?)
+    }
+
+    pub fn set_conversation_model_override(
+        &self,
+        id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_model_override(&self.base_dir, id, model_override)?;
+        Ok(())
     }
 
     pub fn get_settings_by_prefix(&self, prefix: &str) -> Result<HashMap<String, String>> {
@@ -742,8 +779,7 @@ pub struct RuntimeRepositoryFacade {
     conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
     persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
     file_record_store: std::sync::Arc<dyn crate::runtime::store::FileRecordStore>,
-    authorized_workspace_store:
-        std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
+    authorized_workspace_store: std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
 }
 
 impl RuntimeRepositoryFacade {
@@ -992,6 +1028,20 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
     ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
         self.storage.list_compact_boundaries(conversation_id)
     }
+
+    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
+        self.storage
+            .get_conversation_model_override(conversation_id)
+    }
+
+    fn set_conversation_model_override(
+        &self,
+        conversation_id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        self.storage
+            .set_conversation_model_override(conversation_id, model_override)
+    }
 }
 
 impl crate::runtime::store::ConversationStore for AppStorage {
@@ -1043,6 +1093,18 @@ impl crate::runtime::store::ConversationStore for AppStorage {
         conversation_id: &str,
     ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
         self.list_compact_boundaries(conversation_id)
+    }
+
+    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
+        self.get_conversation_model_override(conversation_id)
+    }
+
+    fn set_conversation_model_override(
+        &self,
+        conversation_id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        self.set_conversation_model_override(conversation_id, model_override)
     }
 }
 
@@ -1182,7 +1244,8 @@ impl crate::runtime::store::FileRecordStore for FileFileRecordStore {
         &self,
         conversation_id: &str,
     ) -> Result<Vec<serde_json::Value>> {
-        self.storage.get_uploaded_files_for_conversation(conversation_id)
+        self.storage
+            .get_uploaded_files_for_conversation(conversation_id)
     }
 
     fn delete_uploaded_file(&self, id: &str, conversation_id: &str) -> Result<()> {
@@ -1237,7 +1300,8 @@ impl crate::runtime::store::FileRecordStore for FileFileRecordStore {
         &self,
         conversation_id: &str,
     ) -> Result<Vec<serde_json::Value>> {
-        self.storage.get_generated_files_for_conversation(conversation_id)
+        self.storage
+            .get_generated_files_for_conversation(conversation_id)
     }
 }
 
@@ -1247,7 +1311,8 @@ impl crate::runtime::store::FileRecordStore for FileFileRecordStore {
 
 #[derive(Default)]
 struct InMemoryPersonaStore {
-    personas: std::sync::Mutex<std::collections::HashMap<String, crate::runtime::store::PersonaRecord>>,
+    personas:
+        std::sync::Mutex<std::collections::HashMap<String, crate::runtime::store::PersonaRecord>>,
     active: std::sync::Mutex<String>,
 }
 
@@ -1358,8 +1423,7 @@ impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
             .iter()
             .find(|v| {
                 v.get("id").and_then(|x| x.as_str()) == Some(id)
-                    && v.get("conversationId").and_then(|x| x.as_str())
-                        == Some(conversation_id)
+                    && v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
             })
             .cloned())
     }
@@ -1373,9 +1437,7 @@ impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
             .lock()
             .unwrap()
             .iter()
-            .filter(|v| {
-                v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
-            })
+            .filter(|v| v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id))
             .cloned()
             .collect())
     }
@@ -1436,8 +1498,7 @@ impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
             .iter()
             .find(|v| {
                 v.get("id").and_then(|x| x.as_str()) == Some(id)
-                    && v.get("conversationId").and_then(|x| x.as_str())
-                        == Some(conversation_id)
+                    && v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
             })
             .cloned())
     }
@@ -1451,9 +1512,7 @@ impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
             .lock()
             .unwrap()
             .iter()
-            .filter(|v| {
-                v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
-            })
+            .filter(|v| v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id))
             .cloned()
             .collect())
     }
