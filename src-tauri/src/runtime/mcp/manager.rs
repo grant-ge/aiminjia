@@ -6,9 +6,20 @@ use tokio::sync::RwLock;
 use crate::plugin::registry::ToolRegistry;
 use crate::runtime::mcp::{McpError, McpResult, SharedMcpConnection};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum McpServerState {
+    Configured,
+    Connecting,
+    Ready,
+    Failed,
+    Disconnected,
+}
+
 struct ManagedMcpServer {
     connection: SharedMcpConnection,
     config: crate::runtime::mcp::McpServerConfig,
+    state: McpServerState,
+    last_error: Option<String>,
     registered_tool_ids: Vec<String>,
 }
 
@@ -17,11 +28,11 @@ pub struct McpServerStatus {
     pub name: String,
     pub transport_type: String,
     pub endpoint: String,
-    pub connected: bool,
+    pub state: McpServerState,
     pub registered_tool_ids: Vec<String>,
+    pub last_error: Option<String>,
 }
 
-/// 管理 MCP server 连接及其在 runtime tool pool 中的注册状态。
 pub struct McpServerManager {
     registry: Arc<ToolRegistry>,
     servers: Arc<RwLock<HashMap<String, ManagedMcpServer>>>,
@@ -47,13 +58,15 @@ impl McpServerManager {
             ManagedMcpServer {
                 config: connection.config().clone(),
                 connection,
+                state: McpServerState::Configured,
+                last_error: None,
                 registered_tool_ids: Vec::new(),
             },
         );
         Ok(())
     }
 
-    pub async fn connect(&self, server_name: &str) -> McpResult<Vec<String>> {
+    pub async fn connect(&self, server_name: &str) -> McpResult<McpServerStatus> {
         let (connection, old_ids) = {
             let servers = self.servers.read().await;
             let server = servers.get(server_name).ok_or_else(|| {
@@ -65,12 +78,43 @@ impl McpServerManager {
             )
         };
 
+        self.update_state(
+            server_name,
+            McpServerState::Connecting,
+            None,
+            old_ids.clone(),
+        )
+        .await?;
+
         if !old_ids.is_empty() {
             self.registry.unregister_runtime_tools(&old_ids).await;
+            let mut servers = self.servers.write().await;
+            if let Some(server) = servers.get_mut(server_name) {
+                server.registered_tool_ids.clear();
+            }
         }
 
         if !connection.is_connected() {
-            connection.connect().await?;
+            if let Err(err) = connection.connect().await {
+                let message = err.to_string();
+                return self.fail_status(server_name, message).await;
+            }
+        }
+
+        let list_tools = match connection.list_tools().await {
+            Ok(tools) => tools,
+            Err(err) => {
+                return self.fail_status(server_name, err.to_string()).await;
+            }
+        };
+
+        if list_tools.is_empty() {
+            return self
+                .fail_status(
+                    server_name,
+                    format!("MCP server '{server_name}' connected but returned no tools"),
+                )
+                .await;
         }
 
         let registered_tool_ids = self
@@ -79,15 +123,16 @@ impl McpServerManager {
             .await
             .map_err(McpError::ConnectionFailed)?;
 
-        let mut servers = self.servers.write().await;
-        if let Some(server) = servers.get_mut(server_name) {
-            server.registered_tool_ids = registered_tool_ids.clone();
-        }
-
-        Ok(registered_tool_ids)
+        self.update_state(
+            server_name,
+            McpServerState::Ready,
+            None,
+            registered_tool_ids,
+        )
+        .await
     }
 
-    pub async fn refresh(&self, server_name: &str) -> McpResult<Vec<String>> {
+    pub async fn refresh(&self, server_name: &str) -> McpResult<McpServerStatus> {
         self.connect(server_name).await
     }
 
@@ -116,6 +161,8 @@ impl McpServerManager {
         let mut servers = self.servers.write().await;
         if let Some(server) = servers.get_mut(server_name) {
             server.registered_tool_ids.clear();
+            server.state = McpServerState::Disconnected;
+            server.last_error = None;
         }
 
         disconnect_result
@@ -165,15 +212,16 @@ impl McpServerManager {
                 name: server.config.name.clone(),
                 transport_type: server.config.transport_type.clone(),
                 endpoint: server.config.endpoint.clone(),
-                connected: server.connection.is_connected(),
+                state: server.state.clone(),
                 registered_tool_ids: server.registered_tool_ids.clone(),
+                last_error: server.last_error.clone(),
             })
             .collect();
         items.sort_by(|a, b| a.name.cmp(&b.name));
         items
     }
 
-    pub async fn connect_all(&self) -> Vec<(String, McpResult<Vec<String>>)> {
+    pub async fn connect_all(&self) -> Vec<(String, McpResult<McpServerStatus>)> {
         let mut names: Vec<_> = self.servers.read().await.keys().cloned().collect();
         names.sort();
 
@@ -195,6 +243,50 @@ impl McpServerManager {
             results.push((name, result));
         }
         results
+    }
+
+    async fn fail_status(&self, server_name: &str, message: String) -> McpResult<McpServerStatus> {
+        let old_ids = {
+            let servers = self.servers.read().await;
+            servers
+                .get(server_name)
+                .map(|server| server.registered_tool_ids.clone())
+                .unwrap_or_default()
+        };
+        if !old_ids.is_empty() {
+            self.registry.unregister_runtime_tools(&old_ids).await;
+        }
+        self.update_state(
+            server_name,
+            McpServerState::Failed,
+            Some(message),
+            Vec::new(),
+        )
+        .await
+    }
+
+    async fn update_state(
+        &self,
+        server_name: &str,
+        state: McpServerState,
+        last_error: Option<String>,
+        registered_tool_ids: Vec<String>,
+    ) -> McpResult<McpServerStatus> {
+        let mut servers = self.servers.write().await;
+        let server = servers.get_mut(server_name).ok_or_else(|| {
+            McpError::ConnectionFailed(format!("MCP server '{server_name}' not registered"))
+        })?;
+        server.state = state.clone();
+        server.last_error = last_error.clone();
+        server.registered_tool_ids = registered_tool_ids.clone();
+        Ok(McpServerStatus {
+            name: server.config.name.clone(),
+            transport_type: server.config.transport_type.clone(),
+            endpoint: server.config.endpoint.clone(),
+            state,
+            registered_tool_ids,
+            last_error,
+        })
     }
 }
 

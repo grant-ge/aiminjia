@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::runtime::mcp::{
-    McpServerConfig, McpServerManager, McpServerStatus, PendingMcpConnection,
+    build_mcp_connection, McpServerConfig, McpServerManager, McpServerState, McpServerStatus,
 };
 use crate::storage::mcp_config_store::McpConfigStore;
 
@@ -24,8 +24,9 @@ pub struct McpServerStatusDto {
     pub name: String,
     pub transport_type: String,
     pub endpoint: String,
-    pub connected: bool,
+    pub state: String,
     pub registered_tool_ids: Vec<String>,
+    pub last_error: Option<String>,
 }
 
 impl From<McpServerConfigDto> for McpServerConfig {
@@ -45,8 +46,15 @@ impl From<McpServerStatus> for McpServerStatusDto {
             name: value.name,
             transport_type: value.transport_type,
             endpoint: value.endpoint,
-            connected: value.connected,
+            state: match value.state {
+                McpServerState::Configured => "configured".to_string(),
+                McpServerState::Connecting => "connecting".to_string(),
+                McpServerState::Ready => "ready".to_string(),
+                McpServerState::Failed => "failed".to_string(),
+                McpServerState::Disconnected => "disconnected".to_string(),
+            },
             registered_tool_ids: value.registered_tool_ids,
+            last_error: value.last_error,
         }
     }
 }
@@ -72,7 +80,7 @@ pub async fn add_mcp_server(
     let config: McpServerConfig = config.into();
     config_store.add(config.clone())?;
 
-    let connection = Arc::new(PendingMcpConnection::new(config.clone()));
+    let connection = build_mcp_connection(&config).map_err(|err| err.to_string())?;
     if let Err(err) = manager.register(connection).await {
         let _ = config_store.remove(&config.name);
         return Err(err.to_string());
@@ -99,10 +107,11 @@ pub async fn remove_mcp_server(
 pub async fn connect_mcp_server(
     server_name: String,
     manager: State<'_, Arc<McpServerManager>>,
-) -> Result<Vec<String>, String> {
+) -> Result<McpServerStatusDto, String> {
     manager
         .connect(&server_name)
         .await
+        .map(McpServerStatusDto::from)
         .map_err(|err| err.to_string())
 }
 

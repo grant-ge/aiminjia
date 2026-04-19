@@ -199,7 +199,10 @@
       "list": {
         "empty": "还没有配置 MCP 服务器",
         "emptyHint": "点击「添加服务器」配置第一个 MCP server。",
-        "statusConnected": "已连接",
+        "statusConfigured": "已配置",
+        "statusConnecting": "连接中",
+        "statusReady": "已就绪",
+        "statusFailed": "连接失败",
         "statusDisconnected": "未连接",
         "connect": "连接",
         "connecting": "连接中...",

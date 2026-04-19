@@ -176,12 +176,18 @@ pub fn run() {
 
             tauri::async_runtime::block_on(async {
                 for config in persisted_mcp_configs {
-                    if let Err(err) = mcp_server_manager
-                        .register(Arc::new(runtime::mcp::PendingMcpConnection::new(
-                            config.clone(),
-                        )))
-                        .await
-                    {
+                    let connection = match runtime::mcp::build_mcp_connection(&config) {
+                        Ok(connection) => connection,
+                        Err(err) => {
+                            log::warn!(
+                                "Failed to build persisted MCP server '{}': {}",
+                                config.name,
+                                err
+                            );
+                            continue;
+                        }
+                    };
+                    if let Err(err) = mcp_server_manager.register(connection).await {
                         log::warn!(
                             "Failed to pre-register persisted MCP server '{}': {}",
                             config.name,

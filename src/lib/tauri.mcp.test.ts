@@ -19,6 +19,7 @@ import {
   listMcpServers,
   removeMcpServer,
   type McpServerConfig,
+  type McpServerStatus,
 } from './tauri'
 
 describe('tauri mcp commands', () => {
@@ -63,9 +64,17 @@ describe('tauri mcp commands', () => {
   })
 
   it('connects an MCP server via the expected command payload', async () => {
-    coreMock.invoke.mockResolvedValue(['mcp__demo__search'])
+    const status: McpServerStatus = {
+      name: 'demo-server',
+      transportType: 'stdio',
+      endpoint: '/usr/local/bin/demo',
+      state: 'ready',
+      registeredToolIds: ['mcp__demo__search'],
+      lastError: null,
+    }
+    coreMock.invoke.mockResolvedValue(status)
 
-    await connectMcpServer('demo-server')
+    await expect(connectMcpServer('demo-server')).resolves.toEqual(status)
 
     expect(coreMock.invoke).toHaveBeenCalledWith('connect_mcp_server', {
       serverName: 'demo-server',

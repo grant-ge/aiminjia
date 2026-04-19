@@ -88,17 +88,29 @@ export function McpTab() {
   const handleConnect = async (name: string) => {
     setRowLoading(name, true)
     try {
-      const ids = await connectMcpServer(name)
+      const status = await connectMcpServer(name)
       await reload()
-      pushNotification({
-        level: 'success',
-        title: t('settings.mcp.connectSuccess'),
-        message: t('settings.mcp.list.tools', { count: ids.length }),
-        actions: [],
-        dismissible: true,
-        autoHide: 4,
-        context: 'toast',
-      })
+      if (status.state === 'ready') {
+        pushNotification({
+          level: 'success',
+          title: t('settings.mcp.connectSuccess'),
+          message: t('settings.mcp.list.tools', { count: status.registeredToolIds.length }),
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
+      } else {
+        pushNotification({
+          level: 'error',
+          title: t('settings.mcp.connectFailed'),
+          message: status.lastError ?? `${name}: ${status.state}`,
+          actions: [],
+          dismissible: true,
+          autoHide: 5,
+          context: 'toast',
+        })
+      }
     } catch (error) {
       pushNotification({
         level: 'error',

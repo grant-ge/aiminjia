@@ -1195,8 +1195,9 @@ export interface McpServerStatus {
   name: string
   transportType: string
   endpoint: string
-  connected: boolean
+  state: 'configured' | 'connecting' | 'ready' | 'failed' | 'disconnected'
   registeredToolIds: string[]
+  lastError: string | null
 }
 
 export function listMcpServers(): Promise<McpServerStatus[]> {
@@ -1211,8 +1212,8 @@ export function removeMcpServer(serverName: string): Promise<void> {
   return invoke<void>('remove_mcp_server', { serverName })
 }
 
-export function connectMcpServer(serverName: string): Promise<string[]> {
-  return invoke<string[]>('connect_mcp_server', { serverName })
+export function connectMcpServer(serverName: string): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>('connect_mcp_server', { serverName })
 }
 
 export function disconnectMcpServer(serverName: string): Promise<void> {

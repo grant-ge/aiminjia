@@ -199,7 +199,10 @@
       "list": {
         "empty": "No MCP servers configured yet",
         "emptyHint": "Click \"Add Server\" to configure your first MCP server.",
-        "statusConnected": "Connected",
+        "statusConfigured": "Configured",
+        "statusConnecting": "Connecting",
+        "statusReady": "Ready",
+        "statusFailed": "Failed",
         "statusDisconnected": "Offline",
         "connect": "Connect",
         "connecting": "Connecting...",

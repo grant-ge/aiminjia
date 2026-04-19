@@ -33,7 +33,7 @@ export function McpServerList({
     )
   }
 
-  if (servers.length === 0) {
+  if (!servers || servers.length === 0) {
     return (
       <div
         className="rounded-lg border p-6 text-center"
@@ -49,6 +49,7 @@ export function McpServerList({
     <div className="space-y-2">
       {servers.map((server) => {
         const rowBusy = !!actionLoading[server.name]
+        const isReady = server.state === 'ready'
         return (
           <div
             key={server.name}
@@ -73,7 +74,7 @@ export function McpServerList({
                 >
                   {server.transportType}
                 </span>
-                <StatusBadge connected={server.connected} />
+                <StatusBadge state={server.state} />
               </div>
               <div className="mt-1 break-all text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 {server.endpoint}
@@ -81,10 +82,15 @@ export function McpServerList({
               <div className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 {t('settings.mcp.list.tools', { count: server.registeredToolIds.length })}
               </div>
+              {server.lastError ? (
+                <div className="mt-1 text-xs" style={{ color: 'var(--color-semantic-red, #ef4444)' }}>
+                  {server.lastError}
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {server.connected ? (
+              {isReady ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -123,26 +129,52 @@ export function McpServerList({
   )
 }
 
-function StatusBadge({ connected }: { connected: boolean }) {
+function StatusBadge({ state }: { state: McpServerStatus['state'] }) {
   const { t } = useTranslation()
+
+  const palette = {
+    ready: {
+      bg: 'rgba(52, 199, 89, 0.12)',
+      fg: 'var(--color-semantic-green, #34C759)',
+      text: t('settings.mcp.list.statusReady'),
+    },
+    connecting: {
+      bg: 'rgba(59, 130, 246, 0.12)',
+      fg: 'var(--color-semantic-blue, #3b82f6)',
+      text: t('settings.mcp.list.statusConnecting'),
+    },
+    failed: {
+      bg: 'rgba(239, 68, 68, 0.12)',
+      fg: 'var(--color-semantic-red, #ef4444)',
+      text: t('settings.mcp.list.statusFailed'),
+    },
+    disconnected: {
+      bg: 'rgba(148, 163, 184, 0.12)',
+      fg: 'var(--color-text-muted)',
+      text: t('settings.mcp.list.statusDisconnected'),
+    },
+    configured: {
+      bg: 'rgba(148, 163, 184, 0.12)',
+      fg: 'var(--color-text-muted)',
+      text: t('settings.mcp.list.statusConfigured'),
+    },
+  } as const
+
+  const status = palette[state]
 
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
       style={{
-        background: connected
-          ? 'rgba(52, 199, 89, 0.12)'
-          : 'rgba(148, 163, 184, 0.12)',
-        color: connected ? 'var(--color-semantic-green, #34C759)' : 'var(--color-text-muted)',
+        background: status.bg,
+        color: status.fg,
       }}
     >
       <span
         className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{
-          background: connected ? 'var(--color-semantic-green, #34C759)' : 'var(--color-text-muted)',
-        }}
+        style={{ background: status.fg }}
       />
-      {connected ? t('settings.mcp.list.statusConnected') : t('settings.mcp.list.statusDisconnected')}
+      {status.text}
     </span>
   )
 }

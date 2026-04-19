@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::mcp::{
-    McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpToolDefinition,
+    McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpServerState,
+    McpToolDefinition,
 };
 use app_lib::runtime::tools::TOOL_CATALOG;
 use async_trait::async_trait;
@@ -85,19 +86,27 @@ async fn manager_connect_and_disconnect_sync_runtime_tools() {
 
     manager.register(connection.clone()).await.unwrap();
 
-    let ids = manager.connect("server-a").await.unwrap();
-    assert_eq!(ids, vec!["mcp__server-a__lookup".to_string()]);
+    let status = manager.connect("server-a").await.unwrap();
+    assert_eq!(
+        status.registered_tool_ids,
+        vec!["mcp__server-a__lookup".to_string()]
+    );
+    assert_eq!(status.state, McpServerState::Ready);
     assert!(connection.is_connected());
     assert!(TOOL_CATALOG.get("mcp__server-a__lookup").is_some());
 
     let servers = manager.list_servers().await;
     assert_eq!(servers.len(), 1);
-    assert!(servers[0].connected);
-    assert_eq!(servers[0].registered_tool_ids, ids);
+    assert_eq!(servers[0].state, McpServerState::Ready);
+    assert_eq!(servers[0].registered_tool_ids, status.registered_tool_ids);
 
     manager.disconnect("server-a").await.unwrap();
     assert!(!connection.is_connected());
     assert!(TOOL_CATALOG.get("mcp__server-a__lookup").is_none());
+
+    let servers = manager.list_servers().await;
+    assert_eq!(servers[0].state, McpServerState::Disconnected);
+    assert_eq!(servers[0].registered_tool_ids, Vec::<String>::new());
 
     let schemas = registry.get_all_schemas().await;
     assert!(
@@ -135,7 +144,11 @@ async fn manager_refresh_replaces_stale_tool_ids() {
     *connection.tools.lock().unwrap() = vec![tool("server-b", "status")];
     let refreshed = manager.refresh("server-b").await.unwrap();
 
-    assert_eq!(refreshed, vec!["mcp__server-b__status".to_string()]);
+    assert_eq!(refreshed.state, McpServerState::Ready);
+    assert_eq!(
+        refreshed.registered_tool_ids,
+        vec!["mcp__server-b__status".to_string()]
+    );
     assert!(TOOL_CATALOG.get("mcp__server-b__lookup").is_none());
     assert!(TOOL_CATALOG.get("mcp__server-b__status").is_some());
 }
@@ -166,6 +179,12 @@ async fn manager_connect_all_and_disconnect_all_cover_all_servers() {
     let connect_results = manager.connect_all().await;
     assert_eq!(connect_results.len(), 2);
     assert!(connect_results.iter().all(|(_, result)| result.is_ok()));
+    assert!(connect_results.iter().all(|(_, result)| {
+        result
+            .as_ref()
+            .map(|status| status.state == McpServerState::Ready)
+            .unwrap_or(false)
+    }));
 
     let disconnect_results = manager.disconnect_all().await;
     assert_eq!(disconnect_results.len(), 2);
@@ -195,4 +214,43 @@ async fn manager_rejects_duplicate_registration() {
     manager.register(connection.clone()).await.unwrap();
     let err = manager.register(connection).await.unwrap_err();
     assert!(matches!(err, McpError::AlreadyConnected));
+}
+
+#[tokio::test]
+async fn manager_marks_server_failed_when_tool_list_is_empty() {
+    let registry = Arc::new(ToolRegistry::new());
+    let manager = McpServerManager::new(registry.clone());
+
+    let connection = Arc::new(TestMcpConn {
+        config: McpServerConfig {
+            name: "server-empty".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: "cmd".to_string(),
+            env_vars: None,
+        },
+        connected: Mutex::new(false),
+        tools: Mutex::new(vec![]),
+        outputs: Mutex::new(HashMap::new()),
+    });
+
+    manager.register(connection).await.unwrap();
+
+    let status = manager.connect("server-empty").await.unwrap();
+    assert_eq!(status.state, McpServerState::Failed);
+    assert_eq!(status.registered_tool_ids, Vec::<String>::new());
+    assert!(
+        status
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("no tools"),
+        "expected no-tools failure, got: {:?}",
+        status.last_error
+    );
+
+    assert!(TOOL_CATALOG.get("mcp__server-empty__lookup").is_none());
+    let schemas = registry.get_all_schemas().await;
+    assert!(schemas
+        .iter()
+        .all(|schema| !schema.name.starts_with("mcp__server-empty__")));
 }

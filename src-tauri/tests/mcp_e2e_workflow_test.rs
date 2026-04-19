@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::mcp::{
-    McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpToolDefinition,
+    McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpServerState,
+    McpToolDefinition,
 };
 use app_lib::runtime::store::permission_store::{PermissionStore, PolicyDecision};
 use app_lib::runtime::tools::permission::PermissionDecision;
@@ -129,8 +130,12 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
     });
 
     manager.register(connection).await.unwrap();
-    let ids = manager.connect("e2e-server").await.unwrap();
-    assert_eq!(ids, vec!["mcp__e2e-server__lookup".to_string()]);
+    let status = manager.connect("e2e-server").await.unwrap();
+    assert_eq!(status.state, McpServerState::Ready);
+    assert_eq!(
+        status.registered_tool_ids,
+        vec!["mcp__e2e-server__lookup".to_string()]
+    );
     assert!(TOOL_CATALOG.get("mcp__e2e-server__lookup").is_some());
 
     let dispatcher = registry
@@ -149,7 +154,10 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
         ToolDispatchOutcome::AskRequired(PermissionDecision::Ask { message, .. }) => {
             assert!(message.contains("MCP") || message.contains("external server"));
         }
-        other => panic!("expected AskRequired for first MCP dispatch, got: {:?}", other),
+        other => panic!(
+            "expected AskRequired for first MCP dispatch, got: {:?}",
+            other
+        ),
     }
 
     store.record(
@@ -172,7 +180,10 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
             assert!(result.content.contains("a"));
         }
         ToolDispatchOutcome::AskRequired(other) => {
-            panic!("unexpected AskRequired after allow-once decision: {:?}", other)
+            panic!(
+                "unexpected AskRequired after allow-once decision: {:?}",
+                other
+            )
         }
     }
 
