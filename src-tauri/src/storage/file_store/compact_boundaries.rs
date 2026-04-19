@@ -24,5 +24,8 @@ pub fn list_compact_boundaries(
     base_dir: &Path,
     conversation_id: &str,
 ) -> StorageResult<Vec<CompactBoundaryRecord>> {
-    Ok(read_jsonl(&compact_boundaries_path(base_dir, conversation_id))?)
+    Ok(read_jsonl(&compact_boundaries_path(
+        base_dir,
+        conversation_id,
+    ))?)
 }

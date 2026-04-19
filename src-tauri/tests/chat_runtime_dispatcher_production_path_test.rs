@@ -19,10 +19,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::AuthorizedWorkspaceRef;
@@ -64,7 +64,11 @@ impl RuntimeTool for CapturingRuntimeTool {
             .and_then(|storage| storage.authorized_workspace.as_ref())
             .map(|aw| aw.root_path.clone());
         *self.captured_authorized_root.lock().unwrap() = authorized_root;
-        Ok(ToolResult::new(self.name, format!("dispatched:{}", self.name), None))
+        Ok(ToolResult::new(
+            self.name,
+            format!("dispatched:{}", self.name),
+            None,
+        ))
     }
 }
 
@@ -157,8 +161,7 @@ async fn runtime_chat_mainline_preserves_workspace_first_authorized_directory() 
             display_name: "prod-authorized".to_string(),
         }));
 
-    let mapping =
-        IdentityMapping::from_legacy_conversation_id("conv-workspace-first".to_string());
+    let mapping = IdentityMapping::from_legacy_conversation_id("conv-workspace-first".to_string());
     let turn = TurnState::new(
         mapping,
         RunId::new("run-workspace-first"),
@@ -203,8 +206,7 @@ async fn runtime_chat_mainline_emits_tool_events_once() {
     let bus = RuntimeEventBus::new();
     bus.subscribe(Arc::new(TauriEventAdapter::new(host.clone())));
 
-    let mapping =
-        IdentityMapping::from_legacy_conversation_id("conv-event-count".to_string());
+    let mapping = IdentityMapping::from_legacy_conversation_id("conv-event-count".to_string());
     let turn = TurnState::new(
         mapping,
         RunId::new("run-event-count"),

@@ -20,7 +20,11 @@ impl RuntimeTool for OkTool {
         ToolDefinition::new(&self.name, "always ok")
     }
 
-    async fn execute(&self, _input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        _input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         Ok(ToolResult::new(&self.name, "success output", None))
     }
 }
@@ -31,7 +35,9 @@ async fn post_tool_hook_executes_after_success() {
     let _ = std::fs::remove_file(&tmp_path);
     let tmp_str = tmp_path.to_str().unwrap().to_string();
 
-    let tool = Arc::new(OkTool { name: "bash_tool".to_string() });
+    let tool = Arc::new(OkTool {
+        name: "bash_tool".to_string(),
+    });
     let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
     dispatcher.register(tool);
 
@@ -54,7 +60,9 @@ async fn post_tool_hook_executes_after_success() {
 
 #[tokio::test]
 async fn post_tool_hook_prevent_continuation_surfaced() {
-    let tool = Arc::new(OkTool { name: "bash_tool".to_string() });
+    let tool = Arc::new(OkTool {
+        name: "bash_tool".to_string(),
+    });
     let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
     dispatcher.register(tool);
 
@@ -70,7 +78,10 @@ async fn post_tool_hook_prevent_continuation_surfaced() {
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_hook_registry(Arc::new(registry));
 
-    let outcome = dispatcher.dispatch("bash_tool", json!({}), ctx).await.unwrap();
+    let outcome = dispatcher
+        .dispatch("bash_tool", json!({}), ctx)
+        .await
+        .unwrap();
     match outcome {
         ToolDispatchOutcome::Completed {
             prevent_continuation,
@@ -86,13 +97,18 @@ async fn post_tool_hook_prevent_continuation_surfaced() {
 
 #[tokio::test]
 async fn no_post_hook_no_prevent_continuation() {
-    let tool = Arc::new(OkTool { name: "bash_tool".to_string() });
+    let tool = Arc::new(OkTool {
+        name: "bash_tool".to_string(),
+    });
     let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
     dispatcher.register(tool);
 
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
 
-    let outcome = dispatcher.dispatch("bash_tool", json!({}), ctx).await.unwrap();
+    let outcome = dispatcher
+        .dispatch("bash_tool", json!({}), ctx)
+        .await
+        .unwrap();
     match outcome {
         ToolDispatchOutcome::Completed {
             prevent_continuation,

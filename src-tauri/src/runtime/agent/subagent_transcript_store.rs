@@ -39,12 +39,7 @@ impl SubagentTranscriptStore for InMemorySubagentTranscriptStore {
     }
 
     fn get(&self, transcript_ref: &str) -> Result<Option<Vec<SubagentTranscriptEntryRecord>>> {
-        Ok(self
-            .entries
-            .lock()
-            .unwrap()
-            .get(transcript_ref)
-            .cloned())
+        Ok(self.entries.lock().unwrap().get(transcript_ref).cloned())
     }
 }
 

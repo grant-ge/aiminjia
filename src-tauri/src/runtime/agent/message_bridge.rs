@@ -1,6 +1,6 @@
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::events::{AgentIdleScope, RuntimeEventKind};
 use crate::runtime::ids::AgentId;
-use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 
 /// Build the `AgentIdle` event kind for a completed sub-agent.
 /// This event signals the UI that the background sub-agent has finished.
@@ -15,7 +15,11 @@ pub fn bridge_agent_summary(agent_id: AgentId) -> RuntimeEventKind {
 ///
 /// Returns a concise string that is persisted in the invocation record and
 /// can later be retrieved by the parent run via `AgentRuntime::get_summary`.
-pub fn format_sub_agent_summary(output: &str, iterations_used: usize, files_count: usize) -> String {
+pub fn format_sub_agent_summary(
+    output: &str,
+    iterations_used: usize,
+    files_count: usize,
+) -> String {
     let short = if output.len() > 500 {
         let end = output
             .char_indices()
@@ -59,7 +63,11 @@ mod tests {
         let s = format_sub_agent_summary(&long, 3, 2);
         assert!(s.contains("iterations=3"));
         assert!(s.contains("files=2"));
-        assert!(s.len() < 600, "summary should be truncated: len={}", s.len());
+        assert!(
+            s.len() < 600,
+            "summary should be truncated: len={}",
+            s.len()
+        );
     }
 
     #[test]

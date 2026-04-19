@@ -419,7 +419,10 @@ fn format_browse_data_subagent_result(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "data.json".to_string());
                 if let Ok(content) = std::fs::read(src) {
-                    match ctx.file_manager.write_file("generated", &file_name, &content) {
+                    match ctx
+                        .file_manager
+                        .write_file("generated", &file_name, &content)
+                    {
                         Ok(file_info) => {
                             let file_id = uuid::Uuid::new_v4().to_string();
                             let _ = ctx.storage.insert_generated_file(
@@ -680,13 +683,8 @@ pub(crate) async fn execute_browse_data(
         task: require_str(args, "task")?.to_string(),
         url: optional_str(args, "url").map(str::to_string),
     };
-    launch_browse_data_with_plugin_ctx(
-        ctx,
-        request,
-        ctx.cancellation.clone(),
-        ctx.run_id.is_some(),
-    )
-    .await
+    launch_browse_data_with_plugin_ctx(ctx, request, ctx.cancellation.clone(), ctx.run_id.is_some())
+        .await
 }
 
 #[cfg(test)]
@@ -805,22 +803,24 @@ mod tests {
             output: "child completed analysis".to_string(),
             files: vec![child_file.display().to_string()],
             iterations_used: 3,
-            envelope:
-                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
-                    schema_version: 1,
-                    output: "child completed analysis".to_string(),
-                    iterations_used: 3,
-                    generated_files: vec![child_file.display().to_string()],
-                    terminal_tool_results: Vec::new(),
-                    transcript_snapshot: Vec::new(),
-                    transcript_ref: Some("child-run-1".to_string()),
-                },
+            envelope: crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                schema_version: 1,
+                output: "child completed analysis".to_string(),
+                iterations_used: 3,
+                generated_files: vec![child_file.display().to_string()],
+                terminal_tool_results: Vec::new(),
+                transcript_snapshot: Vec::new(),
+                transcript_ref: Some("child-run-1".to_string()),
+            },
         };
 
         let output = format_browse_data_subagent_result(&ctx, &result);
         let registered = workspace.path().join("generated").join("child-result.json");
 
-        assert!(registered.exists(), "parent workspace should register child artifact");
+        assert!(
+            registered.exists(),
+            "parent workspace should register child artifact"
+        );
         assert!(output.contains("Browser agent completed in 3 iterations."));
         assert!(output.contains("### Extracted Data Files"));
         assert!(output.contains(registered.to_string_lossy().as_ref()));
@@ -831,7 +831,11 @@ mod tests {
             .storage
             .get_generated_files_for_conversation("parent-conv")
             .expect("query generated files");
-        assert_eq!(generated.len(), 1, "registered artifact should be recorded in storage");
+        assert_eq!(
+            generated.len(),
+            1,
+            "registered artifact should be recorded in storage"
+        );
     }
 
     #[test]
@@ -844,16 +848,15 @@ mod tests {
             output: String::new(),
             files: vec![missing.display().to_string()],
             iterations_used: 1,
-            envelope:
-                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
-                    schema_version: 1,
-                    output: String::new(),
-                    iterations_used: 1,
-                    generated_files: vec![missing.display().to_string()],
-                    terminal_tool_results: Vec::new(),
-                    transcript_snapshot: Vec::new(),
-                    transcript_ref: Some("child-run-2".to_string()),
-                },
+            envelope: crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                schema_version: 1,
+                output: String::new(),
+                iterations_used: 1,
+                generated_files: vec![missing.display().to_string()],
+                terminal_tool_results: Vec::new(),
+                transcript_snapshot: Vec::new(),
+                transcript_ref: Some("child-run-2".to_string()),
+            },
         };
 
         let output = format_browse_data_subagent_result(&ctx, &result);
@@ -873,16 +876,15 @@ mod tests {
             output: "legacy output should not be rendered".to_string(),
             files: vec!["/tmp/legacy-only.json".to_string()],
             iterations_used: 99,
-            envelope:
-                crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
-                    schema_version: 1,
-                    output: "envelope output wins".to_string(),
-                    iterations_used: 2,
-                    generated_files: vec![child_file.display().to_string()],
-                    terminal_tool_results: Vec::new(),
-                    transcript_snapshot: Vec::new(),
-                    transcript_ref: Some("child-run-envelope".to_string()),
-                },
+            envelope: crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope {
+                schema_version: 1,
+                output: "envelope output wins".to_string(),
+                iterations_used: 2,
+                generated_files: vec![child_file.display().to_string()],
+                terminal_tool_results: Vec::new(),
+                transcript_snapshot: Vec::new(),
+                transcript_ref: Some("child-run-envelope".to_string()),
+            },
         };
 
         let output = format_browse_data_subagent_result(&ctx, &result);
@@ -913,7 +915,10 @@ mod tests {
                 ..
             } => {
                 assert_eq!(message, "need approval");
-                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+                assert_eq!(
+                    suggestions,
+                    vec!["Allow once".to_string(), "Deny".to_string()]
+                );
             }
             other => panic!("expected structured ask decision, got: {:?}", other),
         }

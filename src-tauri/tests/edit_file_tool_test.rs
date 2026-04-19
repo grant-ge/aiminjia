@@ -121,9 +121,7 @@ async fn edit_file_updates_cache_after_edit() {
     .await
     .unwrap();
 
-    let resolved = std::fs::canonicalize(tmp.path())
-        .unwrap()
-        .join("cache.txt");
+    let resolved = std::fs::canonicalize(tmp.path()).unwrap().join("cache.txt");
     let state = cache.get(&resolved).expect("cache should be populated");
     assert_eq!(state.content, "updated text");
 }

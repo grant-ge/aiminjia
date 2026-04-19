@@ -67,10 +67,20 @@ async fn background_completion_persists_summary_and_transcript_ref_together() {
         .await
         .unwrap();
 
-    let stored_summary = runtime.get_summary(handle.child_run_id()).await.unwrap().unwrap();
+    let stored_summary = runtime
+        .get_summary(handle.child_run_id())
+        .await
+        .unwrap()
+        .unwrap();
     let decoded = SubAgentResultEnvelope::from_storage_summary(&stored_summary).unwrap();
-    let stored_ref = runtime.get_transcript_ref(handle.child_run_id()).await.unwrap();
+    let stored_ref = runtime
+        .get_transcript_ref(handle.child_run_id())
+        .await
+        .unwrap();
 
-    assert_eq!(decoded.transcript_ref.as_deref(), Some(transcript_ref.as_str()));
+    assert_eq!(
+        decoded.transcript_ref.as_deref(),
+        Some(transcript_ref.as_str())
+    );
     assert_eq!(stored_ref.as_deref(), Some(transcript_ref.as_str()));
 }

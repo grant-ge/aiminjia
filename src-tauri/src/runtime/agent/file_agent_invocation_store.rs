@@ -3,8 +3,8 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 
-use crate::runtime::ids::AgentId;
 use crate::runtime::agent::invocation::AgentStatus;
+use crate::runtime::ids::AgentId;
 use crate::runtime::store::{AgentInvocationRecord, AgentInvocationStore};
 
 /// File-backed implementation of [`AgentInvocationStore`].
@@ -56,10 +56,7 @@ impl AgentInvocationStore for FileAgentInvocationStore {
 
     fn get_invocation(&self, agent_id: &AgentId) -> Result<Option<AgentInvocationRecord>> {
         let cache = self.cache.lock().unwrap();
-        Ok(cache
-            .iter()
-            .find(|r| r.agent_id == *agent_id)
-            .cloned())
+        Ok(cache.iter().find(|r| r.agent_id == *agent_id).cloned())
     }
 
     fn list_invocations(&self) -> Result<Vec<AgentInvocationRecord>> {

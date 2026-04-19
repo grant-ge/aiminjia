@@ -13,7 +13,11 @@ pub struct ToolResult {
 }
 
 impl ToolResult {
-    pub fn new(tool_name: impl Into<String>, content: impl Into<String>, data: Option<Value>) -> Self {
+    pub fn new(
+        tool_name: impl Into<String>,
+        content: impl Into<String>,
+        data: Option<Value>,
+    ) -> Self {
         Self {
             tool_name: tool_name.into(),
             content: content.into(),

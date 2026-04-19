@@ -40,5 +40,8 @@ fn test_h2_3_parent_cancel_propagates_to_grandchild() {
     assert!(child.is_cancelled());
     assert!(grandchild.is_cancelled());
     assert_eq!(child.reason(), Some(CancellationReason::BackgroundStop));
-    assert_eq!(grandchild.reason(), Some(CancellationReason::BackgroundStop));
+    assert_eq!(
+        grandchild.reason(),
+        Some(CancellationReason::BackgroundStop)
+    );
 }

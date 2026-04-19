@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::capability::FileState;
+use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -28,7 +28,9 @@ use crate::storage::file_manager;
 ///
 /// Returns `PermissionDenied` only when no capability context is present at all
 /// (i.e., the tool was invoked outside a proper session context).
-pub(crate) fn require_workspace_root(ctx: &ToolExecutionContext) -> Result<std::path::PathBuf, ToolError> {
+pub(crate) fn require_workspace_root(
+    ctx: &ToolExecutionContext,
+) -> Result<std::path::PathBuf, ToolError> {
     ctx.capability
         .as_ref()
         .and_then(|c| c.storage.as_ref())
@@ -128,7 +130,9 @@ impl RuntimeTool for ListDirectoryRuntimeTool {
         let rel = input.get("path").and_then(Value::as_str).unwrap_or(".");
         let resolved = resolve_path(&root, rel)?;
         if !resolved.is_dir() {
-            return Err(ToolError::ExecutionFailed(format!("Not a directory: {rel}")));
+            return Err(ToolError::ExecutionFailed(format!(
+                "Not a directory: {rel}"
+            )));
         }
         let mut files = Vec::new();
         for entry in std::fs::read_dir(&resolved)
@@ -193,16 +197,27 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let max_bytes = capability
             .and_then(|cap| cap.file_reading_limits.as_ref())
             .map(|limits| limits.max_size_bytes)
-            .or_else(|| input.get("max_bytes").and_then(Value::as_u64).map(|v| v as usize))
+            .or_else(|| {
+                input
+                    .get("max_bytes")
+                    .and_then(Value::as_u64)
+                    .map(|v| v as usize)
+            })
             .unwrap_or(1_048_576);
-        let offset = input.get("offset").and_then(Value::as_u64).map(|v| v as usize);
-        let limit = input.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+        let offset = input
+            .get("offset")
+            .and_then(Value::as_u64)
+            .map(|v| v as usize);
+        let limit = input
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|v| v as usize);
         let resolved = resolve_path(&root, rel)?;
         if !resolved.is_file() {
             return Err(ToolError::ExecutionFailed(format!("Not a file: {rel}")));
         }
-        let metadata = std::fs::metadata(&resolved)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let metadata =
+            std::fs::metadata(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let mtime_secs = metadata
             .modified()
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
@@ -219,8 +234,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                     if !cache_is_too_short {
                         let (content, limit_truncated) =
                             limit_text_content(&state.content, max_bytes);
-                        let truncated =
-                            limit_truncated || metadata.len() as usize > content.len();
+                        let truncated = limit_truncated || metadata.len() as usize > content.len();
                         let mut result = json!({
                             "path": rel,
                             "content": content,
@@ -235,8 +249,8 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                 }
             }
         }
-        let bytes = std::fs::read(&resolved)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let bytes =
+            std::fs::read(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let full_content = String::from_utf8_lossy(&bytes).to_string();
         let (content, limit_truncated) = limit_text_content(&full_content, max_bytes);
         let truncated = limit_truncated || bytes.len() > content.len();
@@ -410,8 +424,8 @@ impl RuntimeTool for GetFileInfoRuntimeTool {
                 "Path does not exist: {rel}"
             )));
         }
-        let meta = std::fs::metadata(&resolved)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let meta =
+            std::fs::metadata(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let is_dir = meta.is_dir();
         let modified = meta
             .modified()

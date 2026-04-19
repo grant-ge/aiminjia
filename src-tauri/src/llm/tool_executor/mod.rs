@@ -48,33 +48,33 @@ pub struct FileGenResult {
 // Re-exports — preserve external import paths
 // ─────────────────────────────────────────────────
 
-pub(crate) use chart::handle_generate_chart;
-pub(crate) use chart::ChartCoreParams;
 pub(crate) use chart::build_chart_python;
+pub(crate) use chart::handle_generate_chart;
 pub(crate) use chart::handle_generate_chart_core;
+pub(crate) use chart::ChartCoreParams;
 pub(crate) use export::handle_export_data;
 pub(crate) use file_load::handle_load_file;
-pub(crate) use internal_system::handle_browse_and_extract;
 pub(crate) use internal_system::execute_browse_data;
+pub(crate) use internal_system::handle_browse_and_extract;
 pub(crate) use internal_system::handle_browse_navigate;
-pub(crate) use internal_system::DefaultBrowseDataLauncher;
 pub(crate) use internal_system::handle_extract_table_data;
 pub(crate) use internal_system::handle_extract_with_pagination;
 pub(crate) use internal_system::handle_page_execute_js;
 pub(crate) use internal_system::handle_read_page_content;
+pub(crate) use internal_system::DefaultBrowseDataLauncher;
 pub(crate) use memory::handle_distill_memories;
 pub(crate) use memory::handle_load_core_memory;
 pub(crate) use memory::handle_save_memory;
 pub(crate) use memory::handle_search_memory;
 pub(crate) use notes::handle_save_analysis_note;
 pub(crate) use progress::handle_update_progress;
-pub(crate) use python::ExecutePythonCoreParams;
-pub(crate) use python::handle_execute_python_core;
 pub(crate) use python::handle_execute_python;
-pub(crate) use report::ReportCoreParams;
+pub(crate) use python::handle_execute_python_core;
+pub(crate) use python::ExecutePythonCoreParams;
 pub(crate) use report::generate_report_bytes_core;
-pub(crate) use report::handle_generate_report_core;
 pub(crate) use report::handle_generate_report;
+pub(crate) use report::handle_generate_report_core;
+pub(crate) use report::ReportCoreParams;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
 pub(crate) use slides::handle_generate_slides;

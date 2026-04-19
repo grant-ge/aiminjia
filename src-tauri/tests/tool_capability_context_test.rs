@@ -22,10 +22,17 @@ struct WorkspacePrinterTool;
 #[async_trait]
 impl RuntimeTool for WorkspacePrinterTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("workspace_printer", "Print workspace path from capability ctx")
+        ToolDefinition::new(
+            "workspace_printer",
+            "Print workspace path from capability ctx",
+        )
     }
 
-    async fn execute(&self, _input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        _input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let workspace = ctx
             .capability
             .as_ref()
@@ -102,7 +109,9 @@ fn capability_context_does_not_expose_full_plugin_context() {
 fn file_state_cache_returns_none_for_unknown_path() {
     use app_lib::runtime::tools::capability::FileStateCache;
     let cache = FileStateCache::new();
-    assert!(cache.get(std::path::Path::new("/tmp/nonexistent.txt")).is_none());
+    assert!(cache
+        .get(std::path::Path::new("/tmp/nonexistent.txt"))
+        .is_none());
 }
 
 #[test]
@@ -206,8 +215,7 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
         .with_read_file_state(cache.clone())
         .with_file_reading_limits(FileReadingLimits::default());
     let ctx = || {
-        ToolExecutionContext::for_test("conv", "run", "tc-1")
-            .with_capability(Arc::new(cap.clone()))
+        ToolExecutionContext::for_test("conv", "run", "tc-1").with_capability(Arc::new(cap.clone()))
     };
 
     let tool = ReadWorkspaceFileRuntimeTool;
@@ -215,7 +223,10 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
     let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
         .await
         .unwrap();
-    let r1_data = r1.data.as_ref().expect("first read should include structured data");
+    let r1_data = r1
+        .data
+        .as_ref()
+        .expect("first read should include structured data");
     assert_eq!(r1_data["content"], json!("line1\nline2\n"));
     assert!(r1_data.get("cached").is_none());
 
@@ -254,8 +265,7 @@ async fn read_workspace_file_reloads_when_larger_request_exceeds_truncated_cache
     let cache = Arc::new(FileStateCache::new());
     let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
     let ctx = || {
-        ToolExecutionContext::for_test("conv", "run", "tc-1")
-            .with_capability(Arc::new(cap.clone()))
+        ToolExecutionContext::for_test("conv", "run", "tc-1").with_capability(Arc::new(cap.clone()))
     };
 
     let tool = ReadWorkspaceFileRuntimeTool;
@@ -318,8 +328,7 @@ async fn read_workspace_file_truncates_cached_content_for_smaller_follow_up_limi
     let cache = Arc::new(FileStateCache::new());
     let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
     let ctx = || {
-        ToolExecutionContext::for_test("conv", "run", "tc-1")
-            .with_capability(Arc::new(cap.clone()))
+        ToolExecutionContext::for_test("conv", "run", "tc-1").with_capability(Arc::new(cap.clone()))
     };
 
     let tool = ReadWorkspaceFileRuntimeTool;
@@ -369,8 +378,7 @@ async fn read_workspace_file_preserves_utf8_boundaries_between_cold_and_cached_r
     let cache = Arc::new(FileStateCache::new());
     let cap = CapabilityContext::with_workspace(dir, "ws").with_read_file_state(cache);
     let ctx = || {
-        ToolExecutionContext::for_test("conv", "run", "tc-1")
-            .with_capability(Arc::new(cap.clone()))
+        ToolExecutionContext::for_test("conv", "run", "tc-1").with_capability(Arc::new(cap.clone()))
     };
 
     let tool = ReadWorkspaceFileRuntimeTool;

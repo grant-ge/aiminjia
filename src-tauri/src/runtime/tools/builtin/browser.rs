@@ -75,7 +75,9 @@ pub struct BrowseNavigateRuntimeTool {
 
 impl BrowseNavigateRuntimeTool {
     pub fn new(deps: BrowserDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self {
+            deps: Arc::new(deps),
+        }
     }
 }
 
@@ -87,7 +89,11 @@ impl RuntimeTool for BrowseNavigateRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("browse_navigate", "导航浏览器到指定 URL"))
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let url = input
             .get("url")
             .and_then(Value::as_str)
@@ -99,7 +105,10 @@ impl RuntimeTool for BrowseNavigateRuntimeTool {
             .browser_navigate(url)
             .await
             .map_err(|e| {
-                warn!("[BROWSER] browse_navigate failed: url='{}', error={}", url, e);
+                warn!(
+                    "[BROWSER] browse_navigate failed: url='{}', error={}",
+                    url, e
+                );
                 ToolError::ExecutionFailed(e)
             })?;
 
@@ -154,19 +163,25 @@ pub struct ReadPageContentRuntimeTool {
 
 impl ReadPageContentRuntimeTool {
     pub fn new(deps: BrowserDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self {
+            deps: Arc::new(deps),
+        }
     }
 }
 
 #[async_trait]
 impl RuntimeTool for ReadPageContentRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("read_page_content")
-            .unwrap_or_else(|| ToolDefinition::new("read_page_content", "读取当前浏览器页面的文本内容"))
+        TOOL_CATALOG.get("read_page_content").unwrap_or_else(|| {
+            ToolDefinition::new("read_page_content", "读取当前浏览器页面的文本内容")
+        })
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let extract_script = input.get("selector").and_then(Value::as_str);
 
         info!("[BROWSER] read_page_content");
@@ -189,7 +204,11 @@ impl RuntimeTool for ReadPageContentRuntimeTool {
 
         if !result.tables.is_empty() {
             for (i, table) in result.tables.iter().enumerate() {
-                output.push_str(&format!("### Table {} ({} rows)\n", i + 1, table.rows.len()));
+                output.push_str(&format!(
+                    "### Table {} ({} rows)\n",
+                    i + 1,
+                    table.rows.len()
+                ));
                 if !table.headers.is_empty() {
                     output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
                 }
@@ -255,19 +274,25 @@ pub struct PageExecuteJsRuntimeTool {
 
 impl PageExecuteJsRuntimeTool {
     pub fn new(deps: BrowserDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self {
+            deps: Arc::new(deps),
+        }
     }
 }
 
 #[async_trait]
 impl RuntimeTool for PageExecuteJsRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("page_execute_js")
-            .unwrap_or_else(|| ToolDefinition::new("page_execute_js", "在当前浏览器页面执行 JavaScript"))
+        TOOL_CATALOG.get("page_execute_js").unwrap_or_else(|| {
+            ToolDefinition::new("page_execute_js", "在当前浏览器页面执行 JavaScript")
+        })
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let script = input
             .get("code")
             .and_then(Value::as_str)
@@ -312,19 +337,25 @@ pub struct ExtractTableDataRuntimeTool {
 
 impl ExtractTableDataRuntimeTool {
     pub fn new(deps: BrowserDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self {
+            deps: Arc::new(deps),
+        }
     }
 }
 
 #[async_trait]
 impl RuntimeTool for ExtractTableDataRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("extract_table_data")
-            .unwrap_or_else(|| ToolDefinition::new("extract_table_data", "从当前浏览器页面抽取表格数据"))
+        TOOL_CATALOG.get("extract_table_data").unwrap_or_else(|| {
+            ToolDefinition::new("extract_table_data", "从当前浏览器页面抽取表格数据")
+        })
     }
 
-    async fn execute(&self, _input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        _input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let filename = format!(
             "table_data_{}.json",
             chrono::Utc::now().format("%Y%m%d_%H%M%S")
@@ -333,7 +364,9 @@ impl RuntimeTool for ExtractTableDataRuntimeTool {
             .deps
             .file_manager
             .write_file("generated", &filename, b"{}")
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to create output file: {}", e)))?;
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to create output file: {}", e))
+            })?;
         let save_path = self.deps.file_manager.full_path(&file_info.stored_path);
 
         info!("[BROWSER] extract_table_data: save_path={:?}", save_path);
@@ -398,8 +431,16 @@ impl RuntimeTool for ExtractTableDataRuntimeTool {
              - Total records: {}\n\
              - Current page: {}\n\
              - Has next page: {}\n",
-            if total > 0 { total.to_string() } else { "unknown".to_string() },
-            if current_page > 0 { current_page.to_string() } else { "unknown".to_string() },
+            if total > 0 {
+                total.to_string()
+            } else {
+                "unknown".to_string()
+            },
+            if current_page > 0 {
+                current_page.to_string()
+            } else {
+                "unknown".to_string()
+            },
             has_next,
         ));
         if has_next || (total > 0 && total_saved < total) {
@@ -444,7 +485,9 @@ pub struct ExtractWithPaginationRuntimeTool {
 
 impl ExtractWithPaginationRuntimeTool {
     pub fn new(deps: BrowserDeps) -> Self {
-        Self { deps: Arc::new(deps) }
+        Self {
+            deps: Arc::new(deps),
+        }
     }
 }
 
@@ -458,12 +501,19 @@ impl RuntimeTool for ExtractWithPaginationRuntimeTool {
             })
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let pagination_js = input
             .get("next_selector")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let max_pages = input.get("max_pages").and_then(Value::as_u64).map(|v| v as u32);
+        let max_pages = input
+            .get("max_pages")
+            .and_then(Value::as_u64)
+            .map(|v| v as u32);
 
         let filename = format!(
             "table_data_{}.json",
@@ -473,10 +523,15 @@ impl RuntimeTool for ExtractWithPaginationRuntimeTool {
             .deps
             .file_manager
             .write_file("generated", &filename, b"{}")
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to create output file: {}", e)))?;
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to create output file: {}", e))
+            })?;
         let save_path = self.deps.file_manager.full_path(&file_info.stored_path);
 
-        info!("[BROWSER] extract_with_pagination: save_path={:?}", save_path);
+        info!(
+            "[BROWSER] extract_with_pagination: save_path={:?}",
+            save_path
+        );
 
         let result = connector_engine(&self.deps)?
             .browser_extract_with_pagination(&save_path.to_string_lossy(), pagination_js, max_pages)

@@ -234,7 +234,10 @@ async fn bash_cancel_kills_descendant_processes() {
         )
         .await;
 
-    assert!(result.is_err(), "cancelled command should still return an error");
+    assert!(
+        result.is_err(),
+        "cancelled command should still return an error"
+    );
     tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
     assert!(
         !tmp.path().join("cancel-child.txt").exists(),

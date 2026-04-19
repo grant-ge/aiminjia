@@ -1,6 +1,6 @@
+use app_lib::runtime::chat::ChatTurnOutcome;
 use app_lib::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
-use app_lib::runtime::chat::ChatTurnOutcome;
 use app_lib::transport::tauri_event_adapter::map_runtime_event;
 
 #[test]
@@ -47,7 +47,10 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
     let mapped = map_runtime_event(&event).expect("legacy adapter should expose permission ask");
     assert_eq!(mapped.name, "permission:ask");
     assert_eq!(
-        mapped.payload.get("conversationId").and_then(|v| v.as_str()),
+        mapped
+            .payload
+            .get("conversationId")
+            .and_then(|v| v.as_str()),
         Some("conv-1")
     );
     assert_eq!(
@@ -95,7 +98,10 @@ fn maps_turn_completed_runtime_event_to_legacy_turn_completed() {
     let mapped = map_runtime_event(&event).expect("legacy adapter should expose turn completion");
     assert_eq!(mapped.name, "turn:completed");
     assert_eq!(
-        mapped.payload.get("conversationId").and_then(|v| v.as_str()),
+        mapped
+            .payload
+            .get("conversationId")
+            .and_then(|v| v.as_str()),
         Some("conv-1")
     );
     assert_eq!(

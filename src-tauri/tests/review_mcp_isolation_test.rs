@@ -85,7 +85,10 @@ async fn review_unregister_runtime_tools_removes_only_dynamic_mcp_entries() {
             input_schema: json!({ "type": "object" }),
         }],
         connected: Mutex::new(false),
-        outputs: Mutex::new(HashMap::from([("lookup".to_string(), json!({ "ok": true }))])),
+        outputs: Mutex::new(HashMap::from([(
+            "lookup".to_string(),
+            json!({ "ok": true }),
+        )])),
     });
 
     assert!(TOOL_CATALOG.get("execute_python").is_some());

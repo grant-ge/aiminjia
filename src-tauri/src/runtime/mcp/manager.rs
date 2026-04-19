@@ -56,12 +56,13 @@ impl McpServerManager {
     pub async fn connect(&self, server_name: &str) -> McpResult<Vec<String>> {
         let (connection, old_ids) = {
             let servers = self.servers.read().await;
-            let server = servers
-                .get(server_name)
-                .ok_or_else(|| McpError::ConnectionFailed(format!(
-                    "MCP server '{server_name}' not registered"
-                )))?;
-            (server.connection.clone(), server.registered_tool_ids.clone())
+            let server = servers.get(server_name).ok_or_else(|| {
+                McpError::ConnectionFailed(format!("MCP server '{server_name}' not registered"))
+            })?;
+            (
+                server.connection.clone(),
+                server.registered_tool_ids.clone(),
+            )
         };
 
         if !old_ids.is_empty() {
@@ -93,12 +94,13 @@ impl McpServerManager {
     pub async fn disconnect(&self, server_name: &str) -> McpResult<()> {
         let (connection, registered_tool_ids) = {
             let servers = self.servers.read().await;
-            let server = servers
-                .get(server_name)
-                .ok_or_else(|| McpError::ConnectionFailed(format!(
-                    "MCP server '{server_name}' not registered"
-                )))?;
-            (server.connection.clone(), server.registered_tool_ids.clone())
+            let server = servers.get(server_name).ok_or_else(|| {
+                McpError::ConnectionFailed(format!("MCP server '{server_name}' not registered"))
+            })?;
+            (
+                server.connection.clone(),
+                server.registered_tool_ids.clone(),
+            )
         };
 
         self.registry
@@ -141,9 +143,9 @@ impl McpServerManager {
             let servers = self.servers.read().await;
             servers
                 .get(server_name)
-                .ok_or_else(|| McpError::ConnectionFailed(format!(
-                    "MCP server '{server_name}' not registered"
-                )))?
+                .ok_or_else(|| {
+                    McpError::ConnectionFailed(format!("MCP server '{server_name}' not registered"))
+                })?
                 .connection
                 .clone()
         };

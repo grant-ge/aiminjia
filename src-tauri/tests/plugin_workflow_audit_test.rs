@@ -68,7 +68,10 @@ fn all_plugin_workflow_toml_files_parse_successfully() {
                 }
             }
             Err(e) => {
-                failures.push(format!("[{}] workflow.toml parse error: {}", plugin_name, e));
+                failures.push(format!(
+                    "[{}] workflow.toml parse error: {}",
+                    plugin_name, e
+                ));
             }
         }
     }
@@ -173,8 +176,7 @@ advance_on = "any"
 
     // 故意不创建 prompts/extract/ 目录或 base_extract.md
 
-    let plugin_toml =
-        std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
+    let plugin_toml = std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
     let manifest = parse_plugin_manifest(&plugin_toml).unwrap();
 
     // 构造 DeclarativeSkill 不应失败
@@ -228,7 +230,8 @@ fn historically_broken_skills_load_successfully_via_declarative_skill() {
         assert!(
             plugin_dir.is_dir(),
             "[{}] plugin directory not found at {:?}",
-            plugin_id, plugin_dir
+            plugin_id,
+            plugin_dir
         );
 
         // Step 1: 读取并解析 plugin.toml
@@ -256,7 +259,8 @@ fn historically_broken_skills_load_successfully_via_declarative_skill() {
 
         // Step 3: smoke asserts
         assert_eq!(
-            skill.id(), *plugin_id,
+            skill.id(),
+            *plugin_id,
             "[{}] skill.id() mismatch after load",
             plugin_id
         );
@@ -264,17 +268,23 @@ fn historically_broken_skills_load_successfully_via_declarative_skill() {
         assert!(
             skill.display_name().contains(expected_name_fragment),
             "[{}] display_name '{}' should contain '{}'",
-            plugin_id, skill.display_name(), expected_name_fragment
+            plugin_id,
+            skill.display_name(),
+            expected_name_fragment
         );
 
         // workflow 必须存在且有步骤（这些 skill 都是多步工作流）
         let wf = skill.workflow().unwrap_or_else(|| {
-            panic!("[{}] workflow() returned None — plugin should have a workflow", plugin_id)
+            panic!(
+                "[{}] workflow() returned None — plugin should have a workflow",
+                plugin_id
+            )
         });
         assert!(
             wf.steps.len() >= 4,
             "[{}] workflow should have at least 4 steps, got {}",
-            plugin_id, wf.steps.len()
+            plugin_id,
+            wf.steps.len()
         );
 
         // allowed_tool_names 在 step0 应返回 Some（step0 均定义了 tools_only）

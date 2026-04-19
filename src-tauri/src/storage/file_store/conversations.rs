@@ -98,22 +98,17 @@ pub fn get_conversation_mode(base_dir: &Path, id: &str) -> StorageResult<String>
 }
 
 /// Get the configured model override for a conversation.
-pub fn get_conversation_model_override(
-    base_dir: &Path,
-    id: &str,
-) -> StorageResult<Option<String>> {
+pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResult<Option<String>> {
     let meta_path = conv_meta_path(base_dir, id);
     let meta: ConversationMeta = read_json_safe(&meta_path)?;
-    Ok(meta
-        .model_override
-        .and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        }))
+    Ok(meta.model_override.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
 }
 
 /// Set the mode of a conversation.
@@ -367,7 +362,9 @@ mod tests {
 
         set_conversation_model_override(&base, "c1", Some("claude".to_string())).unwrap();
         assert_eq!(
-            get_conversation_model_override(&base, "c1").unwrap().as_deref(),
+            get_conversation_model_override(&base, "c1")
+                .unwrap()
+                .as_deref(),
             Some("claude")
         );
 

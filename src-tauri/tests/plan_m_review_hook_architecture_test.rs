@@ -30,8 +30,7 @@ fn review_capability_context_not_widened() {
 #[test]
 fn review_hook_runner_no_llm_gateway() {
     let _runner = app_lib::runtime::hooks::runner::HookRunner::new();
-    let content = std::fs::read_to_string("src/runtime/hooks/runner.rs")
-        .expect("read hook runner");
+    let content = std::fs::read_to_string("src/runtime/hooks/runner.rs").expect("read hook runner");
     assert!(
         !content.contains("LlmGateway") && !content.contains("AgentRuntime"),
         "HookRunner must stay independent from LLM/runtime host services"

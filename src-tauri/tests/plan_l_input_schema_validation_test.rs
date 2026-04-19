@@ -97,7 +97,10 @@ mod l2_validate_input_trait {
         let bad_input = json!({"not_command": "ls"});
         let result = tool.validate_input(&bad_input);
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), ToolError::InputValidationError { .. }));
+        assert!(matches!(
+            result.unwrap(),
+            ToolError::InputValidationError { .. }
+        ));
     }
 
     #[test]
@@ -110,8 +113,8 @@ mod l2_validate_input_trait {
 }
 
 mod l3_dispatcher_validation_gate {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     use async_trait::async_trait;
     use serde_json::{json, Value};
@@ -155,7 +158,9 @@ mod l3_dispatcher_validation_gate {
     #[tokio::test]
     async fn l3_dispatcher_returns_validation_error_before_execute() {
         let executed = Arc::new(AtomicBool::new(false));
-        let tool = ValidatingTool { executed: executed.clone() };
+        let tool = ValidatingTool {
+            executed: executed.clone(),
+        };
         let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
         dispatcher.register(Arc::new(tool));
 
@@ -175,14 +180,18 @@ mod l3_dispatcher_validation_gate {
     #[tokio::test]
     async fn l3_dispatcher_executes_when_validation_passes() {
         let executed = Arc::new(AtomicBool::new(false));
-        let tool = ValidatingTool { executed: executed.clone() };
+        let tool = ValidatingTool {
+            executed: executed.clone(),
+        };
         let dispatcher = ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline));
         dispatcher.register(Arc::new(tool));
 
         let ctx = ToolExecutionContext::for_test("sess-l3b", "run-l3b", "tc-l3b");
         let good_input = json!({"path": "/workspace/file.txt"});
 
-        let result = dispatcher.dispatch("validating_tool", good_input, ctx).await;
+        let result = dispatcher
+            .dispatch("validating_tool", good_input, ctx)
+            .await;
 
         assert!(result.is_ok());
         assert!(executed.load(Ordering::SeqCst));
@@ -195,7 +204,9 @@ mod l4_query_engine_validation_error_encoding {
     use async_trait::async_trait;
     use serde_json::{json, Value};
 
-    use app_lib::runtime::chat::tool_round_types::{RuntimeToolCallOutcome, RuntimeToolCallRequest};
+    use app_lib::runtime::chat::tool_round_types::{
+        RuntimeToolCallOutcome, RuntimeToolCallRequest,
+    };
     use app_lib::runtime::event_bus::RuntimeEventBus;
     use app_lib::runtime::identity::IdentityMapping;
     use app_lib::runtime::ids::RunId;
@@ -255,9 +266,7 @@ mod l4_query_engine_validation_error_encoding {
 
         match outcome {
             RuntimeToolCallOutcome::Completed {
-                is_error,
-                content,
-                ..
+                is_error, content, ..
             } => {
                 assert!(is_error);
                 assert!(content.contains("InputValidationError"), "got: {content}");
@@ -282,7 +291,10 @@ mod l5_builtin_tool_validation {
         let bad = json!({"timeout_secs": 30});
         let result = tool.validate_input(&bad);
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), ToolError::InputValidationError { .. }));
+        assert!(matches!(
+            result.unwrap(),
+            ToolError::InputValidationError { .. }
+        ));
     }
 
     #[test]

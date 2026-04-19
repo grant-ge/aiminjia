@@ -56,10 +56,7 @@ impl RuntimeTool for CaptureSubagentContextTool {
 }
 
 #[allow(deprecated)]
-fn make_plugin_ctx(
-    workspace: &Path,
-    agent_id: Option<AgentId>,
-) -> PluginContext {
+fn make_plugin_ctx(workspace: &Path, agent_id: Option<AgentId>) -> PluginContext {
     let storage = Arc::new(AppStorage::new(workspace).expect("AppStorage::new failed"));
     let file_manager = Arc::new(FileManager::new(workspace));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
@@ -160,10 +157,15 @@ async fn test_h4_3_query_engine_keeps_primary_context_non_subagent() {
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
     dispatcher.register(Arc::new(CaptureSubagentContextTool { seen: seen.clone() }));
 
-    let engine = QueryEngine::with_dispatcher(dispatcher)
-        .with_workspace_path(tmp.path().to_path_buf());
-    let mapping = IdentityMapping::from_legacy_conversation_id("subagent-capability-conv".to_string());
-    let turn = TurnState::new(mapping, RunId::new("run-capability-main"), "capture".to_string());
+    let engine =
+        QueryEngine::with_dispatcher(dispatcher).with_workspace_path(tmp.path().to_path_buf());
+    let mapping =
+        IdentityMapping::from_legacy_conversation_id("subagent-capability-conv".to_string());
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("run-capability-main"),
+        "capture".to_string(),
+    );
     let bus = RuntimeEventBus::new();
 
     engine

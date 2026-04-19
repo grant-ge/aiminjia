@@ -42,7 +42,9 @@ impl RuntimeTool for FailTool {
         _input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        Err(ToolError::ExecutionFailed("intentional failure".to_string()))
+        Err(ToolError::ExecutionFailed(
+            "intentional failure".to_string(),
+        ))
     }
 }
 
@@ -62,12 +64,18 @@ impl RuntimeTool for SlowTool {
         true
     }
 
-    async fn execute(&self, _input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        _input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         *self.started.lock().unwrap() = true;
         for _ in 0..200 {
             if ctx.cancellation.is_cancelled() {
                 *self.cancelled.lock().unwrap() = true;
-                return Err(ToolError::ExecutionFailed("cancelled by sibling error".to_string()));
+                return Err(ToolError::ExecutionFailed(
+                    "cancelled by sibling error".to_string(),
+                ));
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -126,14 +134,19 @@ async fn sibling_error_cascades_to_concurrent_tool() {
     if let ToolRoundResult::Ok(outcome) = &results[1] {
         let content = outcome.content();
         assert!(
-            content.contains("sibling") || content.contains("cancelled") || content.contains("parallel"),
+            content.contains("sibling")
+                || content.contains("cancelled")
+                || content.contains("parallel"),
             "sibling cancel message should mention the reason; got: {}",
             content
         );
     }
 
     assert!(*slow_started.lock().unwrap(), "slow tool should start");
-    assert!(*slow_cancelled.lock().unwrap(), "slow tool should observe sibling cancellation");
+    assert!(
+        *slow_cancelled.lock().unwrap(),
+        "slow tool should observe sibling cancellation"
+    );
 }
 
 #[tokio::test]
@@ -192,8 +205,12 @@ async fn concurrent_success_no_spurious_cancels() {
     }
 
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
-    dispatcher.register(Arc::new(OkTool { name: "tool_a".into() }));
-    dispatcher.register(Arc::new(OkTool { name: "tool_b".into() }));
+    dispatcher.register(Arc::new(OkTool {
+        name: "tool_a".into(),
+    }));
+    dispatcher.register(Arc::new(OkTool {
+        name: "tool_b".into(),
+    }));
 
     let engine = QueryEngine::with_dispatcher(dispatcher);
     let driver = ToolRoundDriver::new(engine);

@@ -113,7 +113,10 @@ async fn shared_mcp_connection_trait_object_supports_basic_calls() {
             name: "demo-server".to_string(),
             transport_type: "stdio".to_string(),
             endpoint: "demo-command".to_string(),
-            env_vars: Some(HashMap::from([(String::from("TOKEN"), String::from("abc"))])),
+            env_vars: Some(HashMap::from([(
+                String::from("TOKEN"),
+                String::from("abc"),
+            )])),
         },
         connected: AtomicBool::new(false),
     });

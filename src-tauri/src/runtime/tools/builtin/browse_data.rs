@@ -92,10 +92,7 @@ impl RuntimeTool for BrowseDataRuntimeTool {
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: task".into()))?;
         let request = BrowseDataLaunchRequest {
             task: task.to_string(),
-            url: input
-                .get("url")
-                .and_then(Value::as_str)
-                .map(str::to_string),
+            url: input.get("url").and_then(Value::as_str).map(str::to_string),
         };
         let launch_ctx = BrowseDataLaunchContext {
             session_id: ctx.session_id.clone(),

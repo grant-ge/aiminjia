@@ -102,12 +102,7 @@ impl AuthorizedWorkspaceStore for InMemoryAuthorizedWorkspaceStore {
         &self,
         session_id: &SessionId,
     ) -> Result<Option<AuthorizedWorkspace>> {
-        Ok(self
-            .data
-            .lock()
-            .unwrap()
-            .get(session_id.as_str())
-            .cloned())
+        Ok(self.data.lock().unwrap().get(session_id.as_str()).cloned())
     }
 
     fn clear_for_session(&self, session_id: &SessionId) -> Result<()> {

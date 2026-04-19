@@ -40,7 +40,6 @@ const MAX_RETRIES: u32 = 3;
 /// Initial backoff delay in milliseconds (doubles each retry: 1s → 2s → 4s).
 const INITIAL_BACKOFF_MS: u64 = 1000;
 
-
 pub fn thinking_config_for_route(
     route: &RouteResult,
     settings: &AppSettings,
@@ -58,7 +57,6 @@ pub fn thinking_config_for_route(
         _ => Some(ThinkingConfig::Disabled),
     }
 }
-
 
 /// Check if an error is retryable (rate limit, server error, or network timeout).
 ///

@@ -22,8 +22,7 @@ fn ctx_without_capability() -> ToolExecutionContext {
 fn ctx_with_workspace() -> ToolExecutionContext {
     let tmp = TempDir::new().expect("tempdir");
     let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws");
-    ToolExecutionContext::for_test("conv", "run", "tool-call")
-        .with_capability(Arc::new(cap))
+    ToolExecutionContext::for_test("conv", "run", "tool-call").with_capability(Arc::new(cap))
 }
 
 fn decision_kind(decision: &PermissionDecision) -> &'static str {

@@ -152,8 +152,7 @@ except Exception as e:
 "#,
             html_path =
                 serde_json::to_string(&html_temp_path.to_string_lossy().to_string()).unwrap(),
-            pdf_path =
-                serde_json::to_string(&output_path.to_string_lossy().to_string()).unwrap(),
+            pdf_path = serde_json::to_string(&output_path.to_string_lossy().to_string()).unwrap(),
         );
 
         let script_path = temp_dir.join(format!("export_script_{}.py", file_id));

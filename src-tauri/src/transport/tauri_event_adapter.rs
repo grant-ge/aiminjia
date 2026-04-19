@@ -33,17 +33,18 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
-        RuntimeEventKind::StreamError { ref error, ref raw_error } => {
-            Some(LegacyEvent {
-                name: "streaming:error".to_string(),
-                payload: serde_json::json!({
-                    "conversationId": conversation_id,
-                    "error": error,
-                    "rawError": raw_error,
-                    "runId": event.run_id.as_str(),
-                }),
-            })
-        }
+        RuntimeEventKind::StreamError {
+            ref error,
+            ref raw_error,
+        } => Some(LegacyEvent {
+            name: "streaming:error".to_string(),
+            payload: serde_json::json!({
+                "conversationId": conversation_id,
+                "error": error,
+                "rawError": raw_error,
+                "runId": event.run_id.as_str(),
+            }),
+        }),
         RuntimeEventKind::ToolCallExecuting {
             tool_call_id,
             tool_name,

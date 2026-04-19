@@ -1,26 +1,21 @@
-use app_lib::runtime::chat::compaction::{
-    build_compact_boundary_record, CompactTrigger,
-};
+use app_lib::runtime::chat::compaction::{build_compact_boundary_record, CompactTrigger};
 use app_lib::runtime::store::{ConversationStore, InMemoryConversationStore};
 use app_lib::storage::file_store::AppStorage;
 use tempfile::TempDir;
 
 #[test]
 fn k1_compact_boundary_record_fields_are_correct() {
-    let record = build_compact_boundary_record(
-        "conv-1",
-        CompactTrigger::Auto,
-        42_000,
-        8_200,
-        15,
-    );
+    let record = build_compact_boundary_record("conv-1", CompactTrigger::Auto, 42_000, 8_200, 15);
 
     assert_eq!(record.conversation_id, "conv-1");
     assert_eq!(record.trigger, CompactTrigger::Auto);
     assert_eq!(record.pre_tokens, 42_000);
     assert_eq!(record.post_tokens, 8_200);
     assert_eq!(record.messages_summarized, 15);
-    assert!(!record.id.is_empty(), "compact boundary record must have an id");
+    assert!(
+        !record.id.is_empty(),
+        "compact boundary record must have an id"
+    );
     assert!(
         !record.created_at.is_empty(),
         "compact boundary record must have a timestamp"
@@ -32,13 +27,7 @@ fn k1_inmemory_store_append_and_list_compact_boundaries() {
     let store = InMemoryConversationStore::new();
     store.create_conversation("conv-k1", "Test").unwrap();
 
-    let record = build_compact_boundary_record(
-        "conv-k1",
-        CompactTrigger::Auto,
-        50_000,
-        9_000,
-        20,
-    );
+    let record = build_compact_boundary_record("conv-k1", CompactTrigger::Auto, 50_000, 9_000, 20);
     store.append_compact_boundary(record.clone()).unwrap();
 
     let boundaries = store.list_compact_boundaries("conv-k1").unwrap();
@@ -78,20 +67,9 @@ fn k1_app_storage_persists_compact_boundaries() {
     let store: &dyn ConversationStore = &storage;
     store.create_conversation("conv-file", "File Test").unwrap();
 
-    let first = build_compact_boundary_record(
-        "conv-file",
-        CompactTrigger::Auto,
-        61_000,
-        7_500,
-        22,
-    );
-    let second = build_compact_boundary_record(
-        "conv-file",
-        CompactTrigger::Manual,
-        31_000,
-        6_000,
-        10,
-    );
+    let first = build_compact_boundary_record("conv-file", CompactTrigger::Auto, 61_000, 7_500, 22);
+    let second =
+        build_compact_boundary_record("conv-file", CompactTrigger::Manual, 31_000, 6_000, 10);
 
     store.append_compact_boundary(first.clone()).unwrap();
     store.append_compact_boundary(second.clone()).unwrap();

@@ -10,11 +10,11 @@
 use std::sync::Arc;
 
 use app_lib::runtime::store::permission_store::PermissionStore;
-use app_lib::runtime::tools::{
-    PermissionDecision, PermissionPipeline, RuntimeTool, ToolDefinition,
-    ToolDispatchOutcome, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
-};
 use app_lib::runtime::tools::permission::{PermissionReason, StorePolicyPipeline};
+use app_lib::runtime::tools::{
+    PermissionDecision, PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatchOutcome,
+    ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -41,11 +41,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
     ) -> PermissionDecision {
         PermissionDecision::Ask {
             message: format!("permission confirmation required for '{}'", definition.id),
-            suggestions: vec![
-                "Allow once".into(),
-                "Always allow".into(),
-                "Deny".into(),
-            ],
+            suggestions: vec!["Allow once".into(), "Always allow".into(), "Deny".into()],
             reason: PermissionReason::UnknownScope,
         }
     }
@@ -93,7 +89,12 @@ fn store_policy_pipeline_unknown_scope_no_policy_returns_ask() {
     );
 
     // 确认 Ask 携带了有意义的 message 和 suggestions
-    if let PermissionDecision::Ask { message, suggestions, .. } = &result {
+    if let PermissionDecision::Ask {
+        message,
+        suggestions,
+        ..
+    } = &result
+    {
         assert!(
             message.contains("custom:test"),
             "Ask message should mention the unknown scope, got: {}",
@@ -116,9 +117,7 @@ async fn dispatcher_ask_pipeline_returns_ok_ask_required() {
     dispatcher.register(Arc::new(EchoTool));
 
     let ctx = make_ctx();
-    let outcome = dispatcher
-        .dispatch("echo_tool", json!({}), ctx)
-        .await;
+    let outcome = dispatcher.dispatch("echo_tool", json!({}), ctx).await;
 
     assert!(
         outcome.is_ok(),
@@ -235,21 +234,32 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
     #[async_trait]
     impl RuntimeTool for RuntimeUnknownScopeTool {
         fn definition(&self) -> ToolDefinition {
-            ToolDefinition::new("legacy_unknown_scope_tool", "runtime version with unknown scope")
-                .with_capability_scope(["custom:unknown_scope"])
+            ToolDefinition::new(
+                "legacy_unknown_scope_tool",
+                "runtime version with unknown scope",
+            )
+            .with_capability_scope(["custom:unknown_scope"])
         }
         async fn execute(
             &self,
             _input: Value,
             _ctx: ToolExecutionContext,
         ) -> Result<ToolResult, ToolError> {
-            Ok(ToolResult::new("legacy_unknown_scope_tool", "runtime_ok", None))
+            Ok(ToolResult::new(
+                "legacy_unknown_scope_tool",
+                "runtime_ok",
+                None,
+            ))
         }
     }
 
     let registry = ToolRegistry::new();
-    registry.register(Arc::new(LegacyUnknownScopeTool), "builtin").await;
-    registry.register_runtime(Arc::new(RuntimeUnknownScopeTool)).await;
+    registry
+        .register(Arc::new(LegacyUnknownScopeTool), "builtin")
+        .await;
+    registry
+        .register_runtime(Arc::new(RuntimeUnknownScopeTool))
+        .await;
 
     // Set a PermissionStore with no policy for "custom:unknown_scope"
     let store = Arc::new(PermissionStore::in_memory());
@@ -259,13 +269,13 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
     let tmp_dir = tempfile::TempDir::new().unwrap();
     let tmp = tmp_dir.path().to_path_buf();
     let app_storage = Arc::new(
-        app_lib::storage::file_store::AppStorage::new(&tmp)
-            .expect("AppStorage::new failed"),
+        app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
-    let session_manager = Arc::new(
-        app_lib::python::session::PythonSessionManager::new(tmp.clone(), None),
-    );
+    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
+        tmp.clone(),
+        None,
+    ));
 
     #[allow(deprecated)]
     let ctx = app_lib::plugin::context::PluginContext {
@@ -344,7 +354,11 @@ async fn query_engine_run_tool_call_with_bus_ask_returns_ask_required_outcome() 
     let bus = RuntimeEventBus::new();
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-ask-outcome");
-    let turn = TurnState::new(mapping, RunId::new("run-ask-outcome"), "ask test".to_string());
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("run-ask-outcome"),
+        "ask test".to_string(),
+    );
 
     let outcome = engine
         .run_tool_call_with_bus(

@@ -22,7 +22,10 @@ async fn write_file_creates_new_file() {
 
     let tool = WriteFileRuntimeTool;
     let result = tool
-        .execute(json!({ "path": "hello.txt", "content": "hello world" }), ctx)
+        .execute(
+            json!({ "path": "hello.txt", "content": "hello world" }),
+            ctx,
+        )
         .await
         .unwrap();
 
@@ -100,7 +103,10 @@ async fn write_file_updates_file_state_cache() {
         .unwrap()
         .join("cached.txt");
     let state = cache.get(&resolved);
-    assert!(state.is_some(), "FileStateCache should be updated after write");
+    assert!(
+        state.is_some(),
+        "FileStateCache should be updated after write"
+    );
     assert_eq!(state.unwrap().content, "cached content");
 }
 
@@ -110,6 +116,8 @@ async fn write_file_missing_path_returns_error() {
     let ctx = make_ctx_with_workspace(&tmp);
 
     let tool = WriteFileRuntimeTool;
-    let result = tool.execute(json!({ "content": "no path given" }), ctx).await;
+    let result = tool
+        .execute(json!({ "content": "no path given" }), ctx)
+        .await;
     assert!(result.is_err());
 }

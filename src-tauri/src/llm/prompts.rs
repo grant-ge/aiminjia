@@ -246,7 +246,9 @@ pub fn build_system_prompt_parts(
                 dynamic_parts.push(format!("【专业领域】{}", p.expertise.join("、")));
             }
             if !p.memory_hints.is_empty() {
-                let hints = p.memory_hints.iter()
+                let hints = p
+                    .memory_hints
+                    .iter()
                     .map(|h| format!("- {}", h))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -284,7 +286,10 @@ pub fn build_system_prompt_parts(
 
     let dynamic_section = dynamic_parts.join("\n\n");
 
-    SystemPromptParts { static_section, dynamic_section }
+    SystemPromptParts {
+        static_section,
+        dynamic_section,
+    }
 }
 
 /// Compose the full system prompt (backward-compatible shim).
@@ -514,16 +519,26 @@ mod tests {
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
-        assert!(parts.static_section.contains("AI小家 base"),
-            "static_section must contain base prompt");
-        assert!(parts.static_section.contains("工具选择偏好"),
-            "static_section must contain tool preference section");
-        assert!(!parts.static_section.contains("今天是"),
-            "static_section must NOT contain date");
-        assert!(parts.dynamic_section.contains("日常工作助手"),
-            "dynamic_section must contain daily prompt");
-        assert!(!parts.dynamic_section.contains("AI小家 base"),
-            "dynamic_section must NOT repeat base prompt");
+        assert!(
+            parts.static_section.contains("AI小家 base"),
+            "static_section must contain base prompt"
+        );
+        assert!(
+            parts.static_section.contains("工具选择偏好"),
+            "static_section must contain tool preference section"
+        );
+        assert!(
+            !parts.static_section.contains("今天是"),
+            "static_section must NOT contain date"
+        );
+        assert!(
+            parts.dynamic_section.contains("日常工作助手"),
+            "dynamic_section must contain daily prompt"
+        );
+        assert!(
+            !parts.dynamic_section.contains("AI小家 base"),
+            "dynamic_section must NOT repeat base prompt"
+        );
     }
 
     #[test]
@@ -540,8 +555,10 @@ mod tests {
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(PromptMode::Analysis, None, None);
-        assert!(!parts.dynamic_section.contains("日常工作助手"),
-            "Analysis dynamic_section must NOT contain daily prompt");
+        assert!(
+            !parts.dynamic_section.contains("日常工作助手"),
+            "Analysis dynamic_section must NOT contain daily prompt"
+        );
     }
 
     #[test]
@@ -555,10 +572,14 @@ mod tests {
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, Some("智能办公"));
-        assert!(parts.static_section.contains("智能办公"),
-            "product_name replacement must work in static_section");
-        assert!(!parts.static_section.contains("AI小家"),
-            "original brand name must be replaced");
+        assert!(
+            parts.static_section.contains("智能办公"),
+            "product_name replacement must work in static_section"
+        );
+        assert!(
+            !parts.static_section.contains("AI小家"),
+            "original brand name must be replaced"
+        );
     }
 
     #[test]
@@ -590,12 +611,18 @@ mod tests {
         };
 
         let parts = build_system_prompt_parts(PromptMode::Daily, Some(&persona), None);
-        assert!(parts.dynamic_section.contains("你是专业 HR 顾问"),
-            "persona identity must appear in dynamic_section");
-        assert!(parts.dynamic_section.contains("薪酬分析"),
-            "persona expertise must appear in dynamic_section");
-        assert!(!parts.static_section.contains("你是专业 HR 顾问"),
-            "persona must NOT be in static_section");
+        assert!(
+            parts.dynamic_section.contains("你是专业 HR 顾问"),
+            "persona identity must appear in dynamic_section"
+        );
+        assert!(
+            parts.dynamic_section.contains("薪酬分析"),
+            "persona expertise must appear in dynamic_section"
+        );
+        assert!(
+            !parts.static_section.contains("你是专业 HR 顾问"),
+            "persona must NOT be in static_section"
+        );
     }
 
     #[test]
@@ -604,17 +631,32 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
-        setup_prompts(&bundled, &[("base", "AI小家 base"), ("daily", "日常工作助手")]);
+        setup_prompts(
+            &bundled,
+            &[("base", "AI小家 base"), ("daily", "日常工作助手")],
+        );
         fs::create_dir_all(&user).unwrap();
         init_prompts(&bundled, &user);
 
         let prompt = get_system_prompt(None, None, None);
         assert!(prompt.contains("AI小家 base"), "shim: base must be present");
-        assert!(prompt.contains("日常工作助手"), "shim: daily must be present for step=None");
+        assert!(
+            prompt.contains("日常工作助手"),
+            "shim: daily must be present for step=None"
+        );
         let prompt_step = get_system_prompt(Some(0), None, None);
-        assert!(prompt_step.contains("AI小家 base"), "shim: base must be present for step");
-        assert!(!prompt_step.contains("日常工作助手"), "shim: daily must be absent for step=Some");
-        assert!(!prompt.contains("今天是"), "shim: date must NOT be in system prompt");
+        assert!(
+            prompt_step.contains("AI小家 base"),
+            "shim: base must be present for step"
+        );
+        assert!(
+            !prompt_step.contains("日常工作助手"),
+            "shim: daily must be absent for step=Some"
+        );
+        assert!(
+            !prompt.contains("今天是"),
+            "shim: date must NOT be in system prompt"
+        );
     }
 
     #[test]
@@ -628,13 +670,21 @@ mod tests {
         init_prompts(&bundled, &user);
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
-        assert!(parts.static_section.contains("优先使用专用工具"),
-            "must mention prefer dedicated tools");
-        assert!(parts.static_section.contains("execute_python"),
-            "must mention execute_python in context");
-        assert!(parts.static_section.contains("web_search"),
-            "must mention web_search in context");
-        assert!(parts.static_section.contains("save_memory"),
-            "must mention save_memory in context");
+        assert!(
+            parts.static_section.contains("优先使用专用工具"),
+            "must mention prefer dedicated tools"
+        );
+        assert!(
+            parts.static_section.contains("execute_python"),
+            "must mention execute_python in context"
+        );
+        assert!(
+            parts.static_section.contains("web_search"),
+            "must mention web_search in context"
+        );
+        assert!(
+            parts.static_section.contains("save_memory"),
+            "must mention save_memory in context"
+        );
     }
 }

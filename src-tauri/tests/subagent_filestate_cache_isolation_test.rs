@@ -5,7 +5,9 @@ use app_lib::plugin::context::PluginContext;
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::tools::capability::{FileState, FileStateCache};
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use app_lib::runtime::tools::{
+    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+};
 use app_lib::storage::file_manager::FileManager;
 use app_lib::storage::file_store::AppStorage;
 use async_trait::async_trait;
@@ -20,7 +22,11 @@ impl RuntimeTool for CaptureFileStateTool {
         ToolDefinition::new("capture_file_state", "capture subagent file state cache")
     }
 
-    async fn execute(&self, input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let target = PathBuf::from(
             input
                 .get("path")
@@ -57,10 +63,7 @@ impl RuntimeTool for CaptureFileStateTool {
 }
 
 #[allow(deprecated)]
-fn make_plugin_ctx(
-    workspace: &Path,
-    cache: Option<Arc<FileStateCache>>,
-) -> PluginContext {
+fn make_plugin_ctx(workspace: &Path, cache: Option<Arc<FileStateCache>>) -> PluginContext {
     let storage = Arc::new(AppStorage::new(workspace).expect("AppStorage::new failed"));
     let file_manager = Arc::new(FileManager::new(workspace));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
@@ -111,7 +114,9 @@ fn test_h1_1_clone_for_child_reads_parent_snapshot() {
 
     let child_cache = parent_cache.clone_for_child();
 
-    let child_state = child_cache.get(&target).expect("child should inherit parent snapshot");
+    let child_state = child_cache
+        .get(&target)
+        .expect("child should inherit parent snapshot");
     assert_eq!(child_state.content, "parent-content");
 
     child_cache.set(
@@ -124,7 +129,9 @@ fn test_h1_1_clone_for_child_reads_parent_snapshot() {
         },
     );
 
-    let parent_state = parent_cache.get(&target).expect("parent state should still exist");
+    let parent_state = parent_cache
+        .get(&target)
+        .expect("parent state should still exist");
     assert_eq!(parent_state.content, "parent-content");
     assert_eq!(parent_state.mtime_secs, 1_000);
 }
@@ -155,7 +162,9 @@ fn test_h1_2_child_snapshot_isolated_from_later_parent_writes() {
         },
     );
 
-    let child_state = child_cache.get(&target).expect("child snapshot should still exist");
+    let child_state = child_cache
+        .get(&target)
+        .expect("child snapshot should still exist");
     assert_eq!(child_state.content, "initial");
     assert_eq!(child_state.mtime_secs, 1_000);
 }
@@ -164,7 +173,9 @@ fn test_h1_2_child_snapshot_isolated_from_later_parent_writes() {
 async fn test_h1_3_subagent_runtime_tool_writes_only_child_cache() {
     let tmp = TempDir::new().expect("TempDir::new failed");
     let registry = ToolRegistry::new();
-    registry.register_runtime(Arc::new(CaptureFileStateTool)).await;
+    registry
+        .register_runtime(Arc::new(CaptureFileStateTool))
+        .await;
 
     let target = PathBuf::from("/tmp/subagent-write.txt");
     let parent_cache = Arc::new(FileStateCache::new());
@@ -194,10 +205,14 @@ async fn test_h1_3_subagent_runtime_tool_writes_only_child_cache() {
         .await
         .expect("runtime tool should update child cache only");
 
-    let parent_state = parent_cache.get(&target).expect("parent cache should retain original");
+    let parent_state = parent_cache
+        .get(&target)
+        .expect("parent cache should retain original");
     assert_eq!(parent_state.content, "parent-before");
 
-    let child_state = child_cache.get(&target).expect("child cache should be updated");
+    let child_state = child_cache
+        .get(&target)
+        .expect("child cache should be updated");
     assert_eq!(child_state.content, "child-after");
     assert_eq!(child_state.mtime_secs, 2_000);
 }

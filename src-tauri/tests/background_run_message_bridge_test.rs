@@ -59,10 +59,7 @@ async fn complete_background_run_stores_summary_and_emits_agent_idle() {
     );
 
     // Status is Completed
-    assert_eq!(
-        runtime.status(&child_run_id).await.unwrap(),
-        "completed"
-    );
+    assert_eq!(runtime.status(&child_run_id).await.unwrap(), "completed");
 
     // AgentIdle event emitted for the agent
     let events = bus.recorded();

@@ -53,7 +53,11 @@ impl RuntimeTool for WebSearchRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("web_search", "搜索互联网获取最新信息"))
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let query = input
             .get("query")
             .and_then(Value::as_str)

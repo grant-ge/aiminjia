@@ -280,9 +280,7 @@ pub async fn revoke_authorized_workspace(
 
 /// Open the workspace root directory in the system file manager.
 #[tauri::command]
-pub async fn open_workspace_directory(
-    file_mgr: State<'_, Arc<FileManager>>,
-) -> Result<(), String> {
+pub async fn open_workspace_directory(file_mgr: State<'_, Arc<FileManager>>) -> Result<(), String> {
     let ws_dir = file_mgr.workspace_path();
     if !ws_dir.exists() {
         std::fs::create_dir_all(&ws_dir).map_err(|e| e.to_string())?;

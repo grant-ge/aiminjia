@@ -7,8 +7,8 @@
 // It does NOT use the `for_test` helper alone — it uses a shared `AgentRuntime`
 // and `RuntimeEventBus` just like the real application would.
 
-use app_lib::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use app_lib::runtime::agent::message_bridge;
+use app_lib::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::ids::{RunId, SessionId};
@@ -35,7 +35,10 @@ fn message_bridge_summary_truncates_long_output() {
         "summary too long ({} chars), expected truncation",
         s.len()
     );
-    assert!(s.ends_with("..."), "expected trailing '...' for truncated output");
+    assert!(
+        s.ends_with("..."),
+        "expected trailing '...' for truncated output"
+    );
 }
 
 // ─── background run completion wiring ───────────────────────────────────────
@@ -155,10 +158,16 @@ async fn background_run_unknown_child_run_is_noop() {
             bus.clone(),
         )
         .await;
-    assert!(result.is_ok(), "missing invocation should be a no-op: {result:?}");
+    assert!(
+        result.is_ok(),
+        "missing invocation should be a no-op: {result:?}"
+    );
 
     // No events emitted
-    assert!(bus.recorded().is_empty(), "no events expected for missing run");
+    assert!(
+        bus.recorded().is_empty(),
+        "no events expected for missing run"
+    );
 }
 
 // ─── BackgroundRun struct ────────────────────────────────────────────────────

@@ -107,7 +107,9 @@ fn search_file(path: &Path, root: &Path, regex: &Regex, results: &mut GrepResult
 
     if file_match_count > 0 {
         results.filenames.push(rel.clone());
-        results.count_lines.push(format!("{rel}:{file_match_count}"));
+        results
+            .count_lines
+            .push(format!("{rel}:{file_match_count}"));
         results.content_lines.extend(file_lines);
     }
 }

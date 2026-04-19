@@ -27,9 +27,8 @@ fn build_test_plugin_ctx(
     conversation_id: &str,
     run_id: Option<RunId>,
 ) -> app_lib::plugin::context::PluginContext {
-    let storage = Arc::new(
-        AppStorage::new(&workspace_path).expect("AppStorage::new should succeed"),
-    );
+    let storage =
+        Arc::new(AppStorage::new(&workspace_path).expect("AppStorage::new should succeed"));
     storage
         .create_conversation(conversation_id, "Test Conversation")
         .expect("conversation should be created");

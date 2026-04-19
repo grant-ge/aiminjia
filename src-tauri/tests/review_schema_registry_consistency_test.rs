@@ -3,7 +3,9 @@ use std::sync::Arc;
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use app_lib::runtime::tools::{
+    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -23,11 +25,7 @@ impl RuntimeTool for MissingCatalogRuntimeTool {
         _input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult::new(
-            "missing_catalog_runtime_tool",
-            "ok",
-            None,
-        ))
+        Ok(ToolResult::new("missing_catalog_runtime_tool", "ok", None))
     }
 }
 

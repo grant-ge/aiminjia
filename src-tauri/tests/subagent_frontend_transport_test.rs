@@ -56,10 +56,7 @@ async fn get_messages_structures_subagent_envelope_and_hides_raw_text() {
         content["subagentEnvelope"]["output"],
         json!("child finished")
     );
-    assert_eq!(
-        content["subagentEnvelope"]["iterationsUsed"],
-        json!(3)
-    );
+    assert_eq!(content["subagentEnvelope"]["iterationsUsed"], json!(3));
     assert_eq!(
         content["subagentEnvelope"]["generatedFiles"],
         json!(["report.xlsx", "chart.png"])
@@ -88,10 +85,7 @@ fn message_updated_payload_structures_subagent_envelope_and_hides_raw_text() {
         content.get("text").is_none(),
         "message:updated should expose structured envelope only"
     );
-    assert_eq!(
-        content["subagentEnvelope"]["schemaVersion"],
-        json!(1)
-    );
+    assert_eq!(content["subagentEnvelope"]["schemaVersion"], json!(1));
     assert_eq!(
         content["subagentEnvelope"]["transcriptRef"],
         json!("subagent://child-run-42")

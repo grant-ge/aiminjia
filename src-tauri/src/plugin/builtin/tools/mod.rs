@@ -67,12 +67,12 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
 
     // Register runtime-native workspace tools (take precedence over legacy ToolPlugin).
     // These four tools have no constructor deps and can be registered unconditionally.
+    use crate::runtime::tools::builtin::bash::BashTool;
+    use crate::runtime::tools::builtin::grep::GrepContentTool;
     use crate::runtime::tools::builtin::workspace::{
         EditFileRuntimeTool, GetFileInfoRuntimeTool, ListDirectoryRuntimeTool,
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
     };
-    use crate::runtime::tools::builtin::bash::BashTool;
-    use crate::runtime::tools::builtin::grep::GrepContentTool;
     registry
         .register_runtime(Arc::new(ListDirectoryRuntimeTool))
         .await;

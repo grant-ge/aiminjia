@@ -13,7 +13,10 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 pub async fn list_personas(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
 ) -> Result<Vec<PersonaSummary>, String> {
-    facade.persona_store().list_personas().map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .list_personas()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -21,7 +24,10 @@ pub async fn get_persona(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     id: String,
 ) -> Result<PersonaRecord, String> {
-    facade.persona_store().get_persona(&id).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .get_persona(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -29,7 +35,10 @@ pub async fn save_persona(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     persona: PersonaRecord,
 ) -> Result<(), String> {
-    facade.persona_store().save_persona(&persona).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .save_persona(&persona)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -37,7 +46,10 @@ pub async fn delete_persona(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     id: String,
 ) -> Result<(), String> {
-    facade.persona_store().delete_persona(&id).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .delete_persona(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -45,7 +57,10 @@ pub async fn set_active_persona(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     id: String,
 ) -> Result<(), String> {
-    facade.persona_store().set_active_persona(&id).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .set_active_persona(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -62,7 +77,10 @@ pub async fn export_personas(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     id: String,
 ) -> Result<String, String> {
-    facade.persona_store().export_persona(&id).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .export_persona(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -70,5 +88,8 @@ pub async fn import_personas(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
     json: String,
 ) -> Result<String, String> {
-    facade.persona_store().import_persona(&json).map_err(|e| e.to_string())
+    facade
+        .persona_store()
+        .import_persona(&json)
+        .map_err(|e| e.to_string())
 }

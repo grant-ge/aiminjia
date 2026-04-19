@@ -101,7 +101,8 @@ impl DeclarativeSkill {
 
         // Load extract prompts (for checkpoint extraction at step boundaries)
         // base_extract.md is OPTIONAL — absence is silent (returns empty string).
-        let extract_base = Self::load_optional_prompt(plugin_dir, "prompts/extract/base_extract.md");
+        let extract_base =
+            Self::load_optional_prompt(plugin_dir, "prompts/extract/base_extract.md");
         let mut extract_steps = HashMap::new();
         let extract_dir = plugin_dir.join("prompts/extract");
         if extract_dir.exists() {

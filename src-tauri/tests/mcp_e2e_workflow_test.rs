@@ -61,8 +61,7 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
     let _ = &tmp_dir;
 
     let storage = Arc::new(
-        app_lib::storage::file_store::AppStorage::new(&tmp)
-            .expect("AppStorage::new failed"),
+        app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(

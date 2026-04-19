@@ -43,7 +43,9 @@ struct TokenInner {
 }
 
 fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl CancellationToken {
@@ -212,7 +214,10 @@ mod tests {
         parent.cancel();
 
         assert!(parent.is_cancelled());
-        assert!(child.is_cancelled(), "child should be cancelled when parent is cancelled");
+        assert!(
+            child.is_cancelled(),
+            "child should be cancelled when parent is cancelled"
+        );
         assert_eq!(parent.reason(), Some(CancellationReason::UserCancel));
         assert_eq!(child.reason(), Some(CancellationReason::UserCancel));
     }
@@ -225,7 +230,10 @@ mod tests {
         child.cancel_with_reason(CancellationReason::SiblingError);
 
         assert!(child.is_cancelled());
-        assert!(!parent.is_cancelled(), "parent should NOT be cancelled when child is cancelled");
+        assert!(
+            !parent.is_cancelled(),
+            "parent should NOT be cancelled when child is cancelled"
+        );
         assert_eq!(child.reason(), Some(CancellationReason::SiblingError));
         assert_eq!(parent.reason(), None);
         assert_eq!(parent.debug_child_count(), 0);
@@ -241,7 +249,10 @@ mod tests {
 
         assert!(parent.is_cancelled());
         assert!(child.is_cancelled(), "child should be cancelled");
-        assert!(grandchild.is_cancelled(), "grandchild should be cancelled via cascade");
+        assert!(
+            grandchild.is_cancelled(),
+            "grandchild should be cancelled via cascade"
+        );
         assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
         assert_eq!(grandchild.reason(), Some(CancellationReason::Interrupt));
     }
@@ -253,7 +264,10 @@ mod tests {
 
         let child = parent.child_token();
 
-        assert!(child.is_cancelled(), "child created from cancelled parent should be immediately cancelled");
+        assert!(
+            child.is_cancelled(),
+            "child created from cancelled parent should be immediately cancelled"
+        );
         assert_eq!(child.reason(), Some(CancellationReason::Interrupt));
     }
 
@@ -268,7 +282,10 @@ mod tests {
         parent.compact_children_for_test();
         parent.cancel();
 
-        assert!(parent.is_cancelled(), "parent should still be cancellable after child is dropped");
+        assert!(
+            parent.is_cancelled(),
+            "parent should still be cancellable after child is dropped"
+        );
     }
 
     #[test]

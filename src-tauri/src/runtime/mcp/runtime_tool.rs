@@ -56,10 +56,9 @@ impl RuntimeTool for McpRuntimeTool {
             .await
             .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
 
-        let content = result
-            .as_str()
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string()));
+        let content = result.as_str().map(ToOwned::to_owned).unwrap_or_else(|| {
+            serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string())
+        });
 
         Ok(ToolResult::new(self.definition().id, content, Some(result)))
     }

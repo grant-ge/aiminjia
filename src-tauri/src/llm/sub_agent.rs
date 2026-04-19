@@ -272,7 +272,9 @@ pub async fn run_sub_agent(
     let mut sub_plugin_ctx = plugin_ctx.clone();
     sub_plugin_ctx.run_id = Some(child_run_id.clone());
     sub_plugin_ctx.agent_id = child_agent_id.clone();
-    let dispatcher = tool_registry.to_runtime_dispatcher(sub_plugin_ctx.clone()).await;
+    let dispatcher = tool_registry
+        .to_runtime_dispatcher(sub_plugin_ctx.clone())
+        .await;
 
     let dynamic_ctx = if config.dynamic_context.is_empty() {
         None
@@ -409,11 +411,8 @@ pub async fn run_sub_agent(
                     Some(parent) => parent.child_token(),
                     None => crate::runtime::cancellation::CancellationToken::new(),
                 };
-                let capability = build_subagent_capability(
-                    &tc.name,
-                    &sub_plugin_ctx,
-                    child_agent_id.is_some(),
-                );
+                let capability =
+                    build_subagent_capability(&tc.name, &sub_plugin_ctx, child_agent_id.is_some());
                 let exec_ctx = ToolExecutionContext::new(
                     sub_plugin_ctx.session_id.clone(),
                     child_run_id.clone(),

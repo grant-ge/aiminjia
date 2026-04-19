@@ -58,10 +58,7 @@ impl FileStateCache {
         let mut cloned = lru::LruCache::new(
             NonZeroUsize::new(100).expect("FileStateCache capacity must be non-zero"),
         );
-        let guard = other
-            .cache
-            .lock()
-            .expect("FileStateCache mutex poisoned");
+        let guard = other.cache.lock().expect("FileStateCache mutex poisoned");
         for (path, state) in guard.iter() {
             cloned.put(path.clone(), state.clone());
         }
@@ -193,7 +190,10 @@ impl std::fmt::Debug for CapabilityContext {
             .field("storage", &self.storage)
             .field("workspace_id", &self.workspace_id)
             .field("browser_available", &self.browser_available)
-            .field("file_ops", &self.file_ops.as_ref().map(|f| format!("{:?}", f)))
+            .field(
+                "file_ops",
+                &self.file_ops.as_ref().map(|f| format!("{:?}", f)),
+            )
             .field(
                 "read_file_state",
                 &self.read_file_state.as_ref().map(|_| "<FileStateCache>"),
@@ -201,7 +201,10 @@ impl std::fmt::Debug for CapabilityContext {
             .field("file_reading_limits", &self.file_reading_limits)
             .field(
                 "notification_sink",
-                &self.notification_sink.as_ref().map(|_| "<NotificationSink>"),
+                &self
+                    .notification_sink
+                    .as_ref()
+                    .map(|_| "<NotificationSink>"),
             )
             .field("is_subagent", &self.is_subagent)
             .finish()
@@ -242,10 +245,7 @@ impl CapabilityContext {
         self
     }
 
-    pub fn with_notification_sink(
-        mut self,
-        notification_sink: Arc<dyn NotificationSink>,
-    ) -> Self {
+    pub fn with_notification_sink(mut self, notification_sink: Arc<dyn NotificationSink>) -> Self {
         self.notification_sink = Some(notification_sink);
         self
     }

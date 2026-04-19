@@ -5,19 +5,19 @@ use anyhow::Result;
 
 // Import and re-export from chat module.  Types were previously defined here;
 // they now live in `runtime::chat` to avoid circular imports.
-pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
+pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::query_engine::QueryEngine;
+use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequestStore,
     PendingPermissionResolution,
 };
-use crate::runtime::state::TurnState;
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 
@@ -100,8 +100,7 @@ impl SessionRuntime {
         &self,
         mut request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
-        let mapping =
-            IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
+        let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
         // Generate the single authoritative RunId for this turn here and propagate
         // it into the request so legacy_send_message_impl uses the same identity.
         let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
@@ -153,7 +152,8 @@ impl SessionRuntime {
         tool_call_id: &ToolCallId,
         resolution: PendingPermissionResolution,
     ) -> Result<()> {
-        self.pending_permission_store.resolve(tool_call_id, resolution)
+        self.pending_permission_store
+            .resolve(tool_call_id, resolution)
     }
 
     pub fn cancel_pending_permission_requests_for_session(
@@ -191,10 +191,7 @@ impl SessionRuntime {
             .remove(&session_key);
     }
 
-    fn query_engine_for_session(
-        &self,
-        session_id: &SessionId,
-    ) -> QueryEngine {
+    fn query_engine_for_session(&self, session_id: &SessionId) -> QueryEngine {
         let authorized_workspace = self
             .authorized_workspace_store
             .as_ref()
@@ -256,8 +253,8 @@ impl SessionRuntime {
 mod tests {
     use super::*;
     use crate::runtime::tools::{
-        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher,
-        ToolError, ToolExecutionContext, ToolResult,
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
+        ToolExecutionContext, ToolResult,
     };
     use async_trait::async_trait;
     use serde_json::Value;
@@ -272,7 +269,10 @@ mod tests {
     #[async_trait]
     impl RuntimeTool for CaptureAuthorizedWorkspaceTool {
         fn definition(&self) -> ToolDefinition {
-            ToolDefinition::new("capture_authorized_workspace", "Capture authorized workspace")
+            ToolDefinition::new(
+                "capture_authorized_workspace",
+                "Capture authorized workspace",
+            )
         }
 
         async fn execute(
@@ -320,8 +320,7 @@ mod tests {
         )
         .with_authorized_workspace_store(store);
 
-        let mapping =
-            IdentityMapping::from_legacy_conversation_id(session_id.as_str().to_string());
+        let mapping = IdentityMapping::from_legacy_conversation_id(session_id.as_str().to_string());
         let turn = TurnState::new(
             mapping,
             RunId::new("run-authorized"),
@@ -350,11 +349,15 @@ mod tests {
         let engine_a_1 = runtime.query_engine_for_session(&session_a);
         engine_a_1.accumulate_usage(5, 7);
 
-        let usage_a_2 = runtime.query_engine_for_session(&session_a).get_total_usage();
+        let usage_a_2 = runtime
+            .query_engine_for_session(&session_a)
+            .get_total_usage();
         assert_eq!(usage_a_2.tokens_in, 5);
         assert_eq!(usage_a_2.tokens_out, 7);
 
-        let usage_b = runtime.query_engine_for_session(&session_b).get_total_usage();
+        let usage_b = runtime
+            .query_engine_for_session(&session_b)
+            .get_total_usage();
         assert_eq!(
             usage_b.tokens_in, 0,
             "different sessions must not share total_usage.tokens_in"
@@ -433,7 +436,10 @@ mod tests {
         let root_a = runtime.ensure_active_session_cancel_root(&session);
         let root_b = runtime.ensure_active_session_cancel_root(&session);
 
-        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+        runtime.cancel_session(
+            &session,
+            crate::runtime::cancellation::CancellationReason::Interrupt,
+        );
 
         assert!(root_a.is_cancelled());
         assert!(root_b.is_cancelled());
@@ -453,7 +459,10 @@ mod tests {
         let session = SessionId::new("sess-i1-rotate");
 
         let old_root = runtime.ensure_active_session_cancel_root(&session);
-        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+        runtime.cancel_session(
+            &session,
+            crate::runtime::cancellation::CancellationReason::Interrupt,
+        );
         let new_root = runtime.ensure_active_session_cancel_root(&session);
 
         assert!(old_root.is_cancelled());
@@ -473,7 +482,10 @@ mod tests {
         runtime.clear_session_state(&session);
         let root_after = runtime.ensure_active_session_cancel_root(&session);
 
-        runtime.cancel_session(&session, crate::runtime::cancellation::CancellationReason::Interrupt);
+        runtime.cancel_session(
+            &session,
+            crate::runtime::cancellation::CancellationReason::Interrupt,
+        );
 
         assert!(!root_before.is_cancelled());
         assert!(root_after.is_cancelled());

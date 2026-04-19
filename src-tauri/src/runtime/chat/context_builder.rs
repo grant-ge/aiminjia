@@ -122,9 +122,7 @@ pub async fn build_env_info(
         .await
     {
         if output.status.success() {
-            let status_str = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
+            let status_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !status_str.is_empty() {
                 let lines: Vec<&str> = status_str.lines().take(10).collect();
                 parts.push(format!("Git: {}", lines.join(" | ")));
@@ -167,8 +165,7 @@ mod tests {
 
     #[test]
     fn test_precompute_result_block() {
-        let result =
-            build_iteration_context("", "", "", "", Some("computed data"), None, None);
+        let result = build_iteration_context("", "", "", "", Some("computed data"), None, None);
         assert!(result.contains("[precompute_result]\n"));
         assert!(result.contains("computed data"));
         assert!(result.contains("[/precompute_result]"));
@@ -176,8 +173,7 @@ mod tests {
 
     #[test]
     fn test_connector_context_block() {
-        let result =
-            build_iteration_context("", "", "", "", None, Some("connector info"), None);
+        let result = build_iteration_context("", "", "", "", None, Some("connector info"), None);
         assert!(result.contains("[内部系统浏览]\n"));
         assert!(result.contains("connector info"));
         assert!(result.contains("[/内部系统浏览]"));
@@ -214,13 +210,19 @@ mod tests {
     #[tokio::test]
     async fn test_build_env_info_with_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
-        let authorized = Some(("/tmp/test-workspace/my-project".to_string(), "我的项目".to_string()));
+        let authorized = Some((
+            "/tmp/test-workspace/my-project".to_string(),
+            "我的项目".to_string(),
+        ));
         let result = build_env_info(
             &workspace_path,
             authorized.as_ref().map(|(p, n)| (p.as_str(), n.as_str())),
         )
         .await;
-        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(
+            result.contains("[当前环境]"),
+            "must have env section header"
+        );
         assert!(result.contains("已连接目录"), "must mention authorized dir");
         assert!(
             result.contains("my-project") || result.contains("我的项目"),
@@ -233,7 +235,10 @@ mod tests {
     async fn test_build_env_info_without_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
         let result = build_env_info(&workspace_path, None).await;
-        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(
+            result.contains("[当前环境]"),
+            "must have env section header"
+        );
         assert!(result.contains("工作目录"), "must include working dir");
         assert!(result.contains("Platform:"), "must include platform");
         assert!(
@@ -258,9 +263,15 @@ mod tests {
 
         let result = build_env_info(&workspace_path, None).await;
 
-        assert!(result.contains("[当前环境]"), "must have env section header");
+        assert!(
+            result.contains("[当前环境]"),
+            "must have env section header"
+        );
         assert!(result.contains("工作目录:"), "must include working dir");
-        assert!(!result.contains("Git:"), "must skip git section in non-git dir");
+        assert!(
+            !result.contains("Git:"),
+            "must skip git section in non-git dir"
+        );
     }
 
     #[tokio::test]
@@ -289,7 +300,10 @@ mod tests {
             result.contains("已连接目录: 授权目录 ("),
             "must include authorized dir header"
         );
-        assert!(result.contains("Git:"), "must include git status from authorized dir");
+        assert!(
+            result.contains("Git:"),
+            "must include git status from authorized dir"
+        );
         assert!(
             result.contains("untracked.txt") || result.contains("##"),
             "must reflect authorized git repo status, got: {}",

@@ -1,4 +1,7 @@
-use app_lib::llm::context_decay::{estimate_context_tokens, estimate_tokens, estimate_tokens_from_json, context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
+use app_lib::llm::context_decay::{
+    context_window_for_provider, estimate_context_tokens, estimate_tokens,
+    estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
+};
 use app_lib::llm::gateway::thinking_config_for_route;
 use app_lib::llm::providers::claude::ClaudeProvider;
 use app_lib::llm::router::RouteResult;
@@ -26,7 +29,11 @@ fn ad1_estimate_tokens_counts_text_and_tool_calls() {
     ];
 
     let estimated = estimate_tokens(&messages);
-    assert!(estimated > 2, "tool_calls json should be included, got {}", estimated);
+    assert!(
+        estimated > 2,
+        "tool_calls json should be included, got {}",
+        estimated
+    );
 }
 
 #[test]
@@ -78,7 +85,9 @@ fn ad4_gateway_only_enables_thinking_for_claude_route() {
 
     assert!(matches!(
         thinking_config_for_route(&claude_route, &settings),
-        Some(ThinkingConfig::Enabled { budget_tokens: 4096 })
+        Some(ThinkingConfig::Enabled {
+            budget_tokens: 4096
+        })
     ));
     assert!(thinking_config_for_route(&deepseek_route, &settings).is_none());
 }
@@ -95,7 +104,9 @@ fn ad5_thinking_headers_only_added_when_thinking_is_active() {
         ..LlmRequest::default()
     };
     let enabled = LlmRequest {
-        thinking_config: Some(ThinkingConfig::Enabled { budget_tokens: 1024 }),
+        thinking_config: Some(ThinkingConfig::Enabled {
+            budget_tokens: 1024,
+        }),
         ..disabled.clone()
     };
 
@@ -114,7 +125,10 @@ fn ad4_thinking_config_serializes_adaptive_and_enabled() {
     let adaptive = serde_json::to_value(&ThinkingConfig::Adaptive).unwrap();
     assert_eq!(adaptive["type"], "adaptive");
 
-    let enabled = serde_json::to_value(&ThinkingConfig::Enabled { budget_tokens: 2048 }).unwrap();
+    let enabled = serde_json::to_value(&ThinkingConfig::Enabled {
+        budget_tokens: 2048,
+    })
+    .unwrap();
     assert_eq!(enabled["type"], "enabled");
     assert_eq!(enabled["budget_tokens"], 2048);
 }
@@ -147,7 +161,9 @@ fn ad5_build_request_body_with_thinking_enabled_clamps_budget_and_drops_temperat
         max_tokens: 1024,
         temperature: 0.3,
         stream: false,
-        thinking_config: Some(ThinkingConfig::Enabled { budget_tokens: 4096 }),
+        thinking_config: Some(ThinkingConfig::Enabled {
+            budget_tokens: 4096,
+        }),
         ..LlmRequest::default()
     };
 

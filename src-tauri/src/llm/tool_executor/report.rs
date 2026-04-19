@@ -158,7 +158,10 @@ fn resolve_report_sections(params: &ReportCoreParams<'_>, args: &Value) -> Resul
             )
         })?;
         if sections.is_empty() {
-            anyhow::bail!("Source file '{}' contains an empty sections array.", source_path);
+            anyhow::bail!(
+                "Source file '{}' contains an empty sections array.",
+                source_path
+            );
         }
         log::info!(
             "[generate_report] Loaded {} sections from source file: {}",
@@ -251,26 +254,23 @@ pub(crate) async fn generate_report_bytes_core(
                 })
             }
         },
-        "docx" => match convert_html_to_docx_with_runtime(
-            workspace_path,
-            &html_content,
-            python_runtime,
-        )
-        .await
-        {
-            Ok(bytes) => Ok(ReportGenOutput {
-                bytes,
-                extension: "docx".to_string(),
-                actual_format: "docx".to_string(),
-                is_degraded: false,
-                degradation_notice: None,
-            }),
-            Err(e) => {
-                log::warn!(
-                    "[generate_report] DOCX conversion failed: {}. Falling back to HTML.",
-                    e
-                );
-                Ok(ReportGenOutput {
+        "docx" => {
+            match convert_html_to_docx_with_runtime(workspace_path, &html_content, python_runtime)
+                .await
+            {
+                Ok(bytes) => Ok(ReportGenOutput {
+                    bytes,
+                    extension: "docx".to_string(),
+                    actual_format: "docx".to_string(),
+                    is_degraded: false,
+                    degradation_notice: None,
+                }),
+                Err(e) => {
+                    log::warn!(
+                        "[generate_report] DOCX conversion failed: {}. Falling back to HTML.",
+                        e
+                    );
+                    Ok(ReportGenOutput {
                     bytes: html_content.into_bytes(),
                     extension: "html".to_string(),
                     actual_format: "html_fallback_from_docx".to_string(),
@@ -279,8 +279,9 @@ pub(crate) async fn generate_report_bytes_core(
                         "⚠️ DOCX 转换失败，已保存为 HTML 格式。请告知用户实际生成的是 HTML 而非 DOCX，可在浏览器中打开后通过 Ctrl/Cmd+P 打印为 PDF。"
                     )),
                 })
+                }
             }
-        },
+        }
         _ => Ok(ReportGenOutput {
             bytes: html_content.into_bytes(),
             extension: "html".to_string(),

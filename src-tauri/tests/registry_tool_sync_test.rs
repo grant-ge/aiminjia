@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use app_lib::plugin::registry::ToolRegistry;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use app_lib::runtime::tools::{
+    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -40,7 +42,10 @@ async fn register_runtime_syncs_to_catalog() {
         .get_entry(&tool_id)
         .expect("register_runtime should sync runtime tool into TOOL_CATALOG");
     assert_eq!(entry.definition.id, tool_id);
-    assert_eq!(entry.json_schema, json!({"type": "object", "properties": {}}));
+    assert_eq!(
+        entry.json_schema,
+        json!({"type": "object", "properties": {}})
+    );
 }
 
 #[tokio::test]
@@ -61,5 +66,8 @@ async fn register_runtime_does_not_overwrite_builtin_schema() {
         .get_entry("execute_python")
         .expect("execute_python should remain in TOOL_CATALOG")
         .json_schema;
-    assert_eq!(original_schema, new_schema, "builtin schema should not be overwritten");
+    assert_eq!(
+        original_schema, new_schema,
+        "builtin schema should not be overwritten"
+    );
 }

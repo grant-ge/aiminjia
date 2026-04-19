@@ -9,8 +9,7 @@ use app_lib::runtime::state::TurnState;
 
 fn make_turn(session: &str, run: &str, token: CancellationToken) -> TurnState {
     let mapping = IdentityMapping::from_legacy_conversation_id(session.to_string());
-    TurnState::new(mapping, RunId::new(run), "test input".into())
-        .with_cancellation(token)
+    TurnState::new(mapping, RunId::new(run), "test input".into()).with_cancellation(token)
 }
 
 // ---------------------------------------------------------------------------
@@ -22,7 +21,10 @@ fn turn_cancellation_propagates_from_parent() {
     let parent = CancellationToken::new();
     let turn = make_turn("sess-1", "run-1", parent.child_token());
 
-    assert!(!turn.cancellation().is_cancelled(), "turn should start uncancelled");
+    assert!(
+        !turn.cancellation().is_cancelled(),
+        "turn should start uncancelled"
+    );
 
     parent.cancel();
 
@@ -64,7 +66,10 @@ fn execution_context_cancel_does_not_reverse_propagate_to_turn() {
     // Cancel only the tool-call level token
     ctx.cancellation.cancel();
 
-    assert!(ctx.cancellation.is_cancelled(), "ctx token should be cancelled");
+    assert!(
+        ctx.cancellation.is_cancelled(),
+        "ctx token should be cancelled"
+    );
     assert!(
         !turn.cancellation().is_cancelled(),
         "cancelling ctx must NOT propagate back to turn"
@@ -92,7 +97,10 @@ fn three_level_cascade_session_cancel_reaches_tool_call() {
     // Cancel at the session level
     session_token.cancel();
 
-    assert!(session_token.is_cancelled(), "session token should be cancelled");
+    assert!(
+        session_token.is_cancelled(),
+        "session token should be cancelled"
+    );
     assert!(
         turn.cancellation().is_cancelled(),
         "turn must be cancelled after session cancel"

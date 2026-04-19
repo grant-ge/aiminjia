@@ -117,9 +117,7 @@ pub async fn get_configured_providers(
     crypto: State<'_, Option<Arc<SecureStorage>>>,
 ) -> Result<Vec<String>, String> {
     let store = facade.settings_store();
-    let prefix_map = store
-        .get_by_prefix("apiKey:")
-        .map_err(|e| e.to_string())?;
+    let prefix_map = store.get_by_prefix("apiKey:").map_err(|e| e.to_string())?;
     let mut providers: Vec<String> = Vec::new();
 
     for (key, value) in &prefix_map {
@@ -208,9 +206,7 @@ pub async fn get_all_provider_keys(
     crypto: State<'_, Option<Arc<SecureStorage>>>,
 ) -> Result<HashMap<String, String>, String> {
     let store = facade.settings_store();
-    let prefix_map = store
-        .get_by_prefix("apiKey:")
-        .map_err(|e| e.to_string())?;
+    let prefix_map = store.get_by_prefix("apiKey:").map_err(|e| e.to_string())?;
     let mut result: HashMap<String, String> = HashMap::new();
 
     for (key, value) in &prefix_map {

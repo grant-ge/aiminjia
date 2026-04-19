@@ -72,18 +72,19 @@ impl LegacyToolAdapter {
                     plugin_ctx.run_id = Some(exec_ctx.run_id.clone());
                     plugin_ctx.agent_id = exec_ctx.agent_id.clone();
                     plugin_ctx.cancellation = Some(exec_ctx.cancellation.clone());
-                    let output = plugin
-                        .execute(&plugin_ctx, input)
-                        .await
-                        .map_err(|err| match err {
-                            crate::plugin::tool_trait::ToolError::AskRequired(decision) => {
-                                ToolError::AskRequired(decision)
-                            }
-                            crate::plugin::tool_trait::ToolError::PermissionDenied(message) => {
-                                ToolError::PermissionDenied(message)
-                            }
-                            other => ToolError::Other(anyhow::anyhow!(other.to_string())),
-                        })?;
+                    let output =
+                        plugin
+                            .execute(&plugin_ctx, input)
+                            .await
+                            .map_err(|err| match err {
+                                crate::plugin::tool_trait::ToolError::AskRequired(decision) => {
+                                    ToolError::AskRequired(decision)
+                                }
+                                crate::plugin::tool_trait::ToolError::PermissionDenied(message) => {
+                                    ToolError::PermissionDenied(message)
+                                }
+                                other => ToolError::Other(anyhow::anyhow!(other.to_string())),
+                            })?;
                     Ok(ToolResult {
                         tool_name: plugin.name().to_string(),
                         content: output.content,

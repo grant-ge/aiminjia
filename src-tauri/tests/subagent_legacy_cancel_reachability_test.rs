@@ -32,11 +32,7 @@ impl ToolPlugin for BlockingLegacyTool {
         })
     }
 
-    async fn execute(
-        &self,
-        ctx: &PluginContext,
-        _input: Value,
-    ) -> Result<ToolOutput, ToolError> {
+    async fn execute(&self, ctx: &PluginContext, _input: Value) -> Result<ToolOutput, ToolError> {
         let cancellation = ctx
             .cancellation
             .clone()

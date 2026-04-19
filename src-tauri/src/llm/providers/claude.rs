@@ -69,16 +69,24 @@ impl ClaudeProvider {
         }
     }
 
-
-    fn build_request_headers(&self, request: &LlmRequest) -> std::collections::HashMap<String, String> {
+    fn build_request_headers(
+        &self,
+        request: &LlmRequest,
+    ) -> std::collections::HashMap<String, String> {
         let mut headers = std::collections::HashMap::new();
         headers.insert("x-api-key".to_string(), self.api_key.clone());
-        headers.insert("anthropic-version".to_string(), ANTHROPIC_VERSION.to_string());
+        headers.insert(
+            "anthropic-version".to_string(),
+            ANTHROPIC_VERSION.to_string(),
+        );
         headers.insert("content-type".to_string(), "application/json".to_string());
         match request.thinking_config {
             Some(crate::llm::streaming::ThinkingConfig::Adaptive)
             | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
-                headers.insert("anthropic-beta".to_string(), ANTHROPIC_BETA_THINKING.to_string());
+                headers.insert(
+                    "anthropic-beta".to_string(),
+                    ANTHROPIC_BETA_THINKING.to_string(),
+                );
             }
             _ => {}
         }
@@ -191,10 +199,7 @@ impl ClaudeProvider {
             if self.supports_prompt_caching() {
                 if let Some(last) = tools.last_mut() {
                     if let Some(obj) = last.as_object_mut() {
-                        obj.insert(
-                            "cache_control".to_string(),
-                            json!({ "type": "ephemeral" }),
-                        );
+                        obj.insert("cache_control".to_string(), json!({ "type": "ephemeral" }));
                     }
                 }
             }
@@ -208,12 +213,16 @@ impl ClaudeProvider {
         match &request.thinking_config {
             Some(crate::llm::streaming::ThinkingConfig::Adaptive) => {
                 body["thinking"] = json!({ "type": "adaptive" });
-                if let Some(obj) = body.as_object_mut() { obj.remove("temperature"); }
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("temperature");
+                }
             }
             Some(crate::llm::streaming::ThinkingConfig::Enabled { budget_tokens }) => {
                 let budget = (*budget_tokens).min(request.max_tokens.saturating_sub(1));
                 body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
-                if let Some(obj) = body.as_object_mut() { obj.remove("temperature"); }
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("temperature");
+                }
             }
             Some(crate::llm::streaming::ThinkingConfig::Disabled) | None => {}
         }
@@ -227,7 +236,10 @@ impl ClaudeProvider {
     }
 
     #[doc(hidden)]
-    pub fn build_request_headers_for_test(&self, request: &LlmRequest) -> std::collections::HashMap<String, String> {
+    pub fn build_request_headers_for_test(
+        &self,
+        request: &LlmRequest,
+    ) -> std::collections::HashMap<String, String> {
         self.build_request_headers(request)
     }
 
@@ -836,7 +848,10 @@ mod tests {
         let data =
             r#"{"type":"error","error":{"type":"overloaded_error","message":"API overloaded"}}"#;
         let result = process_sse_data(data, &mut state);
-        assert!(result.is_some(), "error event must not be silently discarded");
+        assert!(
+            result.is_some(),
+            "error event must not be silently discarded"
+        );
         let events = result.unwrap();
         assert_eq!(events.len(), 1);
         match &events[0] {

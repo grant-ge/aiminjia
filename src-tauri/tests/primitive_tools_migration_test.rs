@@ -95,7 +95,8 @@ fn load_file_is_power_with_correct_scopes() {
         "load_file must have workspace:read scope"
     );
     assert!(
-        def.capability_scope.contains(&"workspace:write".to_string()),
+        def.capability_scope
+            .contains(&"workspace:write".to_string()),
         "load_file must have workspace:write scope"
     );
     assert!(

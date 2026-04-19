@@ -8,10 +8,10 @@
 //! This module lives in `runtime::chat` and is transport-neutral — it must
 //! NOT depend on `tauri::*` or any transport-layer type.
 
+use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::chat::tool_round_types::{
     BlockedToolOutcome, RuntimeToolCallOutcome, RuntimeToolCallRequest,
 };
-use crate::runtime::cancellation::CancellationReason;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
@@ -255,7 +255,11 @@ mod tests {
             _ctx: ToolExecutionContext,
         ) -> Result<ToolResult, ToolError> {
             self.calls.lock().unwrap().push(input);
-            Ok(ToolResult::new(self.name.clone(), format!("ok:{}", self.name), None))
+            Ok(ToolResult::new(
+                self.name.clone(),
+                format!("ok:{}", self.name),
+                None,
+            ))
         }
     }
 
@@ -377,8 +381,7 @@ mod tests {
         dispatcher.register(tool);
 
         let engine = QueryEngine::with_dispatcher(dispatcher);
-        let driver =
-            ToolRoundDriver::new(engine).with_allowed_tools(vec!["ok_tool".to_string()]);
+        let driver = ToolRoundDriver::new(engine).with_allowed_tools(vec!["ok_tool".to_string()]);
         let bus = RuntimeEventBus::new();
         let turn = make_turn();
 

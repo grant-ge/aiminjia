@@ -1,22 +1,16 @@
 use app_lib::runtime::tools::builtin::workspace::{
-    ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
-    SearchFilesRuntimeTool, GetFileInfoRuntimeTool,
-};
-use app_lib::runtime::tools::{
-    RuntimeTool, ToolExecutionContext,
+    GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
+    SearchFilesRuntimeTool,
 };
 use app_lib::runtime::tools::capability::{CapabilityContext, StorageCapability};
+use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::TempDir;
 
 fn make_ctx_with_workspace(tmp: &TempDir) -> ToolExecutionContext {
-    let cap = CapabilityContext::with_workspace(
-        tmp.path().to_path_buf(),
-        "test-ws",
-    );
-    ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
-        .with_capability(Arc::new(cap))
+    let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "test-ws");
+    ToolExecutionContext::for_test("conv-1", "run-1", "tc-1").with_capability(Arc::new(cap))
 }
 
 #[tokio::test]
@@ -25,8 +19,14 @@ async fn list_directory_runtime_tool_lists_files() {
     std::fs::write(tmp.path().join("data.csv"), b"col1\n1\n").unwrap();
     let ctx = make_ctx_with_workspace(&tmp);
     let tool = ListDirectoryRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"path": "."}), ctx).await.unwrap();
-    assert!(result.content.contains("data.csv"), "Should list data.csv, got: {}", result.content);
+    let result = RuntimeTool::execute(&tool, json!({"path": "."}), ctx)
+        .await
+        .unwrap();
+    assert!(
+        result.content.contains("data.csv"),
+        "Should list data.csv, got: {}",
+        result.content
+    );
 }
 
 #[tokio::test]
@@ -43,8 +43,13 @@ async fn read_workspace_file_runtime_tool_reads_content() {
     std::fs::write(tmp.path().join("hello.txt"), b"hello world").unwrap();
     let ctx = make_ctx_with_workspace(&tmp);
     let tool = ReadWorkspaceFileRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"path": "hello.txt"}), ctx).await.unwrap();
-    assert!(result.content.contains("hello world"), "Should contain file content");
+    let result = RuntimeTool::execute(&tool, json!({"path": "hello.txt"}), ctx)
+        .await
+        .unwrap();
+    assert!(
+        result.content.contains("hello world"),
+        "Should contain file content"
+    );
 }
 
 #[tokio::test]
@@ -54,7 +59,9 @@ async fn search_files_runtime_tool_finds_csv() {
     std::fs::write(tmp.path().join("b.txt"), b"").unwrap();
     let ctx = make_ctx_with_workspace(&tmp);
     let tool = SearchFilesRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"pattern": "*.csv"}), ctx).await.unwrap();
+    let result = RuntimeTool::execute(&tool, json!({"pattern": "*.csv"}), ctx)
+        .await
+        .unwrap();
     assert!(result.content.contains("a.csv"), "Should find a.csv");
     assert!(!result.content.contains("b.txt"), "Should not find b.txt");
 }

@@ -56,7 +56,10 @@ fn deprecated_tool_plugin_trait_is_still_implementable() {
     #[allow(deprecated)]
     let plugin: Arc<dyn ToolPlugin> = Arc::new(LegacyEchoPlugin);
     assert_eq!(plugin.name(), "legacy_echo");
-    assert_eq!(plugin.description(), "Echo via legacy trait (deprecated path)");
+    assert_eq!(
+        plugin.description(),
+        "Echo via legacy trait (deprecated path)"
+    );
 }
 
 // ---------------------------------------------------------------------------

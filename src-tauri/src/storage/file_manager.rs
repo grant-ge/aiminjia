@@ -213,11 +213,16 @@ impl FileManager {
 }
 
 /// 通过 containment 校验解析相对路径到授权根目录下的绝对路径
-pub fn resolve_local_reference(root_path: &std::path::Path, rel_path: &str) -> anyhow::Result<std::path::PathBuf> {
+pub fn resolve_local_reference(
+    root_path: &std::path::Path,
+    rel_path: &str,
+) -> anyhow::Result<std::path::PathBuf> {
     use anyhow::anyhow;
     let joined = root_path.join(rel_path);
 
-    fn canonicalize_existing_ancestor(path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    fn canonicalize_existing_ancestor(
+        path: &std::path::Path,
+    ) -> anyhow::Result<std::path::PathBuf> {
         let mut current = path;
         while !current.exists() {
             current = current
@@ -225,7 +230,9 @@ pub fn resolve_local_reference(root_path: &std::path::Path, rel_path: &str) -> a
                 .ok_or_else(|| anyhow!("Path traversal rejected: ancestor missing"))?;
         }
         let canonical = current.canonicalize()?;
-        let suffix = path.strip_prefix(current).unwrap_or(std::path::Path::new(""));
+        let suffix = path
+            .strip_prefix(current)
+            .unwrap_or(std::path::Path::new(""));
         Ok(canonical.join(suffix))
     }
 
@@ -235,9 +242,14 @@ pub fn resolve_local_reference(root_path: &std::path::Path, rel_path: &str) -> a
     } else {
         canonicalize_existing_ancestor(&joined)?
     };
-    let root_canonical = root_path.canonicalize().unwrap_or_else(|_| root_path.to_path_buf());
+    let root_canonical = root_path
+        .canonicalize()
+        .unwrap_or_else(|_| root_path.to_path_buf());
     if !canonical.starts_with(&root_canonical) {
-        return Err(anyhow!("Path traversal rejected: '{}' escapes authorized workspace", rel_path));
+        return Err(anyhow!(
+            "Path traversal rejected: '{}' escapes authorized workspace",
+            rel_path
+        ));
     }
     Ok(canonical)
 }
@@ -263,7 +275,10 @@ mod tests {
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&outside, &link).unwrap();
         let result = super::resolve_local_reference(&root, "escape_link");
-        assert!(result.is_err(), "Symlink to outside root should be rejected");
+        assert!(
+            result.is_err(),
+            "Symlink to outside root should be rejected"
+        );
         // 清理
         let _ = std::fs::remove_file(&link);
     }

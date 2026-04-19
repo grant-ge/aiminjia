@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use app_lib::runtime::tools::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 use app_lib::runtime::tools::dispatcher::{InterruptBehavior, RuntimeTool};
+use app_lib::runtime::tools::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 
 struct CancelTool;
 struct BlockTool;
@@ -36,13 +36,19 @@ impl RuntimeTool for BlockTool {
 #[test]
 fn default_interrupt_behavior_is_block() {
     let tool = BlockTool;
-    assert!(matches!(tool.interrupt_behavior(), InterruptBehavior::Block));
+    assert!(matches!(
+        tool.interrupt_behavior(),
+        InterruptBehavior::Block
+    ));
 }
 
 #[test]
 fn cancel_tool_declares_cancel() {
     let tool = CancelTool;
-    assert!(matches!(tool.interrupt_behavior(), InterruptBehavior::Cancel));
+    assert!(matches!(
+        tool.interrupt_behavior(),
+        InterruptBehavior::Cancel
+    ));
 }
 
 #[test]
@@ -87,7 +93,11 @@ async fn interrupt_only_cancels_cancel_behavior_tools() {
             InterruptBehavior::Cancel
         }
 
-        async fn execute(&self, _: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+        async fn execute(
+            &self,
+            _: Value,
+            ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
             for _ in 0..100 {
                 if ctx.cancellation.is_cancelled() {
                     *self.cancelled.lock().unwrap() = true;
@@ -117,7 +127,11 @@ async fn interrupt_only_cancels_cancel_behavior_tools() {
             InterruptBehavior::Block
         }
 
-        async fn execute(&self, _: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+        async fn execute(
+            &self,
+            _: Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
             tokio::time::sleep(Duration::from_millis(50)).await;
             *self.completed.lock().unwrap() = true;
             Ok(ToolResult::new("block_aware", "completed", None))
@@ -170,6 +184,12 @@ async fn interrupt_only_cancels_cancel_behavior_tools() {
         .await;
 
     assert_eq!(results.len(), 2);
-    assert!(*cancel_flag.lock().unwrap(), "Cancel tool should have been interrupted");
-    assert!(*block_flag.lock().unwrap(), "Block tool should have completed despite interrupt");
+    assert!(
+        *cancel_flag.lock().unwrap(),
+        "Cancel tool should have been interrupted"
+    );
+    assert!(
+        *block_flag.lock().unwrap(),
+        "Block tool should have completed despite interrupt"
+    );
 }

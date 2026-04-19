@@ -8,11 +8,11 @@
 
 use std::sync::Arc;
 
+use app_lib::runtime::tools::builtin::file::LoadFileRuntimeTool;
 use app_lib::runtime::tools::{
     CapabilityContext, FileOperations, PermissionDecision, PermissionPipeline, PermissionReason,
     RuntimeTool, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
 };
-use app_lib::runtime::tools::builtin::file::LoadFileRuntimeTool;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -138,7 +138,11 @@ async fn load_file_is_loaded_returns_true_after_successful_load() {
     // Simulate a load call with file_id + scope_id
     let args = json!({"file_id": "test-file-1", "scope_id": "default-scope"});
     let result = file_ops.load_file(&args).await;
-    assert!(result.is_ok(), "load_file should succeed, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "load_file should succeed, got: {:?}",
+        result.err()
+    );
 
     // After a successful load, is_loaded must return true
     assert!(
@@ -240,8 +244,12 @@ fn load_file_context_cancellation_cascades_from_parent_via_turn() {
     let parent = CancellationToken::new();
 
     let mapping = IdentityMapping::from_legacy_conversation_id("load-file-sess".to_string());
-    let turn = TurnState::new(mapping, RunId::new("load-file-run"), "load_file call".into())
-        .with_cancellation(parent.child_token());
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("load-file-run"),
+        "load_file call".into(),
+    )
+    .with_cancellation(parent.child_token());
 
     // build_execution_context() creates a child of the turn's token
     let ctx = turn.build_execution_context("call-load-file-1");

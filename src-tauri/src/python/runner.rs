@@ -103,7 +103,6 @@ impl PythonRunner {
         }
     }
 
-
     /// Execute Python code string.
     ///
     /// 1. Validates code against sandbox rules.
@@ -371,5 +370,4 @@ mod tests {
 
         assert_eq!(runner.python_binary, binary);
     }
-
 }

@@ -10,9 +10,9 @@ fn review_stop_streaming_cancels_runtime_session_before_legacy_bridge() {
         .expect("approve_permission_request should follow stop_streaming");
     let stop_streaming_body = &source[start..end];
 
-    let runtime_cancel = stop_streaming_body
-        .find("cancel_session(")
-        .expect("stop_streaming must cancel the SessionRuntime root before touching legacy bridges");
+    let runtime_cancel = stop_streaming_body.find("cancel_session(").expect(
+        "stop_streaming must cancel the SessionRuntime root before touching legacy bridges",
+    );
     let legacy_bridge = stop_streaming_body
         .find("conversation_service::stop_streaming(")
         .expect("stop_streaming should still bridge to the legacy gateway/python interrupter");

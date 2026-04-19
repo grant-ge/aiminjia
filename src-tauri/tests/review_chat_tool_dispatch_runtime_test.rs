@@ -14,19 +14,18 @@
 ///   T6 (ToolRoundDriver respects allowed_tools filter)
 ///
 /// Note: T1-T3 which used legacy RuntimeTurnExecutor mocks were removed in S4-T15.
-
 mod common;
 
 use std::sync::{Arc, Mutex};
 
-use app_lib::runtime::{
-    IdentityMapping, QueryEngine, RuntimeEventBus, RunId,
-    ToolRoundDriver, ToolRoundResult, TurnState,
-};
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::tools::{
     AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
+};
+use app_lib::runtime::{
+    IdentityMapping, QueryEngine, RunId, RuntimeEventBus, ToolRoundDriver, ToolRoundResult,
+    TurnState,
 };
 use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
 use app_lib::transport::testing::RecordingRuntimeHost;
@@ -44,7 +43,10 @@ struct SpyTool {
 #[async_trait]
 impl RuntimeTool for SpyTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new(self.name, "Spy tool — detects whether dispatcher was reached")
+        ToolDefinition::new(
+            self.name,
+            "Spy tool — detects whether dispatcher was reached",
+        )
     }
 
     async fn execute(
@@ -146,8 +148,14 @@ async fn review_tool_round_driver_emits_tool_events_via_runtime_bus() {
 
     let event_names = host.trace().event_names();
 
-    let executing_count = event_names.iter().filter(|n| n.as_str() == "tool:executing").count();
-    let completed_count = event_names.iter().filter(|n| n.as_str() == "tool:completed").count();
+    let executing_count = event_names
+        .iter()
+        .filter(|n| n.as_str() == "tool:executing")
+        .count();
+    let completed_count = event_names
+        .iter()
+        .filter(|n| n.as_str() == "tool:completed")
+        .count();
 
     assert_eq!(
         executing_count, 1,
@@ -184,11 +192,14 @@ async fn review_tool_round_driver_respects_allowed_tools_filter() {
 
     let engine = QueryEngine::with_dispatcher(dispatcher);
     // allowed_tools does NOT include "blocked_spy_t6"
-    let driver = ToolRoundDriver::new(engine)
-        .with_allowed_tools(vec!["other_tool".to_string()]);
+    let driver = ToolRoundDriver::new(engine).with_allowed_tools(vec!["other_tool".to_string()]);
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-t6".to_string());
-    let turn = TurnState::new(mapping, RunId::new("run-t6"), "call blocked_spy_t6".to_string());
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("run-t6"),
+        "call blocked_spy_t6".to_string(),
+    );
     let bus = RuntimeEventBus::new();
 
     let calls = vec![RuntimeToolCallRequest {

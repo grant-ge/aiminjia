@@ -193,11 +193,7 @@ impl TauriFileCommandAdapter {
         Ok(())
     }
 
-    pub fn preview_file(
-        &self,
-        file_id: String,
-        conversation_id: String,
-    ) -> Result<String, String> {
+    pub fn preview_file(&self, file_id: String, conversation_id: String) -> Result<String, String> {
         let file_record = self
             .db
             .get_uploaded_file_for_conversation(&file_id, &conversation_id)

@@ -501,9 +501,8 @@ pub fn render_conversation_html(
 
     // Messages
     for msg in messages {
-        let msg = crate::runtime::conversation_service::transform_message_json_for_frontend(
-            msg.clone(),
-        );
+        let msg =
+            crate::runtime::conversation_service::transform_message_json_for_frontend(msg.clone());
 
         let role = msg
             .get("role")
@@ -855,7 +854,10 @@ fn render_subagent_envelope(html: &mut String, envelope: &serde_json::Value) {
         html.push_str("</div>");
     }
 
-    if let Some(files) = envelope.get("generatedFiles").and_then(|value| value.as_array()) {
+    if let Some(files) = envelope
+        .get("generatedFiles")
+        .and_then(|value| value.as_array())
+    {
         if !files.is_empty() {
             html.push_str(
                 r#"<div style="padding:0 14px 10px 14px"><div style="font-size:12px;font-weight:600;color:#666;margin-bottom:6px">Generated Files</div>"#,
@@ -1106,11 +1108,7 @@ mod tests {
             }
         })];
 
-        let html = render_conversation_html(
-            "Subagent Export",
-            &messages,
-            "2026-04-18T00:00:00Z",
-        );
+        let html = render_conversation_html("Subagent Export", &messages, "2026-04-18T00:00:00Z");
 
         assert!(
             html.contains("Subagent Result"),

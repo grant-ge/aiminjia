@@ -1,6 +1,6 @@
 pub mod chat_turn_driver;
-pub mod context_builder;
 pub mod compaction;
+pub mod context_builder;
 pub mod metrics;
 pub mod post_process;
 pub mod safeguard;
@@ -14,7 +14,6 @@ pub use chat_turn_driver::{ChatTurnRequest, RuntimeChatTurnDriver, RuntimeLlmExe
 pub use tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 pub use tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome, RuntimeToolCallRequest};
 pub use turn_config::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError,
-    TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError, TurnIterationState,
 };
 pub use turn_outcome::{ChatTurnOutcome, PermissionDenialRecord};

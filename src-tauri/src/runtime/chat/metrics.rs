@@ -64,7 +64,11 @@ pub fn log_context_baseline(
          file_context={}chars | notes_context={}chars | \
          analysis_ctx={}chars",
         config.conversation_id,
-        if config.is_analysis { "analysis" } else { "daily" },
+        if config.is_analysis {
+            "analysis"
+        } else {
+            "daily"
+        },
         step_label,
         config.system_prompt.len(),
         messages.len(),
@@ -101,7 +105,10 @@ pub struct ToolRoundMetrics<'a> {
 
 /// Emit the `[METRICS:tool]` log line (Block 26 verbatim format).
 pub fn log_tool_round(config: &TurnConfig, m: &ToolRoundMetrics<'_>) {
-    let blocked = m.tool_names.len().saturating_sub(m.success_count + m.error_count);
+    let blocked = m
+        .tool_names
+        .len()
+        .saturating_sub(m.success_count + m.error_count);
     log::info!(
         "[METRICS:tool] conv={} step={} iter={} | \
          total={} success={} error={} blocked={} | \
@@ -128,7 +135,10 @@ pub fn record_tool_round(
     workspace_path: &Path,
     primary_model: &str,
 ) {
-    let blocked = m.tool_names.len().saturating_sub(m.success_count + m.error_count);
+    let blocked = m
+        .tool_names
+        .len()
+        .saturating_sub(m.success_count + m.error_count);
     crate::telemetry::record(
         "tool",
         workspace_path,
@@ -141,7 +151,10 @@ pub fn record_tool_round(
             ("error", m.error_count.to_string().as_str()),
             ("blocked", blocked.to_string().as_str()),
             ("names", format!("{:?}", m.tool_names).as_str()),
-            ("total_elapsed_ms", m.elapsed.as_millis().to_string().as_str()),
+            (
+                "total_elapsed_ms",
+                m.elapsed.as_millis().to_string().as_str(),
+            ),
             ("model", primary_model),
         ],
     );

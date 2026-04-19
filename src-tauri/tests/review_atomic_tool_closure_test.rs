@@ -17,8 +17,9 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         app_lib::storage::file_store::AppStorage::new(&workspace_path)
             .expect("AppStorage::new failed"),
     );
-    let file_manager =
-        Arc::new(app_lib::storage::file_manager::FileManager::new(&workspace_path));
+    let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(
+        &workspace_path,
+    ));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
         workspace_path.clone(),
         None,
@@ -96,13 +97,11 @@ async fn request_scoped_web_search_schema_should_come_from_catalog() {
         .expect("web_search missing from TOOL_CATALOG");
 
     assert_eq!(
-        schema.description,
-        catalog.definition.description,
+        schema.description, catalog.definition.description,
         "web_search schema description should come from ToolCatalog"
     );
     assert_eq!(
-        schema.parameters,
-        catalog.json_schema,
+        schema.parameters, catalog.json_schema,
         "web_search JSON schema should come from ToolCatalog"
     );
 }
@@ -123,13 +122,11 @@ async fn request_scoped_load_file_filtered_schema_should_come_from_catalog() {
         .expect("load_file missing from TOOL_CATALOG");
 
     assert_eq!(
-        schema.description,
-        catalog.definition.description,
+        schema.description, catalog.definition.description,
         "load_file filtered schema description should come from ToolCatalog"
     );
     assert_eq!(
-        schema.parameters,
-        catalog.json_schema,
+        schema.parameters, catalog.json_schema,
         "load_file filtered JSON schema should come from ToolCatalog"
     );
 }

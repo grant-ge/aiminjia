@@ -77,7 +77,10 @@ fn k3_compact_messages_via_llm_replaces_history() {
     assert!(summary_content.contains("摘要"));
 
     let latest = output.new_messages.last().unwrap();
-    assert_eq!(latest.get("content").and_then(|v| v.as_str()), Some("latest question"));
+    assert_eq!(
+        latest.get("content").and_then(|v| v.as_str()),
+        Some("latest question")
+    );
 
     assert!(output.pre_tokens > 0);
     assert!(output.post_tokens < output.pre_tokens);

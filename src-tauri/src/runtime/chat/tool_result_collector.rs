@@ -180,8 +180,8 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::chat::tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome};
     use crate::runtime::chat::tool_round_driver::ToolRoundResult;
+    use crate::runtime::chat::tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome};
 
     fn completed(id: &str, name: &str, content: &str, is_error: bool) -> ToolRoundResult {
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
@@ -279,6 +279,9 @@ mod tests {
         let content = r#"{"status":"ok","fileId":"aaaabbbb-1234-5678-9012-abcdef012345","name":"report.pdf"}"#;
         let results = vec![completed("tc1", "make_report", content, false)];
         let out = collect_results(results);
-        assert_eq!(out.new_generated_file_ids, vec!["aaaabbbb-1234-5678-9012-abcdef012345"]);
+        assert_eq!(
+            out.new_generated_file_ids,
+            vec!["aaaabbbb-1234-5678-9012-abcdef012345"]
+        );
     }
 }

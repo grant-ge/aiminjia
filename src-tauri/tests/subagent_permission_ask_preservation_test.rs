@@ -46,8 +46,8 @@ async fn browse_data_runtime_tool_surfaces_structured_ask_without_completed_even
         AskingBrowseDataLauncher,
     ))));
 
-    let engine = QueryEngine::with_dispatcher(dispatcher)
-        .with_workspace_path(tmp.path().to_path_buf());
+    let engine =
+        QueryEngine::with_dispatcher(dispatcher).with_workspace_path(tmp.path().to_path_buf());
     let mapping = IdentityMapping::from_legacy_conversation_id("subagent-ask-conv".to_string());
     let turn = TurnState::new(mapping, RunId::new("run-subagent-ask"), "ask".to_string());
     let bus = RuntimeEventBus::new();

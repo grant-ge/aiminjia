@@ -74,13 +74,12 @@ mod tests {
 
     #[test]
     fn map_browse_data_launch_result_preserves_ask_required() {
-        let result = map_browse_data_launch_result(BrowseDataLaunchResult::ask(
-            PermissionDecision::Ask {
+        let result =
+            map_browse_data_launch_result(BrowseDataLaunchResult::ask(PermissionDecision::Ask {
                 message: "need approval".to_string(),
                 suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
                 reason: PermissionReason::UnknownScope,
-            },
-        ));
+            }));
 
         match result.expect_err("ask decision must stay structured") {
             ToolError::AskRequired(PermissionDecision::Ask {
@@ -89,7 +88,10 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(message, "need approval");
-                assert_eq!(suggestions, vec!["Allow once".to_string(), "Deny".to_string()]);
+                assert_eq!(
+                    suggestions,
+                    vec!["Allow once".to_string(), "Deny".to_string()]
+                );
             }
             other => panic!("expected ToolError::AskRequired, got: {:?}", other),
         }

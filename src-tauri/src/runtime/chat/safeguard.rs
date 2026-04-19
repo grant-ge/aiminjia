@@ -87,7 +87,10 @@ mod tests {
         let mut injected = false;
         // iteration 7 >= max_iterations(10) - 3 = 7, full_content empty
         let action = check_iteration(7, 10, "", false, false, &mut injected, false);
-        assert!(matches!(action, SafeguardAction::InjectPromptAndContinue(_)));
+        assert!(matches!(
+            action,
+            SafeguardAction::InjectPromptAndContinue(_)
+        ));
     }
 
     #[test]
@@ -102,16 +105,22 @@ mod tests {
         let mut injected = false;
         // iteration 9 >= max_iterations(15) - 6 = 9, has_saved_note=false, not yet injected
         let action = check_iteration(9, 15, "", true, false, &mut injected, false);
-        assert!(matches!(action, SafeguardAction::InjectPromptAndContinue(_)));
+        assert!(matches!(
+            action,
+            SafeguardAction::InjectPromptAndContinue(_)
+        ));
         assert!(injected);
     }
 
     #[test]
     fn analysis_phase2_forces_no_tools_when_no_content_and_remaining_le_3() {
         let mut injected = true; // phase 1 already injected
-        // iteration 12 → remaining = 15 - 13 = 2 (<= 3)
+                                 // iteration 12 → remaining = 15 - 13 = 2 (<= 3)
         let action = check_iteration(12, 15, "", true, true, &mut injected, false);
-        assert!(matches!(action, SafeguardAction::ForceNoToolsAndContinue(_)));
+        assert!(matches!(
+            action,
+            SafeguardAction::ForceNoToolsAndContinue(_)
+        ));
     }
 
     #[test]

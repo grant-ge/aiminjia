@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::runtime::ids::RunId;
-use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::builtin::python_execution::PythonExecution;
+use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
@@ -102,10 +102,7 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
         for pattern in DANGEROUS_PATTERNS {
             if code.contains(pattern) {
                 return Some(PermissionDecision::Deny {
-                    message: format!(
-                        "execute_python: dangerous pattern detected: '{}'",
-                        pattern
-                    ),
+                    message: format!("execute_python: dangerous pattern detected: '{}'", pattern),
                     reason: PermissionReason::Other("static_code_check".into()),
                 });
             }
@@ -136,7 +133,9 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
             )
         })?;
         let storage = self.storage.as_ref().ok_or_else(|| {
-            ToolError::ExecutionFailed("ExecutePythonRuntimeTool: missing storage dependency".into())
+            ToolError::ExecutionFailed(
+                "ExecutePythonRuntimeTool: missing storage dependency".into(),
+            )
         })?;
         let file_manager = self.file_manager.as_ref().ok_or_else(|| {
             ToolError::ExecutionFailed(
@@ -165,13 +164,10 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
             python_binary: self.python_binary.clone(),
             python_home: self.python_home.clone(),
         };
-        let content = crate::llm::tool_executor::handle_execute_python_core(
-            &params,
-            &input,
-            python.as_ref(),
-        )
-        .await
-        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+        let content =
+            crate::llm::tool_executor::handle_execute_python_core(&params, &input, python.as_ref())
+                .await
+                .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
 
         Ok(ToolResult::new("execute_python", content, None))
     }

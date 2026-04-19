@@ -43,20 +43,18 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     dispatcher.register(Arc::new(ListDirectoryRuntimeTool));
 
     // Build engine WITH workspace_path injected (the fix under test)
-    let engine = QueryEngine::with_dispatcher(dispatcher)
-        .with_workspace_path(tmp.path().to_path_buf());
+    let engine =
+        QueryEngine::with_dispatcher(dispatcher).with_workspace_path(tmp.path().to_path_buf());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-ws".to_string());
-    let turn = TurnState::new(
-        mapping,
-        RunId::new("run-ws"),
-        "list workspace".to_string(),
-    );
+    let turn = TurnState::new(mapping, RunId::new("run-ws"), "list workspace".to_string());
     let bus = RuntimeEventBus::new();
 
     // run_tool_with_bus should succeed — capability context is injected so
     // require_workspace_root() resolves to tmp.path() instead of returning PermissionDenied.
-    let result = engine.run_tool_with_bus(&turn, &bus, "list_directory").await;
+    let result = engine
+        .run_tool_with_bus(&turn, &bus, "list_directory")
+        .await;
     assert!(
         result.is_ok(),
         "list_directory should succeed when QueryEngine has workspace_path set: {:?}",
@@ -74,8 +72,8 @@ async fn query_engine_injects_authorized_workspace_into_capability_context() {
     use app_lib::runtime::state::TurnState;
     use app_lib::runtime::store::AuthorizedWorkspaceRef;
     use app_lib::runtime::tools::{
-        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher,
-        ToolError, ToolExecutionContext, ToolResult,
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
+        ToolExecutionContext, ToolResult,
     };
     use async_trait::async_trait;
     use serde_json::Value;

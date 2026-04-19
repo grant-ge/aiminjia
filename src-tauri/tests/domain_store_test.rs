@@ -150,9 +150,7 @@ fn file_record_store_roundtrip_in_memory() {
         )
         .unwrap();
 
-    let files = store
-        .get_generated_files_for_conversation("conv1")
-        .unwrap();
+    let files = store.get_generated_files_for_conversation("conv1").unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(
         files[0].get("fileName").and_then(|v| v.as_str()),
@@ -177,10 +175,7 @@ fn conversation_store_new_methods_in_memory() {
     // get_conversations returns JSON value with id and title
     let convs = store.get_conversations().unwrap();
     assert_eq!(convs.len(), 1);
-    assert_eq!(
-        convs[0].get("id").and_then(|v| v.as_str()),
-        Some("c1")
-    );
+    assert_eq!(convs[0].get("id").and_then(|v| v.as_str()), Some("c1"));
     assert_eq!(
         convs[0].get("title").and_then(|v| v.as_str()),
         Some("My Conversation")

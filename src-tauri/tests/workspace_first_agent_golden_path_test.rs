@@ -5,8 +5,11 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn authorized_session_exposes_workspace_tools_and_lists_local_directory() {
     let authorized_root = TempDir::new().unwrap();
-    std::fs::write(authorized_root.path().join("sales_2026.csv"), b"month,revenue\n1,100\n")
-        .unwrap();
+    std::fs::write(
+        authorized_root.path().join("sales_2026.csv"),
+        b"month,revenue\n1,100\n",
+    )
+    .unwrap();
     std::fs::write(authorized_root.path().join("notes.txt"), b"hello workspace").unwrap();
 
     let trace = run_workspace_tool_with_authorized_session(
@@ -25,7 +28,10 @@ async fn authorized_session_exposes_workspace_tools_and_lists_local_directory() 
         "get_file_info",
     ] {
         assert!(
-            trace.visible_tool_names.iter().any(|name| name == tool_name),
+            trace
+                .visible_tool_names
+                .iter()
+                .any(|name| name == tool_name),
             "authorized session should expose workspace tool '{}', got {:?}",
             tool_name,
             trace.visible_tool_names
@@ -63,7 +69,10 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
     .unwrap();
 
     assert!(
-        trace.visible_tool_names.iter().any(|name| name == "read_workspace_file"),
+        trace
+            .visible_tool_names
+            .iter()
+            .any(|name| name == "read_workspace_file"),
         "authorized session should expose read_workspace_file, got {:?}",
         trace.visible_tool_names
     );

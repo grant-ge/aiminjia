@@ -28,17 +28,19 @@ impl LoadFileRuntimeTool {
 #[async_trait]
 impl RuntimeTool for LoadFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("load_file")
-            .unwrap_or_else(|| {
-                ToolDefinition::new(
-                    "load_file",
-                    "加载已上传文件，使数据可在 execute_python 中以 _df/_text 变量使用",
-                )
-            })
+        TOOL_CATALOG.get("load_file").unwrap_or_else(|| {
+            ToolDefinition::new(
+                "load_file",
+                "加载已上传文件，使数据可在 execute_python 中以 _df/_text 变量使用",
+            )
+        })
     }
 
-    async fn execute(&self, input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let file_ops = ctx
             .capability
             .as_ref()
@@ -49,10 +51,7 @@ impl RuntimeTool for LoadFileRuntimeTool {
                 ))
             })?;
 
-        let loaded = file_ops
-            .load_file(&input)
-            .await
-            .map_err(ToolError::Other)?;
+        let loaded = file_ops.load_file(&input).await.map_err(ToolError::Other)?;
 
         Ok(ToolResult::new(
             "load_file",

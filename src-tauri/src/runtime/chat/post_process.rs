@@ -56,10 +56,7 @@ pub fn finalize_content(
 ) {
     // 1. Append max-iterations notice when cap is reached.
     if iteration_count >= max_iterations {
-        log::warn!(
-            "[post_process] Hit max_iterations ({})",
-            max_iterations,
-        );
+        log::warn!("[post_process] Hit max_iterations ({})", max_iterations,);
         let notice = format!(
             "\n\n---\n⚠️ 本步分析较为复杂，已达处理上限（{} 次迭代）。以上是当前阶段的分析结果。\n\
             如需补充分析，请回复具体要求；如结果已满足需要，请确认继续下一步。",
@@ -121,8 +118,7 @@ mod tests {
 
     #[test]
     fn strips_hallucinated_xml() {
-        let mut content =
-            "Result: <function_calls>junk</function_calls> done".to_string();
+        let mut content = "Result: <function_calls>junk</function_calls> done".to_string();
         finalize_content(&mut content, 1, 10, false);
         assert_eq!(content, "Result:  done");
     }

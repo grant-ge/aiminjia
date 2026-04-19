@@ -32,7 +32,11 @@ fn setup_test_files(tmp: &TempDir) {
     .unwrap();
 
     std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
-    std::fs::write(tmp.path().join(".git/ignored.txt"), "hello from hidden dir\n").unwrap();
+    std::fs::write(
+        tmp.path().join(".git/ignored.txt"),
+        "hello from hidden dir\n",
+    )
+    .unwrap();
 
     let large = "x".repeat(2 * 1024 * 1024 + 64);
     std::fs::write(tmp.path().join("large.log"), large).unwrap();
@@ -59,10 +63,7 @@ async fn grep_files_with_matches_mode_returns_sorted_relative_paths() {
     let data = result.data.unwrap();
     assert_eq!(data["mode"], json!("files_with_matches"));
     assert_eq!(data["num_files"], json!(3));
-    assert_eq!(
-        data["filenames"],
-        json!(["a.rs", "c.txt", "subdir/d.rs"])
-    );
+    assert_eq!(data["filenames"], json!(["a.rs", "c.txt", "subdir/d.rs"]));
     assert!(
         result.content.contains("a.rs") && result.content.contains("subdir/d.rs"),
         "content should include matched file list: {}",
@@ -78,14 +79,19 @@ async fn grep_content_mode_returns_line_text() {
 
     let tool = GrepContentTool;
     let result = tool
-        .execute(json!({ "pattern": "fn main", "output_mode": "content" }), ctx)
+        .execute(
+            json!({ "pattern": "fn main", "output_mode": "content" }),
+            ctx,
+        )
         .await
         .unwrap();
 
     let data = result.data.unwrap();
     assert_eq!(data["mode"], json!("content"));
     assert_eq!(data["num_lines"], json!(1));
-    let content = data["content"].as_str().expect("content output should be text");
+    let content = data["content"]
+        .as_str()
+        .expect("content output should be text");
     assert!(
         content.contains("a.rs:1:fn main()"),
         "content mode should include relative path, line number, and line text: {content}"
@@ -107,7 +113,9 @@ async fn grep_count_mode_returns_counts_text() {
     let data = result.data.unwrap();
     assert_eq!(data["mode"], json!("count"));
     assert_eq!(data["num_matches"], json!(4));
-    let content = data["content"].as_str().expect("count output should be text");
+    let content = data["content"]
+        .as_str()
+        .expect("count output should be text");
     assert!(
         content.contains("b.rs:2"),
         "count mode should include per-file counts: {content}"

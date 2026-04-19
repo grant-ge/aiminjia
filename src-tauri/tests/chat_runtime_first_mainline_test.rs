@@ -9,7 +9,6 @@
 ///
 /// S4 status: the executor-backed path (legacy RuntimeTurnExecutor) has been
 /// removed. All tests here use the pure runtime or RuntimeLlmExecutor path.
-
 mod common;
 
 use app_lib::commands::chat::testsupport::run_send_message_through_runtime;

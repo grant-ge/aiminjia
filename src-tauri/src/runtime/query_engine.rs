@@ -7,13 +7,13 @@ use serde_json::json;
 use crate::runtime::chat::PermissionDenialRecord;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
-use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::state::TurnState;
+use crate::runtime::store::AuthorizedWorkspaceRef;
+use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::{
     CapabilityContext, FileOperations, FileStateCache, InterruptBehavior, StorageCapability,
     ToolDispatcher, ToolExecutionContext,
 };
-use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
 #[derive(Clone, Default)]
 pub struct QueryEngine {
@@ -258,7 +258,9 @@ impl QueryEngine {
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
         let mut event_names = match outcome {
-            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
+            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => {
+                event_names
+            }
             crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
                 // FIXME(S6): extend return type to carry Ask up to TurnDriver/transport.
                 // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).
@@ -304,7 +306,8 @@ impl QueryEngine {
         bus: &RuntimeEventBus,
         call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
     ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
-        self.run_tool_call_with_bus_internal(turn, bus, call, None).await
+        self.run_tool_call_with_bus_internal(turn, bus, call, None)
+            .await
     }
 
     pub async fn replay_tool_call_with_bus(
@@ -350,10 +353,11 @@ impl QueryEngine {
 
         // Inject capability context (Workspace-First guarantee) — same logic as
         // `run_tool_with_bus` so workspace-scoped tools receive the correct root.
-        let capability_workspace = self
-            .workspace_path
-            .clone()
-            .or_else(|| self.authorized_workspace.as_ref().map(|aw| aw.root_path.clone()));
+        let capability_workspace = self.workspace_path.clone().or_else(|| {
+            self.authorized_workspace
+                .as_ref()
+                .map(|aw| aw.root_path.clone())
+        });
         let mut ctx = if let Some(workspace_path) = capability_workspace {
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
@@ -443,7 +447,8 @@ impl QueryEngine {
                 })
             }
             Err(err) => {
-                if let crate::runtime::tools::executor::ToolError::PermissionDenied(ref reason) = err
+                if let crate::runtime::tools::executor::ToolError::PermissionDenied(ref reason) =
+                    err
                 {
                     self.record_permission_denial(&call.tool_name, &call.tool_call_id, reason);
                 }
@@ -500,10 +505,11 @@ impl QueryEngine {
         // can resolve their root path correctly.  When no workspace_path is set
         // (legacy/test paths), capability remains None and tools that require it
         // will return PermissionDenied as expected.
-        let capability_workspace = self
-            .workspace_path
-            .clone()
-            .or_else(|| self.authorized_workspace.as_ref().map(|aw| aw.root_path.clone()));
+        let capability_workspace = self.workspace_path.clone().or_else(|| {
+            self.authorized_workspace
+                .as_ref()
+                .map(|aw| aw.root_path.clone())
+        });
         let ctx = if let Some(workspace_path) = capability_workspace {
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
@@ -526,7 +532,9 @@ impl QueryEngine {
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
         let event_names = match outcome {
-            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => event_names,
+            crate::runtime::tools::ToolDispatchOutcome::Completed { event_names, .. } => {
+                event_names
+            }
             crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision) => {
                 // FIXME(S6): extend return type to carry Ask up to TurnDriver/transport.
                 // S1 transition: Ask→error at QueryEngine boundary (not at Dispatcher).

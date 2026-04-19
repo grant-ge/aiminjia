@@ -27,9 +27,7 @@ use tempfile::TempDir;
 /// 调用方保留 `_dir` 变量即可。
 fn make_test_env() -> (TempDir, Arc<AppStorage>, Arc<FileManager>) {
     let dir = TempDir::new().expect("TempDir::new failed");
-    let storage = Arc::new(
-        AppStorage::new(dir.path()).expect("AppStorage::new failed"),
-    );
+    let storage = Arc::new(AppStorage::new(dir.path()).expect("AppStorage::new failed"));
     // FileManager workspace 直接指向 TempDir 根
     let file_manager = Arc::new(FileManager::new(dir.path()));
     (dir, storage, file_manager)
@@ -53,7 +51,13 @@ fn make_default_file_ops_with_run(
     conversation_id: &str,
     run_id: RunId,
 ) -> DefaultFileOperations {
-    DefaultFileOperations::new(storage, file_manager, workspace_path, conversation_id, Some(run_id))
+    DefaultFileOperations::new(
+        storage,
+        file_manager,
+        workspace_path,
+        conversation_id,
+        Some(run_id),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,12 +81,7 @@ fn default_file_ops_is_loaded_reads_real_storage_loaded_key() {
     let conversation_id = "conv-real-001";
     let file_id = "file-abc-001";
 
-    let file_ops = make_default_file_ops(
-        storage.clone(),
-        file_manager,
-        workspace,
-        conversation_id,
-    );
+    let file_ops = make_default_file_ops(storage.clone(), file_manager, workspace, conversation_id);
 
     // ── Before write ──────────────────────────────────────────────────────────
     assert!(
@@ -194,12 +193,7 @@ fn scope_selection_no_run_id_uses_conversation_id() {
     let file_id = "file-scope-001";
 
     // Build DefaultFileOperations WITHOUT run_id → scope = conversation_id
-    let file_ops = make_default_file_ops(
-        storage.clone(),
-        file_manager,
-        workspace,
-        conversation_id,
-    );
+    let file_ops = make_default_file_ops(storage.clone(), file_manager, workspace, conversation_id);
 
     // Write the key that production code would write when run_id is absent:
     // loaded_scope_id() → conversation_id
@@ -295,7 +289,11 @@ fn loaded_key_format_round_trips_in_real_appstorage() {
 
     // Write
     storage
-        .set_memory(&key, r#"{"format":"csv","loadedAs":"dataframe"}"#, Some("test"))
+        .set_memory(
+            &key,
+            r#"{"format":"csv","loadedAs":"dataframe"}"#,
+            Some("test"),
+        )
         .expect("set_memory must succeed");
 
     // After write

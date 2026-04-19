@@ -27,7 +27,11 @@ impl RuntimeTool for FakeRuntimeTool {
         _input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult::new(self.id, format!("runtime:{}", self.id), None))
+        Ok(ToolResult::new(
+            self.id,
+            format!("runtime:{}", self.id),
+            None,
+        ))
     }
 }
 
@@ -41,15 +45,13 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
     // Keep tmp_dir alive for the duration of the context
     let _ = &tmp_dir;
     let storage = Arc::new(
-        app_lib::storage::file_store::AppStorage::new(&tmp)
-            .expect("AppStorage::new failed"),
+        app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
-    let file_manager = Arc::new(
-        app_lib::storage::file_manager::FileManager::new(&tmp),
-    );
-    let session_manager = Arc::new(
-        app_lib::python::session::PythonSessionManager::new(tmp.clone(), None),
-    );
+    let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
+    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
+        tmp.clone(),
+        None,
+    ));
     #[allow(deprecated)]
     app_lib::plugin::context::PluginContext {
         storage,
@@ -89,9 +91,7 @@ async fn register_runtime_adds_to_registry() {
     let ctx = make_test_plugin_ctx("conv-test");
     let dispatcher = registry.to_runtime_dispatcher(ctx).await;
     let exec_ctx = ToolExecutionContext::for_test("conv-test", "run-1", "tc-1");
-    let outcome = dispatcher
-        .dispatch("test_tool", json!({}), exec_ctx)
-        .await;
+    let outcome = dispatcher.dispatch("test_tool", json!({}), exec_ctx).await;
     assert!(outcome.is_ok(), "Runtime tool should be dispatchable");
     let content = match outcome.unwrap() {
         app_lib::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => result.content,
@@ -152,8 +152,7 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
         }
     };
     assert_eq!(
-        content,
-        "runtime:dual_tool",
+        content, "runtime:dual_tool",
         "RuntimeTool should take precedence over legacy ToolPlugin"
     );
 }

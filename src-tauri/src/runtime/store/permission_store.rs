@@ -27,7 +27,10 @@ impl PolicyDecision {
     }
 
     pub fn is_persistent(&self) -> bool {
-        matches!(self, PolicyDecision::AlwaysAllow | PolicyDecision::AlwaysDeny)
+        matches!(
+            self,
+            PolicyDecision::AlwaysAllow | PolicyDecision::AlwaysDeny
+        )
     }
 }
 

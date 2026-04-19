@@ -126,7 +126,6 @@ pub struct ToolDefinition {
     pub parameters: serde_json::Value, // JSON Schema
 }
 
-
 /// Extended thinking configuration for providers that support explicit reasoning controls.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]

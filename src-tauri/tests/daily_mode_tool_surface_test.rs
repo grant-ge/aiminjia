@@ -7,10 +7,15 @@ use app_lib::runtime::tools::definition::ToolKind;
 fn composite_tools_are_not_primitive() {
     let catalog = ToolCatalog::default_catalog();
     let composite_ids = [
-        "browse_data", "generate_report", "export_data", "generate_chart",
+        "browse_data",
+        "generate_report",
+        "export_data",
+        "generate_chart",
     ];
     for id in &composite_ids {
-        let def = catalog.get(id).unwrap_or_else(|| panic!("{} must be in catalog", id));
+        let def = catalog
+            .get(id)
+            .unwrap_or_else(|| panic!("{} must be in catalog", id));
         assert!(
             !matches!(def.kind, ToolKind::Primitive),
             "Composite tool '{}' must NOT be Primitive kind",

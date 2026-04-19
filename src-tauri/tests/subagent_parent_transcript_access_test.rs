@@ -49,8 +49,15 @@ async fn parent_can_load_transcript_entries_via_child_run_id() {
         .await
         .unwrap();
 
-    let loaded_ref = runtime.get_transcript_ref(handle.child_run_id()).await.unwrap();
-    let loaded = runtime.load_transcript(handle.child_run_id()).await.unwrap().unwrap();
+    let loaded_ref = runtime
+        .get_transcript_ref(handle.child_run_id())
+        .await
+        .unwrap();
+    let loaded = runtime
+        .load_transcript(handle.child_run_id())
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(loaded_ref.as_deref(), Some(transcript_ref.as_str()));
     assert_eq!(loaded[0].content, "done");

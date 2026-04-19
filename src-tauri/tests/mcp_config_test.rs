@@ -14,7 +14,10 @@ fn mcp_config_store_add_load_remove_roundtrip() {
         name: "demo".to_string(),
         transport_type: "stdio".to_string(),
         endpoint: "/usr/local/bin/demo".to_string(),
-        env_vars: Some(HashMap::from([("API_KEY".to_string(), "secret".to_string())])),
+        env_vars: Some(HashMap::from([(
+            "API_KEY".to_string(),
+            "secret".to_string(),
+        )])),
     };
     let second = McpServerConfig {
         name: "metrics".to_string(),

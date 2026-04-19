@@ -77,7 +77,10 @@ async fn manager_connect_and_disconnect_sync_runtime_tools() {
         },
         connected: Mutex::new(false),
         tools: Mutex::new(vec![tool("server-a", "lookup")]),
-        outputs: Mutex::new(HashMap::from([("lookup".to_string(), json!({ "ok": true }))])),
+        outputs: Mutex::new(HashMap::from([(
+            "lookup".to_string(),
+            json!({ "ok": true }),
+        )])),
     });
 
     manager.register(connection.clone()).await.unwrap();
@@ -98,7 +101,9 @@ async fn manager_connect_and_disconnect_sync_runtime_tools() {
 
     let schemas = registry.get_all_schemas().await;
     assert!(
-        schemas.iter().all(|schema| schema.name != "mcp__server-a__lookup"),
+        schemas
+            .iter()
+            .all(|schema| schema.name != "mcp__server-a__lookup"),
         "disconnect should remove MCP tool schema from runtime tool pool"
     );
 }
@@ -150,7 +155,10 @@ async fn manager_connect_all_and_disconnect_all_cover_all_servers() {
             },
             connected: Mutex::new(false),
             tools: Mutex::new(vec![tool(server_name, "lookup")]),
-            outputs: Mutex::new(HashMap::from([("lookup".to_string(), json!({ "ok": true }))])),
+            outputs: Mutex::new(HashMap::from([(
+                "lookup".to_string(),
+                json!({ "ok": true }),
+            )])),
         });
         manager.register(connection).await.unwrap();
     }
@@ -178,7 +186,10 @@ async fn manager_rejects_duplicate_registration() {
         },
         connected: Mutex::new(false),
         tools: Mutex::new(vec![tool("server-e", "lookup")]),
-        outputs: Mutex::new(HashMap::from([("lookup".to_string(), json!({ "ok": true }))])),
+        outputs: Mutex::new(HashMap::from([(
+            "lookup".to_string(),
+            json!({ "ok": true }),
+        )])),
     });
 
     manager.register(connection.clone()).await.unwrap();

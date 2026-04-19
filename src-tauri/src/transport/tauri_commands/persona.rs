@@ -32,9 +32,7 @@ impl TauriPersonaCommandAdapter {
     }
 
     pub fn set_active_persona(&self, id: String) -> Result<(), String> {
-        self.db
-            .set_active_persona(&id)
-            .map_err(|e| e.to_string())
+        self.db.set_active_persona(&id).map_err(|e| e.to_string())
     }
 
     pub fn get_active_persona(&self) -> Result<Persona, String> {

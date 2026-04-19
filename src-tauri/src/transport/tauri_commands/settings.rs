@@ -236,9 +236,7 @@ impl TauriSettingsCommandAdapter {
         for (provider, plaintext_key) in &keys {
             let db_key = format!("apiKey:{}", provider);
             if plaintext_key.is_empty() {
-                self.db
-                    .delete_setting(&db_key)
-                    .map_err(|e| e.to_string())?;
+                self.db.delete_setting(&db_key).map_err(|e| e.to_string())?;
             } else {
                 let mut value_to_store = plaintext_key.clone();
                 if let Some(ss) = self.crypto.as_ref() {
@@ -261,7 +259,11 @@ impl TauriSettingsCommandAdapter {
         Ok(())
     }
 
-    pub async fn validate_api_key(&self, provider: String, api_key: String) -> Result<bool, String> {
+    pub async fn validate_api_key(
+        &self,
+        provider: String,
+        api_key: String,
+    ) -> Result<bool, String> {
         if provider != "custom" && api_key.trim().is_empty() {
             return Ok(false);
         }

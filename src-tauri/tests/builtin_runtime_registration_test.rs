@@ -18,8 +18,9 @@ fn build_test_plugin_ctx(
         app_lib::storage::file_store::AppStorage::new(&workspace_path)
             .expect("AppStorage::new failed"),
     );
-    let file_manager =
-        Arc::new(app_lib::storage::file_manager::FileManager::new(&workspace_path));
+    let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(
+        &workspace_path,
+    ));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
         workspace_path.clone(),
         None,
@@ -401,8 +402,7 @@ async fn execute_python_routes_to_runtime_tool_via_factory_and_denies_dangerous_
     let err = result.expect_err("dangerous execute_python input should be denied");
     let message = err.to_string();
     assert!(
-        message.contains("dangerous pattern detected")
-            || message.contains("Permission denied"),
+        message.contains("dangerous pattern detected") || message.contains("Permission denied"),
         "execute_python should deny dangerous code in runtime path, got: {}",
         message
     );
@@ -434,8 +434,7 @@ async fn execute_python_in_runtime_dispatcher_denies_dangerous_code() {
     };
     let message = err.to_string();
     assert!(
-        message.contains("dangerous pattern detected")
-            || message.contains("permission denied"),
+        message.contains("dangerous pattern detected") || message.contains("permission denied"),
         "dispatcher should surface execute_python tool-level deny, got: {}",
         message
     );
@@ -481,7 +480,8 @@ async fn generate_report_request_scoped_runtime_factory_preserves_file_meta_with
 // ─── Test 11: generate_chart survives legacy unregistration via runtime factory ──
 
 #[tokio::test]
-async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_boundary_without_legacy_tool() {
+async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_boundary_without_legacy_tool(
+) {
     let registry = ToolRegistry::new();
     register_builtin_tools(&registry).await;
     registry.unregister("generate_chart").await;
@@ -520,7 +520,8 @@ async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_bounda
 // ─── Test 12: browse_data survives legacy unregistration via runtime factory ──
 
 #[tokio::test]
-async fn browse_data_request_scoped_runtime_factory_requires_browser_capability_without_legacy_tool() {
+async fn browse_data_request_scoped_runtime_factory_requires_browser_capability_without_legacy_tool(
+) {
     let registry = ToolRegistry::new();
     register_builtin_tools(&registry).await;
     registry.unregister("browse_data").await;
@@ -604,11 +605,8 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
 
     // Dispatch WITHOUT capability context → CapabilityPermissionPipeline should
     // reject the call because workspace:read requires storage capability.
-    let exec_ctx = app_lib::runtime::tools::ToolExecutionContext::for_test(
-        "test-conv",
-        "run-1",
-        "tc-1",
-    );
+    let exec_ctx =
+        app_lib::runtime::tools::ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     // No capability attached → permission denied
     let outcome = dispatcher
         .dispatch("list_directory", serde_json::json!({"path": "."}), exec_ctx)

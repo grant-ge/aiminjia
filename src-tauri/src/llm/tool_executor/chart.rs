@@ -7,9 +7,7 @@ use serde_json::{json, Value};
 
 use crate::plugin::context::PluginContext;
 use crate::plugin::tool_trait::FileMeta;
-use crate::runtime::tools::builtin::chart_capability::{
-    ChartCapability, DefaultChartCapability,
-};
+use crate::runtime::tools::builtin::chart_capability::{ChartCapability, DefaultChartCapability};
 
 use super::require_str;
 use super::FileGenResult;

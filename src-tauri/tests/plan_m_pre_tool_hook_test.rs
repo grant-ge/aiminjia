@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 use app_lib::runtime::hooks::config::{HookConfig, HookEvent, HookRegistry};
 use app_lib::runtime::tools::dispatcher::RuntimeTool;
 use app_lib::runtime::tools::{
-    AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
+    AllowAllPermissionPipeline, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext,
+    ToolResult,
 };
 
 struct RecordingTool {
@@ -20,7 +21,11 @@ impl RuntimeTool for RecordingTool {
         ToolDefinition::new(&self.name, "recording")
     }
 
-    async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         self.received_inputs.lock().unwrap().push(input);
         Ok(ToolResult::new(&self.name, "ok", None))
     }
@@ -47,7 +52,9 @@ async fn pre_tool_hook_deny_prevents_execution() {
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_hook_registry(Arc::new(registry));
 
-    let result = dispatcher.dispatch("bash_tool", json!({"command": "rm -rf /"}), ctx).await;
+    let result = dispatcher
+        .dispatch("bash_tool", json!({"command": "rm -rf /"}), ctx)
+        .await;
 
     assert!(result.is_err());
     let err_str = match result {
@@ -79,7 +86,9 @@ async fn pre_tool_hook_allow_permits_execution() {
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_hook_registry(Arc::new(registry));
 
-    let result = dispatcher.dispatch("bash_tool", json!({"command": "ls"}), ctx).await;
+    let result = dispatcher
+        .dispatch("bash_tool", json!({"command": "ls"}), ctx)
+        .await;
     assert!(result.is_ok());
     assert_eq!(received.lock().unwrap().len(), 1);
 }
@@ -97,7 +106,9 @@ async fn pre_tool_hook_updated_input_modifies_args() {
     let mut registry = HookRegistry::new();
     registry.hooks.push(HookConfig {
         event: HookEvent::PreToolUse,
-        command: r#"printf '{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"echo safe\"}}'"#.to_string(),
+        command:
+            r#"printf '{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"echo safe\"}}'"#
+                .to_string(),
         tool_filter: None,
         timeout_secs: Some(10),
     });
@@ -105,11 +116,17 @@ async fn pre_tool_hook_updated_input_modifies_args() {
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_hook_registry(Arc::new(registry));
 
-    dispatcher.dispatch("bash_tool", json!({"command": "dangerous"}), ctx).await.unwrap();
+    dispatcher
+        .dispatch("bash_tool", json!({"command": "dangerous"}), ctx)
+        .await
+        .unwrap();
 
     let inputs = received.lock().unwrap();
     assert_eq!(inputs.len(), 1);
-    assert_eq!(inputs[0].get("command").and_then(serde_json::Value::as_str), Some("echo safe"));
+    assert_eq!(
+        inputs[0].get("command").and_then(serde_json::Value::as_str),
+        Some("echo safe")
+    );
 }
 
 #[tokio::test]
@@ -124,7 +141,9 @@ async fn no_hook_registry_executes_normally() {
 
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
 
-    let result = dispatcher.dispatch("bash_tool", json!({"command": "ls"}), ctx).await;
+    let result = dispatcher
+        .dispatch("bash_tool", json!({"command": "ls"}), ctx)
+        .await;
     assert!(result.is_ok());
     assert_eq!(received.lock().unwrap().len(), 1);
 }
@@ -150,7 +169,9 @@ async fn pre_tool_hook_tool_filter_only_affects_target() {
     let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1")
         .with_hook_registry(Arc::new(registry));
 
-    let result = dispatcher.dispatch("write_file", json!({"path": "/tmp/x"}), ctx).await;
+    let result = dispatcher
+        .dispatch("write_file", json!({"path": "/tmp/x"}), ctx)
+        .await;
     assert!(result.is_ok());
     assert_eq!(received.lock().unwrap().len(), 1);
 }

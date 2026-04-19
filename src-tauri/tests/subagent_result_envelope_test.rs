@@ -1,9 +1,9 @@
 use app_lib::runtime::agent::message_bridge;
-use app_lib::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use app_lib::runtime::agent::subagent_result_envelope::{
     build_subagent_transcript_ref, SubAgentResultEnvelope, SubAgentTerminalToolResult,
     SubAgentTranscriptEntry,
 };
+use app_lib::runtime::agent::{AgentRuntime, SpawnChildRunRequest};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::ids::{RunId, SessionId};
 
@@ -44,7 +44,10 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
 
     assert_eq!(decoded.generated_files, vec!["/tmp/a.json", "/tmp/b.json"]);
     assert_eq!(decoded.terminal_tool_results.len(), 1);
-    assert_eq!(decoded.terminal_tool_results[0].tool_name, "extract_table_data");
+    assert_eq!(
+        decoded.terminal_tool_results[0].tool_name,
+        "extract_table_data"
+    );
     assert_eq!(decoded.transcript_snapshot.len(), 2);
     assert_eq!(
         decoded.transcript_ref.as_deref(),
@@ -117,7 +120,9 @@ async fn background_run_persists_decodable_envelope_summary() {
             tool_call_id: None,
             tool_name: None,
         }],
-        transcript_ref: Some(build_subagent_transcript_ref(handle.child_run_id().as_str())),
+        transcript_ref: Some(build_subagent_transcript_ref(
+            handle.child_run_id().as_str(),
+        )),
     };
 
     let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);

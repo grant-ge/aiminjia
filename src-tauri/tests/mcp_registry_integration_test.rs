@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use app_lib::plugin::registry::ToolRegistry;
-use app_lib::runtime::mcp::{
-    McpConnection, McpError, McpServerConfig, McpToolDefinition,
-};
+use app_lib::runtime::mcp::{McpConnection, McpError, McpServerConfig, McpToolDefinition};
 use app_lib::runtime::tools::{ToolDispatchOutcome, ToolExecutionContext, TOOL_CATALOG};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -61,8 +59,7 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
     let _ = &tmp_dir;
 
     let storage = Arc::new(
-        app_lib::storage::file_store::AppStorage::new(&tmp)
-            .expect("AppStorage::new failed"),
+        app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
     let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
@@ -127,9 +124,15 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
         )])),
     });
 
-    let registered_ids = registry.register_mcp_server(connection.clone()).await.unwrap();
+    let registered_ids = registry
+        .register_mcp_server(connection.clone())
+        .await
+        .unwrap();
     assert_eq!(registered_ids, vec!["mcp__test-mcp__lookup".to_string()]);
-    assert!(connection.is_connected(), "register_mcp_server should connect when needed");
+    assert!(
+        connection.is_connected(),
+        "register_mcp_server should connect when needed"
+    );
 
     let catalog_entry = TOOL_CATALOG
         .get_entry("mcp__test-mcp__lookup")

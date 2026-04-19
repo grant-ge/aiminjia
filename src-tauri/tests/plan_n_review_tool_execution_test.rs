@@ -60,7 +60,10 @@ fn review_sibling_error_does_not_cancel_turn() {
     sibling_cancel.cancel_with_reason(CancellationReason::SiblingError);
 
     assert!(!turn_cancel.is_cancelled());
-    assert_eq!(sibling_cancel.reason(), Some(CancellationReason::SiblingError));
+    assert_eq!(
+        sibling_cancel.reason(),
+        Some(CancellationReason::SiblingError)
+    );
 }
 
 #[test]

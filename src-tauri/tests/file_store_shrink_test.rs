@@ -11,7 +11,9 @@ fn facade_exposes_conversation_store() {
     let facade = RuntimeRepositoryFacade::for_test();
     let store: &dyn ConversationStore = facade.conversation_store();
     // Round-trip: create + list
-    store.create_conversation("c-facade-1", "Facade Test").unwrap();
+    store
+        .create_conversation("c-facade-1", "Facade Test")
+        .unwrap();
     let ids = store.list_conversation_ids().unwrap();
     assert!(ids.contains(&"c-facade-1".to_string()));
 }
