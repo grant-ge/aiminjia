@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use app_lib::plugin::context::PluginContext;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::event_bus::RuntimeEventBus;
@@ -116,7 +116,7 @@ async fn test_h4_2_registry_injects_is_subagent_for_child_contexts() {
     registry
         .execute(
             "capture_subagent_context",
-            &parent_ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&parent_ctx),
             serde_json::json!({}),
             CancellationToken::new(),
         )
@@ -127,7 +127,7 @@ async fn test_h4_2_registry_injects_is_subagent_for_child_contexts() {
     registry
         .execute(
             "capture_subagent_context",
-            &child_ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&child_ctx),
             serde_json::json!({}),
             CancellationToken::new(),
         )

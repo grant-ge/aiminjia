@@ -329,6 +329,260 @@ impl RuntimeTool for PageExecuteJsRuntimeTool {
     }
 }
 
+
+// ── BrowseAndExtractRuntimeTool ──────────────────────────────────────────────
+
+pub struct BrowseAndExtractRuntimeTool {
+    deps: Arc<BrowserDeps>,
+}
+
+impl BrowseAndExtractRuntimeTool {
+    pub fn new(deps: BrowserDeps) -> Self {
+        Self {
+            deps: Arc::new(deps),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeTool for BrowseAndExtractRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        TOOL_CATALOG.get("browse_and_extract").unwrap_or_else(|| {
+            ToolDefinition::new("browse_and_extract", "导航到 URL 并抽取结构化数据")
+        })
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let url = input
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: url".into()))?;
+        let method = input
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or("GET")
+            .to_uppercase();
+        let body = input.get("body").and_then(Value::as_str);
+        let headers = input.get("headers").and_then(Value::as_str);
+        let extract_script = input
+            .get("extract_script")
+            .or_else(|| input.get("selector"))
+            .and_then(Value::as_str);
+
+        let engine = connector_engine(&self.deps)?;
+        let is_api_mode = method != "GET" || body.is_some();
+
+        if is_api_mode {
+            info!("[BROWSER] browse_and_extract API mode: {} '{}'", method, url);
+            let result = engine
+                .browser_api_fetch(url, &method, body, headers)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+            let mut output = format!(
+                "API Response: {} {}\nStatus: {}, Content-Type: {}\n\n",
+                method, url, result.status, result.content_type
+            );
+
+            if let Some(ref path) = result.saved_file_path {
+                let file_name = path
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "api_data.json".to_string());
+
+                let registered_path = if let Ok(content) = std::fs::read(path) {
+                    match self.deps.file_manager.write_file("generated", &file_name, &content) {
+                        Ok(file_info) => {
+                            let file_id = uuid::Uuid::new_v4().to_string();
+                            let _ = self.deps.storage.insert_generated_file(
+                                &file_id,
+                                &self.deps.conversation_id,
+                                None,
+                                &file_info.file_name,
+                                &file_info.stored_path,
+                                "json",
+                                file_info.file_size as i64,
+                                "data",
+                                Some(&format!("API data: {} {}", method, url)),
+                                1,
+                                true,
+                                None,
+                                None,
+                                None,
+                            );
+                            self.deps
+                                .file_manager
+                                .full_path(&file_info.stored_path)
+                                .display()
+                                .to_string()
+                        }
+                        Err(e) => {
+                            warn!("[BROWSER] Failed to copy API data to workspace: {}", e);
+                            path.display().to_string()
+                        }
+                    }
+                } else {
+                    path.display().to_string()
+                };
+
+                let total = result
+                    .total_rows
+                    .map(|t| format!("{} rows", t))
+                    .unwrap_or("unknown size".to_string());
+                output.push_str(&format!("### Data saved to file ({}) \n", total));
+                output.push_str(&format!("File: {}\n\n", registered_path));
+                output.push_str("The full JSON data has been saved to the file above. ");
+                output.push_str("Use `execute_python` to load and process this JSON file (e.g. pd.read_json or json.load). ");
+                output.push_str("Do NOT use page_execute_js to re-fetch the data.\n\n");
+                output.push_str("### Sample (first rows)\n");
+            } else if let Some(total) = result.total_rows {
+                output.push_str(&format!("### Data ({} rows)\n", total));
+            }
+
+            let data_str = serde_json::to_string_pretty(&result.data)
+                .unwrap_or_else(|_| format!("{}", result.data));
+            if data_str.len() > 8000 {
+                let end = data_str
+                    .char_indices()
+                    .take_while(|(i, _)| *i < 8000)
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(0);
+                output.push_str(&data_str[..end]);
+                output.push_str("\n...(truncated)\n");
+            } else {
+                output.push_str(&data_str);
+                output.push('\n');
+            }
+
+            return Ok(tool_result("browse_and_extract", output));
+        }
+
+        info!("[BROWSER] browse_and_extract page mode: '{}'", url);
+        let result = engine
+            .browser_navigate_and_extract(url, extract_script)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+
+        let mut output = format!(
+            "Page: {} ({})\n",
+            result.navigate.title, result.navigate.url
+        );
+
+        if result.navigate.redirected_to_login {
+            let final_path = result.navigate.url.to_lowercase();
+            if final_path.contains("error")
+                || final_path.contains("forbidden")
+                || final_path.contains("no_resource")
+                || final_path.contains("no_permission")
+                || final_path.contains("/403")
+                || final_path.contains("/404")
+            {
+                return Err(ToolError::PermissionDenied(format!(
+                    "ACCESS DENIED: Redirected to error page '{}'. The current user does not have permission to access the requested URL.",
+                    result.navigate.url
+                )));
+            }
+            output.push_str("\n⚠️ Redirected to login page. Ask the user to log in in Chrome, then call again.\n");
+            return Ok(tool_result("browse_and_extract", output));
+        }
+
+        if !result.content.tables.is_empty() {
+            for (i, table) in result.content.tables.iter().enumerate() {
+                output.push_str(&format!("\n### Table {} ({} rows)\n", i + 1, table.rows.len()));
+                if !table.headers.is_empty() {
+                    output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
+                }
+                for row in &table.rows {
+                    let cells: Vec<String> = if !table.headers.is_empty() {
+                        table
+                            .headers
+                            .iter()
+                            .map(|h| row.get(h).cloned().unwrap_or_default())
+                            .collect()
+                    } else {
+                        row.values().cloned().collect()
+                    };
+                    output.push_str(&format!("{}\n", cells.join(" | ")));
+                }
+            }
+        }
+
+        if !result.content.links.is_empty() {
+            output.push_str("\n### Navigation & Actions\n");
+            for link in &result.content.links {
+                match link.link_type.as_str() {
+                    "menu" => {
+                        if !link.href.is_empty() {
+                            output.push_str(&format!("- [menu] {} -> {}\n", link.label, link.href));
+                        } else if !link.selector.is_empty() {
+                            output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                        } else {
+                            output.push_str(&format!("- [menu] {}\n", link.label));
+                        }
+                    }
+                    "button" => output.push_str(&format!("- [button] {}\n", link.label)),
+                    _ => {
+                        if !link.href.is_empty() {
+                            output.push_str(&format!("- {} -> {}\n", link.label, link.href));
+                        }
+                    }
+                }
+            }
+        }
+
+        if !result.api_calls.is_empty() {
+            output.push_str("\n### Discovered API Endpoints\n");
+            for api in &result.api_calls {
+                let size = if api.size_bytes > 1024 {
+                    format!("{:.1}KB", api.size_bytes as f64 / 1024.0)
+                } else {
+                    format!("{}B", api.size_bytes)
+                };
+                let ct_short = if api.content_type.contains("json") {
+                    "JSON"
+                } else if api.content_type.contains("html") {
+                    "HTML"
+                } else {
+                    &api.content_type
+                };
+                output.push_str(&format!(
+                    "- {} {} -> {} ({} {})\n",
+                    api.method, api.url, api.status, size, ct_short
+                ));
+            }
+            output.push_str("Tip: Use browse_and_extract with these API URLs to fetch data directly.\n");
+        }
+
+        if !result.forms.is_empty() {
+            output.push_str("\n### Forms\n");
+            for form in &result.forms {
+                output.push_str(&format!("- Form#{}: {} {}\n", form.id, form.method, form.action));
+                for field in &form.fields {
+                    let val = if field.value.is_empty() {
+                        String::new()
+                    } else {
+                        format!("={}", field.value)
+                    };
+                    output.push_str(&format!("  - {} ({}{})\n", field.name, field.field_type, val));
+                }
+            }
+        }
+
+        if !result.content.text.is_empty() && result.content.tables.is_empty() {
+            output.push_str("\n### Page Text\n");
+            output.push_str(&result.content.text);
+            output.push('\n');
+        }
+
+        Ok(tool_result("browse_and_extract", output))
+    }
+}
+
 // ── ExtractTableDataRuntimeTool ───────────────────────────────────────────────
 
 pub struct ExtractTableDataRuntimeTool {

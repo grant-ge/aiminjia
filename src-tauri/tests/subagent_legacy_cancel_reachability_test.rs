@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_lib::plugin::context::PluginContext;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::plugin::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
@@ -114,7 +114,7 @@ async fn subagent_legacy_tool_observes_parent_cancel_via_registry_bridge() {
         Duration::from_secs(1),
         registry.execute(
             "blocking_legacy",
-            &plugin_ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&plugin_ctx),
             serde_json::json!({}),
             exec_cancel,
         ),

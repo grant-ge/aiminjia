@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use app_lib::plugin::context::PluginContext;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::tools::capability::{FileState, FileStateCache};
 use app_lib::runtime::tools::{
@@ -197,7 +197,7 @@ async fn test_h1_3_subagent_runtime_tool_writes_only_child_cache() {
     registry
         .execute(
             "capture_file_state",
-            &plugin_ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&plugin_ctx),
             json!({
                 "path": target.to_string_lossy(),
                 "content": "child-after"

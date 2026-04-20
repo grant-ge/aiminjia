@@ -154,7 +154,7 @@ pub mod testsupport {
 
     use crate::plugin::builtin::tools::register_builtin_tools;
     use crate::plugin::context::PluginContext;
-    use crate::plugin::registry::ToolRegistry;
+    use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
     use crate::python::session::PythonSessionManager;
     use crate::runtime::event_bus::RuntimeEventBus;
     use crate::runtime::identity::IdentityMapping;
@@ -283,8 +283,9 @@ pub mod testsupport {
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()
         // 当前是孤立 root token，cancel cascade 不生效
         let sub_cancel = crate::runtime::cancellation::CancellationToken::new();
+        let request_scoped = RequestScopedRuntimeDeps::from_plugin_context(&plugin_ctx);
         let output = tool_registry
-            .execute(tool_name, &plugin_ctx, input, sub_cancel)
+            .execute(tool_name, &request_scoped, input, sub_cancel)
             .await
             // FIXME(S6): AskRequired from permission pipeline is treated as an error
             // in the test-support path. Wire up permission-request UI flow in S6.

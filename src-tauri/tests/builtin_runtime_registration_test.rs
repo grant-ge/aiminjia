@@ -4,7 +4,7 @@
 #![allow(deprecated)]
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::tools::ToolExecutionContext;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -74,7 +74,7 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
     let result = registry
         .execute(
             "list_directory",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"path": "."}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -133,7 +133,7 @@ async fn bash_runtime_tool_executes_via_registry() {
     let result = registry
         .execute(
             "bash",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"command": "echo hi"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -159,7 +159,7 @@ async fn grep_runtime_tool_executes_via_registry() {
     let result = registry
         .execute(
             "grep_content",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"pattern": "hello", "output_mode": "files_with_matches"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -189,7 +189,7 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     let result = registry
         .execute(
             "list_directory",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"path": "."}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -232,7 +232,7 @@ async fn workspace_runtime_tool_uses_authorized_workspace_when_present() {
     let result = registry
         .execute(
             "list_directory",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"path": "."}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -270,7 +270,7 @@ async fn web_search_routes_to_runtime_tool_via_factory() {
     let result = registry
         .execute(
             "web_search",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"query": "test"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -302,7 +302,7 @@ async fn load_file_routes_to_runtime_tool_via_factory() {
     let result = registry
         .execute(
             "load_file",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"file_id": "nonexistent-file-id"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -366,7 +366,7 @@ async fn registry_execute_uses_runtime_tool_check_permissions() {
     let result = registry
         .execute(
             "deny_runtime_tool",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -393,7 +393,7 @@ async fn execute_python_routes_to_runtime_tool_via_factory_and_denies_dangerous_
     let result = registry
         .execute(
             "execute_python",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"code": "__import__('os').system"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -417,7 +417,7 @@ async fn execute_python_in_runtime_dispatcher_denies_dangerous_code() {
 
     let tmp = TempDir::new().unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry.to_runtime_dispatcher(ctx).await;
+    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
 
     let exec_ctx = ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     let result = dispatcher
@@ -457,7 +457,7 @@ async fn generate_report_request_scoped_runtime_factory_preserves_file_meta_with
     let output = registry
         .execute(
             "generate_report",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({
                 "title": "Runtime Report",
                 "sections": [{"heading": "Summary", "content": "hello"}],
@@ -498,7 +498,7 @@ async fn generate_chart_request_scoped_runtime_factory_enforces_workspace_bounda
     let err = registry
         .execute(
             "generate_chart",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({
                 "chart_type": "bar",
                 "title": "Runtime Chart",
@@ -532,7 +532,7 @@ async fn browse_data_request_scoped_runtime_factory_requires_browser_capability_
     let err = registry
         .execute(
             "browse_data",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"task": "抓取订单列表"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -548,6 +548,39 @@ async fn browse_data_request_scoped_runtime_factory_requires_browser_capability_
     assert!(
         !message.contains("Unknown tool"),
         "browse_data must not fall through to unknown tool after legacy unregistration: {}",
+        message
+    );
+}
+
+// ─── Test 12b: browse_and_extract survives without legacy fallback ──────────
+
+#[tokio::test]
+async fn browse_and_extract_request_scoped_runtime_factory_requires_browser_capability() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let err = registry
+        .execute(
+            "browse_and_extract",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({"url": "https://example.com/data"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect_err("browse_and_extract should route through request-scoped runtime tool");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("Permission denied") || message.contains("browser capability"),
+        "browse_and_extract should be denied by runtime browser capability check, got: {}",
+        message
+    );
+    assert!(
+        !message.contains("Unknown tool"),
+        "browse_and_extract must not fall through to unknown tool: {}",
         message
     );
 }
@@ -568,7 +601,7 @@ async fn browser_tool_without_connector_engine_is_permission_denied() {
     let result = registry
         .execute(
             "browse_navigate",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"url": "https://example.com"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
@@ -601,7 +634,7 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
 
     let tmp = TempDir::new().unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry.to_runtime_dispatcher(ctx).await;
+    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
 
     // Dispatch WITHOUT capability context → CapabilityPermissionPipeline should
     // reject the call because workspace:read requires storage capability.

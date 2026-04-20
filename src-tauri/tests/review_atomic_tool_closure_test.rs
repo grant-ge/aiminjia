@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::context::PluginContext;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::plugin::skill_trait::ToolFilter;
 use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
@@ -59,7 +59,7 @@ async fn runtime_dispatcher_should_reject_browser_tool_without_browser_capabilit
 
     let tmp = TempDir::new().unwrap();
     let plugin_ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry.to_runtime_dispatcher(plugin_ctx).await;
+    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&plugin_ctx)).await;
 
     let exec_ctx = ToolExecutionContext::for_test("review-conv", "run-1", "tc-1");
     let err = match dispatcher

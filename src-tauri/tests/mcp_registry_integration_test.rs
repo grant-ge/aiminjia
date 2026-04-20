@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::mcp::{McpConnection, McpError, McpServerConfig, McpToolDefinition};
 use app_lib::runtime::store::permission_store::{PermissionStore, PolicyDecision};
 use app_lib::runtime::tools::permission::PermissionDecision;
@@ -161,7 +161,7 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
     );
 
     let dispatcher = registry
-        .to_runtime_dispatcher(make_test_plugin_ctx("conv-mcp"))
+        .to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&make_test_plugin_ctx("conv-mcp")))
         .await;
     let ask = dispatcher
         .dispatch(

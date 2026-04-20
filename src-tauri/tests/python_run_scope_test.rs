@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::python::session::{migrate_loaded_keys_to_run_scope, session_key_for_run};
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{RunId, SessionId};
@@ -83,7 +83,7 @@ async fn analysis_execute_python_requires_run_id() {
     let result = registry
         .execute(
             "execute_python",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             json!({"code": "print('hello from analysis')"}),
             CancellationToken::new(),
         )

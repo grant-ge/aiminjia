@@ -1,9 +1,6 @@
 //! Sub-agent executor — runs a mini agent loop with its own system prompt,
 //! tool set, and iteration budget. Used by delegation tools like `browse_data`
 //! to isolate complex multi-step tasks from the main conversation context.
-// Legacy bridge: accepts PluginContext to construct its tool set.
-// Suppress the deprecation lint here; migrate when this module is refactored.
-#![allow(deprecated)]
 
 use futures::StreamExt;
 use log::{info, warn};
@@ -13,8 +10,7 @@ use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
 use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
 use crate::models::settings::AppSettings;
-use crate::plugin::context::PluginContext;
-use crate::plugin::registry::ToolRegistry;
+use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use crate::plugin::tool_trait::ToolError as LegacyToolError;
 use crate::runtime::agent::message_bridge;
 use crate::runtime::agent::subagent_result_envelope::{
@@ -52,6 +48,60 @@ fn take_ask_required_decision(err: &LegacyToolError) -> Option<PermissionDecisio
     }
 }
 
+#[derive(Clone)]
+pub struct SubAgentRuntimeDeps {
+    pub storage: Arc<crate::storage::file_store::AppStorage>,
+    pub file_manager: Arc<crate::storage::file_manager::FileManager>,
+    pub workspace_path: std::path::PathBuf,
+    pub conversation_id: String,
+    pub session_id: crate::runtime::ids::SessionId,
+    pub run_id: Option<RunId>,
+    pub agent_id: Option<crate::runtime::ids::AgentId>,
+    pub session_manager: Arc<crate::python::session::PythonSessionManager>,
+    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
+    pub agent_runtime: Option<Arc<AgentRuntime>>,
+    pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    pub app_handle: Option<tauri::AppHandle>,
+}
+
+impl SubAgentRuntimeDeps {
+    pub fn request_scoped_tool_deps(
+        &self,
+        run_id: RunId,
+        agent_id: Option<crate::runtime::ids::AgentId>,
+        cancellation: Option<crate::runtime::cancellation::CancellationToken>,
+        read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    ) -> RequestScopedRuntimeDeps {
+        RequestScopedRuntimeDeps {
+            storage: self.storage.clone(),
+            file_manager: self.file_manager.clone(),
+            workspace_path: self.workspace_path.clone(),
+            conversation_id: self.conversation_id.clone(),
+            session_id: self.session_id.clone(),
+            run_id: Some(run_id),
+            agent_id,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: self.app_handle.clone(),
+            session_manager: self.session_manager.clone(),
+            auth_manager: None,
+            connector_engine: self.connector_engine.clone(),
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: self.agent_runtime.clone(),
+            event_bus: self.event_bus.clone(),
+            authorized_workspace: self.authorized_workspace.clone(),
+            read_file_state,
+            cancellation,
+        }
+    }
+}
+
 fn annotate_subagent_ask_decision(
     tool_name: &str,
     tool_call_id: &str,
@@ -80,22 +130,23 @@ fn annotate_subagent_ask_decision(
 
 fn build_subagent_capability(
     tool_name: &str,
-    plugin_ctx: &PluginContext,
+    runtime_deps: &SubAgentRuntimeDeps,
+    scoped_request_deps: &RequestScopedRuntimeDeps,
     is_subagent: bool,
 ) -> Arc<CapabilityContext> {
     let storage = StorageCapability {
-        workspace_path: plugin_ctx.workspace_path.clone(),
-        authorized_workspace: plugin_ctx.authorized_workspace.clone(),
+        workspace_path: runtime_deps.workspace_path.clone(),
+        authorized_workspace: runtime_deps.authorized_workspace.clone(),
     };
     let file_ops = (tool_name == "load_file").then(|| {
         let (python_binary, python_home) =
-            crate::python::runner::resolve_python_path(plugin_ctx.app_handle.as_ref());
+            crate::python::runner::resolve_python_path(runtime_deps.app_handle.as_ref());
         Arc::new(DefaultFileOperations {
-            storage: plugin_ctx.storage.clone(),
-            file_manager: plugin_ctx.file_manager.clone(),
-            workspace_path: plugin_ctx.workspace_path.clone(),
-            conversation_id: plugin_ctx.conversation_id.clone(),
-            run_id: plugin_ctx.run_id.clone(),
+            storage: runtime_deps.storage.clone(),
+            file_manager: runtime_deps.file_manager.clone(),
+            workspace_path: runtime_deps.workspace_path.clone(),
+            conversation_id: runtime_deps.conversation_id.clone(),
+            run_id: scoped_request_deps.run_id.clone(),
             python_binary: Some(python_binary),
             python_home,
         }) as Arc<dyn crate::runtime::tools::capability::FileOperations>
@@ -103,10 +154,10 @@ fn build_subagent_capability(
 
     Arc::new(CapabilityContext {
         storage: Some(storage),
-        workspace_id: Some(plugin_ctx.conversation_id.clone()),
-        browser_available: plugin_ctx.connector_engine.is_some(),
+        workspace_id: Some(runtime_deps.conversation_id.clone()),
+        browser_available: runtime_deps.connector_engine.is_some(),
         file_ops,
-        read_file_state: plugin_ctx.read_file_state.clone(),
+        read_file_state: scoped_request_deps.read_file_state.clone(),
         file_reading_limits: Some(FileReadingLimits::default()),
         notification_sink: None,
         is_subagent,
@@ -114,13 +165,13 @@ fn build_subagent_capability(
 }
 
 fn collect_generated_files(
-    plugin_ctx: &PluginContext,
+    runtime_deps: &SubAgentRuntimeDeps,
     tool_result: &crate::runtime::tools::ToolResult,
 ) -> Vec<String> {
     let mut files = Vec::new();
 
     if let Some(meta) = tool_result.file_meta.as_ref() {
-        let full_path = plugin_ctx.file_manager.full_path(&meta.stored_path);
+        let full_path = runtime_deps.file_manager.full_path(&meta.stored_path);
         files.push(full_path.display().to_string());
     }
 
@@ -208,7 +259,7 @@ pub struct SubAgentResult {
 pub async fn run_sub_agent(
     gateway: &LlmGateway,
     tool_registry: &ToolRegistry,
-    plugin_ctx: &PluginContext,
+    runtime_deps: &SubAgentRuntimeDeps,
     config: SubAgentConfig,
     settings: &AppSettings,
 ) -> std::result::Result<SubAgentResult, LegacyToolError> {
@@ -245,7 +296,7 @@ pub async fn run_sub_agent(
     let mut pending_ask: Option<PermissionDecision> = None;
     let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
 
-    let agent_runtime = plugin_ctx
+    let agent_runtime = runtime_deps
         .agent_runtime
         .clone()
         .unwrap_or_else(|| Arc::new(AgentRuntime::for_test()));
@@ -273,11 +324,17 @@ pub async fn run_sub_agent(
         .map(|handle| handle.invocation().agent_id.clone());
     let sub_conv_id = child_run_id.as_str().to_string();
 
-    let mut sub_plugin_ctx = plugin_ctx.clone();
-    sub_plugin_ctx.run_id = Some(child_run_id.clone());
-    sub_plugin_ctx.agent_id = child_agent_id.clone();
+    let request_scoped_runtime_deps = runtime_deps.request_scoped_tool_deps(
+        child_run_id.clone(),
+        child_agent_id.clone(),
+        config.cancel_token.as_ref().map(|parent| parent.child_token()),
+        runtime_deps
+            .read_file_state
+            .as_ref()
+            .map(|cache| cache.clone_for_child()),
+    );
     let dispatcher = tool_registry
-        .to_runtime_dispatcher(sub_plugin_ctx.clone())
+        .to_runtime_dispatcher(request_scoped_runtime_deps.clone())
         .await;
 
     let dynamic_ctx = if config.dynamic_context.is_empty() {
@@ -416,9 +473,14 @@ pub async fn run_sub_agent(
                     None => crate::runtime::cancellation::CancellationToken::new(),
                 };
                 let capability =
-                    build_subagent_capability(&tc.name, &sub_plugin_ctx, child_agent_id.is_some());
+                    build_subagent_capability(
+                        &tc.name,
+                        runtime_deps,
+                        &request_scoped_runtime_deps,
+                        child_agent_id.is_some(),
+                    );
                 let exec_ctx = ToolExecutionContext::new(
-                    sub_plugin_ctx.session_id.clone(),
+                    runtime_deps.session_id.clone(),
                     child_run_id.clone(),
                     child_agent_id.clone(),
                     tc.id.clone(),
@@ -438,7 +500,7 @@ pub async fn run_sub_agent(
                     } else {
                         result.content.clone()
                     };
-                    let generated_files = collect_generated_files(&sub_plugin_ctx, &result);
+                    let generated_files = collect_generated_files(runtime_deps, &result);
                     terminal_tool_results.push(SubAgentTerminalToolResult {
                         tool_call_id: tc.id.clone(),
                         tool_name: tc.name.clone(),
@@ -565,7 +627,7 @@ pub async fn run_sub_agent(
 
     // Clean up gateway active task entry
     gateway.clear_task(&sub_conv_id);
-    plugin_ctx.session_manager.destroy_run(&child_run_id).await;
+    runtime_deps.session_manager.destroy_run(&child_run_id).await;
 
     // Route completion through the correct path depending on whether this was
     // a background sub-agent run.  Background runs must emit `AgentIdle` via
@@ -574,7 +636,7 @@ pub async fn run_sub_agent(
         if handle.invocation().background {
             // Background path: persist summary + emit AgentIdle
             if let (Some(bus), Some(parent_run_id)) =
-                (plugin_ctx.event_bus.clone(), config.parent_run_id.clone())
+                (runtime_deps.event_bus.clone(), config.parent_run_id.clone())
             {
                 let summary = message_bridge::format_sub_agent_envelope_summary(&envelope);
                 let _ = agent_runtime
@@ -582,7 +644,7 @@ pub async fn run_sub_agent(
                         &child_run_id,
                         Some(&summary),
                         Some(&transcript_ref),
-                        plugin_ctx.session_id.clone(),
+                        runtime_deps.session_id.clone(),
                         parent_run_id,
                         bus,
                     )

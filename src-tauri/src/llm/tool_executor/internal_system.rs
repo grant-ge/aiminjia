@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use super::{optional_str, require_str};
 use crate::plugin::context::PluginContext;
+use crate::plugin::registry::RequestScopedRuntimeDeps;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::tools::builtin::browse_data::{
     BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLaunchResult, BrowseDataLauncher,
@@ -39,7 +40,7 @@ pub(crate) struct BrowseDataLauncherDeps {
 }
 
 impl BrowseDataLauncherDeps {
-    pub(crate) fn from_plugin_ctx(ctx: &PluginContext) -> Self {
+    pub(crate) fn from_runtime_deps(ctx: &RequestScopedRuntimeDeps) -> Self {
         Self {
             storage: ctx.storage.clone(),
             file_manager: ctx.file_manager.clone(),
@@ -63,8 +64,8 @@ impl BrowseDataLauncherDeps {
         }
     }
 
-    fn into_plugin_ctx(self) -> PluginContext {
-        PluginContext {
+    pub(crate) fn into_runtime_deps(self) -> RequestScopedRuntimeDeps {
+        RequestScopedRuntimeDeps {
             storage: self.storage,
             file_manager: self.file_manager,
             workspace_path: self.workspace_path,
@@ -90,6 +91,7 @@ impl BrowseDataLauncherDeps {
             cancellation: self.cancellation,
         }
     }
+
 }
 
 #[derive(Clone)]
@@ -98,28 +100,14 @@ pub(crate) struct DefaultBrowseDataLauncher {
 }
 
 impl DefaultBrowseDataLauncher {
-    pub fn new(base_ctx: PluginContext) -> Self {
-        Self::from_deps(BrowseDataLauncherDeps::from_plugin_ctx(&base_ctx))
+    pub fn from_runtime_deps(base_ctx: RequestScopedRuntimeDeps) -> Self {
+        Self::from_deps(BrowseDataLauncherDeps::from_runtime_deps(&base_ctx))
     }
 
     pub fn from_deps(deps: BrowseDataLauncherDeps) -> Self {
         Self { deps }
     }
 
-    fn scoped_plugin_ctx(&self, launch_ctx: &BrowseDataLaunchContext) -> PluginContext {
-        let mut ctx = self.deps.clone().into_plugin_ctx();
-        ctx.conversation_id = launch_ctx.session_id.as_str().to_string();
-        ctx.session_id = launch_ctx.session_id.clone();
-        ctx.run_id = launch_ctx.parent_run_id.clone();
-        ctx.agent_id = launch_ctx.parent_agent_id.clone();
-        ctx.cancellation = Some(launch_ctx.cancellation.clone());
-        ctx.read_file_state = self
-            .deps
-            .read_file_state
-            .as_ref()
-            .map(|cache| cache.clone_for_child());
-        ctx
-    }
 }
 
 #[async_trait]
@@ -129,9 +117,21 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
         request: BrowseDataLaunchRequest,
         context: BrowseDataLaunchContext,
     ) -> Result<BrowseDataLaunchResult> {
-        let scoped_ctx = self.scoped_plugin_ctx(&context);
-        launch_browse_data_with_plugin_ctx(
-            &scoped_ctx,
+        let scoped_runtime_deps = self
+            .deps
+            .clone()
+            .into_runtime_deps()
+            .with_run_scope(
+                context.parent_run_id.clone(),
+                context.parent_agent_id.clone(),
+                Some(context.cancellation.clone()),
+                self.deps
+                    .read_file_state
+                    .as_ref()
+                    .map(|cache| cache.clone_for_child()),
+            );
+        launch_browse_data_with_runtime_deps(
+            &scoped_runtime_deps,
             request,
             Some(context.cancellation),
             self.deps.run_id.is_some(),
@@ -140,8 +140,8 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
     }
 }
 
-async fn launch_browse_data_with_plugin_ctx(
-    ctx: &PluginContext,
+async fn launch_browse_data_with_runtime_deps(
+    ctx: &RequestScopedRuntimeDeps,
     request: BrowseDataLaunchRequest,
     cancel_token: Option<CancellationToken>,
     sub_agent_background: bool,
@@ -380,7 +380,28 @@ async fn launch_browse_data_with_plugin_ctx(
     };
 
     let result =
-        crate::llm::sub_agent::run_sub_agent(gateway, tool_registry, ctx, config, app_settings)
+        crate::llm::sub_agent::run_sub_agent(
+            gateway,
+            tool_registry,
+            &crate::llm::sub_agent::SubAgentRuntimeDeps {
+                storage: ctx.storage.clone(),
+                file_manager: ctx.file_manager.clone(),
+                workspace_path: ctx.workspace_path.clone(),
+                conversation_id: ctx.conversation_id.clone(),
+                session_id: ctx.session_id.clone(),
+                run_id: ctx.run_id.clone(),
+                agent_id: ctx.agent_id.clone(),
+                session_manager: ctx.session_manager.clone(),
+                connector_engine: ctx.connector_engine.clone(),
+                agent_runtime: ctx.agent_runtime.clone(),
+                event_bus: ctx.event_bus.clone(),
+                authorized_workspace: ctx.authorized_workspace.clone(),
+                read_file_state: ctx.read_file_state.clone(),
+                app_handle: ctx.app_handle.clone(),
+            },
+            config,
+            app_settings,
+        )
             .await
             .map_err(|e| {
                 warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
@@ -400,7 +421,7 @@ async fn launch_browse_data_with_plugin_ctx(
 }
 
 fn format_browse_data_subagent_result(
-    ctx: &PluginContext,
+    ctx: &RequestScopedRuntimeDeps,
     result: &crate::llm::sub_agent::SubAgentResult,
 ) -> String {
     let envelope = &result.envelope;
@@ -683,7 +704,8 @@ pub(crate) async fn execute_browse_data(
         task: require_str(args, "task")?.to_string(),
         url: optional_str(args, "url").map(str::to_string),
     };
-    launch_browse_data_with_plugin_ctx(ctx, request, ctx.cancellation.clone(), ctx.run_id.is_some())
+    let runtime_deps = RequestScopedRuntimeDeps::from_plugin_context(ctx);
+    launch_browse_data_with_runtime_deps(&runtime_deps, request, ctx.cancellation.clone(), ctx.run_id.is_some())
         .await
 }
 
@@ -738,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn scoped_plugin_ctx_clones_read_file_state_for_child() {
+    fn request_scoped_runtime_deps_clone_read_file_state_for_child() {
         let workspace = TempDir::new().expect("TempDir::new failed");
         let target = PathBuf::from("/tmp/subagent-launcher-cache.txt");
         let parent_cache = Arc::new(FileStateCache::new());
@@ -753,22 +775,22 @@ mod tests {
         );
 
         let base_ctx = make_plugin_ctx(workspace.path(), Some(parent_cache.clone()));
-        let deps = BrowseDataLauncherDeps::from_plugin_ctx(&base_ctx);
-        let launcher = DefaultBrowseDataLauncher::from_deps(deps);
-
-        let child_ctx = launcher.scoped_plugin_ctx(&BrowseDataLaunchContext {
-            session_id: crate::runtime::ids::SessionId::new("child-conv"),
-            parent_run_id: Some(crate::runtime::ids::RunId::new("run-child-parent")),
-            parent_agent_id: Some(crate::runtime::ids::AgentId::new("agent-child-parent")),
-            cancellation: crate::runtime::cancellation::CancellationToken::new(),
-        });
-
-        let child_cache = child_ctx
+        let parent_deps = RequestScopedRuntimeDeps::from_plugin_context(&base_ctx);
+        let child_cache = parent_deps
+            .with_run_scope(
+                Some(crate::runtime::ids::RunId::new("run-child-parent")),
+                Some(crate::runtime::ids::AgentId::new("agent-child-parent")),
+                Some(crate::runtime::cancellation::CancellationToken::new()),
+                parent_deps
+                    .read_file_state
+                    .as_ref()
+                    .map(|cache| cache.clone_for_child()),
+            )
             .read_file_state
-            .expect("scoped subagent ctx should carry read_file_state");
+            .expect("scoped subagent deps should carry read_file_state");
         assert!(
             !Arc::ptr_eq(&parent_cache, &child_cache),
-            "child subagent context must receive a cloned file-state cache"
+            "child request-scoped deps must receive a cloned file-state cache"
         );
         let inherited = child_cache
             .get(&target)
@@ -814,7 +836,8 @@ mod tests {
             },
         };
 
-        let output = format_browse_data_subagent_result(&ctx, &result);
+        let runtime_deps = RequestScopedRuntimeDeps::from_plugin_context(&ctx);
+        let output = format_browse_data_subagent_result(&runtime_deps, &result);
         let registered = workspace.path().join("generated").join("child-result.json");
 
         assert!(
@@ -859,7 +882,8 @@ mod tests {
             },
         };
 
-        let output = format_browse_data_subagent_result(&ctx, &result);
+        let runtime_deps = RequestScopedRuntimeDeps::from_plugin_context(&ctx);
+        let output = format_browse_data_subagent_result(&runtime_deps, &result);
 
         assert!(output.contains("### Extracted Data Files"));
         assert!(output.contains(missing.to_string_lossy().as_ref()));
@@ -887,7 +911,8 @@ mod tests {
             },
         };
 
-        let output = format_browse_data_subagent_result(&ctx, &result);
+        let runtime_deps = RequestScopedRuntimeDeps::from_plugin_context(&ctx);
+        let output = format_browse_data_subagent_result(&runtime_deps, &result);
 
         assert!(output.contains("Browser agent completed in 2 iterations."));
         assert!(output.contains("envelope output wins"));

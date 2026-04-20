@@ -3,7 +3,7 @@
 
 #![allow(deprecated)]
 
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
 };
@@ -89,7 +89,7 @@ async fn register_runtime_adds_to_registry() {
     registry.register_runtime(tool).await;
 
     let ctx = make_test_plugin_ctx("conv-test");
-    let dispatcher = registry.to_runtime_dispatcher(ctx).await;
+    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
     let exec_ctx = ToolExecutionContext::for_test("conv-test", "run-1", "tc-1");
     let outcome = dispatcher.dispatch("test_tool", json!({}), exec_ctx).await;
     assert!(outcome.is_ok(), "Runtime tool should be dispatchable");
@@ -139,7 +139,7 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
         .await;
 
     let ctx = make_test_plugin_ctx("conv-test2");
-    let dispatcher = registry.to_runtime_dispatcher(ctx).await;
+    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
     let exec_ctx = ToolExecutionContext::for_test("conv-test2", "run-2", "tc-2");
     let outcome = dispatcher
         .dispatch("dual_tool", json!({}), exec_ctx)

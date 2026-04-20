@@ -22,6 +22,78 @@ use super::context::PluginContext;
 use super::skill_trait::{Skill, ToolFilter};
 use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
+#[derive(Clone)]
+pub struct RequestScopedRuntimeDeps {
+    pub storage: Arc<crate::storage::file_store::AppStorage>,
+    pub file_manager: Arc<crate::storage::file_manager::FileManager>,
+    pub workspace_path: std::path::PathBuf,
+    pub conversation_id: String,
+    pub session_id: crate::runtime::ids::SessionId,
+    pub run_id: Option<crate::runtime::ids::RunId>,
+    pub agent_id: Option<crate::runtime::ids::AgentId>,
+    pub tavily_api_key: Option<String>,
+    pub bocha_api_key: Option<String>,
+    pub app_handle: Option<tauri::AppHandle>,
+    pub session_manager: Arc<crate::python::session::PythonSessionManager>,
+    pub auth_manager: Option<Arc<crate::auth::AuthManager>>,
+    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
+    pub use_cloud: bool,
+    pub model: String,
+    pub gateway: Option<Arc<crate::llm::gateway::LlmGateway>>,
+    pub tool_registry: Option<Arc<crate::plugin::registry::ToolRegistry>>,
+    pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
+    pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
+    pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
+}
+
+impl RequestScopedRuntimeDeps {
+    pub fn from_plugin_context(ctx: &PluginContext) -> Self {
+        Self {
+            storage: ctx.storage.clone(),
+            file_manager: ctx.file_manager.clone(),
+            workspace_path: ctx.workspace_path.clone(),
+            conversation_id: ctx.conversation_id.clone(),
+            session_id: ctx.session_id.clone(),
+            run_id: ctx.run_id.clone(),
+            agent_id: ctx.agent_id.clone(),
+            tavily_api_key: ctx.tavily_api_key.clone(),
+            bocha_api_key: ctx.bocha_api_key.clone(),
+            app_handle: ctx.app_handle.clone(),
+            session_manager: ctx.session_manager.clone(),
+            auth_manager: ctx.auth_manager.clone(),
+            connector_engine: ctx.connector_engine.clone(),
+            use_cloud: ctx.use_cloud,
+            model: ctx.model.clone(),
+            gateway: ctx.gateway.clone(),
+            tool_registry: ctx.tool_registry.clone(),
+            app_settings: ctx.app_settings.clone(),
+            agent_runtime: ctx.agent_runtime.clone(),
+            event_bus: ctx.event_bus.clone(),
+            authorized_workspace: ctx.authorized_workspace.clone(),
+            read_file_state: ctx.read_file_state.clone(),
+            cancellation: ctx.cancellation.clone(),
+        }
+    }
+
+    pub fn with_run_scope(
+        &self,
+        run_id: Option<crate::runtime::ids::RunId>,
+        agent_id: Option<crate::runtime::ids::AgentId>,
+        cancellation: Option<crate::runtime::cancellation::CancellationToken>,
+        read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    ) -> Self {
+        let mut next = self.clone();
+        next.run_id = run_id;
+        next.agent_id = agent_id;
+        next.cancellation = cancellation;
+        next.read_file_state = read_file_state;
+        next
+    }
+}
+
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "web_search",
     "browse_navigate",
@@ -29,6 +101,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "page_execute_js",
     "extract_table_data",
     "extract_with_pagination",
+    "browse_and_extract",
     "load_file",
     "browse_data",
     "execute_python",
@@ -371,7 +444,7 @@ impl ToolRegistry {
     pub async fn execute(
         &self,
         name: &str,
-        ctx: &PluginContext,
+        ctx: &RequestScopedRuntimeDeps,
         input: serde_json::Value,
         cancel_token: crate::runtime::cancellation::CancellationToken,
     ) -> Result<ToolOutput, ToolError> {
@@ -510,7 +583,31 @@ impl ToolRegistry {
         let dispatcher = ToolDispatcher::new(pipeline);
         dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
             plugin,
-            ctx.clone(),
+            PluginContext {
+                storage: ctx.storage.clone(),
+                file_manager: ctx.file_manager.clone(),
+                workspace_path: ctx.workspace_path.clone(),
+                conversation_id: ctx.conversation_id.clone(),
+                session_id: ctx.session_id.clone(),
+                run_id: ctx.run_id.clone(),
+                agent_id: ctx.agent_id.clone(),
+                tavily_api_key: ctx.tavily_api_key.clone(),
+                bocha_api_key: ctx.bocha_api_key.clone(),
+                app_handle: ctx.app_handle.clone(),
+                session_manager: ctx.session_manager.clone(),
+                auth_manager: ctx.auth_manager.clone(),
+                connector_engine: ctx.connector_engine.clone(),
+                use_cloud: ctx.use_cloud,
+                model: ctx.model.clone(),
+                gateway: ctx.gateway.clone(),
+                tool_registry: ctx.tool_registry.clone(),
+                app_settings: ctx.app_settings.clone(),
+                agent_runtime: ctx.agent_runtime.clone(),
+                event_bus: ctx.event_bus.clone(),
+                authorized_workspace: ctx.authorized_workspace.clone(),
+                read_file_state: ctx.read_file_state.clone(),
+                cancellation: ctx.cancellation.clone(),
+            },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
             ctx.session_id.clone(),
@@ -558,7 +655,10 @@ impl ToolRegistry {
     /// Build a runtime-first dispatcher while keeping legacy tool implementations
     /// behind an adapter. This is the bridge point for incrementally moving the
     /// production query path onto the new runtime contract.
-    pub async fn to_runtime_dispatcher(&self, plugin_ctx: PluginContext) -> Arc<ToolDispatcher> {
+    pub async fn to_runtime_dispatcher(
+        &self,
+        request_scoped: RequestScopedRuntimeDeps,
+    ) -> Arc<ToolDispatcher> {
         let pipeline: Arc<dyn PermissionPipeline> =
             match self.permission_store.read().await.as_ref() {
                 Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
@@ -566,34 +666,19 @@ impl ToolRegistry {
             };
         let dispatcher = Arc::new(ToolDispatcher::new(pipeline));
         let runtime_tools = self.runtime_tools.read().await;
-        let legacy_tools = self.tools.read().await;
-        let mut request_scoped_registered = std::collections::HashSet::new();
 
         // 1. Register native RuntimeTools first (they take priority)
         for (_, tool) in runtime_tools.iter() {
             dispatcher.register(tool.clone());
         }
 
-        // 2. Register request-scoped RuntimeTools built from PluginContext.
+        // 2. Register request-scoped RuntimeTools built from explicit runtime deps.
         for tool_name in REQUEST_SCOPED_RUNTIME_TOOL_NAMES {
             if runtime_tools.contains_key(*tool_name) {
                 continue;
             }
-            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &plugin_ctx) {
+            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &request_scoped) {
                 dispatcher.register(tool);
-                request_scoped_registered.insert((*tool_name).to_string());
-            }
-        }
-
-        // 3. Register legacy ToolPlugin tools that have NOT been migrated
-        //    (i.e., not already covered by a RuntimeTool with the same name)
-        for rt in legacy_tools.values() {
-            let name = rt.plugin.name();
-            if !runtime_tools.contains_key(name) && !request_scoped_registered.contains(name) {
-                dispatcher.register(Arc::new(LegacyToolAdapter::from_plugin(
-                    rt.plugin.clone(),
-                    plugin_ctx.clone(),
-                )));
             }
         }
 
@@ -611,7 +696,7 @@ impl ToolRegistry {
     /// For browser tools, also returns `None` when `connector_engine` is absent.
     fn try_build_request_scoped_tool(
         name: &str,
-        ctx: &PluginContext,
+        ctx: &RequestScopedRuntimeDeps,
     ) -> Option<Arc<dyn crate::runtime::tools::RuntimeTool>> {
         use crate::runtime::tools::builtin;
         use std::sync::Arc;
@@ -692,10 +777,25 @@ impl ToolRegistry {
                     )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
             }
+            "browse_and_extract" => {
+                let deps = builtin::browser::BrowserDeps {
+                    connector_engine: ctx.connector_engine.clone(),
+                    file_manager: ctx.file_manager.clone(),
+                    storage: ctx.storage.clone(),
+                    workspace_path: ctx.workspace_path.clone(),
+                    conversation_id: ctx.conversation_id.clone(),
+                };
+                Some(
+                    Arc::new(builtin::browser::BrowseAndExtractRuntimeTool::new(deps))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
+            }
             "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
             "browse_data" => Some(Arc::new(
                 builtin::browse_data::BrowseDataRuntimeTool::with_launcher(Arc::new(
-                    crate::llm::tool_executor::DefaultBrowseDataLauncher::new(ctx.clone()),
+                    crate::llm::tool_executor::DefaultBrowseDataLauncher::from_runtime_deps(
+                        ctx.clone(),
+                    ),
                 )),
             ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "execute_python" => {

@@ -199,7 +199,7 @@ async fn dispatcher_ask_is_distinguishable_from_deny() {
 async fn registry_execute_unknown_scope_not_silently_allowed() {
     #![allow(deprecated)]
 
-    use app_lib::plugin::registry::ToolRegistry;
+    use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
     use app_lib::plugin::tool_trait::{ToolOutput, ToolPlugin};
     use std::sync::Arc;
 
@@ -311,7 +311,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
     let result = registry
         .execute(
             "legacy_unknown_scope_tool",
-            &ctx,
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             json!({}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use app_lib::plugin::registry::ToolRegistry;
+use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::runtime::mcp::{
     McpConnection, McpError, McpResult, McpServerConfig, McpServerManager, McpServerState,
     McpToolDefinition,
@@ -139,7 +139,7 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
     assert!(TOOL_CATALOG.get("mcp__e2e-server__lookup").is_some());
 
     let dispatcher = registry
-        .to_runtime_dispatcher(make_test_plugin_ctx("conv-e2e"))
+        .to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&make_test_plugin_ctx("conv-e2e")))
         .await;
     let ask = dispatcher
         .dispatch(
