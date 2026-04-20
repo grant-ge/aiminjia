@@ -17,7 +17,6 @@ python-pptx>=0.6
 # Export / report generation
 htmldocx>=0.0.6
 reportlab>=4.0
-xhtml2pdf>=0.2.11  # HTML->PDF (pure Python, uses reportlab + CID fonts for CJK)
 
 # Charting
 matplotlib>=3.7

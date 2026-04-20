@@ -77,7 +77,9 @@
     "exportAsPdf": "Export as PDF",
     "exportAsHtml": "Export as HTML",
     "exportAsPptx": "Export as PPT",
-    "exportAsXlsx": "Export as Excel"
+    "exportAsXlsx": "Export as Excel",
+    "exportPdfFallback": "PDF generator unavailable — exported as HTML",
+    "exportPdfFallbackHint": "Open {{fileName}} in your browser, then use Print → Save as PDF."
   },
 
   "inputBar": {

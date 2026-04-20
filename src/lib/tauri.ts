@@ -208,11 +208,26 @@ export function isAgentBusy(): Promise<string[]> {
  * @param format - Export format: 'pdf' or 'html'
  * @returns File info for the generated export
  */
+export interface ExportConversationResult {
+  fileId: string
+  fileName: string
+  storedPath: string
+  fileSize: number
+  /** Format the user asked for (e.g. "pdf"). */
+  requestedFormat: string
+  /** Format actually produced (may differ from requested on fallback). */
+  actualFormat: string
+  /** True when the requested format could not be generated and a fallback was produced. */
+  wasFallback: boolean
+  /** Human-readable explanation of why the fallback happened. */
+  fallbackMessage?: string | null
+}
+
 export function exportConversation(
   conversationId: string,
   format: 'pdf' | 'html',
-): Promise<{ fileId: string; fileName: string; storedPath: string; fileSize: number }> {
-  return invoke<{ fileId: string; fileName: string; storedPath: string; fileSize: number }>('export_conversation', {
+): Promise<ExportConversationResult> {
+  return invoke<ExportConversationResult>('export_conversation', {
     conversationId,
     format,
   })

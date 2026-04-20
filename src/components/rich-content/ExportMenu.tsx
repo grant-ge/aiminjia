@@ -69,15 +69,29 @@ export function ExportMenu({ conversationId, disabled }: ExportMenuProps) {
       if (format === 'pdf' || format === 'html') {
         // Existing Tauri IPC export
         const result = await exportConversation(conversationId, format)
-        useNotificationStore.getState().push({
-          level: 'success',
-          title: t('topBar.exportSuccess'),
-          message: `${result.fileName} ${t('topBar.saved')}`,
-          actions: [],
-          dismissible: true,
-          autoHide: 5,
-          context: 'toast',
-        })
+        if (result.wasFallback) {
+          // PDF was requested but the bundled runtime cannot produce it —
+          // surface this explicitly instead of silently delivering HTML.
+          useNotificationStore.getState().push({
+            level: 'warning',
+            title: t('topBar.exportPdfFallback'),
+            message: t('topBar.exportPdfFallbackHint', { fileName: result.fileName }),
+            actions: [],
+            dismissible: true,
+            autoHide: 10,
+            context: 'toast',
+          })
+        } else {
+          useNotificationStore.getState().push({
+            level: 'success',
+            title: t('topBar.exportSuccess'),
+            message: `${result.fileName} ${t('topBar.saved')}`,
+            actions: [],
+            dismissible: true,
+            autoHide: 5,
+            context: 'toast',
+          })
+        }
         await openGeneratedFile(result.fileId, conversationId)
       } else if (format === 'pptx') {
         // Client-side PPT generation — save via Tauri fs plugin
