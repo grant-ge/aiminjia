@@ -167,7 +167,7 @@ describe('chatStore — per-conversation streaming', () => {
     expect(s.streamStates['c2']?.streamingContent).toBe('World')
   })
 
-  it('clears stream state for one conversation without affecting others', () => {
+  it('resets stream state for one conversation without affecting others', () => {
     const store = useChatStore.getState()
 
     store.setConversationStreaming('c1', true)
@@ -178,7 +178,12 @@ describe('chatStore — per-conversation streaming', () => {
     store.clearConversationStreamState('c1')
 
     const s = useChatStore.getState()
-    expect(s.streamStates['c1']).toBeUndefined()
+    expect(s.streamStates['c1']).toEqual({
+      isStreaming: false,
+      streamingContent: '',
+      toolExecutions: [],
+      agentPhase: undefined,
+    })
     expect(s.streamStates['c2']?.isStreaming).toBe(true)
     expect(s.streamStates['c2']?.streamingContent).toBe('B')
   })

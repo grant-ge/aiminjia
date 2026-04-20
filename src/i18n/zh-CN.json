@@ -79,7 +79,7 @@
     "exportAsPptx": "导出为 PPT",
     "exportAsXlsx": "导出为 Excel",
     "exportPdfFallback": "PDF 生成不可用，已导出为 HTML",
-    "exportPdfFallbackHint": "可在浏览器打开 {{fileName}}，使用浏览器的"打印 → 另存为 PDF"功能保存"
+    "exportPdfFallbackHint": "可在浏览器打开 {{fileName}}，使用浏览器的\"打印 → 另存为 PDF\"功能保存"
   },
 
   "inputBar": {
