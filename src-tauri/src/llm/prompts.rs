@@ -1,7 +1,7 @@
 //! System prompt library — externalized to .md files with runtime loading.
 //!
 //! Prompts are loaded from external .md files with a priority chain:
-//! 1. User override: `{app_data_dir}/prompts/{name}.md`
+//! 1. User override: `{data_root}/prompts/{name}.md`
 //! 2. Bundled default: `{resource_dir}/prompts/{name}.md`
 //! 3. Hardcoded fallback (base only)
 //!
@@ -45,9 +45,9 @@ struct PromptStore {
 }
 
 impl PromptStore {
-    fn new(resource_dir: &Path, app_data_dir: &Path) -> Self {
+    fn new(resource_dir: &Path, data_root: &Path) -> Self {
         let bundled_dir = resource_dir.join("prompts");
-        let override_dir = app_data_dir.join("prompts");
+        let override_dir = data_root.join("prompts");
 
         let mut prompts = HashMap::new();
 
@@ -145,8 +145,8 @@ static PROMPT_STORE: LazyLock<RwLock<PromptStore>> = LazyLock::new(|| {
 });
 
 /// Initialize the prompt store. Must be called once at app startup.
-pub fn init_prompts(resource_dir: &Path, app_data_dir: &Path) {
-    let store = PromptStore::new(resource_dir, app_data_dir);
+pub fn init_prompts(resource_dir: &Path, data_root: &Path) {
+    let store = PromptStore::new(resource_dir, data_root);
     let mut guard = PROMPT_STORE.write().expect("PromptStore write lock poisoned");
     *guard = store;
 }

@@ -20,11 +20,11 @@ pub struct CustomSkillInfo {
     pub enabled: bool,
 }
 
-/// List all installed custom plugins.
+/// List all installed custom skills.
 #[tauri::command]
 pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let custom_dir = app_data.join("custom_plugins");
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
 
     if !custom_dir.is_dir() {
         return Ok(vec![]);
@@ -74,7 +74,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
     Ok(skills)
 }
 
-/// Install a skill from a directory path (copy to custom_plugins/).
+/// Install a skill from a directory path (copy to ~/.renlijia/skills/).
 #[tauri::command]
 pub async fn install_custom_skill(
     app: AppHandle,
@@ -100,8 +100,8 @@ pub async fn install_custom_skill(
         .ok_or("plugin.id not found in manifest")?
         .to_string();
 
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let custom_dir = app_data.join("custom_plugins");
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
     std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
 
     let dest = custom_dir.join(&plugin_id);
@@ -124,8 +124,8 @@ pub async fn uninstall_custom_skill(
     app: AppHandle,
     skill_id: String,
 ) -> Result<String, String> {
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let skill_dir = app_data.join("custom_plugins").join(&skill_id);
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let skill_dir = aijia_home.skills_dir().join(&skill_id);
 
     if !skill_dir.exists() {
         return Err(format!("Custom skill '{}' not found", skill_id));
@@ -493,7 +493,7 @@ pub async fn list_marketplace_skills(
 }
 
 /// Download and install a skill package from the marketplace.
-/// Downloads the zip from `package_url` and extracts to `custom_plugins/{plugin_id}/`.
+/// Downloads the zip from `package_url` and extracts to `~/.renlijia/skills/{plugin_id}/`.
 #[tauri::command]
 pub async fn install_marketplace_skill(
     app: AppHandle,
@@ -544,9 +544,9 @@ pub async fn install_marketplace_skill(
 
     let zip_bytes = zip_resp.bytes().await.map_err(|e| format!("Download error: {}", e))?;
 
-    // Step 3: Extract to custom_plugins/{plugin_id}/
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let custom_dir = app_data.join("custom_plugins");
+    // Step 3: Extract to ~/.renlijia/skills/{plugin_id}/
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
     std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
 
     let dest = custom_dir.join(&plugin_id);

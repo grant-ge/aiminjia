@@ -14,3 +14,4 @@ pub mod context_decay;
 pub mod analysis_context;
 pub mod content_filter;
 pub mod sub_agent;
+pub mod renlijia_md;

@@ -26,18 +26,27 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // Initialize app data directory
+            // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
+            let aijia_home = Arc::new(storage::AiJiaHome::from_home());
+            aijia_home
+                .ensure_dirs()
+                .expect("Failed to create ~/.renlijia dirs");
+            if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root()) {
+                log::warn!("[setup] migration warning (non-fatal): {}", e);
+            }
+            app.manage(aijia_home.clone());
+
             // Initialize prompt store from external .md files
             let resource_dir = app.path().resource_dir()
-                .unwrap_or_else(|_| app_data_dir.clone());
-            llm::prompts::init_prompts(&resource_dir, &app_data_dir);
+                .unwrap_or_else(|_| aijia_home.root().to_path_buf());
+            llm::prompts::init_prompts(&resource_dir, aijia_home.root());
 
             // Initialize file-based storage
             let db = Arc::new(
-                storage::file_store::AppStorage::new(&app_data_dir)
+                storage::file_store::AppStorage::new(aijia_home.root())
                     .expect("Failed to initialize file storage")
             );
 
@@ -48,9 +57,7 @@ pub fn run() {
                 .unwrap_or_default();
             let fm_path = if workspace_path.is_empty() {
                 // Default workspace: ~/.renlijia
-                let default_ws = dirs::home_dir()
-                    .map(|h| h.join(".renlijia"))
-                    .unwrap_or_else(|| app_data_dir.clone());
+                let default_ws = aijia_home.root().to_path_buf();
                 std::fs::create_dir_all(&default_ws).ok();
                 default_ws
             } else {
@@ -86,9 +93,9 @@ pub fn run() {
 
             // Initialize secure storage for API key encryption
             let secure_storage: Option<Arc<storage::crypto::SecureStorage>> =
-                match storage::crypto::SecureStorage::new(&app_data_dir) {
+                match storage::crypto::SecureStorage::new(&aijia_home.crypto_dir()) {
                     Ok(ss) => {
-                        log::info!("SecureStorage initialized (key file in app data dir)");
+                        log::info!("SecureStorage initialized (key file in ~/.renlijia/crypto)");
                         Some(Arc::new(ss))
                     }
                     Err(e) => {
@@ -152,11 +159,11 @@ pub fn run() {
                 }
 
                 // Scan user-installed custom plugins
-                let custom_plugins_dir = app_data_dir.join("custom_plugins");
-                if custom_plugins_dir.is_dir() {
-                    log::info!("Scanning custom plugins from: {:?}", custom_plugins_dir);
+                let skills_dir = aijia_home.skills_dir();
+                if skills_dir.is_dir() {
+                    log::info!("Scanning custom skills from: {:?}", skills_dir);
                     scan_external_plugins(
-                        &custom_plugins_dir,
+                        &skills_dir,
                         &tool_registry,
                         &skill_registry,
                         file_mgr.workspace_path(),

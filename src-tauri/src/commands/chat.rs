@@ -11,6 +11,7 @@ use crate::llm::orchestrator::{self, StepConfig, StepStatus};
 use crate::llm::prompts;
 use crate::llm::context_decay;
 use crate::llm::analysis_context::AnalysisContext;
+use crate::llm::renlijia_md::{build_renlijia_md_context_message, RenlijiaMdLoader};
 use crate::llm::content_filter::strip_hallucinated_xml;
 use crate::llm::prompt_guard;
 use crate::llm::taor::PhaseTracker;
@@ -2235,6 +2236,12 @@ async fn agent_loop(
             }
             if !analysis_notes_context.is_empty() {
                 ctx.push_str(&analysis_notes_context);
+            }
+
+            let mut renlijia_md_loader = RenlijiaMdLoader::new();
+            let renlijia_md_files = renlijia_md_loader.load(&workspace_path);
+            if let Some(renlijia_md_context) = build_renlijia_md_context_message(&renlijia_md_files) {
+                ctx.push_str(&renlijia_md_context);
             }
             // Inject precompute result into LLM context
             if let Some(ref pc_result) = precompute_context {

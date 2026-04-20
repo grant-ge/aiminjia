@@ -1,4 +1,4 @@
-//! skill_smith_install — install the active draft into custom_plugins.
+//! skill_smith_install — install the active draft into ~/.renlijia/skills.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -16,7 +16,7 @@ impl ToolPlugin for SkillSmithInstallTool {
     }
 
     fn description(&self) -> &str {
-        "Install the active skill draft into custom_plugins/ and trigger \
+        "Install the active skill draft into ~/.renlijia/skills/ and trigger \
          hot-reload (skill is usable immediately, no app restart needed). \
          If a skill with the same id is already installed, returns \
          `status: \"conflict\"` without changes — ask the user whether to \

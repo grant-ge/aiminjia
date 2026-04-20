@@ -221,32 +221,32 @@ impl SiteMap {
 
     // ── Persistence ─────────────────────────────────────────────
 
-    fn cache_dir(app_data_dir: &Path) -> PathBuf {
-        app_data_dir.join("site-profiles")
+    fn cache_dir(data_root: &Path) -> PathBuf {
+        data_root.join("site-profiles")
     }
 
-    fn file_path(app_data_dir: &Path, origin: &str) -> PathBuf {
+    fn file_path(data_root: &Path, origin: &str) -> PathBuf {
         // Sanitize origin for filename: https://foo.com → foo.com.json
         let name = origin
             .replace("https://", "")
             .replace("http://", "")
             .replace(':', "_")
             .replace('/', "_");
-        Self::cache_dir(app_data_dir).join(format!("{}.json", name))
+        Self::cache_dir(data_root).join(format!("{}.json", name))
     }
 
-    pub fn load(app_data_dir: &Path, origin: &str) -> Option<Self> {
-        let path = Self::file_path(app_data_dir, origin);
+    pub fn load(data_root: &Path, origin: &str) -> Option<Self> {
+        let path = Self::file_path(data_root, origin);
         let content = std::fs::read_to_string(&path).ok()?;
         let map: Self = serde_json::from_str(&content).ok()?;
         info!("[SiteMap] Loaded {} pages for {}", map.pages.len(), origin);
         Some(map)
     }
 
-    pub fn save(&self, app_data_dir: &Path) -> Result<(), String> {
-        let dir = Self::cache_dir(app_data_dir);
+    pub fn save(&self, data_root: &Path) -> Result<(), String> {
+        let dir = Self::cache_dir(data_root);
         std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
-        let path = Self::file_path(app_data_dir, &self.origin);
+        let path = Self::file_path(data_root, &self.origin);
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("serialize: {}", e))?;
         std::fs::write(&path, json).map_err(|e| format!("write: {}", e))?;
