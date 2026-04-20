@@ -586,7 +586,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               style={{ color: 'var(--color-text-secondary)' }}
               onClick={() => setShowChangelog(false)}
             >
-              ← {t('changelog.ok')}
+              ← {t('changelog.back')}
             </button>
             <h3 className="text-base font-semibold">{t('changelog.title')}</h3>
           </div>

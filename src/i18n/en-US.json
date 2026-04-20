@@ -379,6 +379,7 @@
   "changelog": {
     "whatsNew": "What's New in v{{version}}",
     "ok": "OK",
+    "back": "Back",
     "title": "Changelog",
     "noChanges": "No changelog available"
   },
