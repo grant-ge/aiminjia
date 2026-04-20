@@ -730,7 +730,7 @@ mod tests {
         let fb = skill.feedback_config(&state1).expect("step1 should have feedback config");
         assert!(fb.tools.contains(&"execute_python".to_string()));
         assert!(fb.tools.contains(&"export_data".to_string()));
-        assert_eq!(fb.max_iterations, 3);
+        assert_eq!(fb.max_iterations, 15);
 
         // Step 5: has precompute + generate_report in allowed tools
         let state5 = SkillState { current_step: Some("step5".into()), ..SkillState::new("comp-analysis-v2") };
