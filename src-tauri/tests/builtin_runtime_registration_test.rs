@@ -417,7 +417,9 @@ async fn execute_python_in_runtime_dispatcher_denies_dangerous_code() {
 
     let tmp = TempDir::new().unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
+    let dispatcher = registry
+        .to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx))
+        .await;
 
     let exec_ctx = ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     let result = dispatcher
@@ -634,7 +636,9 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
 
     let tmp = TempDir::new().unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let dispatcher = registry.to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx)).await;
+    let dispatcher = registry
+        .to_runtime_dispatcher(RequestScopedRuntimeDeps::from_plugin_context(&ctx))
+        .await;
 
     // Dispatch WITHOUT capability context → CapabilityPermissionPipeline should
     // reject the call because workspace:read requires storage capability.

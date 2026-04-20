@@ -792,10 +792,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         }
     }
 
-    async fn build_system_prompt(
-        &self,
-        _conversation_id: &str,
-    ) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok("[UNIFIED-SYSTEM-PROMPT]".to_string())
     }
 

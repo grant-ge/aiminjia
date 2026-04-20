@@ -36,7 +36,9 @@ pub enum PendingPermissionResolution {
         remember: bool,
         destination: Option<PermissionDestination>,
     },
-    Cancel { message: String },
+    Cancel {
+        message: String,
+    },
 }
 
 struct PendingPermissionEntry {

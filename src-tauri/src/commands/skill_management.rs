@@ -668,7 +668,66 @@ pub async fn install_marketplace_skill(
     ))
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+pub(crate) fn pack_skill_to_dir(
+    skill_dir: &Path,
+    output_dir: &Path,
+) -> Result<PathBuf, String> {
+    if !skill_dir.is_dir() {
+        return Err("Skill directory does not exist".to_string());
+    }
+    if !skill_dir.join("plugin.toml").exists() {
+        return Err("No plugin.toml found — not a valid skill directory".to_string());
+    }
+
+    let manifest_content = std::fs::read_to_string(skill_dir.join("plugin.toml"))
+        .map_err(|e| e.to_string())?;
+    let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
+    let plugin_id = manifest
+        .get("plugin")
+        .and_then(|p| p.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
+    let output_path = output_dir.join(format!("{}.aijia-skill", plugin_id));
+
+    let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    fn add_dir_to_zip(
+        zip: &mut zip::ZipWriter<std::fs::File>,
+        dir: &std::path::Path,
+        base: &std::path::Path,
+        options: zip::write::SimpleFileOptions,
+    ) -> Result<(), String> {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
+            let name = relative.to_string_lossy().to_string();
+
+            if path.is_dir() {
+                zip.add_directory(format!("{}/", name), options)
+                    .map_err(|e| e.to_string())?;
+                add_dir_to_zip(zip, &path, base, options)?;
+            } else {
+                zip.start_file(&name, options).map_err(|e| e.to_string())?;
+                let content = std::fs::read(&path).map_err(|e| e.to_string())?;
+                std::io::Write::write_all(zip, &content).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    add_dir_to_zip(&mut zip, skill_dir, skill_dir, options)?;
+    zip.finish().map_err(|e| e.to_string())?;
+
+    Ok(output_path)
+}
+
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;

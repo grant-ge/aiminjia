@@ -26,8 +26,8 @@ use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::store::PendingPermissionResolution;
-use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::runtime::tools::permission::PermissionDestination;
+use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
@@ -1066,9 +1066,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             app_data_dir,
             workspace_path.to_path_buf(),
         );
-        service
-            .load_context(query)
-            .map_err(|err| TurnError::PersistenceError(format!("Failed to load project memory: {err}")))
+        service.load_context(query).map_err(|err| {
+            TurnError::PersistenceError(format!("Failed to load project memory: {err}"))
+        })
     }
 
     async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
@@ -1463,8 +1463,17 @@ impl TauriChatCommandAdapter {
                 crate::runtime::claude_md::ClaudeMdLoader::new(),
             )),
         });
+        // Build a static dispatcher from the already-registered runtime tools so that
+        // the QueryEngine can route tool calls.  Request-scoped tools (web_search,
+        // browser, etc.) are added per-request by the worker runtime path when those
+        // deps are available.  This matches the per-call tool-pool pattern from
+        // claude-code-best: static runtime tools are registered once; request-scoped
+        // tools are layered in at turn time via to_runtime_dispatcher.
+        let static_dispatcher = tauri::async_runtime::block_on(
+            services.tool_registry.to_static_dispatcher()
+        );
         let mut runtime = SessionRuntime::with_llm_executor(
-            QueryEngine::new()
+            QueryEngine::with_dispatcher(static_dispatcher)
                 .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             llm_executor,

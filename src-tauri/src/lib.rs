@@ -173,9 +173,9 @@ pub fn run() {
                 ),
                 Some(app_data_dir.join("permissions.json")),
             ));
-            tauri::async_runtime::block_on(tool_registry.set_permission_store(
-                permission_store.clone(),
-            ));
+            tauri::async_runtime::block_on(
+                tool_registry.set_permission_store(permission_store.clone()),
+            );
             let mcp_server_manager =
                 Arc::new(runtime::mcp::McpServerManager::new(tool_registry.clone()));
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(

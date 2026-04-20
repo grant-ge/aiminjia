@@ -682,7 +682,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_tool_preference_section_omits_retired_tool_names() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();

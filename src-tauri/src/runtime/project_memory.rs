@@ -123,10 +123,7 @@ pub struct ProjectMemoryService {
 }
 
 impl ProjectMemoryService {
-    pub fn new(
-        app_data_dir: impl AsRef<Path>,
-        workspace_path: impl AsRef<Path>,
-    ) -> Self {
+    pub fn new(app_data_dir: impl AsRef<Path>, workspace_path: impl AsRef<Path>) -> Self {
         let app_data_dir = app_data_dir.as_ref().to_path_buf();
         let workspace_path = workspace_path.as_ref().to_path_buf();
         let canonical_workspace = canonical_workspace_key_path(&workspace_path);
@@ -218,7 +215,8 @@ impl ProjectMemoryService {
         }
 
         self.ensure_dirs()?;
-        let relative_path = PathBuf::from(ENTRIES_DIR).join(format!("{LEGACY_MIGRATION_ENTRY_NAME}.md"));
+        let relative_path =
+            PathBuf::from(ENTRIES_DIR).join(format!("{LEGACY_MIGRATION_ENTRY_NAME}.md"));
         let full_path = self.memory_root.join(&relative_path);
         if full_path.exists() {
             if !self.entrypoint_path().exists() {
@@ -342,10 +340,7 @@ fn parse_entry_file(memory_root: &Path, path: &Path) -> Result<Option<ProjectMem
         memory_type,
         content: body.trim().to_string(),
         path: path.to_path_buf(),
-        relative_path: path
-            .strip_prefix(memory_root)
-            .unwrap_or(path)
-            .to_path_buf(),
+        relative_path: path.strip_prefix(memory_root).unwrap_or(path).to_path_buf(),
     }))
 }
 
@@ -375,7 +370,10 @@ fn select_relevant_entries(
                 entry.description.to_lowercase(),
                 entry.content.to_lowercase()
             );
-            let score = tokens.iter().filter(|token| haystack.contains(token.as_str())).count();
+            let score = tokens
+                .iter()
+                .filter(|token| haystack.contains(token.as_str()))
+                .count();
             (score > 0).then(|| (score, entry.clone()))
         })
         .collect::<Vec<_>>();

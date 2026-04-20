@@ -143,7 +143,10 @@ fn u4_distill_rebuilds_memory_index_from_existing_entry_files() {
     let service = ProjectMemoryService::new(&app_data_dir, &workspace);
     std::fs::create_dir_all(service.memory_root().join("entries")).expect("create entries dir");
     std::fs::write(
-        service.memory_root().join("entries").join("frozen-window.md"),
+        service
+            .memory_root()
+            .join("entries")
+            .join("frozen-window.md"),
         r#"---
 type: project_constraint
 name: 发布冻结窗口
@@ -331,7 +334,12 @@ fn u4_compat_tool_definition_helper_excludes_retired_memory_tools() {
         .map(|tool| tool.name)
         .collect::<Vec<_>>();
 
-    for retired in ["save_memory", "search_memory", "core_memory", "distill_memory"] {
+    for retired in [
+        "save_memory",
+        "search_memory",
+        "core_memory",
+        "distill_memory",
+    ] {
         assert!(
             !names.iter().any(|name| name == retired),
             "compat llm::tools helper must not expose retired memory tool '{}'",

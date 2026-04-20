@@ -20,8 +20,8 @@ fn walk_rust_files(dir: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn u6_registry_dispatcher_requires_request_scoped_deps_instead_of_plugin_context() {
-    let source = std::fs::read_to_string("src/plugin/registry.rs")
-        .expect("read src/plugin/registry.rs");
+    let source =
+        std::fs::read_to_string("src/plugin/registry.rs").expect("read src/plugin/registry.rs");
     assert!(
         source.contains("RequestScopedRuntimeDeps"),
         "registry must introduce an explicit request-scoped deps model"
@@ -34,8 +34,8 @@ fn u6_registry_dispatcher_requires_request_scoped_deps_instead_of_plugin_context
 
 #[test]
 fn u6_sub_agent_extracts_request_scoped_deps_before_building_dispatcher() {
-    let source = std::fs::read_to_string("src/llm/sub_agent.rs")
-        .expect("read src/llm/sub_agent.rs");
+    let source =
+        std::fs::read_to_string("src/llm/sub_agent.rs").expect("read src/llm/sub_agent.rs");
     assert!(
         source.contains("RequestScopedRuntimeDeps"),
         "sub_agent must build explicit request-scoped deps for runtime dispatcher"

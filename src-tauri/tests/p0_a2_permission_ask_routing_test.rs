@@ -222,10 +222,7 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
                     PermissionDestination::User,
                 ]
             );
-            assert_eq!(
-                default_destination,
-                &Some(PermissionDestination::Session)
-            );
+            assert_eq!(default_destination, &Some(PermissionDestination::Session));
         }
         other => panic!("unexpected event kind: {:?}", other),
     }

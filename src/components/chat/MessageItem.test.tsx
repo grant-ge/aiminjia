@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Message } from '@/types/message'
 
-const formatRelativeTimeMock = vi.fn(() => '5 分钟前')
+const formatRelativeTimeMock = vi.fn((_iso: string) => '5 分钟前')
 
 vi.mock('@/lib/format', () => ({
   formatRelativeTime: (iso: string) => formatRelativeTimeMock(iso),

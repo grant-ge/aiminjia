@@ -37,7 +37,7 @@ describe('GeneratedFileCard inline preview', () => {
   it('renders inline preview for image extensions beyond png', () => {
     render(
       <GeneratedFileCard
-        file={{ ...baseFile, fileType: 'other', fileName: 'diagram.webp', filePath: '/tmp/diagram.webp' }}
+        file={{ ...baseFile, fileType: 'png', fileName: 'diagram.webp', filePath: '/tmp/diagram.webp' }}
       />,
     )
 

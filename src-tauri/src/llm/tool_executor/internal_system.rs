@@ -91,7 +91,6 @@ impl BrowseDataLauncherDeps {
             cancellation: self.cancellation,
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -107,7 +106,6 @@ impl DefaultBrowseDataLauncher {
     pub fn from_deps(deps: BrowseDataLauncherDeps) -> Self {
         Self { deps }
     }
-
 }
 
 #[async_trait]
@@ -117,19 +115,15 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
         request: BrowseDataLaunchRequest,
         context: BrowseDataLaunchContext,
     ) -> Result<BrowseDataLaunchResult> {
-        let scoped_runtime_deps = self
-            .deps
-            .clone()
-            .into_runtime_deps()
-            .with_run_scope(
-                context.parent_run_id.clone(),
-                context.parent_agent_id.clone(),
-                Some(context.cancellation.clone()),
-                self.deps
-                    .read_file_state
-                    .as_ref()
-                    .map(|cache| cache.clone_for_child()),
-            );
+        let scoped_runtime_deps = self.deps.clone().into_runtime_deps().with_run_scope(
+            context.parent_run_id.clone(),
+            context.parent_agent_id.clone(),
+            Some(context.cancellation.clone()),
+            self.deps
+                .read_file_state
+                .as_ref()
+                .map(|cache| cache.clone_for_child()),
+        );
         launch_browse_data_with_runtime_deps(
             &scoped_runtime_deps,
             request,
@@ -379,34 +373,33 @@ async fn launch_browse_data_with_runtime_deps(
         cancel_token,
     };
 
-    let result =
-        crate::llm::sub_agent::run_sub_agent(
-            gateway,
-            tool_registry,
-            &crate::llm::sub_agent::SubAgentRuntimeDeps {
-                storage: ctx.storage.clone(),
-                file_manager: ctx.file_manager.clone(),
-                workspace_path: ctx.workspace_path.clone(),
-                conversation_id: ctx.conversation_id.clone(),
-                session_id: ctx.session_id.clone(),
-                run_id: ctx.run_id.clone(),
-                agent_id: ctx.agent_id.clone(),
-                session_manager: ctx.session_manager.clone(),
-                connector_engine: ctx.connector_engine.clone(),
-                agent_runtime: ctx.agent_runtime.clone(),
-                event_bus: ctx.event_bus.clone(),
-                authorized_workspace: ctx.authorized_workspace.clone(),
-                read_file_state: ctx.read_file_state.clone(),
-                app_handle: ctx.app_handle.clone(),
-            },
-            config,
-            app_settings,
-        )
-            .await
-            .map_err(|e| {
-                warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
-                anyhow!("Browser agent failed: {}", e)
-            })?;
+    let result = crate::llm::sub_agent::run_sub_agent(
+        gateway,
+        tool_registry,
+        &crate::llm::sub_agent::SubAgentRuntimeDeps {
+            storage: ctx.storage.clone(),
+            file_manager: ctx.file_manager.clone(),
+            workspace_path: ctx.workspace_path.clone(),
+            conversation_id: ctx.conversation_id.clone(),
+            session_id: ctx.session_id.clone(),
+            run_id: ctx.run_id.clone(),
+            agent_id: ctx.agent_id.clone(),
+            session_manager: ctx.session_manager.clone(),
+            connector_engine: ctx.connector_engine.clone(),
+            agent_runtime: ctx.agent_runtime.clone(),
+            event_bus: ctx.event_bus.clone(),
+            authorized_workspace: ctx.authorized_workspace.clone(),
+            read_file_state: ctx.read_file_state.clone(),
+            app_handle: ctx.app_handle.clone(),
+        },
+        config,
+        app_settings,
+    )
+    .await
+    .map_err(|e| {
+        warn!("[CONNECTOR] browse_data sub-agent failed: {}", e);
+        anyhow!("Browser agent failed: {}", e)
+    })?;
 
     info!(
         "[CONNECTOR] browse_data complete: iterations={}, files={}, output_len={}",
@@ -705,8 +698,13 @@ pub(crate) async fn execute_browse_data(
         url: optional_str(args, "url").map(str::to_string),
     };
     let runtime_deps = RequestScopedRuntimeDeps::from_plugin_context(ctx);
-    launch_browse_data_with_runtime_deps(&runtime_deps, request, ctx.cancellation.clone(), ctx.run_id.is_some())
-        .await
+    launch_browse_data_with_runtime_deps(
+        &runtime_deps,
+        request,
+        ctx.cancellation.clone(),
+        ctx.run_id.is_some(),
+    )
+    .await
 }
 
 #[cfg(test)]

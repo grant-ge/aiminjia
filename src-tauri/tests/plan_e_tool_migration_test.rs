@@ -616,7 +616,8 @@ impl BrowseDataLauncher for AskBrowseDataLauncher {
                 message: self.message.clone(),
                 suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
                 remember_options: app_lib::runtime::tools::permission::default_permission_ask().0,
-                default_destination: app_lib::runtime::tools::permission::default_permission_ask().1,
+                default_destination: app_lib::runtime::tools::permission::default_permission_ask()
+                    .1,
                 reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
             },
         ))

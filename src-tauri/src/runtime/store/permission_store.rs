@@ -7,11 +7,11 @@
 //!
 //! 兼容旧格式 `tool:scope -> PolicyDecision`，避免现有测试与历史数据立即失效。
 
+use crate::storage::file_store::io::atomic_write_json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
-use crate::storage::file_store::io::atomic_write_json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,7 +121,12 @@ impl PermissionLayer {
         }
     }
 
-    fn record_legacy(&mut self, scope_key: String, decision: PolicyDecision, source: PermissionSource) {
+    fn record_legacy(
+        &mut self,
+        scope_key: String,
+        decision: PolicyDecision,
+        source: PermissionSource,
+    ) {
         self.legacy.insert(scope_key.clone(), decision.clone());
 
         if let Some((tool_name, scope)) = split_legacy_key(&scope_key) {
@@ -222,7 +227,10 @@ impl PermissionStore {
         Self::with_layer_files(Some(path), None)
     }
 
-    pub fn with_layer_files(workspace_file_path: Option<PathBuf>, user_file_path: Option<PathBuf>) -> Self {
+    pub fn with_layer_files(
+        workspace_file_path: Option<PathBuf>,
+        user_file_path: Option<PathBuf>,
+    ) -> Self {
         let workspace = workspace_file_path
             .as_ref()
             .map(|path| load_snapshot(path, PermissionSource::Workspace))
@@ -256,8 +264,18 @@ impl PermissionStore {
             .read()
             .unwrap()
             .get_rule(tool_name, &permission_scope)
-            .or_else(|| self.workspace.read().unwrap().get_rule(tool_name, &permission_scope))
-            .or_else(|| self.user.read().unwrap().get_rule(tool_name, &permission_scope))
+            .or_else(|| {
+                self.workspace
+                    .read()
+                    .unwrap()
+                    .get_rule(tool_name, &permission_scope)
+            })
+            .or_else(|| {
+                self.user
+                    .read()
+                    .unwrap()
+                    .get_rule(tool_name, &permission_scope)
+            })
             .or_else(|| self.get(&format!("{}:{}", tool_name, scope)))
     }
 
@@ -270,7 +288,11 @@ impl PermissionStore {
         self.record_legacy_to(destination, scope_key, decision);
     }
 
-    pub fn record_to(&self, destination: crate::runtime::tools::permission::PermissionDestination, rule: PermissionRule) {
+    pub fn record_to(
+        &self,
+        destination: crate::runtime::tools::permission::PermissionDestination,
+        rule: PermissionRule,
+    ) {
         match destination {
             crate::runtime::tools::permission::PermissionDestination::Session => {
                 self.session.write().unwrap().upsert_rule(rule);

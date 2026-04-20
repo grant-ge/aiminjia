@@ -146,7 +146,10 @@ impl AppStorage {
         Ok(conversations::get_conversations(&self.base_dir)?)
     }
 
-    pub fn get_conversation(&self, id: &str) -> Result<crate::storage::file_store::types::ConversationMeta> {
+    pub fn get_conversation(
+        &self,
+        id: &str,
+    ) -> Result<crate::storage::file_store::types::ConversationMeta> {
         Ok(conversations::get_conversation(&self.base_dir, id)?)
     }
 

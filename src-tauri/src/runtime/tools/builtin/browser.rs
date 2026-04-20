@@ -329,7 +329,6 @@ impl RuntimeTool for PageExecuteJsRuntimeTool {
     }
 }
 
-
 // ── BrowseAndExtractRuntimeTool ──────────────────────────────────────────────
 
 pub struct BrowseAndExtractRuntimeTool {
@@ -377,7 +376,10 @@ impl RuntimeTool for BrowseAndExtractRuntimeTool {
         let is_api_mode = method != "GET" || body.is_some();
 
         if is_api_mode {
-            info!("[BROWSER] browse_and_extract API mode: {} '{}'", method, url);
+            info!(
+                "[BROWSER] browse_and_extract API mode: {} '{}'",
+                method, url
+            );
             let result = engine
                 .browser_api_fetch(url, &method, body, headers)
                 .await
@@ -395,7 +397,11 @@ impl RuntimeTool for BrowseAndExtractRuntimeTool {
                     .unwrap_or_else(|| "api_data.json".to_string());
 
                 let registered_path = if let Ok(content) = std::fs::read(path) {
-                    match self.deps.file_manager.write_file("generated", &file_name, &content) {
+                    match self
+                        .deps
+                        .file_manager
+                        .write_file("generated", &file_name, &content)
+                    {
                         Ok(file_info) => {
                             let file_id = uuid::Uuid::new_v4().to_string();
                             let _ = self.deps.storage.insert_generated_file(
@@ -493,7 +499,11 @@ impl RuntimeTool for BrowseAndExtractRuntimeTool {
 
         if !result.content.tables.is_empty() {
             for (i, table) in result.content.tables.iter().enumerate() {
-                output.push_str(&format!("\n### Table {} ({} rows)\n", i + 1, table.rows.len()));
+                output.push_str(&format!(
+                    "\n### Table {} ({} rows)\n",
+                    i + 1,
+                    table.rows.len()
+                ));
                 if !table.headers.is_empty() {
                     output.push_str(&format!("Columns: {}\n", table.headers.join(" | ")));
                 }
@@ -520,7 +530,10 @@ impl RuntimeTool for BrowseAndExtractRuntimeTool {
                         if !link.href.is_empty() {
                             output.push_str(&format!("- [menu] {} -> {}\n", link.label, link.href));
                         } else if !link.selector.is_empty() {
-                            output.push_str(&format!("- [menu] {} (selector: {})\n", link.label, link.selector));
+                            output.push_str(&format!(
+                                "- [menu] {} (selector: {})\n",
+                                link.label, link.selector
+                            ));
                         } else {
                             output.push_str(&format!("- [menu] {}\n", link.label));
                         }
@@ -555,20 +568,28 @@ impl RuntimeTool for BrowseAndExtractRuntimeTool {
                     api.method, api.url, api.status, size, ct_short
                 ));
             }
-            output.push_str("Tip: Use browse_and_extract with these API URLs to fetch data directly.\n");
+            output.push_str(
+                "Tip: Use browse_and_extract with these API URLs to fetch data directly.\n",
+            );
         }
 
         if !result.forms.is_empty() {
             output.push_str("\n### Forms\n");
             for form in &result.forms {
-                output.push_str(&format!("- Form#{}: {} {}\n", form.id, form.method, form.action));
+                output.push_str(&format!(
+                    "- Form#{}: {} {}\n",
+                    form.id, form.method, form.action
+                ));
                 for field in &form.fields {
                     let val = if field.value.is_empty() {
                         String::new()
                     } else {
                         format!("={}", field.value)
                     };
-                    output.push_str(&format!("  - {} ({}{})\n", field.name, field.field_type, val));
+                    output.push_str(&format!(
+                        "  - {} ({}{})\n",
+                        field.name, field.field_type, val
+                    ));
                 }
             }
         }

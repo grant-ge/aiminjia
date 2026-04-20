@@ -652,6 +652,27 @@ impl ToolRegistry {
             .collect()
     }
 
+    /// Build a session-static dispatcher containing only the already-registered
+    /// `runtime_tools`.  Request-scoped tools (web_search, browser, etc.) are NOT
+    /// included — the caller must handle those separately or use
+    /// `to_runtime_dispatcher` when request-scoped deps are available.
+    ///
+    /// Intended for paths where a `QueryEngine` must be wired up before the first
+    /// request arrives (e.g. `TauriChatCommandAdapter::new()`).
+    pub async fn to_static_dispatcher(&self) -> Arc<ToolDispatcher> {
+        let pipeline: Arc<dyn PermissionPipeline> =
+            match self.permission_store.read().await.as_ref() {
+                Some(store) => Arc::new(StorePolicyPipeline::new(store.clone())),
+                None => Arc::new(CapabilityPermissionPipeline),
+            };
+        let dispatcher = Arc::new(ToolDispatcher::new(pipeline));
+        let runtime_tools = self.runtime_tools.read().await;
+        for (_, tool) in runtime_tools.iter() {
+            dispatcher.register(tool.clone());
+        }
+        dispatcher
+    }
+
     /// Build a runtime-first dispatcher while keeping legacy tool implementations
     /// behind an adapter. This is the bridge point for incrementally moving the
     /// production query path onto the new runtime contract.

@@ -299,6 +299,25 @@ pub mod testsupport {
     }
 }
 
+const FILE_GEN_TOOLS: &[&str] = &[
+    "generate_report",
+    "generate_chart",
+    "export_data",
+    "generate_slides",
+];
+
+/// Returns true iff the most recent tool message in `messages` was produced
+/// by one of the file-generating tools.
+fn is_last_tool_file_generation(messages: &[crate::llm::streaming::ChatMessage]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "tool")
+        .and_then(|m| m.name.as_deref())
+        .map(|name| FILE_GEN_TOOLS.contains(&name))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod auto_capture_tests {
     use super::is_last_tool_file_generation;

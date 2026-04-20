@@ -242,7 +242,12 @@ fn catalog_long_running_tools_have_declared_default_timeouts() {
 fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for id in ["list_directory", "read_workspace_file", "web_search", "plan_update"] {
+    for id in [
+        "list_directory",
+        "read_workspace_file",
+        "web_search",
+        "plan_update",
+    ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
             def.default_timeout_secs, None,

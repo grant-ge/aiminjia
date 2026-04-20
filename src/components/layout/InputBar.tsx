@@ -105,6 +105,35 @@ export function InputBar() {
     setPendingFiles([])
   }
 
+  const slashMatch = useMemo(() => {
+    if (!input.startsWith('/')) return null
+    const rest = input.slice(1)
+    const wsIdx = rest.search(/\s/)
+    if (wsIdx === -1) {
+      return { filter: rest, tail: '' }
+    }
+    return { filter: rest.slice(0, wsIdx), tail: rest.slice(wsIdx) }
+  }, [input])
+
+  const slashOpen = slashMatch !== null
+
+  const handleSlashSelect = useCallback((skill: SkillInfo) => {
+    const tail = slashMatch?.tail ?? ''
+    const next = tail ? `${skill.triggerText}${tail}` : skill.triggerText
+    setInput(next)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(next.length, next.length)
+      }
+    })
+  }, [slashMatch])
+
+  const handleSlashClose = useCallback(() => {
+    textareaRef.current?.focus()
+  }, [])
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // When the slash-command popover is open, its own capture-phase keydown
     // listener handles Enter (to pick a skill). Skip our Enter-to-send here
@@ -361,7 +390,6 @@ export function InputBar() {
                 onClose={handleSlashClose}
               />
             )}
-          </div>
 
           {/* Send / Stop button */}
           <button

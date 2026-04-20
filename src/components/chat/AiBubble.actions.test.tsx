@@ -7,7 +7,7 @@ import type { Message } from '@/types/message'
 const sendMessageMock = vi.fn(() => Promise.resolve())
 
 vi.mock('@/lib/tauri', () => ({
-  sendMessage: (...args: unknown[]) => sendMessageMock(...args),
+  sendMessage: (...args: Parameters<typeof sendMessageMock>) => sendMessageMock(...args),
   openGeneratedFile: vi.fn(),
   revealFileInFolder: vi.fn(),
 }))

@@ -181,8 +181,7 @@ mod tests {
 
     #[test]
     fn test_precompute_result_block() {
-        let result =
-            build_iteration_context("", "", "", "", "", Some("computed data"), None, None);
+        let result = build_iteration_context("", "", "", "", "", Some("computed data"), None, None);
         assert!(result.contains("[precompute_result]\n"));
         assert!(result.contains("computed data"));
         assert!(result.contains("[/precompute_result]"));

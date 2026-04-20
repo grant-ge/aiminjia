@@ -15,12 +15,12 @@ use crate::runtime::ids::{RunId, SessionId, ToolCallId};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
-    AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequestStore,
-    PendingPermissionResolution, PendingPermissionRequest, PermissionStore, PolicyDecision,
+    AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
+    PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
 };
+use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
-use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 
 #[derive(Clone)]
 pub struct SessionRuntime {
