@@ -3,6 +3,7 @@ pub mod compaction;
 pub mod context_builder;
 pub mod metrics;
 pub mod post_process;
+pub mod preprocess;
 pub mod safeguard;
 pub mod tool_result_collector;
 pub mod tool_round_driver;

@@ -10,12 +10,11 @@ use crate::llm::context_decay::{
     context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
 };
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
-use crate::runtime::chat::compaction::{
-    build_compact_boundary_record, compact_messages_via_llm, microcompact, should_auto_compact,
-    AutoCompactConfig, CompactTrigger, MicrocompactConfig,
-};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
+use crate::runtime::chat::preprocess::{
+    prepare_messages_for_llm, PreprocessConfig, PreprocessRetryAction, PreprocessTrigger,
+};
 use crate::runtime::chat::safeguard::{self, SafeguardAction};
 use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
@@ -35,9 +34,7 @@ use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
 };
-use crate::runtime::tools::permission::{
-    PermissionDecision, PermissionMode, PermissionReason,
-};
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode, PermissionReason};
 
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
@@ -743,59 +740,34 @@ impl RuntimeChatTurnDriver {
             });
 
         'turn: for iteration in 0..config.max_iterations {
-            let microcompact_result = microcompact(&state.messages, &MicrocompactConfig::default());
-            if microcompact_result.executed {
-                state.messages = microcompact_result.messages;
-            }
-
-            let auto_compact_config = AutoCompactConfig::default();
-            if !state.compact_state.is_circuit_broken(&auto_compact_config)
-                && should_auto_compact(&state.messages, &auto_compact_config)
-            {
-                match executor
-                    .compact_summary(config.conversation_id.as_str(), &state.messages)
-                    .await
-                {
-                    Ok(summary_text) if !summary_text.is_empty() => {
-                        let tail_message_id = state.messages.iter().rev().find_map(|message| {
-                            if message
-                                .get("isCompactSummary")
-                                .and_then(|value| value.as_bool())
-                                == Some(true)
-                            {
-                                return None;
-                            }
-                            message
-                                .get("id")
-                                .and_then(|value| value.as_str())
-                                .map(str::to_owned)
-                        });
-                        let output = compact_messages_via_llm(
-                            std::mem::take(&mut state.messages),
-                            summary_text.clone(),
-                        );
-                        let mut boundary_record = build_compact_boundary_record(
-                            config.conversation_id.as_str(),
-                            CompactTrigger::Auto,
-                            output.pre_tokens,
-                            output.post_tokens,
-                            output.messages_summarized,
-                        );
-                        boundary_record.summary_text = summary_text;
-                        boundary_record.tail_message_id = tail_message_id;
-                        state.messages = output.new_messages;
-                        if let Err(err) = executor.save_compact_boundary(boundary_record).await {
-                            log::warn!(
-                                "[run_chat_turn_s4] failed to persist compact boundary: {}",
-                                err
-                            );
-                        }
-                        state.compact_state.record_success();
+            let preprocess_config = PreprocessConfig::default();
+            let conversation_id = config.conversation_id.as_str().to_string();
+            let prepared = prepare_messages_for_llm(
+                std::mem::take(&mut state.messages),
+                conversation_id.as_str(),
+                PreprocessTrigger::Normal,
+                &preprocess_config,
+                &mut state.compact_state,
+                &mut state.preprocess_state,
+                state.stop_hook_active,
+                |messages| {
+                    let conversation_id = conversation_id.clone();
+                    async move {
+                        executor
+                            .compact_summary(conversation_id.as_str(), &messages)
+                            .await
                     }
-                    Ok(_) => {}
-                    Err(_) => {
-                        state.compact_state.record_failure();
-                    }
+                },
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("{}", err))?;
+            state.messages = prepared.messages;
+            if let Some(boundary_record) = prepared.compact_boundary {
+                if let Err(err) = executor.save_compact_boundary(boundary_record).await {
+                    log::warn!(
+                        "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                        err
+                    );
                 }
             }
 
@@ -852,60 +824,36 @@ impl RuntimeChatTurnDriver {
             {
                 Ok(result) => result,
                 Err(TurnError::PromptTooLong(message)) => {
-                    let auto_compact_config = AutoCompactConfig::default();
-                    if !state.stop_hook_active
-                        && !state.compact_state.is_circuit_broken(&auto_compact_config)
-                    {
-                        match executor
-                            .compact_summary(config.conversation_id.as_str(), &state.messages)
-                            .await
-                        {
-                            Ok(summary_text) if !summary_text.is_empty() => {
-                                let tail_message_id =
-                                    state.messages.iter().rev().find_map(|message| {
-                                        if message
-                                            .get("isCompactSummary")
-                                            .and_then(|value| value.as_bool())
-                                            == Some(true)
-                                        {
-                                            return None;
-                                        }
-                                        message
-                                            .get("id")
-                                            .and_then(|value| value.as_str())
-                                            .map(str::to_owned)
-                                    });
-                                let output = compact_messages_via_llm(
-                                    std::mem::take(&mut state.messages),
-                                    summary_text.clone(),
-                                );
-                                let mut boundary_record = build_compact_boundary_record(
-                                    config.conversation_id.as_str(),
-                                    CompactTrigger::Auto,
-                                    output.pre_tokens,
-                                    output.post_tokens,
-                                    output.messages_summarized,
-                                );
-                                boundary_record.summary_text = summary_text;
-                                boundary_record.tail_message_id = tail_message_id;
-                                state.messages = output.new_messages;
-                                if let Err(err) =
-                                    executor.save_compact_boundary(boundary_record).await
-                                {
-                                    log::warn!(
-                                        "[run_chat_turn_s4] failed to persist compact boundary: {}",
-                                        err
-                                    );
-                                }
-                                state.compact_state.record_success();
-                                state.stop_hook_active = true;
-                                continue 'turn;
+                    let prepared = prepare_messages_for_llm(
+                        std::mem::take(&mut state.messages),
+                        conversation_id.as_str(),
+                        PreprocessTrigger::PromptTooLongRecovery,
+                        &PreprocessConfig::default(),
+                        &mut state.compact_state,
+                        &mut state.preprocess_state,
+                        state.stop_hook_active,
+                        |messages| {
+                            let conversation_id = conversation_id.clone();
+                            async move {
+                                executor
+                                    .compact_summary(conversation_id.as_str(), &messages)
+                                    .await
                             }
-                            Ok(_) => {}
-                            Err(_) => {
-                                state.compact_state.record_failure();
-                            }
+                        },
+                    )
+                    .await
+                    .map_err(|err| anyhow::anyhow!("{}", err))?;
+                    state.messages = prepared.messages;
+                    if let Some(boundary_record) = prepared.compact_boundary {
+                        if let Err(err) = executor.save_compact_boundary(boundary_record).await {
+                            log::warn!(
+                                "[run_chat_turn_s4] failed to persist compact boundary: {}",
+                                err
+                            );
                         }
+                    }
+                    if prepared.retry == PreprocessRetryAction::RetryTurn {
+                        continue 'turn;
                     }
 
                     self.event_bus

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::runtime::chat::compaction::AutoCompactState;
+use crate::runtime::chat::preprocess::PreprocessRuntimeState;
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{RunId, SessionId};
@@ -82,6 +83,7 @@ pub struct TurnIterationState {
     pub stop_hook_active: bool,
     pub max_output_tokens_recovery_count: usize,
     pub orphaned_permission_count: usize,
+    pub preprocess_state: PreprocessRuntimeState,
 }
 
 impl TurnIterationState {
@@ -102,6 +104,7 @@ impl TurnIterationState {
             stop_hook_active: false,
             max_output_tokens_recovery_count: 0,
             orphaned_permission_count: 0,
+            preprocess_state: PreprocessRuntimeState::default(),
         }
     }
 
