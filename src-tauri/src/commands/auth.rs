@@ -7,6 +7,22 @@ use crate::auth::AuthManager;
 use crate::auth::state::CloudAuthInfo;
 use crate::auth::state::CloudModelInfo;
 
+/// Map an internal anyhow error into a user-facing string.
+///
+/// If the underlying error is a `reqwest` network/connection failure (request
+/// could not be sent, timed out, or connection failed), prepend a friendly
+/// 中文 message. Otherwise format the full anyhow `Caused by` chain so the
+/// real reason surfaces to the user (and to the support channel) instead of
+/// being collapsed by `.to_string()`.
+fn format_auth_error(e: anyhow::Error) -> String {
+    if let Some(req_err) = e.downcast_ref::<reqwest::Error>() {
+        if req_err.is_connect() || req_err.is_timeout() || req_err.is_request() {
+            return format!("网络连接失败，请检查网络后重试\n\n详情：{:#}", e);
+        }
+    }
+    format!("{:#}", e)
+}
+
 /// Branding info returned to frontend for instant (no-network) brand application.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +48,7 @@ pub async fn cloud_login(
     if username.is_empty() || password.is_empty() {
         return Err("请输入用户名和密码".to_string());
     }
-    auth.login(username, &password).await.map_err(|e| e.to_string())
+    auth.login(username, &password).await.map_err(format_auth_error)
 }
 
 /// Logout from cloud mode.
@@ -59,7 +75,7 @@ pub async fn get_cloud_auth(
 pub async fn get_cloud_models(
     auth: State<'_, Arc<AuthManager>>,
 ) -> Result<Vec<CloudModelInfo>, String> {
-    auth.get_available_models().await.map_err(|e| e.to_string())
+    auth.get_available_models().await.map_err(format_auth_error)
 }
 
 /// Change password on the cloud server.
@@ -76,7 +92,7 @@ pub async fn cloud_change_password(
     if new_password.len() < 8 {
         return Err("新密码长度至少 8 个字符".to_string());
     }
-    auth.change_password(&old_password, &new_password).await.map_err(|e| e.to_string())
+    auth.change_password(&old_password, &new_password).await.map_err(format_auth_error)
 }
 
 /// Get branding info from persisted auth state (no network call).
