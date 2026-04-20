@@ -9,6 +9,7 @@ pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
 pub mod team;
+pub mod worker_runtime;
 pub mod worktree;
 
 pub use agent_runtime::AgentRuntime;

@@ -142,17 +142,21 @@ async fn ab1_load_core_memory_called_once_per_turn() {
 }
 
 #[test]
-fn ab3_sub_agent_uses_runtime_dispatcher_batch_path() {
-    let source = include_str!("../src/llm/sub_agent.rs");
+fn ab3_worker_runtime_owns_runtime_tool_round_path() {
+    let worker_runtime = include_str!("../src/runtime/agent/worker_runtime.rs");
     assert!(
-        source.contains("dispatch_batch("),
-        "sub_agent.rs must route tool calls through ToolDispatcher::dispatch_batch()"
+        worker_runtime.contains("ToolRoundDriver"),
+        "worker_runtime.rs must own runtime tool rounds through ToolRoundDriver"
     );
 }
 
 #[test]
-fn ab3_sub_agent_no_longer_calls_tool_registry_execute_directly() {
+fn ab3_sub_agent_is_only_a_delegating_entrypoint() {
     let source = include_str!("../src/llm/sub_agent.rs");
+    assert!(
+        source.contains("SubagentWorkerRuntime"),
+        "sub_agent.rs must delegate to SubagentWorkerRuntime"
+    );
     assert!(
         !source.contains("tool_registry\n                .execute(")
             && !source.contains("tool_registry.execute("),

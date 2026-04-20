@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:test-driven-development` — each task must have a failing test before implementation. REQUIRED SUB-SKILL: `superpowers:verification-before-completion` — run `cargo test` and confirm output before marking any task done.
 
-**Goal:** 接通 core_memory 注入、修复 SSE error 静默丢弃、sub_agent 从混合桥接执行收敛到 RuntimeTool + ToolDispatcher batch 主路径
+**Goal:** 接通 core_memory 注入、修复 SSE error 静默丢弃，并把 subagent 工具执行收口到 runtime-first worker 主路径（AB3 的最终 owning file 由 U5 的 `worker_runtime.rs` 承担）
 **Tech Stack:** Rust, tokio
 **Worktree branch:** pzc
 
@@ -14,7 +14,7 @@
 |---|------|-----------|------|
 | AB1 | `build_iteration_context()` 第一个参数 `core_memory` 在 S4 路径始终传空字符串 | `chat_turn_driver.rs:703-710` | 跨对话记忆永远不注入 LLM |
 | AB2 | `process_sse_data()` 的 `"error"` event type 走 `_ => None` 静默丢弃 | `providers/claude.rs:492-495` | API 返回流式错误时调用方收不到通知 |
-| AB3 | `sub_agent.rs:292` 用 `for tc in &tool_calls` 串行执行，且直接走 `ToolRegistry::execute()` 混合桥接路径，与主路径 `ToolDispatcher::dispatch_batch()` 不一致 | `sub_agent.rs:292` | 浏览器 sub-agent 工具调用无法复用 runtime batch 调度/并发语义，架构不对齐 |
+| AB3 | subagent 工具 round 仍由 `sub_agent.rs` 自己 owning，和 runtime-first `ToolRoundDriver` / worker runtime 主路径分叉 | `src-tauri/src/llm/sub_agent.rs`、`src-tauri/src/runtime/agent/worker_runtime.rs` | 浏览器 sub-agent 无法真正共享 runtime tool round、Ask / cancel / transcript / background completion 语义，架构不对齐 |
 
 ---
 
@@ -244,15 +244,15 @@ fix(claude-provider): surface SSE error events as StreamEvent::Error instead of 
 
 ---
 
-## Task AB3 — sub_agent 迁移到 RuntimeTool + ToolDispatcher 路径
+## Task AB3 — subagent 工具 round 收口到 runtime-first worker 路径
 
 ### 目标
 
-将 `sub_agent.rs` 中通过 `ToolRegistry::execute()` 串行执行工具的循环，迁移为先基于 request-scoped `PluginContext` 构造 runtime dispatcher，再通过 `ToolDispatcher::dispatch_batch()` 执行，与主路径 `tool_round_driver.rs` 的批量调度语义一致。这是真实架构迁移，而非权宜之计。
+将 subagent 的工具执行从 `sub_agent.rs` 自维护 loop 中抽离，收口到 U5 新增的 `runtime/agent/worker_runtime.rs`。真正的执行主线改为：`worker_runtime` 持有 LLM loop，并通过 `ToolRoundDriver` + `QueryEngine::run_tool_call_with_bus()` 执行 runtime tool round；`sub_agent.rs` 只负责入口委托与结果类型导出。
 
 ### 现状分析
 
-**文件：** `src-tauri/src/llm/sub_agent.rs`
+**文件：** `src-tauri/src/llm/sub_agent.rs`、`src-tauri/src/runtime/agent/worker_runtime.rs`
 
 **当前串行循环（第 292-463 行）：**
 ```rust
@@ -322,7 +322,7 @@ let dispatcher = tool_registry.to_runtime_dispatcher(sub_plugin_ctx.clone()).awa
 
 ### 修改文件
 
-- **Modify:** `src-tauri/src/llm/sub_agent.rs`
+- **Modify:** `src-tauri/src/runtime/agent/worker_runtime.rs`
 - **Modify:** `src-tauri/src/llm/sub_agent.rs`
 - **Modify:** `src-tauri/tests/plan_ab_small_fixes_test.rs`
 

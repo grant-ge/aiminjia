@@ -123,6 +123,11 @@ impl QueryEngine {
         self
     }
 
+    pub fn with_read_file_state(mut self, read_file_state: Arc<FileStateCache>) -> Self {
+        self.read_file_state = read_file_state;
+        self
+    }
+
     pub fn with_max_budget_usd(mut self, max_budget_usd: f64) -> Self {
         self.max_budget_usd = Some(max_budget_usd);
         self
