@@ -12,6 +12,9 @@ const baseAsk: PendingAsk = {
   toolName: 'execute_python',
   message: '即将执行 Python 代码，是否允许？',
   suggestions: ['查看代码', '修改参数'],
+  mode: 'default',
+  rememberOptions: ['session', 'workspace', 'user'],
+  defaultDestination: 'workspace',
 }
 
 describe('PermissionAskDialog', () => {
@@ -59,7 +62,7 @@ describe('PermissionAskDialog', () => {
     expect(screen.getByText('修改参数')).toBeInTheDocument()
   })
 
-  it('calls onAllow when Allow button is clicked', () => {
+  it('calls onAllow with remember destination when remember option is selected', () => {
     const onAllow = vi.fn()
     render(
       <PermissionAskDialog
@@ -71,12 +74,16 @@ describe('PermissionAskDialog', () => {
       />,
     )
 
+    fireEvent.click(screen.getByLabelText('记住到工作区'))
     fireEvent.click(screen.getByRole('button', { name: /允许/i }))
 
-    expect(onAllow).toHaveBeenCalledTimes(1)
+    expect(onAllow).toHaveBeenCalledWith({
+      remember: true,
+      destination: 'workspace',
+    })
   })
 
-  it('calls onDeny when Deny button is clicked', () => {
+  it('calls onDeny with deny destination when Deny button is clicked', () => {
     const onDeny = vi.fn()
     render(
       <PermissionAskDialog
@@ -90,7 +97,10 @@ describe('PermissionAskDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /拒绝/i }))
 
-    expect(onDeny).toHaveBeenCalledTimes(1)
+    expect(onDeny).toHaveBeenCalledWith({
+      remember: false,
+      destination: 'session',
+    })
   })
 
   it('calls onCancel when ESC key is pressed', () => {
@@ -108,5 +118,21 @@ describe('PermissionAskDialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders remember destination choices', () => {
+    render(
+      <PermissionAskDialog
+        open={true}
+        ask={baseAsk}
+        onAllow={vi.fn()}
+        onDeny={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText('仅本次')).toBeInTheDocument()
+    expect(screen.getByLabelText('记住到工作区')).toBeInTheDocument()
+    expect(screen.getByLabelText('记住到用户级')).toBeInTheDocument()
   })
 })

@@ -29,4 +29,16 @@ describe('review_permission_ask: architecture constraints', () => {
     expect(source).toContain('onDeny')
     expect(source).toContain('onCancel')
   })
+
+  it('review_permission_ask_dialog_exposes_remember_controls', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/common/PermissionAskDialog.tsx'),
+      'utf8',
+    )
+
+    expect(source).toContain('rememberOptions')
+    expect(source).toContain('defaultDestination')
+    expect(source).toContain('记住到工作区')
+    expect(source).toContain('记住到用户级')
+  })
 })

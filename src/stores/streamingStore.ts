@@ -31,6 +31,9 @@ export interface PendingAsk {
   toolName: string
   message: string
   suggestions: string[] | null
+  mode: 'default' | 'plan' | 'dontAsk'
+  rememberOptions: Array<'session' | 'workspace' | 'user'> | null
+  defaultDestination: 'session' | 'workspace' | 'user' | null
 }
 
 export interface ConversationStreamState {

@@ -8,6 +8,7 @@ import { InputBar } from '@/components/layout/InputBar'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
+import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
 import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { useStreaming } from '@/hooks/useStreaming'
@@ -187,23 +188,23 @@ function App() {
   const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
   const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
 
-  const handleAllowAsk = async () => {
+  const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
     if (!activeAsk) return
     const toolCallId = activeAsk.toolCallId
     removePendingAsk(toolCallId)
     try {
-      await approvePermissionRequest(toolCallId, null)
+      await approvePermissionRequest(toolCallId, null, remember, destination)
     } catch (err) {
       console.error('[permission:ask] approve failed', err)
     }
   }
 
-  const handleDenyAsk = async () => {
+  const handleDenyAsk = async ({ remember, destination }: PermissionAskDecision) => {
     if (!activeAsk) return
     const toolCallId = activeAsk.toolCallId
     removePendingAsk(toolCallId)
     try {
-      await denyPermissionRequest(toolCallId)
+      await denyPermissionRequest(toolCallId, undefined, remember, destination)
     } catch (err) {
       console.error('[permission:ask] deny failed', err)
     }

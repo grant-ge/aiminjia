@@ -130,6 +130,9 @@ export interface PermissionAskPayload {
   toolName: string
   message: string
   suggestions: string[] | null
+  mode: 'default' | 'plan' | 'dontAsk'
+  rememberOptions: Array<'session' | 'workspace' | 'user'> | null
+  defaultDestination: 'session' | 'workspace' | 'user' | null
 }
 
 export type TurnOutcome =
@@ -183,15 +186,29 @@ export function stopStreaming(conversationId: string): Promise<void> {
 export function approvePermissionRequest(
   toolCallId: string,
   updatedInput: unknown,
+  remember?: boolean,
+  destination?: 'session' | 'workspace' | 'user',
 ): Promise<void> {
-  return invoke<void>('approve_permission_request', { toolCallId, updatedInput })
+  return invoke<void>('approve_permission_request', {
+    toolCallId,
+    updatedInput,
+    remember,
+    destination,
+  })
 }
 
 export function denyPermissionRequest(
   toolCallId: string,
   message?: string,
+  remember?: boolean,
+  destination?: 'session' | 'workspace' | 'user',
 ): Promise<void> {
-  return invoke<void>('deny_permission_request', { toolCallId, message })
+  return invoke<void>('deny_permission_request', {
+    toolCallId,
+    message,
+    remember,
+    destination,
+  })
 }
 
 export function cancelPermissionRequest(
