@@ -4,7 +4,7 @@
  *
  * Wired to useChat (send / stop) and useFileUpload (native file picker).
  */
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useChat } from '@/hooks/useChat'
@@ -13,6 +13,8 @@ import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
 import type { PendingFileInfo } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
+import type { SkillInfo } from '@/lib/tauri'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
@@ -104,6 +106,14 @@ export function InputBar() {
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // When the slash-command popover is open, its own capture-phase keydown
+    // listener handles Enter (to pick a skill). Skip our Enter-to-send here
+    // so we don't fire twice. The popover's onSelect handler will set the
+    // input text; user presses Enter AGAIN (popover now closed) to send.
+    if (slashOpen) {
+      return
+    }
+
     // Some WebView engines fire compositionEnd BEFORE keyDown when the user
     // presses Enter to confirm an IME candidate.  In that case the native
     // `isComposing` property on the event is the only reliable guard.
@@ -241,7 +251,7 @@ export function InputBar() {
         )}
 
         {/* Input row */}
-        <div className="flex items-end gap-2 px-4 py-3">
+        <div className="flex items-center gap-2 px-4 py-3">
           {/* Upload button */}
           <div className="relative shrink-0" ref={attachmentMenuRef}>
             <button
@@ -343,6 +353,15 @@ export function InputBar() {
             }}
             disabled={isStreaming}
           />
+
+            {slashOpen && (
+              <SlashCommandPopover
+                filterText={slashMatch!.filter}
+                onSelect={handleSlashSelect}
+                onClose={handleSlashClose}
+              />
+            )}
+          </div>
 
           {/* Send / Stop button */}
           <button

@@ -244,6 +244,87 @@ elif chart_type == 'histogram':
     fig.add_trace(go.Histogram(x=values,
                                 nbinsx=options.get('bins', 20)))
 
+elif chart_type == 'nine_box':
+    # 9-box talent grid (3x3 matrix of perf x potential).
+    #
+    # Accepts data['grid'] = {{ '中文标签': {{
+    #     'count': N, 'percentage': P,
+    #     'perf_level': 1|2|3, 'pot_level': 1|2|3,
+    #     'label_en': 'English label' (optional)
+    # }} }}
+    # — exactly the shape produced by talent-9box scripts/step2.py.
+    #
+    # Visual: chart top = perf high; chart left = pot low (HR convention).
+    # Colors are 4-tier health, NOT magnitude — green = top performers,
+    # red = at-risk. Cell text shows label + count + %.
+    grid = data.get('grid', {{}})
+
+    # Health tier mapping (1=red, 2=orange, 3=yellow, 4=green)
+    def _tier(perf, pot):
+        if perf == 3 and pot == 3:                   return 4  # Star
+        if (perf, pot) in [(3, 2), (2, 3)]:          return 4  # Core / Rising
+        if (perf, pot) in [(3, 1), (2, 2)]:          return 3  # Expert / Steady
+        if (perf, pot) in [(2, 1), (1, 3), (1, 2)]:  return 2  # Watch list / dev
+        if perf == 1 and pot == 1:                   return 1  # Underperformer
+        return 2
+
+    z = [[0]*3 for _ in range(3)]
+    text_grid = [['']*3 for _ in range(3)]
+    hover_grid = [['']*3 for _ in range(3)]
+
+    for label, cell in grid.items():
+        try:
+            perf = int(cell.get('perf_level', 0))
+            pot = int(cell.get('pot_level', 0))
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= perf <= 3 and 1 <= pot <= 3):
+            continue
+        row_idx = 3 - perf  # perf 3 → row 0 (top of chart)
+        col_idx = pot - 1   # pot 1 → col 0 (left of chart)
+        z[row_idx][col_idx] = _tier(perf, pot)
+        cnt = cell.get('count', 0)
+        pct = cell.get('percentage', 0)
+        try:
+            pct_str = f"{{pct:.1f}}"
+        except (TypeError, ValueError):
+            pct_str = str(pct)
+        text_grid[row_idx][col_idx] = f"<b>{{label}}</b><br>{{cnt}} 人 ({{pct_str}}%)"
+        en = cell.get('label_en', '')
+        hover_grid[row_idx][col_idx] = (
+            f"{{label}} ({{en}})<br>{{cnt}} 人，占比 {{pct_str}}%"
+            if en else f"{{label}}<br>{{cnt}} 人，占比 {{pct_str}}%"
+        )
+
+    # Discrete 4-tier colorscale (light pastels for readability with text).
+    # Tier values 1..4 → normalized 0, 0.333, 0.667, 1.0 (zmin=1, zmax=4).
+    # Boundaries at midpoints 0.167, 0.5, 0.833 give clean step transitions.
+    colorscale = [
+        [0.000, '#ffcdd2'], [0.167, '#ffcdd2'],  # tier 1 — red
+        [0.167, '#ffccbc'], [0.500, '#ffccbc'],  # tier 2 — orange
+        [0.500, '#fff9c4'], [0.833, '#fff9c4'],  # tier 3 — yellow
+        [0.833, '#c8e6c9'], [1.000, '#c8e6c9'],  # tier 4 — green
+    ]
+
+    fig.add_trace(go.Heatmap(
+        z=z,
+        x=['潜力 低', '潜力 中', '潜力 高'],
+        y=['绩效 高', '绩效 中', '绩效 低'],
+        text=text_grid,
+        texttemplate='%{{text}}',
+        textfont=dict(size=13, color='#212121'),
+        hovertext=hover_grid,
+        hovertemplate='%{{hovertext}}<extra></extra>',
+        colorscale=colorscale,
+        showscale=False,
+        zmin=1, zmax=4,
+        xgap=4, ygap=4,
+    ))
+
+    # Square aspect, no axis lines/ticks (cell labels are in text)
+    fig.update_xaxes(side='top', showgrid=False, zeroline=False, fixedrange=True)
+    fig.update_yaxes(showgrid=False, zeroline=False, fixedrange=True, autorange='reversed')
+
 fig.update_layout(
     title=dict(text=title, x=0.5),
     template='plotly_white',
@@ -297,6 +378,25 @@ mod tests {
         assert!(code.contains("chart_type == 'heatmap'"));
         assert!(code.contains("chart_type == 'pie'"));
         assert!(code.contains("chart_type == 'histogram'"));
+        assert!(code.contains("chart_type == 'nine_box'"));
+    }
+
+    #[test]
+    fn test_build_chart_python_nine_box_renders_grid() {
+        let code = build_chart_python("nine_box", "九宫格", "/tmp/d.json", "/tmp/o.json", "/tmp/c.html");
+        // Nine-box branch must read data['grid'] and emit a Heatmap
+        assert!(code.contains("data.get('grid'"));
+        assert!(code.contains("go.Heatmap"));
+        // Y axis must put '绩效 高' first (autorange='reversed' makes it top of chart)
+        assert!(code.contains("绩效 高"));
+        assert!(code.contains("潜力 低"));
+        // Tier health-color scale (4 discrete tiers, must contain green for stars)
+        assert!(code.contains("#c8e6c9"));
+        assert!(code.contains("#ffcdd2"));
+        // Boundary check: 0.167 / 0.5 / 0.833 (clean step transitions)
+        assert!(code.contains("0.167"));
+        assert!(code.contains("0.500"));
+        assert!(code.contains("0.833"));
     }
 
     #[test]

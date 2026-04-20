@@ -9,3 +9,4 @@ pub mod project_memory;
 pub mod settings;
 pub mod skill_management;
 pub mod workspace;
+pub mod skill_smith;

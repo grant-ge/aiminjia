@@ -13,7 +13,9 @@ use tauri::State;
 /// 3. For HTML: save directly to workspace/exports/
 ///    For PDF: write HTML to temp, run Python (weasyprint) to convert
 /// 4. Record in generated_files table
-/// 5. Return file info
+/// 5. Return file info (includes `wasFallback` + `requestedFormat` so the
+///    frontend can surface "PDF engine unavailable — exported as HTML" UX
+///    instead of silently delivering HTML when the user asked for PDF).
 #[tauri::command]
 pub async fn export_conversation(
     facade: State<'_, Arc<RuntimeRepositoryFacade>>,
@@ -129,10 +131,18 @@ pub async fn export_conversation(
             "fileName": output_filename,
             "storedPath": stored_path,
             "fileSize": file_size,
+            "requestedFormat": format,
+            "actualFormat": "html",
+            "wasFallback": false,
         }));
     }
 
-    // For PDF: write HTML to temp and run Python conversion
+    // For PDF: write HTML to temp and run Python conversion.
+    // NOTE: weasyprint is not currently shipped in the bundled Python runtime
+    // (its system-lib requirements are incompatible with pure-Python bundling).
+    // The fallback path below surfaces this to the user as an HTML file +
+    // instruction to "open in browser → print to PDF". A future version will
+    // replace this with WebView-native print-to-PDF for full-fidelity output.
     let python_code = format!(
         r#"
 import json, sys
@@ -149,7 +159,7 @@ except ImportError:
     import shutil
     html_out = pdf_path.replace('.pdf', '.html')
     shutil.copy(html_path, html_out)
-    print(json.dumps({{"status": "fallback_html", "path": html_out, "error": "weasyprint not installed, exported as HTML instead. Install with: pip install weasyprint"}}))
+    print(json.dumps({{"status": "fallback_html", "path": html_out, "error": "PDF engine (weasyprint) not available in bundled runtime; exported as HTML. Open in browser → Print → Save as PDF."}}))
 except Exception as e:
     print(json.dumps({{"status": "error", "error": str(e)}}))
 "#,
@@ -162,12 +172,16 @@ except Exception as e:
     std::fs::write(&script_path, &python_code)
         .map_err(|e| format!("Failed to write export script: {}", e))?;
 
-    let py_output = tokio::process::Command::new("python3")
-        .arg("-u")
+    let mut py_cmd = tokio::process::Command::new("python3");
+    py_cmd.arg("-u")
         .arg(&script_path)
-        .env("PYTHONIOENCODING", "utf-8")
-        .output()
-        .await
+        .env("PYTHONIOENCODING", "utf-8");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        py_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let py_output = py_cmd.output().await
         .map_err(|e| format!("Failed to run python3: {}", e))?;
 
     // Cleanup script
@@ -207,7 +221,9 @@ except Exception as e:
     }
 
     // Handle fallback case (PDF → HTML fallback when weasyprint not available)
-    let (final_path, final_stored_path, final_filename, final_ext) = if status == "fallback_html" {
+    let was_fallback = status == "fallback_html";
+    let fallback_message = python_output.get("error").and_then(|v| v.as_str()).map(String::from);
+    let (final_path, final_stored_path, final_filename, final_ext) = if was_fallback {
         let html_filename = output_filename.replace(".pdf", ".html");
         let html_stored = format!("exports/{}", html_filename);
         let html_out = python_output
@@ -265,6 +281,10 @@ except Exception as e:
         "fileName": final_filename,
         "storedPath": final_stored_path,
         "fileSize": file_size,
+        "requestedFormat": format,
+        "actualFormat": final_ext,
+        "wasFallback": was_fallback,
+        "fallbackMessage": fallback_message,
     }))
 }
 

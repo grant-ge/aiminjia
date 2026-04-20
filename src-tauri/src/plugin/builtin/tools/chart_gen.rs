@@ -22,7 +22,8 @@ impl ToolPlugin for ChartGenTool {
 
     fn description(&self) -> &str {
         "Generate an interactive data visualization chart (Plotly HTML). \
-         Supports bar, line, scatter, box, heatmap, pie, and histogram types."
+         Supports bar, line, scatter, box, heatmap, pie, histogram, and nine_box (人才九宫格) types. \
+         Use 'nine_box' for talent grid visualization with data={grid: {label: {count, percentage, perf_level, pot_level, label_en}, ...}}."
     }
 
     fn input_schema(&self) -> Value {
@@ -31,7 +32,7 @@ impl ToolPlugin for ChartGenTool {
             "properties": {
                 "chart_type": {
                     "type": "string",
-                    "enum": ["bar", "line", "scatter", "box", "heatmap", "pie", "histogram"]
+                    "enum": ["bar", "line", "scatter", "box", "heatmap", "pie", "histogram", "nine_box"]
                 },
                 "title": { "type": "string" },
                 "data_file": {

@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Bump AIjia Homebrew cask version in grant-ge/homebrew-tap.
+
+Runs locally after CI finishes a release. CI has already uploaded all
+platform bundles + update.json to OSS. This script only patches the
+cask version field and pushes to the tap.
+
+Usage:
+  python3 scripts/bump-homebrew.py <version>
+"""
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 bump-homebrew.py <version>")
+        sys.exit(1)
+    version = sys.argv[1].lstrip("v")
+
+    tap_path = Path("/opt/homebrew/Library/Taps/grant-ge/homebrew-tap")
+    if not tap_path.exists():
+        result = subprocess.run(
+            ["brew", "--repository", "grant-ge/tap"],
+            capture_output=True, text=True,
+        )
+        tap_path = Path(result.stdout.strip()) if result.returncode == 0 else None
+
+    cask_file = tap_path / "Casks" / "aijia.rb" if tap_path else None
+    if not cask_file or not cask_file.exists():
+        print(f"[error] Homebrew tap not found. brew tap grant-ge/tap first.")
+        sys.exit(1)
+
+    content = cask_file.read_text()
+    new_content = re.sub(r'version "\d+\.\d+\.\d+"', f'version "{version}"', content)
+    if new_content == content:
+        print(f"[ok] Cask already at v{version}")
+        return
+
+    cask_file.write_text(new_content)
+    subprocess.run(["git", "add", "Casks/aijia.rb"], cwd=tap_path, check=True)
+    subprocess.run(["git", "commit", "-m", f"chore: bump aijia to v{version}"],
+                   cwd=tap_path, check=True)
+    subprocess.run(["gh", "auth", "switch", "--user", "grant-ge"], capture_output=True)
+    try:
+        r = subprocess.run(["git", "push", "origin", "main"],
+                           cwd=tap_path, capture_output=True, text=True)
+    finally:
+        subprocess.run(["gh", "auth", "switch", "--user", "gezhigang000"], capture_output=True)
+
+    if r.returncode == 0:
+        print(f"[ok] Homebrew cask updated to v{version}")
+        print(f"    brew tap grant-ge/tap && brew install --cask aijia")
+    else:
+        print(f"[error] git push failed: {r.stderr.strip()}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

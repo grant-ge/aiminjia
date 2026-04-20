@@ -1,0 +1,82 @@
+# Skill-Smith 工作流（8 步）
+#
+# M2 骨架阶段：所有 prompt 都是占位，tools_only 暂用兜底工具，工作流走
+# confirm/any 让用户手动点过每步。M3 阶段会填充真实 prompt + 工具调用：
+# write_skill_draft_file / validate_skill_draft / dry_run_skill_draft /
+# commit_skill_draft / export_skill_draft。
+#
+# Phase 2（v0.6.0）启用 step4（Python 生成）。
+# Phase 3（v0.7.0）启用 step5（知识库生成）+ step0 embedding Top-K 检索。
+# Phase 4（v0.8.0）step2 可插入 [playwright] 段以生成数据采集步骤。
+
+[[steps]]
+id = "step0"
+name = "意图采集"
+prompt = "prompts/step0-intent.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step1"
+name = "生成 plugin.toml"
+prompt = "prompts/step1-plugin-manifest.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step2"
+name = "生成 workflow.toml"
+prompt = "prompts/step2-workflow.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step3"
+name = "生成 prompts"
+prompt = "prompts/step3-prompts.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 5
+token_budget = 8192
+advance_on = "confirm"
+
+[[steps]]
+id = "step4"
+name = "生成 Python 脚本（可选）"
+prompt = "prompts/step4-scripts.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 3
+token_budget = 4096
+advance_on = "any"
+
+[[steps]]
+id = "step5"
+name = "生成知识库（可选）"
+prompt = "prompts/step5-knowledge.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 3
+token_budget = 4096
+advance_on = "any"
+
+[[steps]]
+id = "step6"
+name = "Dry-run 校验"
+prompt = "prompts/step6-dryrun.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 3
+token_budget = 4096
+advance_on = "confirm"
+
+[[steps]]
+id = "step7"
+name = "交付（安装 / 导出）"
+prompt = "prompts/step7-deliver.md"
+tools_only = ["save_analysis_note"]
+max_iterations = 3
+token_budget = 4096
+advance_on = "confirm"

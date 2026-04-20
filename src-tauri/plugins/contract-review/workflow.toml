@@ -15,7 +15,7 @@ precompute = "scripts/step1.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -27,7 +27,7 @@ precompute = "scripts/step2.py"
 tools_only = ["export_data"]
 tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
-max_iterations_feedback = 3
+max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
 
@@ -35,7 +35,7 @@ advance_on = "confirm"
 id = "step3"
 name = "审查报告与修改建议"
 prompt = "prompts/step3.md"
-tools_only = ["generate_report", "export_data"]
+tools_only = ["generate_report", "export_data", "generate_slides"]
 max_iterations = 5
 token_budget = 8192
 advance_on = "confirm"

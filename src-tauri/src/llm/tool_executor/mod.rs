@@ -26,6 +26,9 @@ mod search;
 mod slides;
 mod stats;
 mod util;
+mod memory;
+mod internal_system;
+pub(crate) mod skill_smith;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;

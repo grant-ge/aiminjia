@@ -77,14 +77,23 @@
     "saved": "已保存",
     "exportFailed": "导出失败",
     "exportAsPdf": "导出为 PDF",
-    "exportAsHtml": "导出为 HTML"
+    "exportAsHtml": "导出为 HTML",
+    "exportAsPptx": "导出为 PPT",
+    "exportAsXlsx": "导出为 Excel",
+    "exportPdfFallback": "PDF 生成不可用，已导出为 HTML",
+    "exportPdfFallbackHint": "可在浏览器打开 {{fileName}}，使用浏览器的"打印 → 另存为 PDF"功能保存"
   },
   "inputBar": {
     "attachData": "添加文件或本地目录",
     "uploadFile": "上传文件（Excel/Word/PDF）",
     "placeholderWithFile": "添加说明（可选），然后按回车发送...",
     "placeholder": "随时提问，或上传文件让我分析...",
-    "analyzeFile": "请分析这个文件"
+    "analyzeFile": "请分析这个文件",
+    "slashEmpty": "没有匹配的技能",
+    "slashFiltered": "{{count}} 个技能",
+    "slashNav": "上下移动",
+    "slashSelect": "选择",
+    "slashClose": "关闭"
   },
   "chatArea": {
     "fileNotFound": "文件未找到",
@@ -99,6 +108,23 @@
     "askAnything": "也可以直接问我任何工作相关问题",
     "hello": "你好"
   },
+
+  "skillSmith": {
+    "banner": {
+      "title": "你有 {{count}} 个未完成的技能草稿",
+      "title_one": "你有 1 个未完成的技能草稿",
+      "unnamed": "未命名",
+      "resume": "继续",
+      "discard": "丢弃",
+      "discardTitle": "丢弃技能草稿",
+      "discardConfirm": "确定要丢弃草稿「{{name}}」吗？此操作不可撤销。",
+      "justNow": "刚刚",
+      "minutesAgo": "{{n}} 分钟前",
+      "hoursAgo": "{{n}} 小时前",
+      "daysAgo": "{{n}} 天前"
+    }
+  },
+
   "aiBubble": {
     "sendFailed": "发送失败",
     "sendFailedDesc": "未能发送回复，请重试。",

@@ -15,7 +15,6 @@ ENDPOINT = "https://oss-cn-beijing.aliyuncs.com"
 CDN_BASE = "https://lotus.renlijia.com"
 OSS_PREFIX = "aijia"
 KEYCHAIN_SERVICE = "aijia-oss"
-VERSION = "0.4.1"
 
 
 def get_oss_credentials():
@@ -45,6 +44,12 @@ def upload_to_oss(bucket, local_file, oss_key):
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 upload-x64.py <version>")
+        print("Example: python3 upload-x64.py 0.4.10")
+        sys.exit(1)
+    VERSION = sys.argv[1]
+
     key_id, key_secret = get_oss_credentials()
     if not key_id:
         print("Error: OSS credentials not found")

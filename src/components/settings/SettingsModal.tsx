@@ -761,7 +761,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       )}
 
       {mainTab === 'skills' && (
-        <SkillsTab />
+        <SkillsTab onRequestClose={onClose} />
       )}
 
       {mainTab === 'mcp' && (

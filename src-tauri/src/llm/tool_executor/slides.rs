@@ -20,14 +20,51 @@ pub(crate) async fn handle_generate_slides(
 ) -> Result<FileGenResult> {
     // LLM sometimes sends slides as a JSON string instead of an array — auto-parse it.
     let slides_owned: Vec<Value>;
-    let slides = match args.get("slides") {
-        Some(Value::Array(arr)) => arr,
-        Some(Value::String(s)) => {
-            slides_owned = serde_json::from_str(s)
-                .map_err(|e| anyhow::anyhow!("slides is a string but not valid JSON array: {e}"))?;
-            &slides_owned
+    let slides = if let Some(source_path) = args.get("source").and_then(|v| v.as_str()) {
+        let full_path = if std::path::Path::new(source_path).is_absolute() {
+            std::path::PathBuf::from(source_path)
+        } else {
+            ctx.workspace_path.join(source_path)
+        };
+        let canonical = full_path.canonicalize().map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read source file '{}': {}. Use execute_python with _save_slides() to write the JSON file first.",
+                source_path, e
+            )
+        })?;
+        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        if !canonical.starts_with(&workspace_canonical) {
+            anyhow::bail!(
+                "Source file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
+                source_path
+            );
         }
-        _ => anyhow::bail!("Missing required array argument: slides"),
+        let content = std::fs::read_to_string(&canonical).map_err(|e| {
+            anyhow::anyhow!("Failed to read source file '{}': {}.", source_path, e)
+        })?;
+        slides_owned = serde_json::from_str::<Vec<Value>>(&content).map_err(|e| {
+            anyhow::anyhow!("Failed to parse slides from '{}': {}. The file must contain a JSON array of slide objects.", source_path, e)
+        })?;
+        if slides_owned.is_empty() {
+            anyhow::bail!("Source file '{}' contains an empty slides array.", source_path);
+        }
+        log::info!("[generate_slides] Loaded {} slides from source file: {}", slides_owned.len(), source_path);
+        &slides_owned
+    } else {
+        // Fallback: inline slides (LLM sometimes sends as JSON string too — auto-parse).
+        match args.get("slides") {
+            Some(Value::Array(arr)) => arr,
+            Some(Value::String(s)) => {
+                slides_owned = serde_json::from_str(s)
+                    .map_err(|e| anyhow::anyhow!("slides is a string but not valid JSON array: {e}"))?;
+                &slides_owned
+            }
+            _ => anyhow::bail!(
+                "Missing slides data. Provide either:\n\
+                 1. 'source': path to a JSON file (preferred — use _save_slides() in execute_python)\n\
+                 2. 'slides': inline array (only for very short decks)"
+            ),
+        }
     };
 
     let title = optional_str(args, "title").unwrap_or_else(|| {

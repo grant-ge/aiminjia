@@ -77,14 +77,23 @@
     "saved": "saved",
     "exportFailed": "Export failed",
     "exportAsPdf": "Export as PDF",
-    "exportAsHtml": "Export as HTML"
+    "exportAsHtml": "Export as HTML",
+    "exportAsPptx": "Export as PPT",
+    "exportAsXlsx": "Export as Excel",
+    "exportPdfFallback": "PDF generator unavailable — exported as HTML",
+    "exportPdfFallbackHint": "Open {{fileName}} in your browser, then use Print → Save as PDF."
   },
   "inputBar": {
     "attachData": "Add file or local directory",
     "uploadFile": "Upload file (Excel/Word/PDF)",
     "placeholderWithFile": "Add a note (optional), then press Enter to send...",
     "placeholder": "Ask anything, or upload a file for analysis...",
-    "analyzeFile": "Please analyze this file"
+    "analyzeFile": "Please analyze this file",
+    "slashEmpty": "No matching skills",
+    "slashFiltered": "{{count}} skill(s)",
+    "slashNav": "navigate",
+    "slashSelect": "select",
+    "slashClose": "close"
   },
   "chatArea": {
     "fileNotFound": "File not found",
@@ -99,6 +108,23 @@
     "askAnything": "Or ask me any work-related question",
     "hello": "Hello"
   },
+
+  "skillSmith": {
+    "banner": {
+      "title": "You have {{count}} unfinished skill drafts",
+      "title_one": "You have 1 unfinished skill draft",
+      "unnamed": "Unnamed",
+      "resume": "Resume",
+      "discard": "Discard",
+      "discardTitle": "Discard skill draft",
+      "discardConfirm": "Discard the draft \"{{name}}\"? This cannot be undone.",
+      "justNow": "just now",
+      "minutesAgo": "{{n}} min ago",
+      "hoursAgo": "{{n}} h ago",
+      "daysAgo": "{{n}} d ago"
+    }
+  },
+
   "aiBubble": {
     "sendFailed": "Send failed",
     "sendFailedDesc": "Failed to send reply. Please try again.",

@@ -56,6 +56,13 @@ pub mod read_page_content;
 pub mod report_gen;
 pub mod slides_gen;
 pub mod web_search;
+// Skill-smith — conversational skill creation (Phase 11 M3.1)
+pub mod skill_smith_create_draft;
+pub mod skill_smith_write_file;
+pub mod skill_smith_validate;
+pub mod skill_smith_dry_run;
+pub mod skill_smith_install;
+pub mod skill_smith_export;
 
 use crate::plugin::ToolRegistry;
 use std::sync::Arc;
