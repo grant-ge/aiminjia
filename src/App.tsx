@@ -9,8 +9,10 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
+import { WhatsNewModal } from '@/components/common/WhatsNewModal'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
+import { useWhatsNew } from '@/hooks/useWhatsNew'
 import { useChat } from '@/hooks/useChat'
 import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
@@ -25,6 +27,7 @@ import { useBrandingStore } from '@/stores/brandingStore'
 function App() {
   useStreaming()
   useUpdater()
+  const { showWhatsNew, dismissWhatsNew, currentVersion, changes } = useWhatsNew()
   const { t, i18n } = useTranslation()
 
   const { loadConversations } = useChat()
@@ -185,6 +188,12 @@ function App() {
         </main>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <WhatsNewModal
+        open={showWhatsNew}
+        onClose={dismissWhatsNew}
+        version={currentVersion}
+        changes={changes}
+      />
       <ToastContainer />
     
       {showPersonaSelector && (
