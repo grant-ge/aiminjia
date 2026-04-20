@@ -54,7 +54,8 @@
       "python-runtime": "python-runtime",
       "playwright-runtime": "playwright-runtime",
       "prompts": "prompts",
-      "plugins": "plugins"
+      "plugins": "plugins",
+      "changelog.json": "changelog.json"
     }
   }
 }

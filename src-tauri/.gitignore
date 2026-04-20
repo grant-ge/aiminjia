@@ -7,3 +7,6 @@
 # Ignore contents but keep the directory (Tauri needs it for bundle.resources validation)
 /python-runtime/*
 !/python-runtime/.gitkeep
+
+# Copied at build time from lotus/code/home/changelog.json
+/changelog.json

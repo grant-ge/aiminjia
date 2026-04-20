@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "curl -fsSL https://lotus.renlijia.com/changelog.json -o src-tauri/changelog.json 2>/dev/null || true",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
