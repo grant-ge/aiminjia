@@ -63,6 +63,8 @@ pub enum RuntimeToolCallOutcome {
         tool_call_id: String,
         /// Name of the tool that needs confirmation.
         tool_name: String,
+        /// Capability scopes declared by the tool definition when Ask occurred.
+        capability_scopes: Vec<String>,
         /// Original tool call request so the driver can replay it after user approval.
         original_request: RuntimeToolCallRequest,
         /// The structured permission decision from the pipeline.

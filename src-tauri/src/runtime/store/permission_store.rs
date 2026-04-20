@@ -1,23 +1,89 @@
-//! 权限决策持久化存储。
+//! 权限规则存储。
 //!
-//! 存储用户对工具 capability scope 的授权决策，支持“本次允许”和“始终允许”两种模式。
-//! 决策按 scope 键存储，JSON 格式持久化到工作区目录。
+//! Plan-U2 的最小落地版本采用三层本地来源：
+//! - `session`：只在当前进程内有效
+//! - `workspace`：当前工作区配置
+//! - `user`：当前用户全局配置
+//!
+//! 兼容旧格式 `tool:scope -> PolicyDecision`，避免现有测试与历史数据立即失效。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
+use crate::storage::file_store::io::atomic_write_json;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionSource {
+    Session,
+    Workspace,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "value")]
+pub enum PermissionScope {
+    Scope(String),
+    PathGlob(String),
+    CommandPattern(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRule {
+    pub tool_name: String,
+    pub scope: PermissionScope,
+    pub decision: PolicyDecision,
+    pub source: PermissionSource,
+}
+
+impl PermissionRule {
+    pub fn simple(
+        tool_name: impl Into<String>,
+        scope: PermissionScope,
+        decision: PolicyDecision,
+        source: PermissionSource,
+    ) -> Self {
+        Self {
+            tool_name: tool_name.into(),
+            scope,
+            decision,
+            source,
+        }
+    }
+
+    pub fn legacy_key(&self) -> Option<String> {
+        match &self.scope {
+            PermissionScope::Scope(scope) => Some(format!("{}:{}", self.tool_name, scope)),
+            PermissionScope::PathGlob(_) | PermissionScope::CommandPattern(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionStoreSnapshot {
+    pub rules: Vec<PermissionRule>,
+    #[serde(default)]
+    pub legacy: HashMap<String, PolicyDecision>,
+}
+
+impl Default for PermissionStoreSnapshot {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            legacy: HashMap::new(),
+        }
+    }
+}
 
 /// 权限决策结果。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PolicyDecision {
-    /// 允许（本次会话有效）。
     Allow,
-    /// 始终允许（持久化，跨会话有效）。
     AlwaysAllow,
-    /// 拒绝（本次会话有效）。
     Deny,
-    /// 始终拒绝（持久化，跨会话有效）。
     AlwaysDeny,
 }
 
@@ -34,82 +100,260 @@ impl PolicyDecision {
     }
 }
 
-/// 内存 + 文件持久化的权限决策存储。
+#[derive(Default)]
+struct PermissionLayer {
+    rules: Vec<PermissionRule>,
+    legacy: HashMap<String, PolicyDecision>,
+}
+
+impl PermissionLayer {
+    fn upsert_rule(&mut self, rule: PermissionRule) {
+        if let Some(existing) = self.rules.iter_mut().find(|candidate| {
+            candidate.tool_name == rule.tool_name && candidate.scope == rule.scope
+        }) {
+            *existing = rule.clone();
+        } else {
+            self.rules.push(rule.clone());
+        }
+
+        if let Some(key) = rule.legacy_key() {
+            self.legacy.insert(key, rule.decision);
+        }
+    }
+
+    fn record_legacy(&mut self, scope_key: String, decision: PolicyDecision, source: PermissionSource) {
+        self.legacy.insert(scope_key.clone(), decision.clone());
+
+        if let Some((tool_name, scope)) = split_legacy_key(&scope_key) {
+            self.upsert_rule(PermissionRule::simple(
+                tool_name,
+                PermissionScope::Scope(scope),
+                decision,
+                source,
+            ));
+        }
+    }
+
+    fn get_rule(&self, tool_name: &str, scope: &PermissionScope) -> Option<PolicyDecision> {
+        self.rules
+            .iter()
+            .find(|rule| rule.tool_name == tool_name && &rule.scope == scope)
+            .map(|rule| rule.decision.clone())
+    }
+
+    fn get_legacy(&self, scope_key: &str) -> Option<PolicyDecision> {
+        self.legacy.get(scope_key).cloned()
+    }
+
+    fn snapshot_with_source(&self, source: PermissionSource) -> PermissionStoreSnapshot {
+        let rules = self
+            .rules
+            .iter()
+            .cloned()
+            .map(|mut rule| {
+                rule.source = source;
+                rule
+            })
+            .collect();
+        PermissionStoreSnapshot {
+            rules,
+            legacy: self.legacy.clone(),
+        }
+    }
+}
+
+fn split_legacy_key(scope_key: &str) -> Option<(String, String)> {
+    let (tool_name, scope) = scope_key.split_once(':')?;
+    Some((tool_name.to_string(), scope.to_string()))
+}
+
+fn load_snapshot(path: &PathBuf, source: PermissionSource) -> PermissionLayer {
+    let mut layer = PermissionLayer::default();
+    if !path.exists() {
+        return layer;
+    }
+
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return layer;
+    };
+
+    if let Ok(snapshot) = serde_json::from_str::<PermissionStoreSnapshot>(&content) {
+        layer.rules = snapshot
+            .rules
+            .into_iter()
+            .map(|mut rule| {
+                rule.source = source;
+                rule
+            })
+            .collect();
+        layer.legacy = snapshot.legacy;
+        return layer;
+    }
+
+    if let Ok(legacy) = serde_json::from_str::<HashMap<String, PolicyDecision>>(&content) {
+        for (key, decision) in legacy {
+            layer.record_legacy(key, decision, source);
+        }
+    }
+
+    layer
+}
+
 pub struct PermissionStore {
-    /// 持久化决策（跨会话）：scope_key → decision
-    persistent: RwLock<HashMap<String, PolicyDecision>>,
-    /// 会话级决策（本次运行有效）：scope_key → decision
-    session: RwLock<HashMap<String, PolicyDecision>>,
-    /// 持久化文件路径。
-    file_path: Option<PathBuf>,
+    session: RwLock<PermissionLayer>,
+    workspace: RwLock<PermissionLayer>,
+    user: RwLock<PermissionLayer>,
+    workspace_file_path: Option<PathBuf>,
+    user_file_path: Option<PathBuf>,
 }
 
 impl PermissionStore {
-    /// 创建内存 only 的存储（测试用）。
     pub fn in_memory() -> Self {
         Self {
-            persistent: RwLock::new(HashMap::new()),
-            session: RwLock::new(HashMap::new()),
-            file_path: None,
+            session: RwLock::new(PermissionLayer::default()),
+            workspace: RwLock::new(PermissionLayer::default()),
+            user: RwLock::new(PermissionLayer::default()),
+            workspace_file_path: None,
+            user_file_path: None,
         }
     }
 
-    /// 创建带持久化的存储。
     pub fn with_file(path: PathBuf) -> Self {
-        let store = Self {
-            persistent: RwLock::new(HashMap::new()),
-            session: RwLock::new(HashMap::new()),
-            file_path: Some(path.clone()),
-        };
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(map) = serde_json::from_str::<HashMap<String, PolicyDecision>>(&content) {
-                    *store.persistent.write().unwrap() = map;
-                }
-            }
-        }
-        store
+        Self::with_layer_files(Some(path), None)
     }
 
-    /// 查询 scope 的当前决策（持久化优先，其次会话级）。
+    pub fn with_layer_files(workspace_file_path: Option<PathBuf>, user_file_path: Option<PathBuf>) -> Self {
+        let workspace = workspace_file_path
+            .as_ref()
+            .map(|path| load_snapshot(path, PermissionSource::Workspace))
+            .unwrap_or_default();
+        let user = user_file_path
+            .as_ref()
+            .map(|path| load_snapshot(path, PermissionSource::User))
+            .unwrap_or_default();
+
+        Self {
+            session: RwLock::new(PermissionLayer::default()),
+            workspace: RwLock::new(workspace),
+            user: RwLock::new(user),
+            workspace_file_path,
+            user_file_path,
+        }
+    }
+
     pub fn get(&self, scope_key: &str) -> Option<PolicyDecision> {
-        if let Some(d) = self.persistent.read().unwrap().get(scope_key) {
-            return Some(d.clone());
-        }
-        self.session.read().unwrap().get(scope_key).cloned()
+        self.session
+            .read()
+            .unwrap()
+            .get_legacy(scope_key)
+            .or_else(|| self.workspace.read().unwrap().get_legacy(scope_key))
+            .or_else(|| self.user.read().unwrap().get_legacy(scope_key))
     }
 
-    /// 记录一次决策。
+    pub fn get_for_scope(&self, tool_name: &str, scope: &str) -> Option<PolicyDecision> {
+        let permission_scope = PermissionScope::Scope(scope.to_string());
+        self.session
+            .read()
+            .unwrap()
+            .get_rule(tool_name, &permission_scope)
+            .or_else(|| self.workspace.read().unwrap().get_rule(tool_name, &permission_scope))
+            .or_else(|| self.user.read().unwrap().get_rule(tool_name, &permission_scope))
+            .or_else(|| self.get(&format!("{}:{}", tool_name, scope)))
+    }
+
     pub fn record(&self, scope_key: String, decision: PolicyDecision) {
-        if decision.is_persistent() {
-            let mut p = self.persistent.write().unwrap();
-            p.insert(scope_key, decision);
-            drop(p);
-            self.flush_persistent();
+        let destination = if decision.is_persistent() {
+            PermissionSource::Workspace
         } else {
-            self.session.write().unwrap().insert(scope_key, decision);
-        }
+            PermissionSource::Session
+        };
+        self.record_legacy_to(destination, scope_key, decision);
     }
 
-    fn flush_persistent(&self) {
-        if let Some(path) = &self.file_path {
-            let map = self.persistent.read().unwrap();
-            if let Ok(json) = serde_json::to_string_pretty(&*map) {
-                if let Err(e) = std::fs::write(path, json) {
-                    log::warn!(
-                        "[PermissionStore] Failed to flush persistent decisions to {:?}: {}",
-                        path,
-                        e
-                    );
-                }
+    pub fn record_to(&self, destination: crate::runtime::tools::permission::PermissionDestination, rule: PermissionRule) {
+        match destination {
+            crate::runtime::tools::permission::PermissionDestination::Session => {
+                self.session.write().unwrap().upsert_rule(rule);
+            }
+            crate::runtime::tools::permission::PermissionDestination::Workspace => {
+                self.workspace.write().unwrap().upsert_rule(rule);
+                self.flush_workspace();
+            }
+            crate::runtime::tools::permission::PermissionDestination::User => {
+                self.user.write().unwrap().upsert_rule(rule);
+                self.flush_user();
             }
         }
+    }
+
+    pub fn record_legacy_to(
+        &self,
+        source: PermissionSource,
+        scope_key: String,
+        decision: PolicyDecision,
+    ) {
+        match source {
+            PermissionSource::Session => {
+                self.session
+                    .write()
+                    .unwrap()
+                    .record_legacy(scope_key, decision, source);
+            }
+            PermissionSource::Workspace => {
+                self.workspace
+                    .write()
+                    .unwrap()
+                    .record_legacy(scope_key, decision, source);
+                self.flush_workspace();
+            }
+            PermissionSource::User => {
+                self.user
+                    .write()
+                    .unwrap()
+                    .record_legacy(scope_key, decision, source);
+                self.flush_user();
+            }
+        }
+    }
+
+    fn flush_workspace(&self) {
+        if let Some(path) = &self.workspace_file_path {
+            let snapshot = self
+                .workspace
+                .read()
+                .unwrap()
+                .snapshot_with_source(PermissionSource::Workspace);
+            flush_snapshot(path, &snapshot);
+        }
+    }
+
+    fn flush_user(&self) {
+        if let Some(path) = &self.user_file_path {
+            let snapshot = self
+                .user
+                .read()
+                .unwrap()
+                .snapshot_with_source(PermissionSource::User);
+            flush_snapshot(path, &snapshot);
+        }
+    }
+}
+
+fn flush_snapshot(path: &PathBuf, snapshot: &PermissionStoreSnapshot) {
+    if let Err(err) = atomic_write_json(path, snapshot) {
+        log::warn!(
+            "[PermissionStore] Failed to flush permission snapshot to {:?}: {}",
+            path,
+            err
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::tools::permission::PermissionDestination;
+    use tempfile::TempDir;
 
     #[test]
     fn test_session_decision_allow() {
@@ -120,17 +364,109 @@ mod tests {
     }
 
     #[test]
-    fn test_persistent_decision_always_allow() {
+    fn test_workspace_overrides_user() {
         let store = PermissionStore::in_memory();
-        store.record("browser".to_string(), PolicyDecision::AlwaysAllow);
-        assert!(store.get("browser").unwrap().is_allow());
-        assert!(store.get("browser").unwrap().is_persistent());
+        store.record_to(
+            PermissionDestination::User,
+            PermissionRule::simple(
+                "browser",
+                PermissionScope::Scope("network".to_string()),
+                PolicyDecision::AlwaysAllow,
+                PermissionSource::User,
+            ),
+        );
+        store.record_to(
+            PermissionDestination::Workspace,
+            PermissionRule::simple(
+                "browser",
+                PermissionScope::Scope("network".to_string()),
+                PolicyDecision::AlwaysDeny,
+                PermissionSource::Workspace,
+            ),
+        );
+
+        assert_eq!(
+            store.get_for_scope("browser", "network"),
+            Some(PolicyDecision::AlwaysDeny)
+        );
     }
 
     #[test]
-    fn test_deny_is_not_allow() {
+    fn test_session_overrides_workspace_and_user() {
         let store = PermissionStore::in_memory();
-        store.record("python:exec".to_string(), PolicyDecision::Deny);
-        assert!(!store.get("python:exec").unwrap().is_allow());
+        store.record_to(
+            PermissionDestination::User,
+            PermissionRule::simple(
+                "browser",
+                PermissionScope::Scope("network".to_string()),
+                PolicyDecision::AlwaysDeny,
+                PermissionSource::User,
+            ),
+        );
+        store.record_to(
+            PermissionDestination::Workspace,
+            PermissionRule::simple(
+                "browser",
+                PermissionScope::Scope("network".to_string()),
+                PolicyDecision::AlwaysDeny,
+                PermissionSource::Workspace,
+            ),
+        );
+        store.record_to(
+            PermissionDestination::Session,
+            PermissionRule::simple(
+                "browser",
+                PermissionScope::Scope("network".to_string()),
+                PolicyDecision::Allow,
+                PermissionSource::Session,
+            ),
+        );
+
+        assert_eq!(
+            store.get_for_scope("browser", "network"),
+            Some(PolicyDecision::Allow)
+        );
+    }
+
+    #[test]
+    fn test_with_layer_files_reads_legacy_and_snapshot() {
+        let temp = TempDir::new().expect("tempdir");
+        let workspace_path = temp.path().join("workspace.json");
+        let user_path = temp.path().join("user.json");
+
+        std::fs::write(
+            &workspace_path,
+            serde_json::to_string(&HashMap::from([(
+                "bash:workspace:write".to_string(),
+                PolicyDecision::AlwaysDeny,
+            )]))
+            .expect("serialize workspace"),
+        )
+        .expect("write workspace");
+
+        std::fs::write(
+            &user_path,
+            serde_json::to_string(&PermissionStoreSnapshot {
+                rules: vec![PermissionRule::simple(
+                    "execute_python",
+                    PermissionScope::Scope("python:exec".to_string()),
+                    PolicyDecision::AlwaysAllow,
+                    PermissionSource::User,
+                )],
+                legacy: HashMap::new(),
+            })
+            .expect("serialize user"),
+        )
+        .expect("write user");
+
+        let store = PermissionStore::with_layer_files(Some(workspace_path), Some(user_path));
+        assert_eq!(
+            store.get("bash:workspace:write"),
+            Some(PolicyDecision::AlwaysDeny)
+        );
+        assert_eq!(
+            store.get_for_scope("execute_python", "python:exec"),
+            Some(PolicyDecision::AlwaysAllow)
+        );
     }
 }

@@ -12,7 +12,10 @@ use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::{PendingPermissionRequestStore, PendingPermissionResolution};
-use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use app_lib::runtime::tools::permission::{
+    default_permission_ask, PermissionDecision, PermissionDestination, PermissionMode,
+    PermissionReason,
+};
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -41,6 +44,8 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
                 "Always allow".to_string(),
                 "Deny".to_string(),
             ],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
         }
     }
@@ -119,6 +124,9 @@ fn runtime_event_new_copies_tool_call_id_for_permission_ask_required() {
             tool_name: "echo_tool".to_string(),
             message: "need permission".to_string(),
             suggestions: vec!["Allow once".to_string()],
+            mode: PermissionMode::Plan,
+            remember_options: vec![PermissionDestination::Session],
+            default_destination: Some(PermissionDestination::Session),
         },
     );
 
@@ -190,10 +198,14 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
             tool_name,
             message,
             suggestions,
+            mode,
+            remember_options,
+            default_destination,
             ..
         } => {
             assert_eq!(tool_name, "echo_tool");
             assert!(message.contains("permission confirmation required"));
+            assert_eq!(*mode, PermissionMode::Default);
             assert_eq!(
                 suggestions,
                 &vec![
@@ -201,6 +213,18 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
                     "Always allow".to_string(),
                     "Deny".to_string(),
                 ]
+            );
+            assert_eq!(
+                remember_options,
+                &vec![
+                    PermissionDestination::Session,
+                    PermissionDestination::Workspace,
+                    PermissionDestination::User,
+                ]
+            );
+            assert_eq!(
+                default_destination,
+                &Some(PermissionDestination::Session)
             );
         }
         other => panic!("unexpected event kind: {:?}", other),
@@ -229,6 +253,8 @@ async fn driver_emits_permission_ask_runtime_event_and_waits_for_resolution() {
             &ToolCallId::new("tc-a2-ask"),
             PendingPermissionResolution::Deny {
                 message: "Denied by user".to_string(),
+                remember: false,
+                destination: None,
             },
         )
         .expect("deny pending request");

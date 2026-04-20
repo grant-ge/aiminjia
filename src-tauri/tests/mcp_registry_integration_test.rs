@@ -176,7 +176,10 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
         ToolDispatchOutcome::AskRequired(PermissionDecision::Ask { message, .. }) => {
             assert!(message.contains("MCP") || message.contains("external server"));
         }
-        other => panic!("expected AskRequired for first MCP dispatch, got: {:?}", other),
+        other => panic!(
+            "expected AskRequired for first MCP dispatch, got: {:?}",
+            other
+        ),
     }
 
     store.record(
@@ -198,7 +201,10 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
             assert!(result.content.contains("ok"));
         }
         ToolDispatchOutcome::AskRequired(other) => {
-            panic!("unexpected AskRequired after allow-once decision: {:?}", other)
+            panic!(
+                "unexpected AskRequired after allow-once decision: {:?}",
+                other
+            )
         }
     }
 }

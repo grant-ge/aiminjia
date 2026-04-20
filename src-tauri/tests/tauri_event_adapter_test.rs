@@ -1,6 +1,7 @@
 use app_lib::runtime::chat::ChatTurnOutcome;
 use app_lib::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
+use app_lib::runtime::tools::permission::{PermissionDestination, PermissionMode};
 use app_lib::transport::tauri_event_adapter::map_runtime_event;
 
 #[test]
@@ -42,6 +43,13 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
             tool_name: "bash".to_string(),
             message: "need approval".to_string(),
             suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            mode: PermissionMode::Plan,
+            remember_options: vec![
+                PermissionDestination::Session,
+                PermissionDestination::Workspace,
+                PermissionDestination::User,
+            ],
+            default_destination: Some(PermissionDestination::Session),
         },
     );
     let mapped = map_runtime_event(&event).expect("legacy adapter should expose permission ask");
@@ -76,6 +84,25 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
             .and_then(|v| v.as_array())
             .map(|v| v.len()),
         Some(2)
+    );
+    assert_eq!(
+        mapped.payload.get("mode").and_then(|v| v.as_str()),
+        Some("plan")
+    );
+    assert_eq!(
+        mapped
+            .payload
+            .get("rememberOptions")
+            .and_then(|v| v.as_array())
+            .map(|v| v.len()),
+        Some(3)
+    );
+    assert_eq!(
+        mapped
+            .payload
+            .get("defaultDestination")
+            .and_then(|v| v.as_str()),
+        Some("session")
     );
 }
 

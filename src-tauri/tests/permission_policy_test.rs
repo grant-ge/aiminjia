@@ -2,12 +2,14 @@
 
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{RunId, SessionId};
-use app_lib::runtime::store::permission_store::{PermissionStore, PolicyDecision};
+use app_lib::runtime::store::permission_store::{
+    PermissionRule, PermissionScope, PermissionSource, PermissionStore, PolicyDecision,
+};
 use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::definition::ToolDefinition;
 use app_lib::runtime::tools::permission::{
-    PermissionDecision, PermissionPipeline, StorePolicyPipeline,
+    PermissionDecision, PermissionDestination, PermissionPipeline, StorePolicyPipeline,
 };
 use std::sync::Arc;
 
@@ -99,5 +101,80 @@ fn test_unknown_scope_with_deny_policy_blocks_tool() {
         is_deny(&result),
         "Stored deny policy must produce Deny, got: {:?}",
         result
+    );
+}
+
+#[test]
+fn test_workspace_rule_overrides_user_rule() {
+    let store = Arc::new(PermissionStore::in_memory());
+    store.record_to(
+        PermissionDestination::User,
+        PermissionRule::simple(
+            "execute_python",
+            PermissionScope::Scope("python:exec".to_string()),
+            PolicyDecision::AlwaysAllow,
+            PermissionSource::User,
+        ),
+    );
+    store.record_to(
+        PermissionDestination::Workspace,
+        PermissionRule::simple(
+            "execute_python",
+            PermissionScope::Scope("python:exec".to_string()),
+            PolicyDecision::AlwaysDeny,
+            PermissionSource::Workspace,
+        ),
+    );
+
+    let pipeline = StorePolicyPipeline::new(store);
+    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let ctx = make_ctx();
+    let decision = pipeline.authorize(&def, &serde_json::json!({}), &ctx);
+
+    assert!(
+        is_deny(&decision),
+        "workspace layer should override user layer for the same tool scope"
+    );
+}
+
+#[test]
+fn test_session_rule_overrides_workspace_rule() {
+    let store = Arc::new(PermissionStore::in_memory());
+    store.record_to(
+        PermissionDestination::Workspace,
+        PermissionRule::simple(
+            "execute_python",
+            PermissionScope::Scope("python:exec".to_string()),
+            PolicyDecision::AlwaysDeny,
+            PermissionSource::Workspace,
+        ),
+    );
+    store.record_to(
+        PermissionDestination::Session,
+        PermissionRule::simple(
+            "execute_python",
+            PermissionScope::Scope("python:exec".to_string()),
+            PolicyDecision::Allow,
+            PermissionSource::Session,
+        ),
+    );
+    store.record_to(
+        PermissionDestination::Session,
+        PermissionRule::simple(
+            "execute_python",
+            PermissionScope::Scope("workspace:write".to_string()),
+            PolicyDecision::Allow,
+            PermissionSource::Session,
+        ),
+    );
+
+    let pipeline = StorePolicyPipeline::new(store);
+    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let ctx = make_ctx();
+    let decision = pipeline.authorize(&def, &serde_json::json!({}), &ctx);
+
+    assert!(
+        is_allow(&decision),
+        "session layer should override workspace layer for the same tool scope"
     );
 }

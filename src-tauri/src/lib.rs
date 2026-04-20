@@ -163,6 +163,18 @@ pub fn run() {
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
+            let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
+                Some(
+                    file_mgr
+                        .workspace_path()
+                        .join(".lotus")
+                        .join("permissions.json"),
+                ),
+                Some(app_data_dir.join("permissions.json")),
+            ));
+            tauri::async_runtime::block_on(tool_registry.set_permission_store(
+                permission_store.clone(),
+            ));
             let mcp_server_manager =
                 Arc::new(runtime::mcp::McpServerManager::new(tool_registry.clone()));
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
@@ -299,6 +311,7 @@ pub fn run() {
                     tool_registry.clone(),
                     session_mgr.clone(),
                     auth_manager.clone(),
+                    permission_store.clone(),
                     app.handle().clone(),
                 ),
             );
@@ -326,6 +339,7 @@ pub fn run() {
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
             app.manage(mcp_config_store);
+            app.manage(permission_store);
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);

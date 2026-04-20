@@ -345,6 +345,10 @@ impl QueryEngine {
             .tool_dispatcher
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
+        let capability_scopes = dispatcher
+            .tool_definition(&call.tool_name)
+            .map(|definition| definition.capability_scope)
+            .unwrap_or_default();
 
         // Build execution context with the real tool_call_id from the LLM.
         // TurnState centralizes tool-call scoped cancellation so each call gets
@@ -442,6 +446,7 @@ impl QueryEngine {
                 Ok(RuntimeToolCallOutcome::AskRequired {
                     tool_call_id: call.tool_call_id.clone(),
                     tool_name: call.tool_name.clone(),
+                    capability_scopes,
                     original_request: call,
                     decision,
                 })

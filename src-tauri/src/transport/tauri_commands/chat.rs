@@ -27,6 +27,7 @@ use crate::runtime::ids::{SessionId, ToolCallId};
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
+use crate::runtime::tools::permission::PermissionDestination;
 use crate::storage::crypto::SecureStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
@@ -861,10 +862,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     /// 精确移植 agent_loop Block 4 的逻辑：
     ///   - 从 DB 读取 active persona
     ///   - 从 auth_manager 获取 product_name（租户品牌名）
-    async fn build_system_prompt(
-        &self,
-        _conversation_id: &str,
-    ) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
         let persona = self.services.db.get_active_persona().ok();
 
         let product_name: Option<String> = self
@@ -1425,6 +1423,7 @@ impl TauriChatCommandAdapter {
         tool_registry: Arc<ToolRegistry>,
         session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
+        permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
         let assistant_write_queue = Arc::new(MessageWriteQueue::new(db.clone()));
@@ -1454,7 +1453,8 @@ impl TauriChatCommandAdapter {
                 .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             llm_executor,
-        );
+        )
+        .with_permission_store(permission_store);
         if let Some(facade) = services
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
@@ -1511,11 +1511,17 @@ impl TauriChatCommandAdapter {
         &self,
         tool_call_id: String,
         updated_input: Option<serde_json::Value>,
+        remember: Option<bool>,
+        destination: Option<PermissionDestination>,
     ) -> Result<(), String> {
         self.runtime
             .resolve_permission_request(
                 &ToolCallId::new(tool_call_id),
-                PendingPermissionResolution::Allow { updated_input },
+                PendingPermissionResolution::Allow {
+                    updated_input,
+                    remember: remember.unwrap_or(false),
+                    destination,
+                },
             )
             .map_err(|e| e.to_string())
     }
@@ -1524,6 +1530,8 @@ impl TauriChatCommandAdapter {
         &self,
         tool_call_id: String,
         message: Option<String>,
+        remember: Option<bool>,
+        destination: Option<PermissionDestination>,
     ) -> Result<(), String> {
         self.runtime
             .resolve_permission_request(
@@ -1531,6 +1539,8 @@ impl TauriChatCommandAdapter {
                 PendingPermissionResolution::Deny {
                     message: message
                         .unwrap_or_else(|| "Permission request denied by user.".to_string()),
+                    remember: remember.unwrap_or(false),
+                    destination,
                 },
             )
             .map_err(|e| e.to_string())

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::runtime::chat::ChatTurnOutcome;
 use crate::runtime::ids::{AgentId, RunId, SessionId, TaskId, ToolCallId};
+use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentIdleScope {
@@ -37,6 +38,9 @@ pub enum RuntimeEventKind {
         tool_name: String,
         message: String,
         suggestions: Vec<String>,
+        mode: PermissionMode,
+        remember_options: Vec<PermissionDestination>,
+        default_destination: Option<PermissionDestination>,
     },
     AgentIdle {
         agent_id: AgentId,

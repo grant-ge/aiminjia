@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use app_lib::runtime::store::permission_store::PermissionStore;
-use app_lib::runtime::tools::permission::{PermissionReason, StorePolicyPipeline};
+use app_lib::runtime::tools::permission::{
+    default_permission_ask, PermissionReason, StorePolicyPipeline,
+};
 use app_lib::runtime::tools::{
     PermissionDecision, PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatchOutcome,
     ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
@@ -42,6 +44,8 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
         PermissionDecision::Ask {
             message: format!("permission confirmation required for '{}'", definition.id),
             suggestions: vec!["Allow once".into(), "Always allow".into(), "Deny".into()],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
         }
     }

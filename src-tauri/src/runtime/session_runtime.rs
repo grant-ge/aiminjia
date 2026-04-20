@@ -16,10 +16,11 @@ use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequestStore,
-    PendingPermissionResolution,
+    PendingPermissionResolution, PendingPermissionRequest, PermissionStore, PolicyDecision,
 };
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
+use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 
 #[derive(Clone)]
 pub struct SessionRuntime {
@@ -32,6 +33,7 @@ pub struct SessionRuntime {
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
     pending_permission_store: Arc<PendingPermissionRequestStore>,
+    permission_store: Option<Arc<PermissionStore>>,
 }
 
 impl SessionRuntime {
@@ -44,6 +46,7 @@ impl SessionRuntime {
             llm_executor: None,
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            permission_store: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl SessionRuntime {
             llm_executor: Some(executor),
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            permission_store: None,
         }
     }
 
@@ -81,6 +85,11 @@ impl SessionRuntime {
         authorized_workspace_store: Arc<dyn AuthorizedWorkspaceStore>,
     ) -> Self {
         self.authorized_workspace_store = Some(authorized_workspace_store);
+        self
+    }
+
+    pub fn with_permission_store(mut self, permission_store: Arc<PermissionStore>) -> Self {
+        self.permission_store = Some(permission_store);
         self
     }
 
@@ -152,8 +161,13 @@ impl SessionRuntime {
         tool_call_id: &ToolCallId,
         resolution: PendingPermissionResolution,
     ) -> Result<()> {
+        let pending_request = self.pending_permission_store.get(tool_call_id);
         self.pending_permission_store
-            .resolve(tool_call_id, resolution)
+            .resolve(tool_call_id, resolution.clone())?;
+        if let Some(request) = pending_request.as_ref() {
+            self.persist_resolved_permission(request, &resolution);
+        }
+        Ok(())
     }
 
     pub fn cancel_pending_permission_requests_for_session(
@@ -226,6 +240,54 @@ impl SessionRuntime {
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
     }
 
+    fn persist_resolved_permission(
+        &self,
+        pending_request: &PendingPermissionRequest,
+        resolution: &PendingPermissionResolution,
+    ) {
+        let Some(permission_store) = self.permission_store.as_ref() else {
+            return;
+        };
+
+        let (remember, destination, decision) = match resolution {
+            PendingPermissionResolution::Allow {
+                remember,
+                destination,
+                ..
+            } => (*remember, *destination, PolicyDecision::Allow),
+            PendingPermissionResolution::Deny {
+                remember,
+                destination,
+                ..
+            } => (*remember, *destination, PolicyDecision::Deny),
+            PendingPermissionResolution::Cancel { .. } => return,
+        };
+
+        if !remember {
+            return;
+        }
+
+        if pending_request.capability_scopes.is_empty() {
+            log::warn!(
+                "[SessionRuntime] Skip persisting permission for '{}' because no capability scopes were captured",
+                pending_request.tool_name
+            );
+            return;
+        }
+
+        let destination = destination
+            .or(pending_request.default_destination)
+            .unwrap_or(PermissionDestination::Session);
+
+        persist_permission_decision(
+            permission_store,
+            &pending_request.tool_name,
+            &pending_request.capability_scopes,
+            decision,
+            destination,
+        );
+    }
+
     fn ensure_active_session_cancel_root(&self, session_id: &SessionId) -> CancellationToken {
         let mut roots = self
             .session_cancel_roots
@@ -252,6 +314,7 @@ impl SessionRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
     use crate::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
         ToolExecutionContext, ToolResult,
@@ -406,8 +469,12 @@ mod tests {
                 session_id: session_id.clone(),
                 run_id: RunId::new("run-clear-pending"),
                 tool_name: "echo_tool".to_string(),
+                capability_scopes: vec!["custom:test".to_string()],
                 message: "need permission".to_string(),
                 suggestions: vec!["Allow once".to_string()],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::Session],
+                default_destination: Some(PermissionDestination::Session),
                 original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
                     tool_call_id: tool_call_id.as_str().to_string(),
                     tool_name: "echo_tool".to_string(),
@@ -426,6 +493,107 @@ mod tests {
             PendingPermissionResolution::Cancel { ref message }
                 if message.contains("session state was cleared")
         ));
+    }
+
+    #[test]
+    fn resolve_permission_request_persists_remembered_allow_to_selected_layer() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let session_id = SessionId::new("session-b2-persist-allow");
+        let tool_call_id = ToolCallId::new("tc-persist-allow");
+
+        let _resolution_rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id,
+                run_id: RunId::new("run-persist-allow"),
+                tool_name: "echo_tool".to_string(),
+                capability_scopes: vec!["custom:test".to_string()],
+                message: "need permission".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                mode: PermissionMode::Default,
+                remember_options: vec![
+                    PermissionDestination::Session,
+                    PermissionDestination::Workspace,
+                    PermissionDestination::User,
+                ],
+                default_destination: Some(PermissionDestination::Session),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "echo_tool".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+            })
+            .unwrap();
+
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::Workspace),
+                },
+            )
+            .unwrap();
+
+        assert!(pending_permission_store.get(&tool_call_id).is_none());
+        assert_eq!(
+            permission_store.get_for_scope("echo_tool", "custom:test"),
+            Some(crate::runtime::store::PolicyDecision::Allow)
+        );
+    }
+
+    #[test]
+    fn resolve_permission_request_uses_default_destination_when_remembered_deny_has_no_target() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let session_id = SessionId::new("session-b2-persist-deny");
+        let tool_call_id = ToolCallId::new("tc-persist-deny");
+
+        let _resolution_rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id,
+                run_id: RunId::new("run-persist-deny"),
+                tool_name: "echo_tool".to_string(),
+                capability_scopes: vec!["custom:test".to_string()],
+                message: "need permission".to_string(),
+                suggestions: vec!["Deny".to_string()],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "echo_tool".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+            })
+            .unwrap();
+
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Deny {
+                    message: "Denied by user".to_string(),
+                    remember: true,
+                    destination: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            permission_store.get_for_scope("echo_tool", "custom:test"),
+            Some(crate::runtime::store::PolicyDecision::Deny)
+        );
     }
 
     #[test]

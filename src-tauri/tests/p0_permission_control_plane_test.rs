@@ -12,7 +12,10 @@ use app_lib::runtime::ids::{RunId, ToolCallId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::{PendingPermissionRequestStore, PendingPermissionResolution};
-use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use app_lib::runtime::tools::permission::{
+    default_permission_ask, PermissionDecision, PermissionDestination, PermissionMode,
+    PermissionReason,
+};
 use app_lib::runtime::tools::{
     PermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
     ToolExecutionContext, ToolResult,
@@ -55,6 +58,8 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
                 "Always allow".to_string(),
                 "Deny".to_string(),
             ],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
         }
     }
@@ -183,6 +188,19 @@ async fn ask_request_is_recorded_without_completed_error_event() {
             "Deny".to_string(),
         ]
     );
+    assert_eq!(pending.mode, PermissionMode::Default);
+    assert_eq!(
+        pending.remember_options,
+        vec![
+            PermissionDestination::Session,
+            PermissionDestination::Workspace,
+            PermissionDestination::User,
+        ]
+    );
+    assert_eq!(
+        pending.default_destination,
+        Some(PermissionDestination::Session)
+    );
 
     let events = bus.recorded();
     assert!(
@@ -212,6 +230,8 @@ async fn ask_request_is_recorded_without_completed_error_event() {
             &ToolCallId::new("tc-ask-recorded"),
             PendingPermissionResolution::Deny {
                 message: "Denied by user".to_string(),
+                remember: false,
+                destination: None,
             },
         )
         .expect("deny pending request");
@@ -271,6 +291,8 @@ async fn approve_replays_original_tool_call_with_updated_input() {
             &ToolCallId::new("tc-approve-updated-input"),
             PendingPermissionResolution::Allow {
                 updated_input: Some(json!({ "value": "patched" })),
+                remember: true,
+                destination: Some(PermissionDestination::Workspace),
             },
         )
         .expect("approve pending request");
@@ -382,6 +404,20 @@ async fn cancel_clears_pending_request_and_resumes_with_cancelled_outcome() {
         .as_str()
         .unwrap_or_default()
         .contains("cancelled by user"));
+}
+
+#[test]
+fn permission_control_plane_review_resolution_carries_remember_destination_fields() {
+    let source = std::fs::read_to_string("src/runtime/store/pending_permission_request_store.rs")
+        .expect("read pending_permission_request_store.rs");
+    assert!(
+        source.contains("remember: bool"),
+        "Allow/Deny resolution should persist remember flag for later rule writes"
+    );
+    assert!(
+        source.contains("destination: Option<PermissionDestination>"),
+        "Allow/Deny resolution should carry destination so SessionRuntime can write to the selected rule layer"
+    );
 }
 
 #[test]

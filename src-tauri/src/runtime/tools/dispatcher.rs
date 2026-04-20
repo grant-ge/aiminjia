@@ -106,6 +106,14 @@ impl ToolDispatcher {
             .map(|tool| tool.interrupt_behavior())
     }
 
+    pub fn tool_definition(&self, tool_name: &str) -> Option<ToolDefinition> {
+        self.tools
+            .read()
+            .unwrap()
+            .get(tool_name)
+            .map(|tool| tool.definition())
+    }
+
     pub async fn dispatch(
         &self,
         tool_name: &str,

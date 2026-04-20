@@ -900,6 +900,8 @@ mod tests {
         let result = BrowseDataLaunchResult::ask(PermissionDecision::Ask {
             message: "need approval".to_string(),
             suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            remember_options: crate::runtime::tools::permission::default_permission_ask().0,
+            default_destination: crate::runtime::tools::permission::default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
         });
 

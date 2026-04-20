@@ -7,6 +7,7 @@ use tokio::sync::oneshot;
 
 use crate::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
+use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
 
 #[derive(Clone, Debug)]
 pub struct PendingPermissionRequest {
@@ -14,15 +15,27 @@ pub struct PendingPermissionRequest {
     pub session_id: SessionId,
     pub run_id: RunId,
     pub tool_name: String,
+    pub capability_scopes: Vec<String>,
     pub message: String,
     pub suggestions: Vec<String>,
+    pub mode: PermissionMode,
+    pub remember_options: Vec<PermissionDestination>,
+    pub default_destination: Option<PermissionDestination>,
     pub original_request: RuntimeToolCallRequest,
 }
 
 #[derive(Clone, Debug)]
 pub enum PendingPermissionResolution {
-    Allow { updated_input: Option<Value> },
-    Deny { message: String },
+    Allow {
+        updated_input: Option<Value>,
+        remember: bool,
+        destination: Option<PermissionDestination>,
+    },
+    Deny {
+        message: String,
+        remember: bool,
+        destination: Option<PermissionDestination>,
+    },
     Cancel { message: String },
 }
 

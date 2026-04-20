@@ -16,6 +16,7 @@ use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::{
     PendingPermissionRequest, PendingPermissionRequestStore, PendingPermissionResolution,
 };
+use app_lib::runtime::tools::permission::{PermissionDestination, PermissionMode};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -264,8 +265,12 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
         session_id: session_id.clone(),
         run_id: RunId::new("run-orphan"),
         tool_name: "echo_tool".to_string(),
+        capability_scopes: vec!["custom:test".to_string()],
         message: "need approval".to_string(),
         suggestions: vec!["Allow".to_string()],
+        mode: PermissionMode::Default,
+        remember_options: vec![PermissionDestination::Session],
+        default_destination: Some(PermissionDestination::Session),
         original_request: RuntimeToolCallRequest {
             tool_call_id: "tc-orphan".to_string(),
             tool_name: "echo_tool".to_string(),

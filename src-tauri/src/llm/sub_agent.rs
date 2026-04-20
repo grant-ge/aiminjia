@@ -61,6 +61,8 @@ fn annotate_subagent_ask_decision(
         PermissionDecision::Ask {
             message,
             suggestions,
+            remember_options,
+            default_destination,
             reason,
         } => PermissionDecision::Ask {
             message: format!(
@@ -68,6 +70,8 @@ fn annotate_subagent_ask_decision(
                 tool_name, tool_call_id, message
             ),
             suggestions,
+            remember_options,
+            default_destination,
             reason,
         },
         other => other,
@@ -616,13 +620,17 @@ pub async fn run_sub_agent(
 mod tests {
     use super::*;
     use crate::plugin::tool_trait::ToolError as LegacyToolError;
-    use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+    use crate::runtime::tools::permission::{
+        default_permission_ask, PermissionDecision, PermissionReason,
+    };
 
     #[test]
     fn take_ask_required_decision_preserves_structured_permission_request() {
         let decision = PermissionDecision::Ask {
             message: "need approval".to_string(),
             suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: PermissionReason::Other("subagent-inner".to_string()),
         };
 

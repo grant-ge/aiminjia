@@ -11,7 +11,9 @@ use app_lib::runtime::tools::builtin::browse_data::{
     BrowseDataLaunchContext, BrowseDataLaunchRequest, BrowseDataLaunchResult, BrowseDataLauncher,
     BrowseDataRuntimeTool,
 };
-use app_lib::runtime::tools::permission::{PermissionDecision, PermissionReason};
+use app_lib::runtime::tools::permission::{
+    default_permission_ask, PermissionDecision, PermissionReason,
+};
 use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
 use async_trait::async_trait;
 use serde_json::json;
@@ -33,6 +35,8 @@ impl BrowseDataLauncher for AskingBrowseDataLauncher {
                 "Always allow".to_string(),
                 "Deny".to_string(),
             ],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: PermissionReason::Other("subagent_inner_tool".to_string()),
         }))
     }

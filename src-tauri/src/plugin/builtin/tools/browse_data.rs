@@ -70,7 +70,9 @@ impl ToolPlugin for BrowseDataTool {
 mod tests {
     use super::*;
     use crate::runtime::tools::builtin::browse_data::BrowseDataLaunchResult;
-    use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+    use crate::runtime::tools::permission::{
+        default_permission_ask, PermissionDecision, PermissionReason,
+    };
 
     #[test]
     fn map_browse_data_launch_result_preserves_ask_required() {
@@ -78,6 +80,8 @@ mod tests {
             map_browse_data_launch_result(BrowseDataLaunchResult::ask(PermissionDecision::Ask {
                 message: "need approval".to_string(),
                 suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+                remember_options: default_permission_ask().0,
+                default_destination: default_permission_ask().1,
                 reason: PermissionReason::UnknownScope,
             }));
 

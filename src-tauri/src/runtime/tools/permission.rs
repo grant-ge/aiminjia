@@ -1,7 +1,10 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::runtime::store::permission_store::PermissionStore;
+use crate::runtime::store::permission_store::{
+    PermissionRule, PermissionScope, PermissionSource, PermissionStore, PolicyDecision,
+};
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 
@@ -19,6 +22,8 @@ pub enum PermissionDecision {
     Ask {
         message: String,
         suggestions: Vec<String>,
+        remember_options: Vec<PermissionDestination>,
+        default_destination: Option<PermissionDestination>,
         reason: PermissionReason,
     },
 }
@@ -33,11 +38,28 @@ impl std::fmt::Display for PermissionDecision {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub fn default_permission_ask() -> (Vec<PermissionDestination>, Option<PermissionDestination>) {
+    (
+        default_remember_options(),
+        Some(PermissionDestination::Session),
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum PermissionMode {
     #[default]
     Default,
+    Plan,
     DontAsk,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionDestination {
+    Session,
+    Workspace,
+    User,
 }
 
 /// Why the permission decision was made.
@@ -71,6 +93,22 @@ pub fn apply_permission_mode(
                 tool_name
             ),
             reason: PermissionReason::Mode("dontAsk".into()),
+        },
+        (
+            PermissionMode::Plan,
+            PermissionDecision::Ask {
+                message,
+                suggestions,
+                remember_options,
+                default_destination,
+                ..
+            },
+        ) => PermissionDecision::Ask {
+            message,
+            suggestions,
+            remember_options,
+            default_destination,
+            reason: PermissionReason::Mode("plan".into()),
         },
         (_, decision) => decision,
     }
@@ -253,8 +291,7 @@ impl PermissionPipeline for StorePolicyPipeline {
             };
         }
         for scope in &definition.capability_scope {
-            let key = format!("{}:{}", definition.id, scope);
-            match self.store.get(&key) {
+            match self.store.get_for_scope(&definition.id, scope) {
                 // An explicit Allow/AlwaysAllow decision supersedes capability checks.
                 // The user has already granted this permission; re-checking capability
                 // would defeat persistent grants for sessions without a live connector.
@@ -310,6 +347,8 @@ impl PermissionPipeline for StorePolicyPipeline {
                             "Always allow".into(),
                             "Deny".into(),
                         ],
+                        remember_options: default_remember_options(),
+                        default_destination: Some(PermissionDestination::Session),
                         reason: PermissionReason::UnknownScope,
                     };
                 }
@@ -320,6 +359,40 @@ impl PermissionPipeline for StorePolicyPipeline {
             updated_input: None,
             reason: PermissionReason::StoredPolicy,
         }
+    }
+}
+
+fn default_remember_options() -> Vec<PermissionDestination> {
+    vec![
+        PermissionDestination::Session,
+        PermissionDestination::Workspace,
+        PermissionDestination::User,
+    ]
+}
+
+pub fn persist_permission_decision(
+    store: &PermissionStore,
+    tool_name: &str,
+    scopes: &[String],
+    decision: PolicyDecision,
+    destination: PermissionDestination,
+) {
+    let source = match destination {
+        PermissionDestination::Session => PermissionSource::Session,
+        PermissionDestination::Workspace => PermissionSource::Workspace,
+        PermissionDestination::User => PermissionSource::User,
+    };
+
+    for scope in scopes {
+        store.record_to(
+            destination,
+            PermissionRule::simple(
+                tool_name,
+                PermissionScope::Scope(scope.clone()),
+                decision.clone(),
+                source,
+            ),
+        );
     }
 }
 
@@ -375,5 +448,28 @@ mod tests {
 
         let network = check_scope_capability("network", &ctx_without_capability());
         assert!(network.is_none());
+    }
+
+    #[test]
+    fn review_apply_permission_mode_marks_plan_reason() {
+        let decision = apply_permission_mode(
+            PermissionDecision::Ask {
+                message: "need permission".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                remember_options: default_remember_options(),
+                default_destination: Some(PermissionDestination::Session),
+                reason: PermissionReason::UnknownScope,
+            },
+            "echo_tool",
+            PermissionMode::Plan,
+        );
+
+        assert!(matches!(
+            decision,
+            PermissionDecision::Ask {
+                reason: PermissionReason::Mode(ref mode),
+                ..
+            } if mode == "plan"
+        ));
     }
 }

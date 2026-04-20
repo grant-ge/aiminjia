@@ -41,9 +41,11 @@ pub async fn approve_permission_request(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     tool_call_id: String,
     updated_input: Option<serde_json::Value>,
+    remember: Option<bool>,
+    destination: Option<crate::runtime::tools::permission::PermissionDestination>,
 ) -> Result<(), String> {
     adapter
-        .approve_permission_request(tool_call_id, updated_input)
+        .approve_permission_request(tool_call_id, updated_input, remember, destination)
         .await
 }
 
@@ -52,8 +54,12 @@ pub async fn deny_permission_request(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     tool_call_id: String,
     message: Option<String>,
+    remember: Option<bool>,
+    destination: Option<crate::runtime::tools::permission::PermissionDestination>,
 ) -> Result<(), String> {
-    adapter.deny_permission_request(tool_call_id, message).await
+    adapter
+        .deny_permission_request(tool_call_id, message, remember, destination)
+        .await
 }
 
 #[tauri::command]

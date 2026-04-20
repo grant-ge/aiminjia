@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use app_lib::runtime::tools::permission::{
-    AllowAllPermissionPipeline, PermissionDecision, PermissionMode, PermissionPipeline,
+    default_permission_ask, AllowAllPermissionPipeline, PermissionDecision, PermissionMode,
+    PermissionPipeline,
 };
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
@@ -25,6 +26,8 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
                 "Always allow".to_string(),
                 "Deny".to_string(),
             ],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
         }
     }
@@ -63,6 +66,8 @@ impl RuntimeTool for ExecuteAskTool {
         Err(ToolError::AskRequired(PermissionDecision::Ask {
             message: "execute path approval required".to_string(),
             suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
             reason: app_lib::runtime::tools::permission::PermissionReason::Other(
                 "execute_ask".into(),
             ),
@@ -79,6 +84,32 @@ fn review_default_mode_preserves_ask() {
     let decision = pipeline.authorize(&def, &json!({}), &ctx);
 
     assert!(matches!(decision, PermissionDecision::Ask { .. }));
+}
+
+#[test]
+fn review_plan_mode_preserves_ask_but_marks_reason_as_plan_mode() {
+    let decision = app_lib::runtime::tools::permission::apply_permission_mode(
+        PermissionDecision::Ask {
+            message: "permission confirmation required".to_string(),
+            suggestions: vec!["Allow once".to_string()],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
+            reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+        },
+        "echo_tool",
+        PermissionMode::Plan,
+    );
+
+    match decision {
+        PermissionDecision::Ask { reason, .. } => {
+            assert!(matches!(
+                reason,
+                app_lib::runtime::tools::permission::PermissionReason::Mode(ref mode)
+                    if mode == "plan"
+            ));
+        }
+        other => panic!("plan mode should preserve ask, got: {:?}", other),
+    }
 }
 
 #[tokio::test]

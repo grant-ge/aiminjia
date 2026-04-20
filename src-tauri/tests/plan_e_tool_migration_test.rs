@@ -260,7 +260,11 @@ async fn execute_python_runtime_tool_daily_mode_uses_catalog_timeout_for_oneshot
         .expect("daily runtime tool should execute");
 
     let seen = oneshot_timeouts.lock().expect("mutex poisoned").clone();
-    assert_eq!(seen, vec![600], "daily oneshot should inherit catalog timeout");
+    assert_eq!(
+        seen,
+        vec![600],
+        "daily oneshot should inherit catalog timeout"
+    );
 }
 
 #[derive(Debug, Default)]
@@ -611,6 +615,8 @@ impl BrowseDataLauncher for AskBrowseDataLauncher {
             app_lib::runtime::tools::permission::PermissionDecision::Ask {
                 message: self.message.clone(),
                 suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+                remember_options: app_lib::runtime::tools::permission::default_permission_ask().0,
+                default_destination: app_lib::runtime::tools::permission::default_permission_ask().1,
                 reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
             },
         ))

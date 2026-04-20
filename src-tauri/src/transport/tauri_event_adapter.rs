@@ -76,6 +76,9 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             tool_name,
             message,
             suggestions,
+            mode,
+            remember_options,
+            default_destination,
         } => Some(LegacyEvent {
             name: "permission:ask".to_string(),
             payload: json!({
@@ -85,6 +88,21 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "toolName": tool_name,
                 "message": message,
                 "suggestions": suggestions,
+                "mode": match mode {
+                    crate::runtime::tools::permission::PermissionMode::Default => "default",
+                    crate::runtime::tools::permission::PermissionMode::Plan => "plan",
+                    crate::runtime::tools::permission::PermissionMode::DontAsk => "dontAsk",
+                },
+                "rememberOptions": remember_options.iter().map(|destination| match destination {
+                    crate::runtime::tools::permission::PermissionDestination::Session => "session",
+                    crate::runtime::tools::permission::PermissionDestination::Workspace => "workspace",
+                    crate::runtime::tools::permission::PermissionDestination::User => "user",
+                }).collect::<Vec<_>>(),
+                "defaultDestination": default_destination.as_ref().map(|destination| match destination {
+                    crate::runtime::tools::permission::PermissionDestination::Session => "session",
+                    crate::runtime::tools::permission::PermissionDestination::Workspace => "workspace",
+                    crate::runtime::tools::permission::PermissionDestination::User => "user",
+                }),
             }),
         }),
         RuntimeEventKind::MessagePersisted {

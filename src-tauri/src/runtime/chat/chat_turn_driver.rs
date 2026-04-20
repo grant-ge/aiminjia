@@ -35,7 +35,9 @@ use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
 };
-use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::permission::{
+    PermissionDecision, PermissionMode, PermissionReason,
+};
 
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
@@ -137,10 +139,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 构建 Turn 级的 system prompt。
     /// 由 executor 从 DB / settings / persona / product_name 合成。
     /// 默认 no-op（返回空字符串），生产 executor 必须 override。
-    async fn build_system_prompt(
-        &self,
-        _conversation_id: &str,
-    ) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok(String::new())
     }
 
@@ -355,6 +354,20 @@ fn build_claude_md_context_message(
 }
 
 impl RuntimeChatTurnDriver {
+    fn permission_mode_for_ask(decision: &PermissionDecision) -> PermissionMode {
+        match decision {
+            PermissionDecision::Ask {
+                reason: PermissionReason::Mode(mode),
+                ..
+            } => match mode.as_str() {
+                "plan" => PermissionMode::Plan,
+                "dontAsk" => PermissionMode::DontAsk,
+                _ => PermissionMode::Default,
+            },
+            _ => PermissionMode::Default,
+        }
+    }
+
     pub fn new(query_engine: QueryEngine, event_bus: RuntimeEventBus) -> Self {
         Self {
             query_engine,
@@ -432,13 +445,9 @@ impl RuntimeChatTurnDriver {
             let ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
                 tool_call_id,
                 tool_name,
+                capability_scopes,
                 original_request,
-                decision:
-                    PermissionDecision::Ask {
-                        message,
-                        suggestions,
-                        ..
-                    },
+                decision,
             }) = &round_result
             else {
                 resolved_results.push(round_result);
@@ -450,13 +459,29 @@ impl RuntimeChatTurnDriver {
                 ));
             };
 
+            let PermissionDecision::Ask {
+                message,
+                suggestions,
+                remember_options,
+                default_destination,
+                ..
+            } = decision
+            else {
+                resolved_results.push(round_result);
+                continue;
+            };
+            let mode = Self::permission_mode_for_ask(decision);
             let pending_request = PendingPermissionRequest {
                 tool_call_id: tool_call_id.clone().into(),
                 session_id: turn.session_id().clone(),
                 run_id: turn.run_id().clone(),
                 tool_name: tool_name.clone(),
+                capability_scopes: capability_scopes.clone(),
                 message: message.clone(),
                 suggestions: suggestions.clone(),
+                mode,
+                remember_options: remember_options.clone(),
+                default_destination: *default_destination,
                 original_request: original_request.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
@@ -470,6 +495,9 @@ impl RuntimeChatTurnDriver {
                         tool_name: tool_name.clone(),
                         message: message.clone(),
                         suggestions: suggestions.clone(),
+                        mode,
+                        remember_options: remember_options.clone(),
+                        default_destination: *default_destination,
                     },
                 ))
                 .await?;
@@ -479,7 +507,7 @@ impl RuntimeChatTurnDriver {
                 .await;
 
             let resolved = match resolution {
-                PendingPermissionResolution::Allow { updated_input } => ToolRoundResult::Ok(
+                PendingPermissionResolution::Allow { updated_input, .. } => ToolRoundResult::Ok(
                     self.query_engine
                         .replay_tool_call_with_bus(
                             turn,
@@ -492,7 +520,7 @@ impl RuntimeChatTurnDriver {
                             anyhow::anyhow!("failed to replay approved tool call: {err}")
                         })?,
                 ),
-                PendingPermissionResolution::Deny { message }
+                PendingPermissionResolution::Deny { message, .. }
                 | PendingPermissionResolution::Cancel { message } => {
                     self.event_bus
                         .emit(RuntimeEvent::new(
