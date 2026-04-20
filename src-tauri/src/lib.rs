@@ -128,16 +128,16 @@ pub fn run() {
                 }),
             );
 
-            // Initialize LLM gateway
-            let gateway = Arc::new(llm::gateway::LlmGateway::new_with_registry(
-                db.clone(),
-                run_registry.clone(),
-            ));
-
             // Initialize cloud auth manager
             let auth_manager = Arc::new(auth::AuthManager::new(db.clone(), secure_storage.clone()));
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
+
+            // Initialize LLM gateway (with auth_manager for cloud session_key injection)
+            let gateway = Arc::new(
+                llm::gateway::LlmGateway::new_with_registry(db.clone(), run_registry.clone())
+                    .with_auth_manager(auth_manager.clone()),
+            );
 
             // Set window title from persisted branding (before WebView renders)
             {

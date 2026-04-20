@@ -13,6 +13,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
+use crate::auth::AuthManager;
 use crate::llm::masking::{MaskingContext, MaskingLevel};
 use crate::llm::providers::claude;
 use crate::llm::providers::custom;
@@ -131,6 +132,9 @@ pub struct LlmGateway {
     // Stream-level bridge only. Runtime-owned cancellation stays in
     // SessionRuntime; gateway/run_registry must not become a second owner.
     run_registry: Arc<RuntimeRunRegistry>,
+    /// Cloud auth manager — used to fetch a fresh session_key for Lotus requests.
+    /// None in tests / non-cloud builds.
+    auth_manager: Option<Arc<AuthManager>>,
 }
 
 impl LlmGateway {
@@ -140,7 +144,17 @@ impl LlmGateway {
     }
 
     pub fn new_with_registry(db: Arc<AppStorage>, run_registry: Arc<RuntimeRunRegistry>) -> Self {
-        Self { db, run_registry }
+        Self {
+            db,
+            run_registry,
+            auth_manager: None,
+        }
+    }
+
+    /// Attach an [`AuthManager`] so cloud (Lotus) requests can retrieve a fresh session_key.
+    pub fn with_auth_manager(mut self, auth_manager: Arc<AuthManager>) -> Self {
+        self.auth_manager = Some(auth_manager);
+        self
     }
 
     /// Build an [`LlmRequest`] from messages, route, and settings.
@@ -234,7 +248,24 @@ impl LlmGateway {
 
         // 1. Route to best provider
         let task_type = router::infer_task_type(&messages);
-        let route = router::select_route(&task_type, settings);
+        let mut route = router::select_route(&task_type, settings);
+
+        // Cloud mode: replace api_key with a fresh session_key from AuthManager.
+        // primary_api_key in settings is for non-cloud providers; Lotus needs the
+        // login-issued session_key which may have been refreshed since last save.
+        if route.provider == "lotus" {
+            if let Some(auth) = &self.auth_manager {
+                match auth.get_session_key().await {
+                    Ok(sk) => route.api_key = sk,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
+                            e
+                        ))
+                    }
+                }
+            }
+        }
 
         log::info!(
             "Routing task {:?} to provider '{}' (tools={})",
@@ -325,7 +356,22 @@ impl LlmGateway {
     ) -> Result<LlmResponse> {
         // 1. Route to best provider
         let task_type = router::infer_task_type(&messages);
-        let route = router::select_route(&task_type, settings);
+        let mut route = router::select_route(&task_type, settings);
+
+        // Cloud mode: same session_key injection as stream_message.
+        if route.provider == "lotus" {
+            if let Some(auth) = &self.auth_manager {
+                match auth.get_session_key().await {
+                    Ok(sk) => route.api_key = sk,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "API 密钥无效或已过期，请在设置中检查 API Key 配置。({})",
+                            e
+                        ))
+                    }
+                }
+            }
+        }
 
         log::info!(
             "Sending (non-stream) task {:?} to provider '{}'",
