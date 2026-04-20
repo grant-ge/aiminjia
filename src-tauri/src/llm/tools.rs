@@ -103,9 +103,9 @@ mod tests {
 
     #[test]
     fn test_get_tool_by_name_found() {
-        let tool = get_tool_by_name("web_search");
+        let tool = get_tool_by_name("list_directory");
         assert!(tool.is_some());
-        assert_eq!(tool.unwrap().name, "web_search");
+        assert_eq!(tool.unwrap().name, "list_directory");
     }
 
     #[test]

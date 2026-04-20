@@ -34,3 +34,15 @@ fn all_catalog_tools_have_valid_kind() {
         let _kind = &def.kind;
     }
 }
+
+#[test]
+fn retired_memory_tools_are_not_in_daily_catalog() {
+    let catalog = ToolCatalog::default_catalog();
+    for id in ["save_memory", "search_memory", "core_memory", "distill_memory"] {
+        assert!(
+            catalog.get(id).is_none(),
+            "retired memory tool '{}' must not remain in TOOL_CATALOG",
+            id
+        );
+    }
+}

@@ -551,10 +551,6 @@ fn build_default_catalog() -> ToolCatalog {
         ("plan_update", "更新任务计划状态"),
         ("progress_update", "更新分析步骤进度"),
         ("save_analysis_note", "保存中间分析记录"),
-        ("save_memory", "保存记忆条目"),
-        ("search_memory", "搜索记忆"),
-        ("core_memory", "读写核心记忆"),
-        ("distill_memory", "蒸馏精简记忆"),
     ] {
         c.insert(CatalogEntry::new(
             ToolDefinition::new(*id, *desc).with_kind(ToolKind::Support),

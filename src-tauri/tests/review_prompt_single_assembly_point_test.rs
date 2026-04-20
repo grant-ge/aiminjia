@@ -10,7 +10,16 @@ fn prompts_rs() -> PathBuf {
 
 #[test]
 fn review_context_builder_remains_dynamic_only() {
-    let result = build_iteration_context("mem", "workspace", "files", "notes", None, None, None);
+    let result = build_iteration_context(
+        "mem",
+        "project-memory",
+        "workspace",
+        "files",
+        "notes",
+        None,
+        None,
+        None,
+    );
 
     assert!(
         result.starts_with("[动态上下文"),

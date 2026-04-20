@@ -195,6 +195,17 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(vec![])
     }
 
+    /// 加载当前 workspace 对应的项目记忆上下文。
+    ///
+    /// 默认返回空上下文，便于旧测试 executor 无需感知此能力。
+    async fn load_project_memory(
+        &self,
+        _workspace_path: &Path,
+        _query: &str,
+    ) -> Result<crate::runtime::project_memory::ProjectMemoryContext, TurnError> {
+        Ok(crate::runtime::project_memory::ProjectMemoryContext::default())
+    }
+
     /// 加载跨对话共享的 core memory。
     ///
     /// 默认返回空字符串，便于旧测试 executor 无需感知此能力。
@@ -731,13 +742,25 @@ impl RuntimeChatTurnDriver {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
                 String::new()
             });
-        let core_memory_str = executor
-            .load_core_memory(request.conversation_id.as_str())
+        let project_memory_ctx = executor
+            .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
             .unwrap_or_else(|e| {
-                log::warn!("[run_chat_turn_s4] load_core_memory failed: {}", e);
-                String::new()
+                log::warn!("[run_chat_turn_s4] load_project_memory failed: {}", e);
+                crate::runtime::project_memory::ProjectMemoryContext::default()
             });
+        let core_memory_str = if project_memory_ctx.is_empty() {
+            executor
+                .load_core_memory(request.conversation_id.as_str())
+                .await
+                .unwrap_or_else(|e| {
+                    log::warn!("[run_chat_turn_s4] load_core_memory failed: {}", e);
+                    String::new()
+                })
+        } else {
+            String::new()
+        };
+        let project_memory_prompt = project_memory_ctx.render_for_prompt();
 
         'turn: for iteration in 0..config.max_iterations {
             let preprocess_config = PreprocessConfig::default();
@@ -773,6 +796,7 @@ impl RuntimeChatTurnDriver {
 
             let dynamic_context = build_iteration_context(
                 &core_memory_str,
+                &project_memory_prompt,
                 &env_info,
                 "",
                 "",

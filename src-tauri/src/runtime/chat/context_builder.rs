@@ -8,6 +8,7 @@
 /// path produces the string.
 pub fn build_iteration_context(
     core_memory: &str,
+    project_memory: &str,
     workspace_context: &str,
     file_context: &str,
     analysis_notes: &str,
@@ -24,22 +25,29 @@ pub fn build_iteration_context(
         ctx.push_str("\n");
     }
 
-    // 2. Workspace context (file listing, project summary, etc.)
+    // 2. Project memory (workspace-scoped persistent recall)
+    if !project_memory.is_empty() {
+        ctx.push_str("\n[项目记忆]\n");
+        ctx.push_str(project_memory);
+        ctx.push_str("\n");
+    }
+
+    // 3. Workspace context (file listing, project summary, etc.)
     if !workspace_context.is_empty() {
         ctx.push_str(workspace_context);
     }
 
-    // 3. File context (contents of uploaded / referenced files)
+    // 4. File context (contents of uploaded / referenced files)
     if !file_context.is_empty() {
         ctx.push_str(file_context);
     }
 
-    // 4. Analysis notes (accumulated observations from previous iterations)
+    // 5. Analysis notes (accumulated observations from previous iterations)
     if !analysis_notes.is_empty() {
         ctx.push_str(analysis_notes);
     }
 
-    // 5. Precompute result — tagged block so the LLM treats it as pre-computed data
+    // 6. Precompute result — tagged block so the LLM treats it as pre-computed data
     if let Some(pc_result) = precompute_result {
         ctx.push_str("\n\n[precompute_result]\n");
         ctx.push_str("以下是系统自动计算的结果，请基于这些数据向用户展示分析结论。\n");
@@ -47,7 +55,7 @@ pub fn build_iteration_context(
         ctx.push_str("\n[/precompute_result]");
     }
 
-    // 6. Internal connector context (browsing sessions / legacy app integrations)
+    // 7. Internal connector context (browsing sessions / legacy app integrations)
     if let Some(connector) = connector_context {
         ctx.push_str("\n\n[内部系统浏览]\n");
         ctx.push_str(
@@ -58,7 +66,7 @@ pub fn build_iteration_context(
         ctx.push_str("\n[/内部系统浏览]");
     }
 
-    // 7. Optional step context prompt (AnalysisContext::format_for_prompt())
+    // 8. Optional step context prompt (AnalysisContext::format_for_prompt())
     //    and step plan are injected by the caller and forwarded here as a single
     //    pre-formatted string.
     //
@@ -151,21 +159,30 @@ mod tests {
 
     #[test]
     fn test_empty_inputs_yields_only_header() {
-        let result = build_iteration_context("", "", "", "", None, None, None);
+        let result = build_iteration_context("", "", "", "", "", None, None, None);
         assert_eq!(result, EMPTY_HEADER);
     }
 
     #[test]
     fn test_core_memory_block() {
-        let result = build_iteration_context("mem content", "", "", "", None, None, None);
+        let result = build_iteration_context("mem content", "", "", "", "", None, None, None);
         assert!(result.contains("\n[核心记忆]\n"));
         assert!(result.contains("mem content"));
         assert!(result.contains("\n[核心记忆]\nmem content\n"));
     }
 
     #[test]
+    fn test_project_memory_block() {
+        let result = build_iteration_context("", "memory index", "", "", "", None, None, None);
+        assert!(result.contains("\n[项目记忆]\n"));
+        assert!(result.contains("memory index"));
+        assert!(result.contains("\n[项目记忆]\nmemory index\n"));
+    }
+
+    #[test]
     fn test_precompute_result_block() {
-        let result = build_iteration_context("", "", "", "", Some("computed data"), None, None);
+        let result =
+            build_iteration_context("", "", "", "", "", Some("computed data"), None, None);
         assert!(result.contains("[precompute_result]\n"));
         assert!(result.contains("computed data"));
         assert!(result.contains("[/precompute_result]"));
@@ -173,7 +190,8 @@ mod tests {
 
     #[test]
     fn test_connector_context_block() {
-        let result = build_iteration_context("", "", "", "", None, Some("connector info"), None);
+        let result =
+            build_iteration_context("", "", "", "", "", None, Some("connector info"), None);
         assert!(result.contains("[内部系统浏览]\n"));
         assert!(result.contains("connector info"));
         assert!(result.contains("[/内部系统浏览]"));
@@ -183,6 +201,7 @@ mod tests {
     fn test_concatenation_order() {
         let result = build_iteration_context(
             "CORE",
+            "MEMORY",
             "WORKSPACE",
             "FILES",
             "NOTES",
@@ -192,6 +211,7 @@ mod tests {
         );
 
         let core_pos = result.find("CORE").expect("CORE missing");
+        let mem_pos = result.find("MEMORY").expect("MEMORY missing");
         let ws_pos = result.find("WORKSPACE").expect("WORKSPACE missing");
         let file_pos = result.find("FILES").expect("FILES missing");
         let notes_pos = result.find("NOTES").expect("NOTES missing");
@@ -199,7 +219,8 @@ mod tests {
         let conn_pos = result.find("CONNECTOR").expect("CONNECTOR missing");
         let ana_pos = result.find("ANALYSIS").expect("ANALYSIS missing");
 
-        assert!(core_pos < ws_pos);
+        assert!(core_pos < mem_pos);
+        assert!(mem_pos < ws_pos);
         assert!(ws_pos < file_pos);
         assert!(file_pos < notes_pos);
         assert!(notes_pos < pre_pos);

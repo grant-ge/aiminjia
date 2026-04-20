@@ -412,6 +412,9 @@ pub fn run() {
             commands::persona::get_active_persona,
             commands::persona::export_personas,
             commands::persona::import_personas,
+            // Project memory commands
+            commands::project_memory::save_project_memory,
+            commands::project_memory::distill_project_memory,
             // Auth commands
             commands::auth::cloud_login,
             commands::auth::cloud_logout,

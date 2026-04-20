@@ -1056,6 +1056,21 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(loader.load(workspace_path).await)
     }
 
+    async fn load_project_memory(
+        &self,
+        workspace_path: &std::path::Path,
+        query: &str,
+    ) -> Result<crate::runtime::project_memory::ProjectMemoryContext, TurnError> {
+        let app_data_dir = self.services.db.base_dir().to_path_buf();
+        let service = crate::runtime::project_memory::ProjectMemoryService::new(
+            app_data_dir,
+            workspace_path.to_path_buf(),
+        );
+        service
+            .load_context(query)
+            .map_err(|err| TurnError::PersistenceError(format!("Failed to load project memory: {err}")))
+    }
+
     async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
         Ok(self.services.db.load_core_memory())
     }
