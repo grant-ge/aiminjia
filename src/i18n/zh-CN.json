@@ -376,6 +376,13 @@
     "updateAvailableDesc": "有新版本可用，是否现在更新？"
   },
 
+  "changelog": {
+    "whatsNew": "v{{version}} 更新内容",
+    "ok": "好的",
+    "title": "更新日志",
+    "noChanges": "暂无更新记录"
+  },
+
   "auth": {
     "expired": "登录已过期",
     "expiredDesc": "云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。"

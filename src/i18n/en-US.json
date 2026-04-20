@@ -376,6 +376,13 @@
     "updateAvailableDesc": "A new version is available. Would you like to update now?"
   },
 
+  "changelog": {
+    "whatsNew": "What's New in v{{version}}",
+    "ok": "OK",
+    "title": "Changelog",
+    "noChanges": "No changelog available"
+  },
+
   "auth": {
     "expired": "Session expired",
     "expiredDesc": "Cloud service is temporarily unavailable. You can log in again or switch to local mode in Settings."
