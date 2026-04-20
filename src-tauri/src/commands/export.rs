@@ -11,7 +11,7 @@ use crate::storage::file_manager::FileManager;
 /// 1. Fetch conversation metadata + all messages from DB
 /// 2. Render messages into a self-contained HTML document
 /// 3. For HTML: save directly to workspace/exports/
-///    For PDF: write HTML to temp, run Python (weasyprint) to convert
+///    For PDF: write HTML to temp, run Python (xhtml2pdf + reportlab CID fonts) to convert
 /// 4. Record in generated_files table
 /// 5. Return file info
 #[tauri::command]
@@ -105,24 +105,47 @@ pub async fn export_conversation(
         }));
     }
 
-    // For PDF: write HTML to temp and run Python conversion
+    // For PDF: write HTML to temp and run Python conversion via xhtml2pdf
+    // (pure Python, uses reportlab under the hood; reportlab has built-in CJK CID fonts)
     let python_code = format!(
             r#"
-import json, sys
+import json, sys, io
 
 html_path = {html_path}
 pdf_path = {pdf_path}
 
 try:
-    from weasyprint import HTML
-    HTML(filename=html_path).write_pdf(pdf_path)
-    print(json.dumps({{"status": "success", "path": pdf_path}}))
-except ImportError:
-    # Fallback: copy the HTML to exports dir (user can open in browser and print to PDF)
+    from xhtml2pdf import pisa
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+    # Register Simplified Chinese CID font (bundled with reportlab, no external file).
+    pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+
+    with open(html_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
+    # Inject CJK-capable default font into the existing <style> block so xhtml2pdf
+    # renders Chinese characters correctly (its default Helvetica lacks CJK glyphs).
+    html_content = html_content.replace(
+        '<style>',
+        '<style>body, div, p, span, td, th, h1, h2, h3, h4, h5, h6, li, pre, code {{ font-family: "STSong-Light", sans-serif; }}',
+        1,
+    )
+
+    with open(pdf_path, 'wb') as pdf_file:
+        result = pisa.CreatePDF(io.StringIO(html_content), dest=pdf_file, encoding='utf-8')
+
+    if result.err:
+        print(json.dumps({{"status": "error", "error": "xhtml2pdf reported " + str(result.err) + " error(s)"}}))
+    else:
+        print(json.dumps({{"status": "success", "path": pdf_path}}))
+
+except ImportError as e:
     import shutil
     html_out = pdf_path.replace('.pdf', '.html')
     shutil.copy(html_path, html_out)
-    print(json.dumps({{"status": "fallback_html", "path": html_out, "error": "weasyprint not installed, exported as HTML instead. Install with: pip install weasyprint"}}))
+    print(json.dumps({{"status": "fallback_html", "path": html_out, "error": "xhtml2pdf not installed (" + str(e) + "), exported as HTML instead."}}))
 except Exception as e:
     print(json.dumps({{"status": "error", "error": str(e)}}))
 "#,
@@ -170,7 +193,7 @@ except Exception as e:
         return Err(format!("Export failed: {}", err_msg));
     }
 
-    // Handle fallback case (PDF → HTML fallback when weasyprint not available)
+    // Handle fallback case (PDF → HTML fallback when xhtml2pdf not available)
     let (final_path, final_stored_path, final_filename, final_ext) = if status == "fallback_html" {
         let html_filename = output_filename.replace(".pdf", ".html");
         let html_stored = format!("exports/{}", html_filename);

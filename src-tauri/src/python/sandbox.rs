@@ -641,6 +641,63 @@ def _ws_merge(file_paths, output_name='merged', output_format='excel'):
     merged = pd.concat(dfs, ignore_index=True)
     print(f'\n合并结果: {len(merged)} 行, {len(merged.columns)} 列')
     return _export_detail(merged, output_name, f'合并数据（{len(file_paths)} 个文件）', format=output_format)
+
+# ============================================================
+# Document generation helpers — write payload to JSON file
+# for reliable two-step tool calls (avoids SSE chunk truncation
+# on large inline tool arguments).
+# ============================================================
+
+def _save_sections(sections, filename='report_sections.json'):
+    """Write report sections array to a workspace-relative JSON file, return its path.
+
+    Use before calling `generate_report(source=<path>, ...)`. Large inline section
+    arrays get corrupted in LLM SSE streaming; this helper keeps tool-call args tiny.
+
+    Example:
+        path = _save_sections([
+            {"heading": "核心发现", "content": "..."},
+            {"heading": "建议", "items": ["...", "..."]},
+        ])
+        # Then call generate_report(source=path, format="docx", title="...")
+    """
+    if not isinstance(sections, list):
+        raise TypeError(f'sections must be a list, got {type(sections).__name__}')
+    if not sections:
+        raise ValueError('sections list is empty; at least one section is required')
+    import json as _json_local
+    import os as _os_local
+    path = _os_local.path.join(_os_local.getcwd(), filename)
+    with open(path, 'w', encoding='utf-8') as f:
+        _json_local.dump(sections, f, ensure_ascii=False, indent=2)
+    print(f'报告数据已写入: {filename}（{len(sections)} 个章节）→ 现在调用 generate_report(source="{filename}", format="docx|pdf|html|markdown", title="...")')
+    return filename
+
+
+def _save_slides(slides, filename='slides.json'):
+    """Write slides array to a workspace-relative JSON file, return its path.
+
+    Use before calling `generate_slides(source=<path>, title=...)`. Same reliability
+    rationale as _save_sections.
+
+    Example:
+        path = _save_slides([
+            {"title": "封面", "layout": "title_slide"},
+            {"title": "核心发现", "bullets": ["..."]},
+        ])
+        # Then call generate_slides(source=path, title="...", theme="light")
+    """
+    if not isinstance(slides, list):
+        raise TypeError(f'slides must be a list, got {type(slides).__name__}')
+    if not slides:
+        raise ValueError('slides list is empty; at least one slide is required')
+    import json as _json_local
+    import os as _os_local
+    path = _os_local.path.join(_os_local.getcwd(), filename)
+    with open(path, 'w', encoding='utf-8') as f:
+        _json_local.dump(slides, f, ensure_ascii=False, indent=2)
+    print(f'幻灯片数据已写入: {filename}（{len(slides)} 张）→ 现在调用 generate_slides(source="{filename}", title="...")')
+    return filename
 "###;
 
 #[cfg(test)]

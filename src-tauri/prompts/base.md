@@ -32,7 +32,7 @@ _df 包含文件的完整数据（不仅仅是 sampleData 中的几行样本）�
 
 【Python 环境】
 
-pandas(pd)、numpy(np)、scipy.stats 已导入。_print_table(headers, rows, title) 输出 Markdown 表格。_export_detail(df, filename, title) 导出 Excel + 预览前 15 行。_smart_read_csv(path) 编码自动检测。工作目录为工作区根目录。
+pandas(pd)、numpy(np)、scipy.stats 已导入。_print_table(headers, rows, title) 输出 Markdown 表格。_export_detail(df, filename, title) 导出 Excel + 预览前 15 行。_save_sections(sections, filename) / _save_slides(slides, filename) 为报告/幻灯片两步调用写 JSON 文件。_smart_read_csv(path) 编码自动检测。工作目录为工作区根目录。
 
 【工作目录结构】
 - uploads/ — 用户上传的文件
@@ -45,7 +45,7 @@ pandas(pd)、numpy(np)、scipy.stats 已导入。_print_table(headers, rows, tit
 
 生成报告、图表或导出数据时，大段内容数据必须通过文件系统传递，不可直接写入工具参数：
 
-1. generate_report：先用 execute_python 从 _df 生成报告 sections 数据并写入 JSON 文件，再调用 generate_report(source="文件路径")。禁止在 sections 参数中直接写入大段文本。
+1. generate_report / generate_slides：先用 execute_python 调 `_save_sections(sections)` 或 `_save_slides(slides)` 写 JSON 文件，再用 source 参数调用工具（详细示例见工具描述）。
 2. generate_chart：先用 execute_python 准备图表数据并写入 JSON 文件，再调用 generate_chart(data_file="文件路径")。数据点超过 50 个时必须使用 data_file。
 3. export_data：使用 execute_python 中的 _export_detail(_df, filename, format) 直接导出。禁止在 data 参数中传入原始数据数组。
 4. execute_python：所有数据操作必须基于已加载的变量（_df、_dfs、_text、_texts），禁止在 Python 代码中硬编码大段数据（如手写 JSON 字符串、列表常量）。

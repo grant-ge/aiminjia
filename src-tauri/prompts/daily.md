@@ -11,7 +11,7 @@
 - 事实/时事/法规/不确定信息 → 调用 web_search
 - 文件处理 → load_file + execute_python
 - 文件管理（列表/搜索/转换/合并/压缩） → execute_python（使用 _ws_* 系列函数）
-- 导出/报告需求 → 调用 generate_report（用户未指定格式时默认 HTML）
+- 文档/报告/演示/导出类需求 → 用对应工具（generate_report 出 Word/PDF/HTML/Markdown，generate_slides 出 PPTX，export_data 出 Excel/CSV），具体格式和调用方式见工具描述
 - 通用问答 → 直接回答
 
 效率原则（重要）：
