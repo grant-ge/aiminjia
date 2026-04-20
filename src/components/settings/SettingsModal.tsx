@@ -29,6 +29,8 @@ import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
 import { SkillsTab } from '@/components/settings/SkillsTab'
 import type { AppLanguage } from '@/i18n'
+import { resolveResource } from '@tauri-apps/api/path'
+import { readTextFile } from '@tauri-apps/plugin-fs'
 
 interface SettingsModalProps {
   open: boolean
@@ -80,6 +82,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [metricsBytes, setMetricsBytes] = useState(0)
   const [metricsLoading, setMetricsLoading] = useState(false)
 
+  // Changelog state
+  const [showChangelog, setShowChangelog] = useState(false)
+  const [changelogEntries, setChangelogEntries] = useState<Array<{
+    version: string; date: string; changes: { zh: string[]; en: string[] }
+  }>>([])
+
   // Load settings + all provider keys when modal opens
   useEffect(() => {
     if (!open) return
@@ -117,6 +125,23 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       }
     })()
   }, [open])
+
+  useEffect(() => {
+    if (mainTab !== 'general') setShowChangelog(false)
+  }, [mainTab])
+
+  async function loadChangelog() {
+    try {
+      const resourcePath = await resolveResource('changelog.json')
+      const text = await readTextFile(resourcePath)
+      const data = JSON.parse(text)
+      const entries = (data.versions || []).filter((v: any) => v.product === 'desktop')
+      setChangelogEntries(entries)
+      setShowChangelog(true)
+    } catch (err) {
+      console.warn('Failed to load changelog:', err)
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -553,7 +578,41 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
       )}
 
-      {mainTab === 'general' && (
+      {mainTab === 'general' && showChangelog && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              className="text-sm cursor-pointer border-none bg-transparent"
+              style={{ color: 'var(--color-text-secondary)' }}
+              onClick={() => setShowChangelog(false)}
+            >
+              ← {t('changelog.ok')}
+            </button>
+            <h3 className="text-base font-semibold">{t('changelog.title')}</h3>
+          </div>
+          <div className="space-y-4">
+            {changelogEntries.map((entry) => {
+              const langKey = (settings.appLanguage || 'zh-CN').startsWith('zh') ? 'zh' : 'en'
+              const items = entry.changes[langKey] || entry.changes['en'] || []
+              return (
+                <div key={entry.version} className="border-b pb-3" style={{ borderColor: 'var(--color-border)' }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold">v{entry.version}</span>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{entry.date}</span>
+                  </div>
+                  <ul className="pl-4 list-disc space-y-1">
+                    {items.map((item, i) => (
+                      <li key={i} className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'general' && !showChangelog && (
         <div>
           {/* Language toggle */}
           <FormGroup label={t('settings.general.language')} desc={t('settings.general.languageDesc')}>
@@ -707,6 +766,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </Button>
               </div>
             </div>
+          </div>
+
+          {/* Changelog */}
+          <div
+            className="mt-4 border-t pt-4"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <Button variant="secondary" size="sm" onClick={loadChangelog}>
+              {t('changelog.title')}
+            </Button>
           </div>
         </div>
       )}
