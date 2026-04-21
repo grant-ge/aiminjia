@@ -129,6 +129,7 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
             request,
             Some(context.cancellation),
             self.deps.run_id.is_some(),
+            None,
         )
         .await
     }
@@ -139,6 +140,7 @@ async fn launch_browse_data_with_runtime_deps(
     request: BrowseDataLaunchRequest,
     cancel_token: Option<CancellationToken>,
     sub_agent_background: bool,
+    agent_registry: Option<&crate::runtime::agent::registry::AgentRegistry>,
 ) -> Result<BrowseDataLaunchResult> {
     let BrowseDataLaunchRequest { task, url } = request;
     let url = url.as_deref();
@@ -353,18 +355,41 @@ async fn launch_browse_data_with_runtime_deps(
         );
     }
 
+    let (allowed_tools, max_iterations) = if let Some(registry) = agent_registry {
+        if let Some(def) = registry.get("browse_data_agent") {
+            (def.allowed_tools.clone(), def.max_iterations)
+        } else {
+            (
+                vec![
+                    "browse_and_extract".to_string(),
+                    "browse_navigate".to_string(),
+                    "read_page_content".to_string(),
+                    "page_execute_js".to_string(),
+                    "extract_table_data".to_string(),
+                    "extract_with_pagination".to_string(),
+                ],
+                30,
+            )
+        }
+    } else {
+        (
+            vec![
+                "browse_and_extract".to_string(),
+                "browse_navigate".to_string(),
+                "read_page_content".to_string(),
+                "page_execute_js".to_string(),
+                "extract_table_data".to_string(),
+                "extract_with_pagination".to_string(),
+            ],
+            30,
+        )
+    };
+
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
         system_prompt,
-        allowed_tools: vec![
-            "browse_and_extract".to_string(),
-            "browse_navigate".to_string(),
-            "read_page_content".to_string(),
-            "page_execute_js".to_string(),
-            "extract_table_data".to_string(),
-            "extract_with_pagination".to_string(),
-        ],
-        max_iterations: 30,
+        allowed_tools,
+        max_iterations,
         dynamic_context,
         conversation_id: ctx.conversation_id.clone(),
         parent_run_id: ctx.run_id.clone(),
@@ -707,6 +732,7 @@ pub(crate) async fn execute_browse_data(
                 .unwrap_or_else(CancellationToken::new),
         ),
         ctx.run_id.is_some(),
+        None,
     )
     .await
 }

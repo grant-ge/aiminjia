@@ -319,7 +319,7 @@ git commit -m "feat(lib): manage AgentRegistry as global app state"
 **文件：**
 - 修改：`src-tauri/src/llm/tool_executor/internal_system.rs`
 
-- [ ] **Step 1：写测试确认迁移后行为不变**
+- [x] **Step 1：写测试确认迁移后行为不变**
 
 在 `agent_registry_test.rs` 追加：
 
@@ -347,7 +347,7 @@ fn browse_data_agent_tools_match_legacy_hardcoded_list() {
 }
 ```
 
-- [ ] **Step 2：运行确认通过**
+- [x] **Step 2：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test browse_data_agent_tools_match -- --nocapture
@@ -355,7 +355,7 @@ cd src-tauri && cargo test --test agent_registry_test browse_data_agent_tools_ma
 
 期望：`PASSED`
 
-- [ ] **Step 3：修改 launch_browse_data_with_runtime_deps，接收 AgentRegistry 参数**
+- [x] **Step 3：修改 launch_browse_data_with_runtime_deps，接收 AgentRegistry 参数**
 
 `internal_system.rs` 的 `launch_browse_data_with_runtime_deps` 函数签名增加 `agent_registry` 参数：
 
@@ -408,15 +408,10 @@ let config = crate::llm::sub_agent::SubAgentConfig {
     background: sub_agent_background,
     app_handle: ctx.app_handle.clone(),
     cancel_token,
-    permission_mode: if sub_agent_background {
-        crate::runtime::tools::permission::PermissionMode::DontAsk
-    } else {
-        crate::runtime::tools::permission::PermissionMode::Default
-    },
 };
 ```
 
-- [ ] **Step 4：更新所有调用 launch_browse_data_with_runtime_deps 的地方，传入 registry**
+- [x] **Step 4：更新所有调用 launch_browse_data_with_runtime_deps 的地方，传入 registry**
 
 ```bash
 grep -n "launch_browse_data_with_runtime_deps" src-tauri/src/llm/tool_executor/internal_system.rs
@@ -424,13 +419,13 @@ grep -n "launch_browse_data_with_runtime_deps" src-tauri/src/llm/tool_executor/i
 
 对每处调用追加 `agent_registry: None`（后续 Task 会改为真正传入）。
 
-- [ ] **Step 5：编译确认无错误**
+- [x] **Step 5：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 ```
 
-- [ ] **Step 6：Commit**
+- [x] **Step 6：Commit**
 
 ```bash
 git add src-tauri/src/llm/tool_executor/internal_system.rs \

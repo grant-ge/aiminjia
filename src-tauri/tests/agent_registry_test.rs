@@ -58,3 +58,26 @@ fn _keep_definition_types_used(
     _: AgentSource,
 ) {
 }
+
+
+#[test]
+fn browse_data_agent_tools_match_legacy_hardcoded_list() {
+    let registry = AgentRegistry::with_builtins();
+    let def = registry.get("browse_data_agent").unwrap();
+    let expected = vec![
+        "browse_and_extract",
+        "browse_navigate",
+        "read_page_content",
+        "page_execute_js",
+        "extract_table_data",
+        "extract_with_pagination",
+    ];
+    for tool in &expected {
+        assert!(
+            def.allowed_tools.contains(&tool.to_string()),
+            "browse_data_agent must contain tool: {}",
+            tool
+        );
+    }
+    assert_eq!(def.allowed_tools.len(), expected.len());
+}
