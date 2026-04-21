@@ -16,6 +16,7 @@ use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::permission::PermissionMode;
 use crate::runtime::tools::RuntimeTool;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub struct BrowseDataLaunchContext {
     pub parent_run_id: Option<RunId>,
     pub parent_agent_id: Option<AgentId>,
     pub cancellation: CancellationToken,
+    pub permission_mode: PermissionMode,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +101,7 @@ impl RuntimeTool for BrowseDataRuntimeTool {
             parent_run_id: Some(ctx.run_id.clone()),
             parent_agent_id: ctx.agent_id.clone(),
             cancellation: ctx.cancellation.clone(),
+            permission_mode: ctx.permission_mode,
         };
 
         let launch_result = self

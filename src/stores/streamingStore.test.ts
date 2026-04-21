@@ -28,8 +28,8 @@ function buildPendingAsk(overrides: Partial<PendingAsk> = {}): PendingAsk {
     message: 'Run code?',
     suggestions: null,
     mode: 'default',
-    rememberOptions: null,
-    defaultDestination: null,
+    rememberOptions: ['session'],
+    defaultDestination: 'session',
     ...overrides,
   }
 }
@@ -101,25 +101,9 @@ describe('pendingAsks state', () => {
 
   it('clearConversationPendingAsks removes all asks for a given conversationId', () => {
     const store = useStreamingStore.getState()
-    store.addPendingAsk(buildPendingAsk({
-      runId: 'r1',
-      toolCallId: 'tc-1',
-      toolName: 'a',
-      message: 'm',
-    }))
-    store.addPendingAsk(buildPendingAsk({
-      runId: 'r1',
-      toolCallId: 'tc-2',
-      toolName: 'b',
-      message: 'm',
-    }))
-    store.addPendingAsk(buildPendingAsk({
-      conversationId: 'conv-2',
-      runId: 'r2',
-      toolCallId: 'tc-3',
-      toolName: 'c',
-      message: 'm',
-    }))
+    store.addPendingAsk(buildPendingAsk({ runId: 'r1', toolCallId: 'tc-1', toolName: 'a', message: 'm' }))
+    store.addPendingAsk(buildPendingAsk({ runId: 'r1', toolCallId: 'tc-2', toolName: 'b', message: 'm' }))
+    store.addPendingAsk(buildPendingAsk({ conversationId: 'conv-2', runId: 'r2', toolCallId: 'tc-3', toolName: 'c', message: 'm' }))
 
     store.clearConversationPendingAsks('conv-1')
 

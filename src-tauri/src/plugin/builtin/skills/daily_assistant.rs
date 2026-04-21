@@ -9,12 +9,45 @@ use std::sync::Arc;
 use crate::auth::AuthManager;
 use crate::llm::prompts;
 use crate::plugin::skill_trait::*;
+use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use crate::storage::file_store::AppStorage;
 
 pub struct DailyAssistantSkill {
-    pub db: Arc<AppStorage>,
-    pub auth_manager: Arc<AuthManager>,
+    db: Arc<AppStorage>,
+    auth_manager: Arc<AuthManager>,
+    allowed_tools: Vec<String>,
+}
+
+impl DailyAssistantSkill {
+    fn fallback_allowed_tools() -> Vec<String> {
+        DAILY_ALLOWED_TOOLS.iter().map(|tool| tool.to_string()).collect()
+    }
+
+    pub fn new(db: Arc<AppStorage>, auth_manager: Arc<AuthManager>) -> Self {
+        Self {
+            db,
+            auth_manager,
+            allowed_tools: Self::fallback_allowed_tools(),
+        }
+    }
+
+    pub fn new_with_registry(
+        registry: &AgentRegistry,
+        db: Arc<AppStorage>,
+        auth_manager: Arc<AuthManager>,
+    ) -> Self {
+        let allowed_tools = registry
+            .get("daily_assistant_agent")
+            .map(|def| def.allowed_tools.clone())
+            .unwrap_or_else(Self::fallback_allowed_tools);
+
+        Self {
+            db,
+            auth_manager,
+            allowed_tools,
+        }
+    }
 }
 
 #[async_trait]
@@ -44,7 +77,7 @@ impl Skill for DailyAssistantSkill {
     }
 
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
-        ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect())
+        ToolFilter::Only(self.allowed_tools.clone())
     }
 
     fn max_iterations(&self, _state: &SkillState) -> usize {

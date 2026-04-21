@@ -37,6 +37,7 @@ pub(crate) struct BrowseDataLauncherDeps {
     read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     cancellation: Option<CancellationToken>,
     app_handle: Option<tauri::AppHandle>,
+    permission_control_plane: Option<Arc<dyn crate::runtime::store::PendingPermissionControlPlane>>,
 }
 
 impl BrowseDataLauncherDeps {
@@ -61,6 +62,7 @@ impl BrowseDataLauncherDeps {
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
             app_handle: ctx.app_handle.clone(),
+            permission_control_plane: ctx.permission_control_plane.clone(),
         }
     }
 
@@ -89,6 +91,7 @@ impl BrowseDataLauncherDeps {
             authorized_workspace: self.authorized_workspace,
             read_file_state: self.read_file_state,
             cancellation: self.cancellation,
+            permission_control_plane: self.permission_control_plane,
         }
     }
 }
@@ -128,7 +131,9 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
             &scoped_runtime_deps,
             request,
             Some(context.cancellation),
+            context.permission_mode,
             self.deps.run_id.is_some(),
+            None,
         )
         .await
     }
@@ -138,7 +143,9 @@ async fn launch_browse_data_with_runtime_deps(
     ctx: &RequestScopedRuntimeDeps,
     request: BrowseDataLaunchRequest,
     cancel_token: Option<CancellationToken>,
+    permission_mode: crate::runtime::tools::permission::PermissionMode,
     sub_agent_background: bool,
+    agent_registry: Option<&crate::runtime::agent::registry::AgentRegistry>,
 ) -> Result<BrowseDataLaunchResult> {
     let BrowseDataLaunchRequest { task, url } = request;
     let url = url.as_deref();
@@ -353,24 +360,49 @@ async fn launch_browse_data_with_runtime_deps(
         );
     }
 
+    let (allowed_tools, max_iterations) = if let Some(registry) = agent_registry {
+        if let Some(def) = registry.get("browse_data_agent") {
+            (def.allowed_tools.clone(), def.max_iterations)
+        } else {
+            (
+                vec![
+                    "browse_and_extract".to_string(),
+                    "browse_navigate".to_string(),
+                    "read_page_content".to_string(),
+                    "page_execute_js".to_string(),
+                    "extract_table_data".to_string(),
+                    "extract_with_pagination".to_string(),
+                ],
+                30,
+            )
+        }
+    } else {
+        (
+            vec![
+                "browse_and_extract".to_string(),
+                "browse_navigate".to_string(),
+                "read_page_content".to_string(),
+                "page_execute_js".to_string(),
+                "extract_table_data".to_string(),
+                "extract_with_pagination".to_string(),
+            ],
+            30,
+        )
+    };
+
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
         system_prompt,
-        allowed_tools: vec![
-            "browse_and_extract".to_string(),
-            "browse_navigate".to_string(),
-            "read_page_content".to_string(),
-            "page_execute_js".to_string(),
-            "extract_table_data".to_string(),
-            "extract_with_pagination".to_string(),
-        ],
-        max_iterations: 30,
+        allowed_tools,
+        max_iterations,
         dynamic_context,
         conversation_id: ctx.conversation_id.clone(),
         parent_run_id: ctx.run_id.clone(),
         background: sub_agent_background,
         app_handle: ctx.app_handle.clone(),
         cancel_token,
+        permission_mode,
+        control_plane: ctx.permission_control_plane.clone(),
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(
@@ -391,6 +423,7 @@ async fn launch_browse_data_with_runtime_deps(
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             app_handle: ctx.app_handle.clone(),
+            permission_control_plane: ctx.permission_control_plane.clone(),
         },
         config,
         app_settings,
@@ -701,8 +734,14 @@ pub(crate) async fn execute_browse_data(
     launch_browse_data_with_runtime_deps(
         &runtime_deps,
         request,
-        ctx.cancellation.clone(),
+        Some(
+            ctx.cancellation
+                .clone()
+                .unwrap_or_else(CancellationToken::new),
+        ),
+        crate::runtime::tools::permission::PermissionMode::Default,
         ctx.run_id.is_some(),
+        None,
     )
     .await
 }

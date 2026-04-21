@@ -183,6 +183,8 @@ pub fn run() {
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
                 aijia_home.mcp_config_path(),
             ));
+            let agent_registry =
+                Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
 
             let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
                 log::warn!("Failed to load MCP configs from disk: {}", err);
@@ -219,6 +221,7 @@ pub fn run() {
                     &skill_registry,
                     db.clone(),
                     auth_manager.clone(),
+                    Some(agent_registry.as_ref()),
                 )
                 .await;
 
@@ -346,6 +349,7 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
+            app.manage(agent_registry);
             app.manage(chat_adapter);
 
             // Skill-smith: cleanup expired drafts on startup (non-blocking).
@@ -417,6 +421,8 @@ pub fn run() {
             transport::tauri_commands::mcp::remove_mcp_server,
             transport::tauri_commands::mcp::connect_mcp_server,
             transport::tauri_commands::mcp::disconnect_mcp_server,
+            // Agent registry commands
+            transport::tauri_commands::agents::list_agents,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,

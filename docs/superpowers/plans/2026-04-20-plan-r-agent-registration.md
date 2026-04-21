@@ -39,13 +39,13 @@
 - 新建：`src-tauri/src/runtime/agent/registry.rs`
 - 修改：`src-tauri/src/runtime/agent/mod.rs`
 
-- [ ] **Step 1：写失败测试**
+- [x] **Step 1：写失败测试**
 
 新建 `src-tauri/tests/agent_registry_test.rs`：
 
 ```rust
-use lotus_app::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
-use lotus_app::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
+use app_lib::runtime::agent::registry::AgentRegistry;
 
 #[test]
 fn registry_with_builtins_has_browse_data_agent() {
@@ -97,7 +97,7 @@ fn registry_list_returns_all_builtins() {
 }
 ```
 
-- [ ] **Step 2：运行确认失败**
+- [x] **Step 2：运行确认失败**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test -- --nocapture 2>&1 | head -20
@@ -105,7 +105,7 @@ cd src-tauri && cargo test --test agent_registry_test -- --nocapture 2>&1 | head
 
 期望：编译错误，`definition` 和 `registry` 模块不存在
 
-- [ ] **Step 3：新建 definition.rs**
+- [x] **Step 3：新建 definition.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/definition.rs
@@ -140,7 +140,7 @@ pub struct AgentDefinition {
 }
 ```
 
-- [ ] **Step 4：新建 builtin/browse_data_agent.rs**
+- [x] **Step 4：新建 builtin/browse_data_agent.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/browse_data_agent.rs
@@ -166,7 +166,7 @@ pub fn browse_data_agent_definition() -> AgentDefinition {
 }
 ```
 
-- [ ] **Step 5：新建 builtin/daily_assistant_agent.rs**
+- [x] **Step 5：新建 builtin/daily_assistant_agent.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/daily_assistant_agent.rs
@@ -189,7 +189,7 @@ pub fn daily_assistant_agent_definition() -> AgentDefinition {
 }
 ```
 
-- [ ] **Step 6：新建 builtin/mod.rs**
+- [x] **Step 6：新建 builtin/mod.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/mod.rs
@@ -197,7 +197,7 @@ pub mod browse_data_agent;
 pub mod daily_assistant_agent;
 ```
 
-- [ ] **Step 7：新建 registry.rs**
+- [x] **Step 7：新建 registry.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/registry.rs
@@ -238,7 +238,7 @@ impl AgentRegistry {
 }
 ```
 
-- [ ] **Step 8：修改 runtime/agent/mod.rs，暴露新模块**
+- [x] **Step 8：修改 runtime/agent/mod.rs，暴露新模块**
 
 在 `src-tauri/src/runtime/agent/mod.rs` 末尾追加：
 
@@ -248,7 +248,7 @@ pub mod definition;
 pub mod registry;
 ```
 
-- [ ] **Step 9：运行确认通过**
+- [x] **Step 9：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test -- --nocapture
@@ -256,7 +256,7 @@ cd src-tauri && cargo test --test agent_registry_test -- --nocapture
 
 期望：全部 `PASSED`
 
-- [ ] **Step 10：Commit**
+- [x] **Step 10：Commit**
 
 ```bash
 git add \
@@ -277,13 +277,13 @@ git commit -m "feat(agent): AgentDefinition + AgentRegistry + builtin browse_dat
 **文件：**
 - 修改：`src-tauri/src/lib.rs`
 
-- [ ] **Step 1：在 lib.rs 找到 app.manage 区块（约行 292-347）**
+- [x] **Step 1：在 lib.rs 找到 app.manage 区块（约行 292-347）**
 
 ```bash
 grep -n "app.manage\|agent_runtime\|mcp_server_manager" src-tauri/src/lib.rs | head -15
 ```
 
-- [ ] **Step 2：构造并注册 AgentRegistry**
+- [x] **Step 2：构造并注册 AgentRegistry**
 
 在 `app.manage(agent_runtime);` 之后，`app.manage(chat_adapter);` 之前插入：
 
@@ -295,7 +295,7 @@ let agent_registry = std::sync::Arc::new(
 app.manage(agent_registry);
 ```
 
-- [ ] **Step 3：编译确认无错误**
+- [x] **Step 3：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
@@ -303,7 +303,7 @@ cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 
 期望：无错误
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add src-tauri/src/lib.rs
@@ -319,7 +319,7 @@ git commit -m "feat(lib): manage AgentRegistry as global app state"
 **文件：**
 - 修改：`src-tauri/src/llm/tool_executor/internal_system.rs`
 
-- [ ] **Step 1：写测试确认迁移后行为不变**
+- [x] **Step 1：写测试确认迁移后行为不变**
 
 在 `agent_registry_test.rs` 追加：
 
@@ -347,7 +347,7 @@ fn browse_data_agent_tools_match_legacy_hardcoded_list() {
 }
 ```
 
-- [ ] **Step 2：运行确认通过**
+- [x] **Step 2：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test browse_data_agent_tools_match -- --nocapture
@@ -355,7 +355,7 @@ cd src-tauri && cargo test --test agent_registry_test browse_data_agent_tools_ma
 
 期望：`PASSED`
 
-- [ ] **Step 3：修改 launch_browse_data_with_runtime_deps，接收 AgentRegistry 参数**
+- [x] **Step 3：修改 launch_browse_data_with_runtime_deps，接收 AgentRegistry 参数**
 
 `internal_system.rs` 的 `launch_browse_data_with_runtime_deps` 函数签名增加 `agent_registry` 参数：
 
@@ -408,15 +408,10 @@ let config = crate::llm::sub_agent::SubAgentConfig {
     background: sub_agent_background,
     app_handle: ctx.app_handle.clone(),
     cancel_token,
-    permission_mode: if sub_agent_background {
-        crate::runtime::tools::permission::PermissionMode::DontAsk
-    } else {
-        crate::runtime::tools::permission::PermissionMode::Default
-    },
 };
 ```
 
-- [ ] **Step 4：更新所有调用 launch_browse_data_with_runtime_deps 的地方，传入 registry**
+- [x] **Step 4：更新所有调用 launch_browse_data_with_runtime_deps 的地方，传入 registry**
 
 ```bash
 grep -n "launch_browse_data_with_runtime_deps" src-tauri/src/llm/tool_executor/internal_system.rs
@@ -424,13 +419,13 @@ grep -n "launch_browse_data_with_runtime_deps" src-tauri/src/llm/tool_executor/i
 
 对每处调用追加 `agent_registry: None`（后续 Task 会改为真正传入）。
 
-- [ ] **Step 5：编译确认无错误**
+- [x] **Step 5：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 ```
 
-- [ ] **Step 6：Commit**
+- [x] **Step 6：Commit**
 
 ```bash
 git add src-tauri/src/llm/tool_executor/internal_system.rs \
@@ -447,22 +442,29 @@ git commit -m "refactor(browse_data): read allowed_tools/max_iterations from Age
 **文件：**
 - 修改：`src-tauri/src/plugin/builtin/skills/daily_assistant.rs`
 
-- [ ] **Step 1：写测试**
+- [x] **Step 1：写测试**
 
 在 `agent_registry_test.rs` 追加：
 
 ```rust
-use lotus_app::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
-use lotus_app::plugin::skill_trait::{Skill, ToolFilter};
-use lotus_app::runtime::agent::registry::AgentRegistry;
+use app_lib::auth::AuthManager;
+use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
+use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
+use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::storage::file_store::AppStorage;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 #[test]
 fn daily_assistant_tool_filter_matches_registry_definition() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("daily_assistant_agent").unwrap();
     // DailyAssistantSkill 的 tool_filter 应该与 registry 里的 allowed_tools 一致
-    let skill = DailyAssistantSkill::new_with_registry(&registry);
-    let filter = skill.tool_filter();
+    let workspace = TempDir::new().expect("TempDir::new failed");
+    let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
+    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let skill = DailyAssistantSkill::new_with_registry(&registry, storage, auth_manager);
+    let filter = skill.tool_filter(&SkillState::new("daily-assistant"));
     match filter {
         ToolFilter::Only(tools) => {
             assert_eq!(tools.len(), def.allowed_tools.len());
@@ -475,7 +477,7 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
 }
 ```
 
-- [ ] **Step 2：运行确认失败**
+- [x] **Step 2：运行确认失败**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filter -- --nocapture 2>&1 | head -15
@@ -483,7 +485,7 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 
 期望：编译错误，`new_with_registry` 不存在
 
-- [ ] **Step 3：修改 DailyAssistantSkill**
+- [x] **Step 3：修改 DailyAssistantSkill**
 
 `src-tauri/src/plugin/builtin/skills/daily_assistant.rs`：
 
@@ -491,12 +493,18 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 use crate::runtime::agent::registry::AgentRegistry;
 
 pub struct DailyAssistantSkill {
+    db: Arc<AppStorage>,
+    auth_manager: Arc<AuthManager>,
     allowed_tools: Vec<String>,
 }
 
 impl DailyAssistantSkill {
     /// 生产路径：从 AgentRegistry 读取工具列表
-    pub fn new_with_registry(registry: &AgentRegistry) -> Self {
+    pub fn new_with_registry(
+        registry: &AgentRegistry,
+        db: Arc<AppStorage>,
+        auth_manager: Arc<AuthManager>,
+    ) -> Self {
         let tools = registry
             .get("daily_assistant_agent")
             .map(|def| def.allowed_tools.clone())
@@ -507,12 +515,18 @@ impl DailyAssistantSkill {
                     .map(|s| s.to_string())
                     .collect()
             });
-        Self { allowed_tools: tools }
+        Self {
+            db,
+            auth_manager,
+            allowed_tools: tools,
+        }
     }
 
     /// 测试/兼容路径：直接用常量
-    pub fn new() -> Self {
+    pub fn new(db: Arc<AppStorage>, auth_manager: Arc<AuthManager>) -> Self {
         Self {
+            db,
+            auth_manager,
             allowed_tools: crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
                 .iter()
                 .map(|s| s.to_string())
@@ -529,7 +543,7 @@ impl Skill for DailyAssistantSkill {
 }
 ```
 
-- [ ] **Step 4：运行确认通过**
+- [x] **Step 4：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filter -- --nocapture
@@ -537,7 +551,7 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 
 期望：`PASSED`
 
-- [ ] **Step 5：更新 DailyAssistantSkill 的构造调用处**
+- [x] **Step 5：更新 DailyAssistantSkill 的构造调用处**
 
 ```bash
 grep -rn "DailyAssistantSkill::new\b" src-tauri/src/
@@ -545,13 +559,13 @@ grep -rn "DailyAssistantSkill::new\b" src-tauri/src/
 
 对所有调用处，如果能拿到 `AgentRegistry`（通过 State 或参数），改为 `DailyAssistantSkill::new_with_registry(®istry)`，否则保持 `DailyAssistantSkill::new()`。
 
-- [ ] **Step 6：编译确认无错误**
+- [x] **Step 6：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 ```
 
-- [ ] **Step 7：Commit**
+- [x] **Step 7：Commit**
 
 ```bash
 git add src-tauri/src/plugin/builtin/skills/daily_assistant.rs \
@@ -568,7 +582,7 @@ git commit -m "refactor(daily_assistant): read tool list from AgentRegistry, kee
 - 修改：`src-tauri/src/transport/tauri_commands/mod.rs`
 - 修改：`src-tauri/src/lib.rs`（invoke_handler 注册）
 
-- [ ] **Step 1：新建 agents.rs**
+- [x] **Step 1：新建 agents.rs**
 
 ```rust
 // src-tauri/src/transport/tauri_commands/agents.rs
@@ -606,7 +620,7 @@ pub async fn list_agents(
 }
 ```
 
-- [ ] **Step 2：修改 mod.rs 暴露 agents 模块**
+- [x] **Step 2：修改 mod.rs 暴露 agents 模块**
 
 在 `src-tauri/src/transport/tauri_commands/mod.rs` 追加：
 
@@ -614,7 +628,7 @@ pub async fn list_agents(
 pub mod agents;
 ```
 
-- [ ] **Step 3：在 lib.rs invoke_handler 注册**
+- [x] **Step 3：在 lib.rs invoke_handler 注册**
 
 找到约行 409-420 的 MCP 相关 command 注册，在其后追加：
 
@@ -623,7 +637,7 @@ pub mod agents;
 transport::tauri_commands::agents::list_agents,
 ```
 
-- [ ] **Step 4：编译确认**
+- [x] **Step 4：编译确认**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
@@ -631,7 +645,7 @@ cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 
 期望：无错误
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add \
@@ -649,7 +663,7 @@ git commit -m "feat(api): list_agents Tauri command returns registered agent def
 - 修改：`src/lib/tauri.ts`
 - 修改：`src/stores/chatStore.ts`（发送时携带 agent_name）
 
-- [ ] **Step 1：修改 tauri.ts 新增 listAgents**
+- [x] **Step 1：修改 tauri.ts 新增 listAgents**
 
 找到 `tauri.ts` 里 `invoke` 调用集中处，追加：
 
@@ -683,7 +697,7 @@ export async function sendMessage(params: {
 }
 ```
 
-- [ ] **Step 2：修改 Rust send_message command 接收 agent_name**
+- [x] **Step 2：修改 Rust send_message command 接收 agent_name**
 
 ```bash
 grep -n "pub async fn send_message\|agent_name" src-tauri/src/transport/tauri_commands/chat.rs | head -10
@@ -702,7 +716,7 @@ pub async fn send_message(
 }
 ```
 
-- [ ] **Step 3：SessionRuntime 用 agent_name 约束工具池**
+- [x] **Step 3：SessionRuntime 用 agent_name 约束工具池**
 
 在 `session_runtime.rs` 的 `run_chat_request` 方法里，若收到 `agent_name`，从 `AgentRegistry` 查出 definition，用 `definition.allowed_tools` 覆盖本次 turn 的 `TurnConfig.allowed_tools`（`turn_config.rs:56` 已有 `Option<HashSet<String>>`）：
 
@@ -721,7 +735,7 @@ if let Some(ref agent_name) = request.agent_name {
 
 `SessionRuntime` 需要持有 `agent_registry: Option<Arc<AgentRegistry>>`，在 `lib.rs` 构造时注入。
 
-- [ ] **Step 4：前端构建确认**
+- [x] **Step 4：前端构建确认**
 
 ```bash
 pnpm build 2>&1 | grep -i "error\|Error" | grep -v "warning" | head -10
@@ -729,7 +743,7 @@ pnpm build 2>&1 | grep -i "error\|Error" | grep -v "warning" | head -10
 
 期望：无错误
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add src/lib/tauri.ts \
@@ -746,7 +760,7 @@ git commit -m "feat(frontend): listAgents() + send_message agent_name constrains
 - 新建：`src/components/chat/AgentSelector.tsx`
 - 修改：chat 输入区父组件（引入 AgentSelector）
 
-- [ ] **Step 1：新建 AgentSelector.tsx**
+- [x] **Step 1：新建 AgentSelector.tsx**
 
 ```tsx
 // src/components/chat/AgentSelector.tsx
@@ -782,7 +796,7 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
 }
 ```
 
-- [ ] **Step 2：在 chat 输入区使用 AgentSelector**
+- [x] **Step 2：在 chat 输入区使用 AgentSelector**
 
 找到发送消息的输入组件（通常是 `ChatInput.tsx` 或类似名称）：
 
@@ -809,7 +823,7 @@ await sendMessage({
 });
 ```
 
-- [ ] **Step 3：前端构建确认**
+- [x] **Step 3：前端构建确认**
 
 ```bash
 pnpm build 2>&1 | grep -i "^error\|Error:" | head -10
@@ -817,7 +831,7 @@ pnpm build 2>&1 | grep -i "^error\|Error:" | head -10
 
 期望：无错误
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add src/components/chat/AgentSelector.tsx
@@ -831,12 +845,12 @@ git commit -m "feat(ui): AgentSelector dropdown for registered agents"
 **文件：**
 - 新建：`src-tauri/tests/review_agent_registry_test.rs`
 
-- [ ] **Step 1：新建 review test**
+- [x] **Step 1：新建 review test**
 
 ```rust
 //! review_agent_registry — 防止 browse_data 工具硬编码退化的架构约束测试。
 
-use lotus_app::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::agent::registry::AgentRegistry;
 
 /// browse_data_agent 必须在 registry 中注册，且工具列表完整。
 #[test]
@@ -880,7 +894,7 @@ fn review_browse_data_agent_max_iterations_reasonable() {
 }
 ```
 
-- [ ] **Step 2：运行**
+- [x] **Step 2：运行**
 
 ```bash
 cd src-tauri && cargo test review_agent_registry -- --nocapture
@@ -888,7 +902,7 @@ cd src-tauri && cargo test review_agent_registry -- --nocapture
 
 期望：全部 `PASSED`
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add src-tauri/tests/review_agent_registry_test.rs

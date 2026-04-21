@@ -16,6 +16,7 @@ use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::ToolRegistry;
+use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::{
@@ -1479,6 +1480,13 @@ impl TauriChatCommandAdapter {
             llm_executor,
         )
         .with_permission_store(permission_store);
+        if let Some(agent_registry) = services.app.try_state::<Arc<AgentRegistry>>() {
+            runtime = runtime.with_agent_registry(agent_registry.inner().clone());
+        } else {
+            log::warn!(
+                "[TauriChatCommandAdapter] AgentRegistry not registered when chat adapter was constructed."
+            );
+        }
         if let Some(facade) = services
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
@@ -1501,8 +1509,12 @@ impl TauriChatCommandAdapter {
         conversation_id: String,
         content: String,
         file_ids: Vec<String>,
+        agent_name: Option<String>,
     ) -> Result<(), String> {
-        let request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        if let Some(agent_name) = agent_name {
+            request = request.with_agent_name(agent_name);
+        }
         self.runtime.run_chat_request(request).await
     }
 

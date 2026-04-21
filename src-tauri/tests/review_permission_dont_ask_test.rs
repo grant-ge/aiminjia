@@ -87,7 +87,7 @@ fn review_default_mode_preserves_ask() {
 }
 
 #[test]
-fn review_plan_mode_preserves_ask_but_marks_reason_as_plan_mode() {
+fn review_plan_mode_converts_ask_to_deny() {
     let decision = app_lib::runtime::tools::permission::apply_permission_mode(
         PermissionDecision::Ask {
             message: "permission confirmation required".to_string(),
@@ -101,14 +101,14 @@ fn review_plan_mode_preserves_ask_but_marks_reason_as_plan_mode() {
     );
 
     match decision {
-        PermissionDecision::Ask { reason, .. } => {
+        PermissionDecision::Deny { reason, .. } => {
             assert!(matches!(
                 reason,
                 app_lib::runtime::tools::permission::PermissionReason::Mode(ref mode)
                     if mode == "plan"
             ));
         }
-        other => panic!("plan mode should preserve ask, got: {:?}", other),
+        other => panic!("plan mode should convert ask to deny, got: {:?}", other),
     }
 }
 

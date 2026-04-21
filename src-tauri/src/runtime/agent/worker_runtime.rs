@@ -23,8 +23,11 @@ use crate::runtime::identity::IdentityMapping;
 use crate::runtime::ids::RunId;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
+use crate::runtime::store::{
+    PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
+};
 use crate::runtime::tools::capability::{DefaultFileOperations, FileStateCache};
-use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
 use crate::llm::sub_agent::{SubAgentConfig, SubAgentResult, SubAgentRuntimeDeps};
 
@@ -46,6 +49,12 @@ pub struct WorkerRunConfig {
     pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<CancellationToken>,
+    /// 权限模式，从父 run 传入。Default 时行为不变。
+    pub permission_mode: PermissionMode,
+    /// 父 run 的 pending permission control plane。
+    /// Some 时：worker 内 AskRequired 转发给 control plane 等待解析，不冒泡给父 turn。
+    /// None 时：保留原有冒泡行为（subagent caller 处理）。
+    pub control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -83,6 +92,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
             background: config.background,
             app_handle: config.app_handle,
             cancel_token: config.cancel_token,
+            permission_mode: config.permission_mode,
+            control_plane: config.control_plane,
         };
         self.run_worker_turn(turn_request, run_config).await
     }
@@ -142,11 +153,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let sub_conv_id = child_run_id.as_str().to_string();
         request.subagent_conversation_id = sub_conv_id.clone();
 
-        let child_cancel = config
-            .cancel_token
-            .as_ref()
-            .map(|parent| parent.child_token())
-            .unwrap_or_default();
+        let child_cancel = if config.background {
+            CancellationToken::new()
+        } else {
+            config
+                .cancel_token
+                .as_ref()
+                .map(|parent| parent.child_token())
+                .unwrap_or_else(CancellationToken::new)
+        };
         let child_read_file_state = self
             .runtime_deps
             .read_file_state
@@ -191,6 +206,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let mut pending_ask: Option<PermissionDecision> = None;
         let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
         let mut cancelled = false;
+        let mut failed = false;
 
         'agent_loop: for iteration in 0..request.max_iterations {
             if child_cancel.is_cancelled() {
@@ -225,6 +241,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 Err(err) => {
                     warn!("[SubAgent] LLM call failed at iter {}: {}", iteration, err);
                     output = format!("Sub-agent LLM error: {}", err);
+                    failed = true;
                     break;
                 }
             };
@@ -399,36 +416,142 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
                         tool_call_id,
                         tool_name,
+                        capability_scopes,
+                        original_request,
                         decision,
-                        ..
                     }) => {
-                        let bubbled =
-                            annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
-                        terminal_tool_results.push(SubAgentTerminalToolResult {
-                            tool_call_id: tool_call_id.clone(),
-                            tool_name: tool_name.clone(),
-                            success: false,
-                            summary: "Permission Ask required".to_string(),
-                            generated_files: Vec::new(),
-                        });
-                        emit_tool_completed(
-                            config.app_handle.as_ref(),
-                            &config.conversation_id,
-                            &tool_call_id,
-                            false,
-                            Some("Permission Ask required"),
-                        );
-                        request.messages.push(ChatMessage::tool_result(
-                            &tool_call_id,
-                            &tool_name,
-                            "Permission Ask required".to_string(),
-                        ));
-                        warn!(
-                            "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
-                            tool_name, bubbled
-                        );
-                        pending_ask = Some(bubbled);
-                        break 'agent_loop;
+                        if let Some(cp) = config.control_plane.as_ref() {
+                            let PermissionDecision::Ask {
+                                message,
+                                suggestions,
+                                remember_options,
+                                default_destination,
+                                ..
+                            } = &decision
+                            else {
+                                warn!(
+                                    "[SubAgent] AskRequired has non-Ask decision, falling back to bubble"
+                                );
+                                let bubbled =
+                                    annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
+                                pending_ask = Some(bubbled);
+                                break 'agent_loop;
+                            };
+
+                            let pending_request = PendingPermissionRequest {
+                                tool_call_id: tool_call_id.clone().into(),
+                                session_id: turn.session_id().clone(),
+                                run_id: child_run_id.clone(),
+                                tool_name: tool_name.clone(),
+                                capability_scopes: capability_scopes.clone(),
+                                message: message.clone(),
+                                suggestions: suggestions.clone(),
+                                mode: config.permission_mode,
+                                remember_options: remember_options.clone(),
+                                default_destination: *default_destination,
+                                original_request: original_request.clone(),
+                            };
+
+                            match cp.insert_pending_request(pending_request) {
+                                Ok(rx) => {
+                                    let resolution = tokio::time::timeout(
+                                        std::time::Duration::from_secs(300),
+                                        rx,
+                                    )
+                                    .await
+                                    .ok()
+                                    .and_then(|result| result.ok())
+                                    .unwrap_or(PendingPermissionResolution::Cancel {
+                                        message: "Worker permission ask timed out".into(),
+                                    });
+
+                                    match resolution {
+                                        PendingPermissionResolution::Allow { updated_input, .. } => {
+                                            let replay = RuntimeToolCallRequest {
+                                                tool_call_id: tool_call_id.clone(),
+                                                tool_name: tool_name.clone(),
+                                                args: updated_input
+                                                    .unwrap_or_else(|| original_request.args.clone()),
+                                                purpose: original_request.purpose.clone(),
+                                            };
+                                            let replayed = round_driver
+                                                .execute_round(&turn, &tool_event_bus, vec![replay])
+                                                .await;
+                                            for replay_result in replayed {
+                                                if let ToolRoundResult::Ok(
+                                                    RuntimeToolCallOutcome::Completed {
+                                                        tool_call_id: rid,
+                                                        tool_name: rname,
+                                                        content,
+                                                        max_result_size_chars,
+                                                        ..
+                                                    },
+                                                ) = replay_result
+                                                {
+                                                    let content_for_message = truncate_tool_content(
+                                                        &content,
+                                                        max_result_size_chars,
+                                                    );
+                                                    request.messages.push(ChatMessage::tool_result(
+                                                        &rid,
+                                                        &rname,
+                                                        content_for_message,
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                        PendingPermissionResolution::Deny { message, .. }
+                                        | PendingPermissionResolution::Cancel { message } => {
+                                            request.messages.push(ChatMessage::tool_result(
+                                                &tool_call_id,
+                                                &tool_name,
+                                                message,
+                                            ));
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!(
+                                        "[SubAgent] insert_pending_request failed: {err}, bubbling"
+                                    );
+                                    let bubbled = annotate_subagent_ask_decision(
+                                        &tool_name,
+                                        &tool_call_id,
+                                        decision,
+                                    );
+                                    pending_ask = Some(bubbled);
+                                    break 'agent_loop;
+                                }
+                            }
+                        } else {
+                            let bubbled =
+                                annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
+                            terminal_tool_results.push(SubAgentTerminalToolResult {
+                                tool_call_id: tool_call_id.clone(),
+                                tool_name: tool_name.clone(),
+                                success: false,
+                                summary: "Permission Ask required".to_string(),
+                                generated_files: Vec::new(),
+                            });
+                            emit_tool_completed(
+                                config.app_handle.as_ref(),
+                                &config.conversation_id,
+                                &tool_call_id,
+                                false,
+                                Some("Permission Ask required"),
+                            );
+                            request.messages.push(ChatMessage::tool_result(
+                                &tool_call_id,
+                                &tool_name,
+                                "Permission Ask required".to_string(),
+                            ));
+                            warn!(
+                                "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
+                                tool_name, bubbled
+                            );
+                            pending_ask = Some(bubbled);
+                            break 'agent_loop;
+                        }
                     }
                 }
             }
@@ -440,6 +563,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             && !cancelled
         {
             output = "Sub-agent reached iteration limit.".to_string();
+            failed = true;
         }
         if cancelled && output.is_empty() {
             output = "Sub-agent cancelled.".to_string();
@@ -496,6 +620,27 @@ impl<'a> SubagentWorkerRuntime<'a> {
         if let Some(handle) = child_handle.as_ref() {
             if cancelled {
                 let _ = agent_runtime.cancel_run(child_run_id.clone()).await;
+            } else if failed {
+                if handle.invocation().background {
+                    if let (Some(bus), Some(parent_run_id)) = (
+                        self.runtime_deps.event_bus.clone(),
+                        config.parent_run_id.clone(),
+                    ) {
+                        let _ = agent_runtime
+                            .fail_background_run(
+                                &child_run_id,
+                                Some(&output),
+                                self.runtime_deps.session_id.clone(),
+                                parent_run_id,
+                                bus,
+                            )
+                            .await;
+                    } else {
+                        let _ = agent_runtime.fail_run(&child_run_id).await;
+                    }
+                } else {
+                    let _ = agent_runtime.fail_run(&child_run_id).await;
+                }
             } else if handle.invocation().background {
                 if let (Some(bus), Some(parent_run_id)) = (
                     self.runtime_deps.event_bus.clone(),

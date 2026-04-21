@@ -88,12 +88,28 @@ pub enum AgentStatus {
 
 **目标**：`background=true` 时 worker 使用独立的 `CancellationToken::new()`，不挂载到父 session token 的 child 链上；`background=false` 时保持原有行为（父 token 的 child_token）。
 
-#### A-1-1：写失败测试
+- [x] **A-1-1：写失败测试**
 
-新建文件 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs`：
+在现有文件 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 追加测试：
 
 ```rust
+use std::fs;
 use app_lib::runtime::cancellation::CancellationToken;
+
+/// RED: worker_runtime 必须显式对 background 分支创建独立 token。
+#[test]
+fn a1_worker_runtime_background_branch_uses_independent_cancel_token() {
+    let source = fs::read_to_string("src/runtime/agent/worker_runtime.rs")
+        .expect("read src/runtime/agent/worker_runtime.rs");
+    assert!(
+        source.contains("if config.background"),
+        "worker_runtime must branch on config.background for cancel token selection"
+    );
+    assert!(
+        source.contains("CancellationToken::new()"),
+        "background worker must allocate a fresh CancellationToken"
+    );
+}
 
 /// background worker 的 cancel token 必须是独立对象，
 /// 不能是父 session token 的 child_token（即不能与父共享 Arc 内部）。
@@ -127,33 +143,29 @@ fn a1_foreground_worker_cancel_token_cascades_from_session_token() {
     );
 }
 
-/// background worker token 与父 session token 不是同一 Arc 内部对象。
+/// background worker token 与父 session token 的取消状态互不影响。
 #[test]
 fn a1_background_token_arc_is_not_ptr_eq_to_session_token() {
-    use std::sync::Arc;
-    // 通过 CancellationToken 的 inner Arc 指针检查独立性。
-    // 此处用两个独立 new() 来模拟正确行为；
-    // 错误行为等价于用 child_token()（仍共享父的 Arc children 列表）。
     let session_token = CancellationToken::new();
     let bg_token = CancellationToken::new(); // 正确：独立 new
 
-    // 两者互相不感知
     session_token.cancel();
     assert!(!bg_token.is_cancelled());
 
+    let session_token2 = CancellationToken::new();
     let bg_token2 = CancellationToken::new();
     bg_token2.cancel();
-    assert!(!session_token.is_cancelled()); // 已经 cancel，但这里只验证语义正确
+    assert!(!session_token2.is_cancelled());
 }
 ```
 
-**验证**（测试此时必然通过，因为测试只验证 CancellationToken 的公开语义）：
+**验证**（此时应失败，因为 `worker_runtime.rs` 尚未对 background 分支显式创建独立 token）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test subagent_legacy_cancel_reachability_test -- --nocapture
 ```
 
-#### A-1-2：在 `worker_runtime.rs` 修改 cancel_token 来源逻辑
+- [x] **A-1-2：在 `worker_runtime.rs` 修改 cancel_token 来源逻辑**
 
 **文件**：`src-tauri/src/runtime/agent/worker_runtime.rs`，`run_worker_turn` 方法（当前 L146-L150）。
 
@@ -183,13 +195,13 @@ let child_cancel = if config.background {
 
 **验证**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test subagent_legacy_cancel_reachability_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test subagent_cancel_cascade_test -- --nocapture
 ```
 
-#### A-1-3：确保 `execute_browse_data` 传递有效的 cancel_token
+- [x] **A-1-3：确保 `execute_browse_data` 传递有效的 cancel_token**
 
 **文件**：`src-tauri/src/llm/tool_executor/internal_system.rs`，`execute_browse_data` 函数（当前 L692-L708）。
 
@@ -232,10 +244,10 @@ launch_browse_data_with_runtime_deps(
 
 **验证**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep -E "error|warning.*unused"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
-#### A-1-4：commit
+- [x] **A-1-4：commit**
 
 ```
 feat(worker-runtime): background worker 使用独立 CancellationToken，不受父 session ESC 影响
@@ -245,7 +257,7 @@ feat(worker-runtime): background worker 使用独立 CancellationToken，不受�
 
 ### A-2：AgentStatus::Failed + fail_run() + 错误路径
 
-#### A-2-1：写失败测试
+- [x] **A-2-1：写失败测试**
 
 在新建或已有文件中新增测试。推荐放入 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 追加，或新建专用文件 `src-tauri/tests/plan_a_agent_lifecycle_test.rs`：
 
@@ -309,11 +321,11 @@ async fn a2_status_returns_failed_string() {
 
 **运行看失败**（此时 `AgentStatus::Failed` 不存在，编译失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture 2>&1 | head -30
 ```
 
-#### A-2-2：`invocation.rs` 新增 Failed 变体
+- [x] **A-2-2：`invocation.rs` 新增 Failed 变体**
 
 **文件**：`src-tauri/src/runtime/agent/invocation.rs`
 
@@ -330,12 +342,12 @@ pub enum AgentStatus {
 
 **验证编译**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep "error"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
 > 如果有 `match AgentStatus` 未覆盖新变体的编译错误，需要在 `agent_runtime.rs::status()` 方法中补充 `AgentStatus::Failed => "failed"` 分支（见下）。
 
-#### A-2-3：`agent_runtime.rs` 补充 status() match 分支 + 新增 fail_run()
+- [x] **A-2-3：`agent_runtime.rs` 补充 status() match 分支 + 新增 fail_run()**
 
 **文件**：`src-tauri/src/runtime/agent/agent_runtime.rs`
 
@@ -374,11 +386,11 @@ pub async fn fail_run(&self, child_run_id: &RunId) -> Result<()> {
 
 **验证测试通过**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
 ```
 
-#### A-2-4：`worker_runtime.rs` 错误路径改为调用 fail_run()
+- [x] **A-2-4：`worker_runtime.rs` 错误路径改为调用 fail_run()**
 
 **文件**：`src-tauri/src/runtime/agent/worker_runtime.rs`
 
@@ -455,13 +467,13 @@ if let Some(handle) = child_handle.as_ref() {
 
 **验证**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_u5_subagent_worker_runtime_test -- --nocapture
 ```
 
-#### A-2-5：Failed 时发 TaskStatusChanged 事件
+- [x] **A-2-5：Failed 时发 TaskStatusChanged 事件**
 
 background worker Failed 时需要通知前端。在 `fail_run()` 之后发事件（如果有 event bus 可用）。
 
@@ -532,12 +544,12 @@ pub async fn fail_background_run(
 
 **验证**：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep "error"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
-#### A-2-6：commit
+- [x] **A-2-6：commit**
 
 ```
 feat(agent-runtime): 新增 AgentStatus::Failed + fail_run() + fail_background_run()，错误路径不再走 complete_run
@@ -547,7 +559,7 @@ feat(agent-runtime): 新增 AgentStatus::Failed + fail_run() + fail_background_r
 
 ### A-3：回归测试 + review lock
 
-#### A-3-1：background token 独立性 review lock
+- [x] **A-3-1：background token 独立性 review lock**
 
 在 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 中追加（source-level 约束）：
 
@@ -583,7 +595,7 @@ fn review_a1_cancel_token_none_is_handled_explicitly() {
 }
 ```
 
-#### A-3-2：父 cancel 不波及 background agent 的集成测试
+- [x] **A-3-2：父 cancel 不波及 background agent 的集成测试**
 
 在 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 追加：
 
@@ -624,7 +636,7 @@ fn a1_foreground_worker_token_cascades_from_session() {
 }
 ```
 
-#### A-3-3：AgentStatus::Failed 序列化稳定性测试
+- [x] **A-3-3：AgentStatus::Failed 序列化稳定性测试**
 
 在 `src-tauri/tests/plan_a_agent_lifecycle_test.rs` 中追加：
 
@@ -665,40 +677,40 @@ async fn a2_status_string_for_failed_is_lowercase() {
 }
 ```
 
-#### A-3-4：运行全部新增测试
+- [x] **A-3-4：运行全部新增测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test subagent_legacy_cancel_reachability_test -- --nocapture
 
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
 ```
 
-#### A-3-5：运行现有相关回归测试确认不退化
+- [x] **A-3-5：运行现有相关回归测试确认不退化**
 
 ```bash
 # cancel 级联现有回归
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test subagent_cancel_cascade_test -- --nocapture
 
 # U5 worker runtime 约束
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_u5_subagent_worker_runtime_test -- --nocapture
 
 # subagent background wiring 约束
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test review_sub_agent_background_reachability_test -- --nocapture
 
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test review_sub_agent_background_caller_wiring_test -- --nocapture
 
 # 全量 Rust 测试
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && \
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --tests --no-fail-fast 2>&1 | tail -30
 ```
 
-#### A-3-6：commit
+- [x] **A-3-6：commit**
 
 ```
 test(subagent): A-1/A-2 回归测试 + review lock，锁定 background cancel 独立性与 Failed 状态语义

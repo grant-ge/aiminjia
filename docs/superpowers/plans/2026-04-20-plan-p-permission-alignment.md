@@ -29,7 +29,7 @@
 
 ## Task 1 — plan 模式语义修正：Ask → Deny
 
-- [ ] **1-a 先写失败测试**
+- [x] **1-a 先写失败测试**
 
 新建 `src-tauri/tests/review_permission_plan_mode_test.rs`：
 
@@ -100,10 +100,10 @@ fn review_dont_ask_mode_ask_becomes_deny() {
 
 验证命令（应当失败 — `review_plan_mode_ask_becomes_deny` 失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_permission_plan_mode_test -- --nocapture 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_plan_mode_test -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **1-b 修复实现**
+- [x] **1-b 修复实现**
 
 修改 `src-tauri/src/runtime/tools/permission.rs` 中 `apply_permission_mode`（`:97-113`），将：
 
@@ -142,14 +142,14 @@ cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_permission_plan_mode_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test permission -- --nocapture 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_plan_mode_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test permission -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **1-c Commit**
+- [x] **1-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/tools/permission.rs src-tauri/tests/review_permission_plan_mode_test.rs
 git commit -m "$(cat <<'EOF'
 fix(permission): plan mode converts Ask to Deny instead of re-asking
@@ -163,7 +163,7 @@ EOF
 
 ## Task 2 — PermissionStore 补 PathGlob / CommandPattern 匹配
 
-- [ ] **2-a 先写失败测试**
+- [x] **2-a 先写失败测试**
 
 新建 `src-tauri/tests/review_permission_store_glob_test.rs`：
 
@@ -267,10 +267,10 @@ fn review_path_glob_session_overrides_workspace() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_permission_store_glob_test 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_store_glob_test 2>&1 | tail -30
 ```
 
-- [ ] **2-b 实现匹配逻辑**
+- [x] **2-b 实现匹配逻辑**
 
 在 `src-tauri/src/runtime/store/permission_store.rs` 文件顶部（use 块之后）追加私有 glob 辅助函数：
 
@@ -389,14 +389,14 @@ fn glob_matches_inner(pattern: &[u8], text: &[u8]) -> bool {
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_permission_store_glob_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test permission_store -- --nocapture 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_store_glob_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test permission_store -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **2-c Commit**
+- [x] **2-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/store/permission_store.rs src-tauri/tests/review_permission_store_glob_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): add PathGlob and CommandPattern matching to PermissionStore
@@ -410,7 +410,7 @@ EOF
 
 ## Task 3 — WorkerRunConfig 新增 permission_mode 字段
 
-- [ ] **3-a 先写失败测试**
+- [x] **3-a 先写失败测试**
 
 新建 `src-tauri/tests/review_worker_run_config_permission_mode_test.rs`：
 
@@ -451,10 +451,10 @@ fn review_worker_run_config_default_permission_mode_is_default() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_worker_run_config_permission_mode_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_run_config_permission_mode_test 2>&1 | tail -20
 ```
 
-- [ ] **3-b 修改 WorkerRunConfig 与调用链**
+- [x] **3-b 修改 WorkerRunConfig 与调用链**
 
 在 `src-tauri/src/runtime/agent/worker_runtime.rs` 中追加导入并修改 `WorkerRunConfig`：
 
@@ -497,14 +497,14 @@ pub struct WorkerRunConfig {
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_worker_run_config_permission_mode_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_run_config_permission_mode_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **3-c Commit**
+- [x] **3-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/agent/worker_runtime.rs src-tauri/src/llm/sub_agent.rs src-tauri/tests/review_worker_run_config_permission_mode_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): add permission_mode to WorkerRunConfig and SubAgentConfig
@@ -518,7 +518,7 @@ EOF
 
 ## Task 4 — Ask 闭环：worker_runtime AskRequired 接入父 run control plane
 
-- [ ] **4-a 先写失败测试**
+- [x] **4-a 先写失败测试**
 
 新建 `src-tauri/tests/review_worker_ask_control_plane_test.rs`：
 
@@ -548,10 +548,10 @@ fn review_worker_run_config_accepts_optional_control_plane() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_worker_ask_control_plane_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_ask_control_plane_test 2>&1 | tail -20
 ```
 
-- [ ] **4-b 在 WorkerRunConfig 追加 control_plane 字段**
+- [x] **4-b 在 WorkerRunConfig 追加 control_plane 字段**
 
 在 `src-tauri/src/runtime/agent/worker_runtime.rs` 的 `WorkerRunConfig` 中追加：
 
@@ -580,7 +580,7 @@ pub struct WorkerRunConfig {
             control_plane: config.control_plane.clone(),
 ```
 
-- [ ] **4-c 修改 AskRequired 处理逻辑**
+- [x] **4-c 修改 AskRequired 处理逻辑**
 
 在 `run_worker_turn` 中定位 `ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired { .. })` 分支（约 `:400`），在该分支开头插入 control plane 路径：
 
@@ -717,14 +717,14 @@ ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_worker_ask_control_plane_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_ask_control_plane_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **4-d Commit**
+- [x] **4-d Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/agent/worker_runtime.rs src-tauri/src/llm/sub_agent.rs src-tauri/tests/review_worker_ask_control_plane_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): wire worker_runtime Ask to parent control_plane instead of always bubbling
@@ -738,7 +738,7 @@ EOF
 
 ## Task 5 — BashTool 接入 CommandPattern 规则
 
-- [ ] **5-a 先写失败测试**
+- [x] **5-a 先写失败测试**
 
 新建 `src-tauri/tests/review_bash_command_pattern_permission_test.rs`：
 
@@ -814,10 +814,10 @@ async fn review_bash_command_pattern_allow_returns_allow_or_none() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_bash_command_pattern_permission_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_bash_command_pattern_permission_test 2>&1 | tail -20
 ```
 
-- [ ] **5-b 在 ToolExecutionContext 追加 permission_store 字段**
+- [x] **5-b 在 ToolExecutionContext 追加 permission_store 字段**
 
 在 `src-tauri/src/runtime/tools/context.rs` 中追加：
 
@@ -840,7 +840,7 @@ use crate::runtime::store::PermissionStore;
     }
 ```
 
-- [ ] **5-c 修改 BashTool::check_permissions**
+- [x] **5-c 修改 BashTool::check_permissions**
 
 在 `src-tauri/src/runtime/tools/builtin/bash.rs` 中，`check_permissions` 修改为：
 
@@ -892,14 +892,14 @@ use crate::runtime::store::PermissionStore;
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_bash_command_pattern_permission_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test bash -- --nocapture 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_bash_command_pattern_permission_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test bash -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **5-d Commit**
+- [x] **5-d Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/tools/context.rs src-tauri/src/runtime/tools/builtin/bash.rs src-tauri/tests/review_bash_command_pattern_permission_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): BashTool checks CommandPattern rules from PermissionStore
@@ -913,7 +913,7 @@ EOF
 
 ## Task 6 — 文件类工具接入 PathGlob 规则
 
-- [ ] **6-a 先写失败测试**
+- [x] **6-a 先写失败测试**
 
 新建 `src-tauri/tests/review_file_path_glob_permission_test.rs`：
 
@@ -979,10 +979,10 @@ async fn review_write_file_no_matching_glob_returns_none() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test 2>&1 | tail -20
 ```
 
-- [ ] **6-b 为 WriteFileTool / EditFileTool 实现 check_permissions**
+- [x] **6-b 为 WriteFileTool / EditFileTool 实现 check_permissions**
 
 在相应工具的 `RuntimeTool` impl 中追加（以 WriteFileTool 为例，EditFileTool 同理）：
 
@@ -1029,13 +1029,13 @@ EditFileTool 中 `tool_name` 改为 `"edit_file"` 并从 `input.get("path")` 读
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test -- --nocapture
 ```
 
-- [ ] **6-c Commit**
+- [x] **6-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/tools/builtin/ src-tauri/tests/review_file_path_glob_permission_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): WriteFileTool and EditFileTool check PathGlob rules from PermissionStore
@@ -1049,7 +1049,7 @@ EOF
 
 ## Task 7 — 确认 MCP 工具不绕过 authorize（回归测试）
 
-- [ ] **7-a 写回归测试**
+- [x] **7-a 写回归测试**
 
 新建 `src-tauri/tests/review_mcp_no_bypass_permission_test.rs`：
 
@@ -1117,13 +1117,13 @@ async fn review_mcp_tool_pipeline_deny_prevents_execute() {
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_mcp_no_bypass_permission_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_mcp_no_bypass_permission_test -- --nocapture
 ```
 
-- [ ] **7-b Commit**
+- [x] **7-b Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/tests/review_mcp_no_bypass_permission_test.rs
 git commit -m "$(cat <<'EOF'
 test(permission): add review test confirming MCP tools cannot bypass dispatcher permission pipeline
@@ -1137,7 +1137,7 @@ EOF
 
 ## Task 8 — AgentStatus 补 Failed 变体
 
-- [ ] **8-a 先写失败测试**
+- [x] **8-a 先写失败测试**
 
 新建 `src-tauri/tests/review_agent_status_failed_test.rs`：
 
@@ -1167,10 +1167,10 @@ fn review_agent_status_failed_serializes() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_agent_status_failed_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_agent_status_failed_test 2>&1 | tail -20
 ```
 
-- [ ] **8-b 修改 AgentStatus**
+- [x] **8-b 修改 AgentStatus**
 
 修改 `src-tauri/src/runtime/agent/invocation.rs`：
 
@@ -1190,14 +1190,14 @@ pub enum AgentStatus {
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_agent_status_failed_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_agent_status_failed_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **8-c Commit**
+- [x] **8-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/agent/invocation.rs src-tauri/tests/review_agent_status_failed_test.rs
 git commit -m "$(cat <<'EOF'
 feat(agent): add AgentStatus::Failed to distinguish error termination from cancel
@@ -1211,7 +1211,7 @@ EOF
 
 ## Task 9 — QueryEngine 注入 PermissionStore 到 ToolExecutionContext
 
-- [ ] **9-a 先写失败测试**
+- [x] **9-a 先写失败测试**
 
 新建 `src-tauri/tests/review_query_engine_permission_store_injection_test.rs`：
 
@@ -1232,10 +1232,10 @@ fn review_query_engine_accepts_permission_store() {
 
 验证命令（应当失败）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_query_engine_permission_store_injection_test 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_query_engine_permission_store_injection_test 2>&1 | tail -20
 ```
 
-- [ ] **9-b 在 QueryEngine 追加 permission_store 字段与注入逻辑**
+- [x] **9-b 在 QueryEngine 追加 permission_store 字段与注入逻辑**
 
 在 `src-tauri/src/runtime/query_engine.rs` 的 `QueryEngine` 结构体追加：
 
@@ -1278,14 +1278,14 @@ cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review
 
 验证命令（应当通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_query_engine_permission_store_injection_test -- --nocapture
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test 2>&1 | tail -30
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_query_engine_permission_store_injection_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test 2>&1 | tail -30
 ```
 
-- [ ] **9-c Commit**
+- [x] **9-c Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/src/runtime/query_engine.rs src-tauri/src/runtime/session_runtime.rs src-tauri/tests/review_query_engine_permission_store_injection_test.rs
 git commit -m "$(cat <<'EOF'
 feat(permission): QueryEngine injects PermissionStore into ToolExecutionContext
@@ -1299,7 +1299,7 @@ EOF
 
 ## Task 10 — 全量回归与 review lock
 
-- [ ] **10-a 综合约束测试**
+- [x] **10-a 综合约束测试**
 
 新建 `src-tauri/tests/review_permission_alignment_constraints_test.rs`：
 
@@ -1502,27 +1502,27 @@ fn review_mcp_scope_triggers_ask_via_store_pipeline() {
 
 验证命令（应当全部通过）：
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test --test review_permission_alignment_constraints_test -- --nocapture
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_alignment_constraints_test -- --nocapture
 ```
 
-- [ ] **10-b 全量 Rust 回归**
+- [x] **10-b 全量 Rust 回归**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri && cargo test 2>&1 | tail -40
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test 2>&1 | tail -40
 ```
 
 预期：所有测试通过，无编译错误。
 
-- [ ] **10-c 前端回归**
+- [x] **10-c 前端回归**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app && pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -20
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app && pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -20
 ```
 
-- [ ] **10-d Commit**
+- [x] **10-d Commit**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app
 git add src-tauri/tests/review_permission_alignment_constraints_test.rs
 git commit -m "$(cat <<'EOF'
 test(permission): add review_permission_alignment_constraints invariant regression tests

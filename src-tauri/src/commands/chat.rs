@@ -23,9 +23,10 @@ pub async fn send_message(
     conversation_id: String,
     content: String,
     file_ids: Vec<String>,
+    agent_name: Option<String>,
 ) -> Result<(), String> {
     adapter
-        .send_message(conversation_id, content, file_ids)
+        .send_message(conversation_id, content, file_ids, agent_name)
         .await
 }
 #[tauri::command]

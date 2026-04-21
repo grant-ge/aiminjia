@@ -155,6 +155,12 @@ export interface TurnCompletedPayload {
   message?: string
 }
 
+export interface AgentInfo {
+  name: string
+  description: string
+  source: 'builtin' | 'user'
+}
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -166,12 +172,22 @@ export interface TurnCompletedPayload {
  * @param content - The user's message text
  * @param fileIds - Optional list of uploaded file IDs to attach
  */
-export function sendMessage(conversationId: string, content: string, fileIds?: string[]): Promise<void> {
+export function sendMessage(
+  conversationId: string,
+  content: string,
+  fileIds?: string[],
+  agentName?: string | null,
+): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
     content,
     fileIds: fileIds ?? [],
+    agentName: agentName ?? null,
   })
+}
+
+export function listAgents(): Promise<AgentInfo[]> {
+  return invoke<AgentInfo[]>('list_agents')
 }
 
 /**

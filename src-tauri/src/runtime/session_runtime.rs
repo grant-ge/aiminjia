@@ -34,6 +34,7 @@ pub struct SessionRuntime {
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
     pending_permission_store: Arc<PendingPermissionRequestStore>,
     permission_store: Option<Arc<PermissionStore>>,
+    agent_registry: Option<Arc<crate::runtime::agent::registry::AgentRegistry>>,
 }
 
 impl SessionRuntime {
@@ -47,6 +48,7 @@ impl SessionRuntime {
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             permission_store: None,
+            agent_registry: None,
         }
     }
 
@@ -69,6 +71,7 @@ impl SessionRuntime {
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             permission_store: None,
+            agent_registry: None,
         }
     }
 
@@ -93,6 +96,14 @@ impl SessionRuntime {
         self
     }
 
+    pub fn with_agent_registry(
+        mut self,
+        agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
+    ) -> Self {
+        self.agent_registry = Some(agent_registry);
+        self
+    }
+
     pub fn for_test(host: Arc<dyn RuntimeHost>) -> Self {
         let adapter = Arc::new(TauriEventAdapter::new(host));
         let bus = RuntimeEventBus::new();
@@ -109,6 +120,7 @@ impl SessionRuntime {
         &self,
         mut request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
+        request = self.apply_agent_tool_constraint(request);
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
         // Generate the single authoritative RunId for this turn here and propagate
         // it into the request so legacy_send_message_impl uses the same identity.
@@ -223,7 +235,12 @@ impl SessionRuntime {
             .entry(session_id.as_str().to_string())
             .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
             .clone();
-        session_engine.with_authorized_workspace(authorized_workspace)
+        let session_engine = session_engine.with_authorized_workspace(authorized_workspace);
+        if let Some(ref store) = self.permission_store {
+            session_engine.with_permission_store(store.clone())
+        } else {
+            session_engine
+        }
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
@@ -238,6 +255,19 @@ impl SessionRuntime {
             );
         }
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+    }
+
+    fn apply_agent_tool_constraint(&self, mut request: ChatTurnRequest) -> ChatTurnRequest {
+        let Some(agent_name) = request.agent_name.as_deref() else {
+            return request;
+        };
+        let Some(agent_registry) = self.agent_registry.as_ref() else {
+            return request;
+        };
+        if let Some(definition) = agent_registry.get(agent_name) {
+            request.allowed_tools = Some(definition.allowed_tools.clone());
+        }
+        request
     }
 
     fn persist_resolved_permission(
@@ -314,6 +344,7 @@ impl SessionRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::agent::registry::AgentRegistry;
     use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
     use crate::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
@@ -657,5 +688,35 @@ mod tests {
 
         assert!(!root_before.is_cancelled());
         assert!(root_after.is_cancelled());
+    }
+
+    #[test]
+    fn run_chat_request_with_agent_name_constrains_allowed_tools_from_registry() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_agent_registry(Arc::new(AgentRegistry::with_builtins()));
+        let request =
+            ChatTurnRequest::new("conv-agent-name", "hello", vec![]).with_agent_name(
+                "browse_data_agent",
+            );
+
+        let constrained = runtime.apply_agent_tool_constraint(request);
+
+        assert_eq!(constrained.agent_name.as_deref(), Some("browse_data_agent"));
+        assert!(constrained.allowed_tools.is_some());
+        let allowed = constrained.allowed_tools.unwrap();
+        assert_eq!(allowed.len(), 6);
+        for tool in [
+            "browse_and_extract",
+            "browse_navigate",
+            "read_page_content",
+            "page_execute_js",
+            "extract_table_data",
+            "extract_with_pagination",
+        ] {
+            assert!(
+                allowed.iter().any(|allowed_tool| allowed_tool == tool),
+                "agent-constrained allowlist must include {tool}"
+            );
+        }
     }
 }
