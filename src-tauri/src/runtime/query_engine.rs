@@ -8,7 +8,7 @@ use crate::runtime::chat::PermissionDenialRecord;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::state::TurnState;
-use crate::runtime::store::AuthorizedWorkspaceRef;
+use crate::runtime::store::{AuthorizedWorkspaceRef, PermissionStore};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::{
     CapabilityContext, FileOperations, FileStateCache, InterruptBehavior, StorageCapability,
@@ -39,6 +39,8 @@ pub struct QueryEngine {
     total_usage: Arc<Mutex<TotalTokenUsage>>,
     /// Session-scoped accumulation of permission denials across tool calls.
     permission_denials: Arc<Mutex<Vec<PermissionDenialRecord>>>,
+    /// Optional store injected so tool-level permission checks can query stored policies.
+    permission_store: Option<Arc<PermissionStore>>,
     /// Optional USD budget cap for the current session.
     max_budget_usd: Option<f64>,
     /// Simplified cost estimate rate shared across input/output tokens.
@@ -66,6 +68,7 @@ impl QueryEngine {
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
             permission_denials: Arc::new(Mutex::new(Vec::new())),
+            permission_store: None,
             max_budget_usd: None,
             cost_per_1k_tokens: None,
         }
@@ -85,6 +88,7 @@ impl QueryEngine {
             read_file_state: Arc::new(FileStateCache::new()),
             total_usage: Arc::new(Mutex::new(TotalTokenUsage::default())),
             permission_denials: Arc::new(Mutex::new(Vec::new())),
+            permission_store: self.permission_store.clone(),
             max_budget_usd: self.max_budget_usd,
             cost_per_1k_tokens: self.cost_per_1k_tokens,
         }
@@ -125,6 +129,11 @@ impl QueryEngine {
 
     pub fn with_read_file_state(mut self, read_file_state: Arc<FileStateCache>) -> Self {
         self.read_file_state = read_file_state;
+        self
+    }
+
+    pub fn with_permission_store(mut self, store: Arc<PermissionStore>) -> Self {
+        self.permission_store = Some(store);
         self
     }
 
@@ -259,6 +268,11 @@ impl QueryEngine {
             run_id,
             format!("tool-call-{tool_name}"),
         );
+        let ctx = if let Some(store) = self.permission_store.as_ref() {
+            ctx.with_permission_store(store.clone())
+        } else {
+            ctx
+        };
         let outcome = dispatcher
             .dispatch(tool_name, json!({"tool": tool_name}), ctx)
             .await?;
@@ -387,6 +401,9 @@ impl QueryEngine {
         };
         if let Some(permission_override) = permission_override {
             ctx = ctx.with_permission_override(permission_override);
+        }
+        if let Some(store) = self.permission_store.as_ref() {
+            ctx = ctx.with_permission_store(store.clone());
         }
 
         // Emit ToolCallExecuting before dispatching so the UI knows the tool
@@ -535,6 +552,11 @@ impl QueryEngine {
                 is_subagent: turn.agent_id().is_some(),
             });
             ctx.with_capability(capability)
+        } else {
+            ctx
+        };
+        let ctx = if let Some(store) = self.permission_store.as_ref() {
+            ctx.with_permission_store(store.clone())
         } else {
             ctx
         };

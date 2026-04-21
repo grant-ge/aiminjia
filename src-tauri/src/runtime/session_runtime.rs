@@ -235,7 +235,12 @@ impl SessionRuntime {
             .entry(session_id.as_str().to_string())
             .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
             .clone();
-        session_engine.with_authorized_workspace(authorized_workspace)
+        let session_engine = session_engine.with_authorized_workspace(authorized_workspace);
+        if let Some(ref store) = self.permission_store {
+            session_engine.with_permission_store(store.clone())
+        } else {
+            session_engine
+        }
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.

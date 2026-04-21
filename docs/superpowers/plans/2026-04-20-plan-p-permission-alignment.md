@@ -1211,7 +1211,7 @@ EOF
 
 ## Task 9 — QueryEngine 注入 PermissionStore 到 ToolExecutionContext
 
-- [ ] **9-a 先写失败测试**
+- [x] **9-a 先写失败测试**
 
 新建 `src-tauri/tests/review_query_engine_permission_store_injection_test.rs`：
 
@@ -1235,7 +1235,7 @@ fn review_query_engine_accepts_permission_store() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_query_engine_permission_store_injection_test 2>&1 | tail -20
 ```
 
-- [ ] **9-b 在 QueryEngine 追加 permission_store 字段与注入逻辑**
+- [x] **9-b 在 QueryEngine 追加 permission_store 字段与注入逻辑**
 
 在 `src-tauri/src/runtime/query_engine.rs` 的 `QueryEngine` 结构体追加：
 
@@ -1282,7 +1282,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test 2>&1 | tail -30
 ```
 
-- [ ] **9-c Commit**
+- [x] **9-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
