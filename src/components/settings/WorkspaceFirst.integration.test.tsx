@@ -8,6 +8,7 @@ const workspaceState = vi.hoisted(() => ({
 
 const tauriMock = vi.hoisted(() => ({
   createConversation: vi.fn(async () => 'conv-new'),
+  listAgents: vi.fn(async () => []),
   pickLocalDirectory: vi.fn<(options?: { defaultPath?: string; title?: string }) => Promise<string | null>>(async () => '/tmp/reports'),
   authorizeLocalDirectory: vi.fn(async (path: string) => {
     workspaceState.current = {

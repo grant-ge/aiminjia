@@ -760,7 +760,7 @@ git commit -m "feat(frontend): listAgents() + send_message agent_name constrains
 - 新建：`src/components/chat/AgentSelector.tsx`
 - 修改：chat 输入区父组件（引入 AgentSelector）
 
-- [ ] **Step 1：新建 AgentSelector.tsx**
+- [x] **Step 1：新建 AgentSelector.tsx**
 
 ```tsx
 // src/components/chat/AgentSelector.tsx
@@ -796,7 +796,7 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
 }
 ```
 
-- [ ] **Step 2：在 chat 输入区使用 AgentSelector**
+- [x] **Step 2：在 chat 输入区使用 AgentSelector**
 
 找到发送消息的输入组件（通常是 `ChatInput.tsx` 或类似名称）：
 
@@ -823,7 +823,7 @@ await sendMessage({
 });
 ```
 
-- [ ] **Step 3：前端构建确认**
+- [x] **Step 3：前端构建确认**
 
 ```bash
 pnpm build 2>&1 | grep -i "^error\|Error:" | head -10

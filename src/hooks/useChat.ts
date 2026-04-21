@@ -168,10 +168,15 @@ export function useChat() {
   /**
    * Send a user message in the currently active conversation.
    *
-   * @param text  - The user's plain-text input.
-   * @param files - Optional list of attached file info objects.
+   * @param text      - The user's plain-text input.
+   * @param files     - Optional list of attached file info objects.
+   * @param agentName - Optional agent definition name for this turn.
    */
-  const sendUserMessage = useCallback(async (text: string, files?: PendingFileInfo[]) => {
+  const sendUserMessage = useCallback(async (
+    text: string,
+    files?: PendingFileInfo[],
+    agentName?: string | null,
+  ) => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
     console.log('[useChat] sendUserMessage, conversationId:', conversationId, 'text:', text.slice(0, 50))
@@ -258,7 +263,7 @@ export function useChat() {
     try {
       const fileIds = files?.map((f) => f.id)
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, text, fileIds)
+      await sendMessage(conversationId, text, fileIds, agentName)
       console.log('[useChat] sendMessage IPC returned OK')
     } catch (err) {
       console.error('[useChat] sendMessage IPC failed:', err)
