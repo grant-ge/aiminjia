@@ -4,28 +4,28 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaudeMdFile {
+pub struct RenlijiaMdFile {
     pub path: PathBuf,
     pub content: String,
 }
 
 #[derive(Debug, Default)]
-pub struct ClaudeMdLoader {
+pub struct RenlijiaMdLoader {
     cache: HashMap<PathBuf, (SystemTime, String)>,
 }
 
-impl ClaudeMdLoader {
+impl RenlijiaMdLoader {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub async fn load(&mut self, workspace_path: &Path) -> Vec<ClaudeMdFile> {
+    pub async fn load(&mut self, workspace_path: &Path) -> Vec<RenlijiaMdFile> {
         let mut result = Vec::new();
         let mut seen = HashSet::new();
 
         if let Some(home) = Self::home_dir() {
             self.try_add_file(
-                &home.join(".claude").join("CLAUDE.md"),
+                &home.join(".renlijia").join("RENLIJIA.md"),
                 &mut seen,
                 &mut result,
             );
@@ -44,13 +44,13 @@ impl ClaudeMdLoader {
         dirs.reverse();
 
         for dir in dirs {
-            self.try_add_file(&dir.join("CLAUDE.md"), &mut seen, &mut result);
+            self.try_add_file(&dir.join("RENLIJIA.md"), &mut seen, &mut result);
             self.try_add_file(
-                &dir.join(".claude").join("CLAUDE.md"),
+                &dir.join(".aijia").join("RENLIJIA.md"),
                 &mut seen,
                 &mut result,
             );
-            self.try_add_file(&dir.join("CLAUDE.local.md"), &mut seen, &mut result);
+            self.try_add_file(&dir.join("RENLIJIA.local.md"), &mut seen, &mut result);
         }
 
         result
@@ -60,7 +60,7 @@ impl ClaudeMdLoader {
         &mut self,
         path: &Path,
         seen: &mut HashSet<PathBuf>,
-        result: &mut Vec<ClaudeMdFile>,
+        result: &mut Vec<RenlijiaMdFile>,
     ) {
         let dedupe_key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         if !seen.insert(dedupe_key) {
@@ -68,7 +68,7 @@ impl ClaudeMdLoader {
         }
 
         if let Some(content) = self.read_with_cache(path) {
-            result.push(ClaudeMdFile {
+            result.push(RenlijiaMdFile {
                 path: path.to_path_buf(),
                 content,
             });

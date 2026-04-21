@@ -217,7 +217,7 @@ pub(crate) async fn handle_skill_smith_dry_run(
     .to_string())
 }
 
-/// Install the active draft into `custom_plugins/{skill_id}/` and trigger
+/// Install the active draft into `~/.renlijia/skills/{skill_id}/` and trigger
 /// hot-reload. On conflict (skill with same id already installed) and
 /// `force=false`, returns `status: "conflict"` without changes — the LLM
 /// should then ask the user whether to rename or force-overwrite.

@@ -168,7 +168,7 @@ describe('chatStore — per-conversation streaming', () => {
     expect(s.streamStates['c2']?.streamingContent).toBe('World')
   })
 
-  it('clears stream state for one conversation without affecting others', () => {
+  it('resets stream state for one conversation without affecting others', () => {
     const store = useChatStore.getState()
 
     store.setConversationStreaming('c1', true)

@@ -89,10 +89,10 @@ fn setup_storage() -> (AppStorage, TempDir) {
 }
 
 fn write_workspace_settings(workspace: &Path, value: serde_json::Value) {
-    let lotus_dir = workspace.join(".lotus");
-    fs::create_dir_all(&lotus_dir).expect("create .lotus");
+    let aijia_dir = workspace.join(".aijia");
+    fs::create_dir_all(&aijia_dir).expect("create .aijia");
     fs::write(
-        lotus_dir.join("settings.json"),
+        aijia_dir.join("settings.json"),
         serde_json::to_vec_pretty(&value).expect("serialize workspace settings"),
     )
     .expect("write workspace settings");
@@ -230,9 +230,9 @@ fn ae4_workspace_settings_partial_override() {
 fn ae4_workspace_settings_malformed() {
     let (storage, dir) = setup_storage();
     let workspace = dir.path().join("workspace-malformed");
-    let lotus_dir = workspace.join(".lotus");
-    fs::create_dir_all(&lotus_dir).expect("create .lotus");
-    fs::write(lotus_dir.join("settings.json"), b"{not-json").expect("write malformed");
+    let aijia_dir = workspace.join(".aijia");
+    fs::create_dir_all(&aijia_dir).expect("create .aijia");
+    fs::write(aijia_dir.join("settings.json"), b"{not-json").expect("write malformed");
     storage
         .set_setting("primaryModel", "deepseek-v3")
         .expect("set global primary model");

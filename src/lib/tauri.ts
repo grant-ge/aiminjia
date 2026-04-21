@@ -1251,7 +1251,7 @@ export interface SkillCommitResult {
 }
 
 /**
- * Commit a validated draft to `custom_plugins/`. Returns `{ conflict: true }`
+ * Commit a validated draft to `~/.renlijia/skills/`. Returns `{ conflict: true }`
  * without making changes if a skill with the same `plugin.id` already exists —
  * caller should then invoke `commitSkillDraftForce` or prompt the user to
  * rename the skill. Errors if validation fails.

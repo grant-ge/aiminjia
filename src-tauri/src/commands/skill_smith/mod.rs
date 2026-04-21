@@ -2,9 +2,9 @@
 //!
 //! Submodules:
 //! - (this file) **draft file system** (T2): manages the isolated scratchpad
-//!   under `{app_data}/_drafts/{draft_id}/` where the creation flow writes WIP
+//!   under `~/.renlijia/skills/_drafts/{draft_id}/` where the creation flow writes WIP
 //!   `plugin.toml`, `workflow.toml`, prompts, and (later) scripts/knowledge
-//!   before committing to `custom_plugins/`.
+//!   before committing to `~/.renlijia/skills/`.
 //! - [`validation`] (T3): parses draft TOML files against the skill schema and
 //!   returns a structured report that can be fed back to the LLM for
 //!   automatic repair.
@@ -34,7 +34,6 @@ use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-const DRAFTS_DIR_NAME: &str = "_drafts";
 const DRAFT_EXPIRY_DAYS: u64 = 7;
 const MAX_DRAFT_FILE_SIZE: u64 = 1_000_000; // 1MB per file
 const MAX_RELATIVE_PATH_LEN: usize = 512;
@@ -127,8 +126,8 @@ fn validate_relative_path(rel: &str) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 fn drafts_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let root = app_data.join(DRAFTS_DIR_NAME);
+    let aijia_home = app.state::<std::sync::Arc<crate::storage::AiJiaHome>>();
+    let root = aijia_home.drafts_dir();
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     Ok(root)
 }

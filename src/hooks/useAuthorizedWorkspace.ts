@@ -4,7 +4,7 @@ import {
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
 
-const AUTHORIZED_WORKSPACE_CHANGED_EVENT = 'lotus:authorized-workspace-changed'
+const AUTHORIZED_WORKSPACE_CHANGED_EVENT = 'aijia:authorized-workspace-changed'
 
 interface AuthorizedWorkspaceChangedDetail {
   sessionId: string

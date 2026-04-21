@@ -7,7 +7,7 @@ use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
     TurnError,
 };
-use app_lib::runtime::claude_md::ClaudeMdFile;
+use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
@@ -21,21 +21,21 @@ fn make_test_turn(conversation_id: &str) -> TurnState {
 }
 
 #[tokio::test]
-async fn ac1_load_project_claude_md_from_workspace() {
+async fn ac1_load_project_renlijia_md_from_workspace() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
     std::fs::write(
-        workspace.join("CLAUDE.md"),
+        workspace.join("RENLIJIA.md"),
         "# Project\nproject instructions",
     )
     .expect("write claude md");
 
-    let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
+    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    let project_file = files.iter().find(|f| f.path == workspace.join("CLAUDE.md"));
-    assert!(project_file.is_some(), "should find workspace CLAUDE.md");
+    let project_file = files.iter().find(|f| f.path == workspace.join("RENLIJIA.md"));
+    assert!(project_file.is_some(), "should find workspace RENLIJIA.md");
     assert!(project_file
         .expect("project file")
         .content
@@ -48,10 +48,10 @@ async fn ac1_load_order_root_before_workspace() {
     let parent = tmp.path().join("parent");
     let child = parent.join("child");
     std::fs::create_dir_all(&child).expect("create child");
-    std::fs::write(parent.join("CLAUDE.md"), "parent instructions").expect("write parent");
-    std::fs::write(child.join("CLAUDE.md"), "child instructions").expect("write child");
+    std::fs::write(parent.join("RENLIJIA.md"), "parent instructions").expect("write parent");
+    std::fs::write(child.join("RENLIJIA.md"), "child instructions").expect("write child");
 
-    let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
+    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&child).await;
 
     let contents: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
@@ -67,17 +67,17 @@ async fn ac1_load_order_root_before_workspace() {
 }
 
 #[tokio::test]
-async fn ac1_load_dot_claude_and_local_claude_md() {
+async fn ac1_load_dot_aijia_and_local_renlijia_md() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
-    let dot_claude = workspace.join(".claude");
-    std::fs::create_dir_all(&dot_claude).expect("create .claude");
-    std::fs::write(dot_claude.join("CLAUDE.md"), "dot-claude instructions")
+    let dot_claude = workspace.join(".aijia");
+    std::fs::create_dir_all(&dot_claude).expect("create .aijia");
+    std::fs::write(dot_claude.join("RENLIJIA.md"), "dot-claude instructions")
         .expect("write dot claude");
-    std::fs::write(workspace.join("CLAUDE.local.md"), "local override")
+    std::fs::write(workspace.join("RENLIJIA.local.md"), "local override")
         .expect("write local claude");
 
-    let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
+    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;
 
     assert!(files
@@ -90,10 +90,10 @@ async fn ac1_load_dot_claude_and_local_claude_md() {
 async fn ac2_mtime_cache_invalidate_on_change() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().to_path_buf();
-    let file_path = workspace.join("CLAUDE.md");
+    let file_path = workspace.join("RENLIJIA.md");
     std::fs::write(&file_path, "version 1").expect("write v1");
 
-    let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
+    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files1 = loader.load(&workspace).await;
     assert!(files1.iter().any(|f| f.content.contains("version 1")));
 
@@ -105,32 +105,33 @@ async fn ac2_mtime_cache_invalidate_on_change() {
 }
 
 #[tokio::test]
-async fn review_claude_md_loader_empty_path_does_not_panic() {
-    let mut loader = app_lib::runtime::claude_md::ClaudeMdLoader::new();
+async fn review_renlijia_md_loader_empty_path_does_not_panic() {
+    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(Path::new("")).await;
     let _ = files;
 }
 
 #[test]
-fn review_claude_md_loader_has_no_tauri_dependency() {
-    let source = std::fs::read_to_string("src/runtime/claude_md.rs").expect("read claude_md.rs");
+fn review_renlijia_md_loader_has_no_tauri_dependency() {
+    let source =
+        std::fs::read_to_string("src/runtime/renlijia_md.rs").expect("read renlijia_md.rs");
     assert!(
         !source.contains("use tauri::"),
-        "runtime/claude_md.rs must not depend on tauri::*"
+        "runtime/renlijia_md.rs must not depend on tauri::*"
     );
 }
 
-struct ClaudeMdContextExecutor {
+struct RenlijiaMdContextExecutor {
     workspace_path: PathBuf,
-    claude_md_files: Vec<ClaudeMdFile>,
+    renlijia_md_files: Vec<RenlijiaMdFile>,
     received_messages: Mutex<Vec<Vec<serde_json::Value>>>,
 }
 
-impl ClaudeMdContextExecutor {
-    fn new(workspace_path: PathBuf, claude_md_files: Vec<ClaudeMdFile>) -> Self {
+impl RenlijiaMdContextExecutor {
+    fn new(workspace_path: PathBuf, renlijia_md_files: Vec<RenlijiaMdFile>) -> Self {
         Self {
             workspace_path,
-            claude_md_files,
+            renlijia_md_files,
             received_messages: Mutex::new(Vec::new()),
         }
     }
@@ -141,7 +142,7 @@ impl ClaudeMdContextExecutor {
 }
 
 #[async_trait]
-impl RuntimeLlmExecutor for ClaudeMdContextExecutor {
+impl RuntimeLlmExecutor for RenlijiaMdContextExecutor {
     async fn run_llm_step(
         &self,
         input: &LlmStepInput<'_>,
@@ -164,9 +165,9 @@ impl RuntimeLlmExecutor for ClaudeMdContextExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_claude_md(&self, workspace_path: &Path) -> Result<Vec<ClaudeMdFile>, TurnError> {
+    async fn load_renlijia_md(&self, workspace_path: &Path) -> Result<Vec<RenlijiaMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
-        Ok(self.claude_md_files.clone())
+        Ok(self.renlijia_md_files.clone())
     }
 
     async fn persist_assistant_message(
@@ -181,25 +182,25 @@ impl RuntimeLlmExecutor for ClaudeMdContextExecutor {
 }
 
 #[tokio::test]
-async fn ac3_driver_inserts_separate_claude_md_context_message_after_system_reminder() {
+async fn ac3_driver_inserts_separate_renlijia_md_context_message_after_system_reminder() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
-    let claude_path = workspace.join("CLAUDE.md");
-    let claude_content = "project instructions";
-    let executor = Arc::new(ClaudeMdContextExecutor::new(
+    let renlijia_path = workspace.join("RENLIJIA.md");
+    let renlijia_content = "project instructions";
+    let executor = Arc::new(RenlijiaMdContextExecutor::new(
         workspace.clone(),
-        vec![ClaudeMdFile {
-            path: claude_path.clone(),
-            content: claude_content.to_string(),
+        vec![RenlijiaMdFile {
+            path: renlijia_path.clone(),
+            content: renlijia_content.to_string(),
         }],
     ));
 
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
-    let mut turn = make_test_turn("conv-claude-md");
-    let request = ChatTurnRequest::new("conv-claude-md", "hello", vec![]);
+    let mut turn = make_test_turn("conv-renlijia-md");
+    let request = ChatTurnRequest::new("conv-renlijia-md", "hello", vec![]);
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
@@ -211,7 +212,7 @@ async fn ac3_driver_inserts_separate_claude_md_context_message_after_system_remi
     let first_call_messages = &messages[0];
     assert!(
         first_call_messages.len() >= 3,
-        "must have [system-reminder, claude-md-context, user]"
+        "must have [system-reminder, renlijia-md-context, user]"
     );
     assert!(
         first_call_messages[0]["content"]
@@ -226,8 +227,8 @@ async fn ac3_driver_inserts_separate_claude_md_context_message_after_system_remi
         "messages[1] must be a separate meta context message, got: {}",
         context_message
     );
-    assert!(context_message.contains("# claudeMd"));
-    assert!(context_message.contains(claude_path.to_string_lossy().as_ref()));
-    assert!(context_message.contains(claude_content));
+    assert!(context_message.contains("# renlijiaMd"));
+    assert!(context_message.contains(renlijia_path.to_string_lossy().as_ref()));
+    assert!(context_message.contains(renlijia_content));
     assert_eq!(first_call_messages[2]["content"], "hello");
 }

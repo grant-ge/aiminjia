@@ -1,6 +1,6 @@
 //! Skill draft commit + export (M2 T4).
 //!
-//! - `commit_skill_draft` — validated draft → `custom_plugins/{id}/` +
+//! - `commit_skill_draft` — validated draft → `~/.renlijia/skills/{id}/` +
 //!   SkillRegistry 热重载 + draft 清理。原子三段式：copy → staging → rename，
 //!   中途失败不污染已有技能。冲突时返回 `conflict: true`，前端决定改名还是
 //!   覆盖（调 `commit_skill_draft_force`）。
@@ -101,9 +101,9 @@ async fn commit_impl(
         return Err(format!("校验未通过，无法提交: {}", report.summary));
     }
 
-    // 2. Resolve custom_plugins target parent
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let custom_dir = app_data.join("custom_plugins");
+    // 2. Resolve ~/.renlijia/skills target parent
+    let aijia_home = app.state::<std::sync::Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
 
     // 3. Do the actual commit (pure FS work — testable)
     let result = commit_draft_to(&draft, &custom_dir, force)?;
@@ -147,7 +147,7 @@ pub(crate) fn commit_draft_to(
     let skill_id = extract_skill_id(&src_draft.join("plugin.toml"))?;
 
     std::fs::create_dir_all(target_parent).map_err(|e| format!(
-        "Failed to create custom_plugins dir: {}",
+        "Failed to create skills dir: {}",
         e
     ))?;
     let target = target_parent.join(&skill_id);
@@ -279,7 +279,7 @@ icon = "🛠️"
     fn commit_happy_path_installs_and_cleans_draft() {
         let tmp = tempfile::tempdir().unwrap();
         let draft = make_draft(&tmp, "my-test-skill");
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
 
         let result = commit_draft_to(&draft, &target_parent, false).unwrap();
 
@@ -297,7 +297,7 @@ icon = "🛠️"
     #[test]
     fn commit_conflict_returns_flag_without_changes() {
         let tmp = tempfile::tempdir().unwrap();
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
 
         // Pre-populate target
         std::fs::create_dir_all(target_parent.join("taken-id")).unwrap();
@@ -324,7 +324,7 @@ icon = "🛠️"
     #[test]
     fn commit_force_overwrites_existing() {
         let tmp = tempfile::tempdir().unwrap();
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
 
         std::fs::create_dir_all(target_parent.join("taken-id")).unwrap();
         std::fs::write(target_parent.join("taken-id/marker.txt"), "original").unwrap();
@@ -345,7 +345,7 @@ icon = "🛠️"
     #[test]
     fn commit_cleans_stale_staging_from_prior_crash() {
         let tmp = tempfile::tempdir().unwrap();
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
         std::fs::create_dir_all(&target_parent).unwrap();
 
         // Simulate a crashed previous run — stale staging dir
@@ -374,7 +374,7 @@ name = "no id"
 type = "skill"
 "#).unwrap();
 
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
         let err = commit_draft_to(&draft, &target_parent, false).unwrap_err();
         assert!(err.contains("plugin.id missing"));
     }
@@ -386,7 +386,7 @@ type = "skill"
         std::fs::create_dir_all(&draft).unwrap();
         std::fs::write(draft.join("plugin.toml"), "{{not valid toml").unwrap();
 
-        let target_parent = tmp.path().join("custom_plugins");
+        let target_parent = tmp.path().join("skills");
         let err = commit_draft_to(&draft, &target_parent, false).unwrap_err();
         assert!(err.contains("parse error"));
     }

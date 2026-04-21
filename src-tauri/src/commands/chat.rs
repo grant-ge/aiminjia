@@ -215,7 +215,7 @@ pub mod testsupport {
         input: Value,
     ) -> Result<WorkspaceFirstToolTrace> {
         let workspace_path =
-            std::env::temp_dir().join(format!("lotus-workspace-first-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("aijia-workspace-first-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&workspace_path)?;
         let storage = Arc::new(AppStorage::new(&workspace_path)?);
         let file_manager = Arc::new(FileManager::new(&workspace_path));

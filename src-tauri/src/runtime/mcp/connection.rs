@@ -228,7 +228,7 @@ impl McpConnection for StdioMcpConnection {
                     "protocolVersion": "2025-11-25",
                     "capabilities": {},
                     "clientInfo": {
-                        "name": "lotus-app",
+                        "name": "aijia",
                         "version": "0.4.1"
                     }
                 }),

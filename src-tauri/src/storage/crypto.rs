@@ -1,6 +1,6 @@
 //! AES-256-GCM encryption for sensitive data (API keys).
 //!
-//! Master encryption key is stored as a file in the app data directory.
+//! Master encryption key is stored as a file in the AIjia crypto directory.
 //! This is more reliable than OS Keychain in development mode, where
 //! binary code signatures change between recompiles causing Keychain
 //! access denials.
@@ -17,7 +17,7 @@ use aes_gcm::{
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Name of the master key file within the app data directory.
+/// Name of the master key file within the configured crypto directory.
 const KEY_FILE_NAME: &str = "master.key";
 
 /// Encode a byte slice as a lowercase hex string.
@@ -107,6 +107,8 @@ impl SecureStorage {
     /// The key file stores the key as a hex string. If the file doesn't
     /// exist or is corrupted, a new key is generated.
     fn get_or_create_master_key(data_dir: &Path) -> Result<Vec<u8>> {
+        std::fs::create_dir_all(data_dir)
+            .with_context(|| format!("Failed to create key directory {}", data_dir.display()))?;
         let key_path = data_dir.join(KEY_FILE_NAME);
 
         // Try to read existing key

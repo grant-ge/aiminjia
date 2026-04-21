@@ -6,7 +6,7 @@ use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
     TurnError,
 };
-use app_lib::runtime::claude_md::ClaudeMdFile;
+use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
@@ -170,7 +170,7 @@ description: 2026-04-25 起非关键改动暂停合并
 struct ProjectMemoryCapturingExecutor {
     workspace_path: PathBuf,
     project_memory: ProjectMemoryContext,
-    claude_md_files: Vec<ClaudeMdFile>,
+    renlijia_md_files: Vec<RenlijiaMdFile>,
     captured_messages: Mutex<Vec<Vec<serde_json::Value>>>,
     captured_dynamic_contexts: Mutex<Vec<String>>,
     load_project_memory_calls: Mutex<u32>,
@@ -181,12 +181,12 @@ impl ProjectMemoryCapturingExecutor {
     fn new(
         workspace_path: PathBuf,
         project_memory: ProjectMemoryContext,
-        claude_md_files: Vec<ClaudeMdFile>,
+        renlijia_md_files: Vec<RenlijiaMdFile>,
     ) -> Self {
         Self {
             workspace_path,
             project_memory,
-            claude_md_files,
+            renlijia_md_files,
             captured_messages: Mutex::new(Vec::new()),
             captured_dynamic_contexts: Mutex::new(Vec::new()),
             load_project_memory_calls: Mutex::new(0),
@@ -224,9 +224,9 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_claude_md(&self, workspace_path: &Path) -> Result<Vec<ClaudeMdFile>, TurnError> {
+    async fn load_renlijia_md(&self, workspace_path: &Path) -> Result<Vec<RenlijiaMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
-        Ok(self.claude_md_files.clone())
+        Ok(self.renlijia_md_files.clone())
     }
 
     async fn load_project_memory(
@@ -264,7 +264,7 @@ async fn u4_driver_injects_project_memory_as_separate_runtime_context() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("create workspace");
-    let claude_path = workspace.join("CLAUDE.md");
+    let renlijia_path = workspace.join("RENLIJIA.md");
     let project_memory = ProjectMemoryContext {
         index_text: "- [薪资分析偏好箱线图](entries/boxplot.md) - 用户偏好 box plot".to_string(),
         recalled_entries: vec![],
@@ -272,8 +272,8 @@ async fn u4_driver_injects_project_memory_as_separate_runtime_context() {
     let executor = Arc::new(ProjectMemoryCapturingExecutor::new(
         workspace.clone(),
         project_memory,
-        vec![ClaudeMdFile {
-            path: claude_path.clone(),
+        vec![RenlijiaMdFile {
+            path: renlijia_path.clone(),
             content: "project instructions".to_string(),
         }],
     ));
@@ -322,8 +322,8 @@ async fn u4_driver_injects_project_memory_as_separate_runtime_context() {
         "project memory should stay in dynamic context instead of being mixed into message history"
     );
     assert!(
-        combined_messages.contains("# claudeMd"),
-        "CLAUDE.md should remain a separate context message"
+        combined_messages.contains("# renlijiaMd"),
+        "RENLIJIA.md should remain a separate context message"
     );
 }
 

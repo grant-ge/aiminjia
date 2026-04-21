@@ -142,7 +142,7 @@ struct TauriChatServices {
 
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
-    claude_md_loader: Arc<tokio::sync::Mutex<crate::runtime::claude_md::ClaudeMdLoader>>,
+    renlijia_md_loader: Arc<tokio::sync::Mutex<crate::runtime::renlijia_md::RenlijiaMdLoader>>,
 }
 
 async fn wait_for_message_write_completion(
@@ -1048,11 +1048,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(self.services.file_mgr.workspace_path().to_path_buf())
     }
 
-    async fn load_claude_md(
+    async fn load_renlijia_md(
         &self,
         workspace_path: &std::path::Path,
-    ) -> Result<Vec<crate::runtime::claude_md::ClaudeMdFile>, TurnError> {
-        let mut loader = self.claude_md_loader.lock().await;
+    ) -> Result<Vec<crate::runtime::renlijia_md::RenlijiaMdFile>, TurnError> {
+        let mut loader = self.renlijia_md_loader.lock().await;
         Ok(loader.load(workspace_path).await)
     }
 
@@ -1459,8 +1459,8 @@ impl TauriChatCommandAdapter {
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
             services: services.clone(),
-            claude_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::claude_md::ClaudeMdLoader::new(),
+            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
             )),
         });
         // Build a static dispatcher from the already-registered runtime tools so that

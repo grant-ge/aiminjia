@@ -13,7 +13,7 @@ pub struct WorkspaceSettings {
 }
 
 pub fn workspace_settings_path(workspace_dir: &Path) -> PathBuf {
-    workspace_dir.join(".lotus").join("settings.json")
+    workspace_dir.join(".aijia").join("settings.json")
 }
 
 pub fn load_workspace_settings(workspace_dir: &Path) -> WorkspaceSettings {

@@ -142,15 +142,15 @@ impl PlaywrightBrowser {
                 let profile = self
                     .auto_explore(&title, &target_origin, &url_path, iframe_url.clone())
                     .await;
-                let app_data_dir = self.get_app_data_dir();
+                let aijia_home_dir = self.get_aijia_home_dir();
                 {
                     let mut maps = self.site_maps.lock().await;
                     let site_map = maps.entry(target_origin.clone()).or_insert_with(|| {
-                        SiteMap::load(&app_data_dir, &target_origin)
+                        SiteMap::load(&aijia_home_dir, &target_origin)
                             .unwrap_or_else(|| SiteMap::new(&target_origin))
                     });
                     site_map.set_page(profile.clone());
-                    let _ = site_map.save(&app_data_dir);
+                    let _ = site_map.save(&aijia_home_dir);
                 }
                 Some(profile)
             }
@@ -327,14 +327,14 @@ impl PlaywrightBrowser {
                 access_denied: false,
                 iframe_src: None,
             };
-            let app_data_dir = self.get_app_data_dir();
+            let aijia_home_dir = self.get_aijia_home_dir();
             let mut maps = self.site_maps.lock().await;
             let site_map = maps.entry(target_origin.clone()).or_insert_with(|| {
-                SiteMap::load(&app_data_dir, &target_origin)
+                SiteMap::load(&aijia_home_dir, &target_origin)
                     .unwrap_or_else(|| SiteMap::new(&target_origin))
             });
             site_map.set_page(profile);
-            let _ = site_map.save(&app_data_dir);
+            let _ = site_map.save(&aijia_home_dir);
         }
 
         info!(
@@ -382,7 +382,7 @@ impl PlaywrightBrowser {
         // Save large data to file
         let data_json = serde_json::to_string(&resp_data).unwrap_or_default();
         let (final_data, truncated, saved_file_path) = if data_json.len() > 50_000 {
-            let dir = self.get_app_data_dir().join("api-data");
+            let dir = self.get_aijia_home_dir().join("api-data");
             std::fs::create_dir_all(&dir).ok();
             let filename = format!(
                 "api_{}_{}.json",
@@ -431,7 +431,7 @@ impl PlaywrightBrowser {
 
     /// Capture screenshot.
     pub async fn capture_screenshot(&self) -> Option<PathBuf> {
-        let dir = self.get_app_data_dir().join("screenshots");
+        let dir = self.get_aijia_home_dir().join("screenshots");
         std::fs::create_dir_all(&dir).ok()?;
         let data = self
             .send_command(
@@ -546,9 +546,7 @@ impl PlaywrightBrowser {
         state.active_origin = None;
         state.active_url = None;
         // Clean up profile lock
-        let lock_path = self
-            .get_app_data_dir()
-            .join("playwright-profile/SingletonLock");
+        let lock_path = self.get_aijia_home_dir().join("playwright-profile/SingletonLock");
         let _ = std::fs::remove_file(&lock_path);
         info!("[Playwright] Shutdown complete");
     }
@@ -604,7 +602,7 @@ impl PlaywrightBrowser {
         let node_path = self.find_node()?;
         let script_path = self.find_browser_js()?;
         let browsers_path = self.find_browsers_dir()?;
-        let user_data_dir = self.get_app_data_dir().join("playwright-profile");
+        let user_data_dir = self.get_aijia_home_dir().join("playwright-profile");
         std::fs::create_dir_all(&user_data_dir).ok();
 
         // Clean up stale profile locks from previous crashes
@@ -828,9 +826,7 @@ impl PlaywrightBrowser {
         state.active_origin = None;
         state.active_url = None;
         // Clean up profile lock
-        let lock_path = self
-            .get_app_data_dir()
-            .join("playwright-profile/SingletonLock");
+        let lock_path = self.get_aijia_home_dir().join("playwright-profile/SingletonLock");
         let _ = std::fs::remove_file(&lock_path);
     }
 
@@ -909,11 +905,15 @@ impl PlaywrightBrowser {
 
     // ── Path resolution ─────────────────────────────────────────
 
-    fn get_app_data_dir(&self) -> PathBuf {
+    fn get_aijia_home_dir(&self) -> PathBuf {
         self.app_handle
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir())
+            .try_state::<std::sync::Arc<crate::storage::AiJiaHome>>()
+            .map(|home| home.root().to_path_buf())
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .map(|home| home.join(".renlijia"))
+                    .unwrap_or_else(std::env::temp_dir)
+            })
     }
 
     fn find_node(&self) -> Result<PathBuf, String> {
