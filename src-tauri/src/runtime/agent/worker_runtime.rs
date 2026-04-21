@@ -195,6 +195,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let mut pending_ask: Option<PermissionDecision> = None;
         let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
         let mut cancelled = false;
+        let mut failed = false;
 
         'agent_loop: for iteration in 0..request.max_iterations {
             if child_cancel.is_cancelled() {
@@ -229,6 +230,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 Err(err) => {
                     warn!("[SubAgent] LLM call failed at iter {}: {}", iteration, err);
                     output = format!("Sub-agent LLM error: {}", err);
+                    failed = true;
                     break;
                 }
             };
@@ -444,6 +446,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             && !cancelled
         {
             output = "Sub-agent reached iteration limit.".to_string();
+            failed = true;
         }
         if cancelled && output.is_empty() {
             output = "Sub-agent cancelled.".to_string();
@@ -500,6 +503,27 @@ impl<'a> SubagentWorkerRuntime<'a> {
         if let Some(handle) = child_handle.as_ref() {
             if cancelled {
                 let _ = agent_runtime.cancel_run(child_run_id.clone()).await;
+            } else if failed {
+                if handle.invocation().background {
+                    if let (Some(bus), Some(parent_run_id)) = (
+                        self.runtime_deps.event_bus.clone(),
+                        config.parent_run_id.clone(),
+                    ) {
+                        let _ = agent_runtime
+                            .fail_background_run(
+                                &child_run_id,
+                                Some(&output),
+                                self.runtime_deps.session_id.clone(),
+                                parent_run_id,
+                                bus,
+                            )
+                            .await;
+                    } else {
+                        let _ = agent_runtime.fail_run(&child_run_id).await;
+                    }
+                } else {
+                    let _ = agent_runtime.fail_run(&child_run_id).await;
+                }
             } else if handle.invocation().background {
                 if let (Some(bus), Some(parent_run_id)) = (
                     self.runtime_deps.event_bus.clone(),

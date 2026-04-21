@@ -257,7 +257,7 @@ feat(worker-runtime): background worker 使用独立 CancellationToken，不受�
 
 ### A-2：AgentStatus::Failed + fail_run() + 错误路径
 
-- [ ] **A-2-1：写失败测试**
+- [x] **A-2-1：写失败测试**
 
 在新建或已有文件中新增测试。推荐放入 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 追加，或新建专用文件 `src-tauri/tests/plan_a_agent_lifecycle_test.rs`：
 
@@ -325,7 +325,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture 2>&1 | head -30
 ```
 
-- [ ] **A-2-2：`invocation.rs` 新增 Failed 变体**
+- [x] **A-2-2：`invocation.rs` 新增 Failed 变体**
 
 **文件**：`src-tauri/src/runtime/agent/invocation.rs`
 
@@ -342,12 +342,12 @@ pub enum AgentStatus {
 
 **验证编译**：
 ```bash
-cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "error"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
 > 如果有 `match AgentStatus` 未覆盖新变体的编译错误，需要在 `agent_runtime.rs::status()` 方法中补充 `AgentStatus::Failed => "failed"` 分支（见下）。
 
-- [ ] **A-2-3：`agent_runtime.rs` 补充 status() match 分支 + 新增 fail_run()**
+- [x] **A-2-3：`agent_runtime.rs` 补充 status() match 分支 + 新增 fail_run()**
 
 **文件**：`src-tauri/src/runtime/agent/agent_runtime.rs`
 
@@ -390,7 +390,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
 ```
 
-- [ ] **A-2-4：`worker_runtime.rs` 错误路径改为调用 fail_run()**
+- [x] **A-2-4：`worker_runtime.rs` 错误路径改为调用 fail_run()**
 
 **文件**：`src-tauri/src/runtime/agent/worker_runtime.rs`
 
@@ -473,7 +473,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_u5_subagent_worker_runtime_test -- --nocapture
 ```
 
-- [ ] **A-2-5：Failed 时发 TaskStatusChanged 事件**
+- [x] **A-2-5：Failed 时发 TaskStatusChanged 事件**
 
 background worker Failed 时需要通知前端。在 `fail_run()` 之后发事件（如果有 event bus 可用）。
 
@@ -546,10 +546,10 @@ pub async fn fail_background_run(
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
-cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "error"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
-- [ ] **A-2-6：commit**
+- [x] **A-2-6：commit**
 
 ```
 feat(agent-runtime): 新增 AgentStatus::Failed + fail_run() + fail_background_run()，错误路径不再走 complete_run

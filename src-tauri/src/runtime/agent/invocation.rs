@@ -8,6 +8,7 @@ pub enum AgentStatus {
     Running,
     Completed,
     Cancelled,
+    Failed,
 }
 
 #[derive(Clone, Debug)]

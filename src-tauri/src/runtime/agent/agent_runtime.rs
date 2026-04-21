@@ -92,6 +92,16 @@ impl AgentRuntime {
         Ok(())
     }
 
+    pub async fn fail_run(&self, child_run_id: &RunId) -> Result<()> {
+        for record in self.invocation_store.list_invocations()? {
+            if &record.child_run_id == child_run_id {
+                self.invocation_store
+                    .update_invocation_status(&record.agent_id, AgentStatus::Failed)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn status(&self, child_run_id: &RunId) -> Result<String> {
         for record in self.invocation_store.list_invocations()? {
             if &record.child_run_id == child_run_id {
@@ -100,6 +110,7 @@ impl AgentRuntime {
                     AgentStatus::Running => "running",
                     AgentStatus::Completed => "completed",
                     AgentStatus::Cancelled => "cancelled",
+                    AgentStatus::Failed => "failed",
                 }
                 .to_string());
             }
@@ -144,6 +155,40 @@ impl AgentRuntime {
             let event = RuntimeEvent::new(session_id, parent_run_id, kind);
             bus.emit(event).await?;
         }
+        Ok(())
+    }
+
+    pub async fn fail_background_run(
+        &self,
+        child_run_id: &RunId,
+        error_summary: Option<&str>,
+        session_id: SessionId,
+        parent_run_id: RunId,
+        bus: RuntimeEventBus,
+    ) -> Result<()> {
+        for record in self.invocation_store.list_invocations()? {
+            if &record.child_run_id == child_run_id {
+                self.invocation_store
+                    .update_invocation_status(&record.agent_id, AgentStatus::Failed)?;
+                if let Some(summary) = error_summary {
+                    self.invocation_store.update_invocation_result_metadata(
+                        &record.agent_id,
+                        Some(summary.to_owned()),
+                        None,
+                    )?;
+                }
+            }
+        }
+
+        let event = RuntimeEvent::new(
+            session_id,
+            parent_run_id,
+            crate::runtime::events::RuntimeEventKind::TaskStatusChanged {
+                task_id: crate::runtime::ids::TaskId::new(child_run_id.as_str()),
+                status: "failed".to_string(),
+            },
+        );
+        bus.emit(event).await?;
         Ok(())
     }
 
