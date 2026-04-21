@@ -913,7 +913,7 @@ EOF
 
 ## Task 6 — 文件类工具接入 PathGlob 规则
 
-- [ ] **6-a 先写失败测试**
+- [x] **6-a 先写失败测试**
 
 新建 `src-tauri/tests/review_file_path_glob_permission_test.rs`：
 
@@ -982,7 +982,7 @@ async fn review_write_file_no_matching_glob_returns_none() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test 2>&1 | tail -20
 ```
 
-- [ ] **6-b 为 WriteFileTool / EditFileTool 实现 check_permissions**
+- [x] **6-b 为 WriteFileTool / EditFileTool 实现 check_permissions**
 
 在相应工具的 `RuntimeTool` impl 中追加（以 WriteFileTool 为例，EditFileTool 同理）：
 
@@ -1032,7 +1032,7 @@ EditFileTool 中 `tool_name` 改为 `"edit_file"` 并从 `input.get("path")` 读
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_file_path_glob_permission_test -- --nocapture
 ```
 
-- [ ] **6-c Commit**
+- [x] **6-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app

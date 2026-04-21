@@ -468,6 +468,48 @@ impl RuntimeTool for WriteFileRuntimeTool {
         false
     }
 
+    async fn check_permissions(
+        &self,
+        input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Option<crate::runtime::tools::permission::PermissionDecision> {
+        use crate::runtime::store::permission_store::PolicyDecision;
+        use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+
+        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
+        if path.is_empty() {
+            return None;
+        }
+
+        let store = ctx.permission_store.as_ref()?;
+        let root = require_workspace_root(ctx).ok()?;
+        let _resolved = resolve_path(&root, path).ok()?;
+        let lookup_path = if Path::new(path).is_absolute() {
+            path.to_string()
+        } else {
+            root.join(path).to_string_lossy().into_owned()
+        };
+
+        match store.get_for_path("write_file", &lookup_path) {
+            Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
+                Some(PermissionDecision::Deny {
+                    message: format!(
+                        "Write to '{}' is blocked by stored PathGlob policy.",
+                        path
+                    ),
+                    reason: PermissionReason::StoredPolicy,
+                })
+            }
+            Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
+                Some(PermissionDecision::Allow {
+                    updated_input: None,
+                    reason: PermissionReason::StoredPolicy,
+                })
+            }
+            None => None,
+        }
+    }
+
     async fn execute(
         &self,
         input: Value,
@@ -519,6 +561,48 @@ impl RuntimeTool for EditFileRuntimeTool {
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         false
+    }
+
+    async fn check_permissions(
+        &self,
+        input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Option<crate::runtime::tools::permission::PermissionDecision> {
+        use crate::runtime::store::permission_store::PolicyDecision;
+        use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
+
+        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
+        if path.is_empty() {
+            return None;
+        }
+
+        let store = ctx.permission_store.as_ref()?;
+        let root = require_workspace_root(ctx).ok()?;
+        let _resolved = resolve_path(&root, path).ok()?;
+        let lookup_path = if Path::new(path).is_absolute() {
+            path.to_string()
+        } else {
+            root.join(path).to_string_lossy().into_owned()
+        };
+
+        match store.get_for_path("edit_file", &lookup_path) {
+            Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
+                Some(PermissionDecision::Deny {
+                    message: format!(
+                        "Write to '{}' is blocked by stored PathGlob policy.",
+                        path
+                    ),
+                    reason: PermissionReason::StoredPolicy,
+                })
+            }
+            Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
+                Some(PermissionDecision::Allow {
+                    updated_input: None,
+                    reason: PermissionReason::StoredPolicy,
+                })
+            }
+            None => None,
+        }
     }
 
     async fn execute(
