@@ -163,7 +163,7 @@ EOF
 
 ## Task 2 — PermissionStore 补 PathGlob / CommandPattern 匹配
 
-- [ ] **2-a 先写失败测试**
+- [x] **2-a 先写失败测试**
 
 新建 `src-tauri/tests/review_permission_store_glob_test.rs`：
 
@@ -270,7 +270,7 @@ fn review_path_glob_session_overrides_workspace() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_store_glob_test 2>&1 | tail -30
 ```
 
-- [ ] **2-b 实现匹配逻辑**
+- [x] **2-b 实现匹配逻辑**
 
 在 `src-tauri/src/runtime/store/permission_store.rs` 文件顶部（use 块之后）追加私有 glob 辅助函数：
 
@@ -393,7 +393,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test permission_store -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **2-c Commit**
+- [x] **2-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
@@ -410,7 +410,7 @@ EOF
 
 ## Task 3 — WorkerRunConfig 新增 permission_mode 字段
 
-- [ ] **3-a 先写失败测试**
+- [x] **3-a 先写失败测试**
 
 新建 `src-tauri/tests/review_worker_run_config_permission_mode_test.rs`：
 
@@ -454,7 +454,7 @@ fn review_worker_run_config_default_permission_mode_is_default() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_run_config_permission_mode_test 2>&1 | tail -20
 ```
 
-- [ ] **3-b 修改 WorkerRunConfig 与调用链**
+- [x] **3-b 修改 WorkerRunConfig 与调用链**
 
 在 `src-tauri/src/runtime/agent/worker_runtime.rs` 中追加导入并修改 `WorkerRunConfig`：
 
@@ -501,7 +501,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **3-c Commit**
+- [x] **3-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
@@ -518,7 +518,7 @@ EOF
 
 ## Task 4 — Ask 闭环：worker_runtime AskRequired 接入父 run control plane
 
-- [ ] **4-a 先写失败测试**
+- [x] **4-a 先写失败测试**
 
 新建 `src-tauri/tests/review_worker_ask_control_plane_test.rs`：
 
@@ -551,7 +551,7 @@ fn review_worker_run_config_accepts_optional_control_plane() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_worker_ask_control_plane_test 2>&1 | tail -20
 ```
 
-- [ ] **4-b 在 WorkerRunConfig 追加 control_plane 字段**
+- [x] **4-b 在 WorkerRunConfig 追加 control_plane 字段**
 
 在 `src-tauri/src/runtime/agent/worker_runtime.rs` 的 `WorkerRunConfig` 中追加：
 
@@ -580,7 +580,7 @@ pub struct WorkerRunConfig {
             control_plane: config.control_plane.clone(),
 ```
 
-- [ ] **4-c 修改 AskRequired 处理逻辑**
+- [x] **4-c 修改 AskRequired 处理逻辑**
 
 在 `run_worker_turn` 中定位 `ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired { .. })` 分支（约 `:400`），在该分支开头插入 control plane 路径：
 
@@ -721,7 +721,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **4-d Commit**
+- [x] **4-d Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
@@ -738,7 +738,7 @@ EOF
 
 ## Task 5 — BashTool 接入 CommandPattern 规则
 
-- [ ] **5-a 先写失败测试**
+- [x] **5-a 先写失败测试**
 
 新建 `src-tauri/tests/review_bash_command_pattern_permission_test.rs`：
 
@@ -817,7 +817,7 @@ async fn review_bash_command_pattern_allow_returns_allow_or_none() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_bash_command_pattern_permission_test 2>&1 | tail -20
 ```
 
-- [ ] **5-b 在 ToolExecutionContext 追加 permission_store 字段**
+- [x] **5-b 在 ToolExecutionContext 追加 permission_store 字段**
 
 在 `src-tauri/src/runtime/tools/context.rs` 中追加：
 
@@ -840,7 +840,7 @@ use crate::runtime::store::PermissionStore;
     }
 ```
 
-- [ ] **5-c 修改 BashTool::check_permissions**
+- [x] **5-c 修改 BashTool::check_permissions**
 
 在 `src-tauri/src/runtime/tools/builtin/bash.rs` 中，`check_permissions` 修改为：
 
@@ -896,7 +896,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test bash -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **5-d Commit**
+- [x] **5-d Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app

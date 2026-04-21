@@ -333,8 +333,10 @@ impl RuntimeTool for BashTool {
     async fn check_permissions(
         &self,
         input: &Value,
-        _ctx: &ToolExecutionContext,
+        ctx: &ToolExecutionContext,
     ) -> Option<PermissionDecision> {
+        use crate::runtime::store::permission_store::PolicyDecision;
+
         let command = input.get("command").and_then(Value::as_str).unwrap_or("");
         for (pattern, message) in DANGEROUS_PATTERNS {
             if command.contains(pattern) {
@@ -342,6 +344,27 @@ impl RuntimeTool for BashTool {
                     message: (*message).to_string(),
                     reason: PermissionReason::Other("dangerous_pattern".to_string()),
                 });
+            }
+        }
+
+        if let Some(store) = ctx.permission_store.as_ref() {
+            match store.get_for_command("bash", command) {
+                Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
+                    return Some(PermissionDecision::Deny {
+                        message: format!(
+                            "Command blocked by stored CommandPattern policy: {}",
+                            command.chars().take(80).collect::<String>()
+                        ),
+                        reason: PermissionReason::StoredPolicy,
+                    });
+                }
+                Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
+                    return Some(PermissionDecision::Allow {
+                        updated_input: None,
+                        reason: PermissionReason::StoredPolicy,
+                    });
+                }
+                None => {}
             }
         }
         None

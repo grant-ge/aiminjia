@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::hooks::config::HookRegistry;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::store::PermissionStore;
 use crate::runtime::tools::capability::SharedCapabilityContext;
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
@@ -53,6 +54,8 @@ pub struct ToolExecutionContext {
     pub permission_override: Option<PermissionDecision>,
     /// Permission mode transform applied after the pipeline returns a decision.
     pub permission_mode: PermissionMode,
+    /// 可选的 PermissionStore，供工具 check_permissions 做细粒度规则查询。
+    pub permission_store: Option<Arc<PermissionStore>>,
     /// Optional session-scoped hooks executed around tool dispatch.
     pub hook_registry: Option<Arc<HookRegistry>>,
 }
@@ -75,6 +78,7 @@ impl ToolExecutionContext {
             capability: None,
             permission_override: None,
             permission_mode: PermissionMode::Default,
+            permission_store: None,
             hook_registry: None,
         }
     }
@@ -95,6 +99,11 @@ impl ToolExecutionContext {
 
     pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
         self.permission_mode = mode;
+        self
+    }
+
+    pub fn with_permission_store(mut self, store: Arc<PermissionStore>) -> Self {
+        self.permission_store = Some(store);
         self
     }
 
