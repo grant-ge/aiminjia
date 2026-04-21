@@ -701,7 +701,11 @@ pub(crate) async fn execute_browse_data(
     launch_browse_data_with_runtime_deps(
         &runtime_deps,
         request,
-        ctx.cancellation.clone(),
+        Some(
+            ctx.cancellation
+                .clone()
+                .unwrap_or_else(CancellationToken::new),
+        ),
         ctx.run_id.is_some(),
     )
     .await

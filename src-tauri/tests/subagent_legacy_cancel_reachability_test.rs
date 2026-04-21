@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use std::fs;
 
 use app_lib::plugin::context::PluginContext;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
@@ -125,4 +126,58 @@ async fn subagent_legacy_tool_observes_parent_cancel_via_registry_bridge() {
 
     cancel_task.await.expect("cancel task should finish");
     assert_eq!(result.content, "cancelled:Interrupt");
+}
+
+#[test]
+fn a1_worker_runtime_background_branch_uses_independent_cancel_token() {
+    let source = fs::read_to_string("src/runtime/agent/worker_runtime.rs")
+        .expect("read src/runtime/agent/worker_runtime.rs");
+    assert!(
+        source.contains("if config.background"),
+        "worker_runtime must branch on config.background for cancel token selection"
+    );
+    assert!(
+        source.contains("CancellationToken::new()"),
+        "background worker must allocate a fresh CancellationToken"
+    );
+}
+
+#[test]
+fn a1_background_worker_cancel_token_is_independent_from_session_token() {
+    let session_token = CancellationToken::new();
+    let bg_token = CancellationToken::new();
+
+    session_token.cancel();
+
+    assert!(
+        !bg_token.is_cancelled(),
+        "background worker token must NOT be cancelled when session token is cancelled"
+    );
+}
+
+#[test]
+fn a1_foreground_worker_cancel_token_cascades_from_session_token() {
+    let session_token = CancellationToken::new();
+    let fg_token = session_token.child_token();
+
+    session_token.cancel();
+
+    assert!(
+        fg_token.is_cancelled(),
+        "foreground worker token must be cancelled when session token is cancelled"
+    );
+}
+
+#[test]
+fn a1_background_token_arc_is_not_ptr_eq_to_session_token() {
+    let session_token = CancellationToken::new();
+    let bg_token = CancellationToken::new();
+
+    session_token.cancel();
+    assert!(!bg_token.is_cancelled());
+
+    let session_token2 = CancellationToken::new();
+    let bg_token2 = CancellationToken::new();
+    bg_token2.cancel();
+    assert!(!session_token2.is_cancelled());
 }

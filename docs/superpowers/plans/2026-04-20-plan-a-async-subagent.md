@@ -244,10 +244,10 @@ launch_browse_data_with_runtime_deps(
 
 **验证**：
 ```bash
-cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep -E "error|warning.*unused"
+cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build
 ```
 
-- [ ] **A-1-4：commit**
+- [x] **A-1-4：commit**
 
 ```
 feat(worker-runtime): background worker 使用独立 CancellationToken，不受父 session ESC 影响

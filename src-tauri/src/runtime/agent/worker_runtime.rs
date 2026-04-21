@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use log::{info, warn};
-use tauri::Emitter;
 
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
@@ -143,11 +142,15 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let sub_conv_id = child_run_id.as_str().to_string();
         request.subagent_conversation_id = sub_conv_id.clone();
 
-        let child_cancel = config
-            .cancel_token
-            .as_ref()
-            .map(|parent| parent.child_token())
-            .unwrap_or_default();
+        let child_cancel = if config.background {
+            CancellationToken::new()
+        } else {
+            config
+                .cancel_token
+                .as_ref()
+                .map(|parent| parent.child_token())
+                .unwrap_or_else(CancellationToken::new)
+        };
         let child_read_file_state = self
             .runtime_deps
             .read_file_state
@@ -575,7 +578,8 @@ fn emit_tool_executing(
     purpose: Option<&str>,
 ) {
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        let _ = tauri::Emitter::emit(
+            app,
             "tool:executing",
             serde_json::json!({
                 "conversationId": conversation_id,
@@ -595,7 +599,8 @@ fn emit_tool_completed(
     summary: Option<&str>,
 ) {
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        let _ = tauri::Emitter::emit(
+            app,
             "tool:completed",
             serde_json::json!({
                 "conversationId": conversation_id,
