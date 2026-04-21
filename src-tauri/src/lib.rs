@@ -181,6 +181,8 @@ pub fn run() {
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
                 app_config_dir.join("mcp_servers.json"),
             ));
+            let agent_registry =
+                Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
 
             let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
                 log::warn!("Failed to load MCP configs from disk: {}", err);
@@ -217,6 +219,7 @@ pub fn run() {
                     &skill_registry,
                     db.clone(),
                     auth_manager.clone(),
+                    Some(agent_registry.as_ref()),
                 )
                 .await;
 
@@ -344,8 +347,6 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
-            let agent_registry =
-                std::sync::Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
             app.manage(agent_registry);
             app.manage(chat_adapter);
 

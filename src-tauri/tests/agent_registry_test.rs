@@ -1,5 +1,11 @@
 use app_lib::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
 use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::auth::AuthManager;
+use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
+use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
+use app_lib::storage::file_store::AppStorage;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 #[test]
 fn registry_with_builtins_has_browse_data_agent() {
@@ -80,4 +86,25 @@ fn browse_data_agent_tools_match_legacy_hardcoded_list() {
         );
     }
     assert_eq!(def.allowed_tools.len(), expected.len());
+}
+
+
+#[test]
+fn daily_assistant_tool_filter_matches_registry_definition() {
+    let registry = AgentRegistry::with_builtins();
+    let def = registry.get("daily_assistant_agent").unwrap();
+    let workspace = TempDir::new().expect("TempDir::new failed");
+    let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
+    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let skill = DailyAssistantSkill::new_with_registry(&registry, storage, auth_manager);
+    let filter = skill.tool_filter(&SkillState::new("daily-assistant"));
+    match filter {
+        ToolFilter::Only(tools) => {
+            assert_eq!(tools.len(), def.allowed_tools.len());
+            for tool in &def.allowed_tools {
+                assert!(tools.contains(tool), "filter must include {}", tool);
+            }
+        }
+        _ => panic!("DailyAssistantSkill must use ToolFilter::Only"),
+    }
 }

@@ -442,22 +442,29 @@ git commit -m "refactor(browse_data): read allowed_tools/max_iterations from Age
 **文件：**
 - 修改：`src-tauri/src/plugin/builtin/skills/daily_assistant.rs`
 
-- [ ] **Step 1：写测试**
+- [x] **Step 1：写测试**
 
 在 `agent_registry_test.rs` 追加：
 
 ```rust
+use app_lib::auth::AuthManager;
 use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
-use app_lib::plugin::skill_trait::{Skill, ToolFilter};
+use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
 use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::storage::file_store::AppStorage;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 #[test]
 fn daily_assistant_tool_filter_matches_registry_definition() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("daily_assistant_agent").unwrap();
     // DailyAssistantSkill 的 tool_filter 应该与 registry 里的 allowed_tools 一致
-    let skill = DailyAssistantSkill::new_with_registry(&registry);
-    let filter = skill.tool_filter();
+    let workspace = TempDir::new().expect("TempDir::new failed");
+    let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
+    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let skill = DailyAssistantSkill::new_with_registry(&registry, storage, auth_manager);
+    let filter = skill.tool_filter(&SkillState::new("daily-assistant"));
     match filter {
         ToolFilter::Only(tools) => {
             assert_eq!(tools.len(), def.allowed_tools.len());
@@ -470,7 +477,7 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
 }
 ```
 
-- [ ] **Step 2：运行确认失败**
+- [x] **Step 2：运行确认失败**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filter -- --nocapture 2>&1 | head -15
@@ -478,7 +485,7 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 
 期望：编译错误，`new_with_registry` 不存在
 
-- [ ] **Step 3：修改 DailyAssistantSkill**
+- [x] **Step 3：修改 DailyAssistantSkill**
 
 `src-tauri/src/plugin/builtin/skills/daily_assistant.rs`：
 
@@ -486,12 +493,18 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 use crate::runtime::agent::registry::AgentRegistry;
 
 pub struct DailyAssistantSkill {
+    db: Arc<AppStorage>,
+    auth_manager: Arc<AuthManager>,
     allowed_tools: Vec<String>,
 }
 
 impl DailyAssistantSkill {
     /// 生产路径：从 AgentRegistry 读取工具列表
-    pub fn new_with_registry(registry: &AgentRegistry) -> Self {
+    pub fn new_with_registry(
+        registry: &AgentRegistry,
+        db: Arc<AppStorage>,
+        auth_manager: Arc<AuthManager>,
+    ) -> Self {
         let tools = registry
             .get("daily_assistant_agent")
             .map(|def| def.allowed_tools.clone())
@@ -502,12 +515,18 @@ impl DailyAssistantSkill {
                     .map(|s| s.to_string())
                     .collect()
             });
-        Self { allowed_tools: tools }
+        Self {
+            db,
+            auth_manager,
+            allowed_tools: tools,
+        }
     }
 
     /// 测试/兼容路径：直接用常量
-    pub fn new() -> Self {
+    pub fn new(db: Arc<AppStorage>, auth_manager: Arc<AuthManager>) -> Self {
         Self {
+            db,
+            auth_manager,
             allowed_tools: crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
                 .iter()
                 .map(|s| s.to_string())
@@ -524,7 +543,7 @@ impl Skill for DailyAssistantSkill {
 }
 ```
 
-- [ ] **Step 4：运行确认通过**
+- [x] **Step 4：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filter -- --nocapture
@@ -532,7 +551,7 @@ cd src-tauri && cargo test --test agent_registry_test daily_assistant_tool_filte
 
 期望：`PASSED`
 
-- [ ] **Step 5：更新 DailyAssistantSkill 的构造调用处**
+- [x] **Step 5：更新 DailyAssistantSkill 的构造调用处**
 
 ```bash
 grep -rn "DailyAssistantSkill::new\b" src-tauri/src/
@@ -540,13 +559,13 @@ grep -rn "DailyAssistantSkill::new\b" src-tauri/src/
 
 对所有调用处，如果能拿到 `AgentRegistry`（通过 State 或参数），改为 `DailyAssistantSkill::new_with_registry(®istry)`，否则保持 `DailyAssistantSkill::new()`。
 
-- [ ] **Step 6：编译确认无错误**
+- [x] **Step 6：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 ```
 
-- [ ] **Step 7：Commit**
+- [x] **Step 7：Commit**
 
 ```bash
 git add src-tauri/src/plugin/builtin/skills/daily_assistant.rs \
