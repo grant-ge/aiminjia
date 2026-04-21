@@ -37,6 +37,7 @@ pub(crate) struct BrowseDataLauncherDeps {
     read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     cancellation: Option<CancellationToken>,
     app_handle: Option<tauri::AppHandle>,
+    permission_control_plane: Option<Arc<dyn crate::runtime::store::PendingPermissionControlPlane>>,
 }
 
 impl BrowseDataLauncherDeps {
@@ -61,6 +62,7 @@ impl BrowseDataLauncherDeps {
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
             app_handle: ctx.app_handle.clone(),
+            permission_control_plane: ctx.permission_control_plane.clone(),
         }
     }
 
@@ -89,6 +91,7 @@ impl BrowseDataLauncherDeps {
             authorized_workspace: self.authorized_workspace,
             read_file_state: self.read_file_state,
             cancellation: self.cancellation,
+            permission_control_plane: self.permission_control_plane,
         }
     }
 }
@@ -399,6 +402,7 @@ async fn launch_browse_data_with_runtime_deps(
         app_handle: ctx.app_handle.clone(),
         cancel_token,
         permission_mode,
+        control_plane: ctx.permission_control_plane.clone(),
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(
@@ -419,6 +423,7 @@ async fn launch_browse_data_with_runtime_deps(
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             app_handle: ctx.app_handle.clone(),
+            permission_control_plane: ctx.permission_control_plane.clone(),
         },
         config,
         app_settings,

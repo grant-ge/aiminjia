@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
 use crate::runtime::store::permission_store::PermissionStore;
+use crate::runtime::store::PendingPermissionControlPlane;
 use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
 use crate::runtime::tools::permission::PermissionDecision;
 use crate::runtime::tools::permission::StorePolicyPipeline;
@@ -47,6 +48,7 @@ pub struct RequestScopedRuntimeDeps {
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
+    pub permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -75,6 +77,7 @@ impl RequestScopedRuntimeDeps {
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
+            permission_control_plane: None,
         }
     }
 
