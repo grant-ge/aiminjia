@@ -344,6 +344,9 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
+            let agent_registry =
+                std::sync::Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
+            app.manage(agent_registry);
             app.manage(chat_adapter);
 
             // Skill-smith: cleanup expired drafts on startup (non-blocking).

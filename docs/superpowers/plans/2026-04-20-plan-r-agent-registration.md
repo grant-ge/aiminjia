@@ -39,7 +39,7 @@
 - 新建：`src-tauri/src/runtime/agent/registry.rs`
 - 修改：`src-tauri/src/runtime/agent/mod.rs`
 
-- [ ] **Step 1：写失败测试**
+- [x] **Step 1：写失败测试**
 
 新建 `src-tauri/tests/agent_registry_test.rs`：
 
@@ -97,7 +97,7 @@ fn registry_list_returns_all_builtins() {
 }
 ```
 
-- [ ] **Step 2：运行确认失败**
+- [x] **Step 2：运行确认失败**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test -- --nocapture 2>&1 | head -20
@@ -105,7 +105,7 @@ cd src-tauri && cargo test --test agent_registry_test -- --nocapture 2>&1 | head
 
 期望：编译错误，`definition` 和 `registry` 模块不存在
 
-- [ ] **Step 3：新建 definition.rs**
+- [x] **Step 3：新建 definition.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/definition.rs
@@ -140,7 +140,7 @@ pub struct AgentDefinition {
 }
 ```
 
-- [ ] **Step 4：新建 builtin/browse_data_agent.rs**
+- [x] **Step 4：新建 builtin/browse_data_agent.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/browse_data_agent.rs
@@ -166,7 +166,7 @@ pub fn browse_data_agent_definition() -> AgentDefinition {
 }
 ```
 
-- [ ] **Step 5：新建 builtin/daily_assistant_agent.rs**
+- [x] **Step 5：新建 builtin/daily_assistant_agent.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/daily_assistant_agent.rs
@@ -189,7 +189,7 @@ pub fn daily_assistant_agent_definition() -> AgentDefinition {
 }
 ```
 
-- [ ] **Step 6：新建 builtin/mod.rs**
+- [x] **Step 6：新建 builtin/mod.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/builtin/mod.rs
@@ -197,7 +197,7 @@ pub mod browse_data_agent;
 pub mod daily_assistant_agent;
 ```
 
-- [ ] **Step 7：新建 registry.rs**
+- [x] **Step 7：新建 registry.rs**
 
 ```rust
 // src-tauri/src/runtime/agent/registry.rs
@@ -238,7 +238,7 @@ impl AgentRegistry {
 }
 ```
 
-- [ ] **Step 8：修改 runtime/agent/mod.rs，暴露新模块**
+- [x] **Step 8：修改 runtime/agent/mod.rs，暴露新模块**
 
 在 `src-tauri/src/runtime/agent/mod.rs` 末尾追加：
 
@@ -248,7 +248,7 @@ pub mod definition;
 pub mod registry;
 ```
 
-- [ ] **Step 9：运行确认通过**
+- [x] **Step 9：运行确认通过**
 
 ```bash
 cd src-tauri && cargo test --test agent_registry_test -- --nocapture
@@ -256,7 +256,7 @@ cd src-tauri && cargo test --test agent_registry_test -- --nocapture
 
 期望：全部 `PASSED`
 
-- [ ] **Step 10：Commit**
+- [x] **Step 10：Commit**
 
 ```bash
 git add \
@@ -277,13 +277,13 @@ git commit -m "feat(agent): AgentDefinition + AgentRegistry + builtin browse_dat
 **文件：**
 - 修改：`src-tauri/src/lib.rs`
 
-- [ ] **Step 1：在 lib.rs 找到 app.manage 区块（约行 292-347）**
+- [x] **Step 1：在 lib.rs 找到 app.manage 区块（约行 292-347）**
 
 ```bash
 grep -n "app.manage\|agent_runtime\|mcp_server_manager" src-tauri/src/lib.rs | head -15
 ```
 
-- [ ] **Step 2：构造并注册 AgentRegistry**
+- [x] **Step 2：构造并注册 AgentRegistry**
 
 在 `app.manage(agent_runtime);` 之后，`app.manage(chat_adapter);` 之前插入：
 
@@ -295,7 +295,7 @@ let agent_registry = std::sync::Arc::new(
 app.manage(agent_registry);
 ```
 
-- [ ] **Step 3：编译确认无错误**
+- [x] **Step 3：编译确认无错误**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
@@ -303,7 +303,7 @@ cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 
 期望：无错误
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add src-tauri/src/lib.rs
