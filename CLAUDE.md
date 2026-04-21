@@ -47,6 +47,14 @@ pnpm build                   # 仅前端 bundle
 
 推 tag → CI 全自动 → 本地跑一行 Homebrew bump。就这样。
 
+### 0. 更新产品更新日志（tag 之前）
+
+```bash
+cd ~/lotus
+./scripts/update-changelog.sh desktop X.Y.Z
+# → 编辑器打开 → 填写 zh/en 更新内容 → 保存退出 → 自动部署官网 + push
+```
+
 ### 1. 改版本号（4 处，都要改）
 
 - `package.json` → `version`
