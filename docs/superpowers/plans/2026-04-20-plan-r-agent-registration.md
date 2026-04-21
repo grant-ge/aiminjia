@@ -831,7 +831,7 @@ pnpm build 2>&1 | grep -i "^error\|Error:" | head -10
 
 期望：无错误
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add src/components/chat/AgentSelector.tsx
@@ -845,7 +845,7 @@ git commit -m "feat(ui): AgentSelector dropdown for registered agents"
 **文件：**
 - 新建：`src-tauri/tests/review_agent_registry_test.rs`
 
-- [ ] **Step 1：新建 review test**
+- [x] **Step 1：新建 review test**
 
 ```rust
 //! review_agent_registry — 防止 browse_data 工具硬编码退化的架构约束测试。
@@ -894,7 +894,7 @@ fn review_browse_data_agent_max_iterations_reasonable() {
 }
 ```
 
-- [ ] **Step 2：运行**
+- [x] **Step 2：运行**
 
 ```bash
 cd src-tauri && cargo test review_agent_registry -- --nocapture
@@ -902,7 +902,7 @@ cd src-tauri && cargo test review_agent_registry -- --nocapture
 
 期望：全部 `PASSED`
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add src-tauri/tests/review_agent_registry_test.rs
