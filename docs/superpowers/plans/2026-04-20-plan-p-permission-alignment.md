@@ -29,7 +29,7 @@
 
 ## Task 1 — plan 模式语义修正：Ask → Deny
 
-- [ ] **1-a 先写失败测试**
+- [x] **1-a 先写失败测试**
 
 新建 `src-tauri/tests/review_permission_plan_mode_test.rs`：
 
@@ -103,7 +103,7 @@ fn review_dont_ask_mode_ask_becomes_deny() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_plan_mode_test -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **1-b 修复实现**
+- [x] **1-b 修复实现**
 
 修改 `src-tauri/src/runtime/tools/permission.rs` 中 `apply_permission_mode`（`:97-113`），将：
 
@@ -146,7 +146,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test permission -- --nocapture 2>&1 | tail -30
 ```
 
-- [ ] **1-c Commit**
+- [x] **1-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app

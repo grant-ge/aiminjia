@@ -94,20 +94,11 @@ pub fn apply_permission_mode(
             ),
             reason: PermissionReason::Mode("dontAsk".into()),
         },
-        (
-            PermissionMode::Plan,
-            PermissionDecision::Ask {
-                message,
-                suggestions,
-                remember_options,
-                default_destination,
-                ..
-            },
-        ) => PermissionDecision::Ask {
-            message,
-            suggestions,
-            remember_options,
-            default_destination,
+        (PermissionMode::Plan, PermissionDecision::Ask { .. }) => PermissionDecision::Deny {
+            message: format!(
+                "Tool '{}' requires permission, but current mode is plan (read-only planning phase).",
+                tool_name
+            ),
             reason: PermissionReason::Mode("plan".into()),
         },
         (_, decision) => decision,
@@ -450,26 +441,4 @@ mod tests {
         assert!(network.is_none());
     }
 
-    #[test]
-    fn review_apply_permission_mode_marks_plan_reason() {
-        let decision = apply_permission_mode(
-            PermissionDecision::Ask {
-                message: "need permission".to_string(),
-                suggestions: vec!["Allow once".to_string()],
-                remember_options: default_remember_options(),
-                default_destination: Some(PermissionDestination::Session),
-                reason: PermissionReason::UnknownScope,
-            },
-            "echo_tool",
-            PermissionMode::Plan,
-        );
-
-        assert!(matches!(
-            decision,
-            PermissionDecision::Ask {
-                reason: PermissionReason::Mode(ref mode),
-                ..
-            } if mode == "plan"
-        ));
-    }
 }
