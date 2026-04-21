@@ -1137,7 +1137,7 @@ EOF
 
 ## Task 8 — AgentStatus 补 Failed 变体
 
-- [ ] **8-a 先写失败测试**
+- [x] **8-a 先写失败测试**
 
 新建 `src-tauri/tests/review_agent_status_failed_test.rs`：
 
@@ -1170,7 +1170,7 @@ fn review_agent_status_failed_serializes() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_agent_status_failed_test 2>&1 | tail -20
 ```
 
-- [ ] **8-b 修改 AgentStatus**
+- [x] **8-b 修改 AgentStatus**
 
 修改 `src-tauri/src/runtime/agent/invocation.rs`：
 
@@ -1194,7 +1194,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --te
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo build 2>&1 | grep "^error" | head -20
 ```
 
-- [ ] **8-c Commit**
+- [x] **8-c Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
