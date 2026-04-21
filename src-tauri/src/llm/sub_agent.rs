@@ -87,6 +87,8 @@ pub struct SubAgentConfig {
     pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
+    /// 继承父 run 的权限模式。默认为 Default。
+    pub permission_mode: crate::runtime::tools::permission::PermissionMode,
 }
 
 /// Result from a sub-agent run.

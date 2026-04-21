@@ -24,7 +24,7 @@ use crate::runtime::ids::RunId;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::capability::{DefaultFileOperations, FileStateCache};
-use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
 use crate::llm::sub_agent::{SubAgentConfig, SubAgentResult, SubAgentRuntimeDeps};
 
@@ -46,6 +46,8 @@ pub struct WorkerRunConfig {
     pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<CancellationToken>,
+    /// 权限模式，从父 run 传入。Default 时行为不变。
+    pub permission_mode: PermissionMode,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -83,6 +85,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             background: config.background,
             app_handle: config.app_handle,
             cancel_token: config.cancel_token,
+            permission_mode: config.permission_mode,
         };
         self.run_worker_turn(turn_request, run_config).await
     }

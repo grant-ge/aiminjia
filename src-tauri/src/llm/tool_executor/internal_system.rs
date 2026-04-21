@@ -128,6 +128,7 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
             &scoped_runtime_deps,
             request,
             Some(context.cancellation),
+            context.permission_mode,
             self.deps.run_id.is_some(),
             None,
         )
@@ -139,6 +140,7 @@ async fn launch_browse_data_with_runtime_deps(
     ctx: &RequestScopedRuntimeDeps,
     request: BrowseDataLaunchRequest,
     cancel_token: Option<CancellationToken>,
+    permission_mode: crate::runtime::tools::permission::PermissionMode,
     sub_agent_background: bool,
     agent_registry: Option<&crate::runtime::agent::registry::AgentRegistry>,
 ) -> Result<BrowseDataLaunchResult> {
@@ -396,6 +398,7 @@ async fn launch_browse_data_with_runtime_deps(
         background: sub_agent_background,
         app_handle: ctx.app_handle.clone(),
         cancel_token,
+        permission_mode,
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(
@@ -731,6 +734,7 @@ pub(crate) async fn execute_browse_data(
                 .clone()
                 .unwrap_or_else(CancellationToken::new),
         ),
+        crate::runtime::tools::permission::PermissionMode::Default,
         ctx.run_id.is_some(),
         None,
     )
