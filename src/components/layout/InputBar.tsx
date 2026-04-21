@@ -31,7 +31,7 @@ export function InputBar() {
   const [isSending, setIsSending] = useState(false)
   const isComposingRef = useRef(false)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isUploading, selectAndUploadFile } = useFileUpload()
+  const { isUploading, selectAndUploadFiles } = useFileUpload()
   const { isAuthorizingDirectory, selectAndAuthorizeDirectory } = useWorkspaceAuthorization()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
@@ -162,9 +162,9 @@ export function InputBar() {
 
   const handleUploadFileClick = async () => {
     setShowAttachmentMenu(false)
-    const result = await selectAndUploadFile()
-    if (result) {
-      setPendingFiles((prev) => [...prev, result])
+    const results = await selectAndUploadFiles(pendingFiles)
+    if (results.length > 0) {
+      setPendingFiles((prev) => [...prev, ...results])
     }
   }
 

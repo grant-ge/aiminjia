@@ -663,7 +663,7 @@ git commit -m "feat(api): list_agents Tauri command returns registered agent def
 - 修改：`src/lib/tauri.ts`
 - 修改：`src/stores/chatStore.ts`（发送时携带 agent_name）
 
-- [ ] **Step 1：修改 tauri.ts 新增 listAgents**
+- [x] **Step 1：修改 tauri.ts 新增 listAgents**
 
 找到 `tauri.ts` 里 `invoke` 调用集中处，追加：
 
@@ -697,7 +697,7 @@ export async function sendMessage(params: {
 }
 ```
 
-- [ ] **Step 2：修改 Rust send_message command 接收 agent_name**
+- [x] **Step 2：修改 Rust send_message command 接收 agent_name**
 
 ```bash
 grep -n "pub async fn send_message\|agent_name" src-tauri/src/transport/tauri_commands/chat.rs | head -10
@@ -716,7 +716,7 @@ pub async fn send_message(
 }
 ```
 
-- [ ] **Step 3：SessionRuntime 用 agent_name 约束工具池**
+- [x] **Step 3：SessionRuntime 用 agent_name 约束工具池**
 
 在 `session_runtime.rs` 的 `run_chat_request` 方法里，若收到 `agent_name`，从 `AgentRegistry` 查出 definition，用 `definition.allowed_tools` 覆盖本次 turn 的 `TurnConfig.allowed_tools`（`turn_config.rs:56` 已有 `Option<HashSet<String>>`）：
 
@@ -735,7 +735,7 @@ if let Some(ref agent_name) = request.agent_name {
 
 `SessionRuntime` 需要持有 `agent_registry: Option<Arc<AgentRegistry>>`，在 `lib.rs` 构造时注入。
 
-- [ ] **Step 4：前端构建确认**
+- [x] **Step 4：前端构建确认**
 
 ```bash
 pnpm build 2>&1 | grep -i "error\|Error" | grep -v "warning" | head -10
@@ -743,7 +743,7 @@ pnpm build 2>&1 | grep -i "error\|Error" | grep -v "warning" | head -10
 
 期望：无错误
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add src/lib/tauri.ts \

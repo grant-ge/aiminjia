@@ -3,9 +3,6 @@
  * Based on visual-prototype-zh.html top-bar section.
  */
 import { useChatStore } from '@/stores/chatStore'
-import { useNotificationStore } from '@/stores/notificationStore'
-import { exportConversation, openGeneratedFile } from '@/lib/tauri'
-import { ModelOverrideSelector } from '@/components/chat/ModelOverrideSelector'
 import { ExportMenu } from '@/components/rich-content/ExportMenu'
 
 export function TopBar() {

@@ -934,6 +934,81 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
     }
 }
 
+struct CustomToolDefsCapturingExecutor {
+    captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+}
+
+impl CustomToolDefsCapturingExecutor {
+    fn new() -> Self {
+        Self {
+            captured_tool_defs: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for CustomToolDefsCapturingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_tool_defs
+            .lock()
+            .unwrap()
+            .push(input.tool_defs.to_vec());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
+        })
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![
+            serde_json::json!({"name": "allowed_tool", "description": ""}),
+            serde_json::json!({"name": "blocked_tool", "description": ""}),
+        ])
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_s4_filters_tool_defs_when_request_constrains_allowed_tools() {
+    let executor = Arc::new(CustomToolDefsCapturingExecutor::new());
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-tool-defs-constrained");
+    let request = ChatTurnRequest::new("conv-tool-defs-constrained", "hello", vec![])
+        .with_allowed_tools(vec!["allowed_tool".to_string()]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_tool_defs.lock().unwrap();
+    assert_eq!(captured.len(), 1);
+    let names: Vec<&str> = captured[0]
+        .iter()
+        .filter_map(|value| value["name"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["allowed_tool"],
+        "request.allowed_tools must filter tool_defs before executor sees them"
+    );
+}
+
 // ── S4-T5: 多轮历史加载测试 ──────────────────────────────────────────────────
 
 struct HistoryAwareMockExecutor {

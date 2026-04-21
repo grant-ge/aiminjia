@@ -49,6 +49,8 @@ pub struct ChatTurnRequest {
     /// with the single authoritative id generated for this turn.
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
+    pub agent_name: Option<String>,
+    pub allowed_tools: Option<Vec<String>>,
 }
 
 impl ChatTurnRequest {
@@ -63,7 +65,19 @@ impl ChatTurnRequest {
             file_ids,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
+            agent_name: None,
+            allowed_tools: None,
         }
+    }
+
+    pub fn with_agent_name(mut self, agent_name: impl Into<String>) -> Self {
+        self.agent_name = Some(agent_name.into());
+        self
+    }
+
+    pub fn with_allowed_tools(mut self, allowed_tools: Vec<String>) -> Self {
+        self.allowed_tools = Some(allowed_tools);
+        self
     }
 }
 
@@ -622,10 +636,19 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Build the tool definitions via the executor.
-        let tool_defs = executor
+        let mut tool_defs = executor
             .get_tool_defs()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        if let Some(allowed_tools) = request.allowed_tools.as_ref() {
+            tool_defs.retain(|tool_def| {
+                tool_def
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .map(|name| allowed_tools.iter().any(|allowed| allowed == name))
+                    .unwrap_or(false)
+            });
+        }
         let workspace_path = executor
             .load_workspace_path()
             .await
@@ -634,7 +657,10 @@ impl RuntimeChatTurnDriver {
         let config = TurnConfig {
             system_prompt,
             tool_defs,
-            allowed_tools: None,
+            allowed_tools: request
+                .allowed_tools
+                .as_ref()
+                .map(|tools| tools.iter().cloned().collect()),
             max_iterations: 30,
             token_budget: 4096,
             chunk_timeout_secs: 90,
@@ -732,7 +758,12 @@ impl RuntimeChatTurnDriver {
         let mut turn_completed_normally = false;
 
         // ── Step 5: Iteration loop ────────────────────────────────────────────
-        let round_driver = ToolRoundDriver::new(self.query_engine.clone());
+        let round_driver = ToolRoundDriver::new(self.query_engine.clone()).with_allowed_tools_opt(
+            config
+                .allowed_tools
+                .as_ref()
+                .map(|tools| tools.iter().cloned().collect()),
+        );
 
         // 获取会话级环境信息（整个 turn 内稳定）
         let env_info = executor
