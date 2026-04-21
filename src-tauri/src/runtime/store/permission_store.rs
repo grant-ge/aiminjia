@@ -13,6 +13,39 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
+/// Minimal glob matching supporting `**` (any path segments) and `*` (within one segment).
+fn glob_matches(glob: &str, path: &str) -> bool {
+    glob_matches_inner(glob.as_bytes(), path.as_bytes())
+}
+
+fn glob_matches_inner(pattern: &[u8], text: &[u8]) -> bool {
+    match (pattern, text) {
+        ([], []) => true,
+        ([], _) => false,
+        ([b'*', b'*', rest @ ..], _) => {
+            for i in 0..=text.len() {
+                if glob_matches_inner(rest, &text[i..]) {
+                    return true;
+                }
+            }
+            false
+        }
+        ([b'*', rest @ ..], _) => {
+            for i in 0..=text.len() {
+                if i > 0 && text[i - 1] == b'/' {
+                    break;
+                }
+                if glob_matches_inner(rest, &text[i..]) {
+                    return true;
+                }
+            }
+            false
+        }
+        ([p, p_rest @ ..], [t, t_rest @ ..]) if p == t => glob_matches_inner(p_rest, t_rest),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PermissionSource {
@@ -150,6 +183,34 @@ impl PermissionLayer {
         self.legacy.get(scope_key).cloned()
     }
 
+    fn get_for_glob_path(&self, tool_name: &str, path: &str) -> Option<PolicyDecision> {
+        for rule in &self.rules {
+            if rule.tool_name != tool_name {
+                continue;
+            }
+            if let PermissionScope::PathGlob(glob) = &rule.scope {
+                if glob_matches(glob, path) {
+                    return Some(rule.decision.clone());
+                }
+            }
+        }
+        None
+    }
+
+    fn get_for_command_pattern(&self, tool_name: &str, command: &str) -> Option<PolicyDecision> {
+        for rule in &self.rules {
+            if rule.tool_name != tool_name {
+                continue;
+            }
+            if let PermissionScope::CommandPattern(pattern) = &rule.scope {
+                if command.starts_with(pattern.as_str()) || command.contains(pattern.as_str()) {
+                    return Some(rule.decision.clone());
+                }
+            }
+        }
+        None
+    }
+
     fn snapshot_with_source(&self, source: PermissionSource) -> PermissionStoreSnapshot {
         let rules = self
             .rules
@@ -277,6 +338,41 @@ impl PermissionStore {
                     .get_rule(tool_name, &permission_scope)
             })
             .or_else(|| self.get(&format!("{}:{}", tool_name, scope)))
+    }
+
+    /// 按路径查找匹配的 PathGlob 规则。优先级：session > workspace > user。
+    pub fn get_for_path(&self, tool_name: &str, path: &str) -> Option<PolicyDecision> {
+        self.session
+            .read()
+            .unwrap()
+            .get_for_glob_path(tool_name, path)
+            .or_else(|| {
+                self.workspace
+                    .read()
+                    .unwrap()
+                    .get_for_glob_path(tool_name, path)
+            })
+            .or_else(|| self.user.read().unwrap().get_for_glob_path(tool_name, path))
+    }
+
+    /// 按命令字符串查找匹配的 CommandPattern 规则。优先级：session > workspace > user。
+    pub fn get_for_command(&self, tool_name: &str, command: &str) -> Option<PolicyDecision> {
+        self.session
+            .read()
+            .unwrap()
+            .get_for_command_pattern(tool_name, command)
+            .or_else(|| {
+                self.workspace
+                    .read()
+                    .unwrap()
+                    .get_for_command_pattern(tool_name, command)
+            })
+            .or_else(|| {
+                self.user
+                    .read()
+                    .unwrap()
+                    .get_for_command_pattern(tool_name, command)
+            })
     }
 
     pub fn record(&self, scope_key: String, decision: PolicyDecision) {
