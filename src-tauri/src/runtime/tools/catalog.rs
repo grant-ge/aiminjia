@@ -143,6 +143,7 @@ fn build_default_catalog() -> ToolCatalog {
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
+            "required": [],
             "properties": {
                 "path": { "type": "string", "description": "相对于授权工作目录的路径，默认 '.'", "default": "." }
             }
@@ -349,6 +350,7 @@ fn build_default_catalog() -> ToolCatalog {
             .with_capability_scope(["browser"]),
         json!({
             "type": "object",
+            "required": [],
             "properties": {
                 "selector": { "type": "string", "description": "CSS 选择器（可选，默认读取全页）" }
             }
@@ -374,6 +376,7 @@ fn build_default_catalog() -> ToolCatalog {
             .with_capability_scope(["browser"]),
         json!({
             "type": "object",
+            "required": [],
             "properties": {
                 "selector": { "type": "string", "description": "表格 CSS 选择器" },
                 "max_rows": { "type": "integer", "description": "最多抽取行数" }

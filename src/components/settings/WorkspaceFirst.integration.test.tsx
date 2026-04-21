@@ -34,7 +34,7 @@ vi.mock('@/hooks/useChat', () => ({
 vi.mock('@/hooks/useFileUpload', () => ({
   useFileUpload: () => ({
     isUploading: false,
-    selectAndUploadFile: vi.fn(),
+    selectAndUploadFiles: vi.fn(async () => []),
   }),
 }))
 vi.mock('@/stores/brandingStore', () => ({

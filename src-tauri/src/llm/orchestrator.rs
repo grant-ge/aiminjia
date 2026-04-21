@@ -59,7 +59,10 @@ pub fn advance_step(
     step: u32,
     status: &str,
 ) -> Result<(), String> {
-    let step_status = format!(r#"{{\"step{}_status\":\"{}\"}}"#, step, status);
+    let step_status = serde_json::json!({
+        format!("step{}_status", step): status,
+    })
+    .to_string();
     db.upsert_analysis_state(conversation_id, step as i32, &step_status, "{}")
         .map_err(|e| e.to_string())
 }

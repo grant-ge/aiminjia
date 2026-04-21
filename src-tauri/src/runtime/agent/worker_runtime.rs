@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use log::{info, warn};
-use tauri::Emitter;
 
 use crate::llm::gateway::LlmGateway;
 use crate::llm::masking::MaskingLevel;
@@ -575,7 +574,8 @@ fn emit_tool_executing(
     purpose: Option<&str>,
 ) {
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        let _ = tauri::Emitter::emit(
+            app,
             "tool:executing",
             serde_json::json!({
                 "conversationId": conversation_id,
@@ -595,7 +595,8 @@ fn emit_tool_completed(
     summary: Option<&str>,
 ) {
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        let _ = tauri::Emitter::emit(
+            app,
             "tool:completed",
             serde_json::json!({
                 "conversationId": conversation_id,

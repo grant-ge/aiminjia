@@ -42,7 +42,7 @@ const DESTINATION_OPTIONS: Array<{
 ]
 
 function resolveAvailableDestinations(ask: PendingAsk): PermissionDestination[] {
-  const rememberOptions = ask.rememberOptions ?? ['session']
+  const rememberOptions: PermissionDestination[] = ask.rememberOptions ?? ['session']
   const options = new Set<PermissionDestination>(rememberOptions)
   options.add('session')
   return DESTINATION_OPTIONS
@@ -85,7 +85,7 @@ export function PermissionAskDialog({
   onCancel,
 }: PermissionAskDialogProps) {
   const availableDestinations = useMemo(
-    () => (ask ? resolveAvailableDestinations(ask) : ['session']),
+    (): PermissionDestination[] => (ask ? resolveAvailableDestinations(ask) : ['session']),
     [ask],
   )
   const [selectedDestination, setSelectedDestination] =

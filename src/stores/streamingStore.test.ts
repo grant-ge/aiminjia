@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useChatStore } from './chatStore'
 import { useStreamingStore } from './streamingStore'
+import type { PendingAsk } from './streamingStore'
 
 function resetChatStore() {
   useChatStore.setState({
@@ -16,6 +17,21 @@ function resetChatStore() {
     streamingContent: '',
     toolExecutions: [],
   })
+}
+
+function buildPendingAsk(overrides: Partial<PendingAsk> = {}): PendingAsk {
+  return {
+    conversationId: 'conv-1',
+    runId: 'run-1',
+    toolCallId: 'tc-abc',
+    toolName: 'execute_python',
+    message: 'Run code?',
+    suggestions: null,
+    mode: 'default',
+    rememberOptions: null,
+    defaultDestination: null,
+    ...overrides,
+  }
 }
 
 describe('streamingStore view', () => {
@@ -67,14 +83,7 @@ describe('pendingAsks state', () => {
 
   it('addPendingAsk stores ask keyed by toolCallId', () => {
     const store = useStreamingStore.getState()
-    store.addPendingAsk({
-      conversationId: 'conv-1',
-      runId: 'run-1',
-      toolCallId: 'tc-abc',
-      toolName: 'execute_python',
-      message: 'Run code?',
-      suggestions: null,
-    })
+    store.addPendingAsk(buildPendingAsk())
 
     const next = useStreamingStore.getState()
     expect(next.pendingAsks.get('tc-abc')).toBeDefined()
@@ -83,14 +92,7 @@ describe('pendingAsks state', () => {
 
   it('removePendingAsk removes by toolCallId', () => {
     const store = useStreamingStore.getState()
-    store.addPendingAsk({
-      conversationId: 'conv-1',
-      runId: 'run-1',
-      toolCallId: 'tc-abc',
-      toolName: 'execute_python',
-      message: 'Run code?',
-      suggestions: null,
-    })
+    store.addPendingAsk(buildPendingAsk())
 
     store.removePendingAsk('tc-abc')
 
@@ -99,30 +101,25 @@ describe('pendingAsks state', () => {
 
   it('clearConversationPendingAsks removes all asks for a given conversationId', () => {
     const store = useStreamingStore.getState()
-    store.addPendingAsk({
-      conversationId: 'conv-1',
+    store.addPendingAsk(buildPendingAsk({
       runId: 'r1',
       toolCallId: 'tc-1',
       toolName: 'a',
       message: 'm',
-      suggestions: null,
-    })
-    store.addPendingAsk({
-      conversationId: 'conv-1',
+    }))
+    store.addPendingAsk(buildPendingAsk({
       runId: 'r1',
       toolCallId: 'tc-2',
       toolName: 'b',
       message: 'm',
-      suggestions: null,
-    })
-    store.addPendingAsk({
+    }))
+    store.addPendingAsk(buildPendingAsk({
       conversationId: 'conv-2',
       runId: 'r2',
       toolCallId: 'tc-3',
       toolName: 'c',
       message: 'm',
-      suggestions: null,
-    })
+    }))
 
     store.clearConversationPendingAsks('conv-1')
 
