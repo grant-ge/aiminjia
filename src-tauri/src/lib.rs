@@ -80,12 +80,15 @@ pub fn run() {
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
                     .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-                    .target(tauri_plugin_log::Target::new(
-                        tauri_plugin_log::TargetKind::Folder {
-                            path: logs_dir.clone(),
-                            file_name: Some("renlijia".into()),
-                        },
-                    ))
+                    .targets([
+                        tauri_plugin_log::Target::new(
+                            tauri_plugin_log::TargetKind::Folder {
+                                path: logs_dir.clone(),
+                                file_name: Some("renlijia".into()),
+                            },
+                        ),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    ])
                     .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                     .max_file_size(5_000_000) // 5MB per file
                     .build(),

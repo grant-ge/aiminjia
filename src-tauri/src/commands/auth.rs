@@ -48,7 +48,14 @@ pub async fn cloud_login(
     if username.is_empty() || password.is_empty() {
         return Err("请输入用户名和密码".to_string());
     }
-    auth.login(username, &password).await.map_err(format_auth_error)
+    let result = auth.login(username, &password).await.map_err(format_auth_error)?;
+    log::info!(
+        "[cloud_login] user={} models({})={:?}",
+        username,
+        result.models.len(),
+        result.models.iter().map(|m| format!("{}({})", m.id, m.model_type)).collect::<Vec<_>>()
+    );
+    Ok(result)
 }
 
 /// Logout from cloud mode.
@@ -71,7 +78,13 @@ pub async fn get_cloud_auth(auth: State<'_, Arc<AuthManager>>) -> Result<CloudAu
 pub async fn get_cloud_models(
     auth: State<'_, Arc<AuthManager>>,
 ) -> Result<Vec<CloudModelInfo>, String> {
-    auth.get_available_models().await.map_err(format_auth_error)
+    let models = auth.get_available_models().await.map_err(format_auth_error)?;
+    log::info!(
+        "[get_cloud_models] {} models returned: {:?}",
+        models.len(),
+        models.iter().map(|m| format!("{}({})", m.id, m.model_type)).collect::<Vec<_>>()
+    );
+    Ok(models)
 }
 
 /// Change password on the cloud server.

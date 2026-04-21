@@ -8,7 +8,7 @@ import { open } from '@tauri-apps/plugin-shell'
 import { Button } from '@/components/common/Button'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { cloudLogin, cloudLogout, updateSettings, getSettings, cloudChangePassword } from '@/lib/tauri'
+import { cloudLogin, cloudLogout, updateSettings, getSettings, cloudChangePassword, getCloudModels } from '@/lib/tauri'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 
@@ -182,6 +182,21 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     const handleToggleCloud = async (value: boolean) => {
       try {
         const settings = await getSettings()
+        // 切换到云端时重新拉取最新模型列表
+        if (value) {
+          try {
+            const models = await getCloudModels()
+            auth.setCloudModels(models)
+            // 若当前选中的 model 不在新列表里，自动切换到第一个
+            if (models.length > 0 && !models.find((m) => m.id === settings.cloudModel)) {
+              await updateSettings({ ...settings, useCloud: value, cloudModel: models[0].id, cloudModelType: models[0].modelType || 'chat' })
+              useSettingsStore.getState().setSettings({ useCloud: value, cloudModel: models[0].id, cloudModelType: models[0].modelType || 'chat' })
+              return
+            }
+          } catch (err) {
+            console.error('[handleToggleCloud] Failed to refresh cloud models:', err)
+          }
+        }
         await updateSettings({ ...settings, useCloud: value })
         useSettingsStore.getState().setSettings({ useCloud: value })
       } catch (err) {

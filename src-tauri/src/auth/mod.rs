@@ -333,6 +333,11 @@ impl AuthManager {
             let state = self.state.read().await;
             if let Some(auth) = state.as_ref() {
                 if auth.session_key_expires_at > now + buffer {
+                    log::info!(
+                        "[get_session_key] using cached session_key (len={}, expires_at={})",
+                        auth.session_key.len(),
+                        auth.session_key_expires_at
+                    );
                     return Ok(auth.session_key.clone());
                 }
             }
@@ -356,7 +361,11 @@ impl AuthManager {
                     auth.session_key = sk_resp.key.clone();
                     auth.session_key_expires_at = sk_resp.expires_at;
                     self.persist_auth(auth);
-                    log::info!("Session key renewed successfully");
+                    log::info!(
+                        "[get_session_key] renewed via access_token (len={}, expires_at={})",
+                        sk_resp.key.len(),
+                        sk_resp.expires_at
+                    );
                     return Ok(sk_resp.key);
                 }
                 Err(e) => {

@@ -26,14 +26,18 @@ pub struct LotusProvider {
 }
 
 impl LotusProvider {
-    pub fn new(session_key: String, _model: String, model_type: &str) -> Self {
+    pub fn new(session_key: String, model: String, model_type: &str) -> Self {
         let api_url = match model_type {
             "reasoner" => REASONER_URL.to_string(),
             _ => CHAT_URL.to_string(),
         };
-        // Use model_type as model name — Gateway auto-resolves to highest priority route.
-        // This way the Gateway decides which provider/model to use, not the client.
-        let model = model_type.to_string();
+        // Use the configured cloud_model name (e.g. "claude-ops") so the gateway
+        // can route to the correct model. Fall back to model_type if empty.
+        let model = if model.is_empty() {
+            model_type.to_string()
+        } else {
+            model
+        };
         Self {
             session_key,
             model,
