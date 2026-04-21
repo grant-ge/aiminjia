@@ -1049,7 +1049,7 @@ EOF
 
 ## Task 7 — 确认 MCP 工具不绕过 authorize（回归测试）
 
-- [ ] **7-a 写回归测试**
+- [x] **7-a 写回归测试**
 
 新建 `src-tauri/tests/review_mcp_no_bypass_permission_test.rs`：
 
@@ -1120,7 +1120,7 @@ async fn review_mcp_tool_pipeline_deny_prevents_execute() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_mcp_no_bypass_permission_test -- --nocapture
 ```
 
-- [ ] **7-b Commit**
+- [x] **7-b Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
