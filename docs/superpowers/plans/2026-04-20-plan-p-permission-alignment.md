@@ -1299,7 +1299,7 @@ EOF
 
 ## Task 10 — 全量回归与 review lock
 
-- [ ] **10-a 综合约束测试**
+- [x] **10-a 综合约束测试**
 
 新建 `src-tauri/tests/review_permission_alignment_constraints_test.rs`：
 
@@ -1505,7 +1505,7 @@ fn review_mcp_scope_triggers_ask_via_store_pipeline() {
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test --test review_permission_alignment_constraints_test -- --nocapture
 ```
 
-- [ ] **10-b 全量 Rust 回归**
+- [x] **10-b 全量 Rust 回归**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test 2>&1 | tail -40
@@ -1513,13 +1513,13 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && cargo test 2>&1
 
 预期：所有测试通过，无编译错误。
 
-- [ ] **10-c 前端回归**
+- [x] **10-c 前端回归**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app && pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -20
 ```
 
-- [ ] **10-d Commit**
+- [x] **10-d Commit**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app
