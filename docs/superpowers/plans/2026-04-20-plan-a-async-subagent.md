@@ -559,7 +559,7 @@ feat(agent-runtime): 新增 AgentStatus::Failed + fail_run() + fail_background_r
 
 ### A-3：回归测试 + review lock
 
-- [ ] **A-3-1：background token 独立性 review lock**
+- [x] **A-3-1：background token 独立性 review lock**
 
 在 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 中追加（source-level 约束）：
 
@@ -595,7 +595,7 @@ fn review_a1_cancel_token_none_is_handled_explicitly() {
 }
 ```
 
-- [ ] **A-3-2：父 cancel 不波及 background agent 的集成测试**
+- [x] **A-3-2：父 cancel 不波及 background agent 的集成测试**
 
 在 `src-tauri/tests/subagent_legacy_cancel_reachability_test.rs` 追加：
 
@@ -636,7 +636,7 @@ fn a1_foreground_worker_token_cascades_from_session() {
 }
 ```
 
-- [ ] **A-3-3：AgentStatus::Failed 序列化稳定性测试**
+- [x] **A-3-3：AgentStatus::Failed 序列化稳定性测试**
 
 在 `src-tauri/tests/plan_a_agent_lifecycle_test.rs` 中追加：
 
@@ -677,7 +677,7 @@ async fn a2_status_string_for_failed_is_lowercase() {
 }
 ```
 
-- [ ] **A-3-4：运行全部新增测试**
+- [x] **A-3-4：运行全部新增测试**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
@@ -687,7 +687,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --test plan_a_agent_lifecycle_test -- --nocapture
 ```
 
-- [ ] **A-3-5：运行现有相关回归测试确认不退化**
+- [x] **A-3-5：运行现有相关回归测试确认不退化**
 
 ```bash
 # cancel 级联现有回归
@@ -710,7 +710,7 @@ cd /Users/a20250311/.codex/worktrees/0862/lotus-app/src-tauri && \
   cargo test --tests --no-fail-fast 2>&1 | tail -30
 ```
 
-- [ ] **A-3-6：commit**
+- [x] **A-3-6：commit**
 
 ```
 test(subagent): A-1/A-2 回归测试 + review lock，锁定 background cancel 独立性与 Failed 状态语义
