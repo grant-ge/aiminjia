@@ -582,7 +582,7 @@ git commit -m "refactor(daily_assistant): read tool list from AgentRegistry, kee
 - 修改：`src-tauri/src/transport/tauri_commands/mod.rs`
 - 修改：`src-tauri/src/lib.rs`（invoke_handler 注册）
 
-- [ ] **Step 1：新建 agents.rs**
+- [x] **Step 1：新建 agents.rs**
 
 ```rust
 // src-tauri/src/transport/tauri_commands/agents.rs
@@ -620,7 +620,7 @@ pub async fn list_agents(
 }
 ```
 
-- [ ] **Step 2：修改 mod.rs 暴露 agents 模块**
+- [x] **Step 2：修改 mod.rs 暴露 agents 模块**
 
 在 `src-tauri/src/transport/tauri_commands/mod.rs` 追加：
 
@@ -628,7 +628,7 @@ pub async fn list_agents(
 pub mod agents;
 ```
 
-- [ ] **Step 3：在 lib.rs invoke_handler 注册**
+- [x] **Step 3：在 lib.rs invoke_handler 注册**
 
 找到约行 409-420 的 MCP 相关 command 注册，在其后追加：
 
@@ -637,7 +637,7 @@ pub mod agents;
 transport::tauri_commands::agents::list_agents,
 ```
 
-- [ ] **Step 4：编译确认**
+- [x] **Step 4：编译确认**
 
 ```bash
 cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
@@ -645,7 +645,7 @@ cd src-tauri && cargo build 2>&1 | grep "^error" | head -10
 
 期望：无错误
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add \

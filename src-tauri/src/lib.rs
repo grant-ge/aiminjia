@@ -419,6 +419,8 @@ pub fn run() {
             transport::tauri_commands::mcp::remove_mcp_server,
             transport::tauri_commands::mcp::connect_mcp_server,
             transport::tauri_commands::mcp::disconnect_mcp_server,
+            // Agent registry commands
+            transport::tauri_commands::agents::list_agents,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
