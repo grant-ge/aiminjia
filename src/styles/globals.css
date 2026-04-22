@@ -36,6 +36,17 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+
+  /* Legacy token aliases for incremental migration compatibility */
+  --color-bg-main: var(--background);
+  --color-bg-sidebar: var(--sidebar);
+  --color-bg-card: var(--card);
+  --color-text-primary: var(--foreground);
+  --color-text-secondary: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-light: var(--sidebar-border);
+  --color-accent: var(--primary);
+  --color-text-on-accent: var(--primary-foreground);
 }
 
 @theme inline {

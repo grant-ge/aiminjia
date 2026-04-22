@@ -9,8 +9,8 @@ describe('deriveSkin', () => {
 
     expect(skin['--primary']).toBe('#DBAA22')
     expect(skin['--ring']).toBe('#DBAA22')
-    expect(skin['--sidebar']).toMatch(/^#/i)
-    expect(skin['--sidebar-accent']).toMatch(/^#/i)
+    expect(skin['--sidebar']).toBe('#fcf9f0')
+    expect(skin['--sidebar-accent']).toBe('#e8e5dd')
     expect(skin['--primary-foreground']).toBe('#1A1A1A')
     expect(Object.keys(skin)).toEqual(DERIVED_SKIN_KEYS)
   })
