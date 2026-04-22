@@ -4,8 +4,8 @@ import { DERIVED_SKIN_KEYS, deriveSkin } from '@/styles/skin'
 
 
 describe('deriveSkin', () => {
-  it('从 accentColor 派生 shadcn token', () => {
-    const skin = deriveSkin('#DBAA22')
+  it('未传 accentColor 时回退默认金色并派生 shadcn token', () => {
+    const skin = deriveSkin()
 
     expect(skin['--primary']).toBe('#DBAA22')
     expect(skin['--ring']).toBe('#DBAA22')
