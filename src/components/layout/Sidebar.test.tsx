@@ -94,6 +94,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'sidebar.searchPlaceholder') return '搜索对话...'
       if (key === 'sidebar.noSearchResults') return '没有匹配的对话'
       if (key === 'sidebar.conversationActions') return '对话操作'
+      if (key === 'sidebar.newChat') return '新任务'
+      if (key === 'sidebar.settings') return '设置'
       if (key === 'topBar.exportAsHtml') return '导出为 HTML'
       if (key === 'topBar.exportAsPdf') return '导出为 PDF'
       if (key === 'topBar.exportSuccess') return '导出成功'
@@ -117,6 +119,15 @@ describe('Sidebar', () => {
     expect(screen.getByPlaceholderText('搜索对话...')).toBeInTheDocument()
     expect(screen.getByText('Python 分析')).toBeInTheDocument()
     expect(screen.getByText('财务报告')).toBeInTheDocument()
+  })
+
+  it('renders sidebar navigation skeleton', () => {
+    render(<Sidebar onOpenSettings={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
   })
 
   it('filters conversations by title and highlights matches', () => {
