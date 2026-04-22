@@ -19,7 +19,8 @@ describe('brandingStore', () => {
     })
 
     expect(document.documentElement.style.getPropertyValue('--primary')).toBe('#960505')
-    expect(document.documentElement.style.getPropertyValue('--sidebar')).not.toBe('')
+    expect(document.documentElement.style.getPropertyValue('--sidebar')).toBe('')
+    expect(document.documentElement.style.getPropertyValue('--sidebar-accent')).toBe('')
     expect(useBrandingStore.getState().accentColor).toBe('#960505')
     expect(useBrandingStore.getState().isCustom).toBe(true)
   })
