@@ -2,23 +2,29 @@ import { Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useChat } from '@/hooks/useChat'
+import { Textarea } from '@/components/ui/textarea'
+
+const QUICK_PROMPTS = ['写一份周报', '分析销售数据', '帮我拆解执行计划']
 
 export function HomePage() {
-  const { createNewConversation } = useChat()
-
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <Card className="w-full max-w-2xl">
+    <div className="flex h-full flex-col gap-6 overflow-auto px-8 py-8">
+      <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-2xl">
-            <Sparkles className="size-5 text-primary" />
+            <Sparkles className="size-5" />
             新任务
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Skill-First 首页骨架已就位，下一步将接入技能中心与导航体验。</p>
-          <Button onClick={() => void createNewConversation()}>开始新对话</Button>
+          <Textarea className="min-h-40 resize-none" placeholder="描述你现在要完成的任务..." />
+          <div className="flex flex-wrap gap-2">
+            {QUICK_PROMPTS.map((prompt) => (
+              <Button key={prompt} variant="secondary">
+                {prompt}
+              </Button>
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -348,6 +348,12 @@ export function useChat() {
     await tauriRenameConversation(id, newTitle)
   }, [])
 
+  const createConversationFromSkill = useCallback(async (_skillId: string) => {
+    const conversationId = await createNewConversation()
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId })
+    return conversationId
+  }, [createNewConversation])
+
   return {
     // State (subscribed for re-rendering)
     conversations,
@@ -360,6 +366,7 @@ export function useChat() {
     deleteConversation: removeConversation,
     renameConversation,
     switchConversation,
+    createConversationFromSkill,
     sendUserMessage,
     stopCurrentStream,
     loadConversations,
