@@ -52,3 +52,6 @@ output/
 # Python
 __pycache__/
 *.pyc
+
+# Plan-A: visual realignment captures
+tmp/ui-capture/
