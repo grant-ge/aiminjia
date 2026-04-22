@@ -1,4 +1,4 @@
-import { darken, isDarkColor, mix } from '@/lib/themeUtils'
+import { isDarkColor } from '@/lib/themeUtils'
 
 export const DEFAULT_ACCENT_COLOR = '#DBAA22'
 
@@ -8,8 +8,6 @@ export const DERIVED_SKIN_KEYS = [
   '--ring',
   '--sidebar-primary',
   '--sidebar-primary-foreground',
-  '--sidebar',
-  '--sidebar-accent',
 ] as const
 
 function normalizeAccentColor(input?: string): string {
@@ -18,10 +16,11 @@ function normalizeAccentColor(input?: string): string {
     : DEFAULT_ACCENT_COLOR
 }
 
-export function deriveSkin(accentColor?: string): Record<(typeof DERIVED_SKIN_KEYS)[number], string> {
+export function deriveSkin(
+  accentColor?: string,
+): Record<(typeof DERIVED_SKIN_KEYS)[number], string> {
   const accent = normalizeAccentColor(accentColor)
   const foreground = isDarkColor(accent) ? '#FFFFFF' : '#1A1A1A'
-  const sidebar = mix(accent, '#FFFFFF', 0.93)
 
   return {
     '--primary': accent,
@@ -29,7 +28,5 @@ export function deriveSkin(accentColor?: string): Record<(typeof DERIVED_SKIN_KE
     '--ring': accent,
     '--sidebar-primary': accent,
     '--sidebar-primary-foreground': foreground,
-    '--sidebar': sidebar,
-    '--sidebar-accent': darken(sidebar, 0.08),
   }
 }

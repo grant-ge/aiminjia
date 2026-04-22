@@ -1,30 +1,45 @@
 import { describe, expect, it } from 'vitest'
 
-import { DERIVED_SKIN_KEYS, deriveSkin } from '@/styles/skin'
-
+import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from './skin'
 
 describe('deriveSkin', () => {
-  it('未传 accentColor 时回退默认金色并派生 shadcn token', () => {
-    const skin = deriveSkin()
-
-    expect(skin['--primary']).toBe('#DBAA22')
-    expect(skin['--ring']).toBe('#DBAA22')
-    expect(skin['--sidebar']).toBe('#fcf9f0')
-    expect(skin['--sidebar-accent']).toBe('#e8e5dd')
-    expect(skin['--primary-foreground']).toBe('#1A1A1A')
-    expect(Object.keys(skin)).toEqual(DERIVED_SKIN_KEYS)
+  it('returns only the 5 accent-bound CSS variables', () => {
+    const result = deriveSkin(DEFAULT_ACCENT_COLOR)
+    expect(Object.keys(result).sort()).toEqual([
+      '--primary',
+      '--primary-foreground',
+      '--ring',
+      '--sidebar-primary',
+      '--sidebar-primary-foreground',
+    ])
   })
 
-  it('深色主色时返回白色前景', () => {
-    const skin = deriveSkin('#1A2E22')
-
-    expect(skin['--primary-foreground']).toBe('#FFFFFF')
-    expect(skin['--sidebar-primary-foreground']).toBe('#FFFFFF')
+  it('uses the given accent color for --primary / --ring / --sidebar-primary', () => {
+    const result = deriveSkin('#DBAA22')
+    expect(result['--primary']).toBe('#DBAA22')
+    expect(result['--ring']).toBe('#DBAA22')
+    expect(result['--sidebar-primary']).toBe('#DBAA22')
   })
 
-  it('非法输入时回退默认金色', () => {
-    const skin = deriveSkin('bad-color')
+  it('chooses white foreground for dark accent colors', () => {
+    const result = deriveSkin('#000000')
+    expect(result['--primary-foreground']).toBe('#FFFFFF')
+    expect(result['--sidebar-primary-foreground']).toBe('#FFFFFF')
+  })
 
-    expect(skin['--primary']).toBe('#DBAA22')
+  it('chooses near-black foreground for light accent colors', () => {
+    const result = deriveSkin('#FFFFFF')
+    expect(result['--primary-foreground']).toBe('#1A1A1A')
+    expect(result['--sidebar-primary-foreground']).toBe('#1A1A1A')
+  })
+
+  it('falls back to default accent color when input is invalid', () => {
+    expect(deriveSkin('not-a-color')['--primary']).toBe(DEFAULT_ACCENT_COLOR)
+    expect(deriveSkin(undefined)['--primary']).toBe(DEFAULT_ACCENT_COLOR)
+  })
+
+  it('exports DERIVED_SKIN_KEYS matching the result keys', () => {
+    const result = deriveSkin(DEFAULT_ACCENT_COLOR)
+    expect([...DERIVED_SKIN_KEYS].sort()).toEqual(Object.keys(result).sort())
   })
 })
