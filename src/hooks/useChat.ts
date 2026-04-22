@@ -348,7 +348,8 @@ export function useChat() {
     await tauriRenameConversation(id, newTitle)
   }, [])
 
-  const createConversationFromSkill = useCallback(async (_skillId: string) => {
+  const createConversationFromSkill = useCallback(async (skillId: string) => {
+    void skillId
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
     return conversationId

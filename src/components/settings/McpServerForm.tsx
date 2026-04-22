@@ -1,25 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/common/Button'
 import type { McpServerConfig } from '@/lib/tauri'
-
-export function parseEnvVars(raw: string): Record<string, string> | undefined {
-  if (!raw.trim()) return undefined
-
-  const entries = raw
-    .trim()
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [key, ...rest] = line.split('=')
-      return [key?.trim() ?? '', rest.join('=').trim()] as const
-    })
-    .filter(([key, value]) => key && value)
-
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined
-}
+import { parseEnvVars } from './mcpServerFormUtils'
 
 interface McpServerFormProps {
   visible: boolean
@@ -34,20 +18,36 @@ export function McpServerForm({
   onCancel,
   submitting,
 }: McpServerFormProps) {
+  if (!visible) {
+    return null
+  }
+
+  return (
+    <McpServerFormContent
+      key={submitting ? 'submitting' : 'idle'}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      submitting={submitting}
+    />
+  )
+}
+
+interface McpServerFormContentProps {
+  onSubmit: (config: McpServerConfig) => Promise<void>
+  onCancel: () => void
+  submitting: boolean
+}
+
+function McpServerFormContent({
+  onSubmit,
+  onCancel,
+  submitting,
+}: McpServerFormContentProps) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [transportType, setTransportType] = useState('stdio')
   const [endpoint, setEndpoint] = useState('')
   const [envVarsText, setEnvVarsText] = useState('')
-
-  useEffect(() => {
-    if (!visible) {
-      setName('')
-      setTransportType('stdio')
-      setEndpoint('')
-      setEnvVarsText('')
-    }
-  }, [visible])
 
   const nameHasWhitespace = /\s/.test(name)
   const canSubmit = name.trim().length > 0 && endpoint.trim().length > 0 && !nameHasWhitespace
@@ -57,10 +57,6 @@ export function McpServerForm({
       ? t('settings.mcp.form.endpointDescStdio')
       : t('settings.mcp.form.endpointDescHttp')
   }, [t, transportType])
-
-  if (!visible) {
-    return null
-  }
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) return

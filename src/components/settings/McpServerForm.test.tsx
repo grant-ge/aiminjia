@@ -2,7 +2,8 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { McpServerForm, parseEnvVars } from './McpServerForm'
+import { McpServerForm } from './McpServerForm'
+import { parseEnvVars } from './mcpServerFormUtils'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

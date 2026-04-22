@@ -55,7 +55,7 @@ export function SlashCommandPopover({
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const skills = usePluginStore((s) => s.skills)
-  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [selectionState, setSelectionState] = useState({ filterText: '', index: 0 })
   const listRef = useRef<HTMLUListElement>(null)
 
   // Filter + sort skills.
@@ -83,27 +83,38 @@ export function SlashCommandPopover({
       .map((x) => x.skill)
   }, [skills, filterText])
 
-  // Reset selection when filter changes
-  useEffect(() => {
-    setSelectedIdx(0)
-  }, [filterText])
+  const selectedIdx =
+    selectionState.filterText === filterText ? selectionState.index : 0
+  const clampedSelectedIdx = Math.min(
+    selectedIdx,
+    Math.max(0, visibleSkills.length - 1),
+  )
 
   // Keyboard navigation — captured globally while popover is mounted
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedIdx((i) => Math.min(i + 1, Math.max(0, visibleSkills.length - 1)))
+        setSelectionState((current) => ({
+          filterText,
+          index: Math.min(
+            (current.filterText === filterText ? current.index : 0) + 1,
+            Math.max(0, visibleSkills.length - 1),
+          ),
+        }))
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setSelectedIdx((i) => Math.max(0, i - 1))
+        setSelectionState((current) => ({
+          filterText,
+          index: Math.max(0, (current.filterText === filterText ? current.index : 0) - 1),
+        }))
       } else if (e.key === 'Enter') {
         // Only intercept Enter if we have a match to select. If the list is
         // empty, let Enter fall through so the user can still send their
         // original "/" message as text.
         if (visibleSkills.length > 0) {
           e.preventDefault()
-          const picked = visibleSkills[selectedIdx]
+          const picked = visibleSkills[clampedSelectedIdx]
           if (picked) onSelect(picked)
         } else {
           // Nothing to pick — close and let parent handle the Enter normally
@@ -116,7 +127,7 @@ export function SlashCommandPopover({
         // Tab behaves like Enter-select without sending (same as pick)
         if (visibleSkills.length > 0) {
           e.preventDefault()
-          const picked = visibleSkills[selectedIdx]
+          const picked = visibleSkills[clampedSelectedIdx]
           if (picked) onSelect(picked)
         }
       }
@@ -124,18 +135,18 @@ export function SlashCommandPopover({
     // Capture so we can intercept Enter BEFORE the textarea's handler sends.
     window.addEventListener('keydown', handler, { capture: true })
     return () => window.removeEventListener('keydown', handler, { capture: true })
-  }, [visibleSkills, selectedIdx, onSelect, onClose])
+  }, [clampedSelectedIdx, filterText, onClose, onSelect, visibleSkills])
 
   // Scroll selected item into view as user navigates
   useEffect(() => {
     if (!listRef.current) return
     const selected = listRef.current.querySelector<HTMLElement>(
-      `[data-slash-idx="${selectedIdx}"]`
+      `[data-slash-idx="${clampedSelectedIdx}"]`
     )
     if (selected) {
       selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }
-  }, [selectedIdx])
+  }, [clampedSelectedIdx])
 
   const empty = visibleSkills.length === 0
 
@@ -173,7 +184,7 @@ export function SlashCommandPopover({
           style={{ margin: 0 }}
         >
           {visibleSkills.map((skill, idx) => {
-            const isSelected = idx === selectedIdx
+            const isSelected = idx === clampedSelectedIdx
             const name =
               lang === 'en-US' && skill.displayNameEn
                 ? skill.displayNameEn
@@ -193,7 +204,7 @@ export function SlashCommandPopover({
                     : 'transparent',
                 }}
                 onClick={() => onSelect(skill)}
-                onMouseEnter={() => setSelectedIdx(idx)}
+                onMouseEnter={() => setSelectionState({ filterText, index: idx })}
               >
                 <span className="mt-0.5 text-base leading-none">{skill.icon}</span>
                 <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">

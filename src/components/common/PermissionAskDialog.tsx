@@ -88,8 +88,13 @@ export function PermissionAskDialog({
     (): PermissionDestination[] => (ask ? resolveAvailableDestinations(ask) : ['session']),
     [ask],
   )
-  const [selectedDestination, setSelectedDestination] =
-    useState<PermissionDestination>('session')
+  const [selectionState, setSelectionState] = useState<{
+    askKey: string | null
+    destination: PermissionDestination
+  }>({
+    askKey: null,
+    destination: 'session',
+  })
 
   useEffect(() => {
     if (!open) return
@@ -104,17 +109,15 @@ export function PermissionAskDialog({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [open, onCancel])
 
-  useEffect(() => {
-    if (!ask) {
-      setSelectedDestination('session')
-      return
-    }
-    setSelectedDestination(resolveInitialDestination(ask, availableDestinations))
-  }, [ask, availableDestinations])
-
   if (!open || !ask) {
     return null
   }
+
+  const selectedDestination =
+    selectionState.askKey === ask.toolCallId
+      && availableDestinations.includes(selectionState.destination)
+      ? selectionState.destination
+      : resolveInitialDestination(ask, availableDestinations)
 
   const modeLabel = {
     default: '默认模式',
@@ -219,7 +222,10 @@ export function PermissionAskDialog({
                   aria-label={option.label}
                   value={option.value}
                   checked={selectedDestination === option.value}
-                  onChange={() => setSelectedDestination(option.value)}
+                  onChange={() => setSelectionState({
+                    askKey: ask.toolCallId,
+                    destination: option.value,
+                  })}
                 />
                 <span className="flex flex-col gap-1">
                   <span

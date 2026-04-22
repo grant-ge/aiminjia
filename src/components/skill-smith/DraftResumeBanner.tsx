@@ -65,7 +65,8 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
   }, [reload])
 
   const handleResume = useCallback(
-    (_draftId: string) => {
+    (draftId: string) => {
+      void draftId
       // M2: trigger a fresh skill-smith session. M3 will wire up a
       // `resumeDraftId` parameter that jumps to the matching step.
       sendUserMessage(SKILL_SMITH_TRIGGER)
@@ -82,20 +83,17 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
       // instead of a silent no-op. Without this, a thrown ask() left the
       // user staring at an unresponsive button.
       try {
-        // eslint-disable-next-line no-console
         console.log('[DraftResumeBanner] discard clicked', draft.draftId)
         const confirmed = await ask(t('skillSmith.banner.discardConfirm', { name }), {
           title: t('skillSmith.banner.discardTitle'),
           kind: 'warning',
         })
-        // eslint-disable-next-line no-console
         console.log('[DraftResumeBanner] ask resolved', { confirmed })
         if (!confirmed) return
 
         await discardSkillDraft(draft.draftId)
         await reload()
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error('[DraftResumeBanner] discard failed', err)
         const msg = err instanceof Error ? err.message : String(err)
         pushNotification({

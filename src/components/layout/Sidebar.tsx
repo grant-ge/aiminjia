@@ -4,6 +4,7 @@ interface SidebarProps {
   onOpenSettings?: () => void
 }
 
-export function Sidebar(_: SidebarProps) {
+export function Sidebar(props: SidebarProps) {
+  void props
   return <AppSidebar />
 }

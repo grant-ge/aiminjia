@@ -80,7 +80,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
         })
       })
     },
-    [conversationId],
+    [conversationId, t],
   )
 
   /** Open a generated report file via system default app. */
@@ -98,7 +98,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
         context: 'toast',
       })
     })
-  }, [conversationId])
+  }, [conversationId, t])
 
   /** Reveal a file in the OS file manager (Finder / Explorer). */
   const handleRevealFile = useCallback((fileId: string) => {
@@ -115,7 +115,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
         context: 'toast',
       })
     })
-  }, [conversationId])
+  }, [conversationId, t])
 
   const handleRegenerate = useCallback(() => {
     if (!conversationId) return

@@ -7,9 +7,11 @@ import { isDarkColor } from '@/lib/themeUtils'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1) {
-    e.detail === 2
-      ? getCurrentWindow().toggleMaximize()
-      : getCurrentWindow().startDragging()
+    if (e.detail === 2) {
+      void getCurrentWindow().toggleMaximize()
+      return
+    }
+    void getCurrentWindow().startDragging()
   }
 }
 
