@@ -13,6 +13,7 @@ import { useCallback } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useUiStore } from '@/stores/uiStore'
 import i18n from '@/i18n'
 import {
   sendMessage,
@@ -94,6 +95,7 @@ export function useChat() {
           ),
         )
         current.setActiveConversation(backendId)
+        useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         return backendId
       }
     } catch (err) {
@@ -104,6 +106,7 @@ export function useChat() {
       current.setActiveConversation(null)
     }
 
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: optimisticId })
     return optimisticId
   }, [])
 
@@ -155,6 +158,7 @@ export function useChat() {
     const store = useChatStore.getState()
     store.setActiveConversation(id)
     store.setMessages([])
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
 
     try {
       const msgs = await getMessages(id)
@@ -222,6 +226,7 @@ export function useChat() {
         ])
         store.setActiveConversation(backendId)
         store.setMessages([])
+        useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         conversationId = backendId
       } catch (err) {
         console.error('[useChat] Failed to auto-create conversation:', err)

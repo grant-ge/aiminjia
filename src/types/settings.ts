@@ -9,38 +9,22 @@ export type LlmProvider = 'deepseek-v3' | 'qwen-plus' | 'volcano' | 'openai' | '
 export type DataMaskingLevel = 'strict' | 'standard' | 'relaxed'
 
 export interface Settings {
-  // Model config
   primaryModel: LlmProvider
   primaryApiKey: string
   autoModelRouting: boolean
-
-  // Workspace
   workspacePath: string
-
-  // Analysis parameters
-  analysisThreshold: number // default 1.65
+  analysisThreshold: number
   dataMaskingLevel: DataMaskingLevel
-
-  // File management
   autoCleanupEnabled: boolean
-  tempFileRetentionDays: number // default 7
-  keepOldVersions: number // default 1
+  tempFileRetentionDays: number
+  keepOldVersions: number
   tavilyApiKey: string
   bochaApiKey: string
-
-  // Custom model config
   customModelEndpoint: string
   customModelName: string
-
-  // Cloud mode
-  useCloud: boolean
   cloudModel: string
   cloudModelType: string
-
-  // Onboarding
   personaOnboardingDone?: boolean
-
-  // Language
   appLanguage?: AppLanguage
 }
 
@@ -48,7 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   primaryModel: 'deepseek-v3',
   primaryApiKey: '',
   autoModelRouting: true,
-  workspacePath: '',  // resolved at runtime by backend
+  workspacePath: '',
   analysisThreshold: 1.65,
   dataMaskingLevel: 'strict',
   autoCleanupEnabled: true,
@@ -58,7 +42,6 @@ export const DEFAULT_SETTINGS: Settings = {
   bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
-  useCloud: false,
   cloudModel: '',
   cloudModelType: '',
   personaOnboardingDone: false,
@@ -74,7 +57,6 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   'custom': 'Custom Model',
 }
 
-/** Provider model capabilities — mirrors router::get_provider_capabilities in Rust */
 export const PROVIDER_CAPABILITIES: Record<LlmProvider, { modelsDesc: string; hasReasoning: boolean }> = {
   'deepseek-v3': { modelsDesc: 'Default: deepseek-chat | Reasoning: deepseek-reasoner', hasReasoning: true },
   'qwen-plus': { modelsDesc: 'Default: qwen-plus', hasReasoning: false },
