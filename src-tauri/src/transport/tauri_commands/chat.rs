@@ -227,12 +227,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .filter_map(|v| serde_json::from_value(v.clone()).ok())
             .collect();
 
-        // --- Resolve masking level (always Strict; field kept for forward compat) ---
-        let masking_level = match input.masking_level.to_lowercase().as_str() {
-            "relaxed" => MaskingLevel::Relaxed,
-            "standard" => MaskingLevel::Standard,
-            _ => MaskingLevel::Strict,
-        };
+        // --- Resolve masking level from settings field ---
+        let masking_level = MaskingLevel::from_str_or_strict(&input.masking_level);
 
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
@@ -584,6 +580,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
+        use crate::llm::masking::MaskingLevel;
         let global_settings_map = self.services.db.get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
             AppSettings::default()
@@ -634,6 +631,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             cloud_model_type: settings.cloud_model_type,
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
+            masking_level: MaskingLevel::from_str_or_strict(&settings.data_masking_level).to_str().to_string(),
         })
     }
 
