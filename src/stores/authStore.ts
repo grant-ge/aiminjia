@@ -94,10 +94,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   async logout() {
+    set({ isAuthPending: true })
     try {
       await cloudLogout()
-    } finally {
-      set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
+      set({ ...EMPTY_AUTH_STATE, redirectFrom: null, isAuthPending: false })
+    } catch (error) {
+      set({ isAuthPending: false })
+      throw error
     }
   },
 

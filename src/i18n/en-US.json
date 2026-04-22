@@ -1,14 +1,4 @@
 {
-  "personas": {
-    "default": "General Assistant",
-    "hr-expert": "HR Expert",
-    "finance-analyst": "Finance Analyst",
-    "sales-manager": "Sales Manager",
-    "ops-specialist": "Operations Specialist",
-    "legal-advisor": "Legal Advisor",
-    "data-analyst": "Data Analyst",
-    "project-manager": "Project Manager"
-  },
   "skills": {
     "biz-proposal": "Business Proposal Writing",
     "biz-writing": "Business Document Writing",
@@ -29,7 +19,10 @@
     "salary-benchmarking": "Salary Benchmarking Analysis",
     "sales-analysis": "Sales Data Analysis",
     "survey-analysis": "Survey Research Analysis",
-    "talent-9box": "Talent 9-Box Assessment"
+    "talent-9box": "Talent 9-Box Assessment",
+    "market": "Skill Market",
+    "upload": "Upload Skill",
+    "comingSoon": "Coming soon"
   },
   "common": {
     "save": "Save",
@@ -68,7 +61,11 @@
       "yesterday": "Yesterday",
       "thisWeek": "This Week",
       "earlier": "Earlier"
-    }
+    },
+    "home": "New Task",
+    "skillCenter": "Skill Center",
+    "schedules": "Schedules",
+    "tasks": "Tasks"
   },
   "topBar": {
     "exportConversation": "Export conversation",
@@ -108,7 +105,6 @@
     "askAnything": "Or ask me any work-related question",
     "hello": "Hello"
   },
-
   "skillSmith": {
     "banner": {
       "title": "You have {{count}} unfinished skill drafts",
@@ -124,7 +120,6 @@
       "daysAgo": "{{n}} d ago"
     }
   },
-
   "aiBubble": {
     "sendFailed": "Send failed",
     "sendFailedDesc": "Failed to send reply. Please try again.",
@@ -380,32 +375,6 @@
     "loggingIn": "Logging in...",
     "loginButton": "Log In"
   },
-  "persona": {
-    "description": "Select or customize your work persona. AI will adjust its expertise and memory focus based on your persona.",
-    "import": "Import Persona",
-    "switched": "Persona switched",
-    "currentPersona": "Current persona: {{name}}",
-    "switchFailed": "Switch failed",
-    "saveSuccess": "Save successful",
-    "personaUpdated": "Persona updated",
-    "saveFailed": "Save failed",
-    "cannotDelete": "Cannot delete",
-    "builtinCannotDelete": "Built-in personas cannot be deleted",
-    "confirmDelete": "Are you sure you want to delete persona \"{{name}}\"?",
-    "deleted": "Deleted",
-    "personaDeleted": "Persona \"{{name}}\" has been deleted",
-    "deleteFailed": "Delete failed",
-    "featureInDev": "Coming Soon",
-    "exportComingSoon": "Export feature coming soon",
-    "importComingSoon": "Import feature coming soon",
-    "current": "Active",
-    "setAsCurrent": "Set as Active",
-    "editPersona": "Edit Persona",
-    "name": "Name",
-    "icon": "Icon (emoji)",
-    "descriptionLabel": "Description",
-    "identity": "Persona Identity (system prompt injection)"
-  },
   "onboarding": {
     "welcome": "Welcome to {{productName}}",
     "selectPersona": "Choose a persona to get started. AI will adjust its expertise based on your role.",
@@ -428,7 +397,10 @@
   },
   "auth": {
     "expired": "Session expired",
-    "expiredDesc": "Cloud service is temporarily unavailable. You can log in again or switch to local mode in Settings."
+    "expiredDesc": "Please log in again to continue.",
+    "login": "Login",
+    "username": "Username",
+    "password": "Password"
   },
   "errors": {
     "streamingError": "Response error",

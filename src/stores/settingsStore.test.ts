@@ -22,6 +22,8 @@ describe('settingsStore — defaults', () => {
     expect(state.autoCleanupEnabled).toBe(true)
     expect(state.tempFileRetentionDays).toBe(7)
     expect(state.keepOldVersions).toBe(1)
+    expect(state.cloudModel).toBe('')
+    expect(state.cloudModelType).toBe('')
     expect(state.isLoaded).toBe(false)
   })
 })

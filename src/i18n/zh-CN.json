@@ -1,14 +1,4 @@
 {
-  "personas": {
-    "default": "通用工作助手",
-    "hr-expert": "HR 专家",
-    "finance-analyst": "财务分析师",
-    "sales-manager": "销售经理",
-    "ops-specialist": "运营专家",
-    "legal-advisor": "法务顾问",
-    "data-analyst": "数据分析师",
-    "project-manager": "项目经理"
-  },
   "skills": {
     "biz-proposal": "商业方案撰写",
     "biz-writing": "商务文档撰写",
@@ -29,7 +19,10 @@
     "salary-benchmarking": "薪酬市场对标分析",
     "sales-analysis": "销售数据分析",
     "survey-analysis": "问卷调研分析",
-    "talent-9box": "人才盘点九宫格"
+    "talent-9box": "人才盘点九宫格",
+    "market": "技能市场",
+    "upload": "上传技能",
+    "comingSoon": "即将开放"
   },
   "common": {
     "save": "保存",
@@ -68,7 +61,11 @@
       "yesterday": "昨天",
       "thisWeek": "本周",
       "earlier": "更早"
-    }
+    },
+    "home": "新任务",
+    "skillCenter": "技能中心",
+    "schedules": "定时任务",
+    "tasks": "任务"
   },
   "topBar": {
     "exportConversation": "导出对话",
@@ -108,7 +105,6 @@
     "askAnything": "也可以直接问我任何工作相关问题",
     "hello": "你好"
   },
-
   "skillSmith": {
     "banner": {
       "title": "你有 {{count}} 个未完成的技能草稿",
@@ -124,7 +120,6 @@
       "daysAgo": "{{n}} 天前"
     }
   },
-
   "aiBubble": {
     "sendFailed": "发送失败",
     "sendFailedDesc": "未能发送回复，请重试。",
@@ -380,32 +375,6 @@
     "loggingIn": "登录中...",
     "loginButton": "登录"
   },
-  "persona": {
-    "description": "选择或自定义你的工作角色,AI 会根据角色调整专业能力和记忆重点",
-    "import": "导入角色",
-    "switched": "已切换角色",
-    "currentPersona": "当前角色：{{name}}",
-    "switchFailed": "切换失败",
-    "saveSuccess": "保存成功",
-    "personaUpdated": "角色已更新",
-    "saveFailed": "保存失败",
-    "cannotDelete": "无法删除",
-    "builtinCannotDelete": "内置角色不能删除",
-    "confirmDelete": "确定删除角色\"{{name}}\"吗？",
-    "deleted": "已删除",
-    "personaDeleted": "角色\"{{name}}\"已删除",
-    "deleteFailed": "删除失败",
-    "featureInDev": "功能开发中",
-    "exportComingSoon": "导出功能即将上线",
-    "importComingSoon": "导入功能即将上线",
-    "current": "当前",
-    "setAsCurrent": "设为当前角色",
-    "editPersona": "编辑角色",
-    "name": "名称",
-    "icon": "图标 (emoji)",
-    "descriptionLabel": "描述",
-    "identity": "角色设定 (注入系统提示词)"
-  },
   "onboarding": {
     "welcome": "欢迎使用 {{productName}}",
     "selectPersona": "选择一个角色开始,AI 会根据你的角色调整专业能力和记忆重点",
@@ -427,8 +396,11 @@
     "updateAvailableDesc": "有新版本可用，是否现在更新？"
   },
   "auth": {
-    "expired": "登录已过期",
-    "expiredDesc": "云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。"
+    "expired": "登录已失效",
+    "expiredDesc": "请重新登录后继续操作。",
+    "login": "登录",
+    "username": "账号",
+    "password": "密码"
   },
   "errors": {
     "streamingError": "响应异常",

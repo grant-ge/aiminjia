@@ -791,32 +791,32 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
 // Persona Commands
 // ---------------------------------------------------------------------------
 
-/** List all personas (summaries only). */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function listPersonas(): Promise<PersonaSummary[]> {
   return invoke<PersonaSummary[]>('list_personas')
 }
 
-/** Get a persona by ID. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function getPersona(id: string): Promise<Persona> {
   return invoke<Persona>('get_persona', { id })
 }
 
-/** Save a persona (create or update). */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function savePersona(persona: Persona): Promise<void> {
   return invoke<void>('save_persona', { persona })
 }
 
-/** Delete a persona by ID. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function deletePersona(id: string): Promise<void> {
   return invoke<void>('delete_persona', { id })
 }
 
-/** Set active persona. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function setActivePersona(id: string): Promise<void> {
   return invoke<void>('set_active_persona', { id })
 }
 
-/** Get active persona. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function getActivePersona(): Promise<Persona> {
   return invoke<Persona>('get_active_persona')
 }

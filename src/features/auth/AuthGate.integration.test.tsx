@@ -73,4 +73,21 @@ describe('AuthGate', () => {
       expect(useUiStore.getState().route).toEqual({ kind: 'skill-center' })
     })
   })
+
+  it('主动退出登录后回到登录页且不保留 redirectFrom', async () => {
+    useAuthStore.setState({
+      isLoggedIn: true,
+      user: { id: 1, name: 'Test', username: 'test' },
+      tenant: { id: 2, name: 'Tenant', balance: '0' },
+      cloudModels: [],
+      selectedCloudModel: null,
+      redirectFrom: { kind: 'chat', conversationId: 'c1' },
+      isAuthPending: false,
+    })
+
+    await useAuthStore.getState().logout()
+
+    expect(useAuthStore.getState().isLoggedIn).toBe(false)
+    expect(useAuthStore.getState().redirectFrom).toBeNull()
+  })
 })

@@ -52,8 +52,6 @@ function RouteSwitch() {
 }
 
 function AppShell() {
-  const settingsModal = useUiStore((state) => state.settingsModal)
-  const closeSettings = useUiStore((state) => state.closeSettings)
   const pendingAsks = useStreamingStore((s) => s.pendingAsks)
   const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
   const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
@@ -97,7 +95,7 @@ function AppShell() {
       <main className="min-w-0 flex-1 overflow-hidden">
         <RouteSwitch />
       </main>
-      <SettingsModal open={settingsModal !== null} onClose={closeSettings} />
+      <SettingsModal />
       <ToastContainer />
       <PermissionAskDialog
         open={activeAsk !== null}
