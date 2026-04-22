@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
 :root {
+  /* === design.pen Light + Neutral + Default 单一皮肤 === */
   --primary: #DBAA22;
-  --primary-foreground: #1A1A1A;
-  --ring: var(--primary);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: #1A1A1A;
+  --primary-foreground: #FFFFFF;
+  --ring: #DBAA22;
+  --sidebar-primary: #DBAA22;
+  --sidebar-primary-foreground: #FFFFFF;
 
-  --background: #FAFAFA;
+  --background: #fafafa;
   --foreground: #0a0a0a;
   --muted: #f5f5f5;
   --muted-foreground: #737373;
@@ -21,12 +22,18 @@
   --accent-foreground: #0a0a0a;
   --border: #e5e5e5;
   --input: #e5e5e5;
-  --sidebar: #FBF6E6;
-  --sidebar-accent: #E9DEB2;
-  --sidebar-accent-foreground: #0a0a0a;
+
+  --sidebar: #F4F0E6;
+  --sidebar-accent: #E1DAC6;
+  --sidebar-accent-foreground: #18181b;
   --sidebar-foreground: #0a0a0a;
   --sidebar-border: #E1DAC6;
   --sidebar-ring: #71717a;
+
+  --brand-primary-subtle: #FBF3DC;
+  --brand-secondary: #3F3F46;
+  --brand-secondary-subtle: #F3F4F6;
+
   --destructive: #e7000b;
   --destructive-foreground: #FFFFFF;
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Inter, "Segoe UI", system-ui, sans-serif;
@@ -154,6 +161,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand-primary-subtle: var(--brand-primary-subtle);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-secondary-subtle: var(--brand-secondary-subtle);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --font-sans: var(--font-sans);
