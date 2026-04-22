@@ -1,26 +1,13 @@
 import i18n from '@/i18n'
-/**
- * brandingStore — runtime brand customization from tenant config.
- *
- * Colors are set by tenant admin via lotus portal.
- * Desktop client receives colors on login and applies via CSS custom properties.
- *
- * Architecture:
- * - globals.css :root {} defines default color values
- * - applyBranding() overrides them via document.documentElement.style.setProperty()
- * - reset() clears overrides via removeProperty(), falling back to :root defaults
- */
 import { create } from 'zustand'
-import { lighten, darken, rgba, isDarkColor } from '@/lib/themeUtils'
+
+import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from '@/styles/skin'
 
 export const DEFAULTS = {
   productName: 'AI小家',
   productNameEn: 'AIjia',
   logoUrl: '/app-icon.png',
-  accentColor: '#D4A843',
-  primaryColor: '#1D1D1F',
-  bgColor: '#FAFAF8',
-  sidebarBgColor: '#F5F4F1',
+  accentColor: DEFAULT_ACCENT_COLOR,
   fontFamily: '',
 }
 
@@ -31,30 +18,27 @@ const FONT_MAP: Record<string, string> = {
   mono: 'Menlo, Consolas, Monaco, "SF Mono", "Courier New", monospace',
 }
 
+interface TenantBranding {
+  productName?: string
+  logoUrl?: string
+  accentColor?: string
+  fontFamily?: string
+  primaryColor?: string
+  bgColor?: string
+  sidebarBgColor?: string
+}
+
 interface BrandingState {
   productName: string
   productNameEn: string
   logoUrl: string
   accentColor: string
-  primaryColor: string
-  bgColor: string
-  sidebarBgColor: string
   fontFamily: string
   isCustom: boolean
 
-  applyBranding(tenant: {
-    productName?: string
-    logoUrl?: string
-    accentColor?: string
-    primaryColor?: string
-    bgColor?: string
-    sidebarBgColor?: string
-    fontFamily?: string
-  } | null): void
+  applyBranding(tenant: TenantBranding | null): void
   reset(): void
 }
-
-// --- CSS variable helpers (inline style on :root, guaranteed to override :root {} rules) ---
 
 function setVar(name: string, value: string) {
   document.documentElement.style.setProperty(name, value)
@@ -63,55 +47,6 @@ function setVar(name: string, value: string) {
 function removeVar(name: string) {
   document.documentElement.style.removeProperty(name)
 }
-
-// --- Palette derivation ---
-
-function deriveAccentPalette(accent: string) {
-  setVar('--color-accent', accent)
-  setVar('--color-accent-hover', darken(accent, 0.1))
-  setVar('--color-accent-active', darken(accent, 0.2))
-  setVar('--color-accent-light', lighten(accent, 0.4))
-  setVar('--color-accent-50', lighten(accent, 0.9))
-  setVar('--color-accent-100', lighten(accent, 0.75))
-  setVar('--color-accent-200', lighten(accent, 0.55))
-  setVar('--color-accent-300', lighten(accent, 0.35))
-  setVar('--color-accent-400', accent)
-  setVar('--color-accent-500', darken(accent, 0.1))
-  setVar('--color-accent-600', darken(accent, 0.2))
-  setVar('--color-accent-700', darken(accent, 0.35))
-  setVar('--color-accent-subtle', rgba(accent, 0.12))
-  setVar('--color-accent-muted', rgba(accent, 0.25))
-  setVar('--color-accent-bg-light', rgba(accent, 0.04))
-  setVar('--color-accent-border', rgba(accent, 0.25))
-  setVar('--color-text-on-accent', isDarkColor(accent) ? '#FFFFFF' : '#1A1A1A')
-}
-
-function derivePrimaryPalette(primary: string) {
-  const dark = isDarkColor(primary)
-  setVar('--color-primary', primary)
-  setVar('--color-primary-hover', dark ? lighten(primary, 0.15) : darken(primary, 0.1))
-  setVar('--color-primary-active', dark ? lighten(primary, 0.25) : darken(primary, 0.2))
-  setVar('--color-text-on-primary', dark ? '#FFFFFF' : '#1A1A1A')
-  setVar('--color-primary-subtle', rgba(primary, 0.08))
-  setVar('--color-primary-muted', rgba(primary, 0.15))
-}
-
-// All CSS vars that get overridden (for reset)
-const ALL_CSS_VARS = [
-  // Accent
-  '--color-accent', '--color-accent-hover', '--color-accent-active', '--color-accent-light',
-  '--color-accent-50', '--color-accent-100', '--color-accent-200', '--color-accent-300',
-  '--color-accent-400', '--color-accent-500', '--color-accent-600', '--color-accent-700',
-  '--color-accent-subtle', '--color-accent-muted', '--color-accent-bg-light', '--color-accent-border',
-  '--color-text-on-accent',
-  // Primary
-  '--color-primary', '--color-primary-hover', '--color-primary-active',
-  '--color-text-on-primary', '--color-primary-subtle', '--color-primary-muted',
-  // Background (subtle tint)
-  '--color-bg-main', '--color-bg-sidebar',
-  // Font
-  '--font-sans',
-]
 
 function hasValue(s?: string | null): s is string {
   return !!s && s.trim().length > 0
@@ -124,7 +59,9 @@ function resolveLogoUrl(raw: string): string {
     if (u.protocol === 'http:' || u.protocol === 'https:') {
       return `https://ai-tenant.renlijia.com/api/file?url=${encodeURIComponent(raw)}`
     }
-  } catch { /* ignore */ }
+  } catch {
+    // ignore invalid urls and keep raw string
+  }
   return raw
 }
 
@@ -132,9 +69,11 @@ function setWindowTitle(title: string) {
   const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
   // Set window title to empty string to avoid duplicate text in overlay titlebar
-  import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
-    getCurrentWebviewWindow().setTitle(' ').catch(() => {})
-  }).catch(() => {})
+  import('@tauri-apps/api/webviewWindow')
+    .then(({ getCurrentWebviewWindow }) => {
+      getCurrentWebviewWindow().setTitle(' ').catch(() => {})
+    })
+    .catch(() => {})
 }
 
 export const useBrandingStore = create<BrandingState>((set) => ({
@@ -148,27 +87,10 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     const logoUrl = hasValue(tenant.logoUrl) ? resolveLogoUrl(tenant.logoUrl) : DEFAULTS.logoUrl
     const fontFamily = hasValue(tenant.fontFamily) ? tenant.fontFamily : DEFAULTS.fontFamily
     const accentColor = hasValue(tenant.accentColor) ? tenant.accentColor : DEFAULTS.accentColor
-    const primaryColor = hasValue(tenant.primaryColor) ? tenant.primaryColor : DEFAULTS.primaryColor
-    const bgColor = hasValue(tenant.bgColor) ? tenant.bgColor : DEFAULTS.bgColor
-    const sidebarBgColor = hasValue(tenant.sidebarBgColor) ? tenant.sidebarBgColor : DEFAULTS.sidebarBgColor
 
-    const isCustom = hasValue(tenant.accentColor) || hasValue(tenant.primaryColor)
-    const hasBgTint = hasValue(tenant.bgColor) || hasValue(tenant.sidebarBgColor)
-
-    if (isCustom) {
-      deriveAccentPalette(accentColor)
-      derivePrimaryPalette(primaryColor)
-    } else {
-      ALL_CSS_VARS.forEach(removeVar)
-    }
-
-    // Apply bg tint independently — even if only bg colors are set without accent/primary
-    if (hasBgTint) {
-      if (hasValue(tenant.bgColor)) setVar('--color-bg-main', bgColor)
-      if (hasValue(tenant.sidebarBgColor)) setVar('--color-bg-sidebar', sidebarBgColor)
-    } else if (!isCustom) {
-      removeVar('--color-bg-main')
-      removeVar('--color-bg-sidebar')
+    const skin = deriveSkin(accentColor)
+    for (const [key, value] of Object.entries(skin)) {
+      setVar(key, value)
     }
 
     if (hasValue(tenant.fontFamily)) {
@@ -178,11 +100,18 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     }
 
     setWindowTitle(productName)
-    set({ productName, logoUrl, accentColor, primaryColor, bgColor, sidebarBgColor, fontFamily, isCustom })
+    set({
+      productName,
+      logoUrl,
+      accentColor,
+      fontFamily,
+      isCustom: hasValue(tenant.accentColor),
+    })
   },
 
   reset() {
-    ALL_CSS_VARS.forEach(removeVar)
+    DERIVED_SKIN_KEYS.forEach(removeVar)
+    removeVar('--font-sans')
     setWindowTitle(DEFAULTS.productName)
     set({ ...DEFAULTS, isCustom: false })
   },
