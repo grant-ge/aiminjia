@@ -35,6 +35,15 @@ src-tauri/gen/
 # Claude Code
 .claude/
 
+# Local tool scratch dirs
+.codex/
+.superpowers/
+
+# Playwright local artifacts (logs, snapshots, screenshots)
+.playwright-cli/
+.playwright-mcp/
+output/
+
 # Environment
 .env
 .env.local
