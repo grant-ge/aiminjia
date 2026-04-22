@@ -80,15 +80,12 @@ pub fn run() {
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
                     .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-                    .targets([
-                        tauri_plugin_log::Target::new(
-                            tauri_plugin_log::TargetKind::Folder {
-                                path: logs_dir.clone(),
-                                file_name: Some("renlijia".into()),
-                            },
-                        ),
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    ])
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::Folder {
+                            path: logs_dir.clone(),
+                            file_name: Some("renlijia".into()),
+                        },
+                    ))
                     .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                     .max_file_size(5_000_000) // 5MB per file
                     .build(),
@@ -187,8 +184,6 @@ pub fn run() {
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
                 aijia_home.mcp_config_path(),
             ));
-            let agent_registry =
-                Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins());
 
             let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
                 log::warn!("Failed to load MCP configs from disk: {}", err);
@@ -225,7 +220,7 @@ pub fn run() {
                     &skill_registry,
                     db.clone(),
                     auth_manager.clone(),
-                    Some(agent_registry.as_ref()),
+                    None,
                 )
                 .await;
 
@@ -319,6 +314,7 @@ pub fn run() {
                     file_mgr.clone(),
                     secure_storage.clone(),
                     tool_registry.clone(),
+                    skill_registry.clone(),
                     session_mgr.clone(),
                     auth_manager.clone(),
                     permission_store.clone(),
@@ -354,7 +350,6 @@ pub fn run() {
             app.manage(skill_registry);
             app.manage(session_mgr);
             app.manage(agent_runtime);
-            app.manage(agent_registry);
             app.manage(chat_adapter);
 
             // Skill-smith: cleanup expired drafts on startup (non-blocking).
@@ -430,8 +425,6 @@ pub fn run() {
             transport::tauri_commands::mcp::remove_mcp_server,
             transport::tauri_commands::mcp::connect_mcp_server,
             transport::tauri_commands::mcp::disconnect_mcp_server,
-            // Agent registry commands
-            transport::tauri_commands::agents::list_agents,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
@@ -536,23 +529,10 @@ async fn scan_external_plugins(
             }
         }
 
-        let manifest_path = path.join("plugin.toml");
-        if !manifest_path.exists() {
-            continue;
-        }
-
-        let manifest_content = match std::fs::read_to_string(&manifest_path) {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("Failed to read {:?}: {}", manifest_path, e);
-                continue;
-            }
-        };
-
-        let manifest = match plugin::manifest::parse_plugin_manifest(&manifest_content) {
+        let manifest = match plugin::manifest::read_manifest_from_skill_dir(&path) {
             Ok(m) => m,
             Err(e) => {
-                log::warn!("Invalid plugin.toml in {:?}: {}", path, e);
+                log::warn!("Invalid skill manifest in {:?}: {}", path, e);
                 continue;
             }
         };
@@ -591,7 +571,7 @@ async fn scan_external_plugins(
             "skill" => match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
                 Ok(skill) => {
                     skill_registry
-                        .register(std::sync::Arc::new(skill), "plugin")
+                        .register(std::sync::Arc::new(skill), source)
                         .await;
                     log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
                 }
@@ -604,9 +584,69 @@ async fn scan_external_plugins(
                 }
             },
             other => {
-                log::warn!("Unknown plugin type '{}' in {:?}", other, manifest_path);
+                log::warn!("Unknown plugin type '{}' in {:?}", other, path);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan_external_plugins;
+    use crate::plugin::{SkillRegistry, ToolRegistry};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_scan_external_plugins_keeps_source_label_for_skill_registration() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tmp.path().join("md-skill");
+        std::fs::create_dir_all(plugin_dir.join("prompts")).unwrap();
+        std::fs::write(
+            plugin_dir.join("SKILL.md"),
+            r#"---
+id: "md-skill"
+name: "Markdown Skill"
+description: "desc"
+keywords:
+  - "分析"
+include_app_base: false
+---
+# Markdown Skill
+"#,
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("prompts/base.md"), "base prompt").unwrap();
+
+        let storage = Arc::new(
+            crate::storage::file_store::AppStorage::new(tmp.path()).expect("test storage"),
+        );
+        let tool_registry = ToolRegistry::new();
+        let skill_registry = SkillRegistry::new("daily-assistant");
+        skill_registry
+            .register(
+                Arc::new(crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
+                    storage.clone(),
+                    Arc::new(crate::auth::AuthManager::new(storage.clone(), None)),
+                )),
+                "builtin",
+            )
+            .await;
+
+        scan_external_plugins(
+            tmp.path(),
+            &tool_registry,
+            &skill_registry,
+            tmp.path(),
+            "custom",
+        )
+        .await;
+
+        let skills = skill_registry.list().await;
+        let md_skill = skills
+            .into_iter()
+            .find(|skill| skill.id == "md-skill")
+            .expect("SKILL.md-only directory should be scanned and registered");
+        assert_eq!(md_skill.source, "custom");
     }
 }
 

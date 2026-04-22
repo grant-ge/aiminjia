@@ -15,13 +15,12 @@ use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
-use crate::plugin::ToolRegistry;
-use crate::runtime::agent::registry::AgentRegistry;
+use crate::plugin::{SkillRegistry, ToolRegistry};
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig, TurnError,
-    TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, SkillSessionStore,
+    TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
@@ -36,7 +35,7 @@ use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQu
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 
-mod chat_runtime_impl;
+pub(crate) mod chat_runtime_impl;
 
 pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
@@ -187,6 +186,15 @@ pub fn build_history_from_compact_boundary(
     chat_messages
 }
 
+fn build_skill_session_store(
+    memory_store: Option<Arc<dyn crate::runtime::store::MemoryStore>>,
+) -> Arc<SkillSessionStore> {
+    match memory_store {
+        Some(memory_store) => Arc::new(SkillSessionStore::with_memory_store(memory_store)),
+        None => Arc::new(SkillSessionStore::new()),
+    }
+}
+
 #[derive(Clone)]
 struct TauriChatServices {
     db: Arc<AppStorage>,
@@ -198,6 +206,8 @@ struct TauriChatServices {
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
+    skill_registry: Arc<SkillRegistry>,
+    skill_sessions: Arc<SkillSessionStore>,
 }
 
 struct TauriLegacyTurnExecutor {
@@ -287,8 +297,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .filter_map(|v| serde_json::from_value(v.clone()).ok())
             .collect();
 
-        // --- Resolve masking level from settings field ---
-        let masking_level = MaskingLevel::from_str_or_strict(&input.masking_level);
+        // --- Resolve masking level (always Strict; field kept for forward compat) ---
+        let masking_level = match input.masking_level.to_lowercase().as_str() {
+            "relaxed" => MaskingLevel::Relaxed,
+            "standard" => MaskingLevel::Standard,
+            _ => MaskingLevel::Strict,
+        };
 
         // --- Build effective tool defs (empty when force_no_tools) ---
         let effective_tools: Option<Vec<ToolDefinition>> = if input.force_no_tools {
@@ -640,7 +654,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
-        use crate::llm::masking::MaskingLevel;
         let global_settings_map = self.services.db.get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
             AppSettings::default()
@@ -691,7 +704,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             cloud_model_type: settings.cloud_model_type,
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
-            masking_level: MaskingLevel::from_str_or_strict(&settings.data_masking_level).to_str().to_string(),
         })
     }
 
@@ -1091,6 +1103,68 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(json_defs)
     }
 
+    async fn load_turn_config_overrides(
+        &self,
+        request: &ChatTurnRequest,
+    ) -> Result<TurnConfigOverrides, TurnError> {
+        let all_tools = self
+            .services
+            .tool_registry
+            .get_all_schemas()
+            .await
+            .into_iter()
+            .map(|def| def.name)
+            .collect::<Vec<_>>();
+
+        let skill_ctx = self
+            .services
+            .skill_sessions
+            .resolve_turn_context(
+                self.services.skill_registry.as_ref(),
+                &all_tools,
+                request.conversation_id.as_str(),
+                request.content.as_str(),
+                !request.file_ids.is_empty(),
+            )
+            .await
+            .map_err(|err| TurnError::PersistenceError(format!("Failed to resolve skill session: {err}")))?;
+
+        let authorized_workspace =
+            chat_runtime_impl::load_authorized_workspace(&self.services.app, request.conversation_id.as_str());
+        let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
+            self.services.tool_registry.as_ref(),
+            authorized_workspace.is_some(),
+            skill_ctx.allowed_tools.as_ref(),
+        )
+        .await;
+        let json_defs = visible_tool_defs
+            .into_iter()
+            .filter_map(|td| serde_json::to_value(&td).ok())
+            .collect();
+
+        Ok(TurnConfigOverrides {
+            system_prompt: Some(skill_ctx.system_prompt),
+            tool_defs: Some(json_defs),
+            allowed_tools: skill_ctx.allowed_tools,
+            max_iterations: Some(
+                self.services
+                    .skill_registry
+                    .get(skill_ctx.skill_id.as_str())
+                    .await
+                    .map(|skill| skill.max_iterations(&skill_ctx.state))
+                    .unwrap_or(30),
+            ),
+            token_budget: Some(
+                self.services
+                    .skill_registry
+                    .get(skill_ctx.skill_id.as_str())
+                    .await
+                    .map(|skill| skill.token_budget(&skill_ctx.state) as usize)
+                    .unwrap_or(4096),
+            ),
+        })
+    }
+
     async fn load_history(
         &self,
         conversation_id: &str,
@@ -1210,9 +1284,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
+    use crate::plugin::skill_trait::{Skill, SkillState, StepAction, ToolFilter, WorkflowDefinition};
+    use crate::runtime::store::MemoryStore;
     use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
 
@@ -1346,6 +1423,99 @@ mod tests {
         }
     }
 
+    struct TestSkill {
+        id: &'static str,
+        trigger: Option<&'static str>,
+        prompt_prefix: &'static str,
+        default_tools: Vec<String>,
+        workflow: Option<WorkflowDefinition>,
+    }
+
+    #[async_trait]
+    impl Skill for TestSkill {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn display_name(&self) -> &str {
+            self.id
+        }
+
+        fn description(&self) -> &str {
+            self.id
+        }
+
+        fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
+            self.trigger
+                .map(|trigger| current_skill == "daily-assistant" && message.contains(trigger))
+                .unwrap_or(false)
+        }
+
+        fn system_prompt(&self, state: &SkillState) -> String {
+            format!(
+                "{}:{}",
+                self.prompt_prefix,
+                state.current_step.as_deref().unwrap_or("none")
+            )
+        }
+
+        fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
+            ToolFilter::Only(self.default_tools.clone())
+        }
+
+        fn workflow(&self) -> Option<WorkflowDefinition> {
+            self.workflow.clone()
+        }
+
+        fn allowed_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
+            match state.current_step.as_deref() {
+                Some("step0") => Some(vec!["search_files".to_string()]),
+                Some("step1") => Some(vec!["read_workspace_file".to_string()]),
+                _ => Some(self.default_tools.clone()),
+            }
+        }
+
+        fn on_step_complete(&self, _state: &mut SkillState, user_message: &str) -> StepAction {
+            match user_message.trim() {
+                "继续" => StepAction::AdvanceToStep("step1".to_string()),
+                "完成" => StepAction::Finish,
+                _ => StepAction::WaitForUser,
+            }
+        }
+    }
+
+    async fn registry_with_test_skills() -> SkillRegistry {
+        let registry = SkillRegistry::new("daily-assistant");
+        registry
+            .register(
+                Arc::new(TestSkill {
+                    id: "daily-assistant",
+                    trigger: None,
+                    prompt_prefix: "daily",
+                    default_tools: vec!["bash".to_string()],
+                    workflow: None,
+                }),
+                "test",
+            )
+            .await;
+        registry
+            .register(
+                Arc::new(TestSkill {
+                    id: "comp-analysis",
+                    trigger: Some("分析"),
+                    prompt_prefix: "skill",
+                    default_tools: vec!["search_files".to_string()],
+                    workflow: Some(WorkflowDefinition {
+                        initial_step: "step0".to_string(),
+                        steps: vec![],
+                    }),
+                }),
+                "test",
+            )
+            .await;
+        registry
+    }
+
     #[test]
     fn build_history_message_content_preserves_uploaded_file_hints() {
         let content = serde_json::json!({
@@ -1438,6 +1608,39 @@ mod tests {
             err.to_string().contains("synthetic write failure"),
             "worker error text should be preserved for the caller"
         );
+    }
+
+    #[tokio::test]
+    async fn build_skill_session_store_uses_memory_backing_when_available() {
+        let registry = registry_with_test_skills().await;
+        let memory_store = Arc::new(crate::runtime::store::InMemoryMemoryStore::default());
+        let skill_sessions = build_skill_session_store(Some(memory_store.clone()));
+
+        memory_store
+            .set(
+                "note:conv-restored:active_skill_state",
+                r#"{"skillId":"comp-analysis","currentStep":"step1","stepStatus":{"step0":"completed","step1":"active"},"customData":null,"hasFiles":true}"#,
+            )
+            .unwrap();
+
+        let restored = skill_sessions
+            .resolve_turn_context(
+                &registry,
+                &[
+                    "bash".to_string(),
+                    "search_files".to_string(),
+                    "read_workspace_file".to_string(),
+                    "switch_skill".to_string(),
+                ],
+                "conv-restored",
+                "我先看看",
+                true,
+            )
+            .await
+            .expect("memory-backed skill sessions should restore persisted state");
+
+        assert_eq!(restored.skill_id, "comp-analysis");
+        assert_eq!(restored.state.current_step.as_deref(), Some("step1"));
     }
 }
 
@@ -1584,11 +1787,16 @@ impl TauriChatCommandAdapter {
         file_mgr: Arc<FileManager>,
         crypto: Option<Arc<SecureStorage>>,
         tool_registry: Arc<ToolRegistry>,
+        skill_registry: Arc<SkillRegistry>,
         session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
+        let skill_session_memory_store = app
+            .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
+            .map(|facade| facade.inner().clone_memory_store());
+        let skill_sessions = build_skill_session_store(skill_session_memory_store);
         let assistant_write_queue = Arc::new(MessageWriteQueue::new(db.clone()));
         let services = TauriChatServices {
             db,
@@ -1600,6 +1808,8 @@ impl TauriChatCommandAdapter {
             session_mgr,
             auth_manager,
             app,
+            skill_registry,
+            skill_sessions,
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(TauriEventAdapter::new(host));
@@ -1611,29 +1821,55 @@ impl TauriChatCommandAdapter {
                 crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
             )),
         });
-        // Build a static dispatcher from the already-registered runtime tools so that
-        // the QueryEngine can route tool calls.  Request-scoped tools (web_search,
-        // browser, etc.) are added per-request by the worker runtime path when those
-        // deps are available.  This matches the per-call tool-pool pattern from
-        // claude-code-best: static runtime tools are registered once; request-scoped
-        // tools are layered in at turn time via to_runtime_dispatcher.
-        let static_dispatcher = tauri::async_runtime::block_on(
-            services.tool_registry.to_static_dispatcher()
+        // Build a request-scoped dispatcher so production turns can see the same
+        // request-scoped runtime tools as worker paths (load_file / execute_python / etc.).
+        let connector_engine = services
+            .app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .map(|v| v.inner().clone());
+        let agent_runtime = services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
+            .map(|v| v.inner().clone());
+        let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
+            storage: services.db.clone(),
+            file_manager: services.file_mgr.clone(),
+            workspace_path: services.file_mgr.workspace_path().to_path_buf(),
+            conversation_id: String::new(),
+            session_id: crate::runtime::ids::SessionId::new(String::new()),
+            run_id: None,
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: Some(services.app.clone()),
+            session_manager: services.session_mgr.clone(),
+            auth_manager: Some(services.auth_manager.clone()),
+            connector_engine,
+            use_cloud: false,
+            model: String::new(),
+            gateway: Some(services.gateway.clone()),
+            tool_registry: Some(services.tool_registry.clone()),
+            app_settings: Some(Arc::new(AppSettings::default())),
+            agent_runtime,
+            event_bus: None,
+            skill_registry: Some(services.skill_registry.clone()),
+            skill_sessions: Some(services.skill_sessions.clone()),
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+        };
+        let runtime_dispatcher = tauri::async_runtime::block_on(
+            services.tool_registry.to_runtime_dispatcher(request_scoped_runtime_deps)
         );
         let mut runtime = SessionRuntime::with_llm_executor(
-            QueryEngine::with_dispatcher(static_dispatcher)
+            QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             llm_executor,
         )
+        .with_skill_sessions(services.skill_sessions.clone())
         .with_permission_store(permission_store);
-        if let Some(agent_registry) = services.app.try_state::<Arc<AgentRegistry>>() {
-            runtime = runtime.with_agent_registry(agent_registry.inner().clone());
-        } else {
-            log::warn!(
-                "[TauriChatCommandAdapter] AgentRegistry not registered when chat adapter was constructed."
-            );
-        }
         if let Some(facade) = services
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
@@ -1656,11 +1892,11 @@ impl TauriChatCommandAdapter {
         conversation_id: String,
         content: String,
         file_ids: Vec<String>,
-        agent_name: Option<String>,
+        permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     ) -> Result<(), String> {
         let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
-        if let Some(agent_name) = agent_name {
-            request = request.with_agent_name(agent_name);
+        if let Some(permission_mode) = permission_mode {
+            request.permission_mode = permission_mode;
         }
         self.runtime.run_chat_request(request).await
     }

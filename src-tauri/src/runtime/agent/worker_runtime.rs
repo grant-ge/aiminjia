@@ -23,9 +23,6 @@ use crate::runtime::identity::IdentityMapping;
 use crate::runtime::ids::RunId;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
-use crate::runtime::store::{
-    PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
-};
 use crate::runtime::tools::capability::{DefaultFileOperations, FileStateCache};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
@@ -49,12 +46,7 @@ pub struct WorkerRunConfig {
     pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<CancellationToken>,
-    /// 权限模式，从父 run 传入。Default 时行为不变。
     pub permission_mode: PermissionMode,
-    /// 父 run 的 pending permission control plane。
-    /// Some 时：worker 内 AskRequired 转发给 control plane 等待解析，不冒泡给父 turn。
-    /// None 时：保留原有冒泡行为（subagent caller 处理）。
-    pub control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -85,17 +77,20 @@ impl<'a> SubagentWorkerRuntime<'a> {
         config: SubAgentConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
         let turn_request = self.build_turn_request(&config).await;
-        let run_config = WorkerRunConfig {
-            allowed_tools: config.allowed_tools.clone(),
-            conversation_id: config.conversation_id,
-            parent_run_id: config.parent_run_id,
-            background: config.background,
-            app_handle: config.app_handle,
-            cancel_token: config.cancel_token,
-            permission_mode: config.permission_mode,
-            control_plane: config.control_plane,
-        };
+        let run_config = Self::build_run_config(&config);
         self.run_worker_turn(turn_request, run_config).await
+    }
+
+    fn build_run_config(config: &SubAgentConfig) -> WorkerRunConfig {
+        WorkerRunConfig {
+            allowed_tools: config.allowed_tools.clone(),
+            conversation_id: config.conversation_id.clone(),
+            parent_run_id: config.parent_run_id.clone(),
+            background: config.background,
+            app_handle: config.app_handle.clone(),
+            cancel_token: config.cancel_token.clone(),
+            permission_mode: config.permission_mode,
+        }
     }
 
     async fn build_turn_request(&self, config: &SubAgentConfig) -> WorkerTurnRequest {
@@ -153,15 +148,11 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let sub_conv_id = child_run_id.as_str().to_string();
         request.subagent_conversation_id = sub_conv_id.clone();
 
-        let child_cancel = if config.background {
-            CancellationToken::new()
-        } else {
-            config
-                .cancel_token
-                .as_ref()
-                .map(|parent| parent.child_token())
-                .unwrap_or_else(CancellationToken::new)
-        };
+        let child_cancel = config
+            .cancel_token
+            .as_ref()
+            .map(|parent| parent.child_token())
+            .unwrap_or_default();
         let child_read_file_state = self
             .runtime_deps
             .read_file_state
@@ -182,9 +173,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
         let query_engine =
             self.build_query_engine(dispatcher, child_read_file_state, child_run_id.clone());
-        let round_driver =
-            ToolRoundDriver::new(query_engine).with_allowed_tools(config.allowed_tools.clone());
         let tool_event_bus = RuntimeEventBus::new();
+        let mut allowed_tools = config.allowed_tools.clone();
 
         let mut turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id(self.runtime_deps.conversation_id.clone()),
@@ -195,7 +185,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 .map(|message| message.content.clone())
                 .unwrap_or_default(),
         )
-        .with_cancellation(child_cancel.clone());
+        .with_cancellation(child_cancel.clone())
+        .with_permission_mode(config.permission_mode);
         if let Some(agent_id) = child_agent_id.clone() {
             turn.set_agent_id(agent_id);
         }
@@ -206,7 +197,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let mut pending_ask: Option<PermissionDecision> = None;
         let mut terminal_tool_results: Vec<SubAgentTerminalToolResult> = Vec::new();
         let mut cancelled = false;
-        let mut failed = false;
 
         'agent_loop: for iteration in 0..request.max_iterations {
             if child_cancel.is_cancelled() {
@@ -241,7 +231,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 Err(err) => {
                     warn!("[SubAgent] LLM call failed at iter {}: {}", iteration, err);
                     output = format!("Sub-agent LLM error: {}", err);
-                    failed = true;
                     break;
                 }
             };
@@ -340,6 +329,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 );
             }
 
+            let round_driver =
+                ToolRoundDriver::new(query_engine.clone()).with_allowed_tools(allowed_tools.clone());
             let round_results = round_driver
                 .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
                 .await;
@@ -375,6 +366,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         file_meta,
                         context_modifier_message,
                         max_result_size_chars,
+                        skill_runtime_patch,
                         ..
                     }) => {
                         let content_for_message =
@@ -406,6 +398,13 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_name,
                             content_for_message,
                         ));
+                        if let Some(skill_runtime_patch) = skill_runtime_patch {
+                            apply_skill_runtime_patch(
+                                &mut request,
+                                &mut allowed_tools,
+                                skill_runtime_patch,
+                            );
+                        }
                         if let Some(modifier) = context_modifier_message
                             .as_ref()
                             .and_then(context_modifier_to_message)
@@ -416,142 +415,36 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
                         tool_call_id,
                         tool_name,
-                        capability_scopes,
-                        original_request,
                         decision,
+                        ..
                     }) => {
-                        if let Some(cp) = config.control_plane.as_ref() {
-                            let PermissionDecision::Ask {
-                                message,
-                                suggestions,
-                                remember_options,
-                                default_destination,
-                                ..
-                            } = &decision
-                            else {
-                                warn!(
-                                    "[SubAgent] AskRequired has non-Ask decision, falling back to bubble"
-                                );
-                                let bubbled =
-                                    annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
-                                pending_ask = Some(bubbled);
-                                break 'agent_loop;
-                            };
-
-                            let pending_request = PendingPermissionRequest {
-                                tool_call_id: tool_call_id.clone().into(),
-                                session_id: turn.session_id().clone(),
-                                run_id: child_run_id.clone(),
-                                tool_name: tool_name.clone(),
-                                capability_scopes: capability_scopes.clone(),
-                                message: message.clone(),
-                                suggestions: suggestions.clone(),
-                                mode: config.permission_mode,
-                                remember_options: remember_options.clone(),
-                                default_destination: *default_destination,
-                                original_request: original_request.clone(),
-                            };
-
-                            match cp.insert_pending_request(pending_request) {
-                                Ok(rx) => {
-                                    let resolution = tokio::time::timeout(
-                                        std::time::Duration::from_secs(300),
-                                        rx,
-                                    )
-                                    .await
-                                    .ok()
-                                    .and_then(|result| result.ok())
-                                    .unwrap_or(PendingPermissionResolution::Cancel {
-                                        message: "Worker permission ask timed out".into(),
-                                    });
-
-                                    match resolution {
-                                        PendingPermissionResolution::Allow { updated_input, .. } => {
-                                            let replay = RuntimeToolCallRequest {
-                                                tool_call_id: tool_call_id.clone(),
-                                                tool_name: tool_name.clone(),
-                                                args: updated_input
-                                                    .unwrap_or_else(|| original_request.args.clone()),
-                                                purpose: original_request.purpose.clone(),
-                                            };
-                                            let replayed = round_driver
-                                                .execute_round(&turn, &tool_event_bus, vec![replay])
-                                                .await;
-                                            for replay_result in replayed {
-                                                if let ToolRoundResult::Ok(
-                                                    RuntimeToolCallOutcome::Completed {
-                                                        tool_call_id: rid,
-                                                        tool_name: rname,
-                                                        content,
-                                                        max_result_size_chars,
-                                                        ..
-                                                    },
-                                                ) = replay_result
-                                                {
-                                                    let content_for_message = truncate_tool_content(
-                                                        &content,
-                                                        max_result_size_chars,
-                                                    );
-                                                    request.messages.push(ChatMessage::tool_result(
-                                                        &rid,
-                                                        &rname,
-                                                        content_for_message,
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                        PendingPermissionResolution::Deny { message, .. }
-                                        | PendingPermissionResolution::Cancel { message } => {
-                                            request.messages.push(ChatMessage::tool_result(
-                                                &tool_call_id,
-                                                &tool_name,
-                                                message,
-                                            ));
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    warn!(
-                                        "[SubAgent] insert_pending_request failed: {err}, bubbling"
-                                    );
-                                    let bubbled = annotate_subagent_ask_decision(
-                                        &tool_name,
-                                        &tool_call_id,
-                                        decision,
-                                    );
-                                    pending_ask = Some(bubbled);
-                                    break 'agent_loop;
-                                }
-                            }
-                        } else {
-                            let bubbled =
-                                annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
-                            terminal_tool_results.push(SubAgentTerminalToolResult {
-                                tool_call_id: tool_call_id.clone(),
-                                tool_name: tool_name.clone(),
-                                success: false,
-                                summary: "Permission Ask required".to_string(),
-                                generated_files: Vec::new(),
-                            });
-                            emit_tool_completed(
-                                config.app_handle.as_ref(),
-                                &config.conversation_id,
-                                &tool_call_id,
-                                false,
-                                Some("Permission Ask required"),
-                            );
-                            request.messages.push(ChatMessage::tool_result(
-                                &tool_call_id,
-                                &tool_name,
-                                "Permission Ask required".to_string(),
-                            ));
-                            warn!(
-                                "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
-                                tool_name, bubbled
-                            );
-                            pending_ask = Some(bubbled);
-                            break 'agent_loop;
-                        }
+                        let bubbled =
+                            annotate_subagent_ask_decision(&tool_name, &tool_call_id, decision);
+                        terminal_tool_results.push(SubAgentTerminalToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: tool_name.clone(),
+                            success: false,
+                            summary: "Permission Ask required".to_string(),
+                            generated_files: Vec::new(),
+                        });
+                        emit_tool_completed(
+                            config.app_handle.as_ref(),
+                            &config.conversation_id,
+                            &tool_call_id,
+                            false,
+                            Some("Permission Ask required"),
+                        );
+                        request.messages.push(ChatMessage::tool_result(
+                            &tool_call_id,
+                            &tool_name,
+                            "Permission Ask required".to_string(),
+                        ));
+                        warn!(
+                            "[SubAgent] Tool '{}' returned AskRequired; bubbling to parent: {}",
+                            tool_name, bubbled
+                        );
+                        pending_ask = Some(bubbled);
+                        break 'agent_loop;
                     }
                 }
             }
@@ -563,7 +456,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
             && !cancelled
         {
             output = "Sub-agent reached iteration limit.".to_string();
-            failed = true;
         }
         if cancelled && output.is_empty() {
             output = "Sub-agent cancelled.".to_string();
@@ -620,27 +512,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         if let Some(handle) = child_handle.as_ref() {
             if cancelled {
                 let _ = agent_runtime.cancel_run(child_run_id.clone()).await;
-            } else if failed {
-                if handle.invocation().background {
-                    if let (Some(bus), Some(parent_run_id)) = (
-                        self.runtime_deps.event_bus.clone(),
-                        config.parent_run_id.clone(),
-                    ) {
-                        let _ = agent_runtime
-                            .fail_background_run(
-                                &child_run_id,
-                                Some(&output),
-                                self.runtime_deps.session_id.clone(),
-                                parent_run_id,
-                                bus,
-                            )
-                            .await;
-                    } else {
-                        let _ = agent_runtime.fail_run(&child_run_id).await;
-                    }
-                } else {
-                    let _ = agent_runtime.fail_run(&child_run_id).await;
-                }
             } else if handle.invocation().background {
                 if let (Some(bus), Some(parent_run_id)) = (
                     self.runtime_deps.event_bus.clone(),
@@ -759,6 +630,26 @@ fn context_modifier_to_message(value: &serde_json::Value) -> Option<ChatMessage>
     Some(ChatMessage::text(role, content))
 }
 
+fn apply_skill_runtime_patch(
+    request: &mut WorkerTurnRequest,
+    allowed_tools: &mut Vec<String>,
+    patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
+) {
+    request.system_prompt = patch.system_prompt;
+    request.tool_defs = patch
+        .tool_defs
+        .into_iter()
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .collect();
+    request.max_iterations = patch.max_iterations;
+    if let Some(next_allowed_tools) = patch.allowed_tools {
+        let mut names = next_allowed_tools;
+        names.sort();
+        names.dedup();
+        *allowed_tools = names;
+    }
+}
+
 fn annotate_subagent_ask_decision(
     tool_name: &str,
     tool_call_id: &str,
@@ -856,4 +747,77 @@ fn safe_truncate(content: &str, max_bytes: usize) -> &str {
         end -= 1;
     }
     &content[..end]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::streaming::ToolDefinition;
+    use crate::runtime::chat::tool_round_types::SkillRuntimePatch;
+    use crate::runtime::tools::permission::PermissionMode;
+    use serde_json::json;
+
+    #[test]
+    fn build_run_config_preserves_permission_mode_from_subagent_config() {
+        let config = SubAgentConfig {
+            task: "collect data".to_string(),
+            system_prompt: "system".to_string(),
+            allowed_tools: vec!["read_page_content".to_string()],
+            max_iterations: 3,
+            dynamic_context: String::new(),
+            conversation_id: "conv-worker-mode".to_string(),
+            parent_run_id: Some(RunId::new("run-parent-worker-mode")),
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Plan,
+        };
+
+        let run_config = SubagentWorkerRuntime::build_run_config(&config);
+
+        assert_eq!(run_config.permission_mode, PermissionMode::Plan);
+    }
+
+    #[test]
+    fn apply_skill_runtime_patch_updates_worker_request_and_allowed_tools() {
+        let mut request = WorkerTurnRequest {
+            subagent_conversation_id: "sub-conv".to_string(),
+            messages: Vec::new(),
+            tool_defs: vec![ToolDefinition {
+                name: "old_tool".to_string(),
+                description: "old".to_string(),
+                parameters: json!({"type": "object"}),
+            }],
+            system_prompt: "old prompt".to_string(),
+            dynamic_context: None,
+            max_iterations: 3,
+        };
+        let mut allowed_tools = vec!["old_tool".to_string()];
+        let patch = SkillRuntimePatch {
+            skill_id: "analysis".to_string(),
+            system_prompt: "new prompt".to_string(),
+            allowed_tools: Some(vec![
+                "switch_skill".to_string(),
+                "execute_python".to_string(),
+            ]),
+            tool_defs: vec![json!({
+                "name": "switch_skill",
+                "description": "Switch skill",
+                "parameters": {"type": "object", "properties": {}}
+            })],
+            max_iterations: 8,
+            token_budget: 2048,
+        };
+
+        apply_skill_runtime_patch(&mut request, &mut allowed_tools, patch);
+
+        assert_eq!(request.system_prompt, "new prompt");
+        assert_eq!(request.max_iterations, 8);
+        assert_eq!(request.tool_defs.len(), 1);
+        assert_eq!(request.tool_defs[0].name, "switch_skill");
+        assert_eq!(
+            allowed_tools,
+            vec!["execute_python".to_string(), "switch_skill".to_string()]
+        );
+    }
 }

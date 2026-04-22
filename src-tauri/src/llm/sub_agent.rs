@@ -10,7 +10,7 @@ use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::ids::RunId;
-use crate::runtime::store::PendingPermissionControlPlane;
+use crate::runtime::tools::permission::PermissionMode;
 
 #[cfg(test)]
 fn take_ask_required_decision(
@@ -38,7 +38,6 @@ pub struct SubAgentRuntimeDeps {
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
-    pub permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -70,12 +69,12 @@ impl SubAgentRuntimeDeps {
             app_settings: None,
             agent_runtime: self.agent_runtime.clone(),
             event_bus: self.event_bus.clone(),
+            skill_registry: None,
+            skill_sessions: None,
             authorized_workspace: self.authorized_workspace.clone(),
             read_file_state,
             cancellation,
-            permission_control_plane: self
-                .permission_control_plane
-                .clone(),
+            permission_mode: PermissionMode::Default,
         }
     }
 }
@@ -92,9 +91,7 @@ pub struct SubAgentConfig {
     pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
-    /// 继承父 run 的权限模式。默认为 Default。
-    pub permission_mode: crate::runtime::tools::permission::PermissionMode,
-    pub control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
+    pub permission_mode: PermissionMode,
 }
 
 /// Result from a sub-agent run.

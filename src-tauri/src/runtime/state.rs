@@ -1,6 +1,7 @@
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::identity::{IdentityMapping, RuntimeIdentity};
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::tools::permission::PermissionMode;
 
 #[derive(Clone, Debug)]
 pub struct TurnState {
@@ -11,6 +12,7 @@ pub struct TurnState {
     pending_assistant_output: String,
     active_tool_call: Option<ToolCallId>,
     cancellation: CancellationToken,
+    permission_mode: PermissionMode,
 }
 
 impl TurnState {
@@ -24,6 +26,7 @@ impl TurnState {
             pending_assistant_output: String::new(),
             active_tool_call: None,
             cancellation: CancellationToken::new(),
+            permission_mode: PermissionMode::Default,
         }
     }
 
@@ -36,6 +39,11 @@ impl TurnState {
     /// ```
     pub fn with_cancellation(mut self, token: CancellationToken) -> Self {
         self.cancellation = token;
+        self
+    }
+
+    pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
+        self.permission_mode = mode;
         self
     }
 
@@ -56,6 +64,7 @@ impl TurnState {
             tool_call_id,
             self.cancellation.child_token(),
         )
+        .with_permission_mode(self.permission_mode)
     }
 
     pub fn session_id(&self) -> &SessionId {
@@ -100,5 +109,31 @@ impl TurnState {
 
     pub fn cancellation(&self) -> CancellationToken {
         self.cancellation.clone()
+    }
+
+    pub fn permission_mode(&self) -> PermissionMode {
+        self.permission_mode
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::identity::IdentityMapping;
+    use crate::runtime::ids::RunId;
+    use crate::runtime::tools::permission::PermissionMode;
+
+    #[test]
+    fn build_execution_context_inherits_permission_mode() {
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-state-mode".to_string()),
+            RunId::new("run-state-mode"),
+            "hello".to_string(),
+        )
+        .with_permission_mode(PermissionMode::Plan);
+
+        let ctx = turn.build_execution_context("tool-call-state-mode");
+
+        assert_eq!(ctx.permission_mode, PermissionMode::Plan);
     }
 }

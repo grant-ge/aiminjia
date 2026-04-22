@@ -549,6 +549,24 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "switch_skill",
+            "切换当前会话 skill，并让下一轮 turn 使用新的 prompt / 工具面。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["skill_id"],
+            "properties": {
+                "skill_id": {
+                    "type": "string",
+                    "description": "目标 skill id，例如 comp-analysis-v2"
+                }
+            }
+        }),
+    ));
+
     // ── Support tools ─────────────────────────────────────────────
     for (id, desc) in &[
         ("plan_update", "更新任务计划状态"),

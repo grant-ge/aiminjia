@@ -72,6 +72,7 @@ impl LegacyToolAdapter {
                     plugin_ctx.run_id = Some(exec_ctx.run_id.clone());
                     plugin_ctx.agent_id = exec_ctx.agent_id.clone();
                     plugin_ctx.cancellation = Some(exec_ctx.cancellation.clone());
+                    plugin_ctx.permission_mode = exec_ctx.permission_mode;
                     let output =
                         plugin
                             .execute(&plugin_ctx, input)
@@ -112,5 +113,93 @@ impl RuntimeTool for LegacyToolAdapter {
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         (self.handler)(input, ctx).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::tool_trait::{ToolError as LegacyToolError, ToolOutput};
+    use crate::runtime::tools::permission::PermissionMode;
+    use serde_json::json;
+    use std::sync::{Arc, Mutex};
+
+    struct CapturePermissionModePlugin {
+        seen_mode: Arc<Mutex<Option<PermissionMode>>>,
+    }
+
+    #[async_trait]
+    impl ToolPlugin for CapturePermissionModePlugin {
+        fn name(&self) -> &str {
+            "capture_permission_mode"
+        }
+
+        fn description(&self) -> &str {
+            "capture permission mode"
+        }
+
+        fn input_schema(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {},
+            })
+        }
+
+        async fn execute(
+            &self,
+            ctx: &PluginContext,
+            _input: Value,
+        ) -> Result<ToolOutput, LegacyToolError> {
+            *self.seen_mode.lock().unwrap() = Some(ctx.permission_mode);
+            Ok(ToolOutput::success("ok"))
+        }
+    }
+
+    #[test]
+    fn from_plugin_copies_runtime_permission_mode_into_plugin_context() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let seen_mode = Arc::new(Mutex::new(None));
+        let plugin = Arc::new(CapturePermissionModePlugin {
+            seen_mode: seen_mode.clone(),
+        });
+        let plugin_ctx = PluginContext {
+            storage: Arc::new(crate::storage::file_store::AppStorage::new(temp_dir.path()).unwrap()),
+            file_manager: Arc::new(crate::storage::file_manager::FileManager::new(temp_dir.path())),
+            workspace_path: temp_dir.path().to_path_buf(),
+            conversation_id: "conv-legacy-mode".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("conv-legacy-mode"),
+            run_id: None,
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: None,
+            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(
+                temp_dir.path().to_path_buf(),
+                None,
+            )),
+            auth_manager: None,
+            connector_engine: None,
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
+            skill_registry: None,
+            skill_sessions: None,
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: PermissionMode::Default,
+        };
+        let adapter = LegacyToolAdapter::from_plugin(plugin, plugin_ctx);
+        let runtime_ctx =
+            ToolExecutionContext::for_test("conv-legacy-mode", "run-legacy-mode", "tc-legacy")
+                .with_permission_mode(PermissionMode::DontAsk);
+
+        futures::executor::block_on(adapter.execute(json!({}), runtime_ctx)).unwrap();
+
+        assert_eq!(*seen_mode.lock().unwrap(), Some(PermissionMode::DontAsk));
     }
 }

@@ -48,6 +48,7 @@ use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::tools::capability::FileStateCache;
+use crate::runtime::tools::permission::PermissionMode;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
 
@@ -99,6 +100,10 @@ pub struct PluginContext {
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     /// Event bus for emitting runtime events (e.g. AgentIdle on background completion).
     pub event_bus: Option<RuntimeEventBus>,
+    /// Skill registry for request-scoped skill switch runtime tools.
+    pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
+    /// Session-local skill state store shared with the turn driver.
+    pub skill_sessions: Option<Arc<crate::runtime::chat::SkillSessionStore>>,
     /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     /// Transitional bridge for request-scoped runtime executions that still
@@ -107,6 +112,9 @@ pub struct PluginContext {
     /// Transitional bridge for request-scoped runtime executions that still
     /// enter through PluginContext but need the per-call cancellation token.
     pub cancellation: Option<CancellationToken>,
+    /// Transitional bridge for legacy ToolPlugin paths that still need the
+    /// current permission mode for nested runtime launches.
+    pub permission_mode: PermissionMode,
 }
 
 impl PluginContext {

@@ -215,14 +215,41 @@ pub(crate) fn validate_draft_dir(dir: &Path) -> ValidationReport {
 
 fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     let path = dir.join("plugin.toml");
+    if !path.is_file() {
+        let skill_md = dir.join("SKILL.md");
+        if skill_md.is_file() {
+            match crate::plugin::manifest::read_manifest_from_skill_dir(dir) {
+                Ok(manifest) => validate_shared_plugin_manifest(&manifest, errors),
+                Err(e) => errors.push(ValidationError {
+                    file: "SKILL.md".into(),
+                    path: "(root)".into(),
+                    rule: "frontmatter".into(),
+                    actual: e.clone(),
+                    message: format!("SKILL.md frontmatter 解析失败 ({})", e),
+                    fix_hint: Some("检查 YAML frontmatter，至少提供 name，必要时显式提供 id".into()),
+                }),
+            }
+        } else {
+            errors.push(ValidationError {
+                file: "plugin.toml".into(),
+                path: "(file)".into(),
+                rule: "exists".into(),
+                actual: "missing".into(),
+                message: "缺少 plugin.toml (plugin.toml missing)".into(),
+                fix_hint: Some("在 draft 根目录创建 plugin.toml".into()),
+            });
+        }
+        return;
+    }
+
     let Ok(content) = std::fs::read_to_string(&path) else {
         errors.push(ValidationError {
             file: "plugin.toml".into(),
             path: "(file)".into(),
-            rule: "exists".into(),
-            actual: "missing".into(),
-            message: "缺少 plugin.toml (plugin.toml missing)".into(),
-            fix_hint: Some("在 draft 根目录创建 plugin.toml".into()),
+            rule: "readable".into(),
+            actual: "unreadable".into(),
+            message: "读取 plugin.toml 失败 (failed to read plugin.toml)".into(),
+            fix_hint: Some("检查 plugin.toml 文件权限并重试".into()),
         });
         return;
     };
@@ -242,16 +269,46 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
         }
     };
 
-    validate_plugin_section(&manifest.plugin, errors);
-    validate_trigger_section(&manifest.trigger, errors);
-    validate_model_section(&manifest.model, errors);
-    validate_display_section(&manifest.display, errors);
+    validate_plugin_section("plugin.toml", &manifest.plugin, errors);
+    validate_trigger_section("plugin.toml", &manifest.trigger, errors);
+    validate_model_section("plugin.toml", &manifest.model, errors);
+    validate_display_section("plugin.toml", &manifest.display, errors, true);
 }
 
-fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<ValidationError>) {
+fn validate_shared_plugin_manifest(
+    manifest: &crate::plugin::manifest::PluginManifest,
+    errors: &mut Vec<ValidationError>,
+) {
+    let plugin = Some(PluginSection {
+        id: Some(manifest.plugin.id.clone()),
+        name: Some(manifest.plugin.name.clone()),
+        kind: Some(manifest.plugin.plugin_type.clone()),
+    });
+    let trigger = manifest.trigger.as_ref().map(|trigger| TriggerSection {
+        keywords: Some(trigger.keywords.clone()),
+    });
+    let model = manifest.model.as_ref().map(|model| ModelSection {
+        preference: model.preference.clone(),
+    });
+    let display = manifest.display.as_ref().map(|display| DisplaySection {
+        category: display.category.clone(),
+        icon: display.icon.clone(),
+    });
+
+    validate_plugin_section("SKILL.md", &plugin, errors);
+    validate_trigger_section("SKILL.md", &trigger, errors);
+    validate_model_section("SKILL.md", &model, errors);
+    validate_display_section("SKILL.md", &display, errors, false);
+}
+
+fn validate_plugin_section(
+    file: &str,
+    section: &Option<PluginSection>,
+    errors: &mut Vec<ValidationError>,
+) {
     let Some(plugin) = section else {
         errors.push(err(
-            "plugin.toml",
+            file,
             "plugin",
             "exists",
             "missing",
@@ -264,7 +321,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
     // plugin.id
     match &plugin.id {
         None => errors.push(err(
-            "plugin.toml",
+            file,
             "plugin.id",
             "exists",
             "missing",
@@ -274,7 +331,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
         Some(id) => {
             if !is_valid_plugin_id(id) {
                 errors.push(err(
-                    "plugin.toml",
+                    file,
                     "plugin.id",
                     "format",
                     id,
@@ -283,7 +340,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
                 ));
             } else if RESERVED_PLUGIN_IDS.contains(&id.as_str()) {
                 errors.push(err(
-                    "plugin.toml",
+                    file,
                     "plugin.id",
                     "reserved",
                     id,
@@ -297,7 +354,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
     // plugin.name
     match &plugin.name {
         None => errors.push(err(
-            "plugin.toml",
+            file,
             "plugin.name",
             "exists",
             "missing",
@@ -308,7 +365,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
             let char_count = n.chars().count();
             if !(2..=40).contains(&char_count) {
                 errors.push(err(
-                    "plugin.toml",
+                    file,
                     "plugin.name",
                     "length: 2-40",
                     n,
@@ -322,7 +379,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
     // plugin.type (must be exactly "skill")
     match &plugin.kind {
         None => errors.push(err(
-            "plugin.toml",
+            file,
             "plugin.type",
             "exists",
             "missing",
@@ -330,7 +387,7 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
             Some("plugin.type 必须为 \"skill\""),
         )),
         Some(k) if k != "skill" => errors.push(err(
-            "plugin.toml",
+            file,
             "plugin.type",
             "enum: skill",
             k,
@@ -341,10 +398,14 @@ fn validate_plugin_section(section: &Option<PluginSection>, errors: &mut Vec<Val
     }
 }
 
-fn validate_trigger_section(section: &Option<TriggerSection>, errors: &mut Vec<ValidationError>) {
+fn validate_trigger_section(
+    file: &str,
+    section: &Option<TriggerSection>,
+    errors: &mut Vec<ValidationError>,
+) {
     let Some(trigger) = section else {
         errors.push(err(
-            "plugin.toml",
+            file,
             "trigger",
             "exists",
             "missing",
@@ -356,7 +417,7 @@ fn validate_trigger_section(section: &Option<TriggerSection>, errors: &mut Vec<V
 
     let Some(keywords) = &trigger.keywords else {
         errors.push(err(
-            "plugin.toml",
+            file,
             "trigger.keywords",
             "exists",
             "missing",
@@ -371,7 +432,7 @@ fn validate_trigger_section(section: &Option<TriggerSection>, errors: &mut Vec<V
 
     if !(KEYWORD_MIN..=KEYWORD_MAX).contains(&keywords.len()) {
         errors.push(err(
-            "plugin.toml",
+            file,
             "trigger.keywords",
             &format!("count: {}-{}", KEYWORD_MIN, KEYWORD_MAX),
             &format!("{} items", keywords.len()),
@@ -389,7 +450,7 @@ fn validate_trigger_section(section: &Option<TriggerSection>, errors: &mut Vec<V
         let char_count = kw.chars().count();
         if !(KEYWORD_CHAR_MIN..=KEYWORD_CHAR_MAX).contains(&char_count) {
             errors.push(err(
-                "plugin.toml",
+                file,
                 &format!("trigger.keywords[{}]", i),
                 &format!("length: {}-{}", KEYWORD_CHAR_MIN, KEYWORD_CHAR_MAX),
                 kw,
@@ -403,13 +464,17 @@ fn validate_trigger_section(section: &Option<TriggerSection>, errors: &mut Vec<V
     }
 }
 
-fn validate_model_section(section: &Option<ModelSection>, errors: &mut Vec<ValidationError>) {
+fn validate_model_section(
+    file: &str,
+    section: &Option<ModelSection>,
+    errors: &mut Vec<ValidationError>,
+) {
     // [model] section is optional — only validate if present
     let Some(model) = section else { return };
     if let Some(pref) = &model.preference {
         if !VALID_MODEL_PREFERENCES.contains(&pref.as_str()) {
             errors.push(err(
-                "plugin.toml",
+                file,
                 "model.preference",
                 "enum",
                 pref,
@@ -423,23 +488,30 @@ fn validate_model_section(section: &Option<ModelSection>, errors: &mut Vec<Valid
     }
 }
 
-fn validate_display_section(section: &Option<DisplaySection>, errors: &mut Vec<ValidationError>) {
+fn validate_display_section(
+    file: &str,
+    section: &Option<DisplaySection>,
+    errors: &mut Vec<ValidationError>,
+    required: bool,
+) {
     let Some(display) = section else {
-        errors.push(err(
-            "plugin.toml",
-            "display",
-            "exists",
-            "missing",
-            "缺少 [display] 段",
-            Some("补充 [display] 段，至少包含 category 和 icon"),
-        ));
+        if required {
+            errors.push(err(
+                file,
+                "display",
+                "exists",
+                "missing",
+                "缺少 [display] 段",
+                Some("补充 [display] 段，至少包含 category 和 icon"),
+            ));
+        }
         return;
     };
 
     // category
     match &display.category {
         None => errors.push(err(
-            "plugin.toml",
+            file,
             "display.category",
             "exists",
             "missing",
@@ -447,7 +519,7 @@ fn validate_display_section(section: &Option<DisplaySection>, errors: &mut Vec<V
             Some(&format!("枚举值之一：{:?}", VALID_CATEGORIES)),
         )),
         Some(c) if !VALID_CATEGORIES.contains(&c.as_str()) => errors.push(err(
-            "plugin.toml",
+            file,
             "display.category",
             "enum",
             c,
@@ -460,7 +532,7 @@ fn validate_display_section(section: &Option<DisplaySection>, errors: &mut Vec<V
     // icon (single emoji, 1-4 unicode scalar values)
     match &display.icon {
         None => errors.push(err(
-            "plugin.toml",
+            file,
             "display.icon",
             "exists",
             "missing",
@@ -471,7 +543,7 @@ fn validate_display_section(section: &Option<DisplaySection>, errors: &mut Vec<V
             let count = i.chars().count();
             if !(ICON_CHAR_MIN..=ICON_CHAR_MAX).contains(&count) {
                 errors.push(err(
-                    "plugin.toml",
+                    file,
                     "display.icon",
                     &format!("length: {}-{} chars", ICON_CHAR_MIN, ICON_CHAR_MAX),
                     i,
@@ -486,7 +558,7 @@ fn validate_display_section(section: &Option<DisplaySection>, errors: &mut Vec<V
             if let Some(first) = i.chars().next() {
                 if first.is_ascii() && count == 1 {
                     errors.push(err(
-                        "plugin.toml",
+                        file,
                         "display.icon",
                         "non-ascii",
                         i,
@@ -1096,6 +1168,69 @@ prompt = "prompts/step1.md"
             .errors
             .iter()
             .any(|e| e.file == "plugin.toml" && e.rule == "toml-syntax"));
+    }
+
+    #[test]
+    fn validate_skill_draft_accepts_skill_md_only_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+id: "skill-md-only"
+name: "Skill Md Only"
+description: "desc"
+keywords:
+  - "技能草稿"
+  - "skill smith"
+  - "manifest fallback"
+model_preference: "balanced"
+---
+# Skill Md Only
+
+这是一个仅使用 SKILL.md frontmatter 的技能草稿。
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("workflow.toml"),
+            r#"
+[[steps]]
+id = "step0"
+name = "采集"
+prompt = "prompts/step0.md"
+advance_on = "any"
+
+[[steps]]
+id = "step1"
+name = "分析"
+prompt = "prompts/step1.md"
+advance_on = "confirm"
+"#,
+        )
+        .unwrap();
+
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::write(
+            dir.join("prompts/step0.md"),
+            "# Step 0\n\n这里是足够长的 prompt 内容，用来确保不会因为太短而触发 warning。",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("prompts/step1.md"),
+            "# Step 1\n\n这里继续提供足够长的 prompt 内容，验证 SKILL.md-only manifest 能通过。",
+        )
+        .unwrap();
+
+        let report = validate_draft_dir(dir);
+        assert!(
+            report.valid,
+            "expected SKILL.md-only draft to pass validation, got: {:?}",
+            report.errors
+        );
+        assert!(report.errors.is_empty());
     }
 
     #[test]

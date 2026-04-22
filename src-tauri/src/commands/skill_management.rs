@@ -20,95 +20,81 @@ pub struct CustomSkillInfo {
     pub enabled: bool,
 }
 
-/// List all installed custom skills.
-#[tauri::command]
-pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
-
+fn list_custom_skills_in_dir(custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, String> {
     if !custom_dir.is_dir() {
         return Ok(vec![]);
     }
 
     let mut skills = Vec::new();
-    for entry in std::fs::read_dir(&custom_dir).map_err(|e| e.to_string())? {
+    for entry in std::fs::read_dir(custom_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         if path.is_dir() && !path.file_name().unwrap().to_string_lossy().starts_with('_') {
-            let manifest_path = path.join("plugin.toml");
-            if manifest_path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                    if let Ok(manifest) = toml::from_str::<toml::Value>(&content) {
-                        let plugin = manifest
-                            .get("plugin")
-                            .cloned()
-                            .unwrap_or(toml::Value::Table(Default::default()));
-                        skills.push(CustomSkillInfo {
-                            id: plugin
-                                .get("id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            name: plugin
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            description: plugin
-                                .get("description")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            path: path.to_string_lossy().to_string(),
-                            enabled: !path.file_name().unwrap().to_string_lossy().starts_with('_'),
-                        });
-                    }
-                }
+            if let Ok(manifest) = crate::plugin::manifest::read_manifest_from_skill_dir(&path) {
+                skills.push(CustomSkillInfo {
+                    id: manifest.plugin.id,
+                    name: manifest.plugin.name,
+                    description: manifest.plugin.description.unwrap_or_default(),
+                    path: path.to_string_lossy().to_string(),
+                    enabled: !path.file_name().unwrap().to_string_lossy().starts_with('_'),
+                });
             }
         }
     }
+
     Ok(skills)
 }
 
-/// Install a skill from a directory path (copy to ~/.renlijia/skills/).
-#[tauri::command]
-pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
-    let source = PathBuf::from(&source_path);
+fn install_custom_skill_to_dir(custom_dir: &Path, source: &Path) -> Result<String, String> {
     if !source.is_dir() {
         return Err("Source path is not a directory".to_string());
     }
 
-    let manifest_path = source.join("plugin.toml");
-    if !manifest_path.exists() {
-        return Err("No plugin.toml found in source directory".to_string());
-    }
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(source)
+        .map_err(|e| format!("Failed to read skill manifest: {}", e))?;
+    let plugin_id = manifest.plugin.id;
 
-    // Read plugin ID from manifest
-    let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
-    let manifest: toml::Value = toml::from_str(&content).map_err(|e| e.to_string())?;
-    let plugin_id = manifest
-        .get("plugin")
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .ok_or("plugin.id not found in manifest")?
-        .to_string();
-
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
-    std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(custom_dir).map_err(|e| e.to_string())?;
 
     let dest = custom_dir.join(&plugin_id);
     if dest.exists() {
         std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
     }
 
-    // Copy directory recursively
-    copy_dir_recursive(&source, &dest).map_err(|e| e.to_string())?;
+    copy_dir_recursive(source, &dest).map_err(|e| e.to_string())?;
 
     Ok(format!(
         "Installed skill '{}' — restart app to activate",
         plugin_id
     ))
+}
+
+fn load_skill_for_reload(
+    path: &Path,
+) -> Result<(String, crate::plugin::declarative_skill::DeclarativeSkill), String> {
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(path)
+        .map_err(|_| "No plugin.toml or SKILL.md found".to_string())?;
+    let plugin_id = manifest.plugin.id.clone();
+    let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, path)
+        .map_err(|e| e.to_string())?;
+    Ok((plugin_id, skill))
+}
+
+/// List all installed custom skills.
+#[tauri::command]
+pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
+    list_custom_skills_in_dir(&custom_dir)
+}
+
+/// Install a skill from a directory path (copy to ~/.renlijia/skills/).
+#[tauri::command]
+pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
+    let source = PathBuf::from(&source_path);
+    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
+    let custom_dir = aijia_home.skills_dir();
+    install_custom_skill_to_dir(&custom_dir, &source)
 }
 
 /// Uninstall a custom skill by ID.
@@ -179,7 +165,7 @@ pub async fn init_skill_template(
     std::fs::create_dir_all(dir.join("prompts")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(dir.join("scripts/knowledge")).map_err(|e| e.to_string())?;
 
-    // plugin.toml
+    // plugin.toml (migration window compatibility)
     let plugin_toml = format!(
         r#"[plugin]
 id = "{skill_id}"
@@ -210,6 +196,28 @@ trigger_text = ""
 "#
     );
     std::fs::write(dir.join("plugin.toml"), plugin_toml).map_err(|e| e.to_string())?;
+
+    // SKILL.md (new manifest format)
+    let skill_md = format!(
+        r#"---
+id: "{skill_id}"
+name: "{skill_name}"
+description: ""
+keywords:
+  - "{skill_name}"
+requires_files: false
+model_preference: "deep_reasoning"
+max_iterations: 5
+token_budget: 8192
+include_app_base: true
+---
+
+# {skill_name}
+
+你是{skill_name}专家。
+"#
+    );
+    std::fs::write(dir.join("SKILL.md"), skill_md).map_err(|e| e.to_string())?;
 
     // workflow.toml
     std::fs::write(dir.join("workflow.toml"), SCAFFOLD_WORKFLOW_TOML).map_err(|e| e.to_string())?;
@@ -285,8 +293,9 @@ print(_json_mod.dumps(result, ensure_ascii=False, indent=2))
 
 ```
 {skill_id}/
-├── plugin.toml              # 技能元数据
-├── workflow.toml             # 工作流定义
+├── plugin.toml              # 技能元数据（迁移窗口兼容）
+├── SKILL.md                 # 技能元数据（新格式）
+├── workflow.toml            # 工作流定义
 ├── prompts/                  # LLM 提示词
 │   ├── base.md
 │   ├── step0.md
@@ -301,7 +310,7 @@ print(_json_mod.dumps(result, ensure_ascii=False, indent=2))
 
 ## 开发
 
-1. 编辑 `plugin.toml` 填写触发关键词和描述
+1. 在迁移窗口内优先保持 `plugin.toml` 与 `SKILL.md` 的元数据同步
 2. 在 `scripts/knowledge/` 中添加领域知识 JSON 文件
 3. 编辑 `prompts/*.md` 定义每步的 LLM 行为
 4. 编辑 `scripts/*.py` 实现数据处理逻辑
@@ -329,19 +338,9 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
     if !dir.is_dir() {
         return Err("Not a valid directory".to_string());
     }
-    if !dir.join("plugin.toml").exists() {
-        return Err("No plugin.toml found — not a valid skill directory".to_string());
-    }
-
-    // Read plugin ID for output filename
-    let manifest_content =
-        std::fs::read_to_string(dir.join("plugin.toml")).map_err(|e| e.to_string())?;
-    let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
-    let plugin_id = manifest
-        .get("plugin")
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&dir)
+        .map_err(|_| "No plugin.toml or SKILL.md found — not a valid skill directory".to_string())?;
+    let plugin_id = manifest.plugin.id;
 
     let output_path = dir
         .parent()
@@ -385,25 +384,12 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
 }
 
 /// Reload a custom skill from disk (hot-reload for dev mode).
-/// Re-reads plugin.toml, unregisters the old version, and registers the new one.
+/// Re-reads the skill manifest (`plugin.toml` or `SKILL.md`), unregisters the
+/// old version, and registers the new one.
 #[tauri::command]
 pub async fn reload_skill(app: AppHandle, skill_path: String) -> Result<String, String> {
     let path = PathBuf::from(&skill_path);
-    if !path.join("plugin.toml").exists() {
-        return Err("No plugin.toml found".to_string());
-    }
-
-    // Parse manifest
-    let manifest_content =
-        std::fs::read_to_string(path.join("plugin.toml")).map_err(|e| e.to_string())?;
-    let manifest = crate::plugin::manifest::parse_plugin_manifest(&manifest_content)
-        .map_err(|e| e.to_string())?;
-
-    let plugin_id = manifest.plugin.id.clone();
-
-    // Load the skill
-    let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path)
-        .map_err(|e| e.to_string())?;
+    let (plugin_id, skill) = load_skill_for_reload(&path)?;
 
     // Get registry from app state and replace
     let registry = app.state::<Arc<crate::plugin::SkillRegistry>>();
@@ -675,18 +661,9 @@ pub(crate) fn pack_skill_to_dir(
     if !skill_dir.is_dir() {
         return Err("Skill directory does not exist".to_string());
     }
-    if !skill_dir.join("plugin.toml").exists() {
-        return Err("No plugin.toml found — not a valid skill directory".to_string());
-    }
-
-    let manifest_content = std::fs::read_to_string(skill_dir.join("plugin.toml"))
-        .map_err(|e| e.to_string())?;
-    let manifest: toml::Value = toml::from_str(&manifest_content).map_err(|e| e.to_string())?;
-    let plugin_id = manifest
-        .get("plugin")
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(skill_dir)
+        .map_err(|_| "No plugin.toml or SKILL.md found — not a valid skill directory".to_string())?;
+    let plugin_id = manifest.plugin.id;
 
     std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
     let output_path = output_dir.join(format!("{}.aijia-skill", plugin_id));
@@ -745,4 +722,151 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::skill_trait::Skill;
+
+    #[test]
+    fn init_skill_template_writes_skill_md_and_plugin_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().to_string_lossy().to_string();
+
+        let output_dir = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(init_skill_template(
+                target,
+                "demo-skill".to_string(),
+                "演示技能".to_string(),
+            ))
+            .unwrap();
+
+        let skill_dir = PathBuf::from(output_dir);
+        assert!(skill_dir.join("SKILL.md").exists());
+        assert!(skill_dir.join("plugin.toml").exists());
+    }
+
+    #[test]
+    fn init_skill_template_output_is_loadable_by_current_loader() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().to_string_lossy().to_string();
+
+        let output_dir = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(init_skill_template(
+                target,
+                "demo-skill".to_string(),
+                "演示技能".to_string(),
+            ))
+            .unwrap();
+
+        let skill_dir = PathBuf::from(output_dir);
+        let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&skill_dir).unwrap();
+        let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &skill_dir)
+            .expect("template output should be loadable by declarative skill loader");
+
+        assert_eq!(skill.id(), "demo-skill");
+        assert_eq!(skill.display_name(), "演示技能");
+        assert!(skill.workflow().is_some());
+    }
+
+    #[test]
+    fn pack_skill_to_dir_supports_skill_md_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("skill-md-only");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            r#"---
+id: "skill-md-only"
+name: "Skill MD Only"
+description: "test"
+---
+# Skill
+"#,
+        )
+        .unwrap();
+
+        let output_dir = tmp.path().join("out");
+        let package_path = pack_skill_to_dir(&skill_dir, &output_dir).unwrap();
+        assert!(package_path.exists());
+        assert_eq!(
+            package_path.file_name().and_then(|s| s.to_str()),
+            Some("skill-md-only.aijia-skill")
+        );
+    }
+
+    #[test]
+    fn list_custom_skills_in_dir_includes_skill_md_only_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let custom_dir = tmp.path().join("skills");
+        let skill_dir = custom_dir.join("skill-md-only");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            r#"---
+id: "skill-md-only"
+name: "Skill MD Only"
+description: "test"
+---
+# Skill
+"#,
+        )
+        .unwrap();
+
+        let skills = list_custom_skills_in_dir(&custom_dir).unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].id, "skill-md-only");
+        assert_eq!(skills[0].name, "Skill MD Only");
+    }
+
+    #[test]
+    fn install_custom_skill_to_dir_supports_skill_md_only_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source_dir = tmp.path().join("source-skill");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::write(
+            source_dir.join("SKILL.md"),
+            r#"---
+id: "skill-md-only"
+name: "Skill MD Only"
+description: "test"
+---
+# Skill
+"#,
+        )
+        .unwrap();
+
+        let custom_dir = tmp.path().join("installed-skills");
+        let message = install_custom_skill_to_dir(&custom_dir, &source_dir).unwrap();
+
+        assert_eq!(message, "Installed skill 'skill-md-only' — restart app to activate");
+        assert!(custom_dir.join("skill-md-only").join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn load_skill_for_reload_supports_skill_md_only_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("reload-skill");
+        std::fs::create_dir_all(skill_dir.join("prompts")).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            r#"---
+id: "reload-skill"
+name: "Reload Skill"
+description: "test"
+---
+# Reload Skill
+"#,
+        )
+        .unwrap();
+        std::fs::write(skill_dir.join("prompts/base.md"), "base prompt").unwrap();
+
+        let (plugin_id, skill) = load_skill_for_reload(&skill_dir).unwrap();
+        assert_eq!(plugin_id, "reload-skill");
+        assert_eq!(skill.id(), "reload-skill");
+        assert_eq!(skill.display_name(), "Reload Skill");
+    }
 }

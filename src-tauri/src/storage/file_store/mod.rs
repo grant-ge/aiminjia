@@ -855,6 +855,10 @@ impl RuntimeRepositoryFacade {
         self.memory_store.as_ref()
     }
 
+    pub fn clone_memory_store(&self) -> std::sync::Arc<dyn crate::runtime::store::MemoryStore> {
+        self.memory_store.clone()
+    }
+
     pub fn audit_store(&self) -> &dyn crate::runtime::store::AuditStore {
         self.audit_store.as_ref()
     }

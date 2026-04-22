@@ -30,8 +30,9 @@ const WORKSPACE_TOOL_NAMES: &[&str] = &[
 pub(crate) async fn build_visible_tool_defs(
     registry: &ToolRegistry,
     has_authorized_workspace: bool,
+    allowed_tools: Option<&std::collections::HashSet<String>>,
 ) -> Vec<crate::llm::streaming::ToolDefinition> {
-    if has_authorized_workspace {
+    let defs = if has_authorized_workspace {
         registry.get_schemas_filtered(&ToolFilter::All).await
     } else {
         registry
@@ -42,6 +43,14 @@ pub(crate) async fn build_visible_tool_defs(
                     .collect(),
             ))
             .await
+    };
+
+    match allowed_tools {
+        Some(allowed) => defs
+            .into_iter()
+            .filter(|def| allowed.contains(def.name.as_str()))
+            .collect(),
+        None => defs,
     }
 }
 
@@ -146,7 +155,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, true).await;
+        let defs = build_visible_tool_defs(&registry, true, None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -164,7 +173,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, false).await;
+        let defs = build_visible_tool_defs(&registry, false, None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -180,6 +189,21 @@ mod tests {
             names.contains(&"execute_python"),
             "non-workspace tools should remain visible without authorization"
         );
+    }
+
+    #[tokio::test]
+    async fn test_build_visible_tool_defs_applies_allowed_tools_filter_after_workspace_filter() {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+        let allowed = std::collections::HashSet::from([
+            "execute_python".to_string(),
+            "list_directory".to_string(),
+        ]);
+
+        let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;
+        let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+        assert_eq!(names, vec!["execute_python"]);
     }
 
     #[test]

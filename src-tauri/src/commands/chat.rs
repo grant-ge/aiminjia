@@ -23,10 +23,10 @@ pub async fn send_message(
     conversation_id: String,
     content: String,
     file_ids: Vec<String>,
-    agent_name: Option<String>,
+    permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
 ) -> Result<(), String> {
     adapter
-        .send_message(conversation_id, content, file_ids, agent_name)
+        .send_message(conversation_id, content, file_ids, permission_mode)
         .await
 }
 #[tauri::command]
@@ -275,6 +275,7 @@ pub mod testsupport {
         let visible_tool_defs = crate::transport::tauri_commands::chat::build_visible_tool_defs(
             &tool_registry,
             authorized_workspace.is_some(),
+            None,
         )
         .await;
 
@@ -299,9 +300,12 @@ pub mod testsupport {
             app_settings: None,
             agent_runtime: None,
             event_bus: None,
+            skill_registry: None,
+            skill_sessions: None,
             authorized_workspace,
             read_file_state: None,
             cancellation: None,
+            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
         };
 
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()

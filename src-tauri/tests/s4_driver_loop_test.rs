@@ -1,6 +1,7 @@
 // src-tauri/tests/s4_driver_loop_test.rs
 
 use app_lib::runtime::chat::turn_config::*;
+use std::collections::HashSet;
 
 #[test]
 fn turn_iteration_state_initializes_cleanly() {
@@ -939,43 +940,76 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
     }
 }
 
-struct CustomToolDefsCapturingExecutor {
+struct TurnConfigOverrideExecutor {
+    captured_system_prompts: std::sync::Mutex<Vec<String>>,
     captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+    captured_messages: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+    responses: std::sync::Mutex<Vec<LlmStepResult>>,
+    overrides: TurnConfigOverrides,
 }
 
-impl CustomToolDefsCapturingExecutor {
-    fn new() -> Self {
+impl TurnConfigOverrideExecutor {
+    fn new(overrides: TurnConfigOverrides, responses: Vec<LlmStepResult>) -> Self {
         Self {
+            captured_system_prompts: std::sync::Mutex::new(Vec::new()),
             captured_tool_defs: std::sync::Mutex::new(Vec::new()),
+            captured_messages: std::sync::Mutex::new(Vec::new()),
+            responses: std::sync::Mutex::new(responses),
+            overrides,
         }
     }
 }
 
 #[async_trait]
-impl RuntimeLlmExecutor for CustomToolDefsCapturingExecutor {
+impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
     async fn run_llm_step(
         &self,
         input: &LlmStepInput<'_>,
         _bus: &RuntimeEventBus,
         _cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
+        self.captured_system_prompts
+            .lock()
+            .unwrap()
+            .push(input.system_prompt.to_string());
         self.captured_tool_defs
             .lock()
             .unwrap()
             .push(input.tool_defs.to_vec());
-        Ok(LlmStepResult::ContentComplete {
-            content: "ok".to_string(),
-            tokens_in: 0,
-            tokens_out: 0,
-            stop_reason: Some("end_turn".to_string()),
-        })
+        self.captured_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
+
+        let mut responses = self.responses.lock().unwrap();
+        if responses.is_empty() {
+            Ok(LlmStepResult::ContentComplete {
+                content: "done".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
+            })
+        } else {
+            Ok(responses.remove(0))
+        }
+    }
+
+    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        Ok("[BASE-SYSTEM-PROMPT]".to_string())
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![
-            serde_json::json!({"name": "allowed_tool", "description": ""}),
-            serde_json::json!({"name": "blocked_tool", "description": ""}),
-        ])
+        Ok(vec![serde_json::json!({
+            "name": "base_tool",
+            "description": "base"
+        })])
+    }
+
+    async fn load_turn_config_overrides(
+        &self,
+        _request: &app_lib::runtime::chat::ChatTurnRequest,
+    ) -> Result<TurnConfigOverrides, TurnError> {
+        Ok(self.overrides.clone())
     }
 
     async fn persist_assistant_message(
@@ -988,30 +1022,107 @@ impl RuntimeLlmExecutor for CustomToolDefsCapturingExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
     }
+
+    async fn persist_user_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _file_ids: &[String],
+    ) -> Result<String, TurnError> {
+        Ok("user-id".to_string())
+    }
 }
 
 #[tokio::test]
-async fn driver_s4_filters_tool_defs_when_request_constrains_allowed_tools() {
-    let executor = Arc::new(CustomToolDefsCapturingExecutor::new());
+async fn driver_s4_prefers_turn_override_system_prompt_and_tool_defs() {
+    let executor = Arc::new(TurnConfigOverrideExecutor::new(
+        TurnConfigOverrides {
+            system_prompt: Some("[SKILL-PROMPT]".to_string()),
+            tool_defs: Some(vec![serde_json::json!({
+                "name": "skill_only_tool",
+                "description": "skill"
+            })]),
+            ..TurnConfigOverrides::default()
+        },
+        vec![LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
+        }],
+    ));
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
-    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
-    let mut turn = make_test_turn("conv-tool-defs-constrained");
-    let request = ChatTurnRequest::new("conv-tool-defs-constrained", "hello", vec![])
-        .with_allowed_tools(vec!["allowed_tool".to_string()]);
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
+    let mut turn = make_test_turn("conv-skill-overrides");
+    let request = ChatTurnRequest::new("conv-skill-overrides", "hello", vec![]);
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
-    let captured = executor.captured_tool_defs.lock().unwrap();
-    assert_eq!(captured.len(), 1);
-    let names: Vec<&str> = captured[0]
+    let prompts = executor.captured_system_prompts.lock().unwrap();
+    assert_eq!(prompts.as_slice(), ["[SKILL-PROMPT]"]);
+
+    let tool_defs = executor.captured_tool_defs.lock().unwrap();
+    let tool_names: Vec<&str> = tool_defs[0]
         .iter()
-        .filter_map(|value| value["name"].as_str())
+        .filter_map(|value| value.get("name").and_then(|v| v.as_str()))
         .collect();
-    assert_eq!(
-        names,
-        vec!["allowed_tool"],
-        "request.allowed_tools must filter tool_defs before executor sees them"
+    assert_eq!(tool_names, vec!["skill_only_tool"]);
+}
+
+#[tokio::test]
+async fn driver_s4_turn_override_allowed_tools_blocks_runtime_execution() {
+    let executor = Arc::new(TurnConfigOverrideExecutor::new(
+        TurnConfigOverrides {
+            allowed_tools: Some(HashSet::from(["allowed_tool".to_string()])),
+            ..TurnConfigOverrides::default()
+        },
+        vec![
+            LlmStepResult::ToolCalls {
+                assistant_content: String::new(),
+                tool_calls: vec![app_lib::runtime::chat::RuntimeToolCallRequest {
+                    tool_call_id: "tc-blocked".to_string(),
+                    tool_name: "blocked_tool".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                }],
+                tokens_in: 0,
+                tokens_out: 0,
+            },
+            LlmStepResult::ContentComplete {
+                content: "done".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
+            },
+        ],
+    ));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus, executor.clone());
+    let mut turn = make_test_turn("conv-allowed-tools");
+    let request = ChatTurnRequest::new("conv-allowed-tools", "hello", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured_messages = executor.captured_messages.lock().unwrap();
+    let second_iteration = captured_messages
+        .get(1)
+        .expect("second iteration should include blocked tool feedback");
+    let blocked_feedback = second_iteration
+        .iter()
+        .filter_map(|value| value.get("content").and_then(|v| v.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        blocked_feedback.contains("blocked_tool"),
+        "blocked tool feedback must mention the blocked tool, got: {}",
+        blocked_feedback
+    );
+    assert!(
+        blocked_feedback.contains("allowed_tool"),
+        "blocked tool feedback must mention the allowed set, got: {}",
+        blocked_feedback
     );
 }
 

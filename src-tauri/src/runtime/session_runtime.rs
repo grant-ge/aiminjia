@@ -27,6 +27,7 @@ pub struct SessionRuntime {
     query_engine: QueryEngine,
     session_query_engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
     session_cancel_roots: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
     event_bus: RuntimeEventBus,
     /// S4 executor: owns the query loop; executor is a provider streaming adapter only.
     /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`.
@@ -34,7 +35,6 @@ pub struct SessionRuntime {
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
     pending_permission_store: Arc<PendingPermissionRequestStore>,
     permission_store: Option<Arc<PermissionStore>>,
-    agent_registry: Option<Arc<crate::runtime::agent::registry::AgentRegistry>>,
 }
 
 impl SessionRuntime {
@@ -43,12 +43,12 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
+            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: None,
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             permission_store: None,
-            agent_registry: None,
         }
     }
 
@@ -66,12 +66,12 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
+            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: Some(executor),
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             permission_store: None,
-            agent_registry: None,
         }
     }
 
@@ -96,11 +96,11 @@ impl SessionRuntime {
         self
     }
 
-    pub fn with_agent_registry(
+    pub fn with_skill_sessions(
         mut self,
-        agent_registry: Arc<crate::runtime::agent::registry::AgentRegistry>,
+        skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
     ) -> Self {
-        self.agent_registry = Some(agent_registry);
+        self.skill_sessions = skill_sessions;
         self
     }
 
@@ -120,7 +120,6 @@ impl SessionRuntime {
         &self,
         mut request: ChatTurnRequest,
     ) -> std::result::Result<(), String> {
-        request = self.apply_agent_tool_constraint(request);
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
         // Generate the single authoritative RunId for this turn here and propagate
         // it into the request so legacy_send_message_impl uses the same identity.
@@ -137,7 +136,9 @@ impl SessionRuntime {
 
         let mut turn = TurnState::new(mapping, run_id, request.content.clone());
         let session_root = self.ensure_active_session_cancel_root(turn.session_id());
-        turn = turn.with_cancellation(session_root.child_token());
+        turn = turn
+            .with_cancellation(session_root.child_token())
+            .with_permission_mode(request.permission_mode);
 
         // Build a driver for this session and drive the full turn lifecycle.
         // The driver remains the only chat-turn entry and may invoke the legacy
@@ -215,6 +216,7 @@ impl SessionRuntime {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&session_key);
+        self.skill_sessions.clear_session(session_id.as_str());
     }
 
     fn query_engine_for_session(&self, session_id: &SessionId) -> QueryEngine {
@@ -235,12 +237,7 @@ impl SessionRuntime {
             .entry(session_id.as_str().to_string())
             .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
             .clone();
-        let session_engine = session_engine.with_authorized_workspace(authorized_workspace);
-        if let Some(ref store) = self.permission_store {
-            session_engine.with_permission_store(store.clone())
-        } else {
-            session_engine
-        }
+        session_engine.with_authorized_workspace(authorized_workspace)
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
@@ -255,19 +252,6 @@ impl SessionRuntime {
             );
         }
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
-    }
-
-    fn apply_agent_tool_constraint(&self, mut request: ChatTurnRequest) -> ChatTurnRequest {
-        let Some(agent_name) = request.agent_name.as_deref() else {
-            return request;
-        };
-        let Some(agent_registry) = self.agent_registry.as_ref() else {
-            return request;
-        };
-        if let Some(definition) = agent_registry.get(agent_name) {
-            request.allowed_tools = Some(definition.allowed_tools.clone());
-        }
-        request
     }
 
     fn persist_resolved_permission(
@@ -344,7 +328,7 @@ impl SessionRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::agent::registry::AgentRegistry;
+    use crate::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnError};
     use crate::runtime::tools::permission::{PermissionDestination, PermissionMode};
     use crate::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
@@ -354,7 +338,119 @@ mod tests {
     use serde_json::Value;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
+
+    struct CapturePermissionModeTool {
+        seen_mode: Arc<Mutex<Option<PermissionMode>>>,
+    }
+
+    #[async_trait]
+    impl RuntimeTool for CapturePermissionModeTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("capture_permission_mode", "Capture permission mode")
+        }
+
+        async fn execute(
+            &self,
+            _input: Value,
+            ctx: ToolExecutionContext,
+        ) -> std::result::Result<ToolResult, ToolError> {
+            *self.seen_mode.lock().unwrap() = Some(ctx.permission_mode);
+            Ok(ToolResult::new("capture_permission_mode", "ok", None))
+        }
+    }
+
+    struct SingleToolCallExecutor {
+        workspace_path: PathBuf,
+        next_step: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl RuntimeLlmExecutor for SingleToolCallExecutor {
+        async fn run_llm_step(
+            &self,
+            _input: &LlmStepInput<'_>,
+            _bus: &RuntimeEventBus,
+            _cancel: &CancellationToken,
+        ) -> anyhow::Result<LlmStepResult, TurnError> {
+            match self.next_step.fetch_add(1, Ordering::SeqCst) {
+                0 => Ok(LlmStepResult::ToolCalls {
+                    assistant_content: String::new(),
+                    tool_calls: vec![crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                        tool_call_id: "tc-session-mode".to_string(),
+                        tool_name: "capture_permission_mode".to_string(),
+                        args: serde_json::json!({}),
+                        purpose: None,
+                    }],
+                    tokens_in: 0,
+                    tokens_out: 0,
+                }),
+                _ => Ok(LlmStepResult::ContentComplete {
+                    content: "done".to_string(),
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    stop_reason: Some("end_turn".to_string()),
+                }),
+            }
+        }
+
+        async fn persist_assistant_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _generated_file_ids: &[String],
+            _file_metas: &[serde_json::Value],
+        ) -> anyhow::Result<String, TurnError> {
+            Ok("assistant-msg".to_string())
+        }
+
+        async fn persist_user_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _file_ids: &[String],
+        ) -> anyhow::Result<String, TurnError> {
+            Ok("user-msg".to_string())
+        }
+
+        async fn build_system_prompt(&self, _conversation_id: &str) -> anyhow::Result<String, TurnError> {
+            Ok("system".to_string())
+        }
+
+        async fn get_tool_defs(&self) -> anyhow::Result<Vec<serde_json::Value>, TurnError> {
+            Ok(vec![])
+        }
+
+        async fn load_workspace_path(&self) -> anyhow::Result<PathBuf, TurnError> {
+            Ok(self.workspace_path.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn run_chat_request_passes_permission_mode_into_turn_state_execution_context() {
+        let workspace = TempDir::new().expect("TempDir::new failed");
+        let seen_mode = Arc::new(Mutex::new(None));
+        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
+        dispatcher.register(Arc::new(CapturePermissionModeTool {
+            seen_mode: seen_mode.clone(),
+        }));
+
+        let runtime = SessionRuntime::with_llm_executor(
+            QueryEngine::with_dispatcher(dispatcher),
+            RuntimeEventBus::new(),
+            Arc::new(SingleToolCallExecutor {
+                workspace_path: workspace.path().to_path_buf(),
+                next_step: AtomicUsize::new(0),
+            }),
+        );
+        let mut request = ChatTurnRequest::new("conv-session-mode", "run capture", vec![]);
+        request.permission_mode = PermissionMode::DontAsk;
+
+        runtime.run_chat_request(request).await.expect("run_chat_request");
+
+        assert_eq!(*seen_mode.lock().unwrap(), Some(PermissionMode::DontAsk));
+    }
 
     struct CaptureAuthorizedWorkspaceTool {
         seen_root: Arc<Mutex<Option<PathBuf>>>,
@@ -688,35 +784,5 @@ mod tests {
 
         assert!(!root_before.is_cancelled());
         assert!(root_after.is_cancelled());
-    }
-
-    #[test]
-    fn run_chat_request_with_agent_name_constrains_allowed_tools_from_registry() {
-        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
-            .with_agent_registry(Arc::new(AgentRegistry::with_builtins()));
-        let request =
-            ChatTurnRequest::new("conv-agent-name", "hello", vec![]).with_agent_name(
-                "browse_data_agent",
-            );
-
-        let constrained = runtime.apply_agent_tool_constraint(request);
-
-        assert_eq!(constrained.agent_name.as_deref(), Some("browse_data_agent"));
-        assert!(constrained.allowed_tools.is_some());
-        let allowed = constrained.allowed_tools.unwrap();
-        assert_eq!(allowed.len(), 6);
-        for tool in [
-            "browse_and_extract",
-            "browse_navigate",
-            "read_page_content",
-            "page_execute_js",
-            "extract_table_data",
-            "extract_with_pagination",
-        ] {
-            assert!(
-                allowed.iter().any(|allowed_tool| allowed_tool == tool),
-                "agent-constrained allowlist must include {tool}"
-            );
-        }
     }
 }

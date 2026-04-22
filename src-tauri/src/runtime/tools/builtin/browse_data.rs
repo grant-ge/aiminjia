@@ -115,3 +115,48 @@ impl RuntimeTool for BrowseDataRuntimeTool {
         Ok(ToolResult::new("browse_data", launch_result.content, None))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::tools::permission::PermissionMode;
+    use serde_json::json;
+    use std::sync::Mutex;
+
+    struct RecordingLauncher {
+        seen_context: Arc<Mutex<Option<BrowseDataLaunchContext>>>,
+    }
+
+    #[async_trait]
+    impl BrowseDataLauncher for RecordingLauncher {
+        async fn launch(
+            &self,
+            _request: BrowseDataLaunchRequest,
+            context: BrowseDataLaunchContext,
+        ) -> Result<BrowseDataLaunchResult> {
+            *self.seen_context.lock().unwrap() = Some(context);
+            Ok(BrowseDataLaunchResult::completed("done"))
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_passes_parent_permission_mode_to_launch_context() {
+        let seen_context = Arc::new(Mutex::new(None));
+        let tool = BrowseDataRuntimeTool::with_launcher(Arc::new(RecordingLauncher {
+            seen_context: seen_context.clone(),
+        }));
+        let ctx = ToolExecutionContext::for_test("conv-browse-mode", "run-browse-mode", "tc-1")
+            .with_permission_mode(PermissionMode::DontAsk);
+
+        tool.execute(json!({ "task": "collect rows" }), ctx)
+            .await
+            .expect("browse_data execution should succeed");
+
+        let launch_ctx = seen_context
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("launcher should receive a launch context");
+        assert_eq!(launch_ctx.permission_mode, PermissionMode::DontAsk);
+    }
+}

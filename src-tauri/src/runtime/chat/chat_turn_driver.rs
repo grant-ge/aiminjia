@@ -20,8 +20,8 @@ use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use crate::runtime::chat::turn_config::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnError, TurnIterationState,
-    MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnConfigOverrides,
+    TurnError, TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
 };
 use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -34,7 +34,7 @@ use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
 };
-use crate::runtime::tools::permission::{PermissionDecision, PermissionMode, PermissionReason};
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
@@ -43,14 +43,13 @@ pub struct ChatTurnRequest {
     pub conversation_id: SessionId,
     pub content: String,
     pub file_ids: Vec<String>,
+    pub permission_mode: PermissionMode,
     /// The run_id assigned by `SessionRuntime` for this turn.
     /// Callers should use `ChatTurnRequest::new` for ad-hoc creation (generates a
     /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
     /// with the single authoritative id generated for this turn.
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
-    pub agent_name: Option<String>,
-    pub allowed_tools: Option<Vec<String>>,
 }
 
 impl ChatTurnRequest {
@@ -63,21 +62,10 @@ impl ChatTurnRequest {
             conversation_id: conversation_id.into(),
             content: content.into(),
             file_ids,
+            permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
-            agent_name: None,
-            allowed_tools: None,
         }
-    }
-
-    pub fn with_agent_name(mut self, agent_name: impl Into<String>) -> Self {
-        self.agent_name = Some(agent_name.into());
-        self
-    }
-
-    pub fn with_allowed_tools(mut self, allowed_tools: Vec<String>) -> Self {
-        self.allowed_tools = Some(allowed_tools);
-        self
     }
 }
 
@@ -221,6 +209,15 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 加载 turn 对应的 workspace 路径。
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(PathBuf::new())
+    }
+
+    /// Resolve optional per-turn overrides after transport/runtime state has
+    /// been loaded for the request but before the driver snapshots TurnConfig.
+    async fn load_turn_config_overrides(
+        &self,
+        _request: &ChatTurnRequest,
+    ) -> Result<TurnConfigOverrides, TurnError> {
+        Ok(TurnConfigOverrides::default())
     }
 
     /// 加载 RENLIJIA.md user-context 文件。
@@ -398,20 +395,6 @@ fn build_renlijia_md_context_message(
 }
 
 impl RuntimeChatTurnDriver {
-    fn permission_mode_for_ask(decision: &PermissionDecision) -> PermissionMode {
-        match decision {
-            PermissionDecision::Ask {
-                reason: PermissionReason::Mode(mode),
-                ..
-            } => match mode.as_str() {
-                "plan" => PermissionMode::Plan,
-                "dontAsk" => PermissionMode::DontAsk,
-                _ => PermissionMode::Default,
-            },
-            _ => PermissionMode::Default,
-        }
-    }
-
     pub fn new(query_engine: QueryEngine, event_bus: RuntimeEventBus) -> Self {
         Self {
             query_engine,
@@ -514,7 +497,7 @@ impl RuntimeChatTurnDriver {
                 resolved_results.push(round_result);
                 continue;
             };
-            let mode = Self::permission_mode_for_ask(decision);
+            let mode = turn.permission_mode();
             let pending_request = PendingPermissionRequest {
                 tool_call_id: tool_call_id.clone().into(),
                 session_id: turn.session_id().clone(),
@@ -590,6 +573,7 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
+                        skill_runtime_patch: None,
                     })
                 }
             };
@@ -661,35 +645,27 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Build the tool definitions via the executor.
-        let mut tool_defs = executor
+        let tool_defs = executor
             .get_tool_defs()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        if let Some(allowed_tools) = request.allowed_tools.as_ref() {
-            tool_defs.retain(|tool_def| {
-                tool_def
-                    .get("name")
-                    .and_then(|value| value.as_str())
-                    .map(|name| allowed_tools.iter().any(|allowed| allowed == name))
-                    .unwrap_or(false)
-            });
-        }
         let workspace_path = executor
             .load_workspace_path()
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let overrides = executor
+            .load_turn_config_overrides(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        let config = TurnConfig {
-            system_prompt,
-            tool_defs,
-            allowed_tools: request
-                .allowed_tools
-                .as_ref()
-                .map(|tools| tools.iter().cloned().collect()),
-            max_iterations: 30,
-            token_budget: 4096,
+        let mut config = TurnConfig {
+            system_prompt: overrides.system_prompt.unwrap_or(system_prompt),
+            tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
+            allowed_tools: overrides.allowed_tools,
+            max_iterations: overrides.max_iterations.unwrap_or(30),
+            token_budget: overrides.token_budget.unwrap_or(4096),
             chunk_timeout_secs: 90,
-            masking_level: llm_settings.masking_level.clone(),
+            masking_level: "strict".to_string(),
             workspace_path: workspace_path.clone(),
             llm_settings,
             conversation_id: request.conversation_id.clone(),
@@ -783,12 +759,8 @@ impl RuntimeChatTurnDriver {
         let mut turn_completed_normally = false;
 
         // ── Step 5: Iteration loop ────────────────────────────────────────────
-        let round_driver = ToolRoundDriver::new(self.query_engine.clone()).with_allowed_tools_opt(
-            config
-                .allowed_tools
-                .as_ref()
-                .map(|tools| tools.iter().cloned().collect()),
-        );
+        let round_driver = ToolRoundDriver::new(self.query_engine.clone())
+            .with_allowed_tools_opt(stable_allowed_tools_vec(&config.allowed_tools));
 
         // 获取会话级环境信息（整个 turn 内稳定）
         let env_info = executor
@@ -1141,6 +1113,9 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
+                    if let Some(skill_runtime_patch) = results.skill_runtime_patch {
+                        apply_skill_runtime_patch(&mut config, skill_runtime_patch);
+                    }
 
                     // Safeguard check.
                     match safeguard::check_iteration(
@@ -1295,10 +1270,172 @@ impl RuntimeChatTurnDriver {
     }
 }
 
+fn apply_skill_runtime_patch(
+    config: &mut TurnConfig,
+    patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
+) {
+    config.system_prompt = patch.system_prompt;
+    config.tool_defs = patch.tool_defs;
+    config.allowed_tools = patch.allowed_tools.map(|names| names.into_iter().collect());
+    config.max_iterations = patch.max_iterations;
+    config.token_budget = patch.token_budget;
+}
+
+fn stable_allowed_tools_vec(
+    allowed_tools: &Option<HashSet<String>>,
+) -> Option<Vec<String>> {
+    allowed_tools.as_ref().map(|allowed| {
+        let mut names: Vec<String> = allowed.iter().cloned().collect();
+        names.sort();
+        names
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::chat::tool_round_driver::ToolRoundResult;
+    use crate::runtime::chat::tool_round_types::{RuntimeToolCallOutcome, RuntimeToolCallRequest};
+    use crate::runtime::events::RuntimeEventKind;
+    use crate::runtime::identity::IdentityMapping;
+    use crate::runtime::ids::{RunId, ToolCallId};
+    use crate::runtime::store::{
+        PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
+    };
+    use crate::runtime::tools::permission::{
+        PermissionDecision, PermissionMode, PermissionReason,
+    };
+    use crate::runtime::tools::{
+        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
+        ToolExecutionContext, ToolResult,
+    };
+    use async_trait::async_trait;
     use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::oneshot;
+
+    struct RecordingPermissionControlPlane {
+        inserted: Mutex<Vec<PendingPermissionRequest>>,
+        resolution: PendingPermissionResolution,
+    }
+
+    impl RecordingPermissionControlPlane {
+        fn new(resolution: PendingPermissionResolution) -> Self {
+            Self {
+                inserted: Mutex::new(Vec::new()),
+                resolution,
+            }
+        }
+
+        fn inserted_requests(&self) -> Vec<PendingPermissionRequest> {
+            self.inserted.lock().unwrap().clone()
+        }
+    }
+
+    impl PendingPermissionControlPlane for RecordingPermissionControlPlane {
+        fn insert_pending_request(
+            &self,
+            request: PendingPermissionRequest,
+        ) -> anyhow::Result<oneshot::Receiver<PendingPermissionResolution>> {
+            self.inserted.lock().unwrap().push(request);
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(self.resolution.clone());
+            Ok(rx)
+        }
+
+        fn resolve_pending_request(
+            &self,
+            _tool_call_id: &ToolCallId,
+            _resolution: PendingPermissionResolution,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn cancel_for_session(
+            &self,
+            _session_id: &crate::runtime::ids::SessionId,
+            _message: &str,
+        ) -> usize {
+            0
+        }
+
+        fn pending_count_for_session(
+            &self,
+            _session_id: &crate::runtime::ids::SessionId,
+        ) -> usize {
+            0
+        }
+    }
+
+    #[test]
+    fn chat_turn_request_new_defaults_permission_mode() {
+        let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
+
+        assert_eq!(request.permission_mode, PermissionMode::Default);
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_asks_uses_runtime_permission_mode_instead_of_decision_reason() {
+        let bus = RuntimeEventBus::new();
+        let control_plane = Arc::new(RecordingPermissionControlPlane::new(
+            PendingPermissionResolution::Deny {
+                message: "Denied by test".to_string(),
+                remember: false,
+                destination: None,
+            },
+        ));
+        let driver = RuntimeChatTurnDriver {
+            query_engine: QueryEngine::new(),
+            event_bus: bus.clone(),
+            llm_executor: None,
+            pending_permission_control_plane: Some(control_plane.clone()),
+        };
+        let turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
+            RunId::new("run-ask-mode"),
+            "hello".to_string(),
+        )
+        .with_permission_mode(PermissionMode::Plan);
+        let round_results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::AskRequired {
+            tool_call_id: "tc-ask-mode".to_string(),
+            tool_name: "danger_tool".to_string(),
+            capability_scopes: vec!["cap:danger".to_string()],
+            original_request: RuntimeToolCallRequest {
+                tool_call_id: "tc-ask-mode".to_string(),
+                tool_name: "danger_tool".to_string(),
+                args: json!({"path":"/tmp"}),
+                purpose: Some("test ask".to_string()),
+            },
+            decision: PermissionDecision::Ask {
+                message: "need approval".to_string(),
+                suggestions: vec!["Allow once".to_string()],
+                remember_options: vec![],
+                default_destination: None,
+                reason: PermissionReason::Other("not-mode".to_string()),
+            },
+        })];
+
+        let _resolved = driver
+            .resolve_permission_asks(&turn, &turn.cancellation(), round_results)
+            .await
+            .expect("ask resolution should succeed");
+
+        let inserted = control_plane.inserted_requests();
+        assert_eq!(inserted.len(), 1);
+        assert_eq!(inserted[0].mode, PermissionMode::Plan);
+
+        let ask_mode = bus
+            .recorded()
+            .into_iter()
+            .find_map(|event| match event.kind {
+                RuntimeEventKind::PermissionAskRequired { mode, .. } => Some(mode),
+                _ => None,
+            })
+            .expect("permission ask event should be recorded");
+        assert_eq!(ask_mode, PermissionMode::Plan);
+    }
 
     #[test]
     fn cancel_finalizer_injects_missing_tool_results() {
@@ -1364,4 +1501,176 @@ mod tests {
             "missing cancel reason should fall back to generic interrupt wording"
         );
     }
+
+    struct RecordingExecutor {
+        calls: AtomicUsize,
+        seen_system_prompts: Mutex<Vec<String>>,
+        seen_tool_defs: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl RecordingExecutor {
+        fn new() -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                seen_system_prompts: Mutex::new(Vec::new()),
+                seen_tool_defs: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl RuntimeLlmExecutor for RecordingExecutor {
+        async fn run_llm_step(
+            &self,
+            input: &LlmStepInput<'_>,
+            _bus: &RuntimeEventBus,
+            _cancel: &CancellationToken,
+        ) -> Result<LlmStepResult, TurnError> {
+            self.seen_system_prompts
+                .lock()
+                .unwrap()
+                .push(input.system_prompt.to_string());
+            self.seen_tool_defs.lock().unwrap().push(
+                input
+                    .tool_defs
+                    .iter()
+                    .filter_map(|value| value.get("name").and_then(|name| name.as_str()))
+                    .map(|name| name.to_string())
+                    .collect(),
+            );
+
+            match self.calls.fetch_add(1, Ordering::SeqCst) {
+                0 => Ok(LlmStepResult::ToolCalls {
+                    assistant_content: String::new(),
+                    tool_calls: vec![RuntimeToolCallRequest {
+                        tool_call_id: "tc-switch".to_string(),
+                        tool_name: "switch_skill".to_string(),
+                        args: json!({
+                            "skill_id": "comp-analysis"
+                        }),
+                        purpose: None,
+                    }],
+                    tokens_in: 0,
+                    tokens_out: 0,
+                }),
+                _ => Ok(LlmStepResult::ContentComplete {
+                    content: "done".to_string(),
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    stop_reason: Some("end_turn".to_string()),
+                }),
+            }
+        }
+
+        async fn persist_assistant_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _generated_file_ids: &[String],
+            _file_metas: &[serde_json::Value],
+        ) -> Result<String, TurnError> {
+            Ok("assistant-msg".to_string())
+        }
+
+        async fn persist_user_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _file_ids: &[String],
+        ) -> Result<String, TurnError> {
+            Ok("user-msg".to_string())
+        }
+
+        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+            Ok("daily prompt".to_string())
+        }
+
+        async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+            Ok(vec![json!({
+                "name": "bash",
+                "description": "bash"
+            })])
+        }
+
+        async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
+            Ok(std::env::temp_dir())
+        }
+    }
+
+    struct SwitchingTool;
+
+    #[async_trait]
+    impl RuntimeTool for SwitchingTool {
+        fn definition(&self) -> ToolDefinition {
+            ToolDefinition::new("switch_skill", "switch skill")
+        }
+
+        async fn execute(
+            &self,
+            _input: serde_json::Value,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new(
+                "switch_skill",
+                "switched",
+                Some(json!({
+                    "skill_control": {
+                        "skill_id": "comp-analysis",
+                        "system_prompt": "comp prompt",
+                        "allowed_tools": ["execute_python", "switch_skill"],
+                        "tool_defs": [
+                            {
+                                "name": "execute_python",
+                                "description": "python"
+                            },
+                            {
+                                "name": "switch_skill",
+                                "description": "switch"
+                            }
+                        ],
+                        "max_iterations": 5,
+                        "token_budget": 7777
+                    }
+                })),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn driver_applies_skill_runtime_patch_on_next_iteration() {
+        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
+        dispatcher.register(Arc::new(SwitchingTool));
+        let executor = Arc::new(RecordingExecutor::new());
+        let bus = RuntimeEventBus::new();
+        let driver = RuntimeChatTurnDriver::with_llm_executor(
+            QueryEngine::with_dispatcher(dispatcher),
+            bus,
+            executor.clone(),
+        );
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-switch".to_string()),
+            RunId::new("run-driver-switch"),
+            "please switch".to_string(),
+        );
+        let request = ChatTurnRequest::new("conv-driver-switch", "please switch", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should apply skill runtime patch");
+
+        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+        assert_eq!(prompts.len(), 2);
+        assert_eq!(prompts[0], "daily prompt");
+        assert_eq!(prompts[1], "comp prompt");
+
+        let tool_defs = executor.seen_tool_defs.lock().unwrap().clone();
+        assert_eq!(tool_defs.len(), 2);
+        assert_eq!(tool_defs[0], vec!["bash".to_string()]);
+        assert_eq!(
+            tool_defs[1],
+            vec!["execute_python".to_string(), "switch_skill".to_string()]
+        );
+    }
+
 }

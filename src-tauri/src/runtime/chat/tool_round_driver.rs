@@ -116,6 +116,7 @@ impl ToolRoundDriver {
                                 degradation_notice: None,
                                 max_result_size_chars: 8_000,
                                 context_modifier_message: None,
+                                skill_runtime_patch: None,
                             }),
                         ));
                     }
@@ -166,6 +167,7 @@ impl ToolRoundDriver {
                                         degradation_notice: None,
                                         max_result_size_chars: 8_000,
                                         context_modifier_message: None,
+                                        skill_runtime_patch: None,
                                     }),
                                 )
                             }

@@ -57,12 +57,12 @@ pub fn set_memory(
 pub fn get_memory(base_dir: &Path, key: &str) -> StorageResult<Option<String>> {
     let entries = read_all_memory_entries(base_dir)?;
 
-    // Find the last entry with this key that isn't deleted
+    // Last-writer-wins: if the newest entry is a tombstone, the key is deleted.
     let result = entries
         .into_iter()
         .rev()
-        .find(|e| e.key == key && !e.deleted)
-        .map(|e| e.value);
+        .find(|e| e.key == key)
+        .and_then(|e| if e.deleted { None } else { Some(e.value) });
 
     Ok(result)
 }
@@ -286,5 +286,16 @@ mod tests {
         // Deleting non-existent prefix should return 0
         let count = delete_memories_by_prefix(&base, "note:nonexistent:").unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_get_memory_respects_deleted_tombstone() {
+        let (base, _dir) = setup();
+
+        set_memory(&base, "note:c1:active_skill_state", "state-v1", None).unwrap();
+        let deleted = delete_memories_by_prefix(&base, "note:c1:").unwrap();
+
+        assert_eq!(deleted, 1);
+        assert_eq!(get_memory(&base, "note:c1:active_skill_state").unwrap(), None);
     }
 }

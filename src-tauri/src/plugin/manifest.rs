@@ -1,6 +1,7 @@
 //! Plugin manifest parsing (plugin.toml + workflow.toml).
 
 use serde::Deserialize;
+use std::path::Path;
 
 /// Display metadata for UI skill cards.
 #[derive(Debug, Deserialize)]
@@ -142,9 +143,207 @@ pub fn parse_workflow_manifest(content: &str) -> Result<WorkflowManifest, toml::
     toml::from_str(content)
 }
 
+/// Read a skill/plugin manifest from a skill directory.
+///
+/// Migration window behavior:
+/// 1. Prefer `plugin.toml` when present.
+/// 2. Fallback to `SKILL.md` frontmatter for skill-only manifests.
+pub fn read_manifest_from_skill_dir(skill_dir: &Path) -> Result<PluginManifest, String> {
+    let plugin_toml_path = skill_dir.join("plugin.toml");
+    if plugin_toml_path.exists() {
+        let content = std::fs::read_to_string(&plugin_toml_path).map_err(|e| e.to_string())?;
+        return parse_plugin_manifest(&content).map_err(|e| e.to_string());
+    }
+
+    let skill_md_path = skill_dir.join("SKILL.md");
+    if skill_md_path.exists() {
+        let content = std::fs::read_to_string(&skill_md_path).map_err(|e| e.to_string())?;
+        return parse_skill_md_manifest(&content);
+    }
+
+    Err("No plugin.toml or SKILL.md found".to_string())
+}
+
+fn parse_skill_md_manifest(content: &str) -> Result<PluginManifest, String> {
+    let frontmatter = extract_frontmatter(content)?;
+    let map = parse_frontmatter_map(&frontmatter);
+
+    let name = map
+        .get("name")
+        .cloned()
+        .filter(|v| !v.is_empty())
+        .ok_or("SKILL.md frontmatter missing required field 'name'")?;
+    let id = map
+        .get("id")
+        .cloned()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| slugify_name(&name));
+
+    let keywords = parse_list(map.get("keywords"));
+    let file_keywords = parse_list(map.get("file_keywords"));
+    let requires_files = parse_bool(map.get("requires_files")).unwrap_or(false);
+    let preference = map
+        .get("model_preference")
+        .cloned()
+        .or_else(|| map.get("preference").cloned());
+    let max_iterations = parse_usize(map.get("max_iterations"));
+    let token_budget = parse_u32(map.get("token_budget"));
+    let include_app_base = parse_bool(map.get("include_app_base"));
+
+    Ok(PluginManifest {
+        plugin: PluginMeta {
+            id,
+            name,
+            plugin_type: "skill".to_string(),
+            description: map.get("description").cloned(),
+            priority: parse_u32(map.get("priority")),
+            runtime: None,
+            handler: None,
+        },
+        trigger: if keywords.is_empty() && file_keywords.is_empty() && !requires_files {
+            None
+        } else {
+            Some(TriggerConfig {
+                keywords,
+                requires_files,
+                file_keywords,
+            })
+        },
+        model: preference.map(|p| ModelConfig {
+            preference: Some(p),
+        }),
+        defaults: if max_iterations.is_none() && token_budget.is_none() {
+            None
+        } else {
+            Some(DefaultsConfig {
+                max_iterations,
+                token_budget,
+            })
+        },
+        capabilities: None,
+        prompts: Some(PromptsConfig {
+            include_app_base: include_app_base.unwrap_or(true),
+        }),
+        display: None,
+    })
+}
+
+fn extract_frontmatter(content: &str) -> Result<String, String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() || lines[0].trim() != "---" {
+        return Err("SKILL.md must start with YAML frontmatter delimited by ---".to_string());
+    }
+
+    for idx in 1..lines.len() {
+        if lines[idx].trim() == "---" {
+            return Ok(lines[1..idx].join("\n"));
+        }
+    }
+
+    Err("SKILL.md frontmatter closing delimiter '---' not found".to_string())
+}
+
+fn parse_frontmatter_map(frontmatter: &str) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    let lines: Vec<&str> = frontmatter.lines().collect();
+    let mut i = 0usize;
+
+    while i < lines.len() {
+        let raw = lines[i];
+        let line = raw.trim();
+        i += 1;
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
+        let key = k.trim().to_string();
+        let value = v.trim();
+
+        if value.is_empty() {
+            let mut items = Vec::new();
+            while i < lines.len() {
+                let child = lines[i].trim();
+                if let Some(item) = child.strip_prefix("- ") {
+                    items.push(strip_quotes(item.trim()).to_string());
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            out.insert(key, format!("[{}]", items.join(",")));
+            continue;
+        }
+
+        out.insert(key, strip_quotes(value).to_string());
+    }
+
+    out
+}
+
+fn strip_quotes(s: &str) -> &str {
+    if s.len() >= 2 {
+        if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+            return &s[1..s.len() - 1];
+        }
+    }
+    s
+}
+
+fn parse_list(v: Option<&String>) -> Vec<String> {
+    let Some(raw) = v else {
+        return Vec::new();
+    };
+    let trimmed = raw.trim();
+    if !(trimmed.starts_with('[') && trimmed.ends_with(']')) {
+        return Vec::new();
+    }
+    trimmed[1..trimmed.len() - 1]
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| strip_quotes(s).to_string())
+        .collect()
+}
+
+fn parse_bool(v: Option<&String>) -> Option<bool> {
+    v.and_then(|raw| match raw.trim().to_ascii_lowercase().as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    })
+}
+
+fn parse_usize(v: Option<&String>) -> Option<usize> {
+    v.and_then(|raw| raw.trim().parse::<usize>().ok())
+}
+
+fn parse_u32(v: Option<&String>) -> Option<u32> {
+    v.and_then(|raw| raw.trim().parse::<u32>().ok())
+}
+
+fn slugify_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut prev_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_parse_tool_manifest() {
@@ -261,5 +460,100 @@ max_iterations = 5
         assert!(step.precompute.is_none());
         assert!(step.tools_on_feedback.is_none());
         assert!(step.max_iterations_feedback.is_none());
+    }
+
+    #[test]
+    fn test_read_manifest_from_skill_dir_with_plugin_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("plugin-toml-skill");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"[plugin]
+id = "skill-from-plugin"
+name = "Skill From Plugin"
+type = "skill"
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(manifest.plugin.id, "skill-from-plugin");
+        assert_eq!(manifest.plugin.plugin_type, "skill");
+    }
+
+    #[test]
+    fn test_read_manifest_prefers_plugin_toml_when_both_manifest_files_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skill-both");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"[plugin]
+id = "skill-from-plugin"
+name = "Skill From Plugin"
+type = "skill"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+id: "skill-from-md"
+name: "Skill From Md"
+---
+# Body
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(manifest.plugin.id, "skill-from-plugin");
+        assert_eq!(manifest.plugin.name, "Skill From Plugin");
+    }
+
+    #[test]
+    fn test_read_manifest_from_skill_dir_with_skill_md_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skill-md-only");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+id: "skill-from-md"
+name: "Skill From Md"
+description: "desc"
+keywords: ["k1", "k2"]
+requires_files: true
+max_iterations: 7
+token_budget: 5000
+---
+# Body
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(manifest.plugin.id, "skill-from-md");
+        assert_eq!(manifest.plugin.name, "Skill From Md");
+        assert_eq!(manifest.plugin.plugin_type, "skill");
+        assert_eq!(
+            manifest
+                .trigger
+                .as_ref()
+                .map(|t| t.keywords.clone())
+                .unwrap_or_default(),
+            vec!["k1".to_string(), "k2".to_string()]
+        );
+        assert!(manifest
+            .trigger
+            .as_ref()
+            .map(|t| t.requires_files)
+            .unwrap_or(false));
+        assert_eq!(
+            manifest.defaults.as_ref().and_then(|d| d.max_iterations),
+            Some(7)
+        );
+        assert_eq!(manifest.defaults.as_ref().and_then(|d| d.token_budget), Some(5000));
     }
 }

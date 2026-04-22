@@ -3,8 +3,11 @@
 
 #![allow(deprecated)]
 
+use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use app_lib::plugin::SkillRegistry;
+use app_lib::runtime::chat::SkillSessionStore;
 use app_lib::runtime::tools::ToolExecutionContext;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -47,9 +50,12 @@ fn build_test_plugin_ctx(
         app_settings: None,
         agent_runtime: None,
         event_bus: None,
+        skill_registry: None,
+        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,
+        permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
     }
 }
 
@@ -651,5 +657,49 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
     assert!(
         outcome.is_err(),
         "list_directory without capability should be rejected by CapabilityPermissionPipeline"
+    );
+}
+
+#[tokio::test]
+async fn switch_skill_routes_through_request_scoped_runtime_factory() {
+    let registry = Arc::new(ToolRegistry::new());
+    register_builtin_tools(registry.as_ref()).await;
+
+    let tmp = TempDir::new().unwrap();
+    let mut ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+    let skill_registry = Arc::new(SkillRegistry::new("daily-assistant"));
+    skill_registry
+        .register(
+            Arc::new(DailyAssistantSkill::new(
+                ctx.storage.clone(),
+                Arc::new(app_lib::auth::AuthManager::new(ctx.storage.clone(), None)),
+            )),
+            "test",
+        )
+        .await;
+    ctx.skill_registry = Some(skill_registry);
+    ctx.skill_sessions = Some(Arc::new(SkillSessionStore::new()));
+    ctx.tool_registry = Some(registry.clone());
+
+    let err = registry
+        .execute(
+            "switch_skill",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({"skill_id": "missing-skill"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect_err("switch_skill with unknown skill should still route through runtime factory");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("Unknown skill"),
+        "switch_skill should surface runtime-tool validation, got: {}",
+        message
+    );
+    assert!(
+        !message.contains("Unknown tool"),
+        "switch_skill must not fall through to unknown tool: {}",
+        message
     );
 }

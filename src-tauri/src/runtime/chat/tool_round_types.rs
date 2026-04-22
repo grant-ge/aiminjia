@@ -1,5 +1,16 @@
 use crate::plugin::tool_trait::FileMeta;
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkillRuntimePatch {
+    pub skill_id: String,
+    pub system_prompt: String,
+    pub allowed_tools: Option<Vec<String>>,
+    pub tool_defs: Vec<serde_json::Value>,
+    pub max_iterations: usize,
+    pub token_budget: usize,
+}
+
+
 /// A single tool call request coming from the LLM.
 ///
 /// Carries all information needed to route and execute one tool invocation,
@@ -50,6 +61,8 @@ pub enum RuntimeToolCallOutcome {
         max_result_size_chars: usize,
         /// Optional extra context message to append before the next LLM step.
         context_modifier_message: Option<serde_json::Value>,
+        /// Optional runtime skill patch produced by tools such as `switch_skill`.
+        skill_runtime_patch: Option<SkillRuntimePatch>,
     },
 
     /// The permission pipeline returned `Ask` — user confirmation is required
@@ -137,6 +150,16 @@ impl RuntimeToolCallOutcome {
     pub fn file_meta(&self) -> Option<&FileMeta> {
         match self {
             Self::Completed { file_meta, .. } => file_meta.as_ref(),
+            Self::AskRequired { .. } => None,
+        }
+    }
+
+    pub fn skill_runtime_patch(&self) -> Option<&SkillRuntimePatch> {
+        match self {
+            Self::Completed {
+                skill_runtime_patch,
+                ..
+            } => skill_runtime_patch.as_ref(),
             Self::AskRequired { .. } => None,
         }
     }

@@ -11,9 +11,8 @@ use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
 use crate::runtime::store::permission_store::PermissionStore;
-use crate::runtime::store::PendingPermissionControlPlane;
 use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
-use crate::runtime::tools::permission::PermissionDecision;
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::runtime::tools::permission::StorePolicyPipeline;
 use crate::runtime::tools::{
     CapabilityPermissionPipeline, LegacyToolAdapter, PermissionPipeline, ToolDispatcher,
@@ -45,10 +44,12 @@ pub struct RequestScopedRuntimeDeps {
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
+    pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
+    pub skill_sessions: Option<Arc<crate::runtime::chat::SkillSessionStore>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
-    pub permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
+    pub permission_mode: PermissionMode,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -74,10 +75,12 @@ impl RequestScopedRuntimeDeps {
             app_settings: ctx.app_settings.clone(),
             agent_runtime: ctx.agent_runtime.clone(),
             event_bus: ctx.event_bus.clone(),
+            skill_registry: ctx.skill_registry.clone(),
+            skill_sessions: ctx.skill_sessions.clone(),
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
-            permission_control_plane: None,
+            permission_mode: ctx.permission_mode,
         }
     }
 
@@ -110,6 +113,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "execute_python",
     "generate_report",
     "generate_chart",
+    "switch_skill",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -509,6 +513,7 @@ impl ToolRegistry {
                 format!("tool-{}", name),
                 cancel_token.child_token(),
             )
+            .with_permission_mode(ctx.permission_mode)
             .with_capability(capability);
 
             // Permission check: prefer StorePolicyPipeline if permission_store is available
@@ -607,9 +612,12 @@ impl ToolRegistry {
                 app_settings: ctx.app_settings.clone(),
                 agent_runtime: ctx.agent_runtime.clone(),
                 event_bus: ctx.event_bus.clone(),
+                skill_registry: ctx.skill_registry.clone(),
+                skill_sessions: ctx.skill_sessions.clone(),
                 authorized_workspace: ctx.authorized_workspace.clone(),
                 read_file_state: ctx.read_file_state.clone(),
                 cancellation: ctx.cancellation.clone(),
+                permission_mode: ctx.permission_mode,
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
@@ -620,7 +628,8 @@ impl ToolRegistry {
             ctx.agent_id.clone(),
             format!("tool-{}", name),
             cancel_token.child_token(),
-        );
+        )
+        .with_permission_mode(ctx.permission_mode);
         let outcome = dispatcher
             .dispatch(name, input, runtime_ctx)
             .await
@@ -881,6 +890,16 @@ impl ToolRegistry {
                     )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
             }
+            "switch_skill" => match (ctx.skill_registry.clone(), ctx.skill_sessions.clone()) {
+                (Some(skill_registry), Some(skill_sessions)) => Some(
+                    Arc::new(builtin::switch_skill::SwitchSkillRuntimeTool::new(
+                        skill_registry,
+                        skill_sessions,
+                        ctx.tool_registry.clone().unwrap_or_else(|| Arc::new(ToolRegistry::new())),
+                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                ),
+                _ => None,
+            },
             _ => None,
         }
     }

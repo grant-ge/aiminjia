@@ -97,6 +97,7 @@ fn make_plugin_ctx(workspace: &Path, cache: Option<Arc<FileStateCache>>) -> Plug
         authorized_workspace: None,
         read_file_state: cache,
         cancellation: None,
+        permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
     }
 }
 

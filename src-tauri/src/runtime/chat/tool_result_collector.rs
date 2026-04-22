@@ -44,6 +44,9 @@ pub struct ToolRoundResults {
 
     /// Number of tool calls that completed with an error (including blocked and AskRequired).
     pub error_count: usize,
+
+    /// Optional skill runtime patch requested by a completed tool round.
+    pub skill_runtime_patch: Option<crate::runtime::chat::tool_round_types::SkillRuntimePatch>,
 }
 
 /// Helper: truncate `s` at the largest byte position `<= max_bytes` that
@@ -70,6 +73,7 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
     let mut new_generated_file_ids: Vec<String> = Vec::new();
     let mut success_count: usize = 0;
     let mut error_count: usize = 0;
+    let mut skill_runtime_patch = None;
 
     for round_result in &round_results {
         // Unpack the result into common fields for downstream processing.
@@ -104,6 +108,9 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
             }
             if let Some(modifier_message) = outcome.context_modifier_message() {
                 context_modifier_messages.push(modifier_message.clone());
+            }
+            if let Some(patch) = outcome.skill_runtime_patch() {
+                skill_runtime_patch = Some(patch.clone());
             }
         }
 
@@ -174,6 +181,7 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
         new_generated_file_ids,
         success_count,
         error_count,
+        skill_runtime_patch,
     }
 }
 
@@ -181,7 +189,9 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
 mod tests {
     use super::*;
     use crate::runtime::chat::tool_round_driver::ToolRoundResult;
-    use crate::runtime::chat::tool_round_types::{BlockedToolOutcome, RuntimeToolCallOutcome};
+    use crate::runtime::chat::tool_round_types::{
+        BlockedToolOutcome, RuntimeToolCallOutcome, SkillRuntimePatch,
+    };
 
     fn completed(id: &str, name: &str, content: &str, is_error: bool) -> ToolRoundResult {
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
@@ -194,6 +204,7 @@ mod tests {
             degradation_notice: None,
             max_result_size_chars: 8_000,
             context_modifier_message: None,
+            skill_runtime_patch: None,
         })
     }
 
@@ -256,6 +267,7 @@ mod tests {
                 "role": "user",
                 "content": "<context-update>updated</context-update>",
             })),
+            skill_runtime_patch: None,
         })];
 
         let out = collect_results(results);
@@ -284,4 +296,51 @@ mod tests {
             vec!["aaaabbbb-1234-5678-9012-abcdef012345"]
         );
     }
+
+    #[test]
+    fn latest_skill_runtime_patch_is_collected() {
+        let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+            tool_call_id: "tc1".to_string(),
+            tool_name: "switch_skill".to_string(),
+            content: "switched".to_string(),
+            is_error: false,
+            file_meta: None,
+            is_degraded: false,
+            degradation_notice: None,
+            max_result_size_chars: 8_000,
+            context_modifier_message: None,
+            skill_runtime_patch: Some(SkillRuntimePatch {
+                skill_id: "comp-analysis".to_string(),
+                system_prompt: "skill prompt".to_string(),
+                allowed_tools: Some(vec![
+                    "load_file".to_string(),
+                    "execute_python".to_string(),
+                    "switch_skill".to_string(),
+                ]),
+                tool_defs: vec![json!({
+                    "name": "switch_skill",
+                    "description": "switch"
+                })],
+                max_iterations: 7,
+                token_budget: 6000,
+            }),
+        })];
+
+        let out = collect_results(results);
+        let patch = out
+            .skill_runtime_patch
+            .expect("skill runtime patch should be collected");
+        assert_eq!(patch.skill_id, "comp-analysis");
+        assert_eq!(patch.max_iterations, 7);
+        assert_eq!(patch.token_budget, 6000);
+        assert_eq!(
+            patch.allowed_tools.as_deref(),
+            Some(&[
+                "load_file".to_string(),
+                "execute_python".to_string(),
+                "switch_skill".to_string(),
+            ][..])
+        );
+    }
+
 }

@@ -1,7 +1,8 @@
-//! Declarative Skill — loads a Skill from TOML + Markdown prompt files.
+//! Declarative Skill — loads a Skill from manifest + Markdown prompt files.
 //!
-//! Teams can create Skills without writing Rust by placing a plugin.toml,
-//! workflow.toml, and prompt .md files in a plugin directory.
+//! During the migration window, teams can define skill metadata with either
+//! `plugin.toml` or `SKILL.md`, alongside `workflow.toml` and prompt `.md`
+//! files in a skill directory.
 // Uses PluginContext as part of the legacy ToolPlugin execution path.
 #![allow(deprecated)]
 
@@ -291,7 +292,7 @@ impl Skill for DeclarativeSkill {
     }
 
     fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
-        if current_skill != "daily-assistant" {
+        if current_skill == self.id {
             return false;
         }
         let lower = message.to_lowercase();
@@ -636,6 +637,8 @@ mod tests {
 
         // Keyword activation
         assert!(skill.should_activate("请进行薪酬分析v2", true, "daily-assistant"));
+        assert!(skill.should_activate("请进行薪酬分析v2", true, "other-skill"));
+        assert!(!skill.should_activate("请进行薪酬分析v2", true, "comp-analysis-v2"));
         assert!(!skill.should_activate("请进行薪酬分析", true, "daily-assistant"));
     }
 

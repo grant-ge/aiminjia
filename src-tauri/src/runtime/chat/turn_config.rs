@@ -29,7 +29,6 @@ pub struct ResolvedLlmSettings {
     pub cloud_model_type: String,
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
-    pub masking_level: String,
 }
 
 impl Default for ResolvedLlmSettings {
@@ -45,7 +44,6 @@ impl Default for ResolvedLlmSettings {
             cloud_model_type: String::new(),
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
-            masking_level: "strict".to_string(),
         }
     }
 }
@@ -65,6 +63,16 @@ pub struct TurnConfig {
     pub conversation_id: SessionId,
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
+}
+
+/// Optional per-turn overrides resolved before the driver snapshots `TurnConfig`.
+#[derive(Debug, Clone, Default)]
+pub struct TurnConfigOverrides {
+    pub system_prompt: Option<String>,
+    pub tool_defs: Option<Vec<JsonValue>>,
+    pub allowed_tools: Option<HashSet<String>>,
+    pub max_iterations: Option<usize>,
+    pub token_budget: Option<usize>,
 }
 
 /// Turn 级可变状态。Driver 是唯一修改者。

@@ -18,6 +18,7 @@ use tauri::{AppHandle, Manager};
 
 use super::{draft_dir, validation::validate_draft_dir};
 use crate::commands::skill_management::{copy_dir_recursive, pack_skill_to_dir};
+use crate::plugin::manifest::read_manifest_from_skill_dir;
 
 /// Staging suffix used for atomic installs. Collisions (unlikely —
 /// this is user-local and short-lived) get cleaned up on next commit.
@@ -144,7 +145,7 @@ pub(crate) fn commit_draft_to(
     target_parent: &Path,
     force: bool,
 ) -> Result<CommitResult, String> {
-    let skill_id = extract_skill_id(&src_draft.join("plugin.toml"))?;
+    let skill_id = extract_skill_id(src_draft)?;
 
     std::fs::create_dir_all(target_parent).map_err(|e| format!(
         "Failed to create skills dir: {}",
@@ -224,17 +225,10 @@ pub(crate) fn export_draft_to(src_draft: &Path, output_dir: &Path) -> Result<Pat
     pack_skill_to_dir(src_draft, output_dir)
 }
 
-fn extract_skill_id(plugin_toml: &Path) -> Result<String, String> {
-    let content = std::fs::read_to_string(plugin_toml)
-        .map_err(|e| format!("Failed to read plugin.toml: {}", e))?;
-    let manifest: toml::Value = toml::from_str(&content)
-        .map_err(|e| format!("plugin.toml parse error: {}", e))?;
-    manifest
-        .get("plugin")
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "plugin.id missing from plugin.toml".to_string())
+fn extract_skill_id(skill_dir: &Path) -> Result<String, String> {
+    read_manifest_from_skill_dir(skill_dir)
+        .map(|manifest| manifest.plugin.id)
+        .map_err(|e| format!("Failed to read skill manifest: {}", e))
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +370,7 @@ type = "skill"
 
         let target_parent = tmp.path().join("skills");
         let err = commit_draft_to(&draft, &target_parent, false).unwrap_err();
-        assert!(err.contains("plugin.id missing"));
+        assert!(err.contains("Failed to read skill manifest"));
     }
 
     #[test]
@@ -388,7 +382,41 @@ type = "skill"
 
         let target_parent = tmp.path().join("skills");
         let err = commit_draft_to(&draft, &target_parent, false).unwrap_err();
-        assert!(err.contains("parse error"));
+        assert!(err.contains("Failed to read skill manifest"));
+    }
+
+    #[test]
+    fn commit_draft_to_supports_skill_md_only_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let draft = tmp.path().join("draft-skill-md-only");
+        std::fs::create_dir_all(draft.join("prompts")).unwrap();
+        std::fs::write(
+            draft.join("SKILL.md"),
+            r#"---
+id: "skill-md-only"
+name: "Skill Md Only"
+description: "desc"
+keywords:
+  - "技能草稿"
+  - "skill smith"
+  - "manifest fallback"
+---
+# Skill Md Only
+
+这是一个仅使用 SKILL.md frontmatter 的技能草稿。
+"#,
+        )
+        .unwrap();
+        std::fs::write(draft.join("prompts/step0.md"), "hello world").unwrap();
+
+        let target_parent = tmp.path().join("skills");
+        let result = commit_draft_to(&draft, &target_parent, false).unwrap();
+
+        assert_eq!(result.skill_id, "skill-md-only");
+        assert!(!result.conflict);
+        assert!(target_parent.join("skill-md-only").is_dir());
+        assert!(target_parent.join("skill-md-only/SKILL.md").is_file());
+        assert!(!draft.exists(), "draft should be removed after commit");
     }
 
     // ---- export_draft_to ----
@@ -454,16 +482,18 @@ type = "skill"
     #[test]
     fn extract_skill_id_reads_valid_toml() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("plugin.toml");
+        let dir = tmp.path().join("skill");
+        std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
-            &path,
+            dir.join("plugin.toml"),
             r#"[plugin]
 id = "my-id"
 name = "X"
+type = "skill"
 "#,
         )
         .unwrap();
-        assert_eq!(extract_skill_id(&path).unwrap(), "my-id");
+        assert_eq!(extract_skill_id(&dir).unwrap(), "my-id");
     }
 
     // ─── Serde camelCase regression — see mod.rs::draft_file_serializes_camel_case
@@ -483,7 +513,7 @@ name = "X"
 
     #[test]
     fn extract_skill_id_errors_on_missing_file() {
-        let err = extract_skill_id(Path::new("/nonexistent/plugin.toml")).unwrap_err();
-        assert!(err.contains("Failed to read"));
+        let err = extract_skill_id(Path::new("/nonexistent/skill-dir")).unwrap_err();
+        assert!(err.contains("Failed to read skill manifest"));
     }
 }
