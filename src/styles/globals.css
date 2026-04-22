@@ -38,28 +38,94 @@
   --radius-xl: 16px;
 
   /* Legacy token aliases for incremental migration compatibility */
+  --color-primary-hover: #2C2C2E;
+  --color-primary-active: #000000;
+  --color-text-on-primary: #FFFFFF;
+  --color-primary-subtle: rgba(29, 29, 31, 0.08);
+  --color-primary-muted: rgba(29, 29, 31, 0.15);
+
+  --color-accent-50: #FEF9EC;
+  --color-accent-100: #FBF0D1;
+  --color-accent-200: #F5DDA3;
+  --color-accent-300: #E8C86A;
+  --color-accent-400: #D4A843;
+  --color-accent-500: #C49535;
+  --color-accent-600: #A67C2E;
+  --color-accent-700: #875F1E;
+  --color-accent: #D4A843;
+  --color-accent-hover: #C49535;
+  --color-accent-active: #A67C2E;
+  --color-accent-light: #E8C86A;
+  --color-accent-subtle: rgba(212, 168, 67, 0.12);
+  --color-accent-muted: rgba(212, 168, 67, 0.25);
+  --color-accent-bg-light: rgba(212, 168, 67, 0.04);
+  --color-accent-border: rgba(212, 168, 67, 0.25);
+  --color-text-on-accent: #1A1A1A;
+
+  --color-bg-base: #F2F1EE;
   --color-bg-main: var(--background);
   --color-bg-sidebar: var(--sidebar);
+  --color-bg-sidebar-hover: #EBEAE6;
   --color-bg-card: var(--card);
   --color-bg-card-hover: var(--muted);
   --color-bg-elevated: var(--card);
   --color-bg-input: var(--input);
   --color-bg-msg-user: var(--muted);
+  --color-bg-neutral: rgba(168, 168, 168, 0.12);
+  --color-bg-neutral-subtle: rgba(168, 168, 168, 0.1);
   --color-text-primary: var(--foreground);
   --color-text-secondary: var(--muted-foreground);
   --color-text-muted: var(--muted-foreground);
   --color-text-code: var(--foreground);
+  --color-text-inverse: #FFFFFF;
   --color-border: var(--border);
   --color-border-light: var(--sidebar-border);
   --color-border-subtle: var(--border);
-  --color-accent: var(--primary);
-  --color-text-on-accent: var(--primary-foreground);
-  --color-primary-subtle: var(--sidebar-accent);
-  --color-primary-muted: var(--sidebar-border);
   --color-bg-code: var(--muted);
   --color-bg-code-header: var(--background);
+  --color-semantic-green: #34C759;
+  --color-semantic-green-bg: rgba(52, 199, 89, 0.12);
+  --color-semantic-orange: #F5A623;
+  --color-semantic-orange-bg: rgba(245, 166, 35, 0.12);
+  --color-semantic-red: #EF4444;
+  --color-semantic-red-bg: rgba(239, 68, 68, 0.12);
+  --color-semantic-blue: #5B9BD5;
+  --color-semantic-blue-bg: rgba(91, 155, 213, 0.12);
+  --color-semantic-purple: #9B7ED8;
+  --color-semantic-purple-bg: rgba(155, 126, 216, 0.12);
+  --color-semantic-yellow: #E8C86A;
+  --color-semantic-yellow-bg: rgba(232, 200, 106, 0.12);
+  --color-semantic-red-bg-light: rgba(239, 68, 68, 0.04);
+  --color-semantic-red-border: rgba(239, 68, 68, 0.18);
+  --color-semantic-blue-bg-light: rgba(91, 155, 213, 0.06);
+  --color-semantic-blue-border: rgba(91, 155, 213, 0.2);
+  --color-semantic-purple-bg-light: rgba(155, 126, 216, 0.06);
+  --color-semantic-purple-border: rgba(155, 126, 216, 0.2);
+  --color-semantic-green-bg-light: rgba(52, 199, 89, 0.04);
+  --color-semantic-orange-bg-light: rgba(245, 166, 35, 0.04);
+  --color-semantic-orange-border: rgba(245, 166, 35, 0.2);
+
+  --color-filetype-green-bg: rgba(52, 199, 89, 0.15);
+  --color-filetype-blue-bg: rgba(91, 155, 213, 0.15);
+  --color-filetype-red-bg: rgba(239, 68, 68, 0.15);
+  --color-filetype-accent-bg: rgba(212, 168, 67, 0.15);
+  --color-filetype-purple-bg: rgba(155, 126, 216, 0.15);
+  --color-filetype-orange-bg: rgba(245, 166, 35, 0.15);
+  --color-filetype-gray-bg: rgba(168, 168, 168, 0.15);
+
+  --color-bg-hover: var(--color-bg-card-hover);
+  --color-bg-subtle: var(--color-bg-neutral-subtle);
+  --color-border-secondary: var(--color-border-light);
+  --color-bg-primary: var(--color-primary-subtle);
+  --color-bg-secondary: var(--color-bg-neutral);
+
   --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-user-avatar: var(--foreground);
+  --color-user-avatar: #2c2c2c;
+
+  --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
+  --shadow-card: var(--shadow-md);
 }
 
 @theme inline {
