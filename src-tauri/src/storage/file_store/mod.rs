@@ -272,6 +272,17 @@ impl AppStorage {
             {
                 settings.insert("primaryModel".to_string(), primary_model.to_string());
             }
+            if let Some(data_masking_level) = workspace_settings
+                .data_masking_level
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                settings.insert(
+                    "dataMaskingLevel".to_string(),
+                    data_masking_level.to_string(),
+                );
+            }
         }
         Ok(settings)
     }

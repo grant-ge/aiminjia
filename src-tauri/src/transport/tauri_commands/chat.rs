@@ -704,6 +704,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             cloud_model_type: settings.cloud_model_type,
             thinking_type: settings.thinking_type,
             thinking_budget_tokens: settings.thinking_budget_tokens,
+            masking_level: crate::llm::masking::MaskingLevel::from_str_or_strict(
+                &settings.data_masking_level,
+            )
+            .to_str()
+            .to_string(),
         })
     }
 

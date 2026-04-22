@@ -10,6 +10,7 @@ use super::io::{atomic_write_json, read_json_optional};
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub primary_model: Option<String>,
+    pub data_masking_level: Option<String>,
 }
 
 pub fn workspace_settings_path(workspace_dir: &Path) -> PathBuf {
