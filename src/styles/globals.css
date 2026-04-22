@@ -4,8 +4,8 @@
   /* === design.pen Light + Neutral + Default 单一皮肤 === */
   --primary: #DBAA22;
   --primary-foreground: #FFFFFF;
-  --ring: #DBAA22;
-  --sidebar-primary: #DBAA22;
+  --ring: var(--primary);
+  --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: #FFFFFF;
 
   --background: #fafafa;

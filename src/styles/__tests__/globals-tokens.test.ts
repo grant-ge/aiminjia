@@ -9,7 +9,11 @@ const CSS = fs.readFileSync(
 
 function tokenValue(name: string): string | null {
   const m = CSS.match(new RegExp(`${name}\\s*:\\s*([^;]+);`))
-  return m ? m[1].trim() : null
+  if (!m) return null
+  const raw = m[1].trim()
+  const varRef = raw.match(/^var\((--[\w-]+)\)$/)
+  if (varRef) return tokenValue(varRef[1])
+  return raw
 }
 
 describe('design.pen token alignment', () => {
@@ -34,6 +38,7 @@ describe('design.pen token alignment', () => {
     ['--sidebar-border', '#E1DAC6'],
     ['--sidebar-primary', '#DBAA22'],
     ['--sidebar-primary-foreground', '#FFFFFF'],
+    ['--sidebar-accent-foreground', '#18181b'],
     ['--destructive', '#e7000b'],
   ])('token %s equals %s (design.pen)', (name, expected) => {
     const value = tokenValue(name)
