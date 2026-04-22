@@ -34,4 +34,12 @@ describe('brandingStore', () => {
     expect(useBrandingStore.getState().productName).toBe(DEFAULTS.productName)
     expect(useBrandingStore.getState().accentColor).toBe(DEFAULTS.accentColor)
   })
+
+  it('非法 accentColor 会回退默认色并保持状态一致', () => {
+    useBrandingStore.getState().applyBranding({ accentColor: 'abc' })
+
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe(DEFAULTS.accentColor)
+    expect(useBrandingStore.getState().accentColor).toBe(DEFAULTS.accentColor)
+    expect(useBrandingStore.getState().isCustom).toBe(false)
+  })
 })

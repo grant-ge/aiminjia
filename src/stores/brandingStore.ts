@@ -23,6 +23,7 @@ interface TenantBranding {
   logoUrl?: string
   accentColor?: string
   fontFamily?: string
+  // Deprecated: kept for API payload compatibility, ignored by accent-only skin.
   primaryColor?: string
   bgColor?: string
   sidebarBgColor?: string
@@ -50,6 +51,11 @@ function removeVar(name: string) {
 
 function hasValue(s?: string | null): s is string {
   return !!s && s.trim().length > 0
+}
+
+function normalizeAccentColor(input?: string): string {
+  if (!hasValue(input)) return DEFAULTS.accentColor
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(input) ? input : DEFAULTS.accentColor
 }
 
 function resolveLogoUrl(raw: string): string {
@@ -86,7 +92,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     const productName = hasValue(tenant.productName) ? tenant.productName : DEFAULTS.productName
     const logoUrl = hasValue(tenant.logoUrl) ? resolveLogoUrl(tenant.logoUrl) : DEFAULTS.logoUrl
     const fontFamily = hasValue(tenant.fontFamily) ? tenant.fontFamily : DEFAULTS.fontFamily
-    const accentColor = hasValue(tenant.accentColor) ? tenant.accentColor : DEFAULTS.accentColor
+    const accentColor = normalizeAccentColor(tenant.accentColor)
 
     const skin = deriveSkin(accentColor)
     for (const [key, value] of Object.entries(skin)) {
@@ -105,7 +111,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
       logoUrl,
       accentColor,
       fontFamily,
-      isCustom: hasValue(tenant.accentColor),
+      isCustom: accentColor !== DEFAULTS.accentColor,
     })
   },
 
