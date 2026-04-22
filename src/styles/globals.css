@@ -1,167 +1,78 @@
 @import "tailwindcss";
 
-/*
- * AI小家 — Global Styles & Design Tokens
- * Based on visual-standard.md
- *
- * ARCHITECTURE:
- * - :root {} — runtime-changeable colors (overridden by brandingStore via setProperty)
- * - @theme {} — static tokens only (font sizes, spacing, radius, shadows, transitions)
- */
-
-/* ===== Runtime-Changeable Color Variables ===== */
-/* These live in :root (not @theme) so document.documentElement.style.setProperty() can override them */
 :root {
-  /* === Primary / Carbon Black (interactive elements) === */
-  --color-primary: #1D1D1F;
-  --color-primary-hover: #2C2C2E;
-  --color-primary-active: #000000;
-  --color-text-on-primary: #FFFFFF;
-  --color-primary-subtle: rgba(29, 29, 31, 0.08);
-  --color-primary-muted: rgba(29, 29, 31, 0.15);
+  --primary: #DBAA22;
+  --primary-foreground: #FFFFFF;
+  --ring: var(--primary);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: #FFFFFF;
 
-  /* === Accent / Brand Colors === */
-  --color-accent-50: #FEF9EC;
-  --color-accent-100: #FBF0D1;
-  --color-accent-200: #F5DDA3;
-  --color-accent-300: #E8C86A;
-  --color-accent-400: #D4A843;
-  --color-accent-500: #C49535;
-  --color-accent-600: #A67C2E;
-  --color-accent-700: #875F1E;
-  --color-accent: #D4A843;
-  --color-accent-hover: #C49535;
-  --color-accent-active: #A67C2E;
-  --color-accent-light: #E8C86A;
-  --color-accent-subtle: rgba(212, 168, 67, 0.12);
-  --color-accent-muted: rgba(212, 168, 67, 0.25);
-  --color-accent-bg-light: rgba(212, 168, 67, 0.04);
-  --color-accent-border: rgba(212, 168, 67, 0.25);
-  --color-text-on-accent: #1A1A1A;
-
-  /* === Background Colors === */
-  --color-bg-base: #F2F1EE;
-  --color-bg-sidebar: #F5F4F1;
-  --color-bg-sidebar-hover: #EBEAE6;
-  --color-bg-main: #FAFAF8;
-  --color-bg-elevated: #FFFFFF;
-  --color-bg-card: #FFFFFF;
-  --color-bg-card-hover: #F7F6F3;
-  --color-bg-input: #FFFFFF;
-  --color-bg-msg-user: #F2F1EE;
-
-  /* === Border Colors === */
-  --color-border: #E2E0DC;
-  --color-border-light: #D0CEC9;
-  --color-border-subtle: #EDEBE7;
-
-  /* === Text Colors === */
-  --color-text-primary: #1D1D1F;
-  --color-text-secondary: #555555;
-  --color-text-muted: #8C8C8C;
-  --color-text-disabled: #C0C0C0;
-
-  /* === Code Block Colors === */
-  --color-bg-code: #F5F4F0;
-  --color-bg-code-header: rgba(0, 0, 0, 0.02);
-  --color-text-code: #383838;
-
-  /* === Neutral Muted === */
-  --color-bg-neutral: rgba(168, 168, 168, 0.12);
-  --color-bg-neutral-subtle: rgba(168, 168, 168, 0.1);
-
-  /* === Font Families === */
-  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC",
-               "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
-  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono",
-               Consolas, "Courier New", monospace;
-}
-
-/* ===== Static Design Tokens (never change at runtime) ===== */
-@theme {
-  /* === Semantic Colors (fixed, not tenant-customizable) === */
-  --color-semantic-green: #34C759;
-  --color-semantic-green-bg: rgba(52, 199, 89, 0.12);
-  --color-semantic-orange: #F5A623;
-  --color-semantic-orange-bg: rgba(245, 166, 35, 0.12);
-  --color-semantic-red: #EF4444;
-  --color-semantic-red-bg: rgba(239, 68, 68, 0.12);
-  --color-semantic-blue: #5B9BD5;
-  --color-semantic-blue-bg: rgba(91, 155, 213, 0.12);
-  --color-semantic-purple: #9B7ED8;
-  --color-semantic-purple-bg: rgba(155, 126, 216, 0.12);
-  --color-semantic-yellow: #E8C86A;
-
-  /* === Semantic Color Variants (light bg + border) === */
-  --color-semantic-red-bg-light: rgba(239, 68, 68, 0.04);
-  --color-semantic-red-border: rgba(239, 68, 68, 0.18);
-  --color-semantic-blue-bg-light: rgba(91, 155, 213, 0.06);
-  --color-semantic-blue-border: rgba(91, 155, 213, 0.2);
-  --color-semantic-purple-bg-light: rgba(155, 126, 216, 0.06);
-  --color-semantic-purple-border: rgba(155, 126, 216, 0.2);
-  --color-semantic-green-bg-light: rgba(52, 199, 89, 0.04);
-  --color-semantic-orange-bg-light: rgba(245, 166, 35, 0.04);
-  --color-semantic-orange-border: rgba(245, 166, 35, 0.2);
-
-  /* === File Type Badge Backgrounds === */
-  --color-filetype-green-bg: rgba(52, 199, 89, 0.15);
-  --color-filetype-blue-bg: rgba(91, 155, 213, 0.15);
-  --color-filetype-red-bg: rgba(239, 68, 68, 0.15);
-  --color-filetype-accent-bg: rgba(212, 168, 67, 0.15);
-  --color-filetype-purple-bg: rgba(155, 126, 216, 0.15);
-  --color-filetype-orange-bg: rgba(245, 166, 35, 0.15);
-  --color-filetype-gray-bg: rgba(168, 168, 168, 0.15);
-
-  /* === Overlay & Avatar === */
-  --color-overlay: rgba(0, 0, 0, 0.5);
-  --color-user-avatar: #2c2c2c;
-
-  /* === Font Sizes (Apple HIG standard, 14px base) === */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: 1.4;
-  --text-sm: 0.8125rem;
-  --text-sm--line-height: 1.5;
-  --text-base: 0.875rem;
-  --text-base--line-height: 1.6;
-  --text-md: 0.9375rem;
-  --text-md--line-height: 1.6;
-  --text-lg: 1.0625rem;
-  --text-lg--line-height: 1.5;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.4;
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: 1.3;
-
-  /* === Border Radius === */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
+  --background: #FAFAFA;
+  --foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --card: #fafafa;
+  --card-foreground: #0a0a0a;
+  --popover: #fafafa;
+  --popover-foreground: #0a0a0a;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #0a0a0a;
+  --accent: #f5f5f5;
+  --accent-foreground: #0a0a0a;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --sidebar: #FBF6E6;
+  --sidebar-accent: #E9DEB2;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-border: #E1DAC6;
+  --sidebar-ring: #71717a;
+  --destructive: #e7000b;
+  --destructive-foreground: #FFFFFF;
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Inter, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, monospace;
+  --radius-sm: 4px;
+  --radius: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-full: 9999px;
+}
 
-  /* === Spacing (4px grid) === */
-  --spacing-1: 4px;
-  --spacing-2: 8px;
-  --spacing-3: 12px;
-  --spacing-4: 16px;
-  --spacing-5: 20px;
-  --spacing-6: 24px;
-  --spacing-8: 32px;
-  --spacing-10: 40px;
-
-  /* === Shadows === */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
-  --shadow-accent: 0 0 0 3px rgba(212, 168, 67, 0.2);
-  --shadow-input: 0 0 0 1px var(--color-border-subtle), 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
-
-  /* === Transitions === */
-  --transition-fast: 150ms ease;
-  --transition-normal: 250ms ease-out;
-  --transition-slow: 300ms ease;
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
 }
 
 /* ===== Base Styles ===== */
