@@ -13,7 +13,7 @@ import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
 import type { PendingFileInfo } from '@/hooks/useChat'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { AgentSelector } from '@/components/chat/AgentSelector'
+import { SkillPopover } from '@/components/chat/SkillPopover'
 import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import type { SkillInfo } from '@/lib/tauri'
 
@@ -29,7 +29,6 @@ export function InputBar() {
   const { t } = useTranslation()
   const [input, setInput] = useState('')
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const isComposingRef = useRef(false)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
@@ -96,7 +95,6 @@ export function InputBar() {
         sendUserMessage(
           trimmed || t('inputBar.analyzeFile'),
           fileInfos.length > 0 ? fileInfos : undefined,
-          selectedAgent,
         ),
         new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS)
@@ -362,7 +360,7 @@ export function InputBar() {
             )}
           </div>
 
-          <AgentSelector value={selectedAgent} onChange={setSelectedAgent} />
+          <SkillPopover />
 
           {/* Multi-line text input */}
           <textarea

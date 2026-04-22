@@ -26,7 +26,6 @@ import {
 import type { LlmProvider } from '@/types/settings'
 import { PROVIDER_CAPABILITIES } from '@/types/settings'
 import { LoginSection } from '@/components/settings/LoginSection'
-import { PersonaTab } from '@/components/settings/PersonaTab'
 import { SkillsTab } from '@/components/settings/SkillsTab'
 import { McpTab } from '@/components/settings/McpTab'
 import { WorkspaceAuthPanel } from '@/components/settings/WorkspaceAuthPanel'
@@ -38,7 +37,7 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills' | 'mcp'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'skills' | 'mcp'
 
 const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
   { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
@@ -275,12 +274,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('general')}
         >
           {t('settings.tabs.general')}
-        </TabButton>
-        <TabButton
-          active={mainTab === 'persona'}
-          onClick={() => setMainTab('persona')}
-        >
-          {t('settings.tabs.persona')}
         </TabButton>
         <TabButton
           active={mainTab === 'skills'}
@@ -746,10 +739,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
       )}
 
-
-      {mainTab === 'persona' && (
-        <PersonaTab />
-      )}
 
       {mainTab === 'skills' && (
         <SkillsTab onRequestClose={onClose} />

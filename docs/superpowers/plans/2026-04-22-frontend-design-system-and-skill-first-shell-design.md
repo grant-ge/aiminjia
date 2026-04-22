@@ -1445,11 +1445,16 @@ git commit -m "feat(frontend): add skill center pages and home shell"
 - Create: `src/features/chat/ChatPage.tsx`
 - Modify: `src/components/layout/InputBar.tsx`
 - Modify: `src/components/chat/WelcomeScreen.tsx`
+- Modify: `src/components/settings/SettingsModal.tsx`
 - Delete: `src/components/chat/AgentSelector.tsx`
+- Delete: `src/components/settings/PersonaTab.tsx`
 - Delete: `src/stores/personaStore.ts`
 - Delete: `src/components/onboarding/PersonaSelector.tsx`
 - Modify: `src/App.tsx`
 - Test: `src/components/layout/Sidebar.test.tsx`
+
+> Task 8 边界修正：
+> 删除 `personaStore` 不能只删聊天入口；当前设置页里的 `PersonaTab` 仍直接依赖该 store。如果 Task 8 要完成 persona 前端概念清理，必须同步从 `SettingsModal` 去掉 `persona` tab，并删除 `src/components/settings/PersonaTab.tsx`，否则会导致 TypeScript 编译失败。
 
 - [ ] **Step 1: 先改 WelcomeScreen 文案断言**
 
@@ -1545,8 +1550,10 @@ const greeting = t('welcome.defaultGreeting', { productName })
 
 同时删除文件：
 ```bash
-rm src/components/chat/AgentSelector.tsx src/stores/personaStore.ts src/components/onboarding/PersonaSelector.tsx
+rm src/components/chat/AgentSelector.tsx src/components/settings/PersonaTab.tsx src/stores/personaStore.ts src/components/onboarding/PersonaSelector.tsx
 ```
+
+并同步从 `src/components/settings/SettingsModal.tsx` 删除 `PersonaTab` import、`persona` tab 按钮和对应面板内容。
 
 - [ ] **Step 5: 创建对话页容器**
 
@@ -1581,8 +1588,8 @@ Expected: PASS 或只剩与新 route 结构相关的明确失败
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/components/chat/SkillPopover.tsx src/features/chat/ChatPage.tsx src/components/layout/InputBar.tsx src/components/chat/WelcomeScreen.tsx src/App.tsx
-git rm src/components/chat/AgentSelector.tsx src/stores/personaStore.ts src/components/onboarding/PersonaSelector.tsx
+git add src/components/chat/SkillPopover.tsx src/features/chat/ChatPage.tsx src/components/layout/InputBar.tsx src/components/chat/WelcomeScreen.tsx src/components/settings/SettingsModal.tsx src/App.tsx
+git rm src/components/chat/AgentSelector.tsx src/components/settings/PersonaTab.tsx src/stores/personaStore.ts src/components/onboarding/PersonaSelector.tsx
 git commit -m "refactor(frontend): remove persona and agent selector from chat"
 ```
 
