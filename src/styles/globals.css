@@ -41,12 +41,25 @@
   --color-bg-main: var(--background);
   --color-bg-sidebar: var(--sidebar);
   --color-bg-card: var(--card);
+  --color-bg-card-hover: var(--muted);
+  --color-bg-elevated: var(--card);
+  --color-bg-input: var(--input);
+  --color-bg-msg-user: var(--muted);
   --color-text-primary: var(--foreground);
   --color-text-secondary: var(--muted-foreground);
+  --color-text-muted: var(--muted-foreground);
+  --color-text-code: var(--foreground);
   --color-border: var(--border);
   --color-border-light: var(--sidebar-border);
+  --color-border-subtle: var(--border);
   --color-accent: var(--primary);
   --color-text-on-accent: var(--primary-foreground);
+  --color-primary-subtle: var(--sidebar-accent);
+  --color-primary-muted: var(--sidebar-border);
+  --color-bg-code: var(--muted);
+  --color-bg-code-header: var(--background);
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-user-avatar: var(--foreground);
 }
 
 @theme inline {
