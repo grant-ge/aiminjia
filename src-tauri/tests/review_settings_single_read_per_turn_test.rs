@@ -44,6 +44,7 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
             cloud_model_type: String::new(),
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
+            masking_level: "strict".to_string(),
         })
     }
 

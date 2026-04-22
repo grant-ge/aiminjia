@@ -291,6 +291,7 @@ async fn ae2_model_override_applied_to_resolved_settings() {
         cloud_model_type: String::new(),
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),
@@ -328,6 +329,7 @@ async fn ae2_no_override_falls_back_to_effective_settings() {
         cloud_model_type: String::new(),
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),
@@ -365,6 +367,7 @@ async fn ae2_empty_override_treated_as_none() {
         cloud_model_type: String::new(),
         thinking_type: "disabled".to_string(),
         thinking_budget_tokens: 8000,
+        masking_level: "strict".to_string(),
     }));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::default(),

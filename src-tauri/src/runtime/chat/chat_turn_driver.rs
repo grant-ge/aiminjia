@@ -664,7 +664,7 @@ impl RuntimeChatTurnDriver {
             max_iterations: 30,
             token_budget: 4096,
             chunk_timeout_secs: 90,
-            masking_level: "strict".to_string(),
+            masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
             llm_settings,
             conversation_id: request.conversation_id.clone(),

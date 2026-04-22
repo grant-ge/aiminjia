@@ -29,6 +29,7 @@ pub struct ResolvedLlmSettings {
     pub cloud_model_type: String,
     pub thinking_type: String,
     pub thinking_budget_tokens: u32,
+    pub masking_level: String,
 }
 
 impl Default for ResolvedLlmSettings {
@@ -44,6 +45,7 @@ impl Default for ResolvedLlmSettings {
             cloud_model_type: String::new(),
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: 8000,
+            masking_level: "strict".to_string(),
         }
     }
 }

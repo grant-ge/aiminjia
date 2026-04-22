@@ -36,6 +36,31 @@ impl Default for MaskingLevel {
     }
 }
 
+impl MaskingLevel {
+    /// Parse a settings string into a `MaskingLevel`, falling back to `Strict`
+    /// for any empty, unknown, or malformed value.
+    ///
+    /// Accepts "relaxed", "standard", "strict" (case-insensitive, trims whitespace).
+    /// Everything else (including empty string) returns `Strict`.
+    pub fn from_str_or_strict(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "relaxed" => Self::Relaxed,
+            "standard" => Self::Standard,
+            "strict" => Self::Strict,
+            _ => Self::Strict,
+        }
+    }
+
+    /// Return the canonical lowercase string representation.
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Relaxed => "relaxed",
+            Self::Standard => "standard",
+            Self::Strict => "strict",
+        }
+    }
+}
+
 /// Holds the bidirectional mapping for a masking session.
 pub struct MaskingContext {
     level: MaskingLevel,
