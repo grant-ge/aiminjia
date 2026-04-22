@@ -1,3 +1,8 @@
+/**
+ * Plan-A 收敛：本 store 只在运行时下发 5 个 accent-bound CSS 变量。
+ * `--sidebar / --sidebar-accent / --background / --card` 等静态值由 globals.css 固定，
+ * 不再由租户接口改写。deprecated 字段（primaryColor/bgColor/sidebarBgColor）保留接口容错忽略。
+ */
 import i18n from '@/i18n'
 import { create } from 'zustand'
 
