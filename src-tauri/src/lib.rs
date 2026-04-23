@@ -384,6 +384,8 @@ pub fn run() {
             chat::set_conversation_model_override,
             chat::delete_conversation,
             chat::rename_conversation,
+            chat::archive_conversation,
+            chat::get_archived_conversations,
             chat::get_conversations,
             chat::get_tasks,
             chat::is_agent_busy,

@@ -138,6 +138,21 @@ pub async fn rename_conversation(
 }
 
 #[tauri::command]
+pub async fn archive_conversation(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<(), String> {
+    adapter.archive_conversation(conversation_id).await
+}
+
+#[tauri::command]
+pub async fn get_archived_conversations(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    adapter.get_archived_conversations().await
+}
+
+#[tauri::command]
 pub async fn get_conversations(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
 ) -> Result<Vec<serde_json::Value>, String> {

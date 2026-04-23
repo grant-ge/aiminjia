@@ -1829,11 +1829,39 @@ impl TauriChatCommandAdapter {
         Ok(())
     }
 
-    pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
-        conversation_service::get_conversations(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+    pub async fn archive_conversation(
+        &self,
+        conversation_id: String,
+    ) -> Result<(), String> {
+        conversation_service::archive_conversation(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+            conversation_id,
         )
         .await
+    }
+
+    pub async fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
+        conversation_service::get_archived_conversations(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+        )
+        .await
+    }
+
+    pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
+        let mut convs = conversation_service::get_conversations(
+            self.services.db.clone() as Arc<dyn ConversationStore>
+        )
+        .await?;
+        // 为每个对话注入 workspaceName（来自已绑定的授权目录）。
+        // 没有绑定目录的对话不注入字段，前端视为"默认文件夹"。
+        for conv in &mut convs {
+            if let Some(id) = conv["id"].as_str() {
+                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id) {
+                    conv["workspaceName"] = serde_json::Value::String(ws.display_name);
+                }
+            }
+        }
+        Ok(convs)
     }
 
     pub async fn get_tasks(
