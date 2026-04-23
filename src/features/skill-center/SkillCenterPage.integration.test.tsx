@@ -41,8 +41,8 @@ describe('SkillCenterPage', () => {
   it('切换分类并点击卡片进入详情', async () => {
     render(<SkillCenterPage />)
 
-    fireEvent.click(screen.getByRole('tab', { name: '开发' }))
-    fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
+    fireEvent.click(screen.getByRole('button', { name: '开发' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '详情' })[0])
 
     await waitFor(() => {
       expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'writing-plans' })
