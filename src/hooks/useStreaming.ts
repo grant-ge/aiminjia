@@ -35,6 +35,7 @@ import { useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
+import type { Message } from '@/types/message'
 import {
   onStreamingDelta,
   onStreamingDone,
@@ -58,7 +59,6 @@ import type {
   AgentIdlePayload,
   AgentPhasePayload,
   ToolExecutingPayload,
-  ToolCompletedPayload,
   PermissionAskPayload,
   StreamingStepResetPayload,
   FileGeneratedPayload,
@@ -253,27 +253,35 @@ export function useStreaming() {
 
   // --- tool:executing ---------------------------------------------------
   useTauriEvent(() =>
-    onToolExecuting(({ conversationId, toolName, toolId, purpose }: ToolExecutingPayload) => {
-      console.log('[tool:executing]', conversationId, toolName, toolId, purpose)
+    onToolExecuting(({ conversationId, toolName, toolId, purpose, input }: ToolExecutingPayload) => {
+      console.log('[tool:executing]', conversationId, toolName, toolId)
       touchActivity(conversationId)
       useChatStore.getState().addConversationToolExecution(conversationId, {
         toolName,
         toolId,
         status: 'executing',
         summary: purpose,
+        input,
       })
     }),
   )
 
   // --- tool:completed ---------------------------------------------------
   useTauriEvent(() =>
-    onToolCompleted(({ conversationId, toolId, success, summary }: ToolCompletedPayload) => {
-      console.log('[tool:completed]', conversationId, toolId, success, summary)
-      touchActivity(conversationId)
-      useChatStore.getState().updateConversationToolExecution(conversationId, toolId, {
-        status: success ? 'completed' : 'error',
-        summary,
-      })
+    onToolCompleted((message: Message) => {
+      console.log('[tool:completed]', message.conversationId, message.toolResult?.name)
+      touchActivity(message.conversationId)
+      useChatStore.getState().upsertMessage(message)
+      if (message.toolResult) {
+        useChatStore.getState().updateConversationToolExecution(
+          message.conversationId,
+          message.toolResult.toolCallId,
+          {
+            status: message.toolResult.isError ? 'error' : 'completed',
+            durationMs: message.toolResult.durationMs,
+          },
+        )
+      }
     }),
   )
 
@@ -343,12 +351,18 @@ export function useStreaming() {
 
   // --- task:status-changed ------------------------------------------------
   useTauriEvent(() =>
-    onTaskStatusChanged(({ conversationId, taskId, status, runId }: TaskStatusChangedPayload) => {
-      console.log('[task:status-changed]', conversationId, taskId, status, runId)
-      useChatStore.getState().upsertConversationTaskState(conversationId, {
-        taskId,
-        status,
-        runId,
+    onTaskStatusChanged((payload: TaskStatusChangedPayload) => {
+      console.log('[task:status-changed]', payload.conversationId, payload.taskId, payload.status)
+      useChatStore.getState().upsertConversationTaskState(payload.conversationId, {
+        taskId: payload.taskId,
+        status: payload.status,
+        runId: payload.runId,
+        subject: payload.subject,
+        description: payload.description,
+        activeForm: payload.activeForm,
+        owner: payload.owner,
+        blockedBy: payload.blockedBy,
+        createdAt: payload.createdAt,
       })
     }),
   )
