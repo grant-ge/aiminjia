@@ -7,7 +7,6 @@ import { HomeSkillCenterPill } from '@/components/home/HomeSkillCenterPill'
 import { HomeStatusList } from '@/components/home/HomeStatusList'
 import { HomeTaskComposerCard } from '@/components/home/HomeTaskComposerCard'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
-import { PageTopBar } from '@/components/shell/PageTopBar'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route } from '@/stores/uiStore'
 
@@ -51,7 +50,6 @@ export function HomePage() {
 
   return (
     <PageSectionShell
-      topBar={<PageTopBar variant="default" />}
       padding="px-10 pt-8 pb-7"
       gap="gap-4"
     >
