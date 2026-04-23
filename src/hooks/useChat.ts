@@ -25,6 +25,7 @@ import {
   getConversations,
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
+  archiveConversation as tauriArchiveConversation,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -328,6 +329,7 @@ export function useChat() {
         createdAt: (c.createdAt as string) ?? new Date().toISOString(),
         updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
         isArchived: (c.isArchived as boolean) ?? false,
+        workspaceName: (c.workspaceName as string | undefined) ?? undefined,
       }))
       console.log('[useChat] loadConversations OK, count:', convs.length)
       useChatStore.getState().setConversations(convs)
@@ -358,6 +360,23 @@ export function useChat() {
     await tauriRenameConversation(id, newTitle)
   }, [])
 
+  const archiveConversation = useCallback(async (id: string) => {
+    const store = useChatStore.getState()
+    // 乐观更新：从列表移除
+    store.setConversations(store.conversations.filter((c) => c.id !== id))
+    // 如果归档的是当前对话，切回 null
+    if (store.activeConversationId === id) {
+      store.setActiveConversation(null)
+    }
+    try {
+      await tauriArchiveConversation(id)
+    } catch (err) {
+      console.error('[useChat] archiveConversation failed:', err)
+      // 失败则重新加载
+      await loadConversations()
+    }
+  }, [loadConversations])
+
   const createConversationFromSkill = useCallback(async (skillId: string) => {
     void skillId
     const conversationId = await createNewConversation()
@@ -376,6 +395,7 @@ export function useChat() {
     createNewConversation,
     deleteConversation: removeConversation,
     renameConversation,
+    archiveConversation,
     switchConversation,
     createConversationFromSkill,
     sendUserMessage,

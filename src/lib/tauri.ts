@@ -323,6 +323,14 @@ export function renameConversation(conversationId: string, newTitle: string): Pr
   })
 }
 
+export function archiveConversation(conversationId: string): Promise<void> {
+  return invoke<void>('archive_conversation', { conversationId })
+}
+
+export function getArchivedConversations(): Promise<Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>> {
+  return invoke('get_archived_conversations')
+}
+
 /**
  * Check which conversations currently have active agent tasks.
  *
