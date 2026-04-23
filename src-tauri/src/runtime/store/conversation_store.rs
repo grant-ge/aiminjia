@@ -37,6 +37,10 @@ pub trait ConversationStore: Send + Sync {
         conversation_id: &str,
         model_override: Option<String>,
     ) -> Result<()>;
+    /// Mark a conversation as archived (soft delete).
+    fn archive_conversation(&self, id: &str) -> Result<()>;
+    /// Return all archived conversations as JSON values.
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -49,6 +53,7 @@ pub struct InMemoryConversationStore {
     messages: Mutex<HashMap<String, Vec<serde_json::Value>>>,
     active_tasks: Mutex<std::collections::HashSet<String>>,
     compact_boundaries: Mutex<HashMap<String, Vec<CompactBoundaryRecord>>>,
+    archived: Mutex<std::collections::HashSet<String>>,
 }
 
 impl InMemoryConversationStore {
@@ -157,6 +162,20 @@ impl ConversationStore for InMemoryConversationStore {
     ) -> Result<()> {
         Ok(())
     }
+
+    fn archive_conversation(&self, id: &str) -> Result<()> {
+        self.archived.lock().unwrap().insert(id.to_string());
+        Ok(())
+    }
+
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        let archived = self.archived.lock().unwrap();
+        let convs = self.conversations.lock().unwrap();
+        Ok(archived
+            .iter()
+            .filter_map(|id| convs.get(id).map(|title| serde_json::json!({ "id": id, "title": title, "isArchived": true })))
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -180,6 +199,16 @@ mod tests {
         let store = InMemoryConversationStore::new();
         let result = store.rename_conversation("nonexistent", "Title");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_archive_conversation() {
+        let store = InMemoryConversationStore::new();
+        store.create_conversation("c1", "Title").unwrap();
+        store.archive_conversation("c1").unwrap();
+        let archived = store.get_archived_conversations().unwrap();
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0]["id"], "c1");
     }
 
     #[test]

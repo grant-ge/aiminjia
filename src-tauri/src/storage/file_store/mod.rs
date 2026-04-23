@@ -1039,6 +1039,14 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
         self.storage
             .set_conversation_model_override(conversation_id, model_override)
     }
+
+    fn archive_conversation(&self, _id: &str) -> Result<()> {
+        todo!("Task 2: implement FileConversationStore::archive_conversation")
+    }
+
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        todo!("Task 2: implement FileConversationStore::get_archived_conversations")
+    }
 }
 
 impl crate::runtime::store::ConversationStore for AppStorage {
@@ -1102,6 +1110,14 @@ impl crate::runtime::store::ConversationStore for AppStorage {
         model_override: Option<String>,
     ) -> Result<()> {
         self.set_conversation_model_override(conversation_id, model_override)
+    }
+
+    fn archive_conversation(&self, _id: &str) -> Result<()> {
+        todo!("Task 3: implement AppStorage::archive_conversation")
+    }
+
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        todo!("Task 3: implement AppStorage::get_archived_conversations")
     }
 }
 
