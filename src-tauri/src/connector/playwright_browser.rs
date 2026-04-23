@@ -918,3 +918,255 @@ impl PlaywrightBrowser {
         result
     }
 }
+
+// ── Tests ───────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── extract_origin ──────────────────────────────────────────
+
+    #[test]
+    fn extract_origin_https() {
+        assert_eq!(
+            PlaywrightBrowser::extract_origin("https://zeus.renlijia.com/orders?page=1").unwrap(),
+            "https://zeus.renlijia.com"
+        );
+    }
+
+    #[test]
+    fn extract_origin_with_port() {
+        assert_eq!(
+            PlaywrightBrowser::extract_origin("http://localhost:8080/dashboard").unwrap(),
+            "http://localhost:8080"
+        );
+    }
+
+    #[test]
+    fn extract_origin_invalid_url() {
+        assert!(PlaywrightBrowser::extract_origin("not-a-url").is_err());
+    }
+
+    // ── extract_path ────────────────────────────────────────────
+
+    #[test]
+    fn extract_path_normal() {
+        assert_eq!(
+            PlaywrightBrowser::extract_path("https://zeus.renlijia.com/api/orders?page=1"),
+            "/api/orders"
+        );
+    }
+
+    #[test]
+    fn extract_path_root() {
+        assert_eq!(
+            PlaywrightBrowser::extract_path("https://example.com"),
+            "/"
+        );
+    }
+
+    #[test]
+    fn extract_path_invalid() {
+        assert_eq!(PlaywrightBrowser::extract_path("garbage"), "");
+    }
+
+    // ── detect_redirect ─────────────────────────────────────────
+
+    #[test]
+    fn detect_redirect_same_url_no_redirect() {
+        assert!(!PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/orders",
+            "https://zeus.com/orders",
+            "https://zeus.com",
+        ));
+    }
+
+    #[test]
+    fn detect_redirect_cross_origin() {
+        assert!(PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/orders",
+            "https://sso.company.com/login",
+            "https://zeus.com",
+        ));
+    }
+
+    #[test]
+    fn detect_redirect_to_login_path() {
+        assert!(PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/orders",
+            "https://zeus.com/login?redirect=/orders",
+            "https://zeus.com",
+        ));
+    }
+
+    #[test]
+    fn detect_redirect_to_cas() {
+        assert!(PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/orders",
+            "https://zeus.com/cas/login",
+            "https://zeus.com",
+        ));
+    }
+
+    #[test]
+    fn detect_redirect_to_forbidden() {
+        assert!(PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/admin",
+            "https://zeus.com/403",
+            "https://zeus.com",
+        ));
+    }
+
+    #[test]
+    fn detect_redirect_normal_navigation_not_flagged() {
+        assert!(!PlaywrightBrowser::detect_redirect(
+            "https://zeus.com/",
+            "https://zeus.com/dashboard",
+            "https://zeus.com",
+        ));
+    }
+
+    // ── parse_tables ────────────────────────────────────────────
+
+    #[test]
+    fn parse_tables_normal() {
+        let data = json!([{
+            "headers": ["Name", "Age"],
+            "rows": [
+                {"Name": "Alice", "Age": "30"},
+                {"Name": "Bob", "Age": "25"}
+            ]
+        }]);
+        let tables = PlaywrightBrowser::parse_tables(&data);
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].headers, vec!["Name", "Age"]);
+        assert_eq!(tables[0].rows.len(), 2);
+        assert_eq!(tables[0].rows[0].get("Name").unwrap(), "Alice");
+    }
+
+    #[test]
+    fn parse_tables_empty() {
+        assert!(PlaywrightBrowser::parse_tables(&json!([])).is_empty());
+        assert!(PlaywrightBrowser::parse_tables(&json!(null)).is_empty());
+    }
+
+    #[test]
+    fn parse_tables_multiple() {
+        let data = json!([
+            {"headers": ["A"], "rows": [{"A": "1"}]},
+            {"headers": ["B", "C"], "rows": []}
+        ]);
+        let tables = PlaywrightBrowser::parse_tables(&data);
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables[1].headers, vec!["B", "C"]);
+        assert!(tables[1].rows.is_empty());
+    }
+
+    // ── parse_links ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_links_normal() {
+        let data = json!([
+            {"label": "Orders", "href": "/orders", "type": "menu", "selector": ""},
+            {"label": "Export", "href": "", "type": "button", "selector": "#btn-export"}
+        ]);
+        let links = PlaywrightBrowser::parse_links(&data);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].label, "Orders");
+        assert_eq!(links[0].link_type, "menu");
+        assert_eq!(links[1].link_type, "button");
+    }
+
+    #[test]
+    fn parse_links_skips_empty_label() {
+        let data = json!([
+            {"label": "", "href": "/hidden", "type": "link", "selector": ""}
+        ]);
+        assert!(PlaywrightBrowser::parse_links(&data).is_empty());
+    }
+
+    // ── parse_forms ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_forms_normal() {
+        let data = json!([{
+            "id": "search-form",
+            "action": "/api/search",
+            "method": "POST",
+            "fields": [
+                {"name": "keyword", "fieldType": "text", "value": ""},
+                {"name": "date", "fieldType": "date", "value": "2026-01-01"}
+            ]
+        }]);
+        let forms = PlaywrightBrowser::parse_forms(&data);
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].id, "search-form");
+        assert_eq!(forms[0].method, "POST");
+        assert_eq!(forms[0].fields.len(), 2);
+        assert_eq!(forms[0].fields[1].value, "2026-01-01");
+    }
+
+    #[test]
+    fn parse_forms_empty() {
+        assert!(PlaywrightBrowser::parse_forms(&json!([])).is_empty());
+        assert!(PlaywrightBrowser::parse_forms(&json!(null)).is_empty());
+    }
+
+    // ── build_data_sample ───────────────────────────────────────
+
+    #[test]
+    fn build_data_sample_array() {
+        let data = json!([
+            {"id": 1, "name": "A"},
+            {"id": 2, "name": "B"},
+            {"id": 3, "name": "C"},
+            {"id": 4, "name": "D"},
+            {"id": 5, "name": "E"},
+            {"id": 6, "name": "F"},
+        ]);
+        let sample = PlaywrightBrowser::build_data_sample(&data, 3);
+        assert_eq!(sample["_summary"].as_str().unwrap(), "6 total rows, showing first 3");
+        assert_eq!(sample["_sample"].as_array().unwrap().len(), 3);
+        let columns = sample["_columns"].as_array().unwrap();
+        assert!(columns.len() == 2); // id, name
+    }
+
+    #[test]
+    fn build_data_sample_wrapped_object() {
+        let data = json!({
+            "total": 100,
+            "pageSize": 20,
+            "list": [
+                {"id": 1}, {"id": 2}, {"id": 3}
+            ]
+        });
+        let sample = PlaywrightBrowser::build_data_sample(&data, 2);
+        assert_eq!(sample["_sample"].as_array().unwrap().len(), 2);
+        assert!(sample["_summary"].as_str().unwrap().contains("3 total rows"));
+        assert!(sample["_metadata"].as_str().unwrap().contains("total"));
+    }
+
+    #[test]
+    fn build_data_sample_small_data_passthrough() {
+        let data = json!({"key": "value"});
+        let sample = PlaywrightBrowser::build_data_sample(&data, 5);
+        assert_eq!(sample, data); // no array found, return as-is
+    }
+
+    #[test]
+    fn build_data_sample_recognizes_data_keys() {
+        // Test each recognized wrapper key: list, rows, data, items, records, content
+        for key in &["list", "rows", "data", "items", "records", "content"] {
+            let mut obj = serde_json::Map::new();
+            obj.insert(key.to_string(), json!([{"x": 1}, {"x": 2}]));
+            let data = Value::Object(obj);
+            let sample = PlaywrightBrowser::build_data_sample(&data, 5);
+            assert!(
+                sample["_sample"].is_array(),
+                "failed to unwrap key '{}'", key
+            );
+        }
+    }
+}

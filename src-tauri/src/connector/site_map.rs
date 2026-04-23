@@ -254,3 +254,179 @@ impl SiteMap {
         Ok(())
     }
 }
+
+// ── Tests ───────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn make_profile(url_path: &str, title: &str) -> PageProfile {
+        PageProfile {
+            url_path: url_path.to_string(),
+            title: title.to_string(),
+            nav_links: vec![],
+            table_schemas: vec![],
+            forms: vec![],
+            api_endpoints: vec![],
+            explored_at: Utc::now(),
+            access_denied: false,
+            iframe_src: None,
+        }
+    }
+
+    fn make_profile_with_table(url_path: &str, headers: &[&str], row_count: usize) -> PageProfile {
+        PageProfile {
+            table_schemas: vec![TableSchema {
+                name: String::new(),
+                headers: headers.iter().map(|h| h.to_string()).collect(),
+                row_count,
+            }],
+            ..make_profile(url_path, "Data Page")
+        }
+    }
+
+    // ── PageProfile TTL ─────────────────────────────────────────
+
+    #[test]
+    fn profile_not_expired_when_fresh() {
+        let p = make_profile("/orders", "Orders");
+        assert!(!p.is_expired());
+    }
+
+    #[test]
+    fn profile_expired_after_24h() {
+        let mut p = make_profile("/orders", "Orders");
+        p.explored_at = Utc::now() - Duration::hours(25);
+        assert!(p.is_expired());
+    }
+
+    #[test]
+    fn profile_not_expired_at_23h() {
+        let mut p = make_profile("/orders", "Orders");
+        p.explored_at = Utc::now() - Duration::hours(23);
+        assert!(!p.is_expired());
+    }
+
+    // ── PageProfile summary_line ────────────────────────────────
+
+    #[test]
+    fn summary_line_with_tables() {
+        let p = make_profile_with_table("/orders", &["ID", "Name", "Amount"], 50);
+        let line = p.summary_line();
+        assert!(line.contains("/orders"));
+        assert!(line.contains("50 rows"));
+        assert!(line.contains("ID|Name|Amount"));
+    }
+
+    #[test]
+    fn summary_line_truncates_many_columns() {
+        let p = make_profile_with_table(
+            "/data",
+            &["A", "B", "C", "D", "E", "F"],
+            10,
+        );
+        let line = p.summary_line();
+        assert!(line.contains("A|B|C|D...+2"));
+    }
+
+    #[test]
+    fn summary_line_access_denied() {
+        let mut p = make_profile("/secret", "Secret");
+        p.access_denied = true;
+        assert!(p.summary_line().contains("ACCESS DENIED"));
+    }
+
+    #[test]
+    fn summary_line_links_only() {
+        let mut p = make_profile("/home", "Home");
+        p.nav_links = vec![
+            LinkData { label: "A".into(), href: "/a".into(), link_type: "link".into(), selector: String::new() },
+            LinkData { label: "B".into(), href: "/b".into(), link_type: "link".into(), selector: String::new() },
+        ];
+        let line = p.summary_line();
+        assert!(line.contains("2 links"));
+    }
+
+    // ── SiteMap CRUD ────────────────────────────────────────────
+
+    #[test]
+    fn sitemap_set_and_get() {
+        let mut map = SiteMap::new("https://zeus.com");
+        map.set_page(make_profile("/orders", "Orders"));
+        assert!(map.get_page("/orders").is_some());
+        assert!(map.get_page("/nonexistent").is_none());
+    }
+
+    #[test]
+    fn sitemap_get_returns_none_for_expired() {
+        let mut map = SiteMap::new("https://zeus.com");
+        let mut p = make_profile("/old", "Old");
+        p.explored_at = Utc::now() - Duration::hours(25);
+        map.set_page(p);
+        assert!(map.get_page("/old").is_none());
+    }
+
+    #[test]
+    fn sitemap_update_overwrites() {
+        let mut map = SiteMap::new("https://zeus.com");
+        map.set_page(make_profile("/orders", "Orders V1"));
+        map.set_page(make_profile("/orders", "Orders V2"));
+        assert_eq!(map.get_page("/orders").unwrap().title, "Orders V2");
+        assert_eq!(map.pages.len(), 1);
+    }
+
+    // ── SiteMap persistence ─────────────────────────────────────
+
+    #[test]
+    fn sitemap_save_and_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        let mut map = SiteMap::new("https://zeus.com");
+        map.set_page(make_profile_with_table("/orders", &["ID", "Name"], 100));
+        map.save(dir).unwrap();
+
+        let loaded = SiteMap::load(dir, "https://zeus.com").unwrap();
+        assert_eq!(loaded.pages.len(), 1);
+        let p = loaded.pages.get("/orders").unwrap();
+        assert_eq!(p.table_schemas[0].row_count, 100);
+    }
+
+    #[test]
+    fn sitemap_load_nonexistent_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(SiteMap::load(tmp.path(), "https://nope.com").is_none());
+    }
+
+    // ── SiteMap format_for_context ──────────────────────────────
+
+    #[test]
+    fn format_for_context_empty() {
+        let map = SiteMap::new("https://zeus.com");
+        assert!(map.format_for_context(None).is_empty());
+    }
+
+    #[test]
+    fn format_for_context_with_active_page() {
+        let mut map = SiteMap::new("https://zeus.com");
+        map.set_page(make_profile_with_table("/orders", &["ID", "Amount"], 50));
+
+        let ctx = map.format_for_context(Some("/orders"));
+        assert!(ctx.contains("[Site Map: https://zeus.com]"));
+        assert!(ctx.contains("Current page: /orders"));
+        assert!(ctx.contains("ID | Amount"));
+    }
+
+    // ── file_path sanitization ──────────────────────────────────
+
+    #[test]
+    fn file_path_sanitizes_origin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = SiteMap::file_path(tmp.path(), "https://zeus.com:8080");
+        let filename = path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(filename, "zeus.com_8080.json");
+        assert!(!filename.contains("https"));
+    }
+}
