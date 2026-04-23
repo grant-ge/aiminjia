@@ -76,6 +76,7 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -565,6 +566,7 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -712,6 +714,7 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -800,6 +803,7 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -874,6 +878,7 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -977,6 +982,7 @@ impl RuntimeLlmExecutor for CustomToolDefsCapturingExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -1056,6 +1062,7 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -1192,6 +1199,7 @@ impl RuntimeLlmExecutor for FailingHistoryExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -1260,6 +1268,7 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -1365,6 +1374,7 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {

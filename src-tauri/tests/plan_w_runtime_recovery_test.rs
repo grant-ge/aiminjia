@@ -67,6 +67,7 @@ impl RuntimeLlmExecutor for RecordingExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[Value],
     ) -> Result<String, TurnError> {

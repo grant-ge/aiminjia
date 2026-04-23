@@ -71,6 +71,7 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -122,6 +123,7 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
+        _tool_calls: &[serde_json::Value],
         _generated_file_ids: &[String],
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
