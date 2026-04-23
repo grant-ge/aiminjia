@@ -47,4 +47,9 @@ describe('ChatTopBar', () => {
     expect(header?.className).toMatch(/px-6/)
     expect(header?.className).toMatch(/border-b/)
   })
+
+  it('header has data-tauri-drag-region', () => {
+    const { container } = render(<ChatTopBar title="X" />)
+    expect(container.querySelector('header')?.hasAttribute('data-tauri-drag-region')).toBe(true)
+  })
 })

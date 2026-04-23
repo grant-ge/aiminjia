@@ -29,7 +29,7 @@ export function PageTopBar({
   trailing,
 }: PageTopBarProps) {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+    <header data-tauri-drag-region className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       {variant === 'compact' ? (
         <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-foreground">
           {leading}

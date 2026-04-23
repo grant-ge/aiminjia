@@ -46,4 +46,9 @@ describe('PageTopBar', () => {
     )
     expect(screen.getByText('extra')).toBeInTheDocument()
   })
+
+  it('header has data-tauri-drag-region', () => {
+    const { container } = render(<PageTopBar variant="default" />)
+    expect(container.querySelector('header')?.hasAttribute('data-tauri-drag-region')).toBe(true)
+  })
 })

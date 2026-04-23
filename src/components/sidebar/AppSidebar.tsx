@@ -14,6 +14,8 @@ import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { SidebarSectionTitle } from './SidebarSectionTitle'
 import { TenantHeader } from './TenantHeader'
 
+const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+
 export function AppSidebar() {
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
@@ -39,6 +41,13 @@ export function AppSidebar() {
 
   return (
     <aside className="flex h-full w-[256px] shrink-0 flex-col gap-4 overflow-hidden border-r border-sidebar-border bg-sidebar p-2 text-sidebar-foreground">
+      {isMac ? (
+        <div
+          data-tauri-drag-region
+          aria-hidden="true"
+          className="h-6 w-full shrink-0"
+        />
+      ) : null}
       <TenantHeader name={tenantDisplay} logoUrl={logoUrl} />
 
       <SidebarNav
