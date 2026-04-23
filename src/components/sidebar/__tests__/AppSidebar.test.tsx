@@ -44,12 +44,12 @@ describe('AppSidebar', () => {
     expect(screen.getByText('仁励家网络科技(杭州)')).toBeInTheDocument()
   })
 
-  it('renders 3 nav items, the section title 任务, and footer 设置', () => {
+  it('renders 3 nav items, the section title 项目, and footer 设置', () => {
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
-    expect(screen.getByText('任务')).toBeInTheDocument()
+    expect(screen.getByText('项目')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
   })
 
