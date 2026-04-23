@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 
-import { AiSegmentText } from '@/components/chat-scene/AiSegmentText'
+import { AiBubble } from '@/components/chat/AiBubble'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
@@ -29,7 +29,7 @@ export function MessageList() {
           <div key={i} className="flex flex-col gap-4">
             {t.userMessage ? <UserMessageBubble text={t.userMessage.text} /> : null}
             {t.aiSegments.map((s) => (
-              <AiSegmentText key={s.id} text={s.text} />
+              <AiBubble key={s.id} message={s.message} hideHeader />
             ))}
             {t.toolGroup ? (
               <ToolGroupCard
