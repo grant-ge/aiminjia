@@ -123,6 +123,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         &self,
         conversation_id: &str,
         content: &str,
+        tool_calls: &[serde_json::Value],
         generated_file_ids: &[String],
         file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError>;
@@ -1040,6 +1041,7 @@ impl RuntimeChatTurnDriver {
                             })
                         })
                         .collect();
+                    state.all_tool_calls.extend(normalized_tool_calls.clone());
                     let assistant_history_message = serde_json::json!({
                         "role": "assistant",
                         "content": assistant_content,
@@ -1154,6 +1156,7 @@ impl RuntimeChatTurnDriver {
             .persist_assistant_message(
                 config.conversation_id.as_str(),
                 &state.full_content,
+                &state.all_tool_calls,
                 &state.generated_file_ids,
                 &state.all_file_metas,
             )

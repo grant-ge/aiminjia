@@ -201,6 +201,7 @@ async fn persist_assistant_content_json(
     }
 }
 
+
 #[async_trait]
 impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     async fn run_llm_step(
@@ -699,6 +700,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
         content: &str,
+        tool_calls: &[serde_json::Value],
         generated_file_ids: &[String],
         file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
@@ -804,22 +806,19 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                         gen_files.len(),
                         message_id
                     );
-                    serde_json::json!({
-                        "text": filtered_content,
-                        "generatedFiles": gen_files,
-                    })
+                    build_assistant_content_json(&filtered_content, tool_calls, Some(gen_files))
                 }
-                Ok(_) => serde_json::json!({ "text": filtered_content }),
+                Ok(_) => build_assistant_content_json(&filtered_content, tool_calls, None),
                 Err(e) => {
                     log::error!(
                         "[persist_assistant_message] Failed to query generated files: {:#}",
                         e
                     );
-                    serde_json::json!({ "text": filtered_content })
+                    build_assistant_content_json(&filtered_content, tool_calls, None)
                 }
             }
         } else {
-            serde_json::json!({ "text": filtered_content })
+            build_assistant_content_json(&filtered_content, tool_calls, None)
         };
 
         // --- Persist to AppStorage ---
@@ -1312,6 +1311,23 @@ mod tests {
 // ---------------------------------------------------------------------------
 // Private helpers for run_llm_step
 // ---------------------------------------------------------------------------
+
+fn build_assistant_content_json(
+    text: &str,
+    tool_calls: &[serde_json::Value],
+    generated_files: Option<Vec<serde_json::Value>>,
+) -> serde_json::Value {
+    let mut obj = serde_json::json!({ "text": text });
+    if !tool_calls.is_empty() {
+        obj["toolCalls"] = serde_json::Value::Array(tool_calls.to_vec());
+    }
+    if let Some(files) = generated_files {
+        if !files.is_empty() {
+            obj["generatedFiles"] = serde_json::Value::Array(files);
+        }
+    }
+    obj
+}
 
 /// Decrypt an API key stored in encrypted form (salt:iv:ciphertext).
 /// Returns empty string on decryption failure to trigger default fallback.
