@@ -1,29 +1,62 @@
-import { MessageSquare } from 'lucide-react'
+/**
+ * @designSource design.pen#47U5w (proj1/conv1..3 + proj2/convA..B)
+ *
+ * 按 project 分组渲染会话；项目折叠状态由本组件内部 state 管理。
+ */
+import { useState } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { useChat } from '@/hooks/useChat'
+import { ConversationRow } from './ConversationRow'
+import { ProjectAccordion } from './ProjectAccordion'
 
-export function ConversationTree() {
-  const { conversations, activeConversationId, switchConversation } = useChat()
+export interface ConversationTreeItem {
+  id: string
+  title: string
+  active?: boolean
+  loading?: boolean
+}
 
-  if (conversations.length === 0) {
+export interface ConversationTreeProject {
+  id: string
+  name: string
+  conversations: ConversationTreeItem[]
+}
+
+interface ConversationTreeProps {
+  projects?: ConversationTreeProject[]
+  onSelectConversation?: (conversationId: string) => void
+}
+
+export function ConversationTree({
+  projects = [],
+  onSelectConversation = () => {},
+}: ConversationTreeProps) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  if (projects.length === 0) {
     return (
-      <div className="px-1 py-6 text-sm text-muted-foreground">还没有历史任务</div>
+      <div className="px-2 py-4 text-[13px] text-muted-foreground">还没有历史任务</div>
     )
   }
 
   return (
-    <div className="space-y-1 pb-3">
-      {conversations.map((conversation) => (
-        <Button
-          key={conversation.id}
-          className="h-auto w-full justify-start px-3 py-2 text-left"
-          variant={activeConversationId === conversation.id ? 'secondary' : 'ghost'}
-          onClick={() => void switchConversation(conversation.id)}
+    <div className="flex flex-col gap-1">
+      {projects.map((p) => (
+        <ProjectAccordion
+          key={p.id}
+          name={p.name}
+          expanded={!collapsed[p.id]}
+          onToggle={() => setCollapsed((s) => ({ ...s, [p.id]: !s[p.id] }))}
         >
-          <MessageSquare className="mt-0.5 size-4 shrink-0" />
-          <span className="truncate">{conversation.title}</span>
-        </Button>
+          {p.conversations.map((c) => (
+            <ConversationRow
+              key={c.id}
+              title={c.title}
+              active={c.active}
+              loading={c.loading}
+              onClick={() => onSelectConversation(c.id)}
+            />
+          ))}
+        </ProjectAccordion>
       ))}
     </div>
   )

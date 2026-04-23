@@ -70,8 +70,10 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
+    expect(screen.getByLabelText('搜索对话')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
     expect(screen.getByText('任务')).toBeInTheDocument()
-    expect(screen.getByText('Python 分析')).toBeInTheDocument()
+    // ConversationTree is now decoupled from useChat; data is injected via props in A-2.5
+    expect(screen.getByText('还没有历史任务')).toBeInTheDocument()
   })
 })
