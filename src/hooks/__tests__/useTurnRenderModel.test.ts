@@ -41,4 +41,11 @@ describe('buildTurnsFromMessages', () => {
     const turns = buildTurnsFromMessages([userMsg('u1', 'x')], tools)
     expect(turns[0].toolGroup?.status).toBe('running')
   })
+
+  it('aiSegment carries the full message object', () => {
+    const msg = aiMsg('a1', 'hello')
+    const turns = buildTurnsFromMessages([userMsg('u1', 'hi'), msg], [])
+    expect(turns[0].aiSegments[0].message).toBe(msg)
+    expect(turns[0].aiSegments[0].id).toBe('a1')
+  })
 })

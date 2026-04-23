@@ -18,6 +18,7 @@ import type { GeneratedFile, Message } from '@/types/message'
 export interface RenderAiSegment {
   id: string
   text: string
+  message: Message
 }
 
 export interface RenderToolStep {
@@ -92,7 +93,7 @@ export function buildTurnsFromMessages(
         turns.push(current)
       }
       if (m.content.text) {
-        current.aiSegments.push({ id: m.id, text: m.content.text })
+        current.aiSegments.push({ id: m.id, text: m.content.text, message: m })
       }
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
