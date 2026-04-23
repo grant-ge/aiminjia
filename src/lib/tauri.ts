@@ -93,8 +93,10 @@ export interface ToolExecutingPayload {
   toolName: string
   toolId: string
   purpose?: string
+  input?: unknown  // 完整入参 JSON 对象
 }
 
+/** @deprecated tool:completed 现在直接推完整 Message，保留此类型仅供旧引用过渡 */
 export interface ToolCompletedPayload {
   conversationId: string
   toolName: string
@@ -121,6 +123,12 @@ export interface TaskStatusChangedPayload {
   taskId: string
   status: string
   runId: string
+  subject: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+  createdAt?: string
 }
 
 export interface PermissionAskPayload {
@@ -244,6 +252,12 @@ export function getMessages(conversationId: string): Promise<Message[]> {
   return invoke<Message[]>('get_messages', {
     conversationId,
   })
+}
+
+export function getTasks(
+  conversationId: string,
+): Promise<import('@/stores/streamingStore').ConversationTaskState[]> {
+  return invoke('get_tasks', { conversationId })
 }
 
 export function getSubagentTranscript(
@@ -941,9 +955,9 @@ export function onToolExecuting(
  * @returns A function to unlisten (unsubscribe) from the event
  */
 export function onToolCompleted(
-  handler: (payload: ToolCompletedPayload) => void,
+  handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<ToolCompletedPayload>(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
+  return listen<Message>(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
     handler(event.payload)
   })
 }
