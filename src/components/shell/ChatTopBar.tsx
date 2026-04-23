@@ -3,6 +3,7 @@
  * @sizing height 56, padding [0,24], bottom border 1, left gap 12, right gap 14
  */
 import { Ellipsis, PanelLeft, Share2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 interface ChatTopBarProps {
   title: string
@@ -10,6 +11,8 @@ interface ChatTopBarProps {
   onShare?: () => void
   onMore?: () => void
   onToggleSidebar?: () => void
+  /** extra node rendered at the right edge (e.g. ExportMenu) */
+  trailing?: ReactNode
 }
 
 export function ChatTopBar({
@@ -18,6 +21,7 @@ export function ChatTopBar({
   onShare,
   onMore,
   onToggleSidebar,
+  trailing,
 }: ChatTopBarProps) {
   return (
     <header data-tauri-drag-region className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
@@ -35,6 +39,7 @@ export function ChatTopBar({
         ) : null}
       </div>
       <div className="flex items-center gap-3.5">
+        {trailing}
         {onShare ? (
           <button
             type="button"
