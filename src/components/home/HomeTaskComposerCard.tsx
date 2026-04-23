@@ -26,6 +26,7 @@ import { useUiStore } from '@/stores/uiStore'
 
 export function HomeTaskComposerCard() {
   const [value, setValue] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { sendUserMessage } = useChat()
 
@@ -67,41 +68,46 @@ export function HomeTaskComposerCard() {
       title: '选择工作目录',
     })
     if (!path) return
-    const name = path.split('/').pop() || path.split('\\').pop() || path
+    const parts = path.split(/[/\\]/).filter(Boolean)
+    const name = parts[parts.length - 1] ?? path
     const ws: AuthorizedWorkspaceRef = { id: name, rootPath: path, displayName: name }
     setSelectedWorkspace(ws)
     setDisplayWorkspace(ws)
   }
 
   const handleSubmit = async (text: string) => {
-    if (!text.trim()) return
-    setValue('')
+    if (!text.trim() || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      // Create conversation first so we have an ID to authorize against
+      const backendId = await createConversation()
+      setValue('')
+      const now = new Date().toISOString()
+      const store = useChatStore.getState()
+      store.setConversations([
+        { id: backendId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+        ...store.conversations,
+      ])
+      store.setActiveConversation(backendId)
+      store.setMessages([])
+      useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
 
-    // Create conversation first so we have an ID to authorize against
-    const backendId = await createConversation()
-    const now = new Date().toISOString()
-    const store = useChatStore.getState()
-    store.setConversations([
-      { id: backendId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
-      ...store.conversations,
-    ])
-    store.setActiveConversation(backendId)
-    store.setMessages([])
-    useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
-
-    // Authorize the selected (or default) workspace
-    const workspacePath = displayWorkspace?.rootPath
-    if (workspacePath) {
-      try {
-        await authorizeLocalDirectory(workspacePath, backendId)
-      } catch (err) {
-        console.error('[HomeTaskComposerCard] Failed to authorize workspace:', err)
-        // Non-fatal: proceed without workspace authorization
+      // Authorize the selected (or default) workspace
+      const workspacePath = displayWorkspace?.rootPath
+      if (workspacePath) {
+        try {
+          await authorizeLocalDirectory(workspacePath, backendId)
+        } catch (err) {
+          console.error('[HomeTaskComposerCard] Failed to authorize workspace:', err)
+          // Non-fatal: proceed without workspace authorization
+        }
       }
-    }
 
-    // sendUserMessage will use the already-active conversation
-    await sendUserMessage(text)
+      // sendUserMessage will use the already-active conversation
+      await sendUserMessage(text)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -131,6 +137,7 @@ export function HomeTaskComposerCard() {
         onPickProject={() => void handlePickProject()}
         projectLabel={displayWorkspace?.displayName ?? '默认项目'}
         textareaRef={textareaRef}
+        submitDisabled={isSubmitting}
       />
     </div>
   )
