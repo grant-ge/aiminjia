@@ -78,7 +78,7 @@ export function buildTurnsFromMessages(
   for (const m of messages) {
     if (m.role === 'user') {
       current = {
-        userMessage: { id: m.id, text: m.content.text || '' },
+        userMessage: { id: m.id, text: m.content.text ?? '' },
         aiSegments: [],
         toolGroup: undefined,
         generatedFiles: [],
@@ -87,11 +87,26 @@ export function buildTurnsFromMessages(
       turns.push(current)
       continue
     }
-    if (m.role === 'assistant') {
-      if (!current) {
-        current = { userMessage: undefined, aiSegments: [], toolGroup: undefined, generatedFiles: [], suggestions: [] }
-        turns.push(current)
+
+    if (!current) {
+      current = {
+        userMessage: undefined,
+        aiSegments: [],
+        toolGroup: undefined,
+        generatedFiles: [],
+        suggestions: [],
       }
+      turns.push(current)
+    }
+
+    if (m.role === 'assistant') {
+      // assistant 有 toolCalls → 这是一次工具调用轮次，初始化 toolGroup
+      if (m.toolCalls && m.toolCalls.length > 0) {
+        if (!current.toolGroup) {
+          current.toolGroup = { status: 'running', steps: [], durationMs: 0 }
+        }
+      }
+      // 有文字内容才加 aiSegment
       if (m.content.text) {
         current.aiSegments.push({ id: m.id, text: m.content.text, message: m })
       }
@@ -100,9 +115,27 @@ export function buildTurnsFromMessages(
           current.generatedFiles.push(normalizeGeneratedFile(f))
         }
       }
+      continue
+    }
+
+    if (m.role === 'tool' && m.toolResult) {
+      // 确保 toolGroup 存在
+      if (!current.toolGroup) {
+        current.toolGroup = { status: 'done', steps: [], durationMs: 0 }
+      }
+      const result = m.toolResult
+      current.toolGroup.steps.push({
+        index: current.toolGroup.steps.length + 1,
+        name: result.name,
+        status: result.isError ? 'error' : 'done',
+        durationMs: result.durationMs,
+      })
+      current.toolGroup.durationMs =
+        current.toolGroup.steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0)
     }
   }
 
+  // 最后一个 turn：用实时 toolExecutions 覆盖/补充 toolGroup（turn 正在进行时）
   if (toolExecutions.length > 0 && turns.length > 0) {
     const target = turns[turns.length - 1]
     const steps: RenderToolStep[] = toolExecutions.map((t, i) => ({
@@ -116,6 +149,14 @@ export function buildTurnsFromMessages(
       status: running ? 'running' : 'done',
       steps,
       durationMs: steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0),
+    }
+  }
+
+  // 整理所有 toolGroup 最终状态
+  for (const turn of turns) {
+    if (turn.toolGroup && turn.toolGroup.steps.length > 0) {
+      const hasRunning = turn.toolGroup.steps.some((s) => s.status === 'running')
+      turn.toolGroup.status = hasRunning ? 'running' : 'done'
     }
   }
 
