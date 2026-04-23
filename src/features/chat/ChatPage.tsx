@@ -1,7 +1,7 @@
 import { BrowserPanel } from '@/components/browser/BrowserPanel'
+import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
+import { RightPanel } from '@/components/chat/RightPanel'
 import { ChatArea } from '@/components/layout/ChatArea'
-import { InputBar } from '@/components/layout/InputBar'
-import { TitleBar } from '@/components/layout/TitleBar'
 import { ExportMenu } from '@/components/rich-content/ExportMenu'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { useChat } from '@/hooks/useChat'
@@ -17,9 +17,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const conversations = useChatStore((s) => s.conversations)
   const streamStates = useChatStore((s) => s.streamStates)
   const isStreaming = streamStates[conversationId]?.isStreaming ?? false
-
-  const title =
-    conversations.find((c) => c.id === conversationId)?.title ?? ''
+  const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
 
   useEffect(() => {
     void switchConversation(conversationId)
@@ -27,7 +25,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <TitleBar />
       {title ? (
         <ChatTopBar
           title={title}
@@ -41,8 +38,9 @@ export function ChatPage({ conversationId }: ChatPageProps) {
       <div className="relative flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
           <ChatArea />
-          <InputBar />
+          <ChatBottomArea />
         </div>
+        <RightPanel conversationId={conversationId} />
         <BrowserPanel />
       </div>
     </div>
