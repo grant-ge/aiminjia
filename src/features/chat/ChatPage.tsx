@@ -11,6 +11,7 @@ interface ChatPageProps {
 }
 
 export function ChatPage({ conversationId }: ChatPageProps) {
+  // TODO(plan-D): replace TopBar with ChatTopBar from shell when InputBar migration is done
   const { switchConversation } = useChat()
 
   useEffect(() => {
