@@ -124,7 +124,7 @@ export function ChatArea() {
       style={{ background: 'var(--color-bg-main)' }}
       onScroll={handleScroll}
     >
-      <div className="mx-auto max-w-[860px] px-6 pt-6 pb-40">
+      <div className="mx-auto max-w-[1032px] pt-6 pb-40">
         {messages.length === 0 ? <WelcomeScreen /> : <MessageList />}
       </div>
     </div>
