@@ -12,7 +12,6 @@ import { useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
 import type { PendingFileInfo } from '@/hooks/useChat'
-import { useBrandingStore } from '@/stores/brandingStore'
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import type { SkillInfo } from '@/lib/tauri'
@@ -37,7 +36,6 @@ export function InputBar() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const accentColor = useBrandingStore((s) => s.accentColor)
   const { workspace: authorizedWorkspace } = useAuthorizedWorkspace(activeConversationId)
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false)
 
@@ -195,7 +193,7 @@ export function InputBar() {
       }}
     >
       {authorizedWorkspace && (
-        <div className="mx-auto mb-3 flex max-w-[860px] items-center justify-between gap-3 rounded-xl px-4 py-2"
+        <div className="mx-auto mb-3 flex max-w-[1032px] items-center justify-between gap-3 rounded-xl px-4 py-2"
           style={{
             background: 'var(--color-primary-subtle)',
             border: '1px solid var(--color-primary-muted)',
@@ -227,13 +225,7 @@ export function InputBar() {
           </div>
         </div>
       )}
-      <div
-        className="mx-auto max-w-[860px] rounded-xl"
-        style={{
-          background: 'var(--color-bg-input)',
-          boxShadow: 'var(--shadow-input)',
-        }}
-      >
+      <div className="mx-auto max-w-[1032px] rounded-[18px] border border-border bg-card">
         {/* Pending file chips */}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1">
@@ -399,12 +391,12 @@ export function InputBar() {
 
           {/* Send / Stop button */}
           <button
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-none outline-none transition-colors duration-150"
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-none outline-none transition-colors duration-150"
             style={{
               background:
                 isStreaming || hasPendingContent
-                  ? accentColor
-                  : 'var(--color-border)',
+                  ? 'var(--primary)'
+                  : '#D4D4D8',
               cursor: isSendDisabled ? 'default' : 'pointer',
             }}
             onClick={handleSendButtonClick}
