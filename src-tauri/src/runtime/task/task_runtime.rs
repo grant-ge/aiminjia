@@ -32,6 +32,13 @@ impl TaskRuntime {
         self.store.create_task(record)
     }
 
+    pub fn list_for_session(
+        &self,
+        session_id: &crate::runtime::ids::SessionId,
+    ) -> Result<Vec<TaskRecord>> {
+        self.store.list_for_session(session_id)
+    }
+
     pub fn set_status(
         &self,
         task_id: &crate::runtime::ids::TaskId,
@@ -64,6 +71,16 @@ impl TaskRuntime {
                 RuntimeEventKind::TaskStatusChanged {
                     task_id: task_id.clone(),
                     status: status_str.to_string(),
+                    subject: task_record
+                        .as_ref()
+                        .map(|r| r.subject.clone())
+                        .unwrap_or_default(),
+                    active_form: task_record
+                        .as_ref()
+                        .and_then(|r| r.active_form.clone()),
+                    owner_agent_id: task_record
+                        .as_ref()
+                        .and_then(|r| r.owner_agent_id.clone()),
                 },
             );
             let bus = bus.clone();

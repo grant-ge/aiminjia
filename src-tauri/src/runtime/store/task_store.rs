@@ -3,13 +3,14 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 
-use crate::runtime::ids::TaskId;
+use crate::runtime::ids::{SessionId, TaskId};
 use crate::runtime::task::task_models::{TaskRecord, TaskStatus};
 
 pub trait TaskStore: Send + Sync {
     fn create_task(&self, record: TaskRecord) -> Result<()>;
     fn get_task(&self, task_id: &TaskId) -> Result<Option<TaskRecord>>;
     fn update_task_status(&self, task_id: &TaskId, status: TaskStatus) -> Result<()>;
+    fn list_for_session(&self, session_id: &SessionId) -> Result<Vec<TaskRecord>>;
 }
 
 #[derive(Default)]
@@ -43,5 +44,15 @@ impl TaskStore for InMemoryTaskStore {
             .ok_or_else(|| anyhow::anyhow!("task not found: {}", task_id.as_str()))?;
         record.status = status;
         Ok(())
+    }
+
+    fn list_for_session(&self, session_id: &SessionId) -> Result<Vec<TaskRecord>> {
+        let tasks = self.tasks.lock().unwrap();
+        let result = tasks
+            .values()
+            .filter(|r| r.session_id.as_str() == session_id.as_str())
+            .cloned()
+            .collect();
+        Ok(result)
     }
 }

@@ -136,6 +136,40 @@ impl From<SubagentTranscriptEntryRecord> for SubAgentTranscriptEntryFrontend {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TaskRecordFrontend {
+    pub task_id: String,
+    pub session_id: String,
+    pub subject: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_form: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend {
+    fn from(r: crate::runtime::task::task_models::TaskRecord) -> Self {
+        use crate::runtime::task::task_models::TaskStatus;
+        let status_str = match r.status {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Running => "running",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+        };
+        Self {
+            task_id: r.task_id.as_str().to_string(),
+            session_id: r.session_id.as_str().to_string(),
+            subject: r.subject,
+            status: status_str.to_string(),
+            active_form: r.active_form,
+            owner: r.owner_agent_id.map(|id| id.as_str().to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodeBlock {
     pub id: String,
     pub language: String,

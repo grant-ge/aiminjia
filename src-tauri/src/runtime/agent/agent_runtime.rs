@@ -186,6 +186,9 @@ impl AgentRuntime {
             crate::runtime::events::RuntimeEventKind::TaskStatusChanged {
                 task_id: crate::runtime::ids::TaskId::new(child_run_id.as_str()),
                 status: "failed".to_string(),
+                subject: String::new(),
+                active_form: None,
+                owner_agent_id: None,
             },
         );
         bus.emit(event).await?;

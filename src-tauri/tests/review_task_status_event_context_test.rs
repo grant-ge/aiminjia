@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use app_lib::runtime::ids::{RunId, TaskId};
+use app_lib::runtime::ids::{RunId, SessionId, TaskId};
 use app_lib::runtime::store::InMemoryTaskStore;
 use app_lib::runtime::task::{TaskRecord, TaskRuntime, TaskStatus};
 use app_lib::runtime::RuntimeEventBus;
@@ -20,12 +20,34 @@ fn review_task_terminal_notification_should_use_real_parent_run_context() {
     runtime
         .create_task(TaskRecord {
             task_id: task_id.clone(),
+            session_id: SessionId::new("test-session"),
             parent_run_id: RunId::new("run-parent-ctx"),
             owner_agent_id: None,
             subject: "review task".to_string(),
             status: TaskStatus::Running,
+            active_form: None,
         })
         .unwrap();
+
+    runtime.set_status(&task_id, TaskStatus::Completed).unwrap();
+
+    let trace = host.trace();
+    let event = trace
+        .events
+        .iter()
+        .find(|event| event.name == "task:status-changed")
+        .expect("task runtime should emit task:status-changed");
+
+    assert_eq!(
+        event.payload.get("taskId").and_then(|value| value.as_str()),
+        Some("task-ctx-1")
+    );
+    assert_eq!(
+        event.payload.get("runId").and_then(|value| value.as_str()),
+        Some("run-parent-ctx"),
+        "task terminal notifications should keep the owning parent run id so the host can attribute task completion to the correct run"
+    );
+}
 
     runtime.set_status(&task_id, TaskStatus::Completed).unwrap();
 

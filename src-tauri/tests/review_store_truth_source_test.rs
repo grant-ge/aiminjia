@@ -59,10 +59,12 @@ fn review_resume_related_store_records_should_roundtrip_when_present() {
     task_store
         .create_task(TaskRecord {
             task_id: TaskId::new("task-present"),
+            session_id: SessionId::new("test-session"),
             parent_run_id: RunId::new("run-present"),
             owner_agent_id: None,
             subject: "resume probe".to_string(),
             status: TaskStatus::Running,
+            active_form: None,
         })
         .unwrap();
     assert_eq!(
