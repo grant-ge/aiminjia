@@ -1,37 +1,80 @@
-import { Button } from '@/components/ui/button'
+import { Sparkles } from 'lucide-react'
+
+import { PageSectionShell } from '@/components/shell/PageSectionShell'
+import { PageTopBar } from '@/components/shell/PageTopBar'
+import { SkillActionBar } from '@/components/skills/SkillActionBar'
+import { SkillCard } from '@/components/skills/SkillCard'
+import { SkillDetailHero } from '@/components/skills/SkillDetailHero'
+import { SkillMetaRow } from '@/components/skills/SkillMetaRow'
+import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
+import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useChat } from '@/hooks/useChat'
 import { useSkillStore } from '@/stores/skillStore'
+import { useUiStore, type Route } from '@/stores/uiStore'
 
 interface SkillDetailPageProps {
   skillId: string
 }
 
+const TRY_PROMPTS = [
+  '依据这份表格，分析本月经营数据，输出 KPI 达成率、趋势图和 P0/P1 行动建议。',
+  '帮我分析表格数据，自动挖掘 KPI、趋势和异常，输出可视化报告。',
+  '把这份多 sheet Excel 拆开分析，各模块独立出报告并关联对比。',
+]
+
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
-  const skill = useSkillStore((state) => state.getById(skillId))
+  const skill = useSkillStore((s) => s.getById(skillId))
+  const setRoute = useUiStore((s) => s.setRoute)
   const { createConversationFromSkill } = useChat()
 
   if (!skill) {
-    return <div className="p-8 text-sm text-muted-foreground">技能不存在或尚未加载。</div>
+    return (
+      <PageSectionShell topBar={<PageTopBar variant="default" />} padding="px-10 pt-10 pb-8" gap="gap-4">
+        <div className="text-sm text-muted-foreground">技能不存在或尚未加载。</div>
+      </PageSectionShell>
+    )
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 overflow-auto px-8 py-8">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold">{skill.displayName}</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">{skill.description}</p>
-      </div>
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h2 className="text-base font-medium">工作流预览</h2>
-        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
-          <li>识别任务目标与上下文</li>
-          <li>生成对应执行步骤</li>
-          <li>回到会话中继续完成任务</li>
-        </ol>
-      </div>
-      <div className="flex gap-3">
-        <Button onClick={() => void createConversationFromSkill(skill.id)}>开始使用</Button>
-        <Button variant="secondary">上传新版本</Button>
-      </div>
-    </div>
+    <PageSectionShell
+      topBar={<PageTopBar variant="default" />}
+      padding="px-10 pt-7 pb-8"
+      gap="gap-6"
+    >
+      <SkillDetailHero
+        iconNode={<Sparkles className="h-9 w-9 text-primary" />}
+        title={skill.displayName}
+        subtitle={skill.shortDescription || skill.description}
+        actionBar={
+          <SkillActionBar
+            secondaryLabel="禁用"
+            primaryLabel="使用"
+            onSecondary={() => {}}
+            onPrimary={() => void createConversationFromSkill(skill.id)}
+          />
+        }
+      />
+      <SkillMetaRow
+        items={[
+          { label: '来源', value: skill.source === 'builtin' ? 'AI 小家内置' : '已安装' },
+          { label: '更新时间', value: '2026-04-20' },
+        ]}
+      />
+      <SkillTryGrid>
+        {TRY_PROMPTS.map((p, i) => (
+          <SkillCard
+            key={i}
+            iconNode={<Sparkles className="h-4 w-4 text-primary" />}
+            title={skill.displayName}
+            desc={p}
+            onOpen={() => setRoute({ kind: 'skill-detail', skillId: skill.id } as Route)}
+            onUse={() => void createConversationFromSkill(skill.id)}
+          />
+        ))}
+      </SkillTryGrid>
+      <SkillUsageBlock
+        text={skill.description || '上传 Excel 或 CSV 表格，一键生成可视化数据分析报告。'}
+      />
+    </PageSectionShell>
   )
 }
