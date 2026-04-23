@@ -4,7 +4,7 @@
 
 **Goal:** 用 role-based 消息模型贯通工具调用的实时展示与历史回显；扩展 task 数据结构支持辅助栏持久展示；所有数据格式对齐后端 OpenAI camelCase 存储格式。
 
-**Architecture:** 消息层新增 `role: 'tool'`，工具调用历史从 `get_messages` 接口恢复；实时阶段通过扩展事件 payload 驱动；task 与 session 绑定，走独立存储通道，不混入消息流；辅助栏（RightPanel）作为独立面板在 ChatPage 右侧展示 task 列表。
+**Architecture:** 消息层新增 `role: 'tool'`，工具调用历史从 `get_messages` 接口恢复；实时阶段通过扩展事件 payload 驱动；task 与 session 绑定，走独立存储通道，不混入消息流；辅助栏（RightPanel）常驻展示，包含三个 accordion section：待办（task）、产物（generatedFiles）、技能与 MCP（占位导航入口）。
 
 **Tech Stack:** TypeScript, React, Zustand, Tauri IPC, `src/types/message.ts`, `src/stores/streamingStore.ts`, `src/lib/tauri.ts`
 
@@ -206,7 +206,7 @@ export function getTasks(conversationId: string): Promise<ConversationTaskState[
 
 ### 6.1 布局
 
-在 `ChatPage` 右侧新增 `RightPanel`，和 `BrowserPanel` 平级：
+在 `ChatPage` 右侧新增 `RightPanel`，和 `BrowserPanel` 平级。**常驻显示**，固定宽度 260px：
 
 ```tsx
 // ChatPage 结构
@@ -215,88 +215,100 @@ export function getTasks(conversationId: string): Promise<ConversationTaskState[
     <ChatArea />
     <ChatBottomArea />
   </div>
-  <RightPanel conversationId={conversationId} />   // 新增
+  <RightPanel conversationId={conversationId} />   // 新增，常驻
   <BrowserPanel />
 </div>
 ```
 
-### 6.2 RightPanel 组件
+### 6.2 RightPanel 整体结构
 
 文件：`src/components/chat/RightPanel.tsx`
 
-- 固定宽度 280px，右侧 border-l
-- 无 task 时不渲染（`return null`）
-- 有 task 时展示 TaskList
+- 固定宽度 260px，`border-l border-border bg-background`
+- 顶部标题：`任务监控`
+- 三个 accordion section 从上到下：**待办 → 产物 → 技能与 MCP**
+- 每个 section 有折叠/展开状态，默认展开
 
 ```tsx
 export function RightPanel({ conversationId }: { conversationId: string }) {
-  const tasks = useChatStore((s) => s.taskStates[conversationId] ?? [])
-  if (tasks.length === 0) return null
   return (
-    <div className="flex w-[280px] shrink-0 flex-col border-l border-border bg-background">
-      <TaskList tasks={tasks} />
+    <div className="flex w-[260px] shrink-0 flex-col border-l border-border bg-background overflow-y-auto">
+      {/* 标题 */}
+      <div className="px-4 py-4">
+        <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+      </div>
+      {/* Sections */}
+      <TaskSection conversationId={conversationId} />
+      <ArtifactSection conversationId={conversationId} />
+      <SkillMcpSection />
     </div>
   )
 }
 ```
 
-### 6.3 TaskList 组件
+### 6.3 待办 Section（TaskSection）
 
-文件：`src/components/chat/TaskList.tsx`（替换现有 `TaskStatusList.tsx`）
+文件：`src/components/chat/RightPanel.tsx`（同文件）
 
-参考 Claude Code cowork 风格：
-- 顶部 header：`任务列表` + 运行中数量徽章
-- 每条 task 一行：状态图标 + subject + activeForm（运行中时显示）
-- 状态颜色：pending=muted，running=primary+spinner，completed=green，failed=red，cancelled=muted
+- 默认展开（`∨` chevron）
+- 有运行中 task 时自动展开（不可折叠）
+- 空状态：`暂无待办`（muted 文字）
+- 有 task：每条显示 TaskItem
 
 ```tsx
-interface TaskListProps {
-  tasks: ConversationTaskState[]
-}
+function TaskSection({ conversationId }: { conversationId: string }) {
+  const tasks = useChatStore((s) => s.taskStates[conversationId] ?? [])
+  const hasRunning = tasks.some(t => t.status === 'running')
+  const [open, setOpen] = useState(true)
 
-export function TaskList({ tasks }: TaskListProps) {
-  const running = tasks.filter(t => t.status === 'running')
+  // 有运行中任务时强制展开
+  useEffect(() => {
+    if (hasRunning) setOpen(true)
+  }, [hasRunning])
+
   return (
-    <div className="flex flex-col gap-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <span className="text-xs font-semibold text-foreground">任务</span>
-        {running.length > 0 && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-            {running.length} 进行中
-          </span>
-        )}
-      </div>
-      {/* Task items */}
-      <div className="flex flex-col overflow-y-auto">
-        {tasks.map((task) => (
-          <TaskItem key={task.taskId} task={task} />
-        ))}
-      </div>
+    <div className="border-b border-border">
+      <button
+        onClick={() => !hasRunning && setOpen(v => !v)}
+        className="flex w-full items-center justify-between px-4 py-3"
+      >
+        <span className="text-[13px] font-semibold text-foreground">待办</span>
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open ? "" : "-rotate-90")} />
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          {tasks.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">暂无待办</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {tasks.map(task => <TaskItem key={task.taskId} task={task} />)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 ```
 
-### 6.4 TaskItem 组件
+### 6.4 TaskItem
 
 ```tsx
 function TaskItem({ task }: { task: ConversationTaskState }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-3 border-b border-border/50 last:border-0">
+    <div className="flex items-start gap-2 py-1.5">
       <TaskStatusIcon status={task.status} />
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className={cn(
-          "text-[13px] font-medium truncate",
-          task.status === 'completed' ? "text-muted-foreground line-through" : "text-foreground"
+          "text-[12px] font-medium leading-tight",
+          task.status === 'completed'
+            ? "text-muted-foreground line-through"
+            : "text-foreground"
         )}>
           {task.subject}
         </span>
         {task.status === 'running' && task.activeForm && (
           <span className="text-[11px] text-primary">{task.activeForm}</span>
-        )}
-        {task.description && task.status !== 'completed' && (
-          <span className="text-[11px] text-muted-foreground line-clamp-2">{task.description}</span>
         )}
       </div>
     </div>
@@ -310,16 +322,117 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
 function TaskStatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'running':
-      return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary mt-0.5" />
+      return <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
     case 'completed':
-      return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: '#16A34A' }} />
+      return <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" style={{ color: '#16A34A' }} />
     case 'failed':
-      return <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive mt-0.5" />
-    case 'pending':
-      return <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 mt-0.5" />
-    default:
-      return <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30 mt-0.5" />
+      return <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
+    case 'cancelled':
+      return <MinusCircle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+    default: // pending
+      return <Circle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/40" />
   }
+}
+```
+
+### 6.6 产物 Section（ArtifactSection）
+
+文件：`src/components/chat/RightPanel.tsx`（同文件）
+
+数据来源：从当前对话的 `messages` 中提取所有 `content.generatedFiles`，去重后展示。
+
+- 默认展开
+- 空状态：`暂无产物`（muted 文字）
+- 有产物：每个文件一行，显示文件名 + 类型图标 + 打开按钮
+
+```tsx
+function ArtifactSection({ conversationId }: { conversationId: string }) {
+  const messages = useChatStore((s) => s.messages)
+  const [open, setOpen] = useState(true)
+
+  // 从所有消息的 generatedFiles 汇总，按文件 id 去重，只取 isLatest
+  const files = useMemo(() => {
+    const seen = new Set<string>()
+    const result: GeneratedFile[] = []
+    for (const msg of messages) {
+      for (const f of msg.content.generatedFiles ?? []) {
+        if (!seen.has(f.id) && f.isLatest) {
+          seen.add(f.id)
+          result.push(f)
+        }
+      }
+    }
+    return result
+  }, [messages])
+
+  return (
+    <div className="border-b border-border">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between px-4 py-3"
+      >
+        <span className="text-[13px] font-semibold text-foreground">产物</span>
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open ? "" : "-rotate-90")} />
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          {files.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">暂无产物</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {files.map(f => <ArtifactItem key={f.id} file={f} />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+### 6.7 ArtifactItem
+
+```tsx
+function ArtifactItem({ file }: { file: GeneratedFile }) {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <FileIcon fileType={file.fileType} />
+      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
+        {file.fileName}
+      </span>
+    </div>
+  )
+}
+
+// FileIcon：根据 fileType 返回对应图标（FileSpreadsheet/FileText/Image 等）
+function FileIcon({ fileType }: { fileType: string }) {
+  switch (fileType) {
+    case 'excel': case 'csv':
+      return <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-green-600" />
+    case 'html': case 'pdf':
+      return <FileText className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+    case 'png':
+      return <Image className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+    default:
+      return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+  }
+}
+```
+
+### 6.8 技能与 MCP Section（SkillMcpSection）
+
+占位导航入口，`>` 箭头，点击暂不跳转（`onClick` 为空或 `console.log`）：
+
+```tsx
+function SkillMcpSection() {
+  return (
+    <div className="border-b border-border">
+      <button className="flex w-full items-center justify-between px-4 py-3">
+        <span className="text-[13px] font-semibold text-foreground">技能与 MCP</span>
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      </button>
+    </div>
+  )
 }
 ```
 
@@ -403,14 +516,14 @@ upsertMessage: (message: Message) =>
 
 **本 spec 包含：**
 - 类型定义变更（message.ts、tauri.ts、streamingStore.ts）
-- useTurnRenderModel 分组逻辑扩展
-- RightPanel + TaskList + TaskItem 组件（task 展示）
-- useStreaming 事件处理更新
+- useTurnRenderModel 分组逻辑扩展（支持 tool role）
+- RightPanel 常驻辅助栏：待办（TaskSection）、产物（ArtifactSection）、技能与 MCP 占位
+- useStreaming 事件处理更新（tool:executing 加 input、tool:completed 改为 upsert Message）
 - chatStore upsertMessage
 
 **不包含（后续专项）：**
-- ToolGroupCard 渲染 tool 消息步骤详情（入参/出参展开）
-- 辅助栏展示"对话产物"（generatedFiles 等）
-- 后端 `get_tasks` 接口实现
-- 后端 `task:status-changed` payload 字段扩展
-- `tool:completed` 后端改为推完整 Message
+- ToolGroupCard 渲染 tool 消息步骤详情（入参/出参展开）——需后端 tool:executing 先扩展入参
+- 后端 `get_tasks` 接口实现——需 Rust 侧暴露接口，前端 switchConversation 时调用恢复 task 列表
+- 后端 `task:status-changed` payload 补全字段（subject/activeForm 等）——需 Rust 侧修改事件发射
+- 后端 `tool:completed` 改为推完整 Message——需 Rust 侧修改 tauri_event_adapter.rs
+- 后端 `tool:executing` 加 input 字段——需 Rust 侧在 ToolCallExecuting 事件加 args
