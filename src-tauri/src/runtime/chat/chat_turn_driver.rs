@@ -139,6 +139,16 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
+    /// 持久化本轮 tool result 消息到存储。纯 I/O，不含事件发射。
+    /// 默认 no-op；生产 executor 必须 override。
+    async fn persist_tool_messages(
+        &self,
+        _conversation_id: &str,
+        _tool_messages: &[serde_json::Value],
+    ) -> Result<(), TurnError> {
+        Ok(())
+    }
+
     /// Step 后处理。默认 no-op。
     async fn finalize_step(
         &self,
@@ -1075,6 +1085,8 @@ impl RuntimeChatTurnDriver {
                     );
                     history_batch.push(assistant_history_message);
 
+                    let tool_msgs_for_persist: Vec<serde_json::Value> = results.tool_result_messages.clone();
+
                     for msg in results.tool_result_messages {
                         history_batch.push(msg);
                         // CP-3: check cancellation after each staged tool result.
@@ -1088,6 +1100,15 @@ impl RuntimeChatTurnDriver {
                         history_batch.push(msg);
                     }
                     state.append_messages_batch(history_batch);
+                    // 持久化本轮 tool 消息（忽略错误，不阻断流程）
+                    if !tool_msgs_for_persist.is_empty() {
+                        if let Err(e) = executor
+                            .persist_tool_messages(config.conversation_id.as_str(), &tool_msgs_for_persist)
+                            .await
+                        {
+                            log::warn!("[chat_turn_driver] Failed to persist tool messages: {}", e);
+                        }
+                    }
                     state.all_file_metas.extend(results.new_file_metas);
                     state
                         .generated_file_ids

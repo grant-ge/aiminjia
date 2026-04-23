@@ -696,6 +696,54 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(msg_id)
     }
 
+    async fn persist_tool_messages(
+        &self,
+        conversation_id: &str,
+        tool_messages: &[serde_json::Value],
+    ) -> Result<(), TurnError> {
+        for msg in tool_messages {
+            let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
+            // 直接取三个字段，缺失时跳过整条而非写 null
+            let tool_call_id = match msg.get("toolCallId").and_then(|v| v.as_str()) {
+                Some(v) => v.to_string(),
+                None => {
+                    log::warn!("[persist_tool_messages] skipping msg missing toolCallId");
+                    continue;
+                }
+            };
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let content = msg
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let content_json = serde_json::json!({
+                "toolCallId": tool_call_id,
+                "name": name,
+                "content": content,
+            })
+            .to_string();
+            if let Err(e) = self.services.db.insert_message(
+                &msg_id,
+                conversation_id,
+                "tool",
+                &content_json,
+            ) {
+                log::warn!(
+                    "[persist_tool_messages] Failed to save tool message id={} conv={}: {}",
+                    msg_id,
+                    conversation_id,
+                    e
+                );
+            }
+        }
+        Ok(())
+    }
+
     async fn persist_assistant_message(
         &self,
         conversation_id: &str,
