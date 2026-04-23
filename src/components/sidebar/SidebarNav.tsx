@@ -1,31 +1,43 @@
-import { Puzzle, Sparkles, Timer } from 'lucide-react'
+/**
+ * @designSource design.pen#47U5w (nv1/nv2/nv3)
+ * @sizing each row padding [6,8], gap 2
+ */
+import { Blocks, Clock3, Sparkles, type LucideIcon } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import { useUiStore, type Route } from '@/stores/uiStore'
+export type SidebarNavKey = 'home' | 'skill-center' | 'schedules'
 
-const NAV_ITEMS: Array<{ kind: Route['kind']; label: string; icon: typeof Sparkles }> = [
-  { kind: 'home', label: '新任务', icon: Sparkles },
-  { kind: 'skill-center', label: '技能中心', icon: Puzzle },
-  { kind: 'schedules', label: '定时任务', icon: Timer },
+interface SidebarNavProps {
+  activeKey?: SidebarNavKey
+  onSelect?: (key: SidebarNavKey) => void
+}
+
+const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon }> = [
+  { key: 'home', label: '新任务', icon: Sparkles },
+  { key: 'skill-center', label: '技能中心', icon: Blocks },
+  { key: 'schedules', label: '定时任务', icon: Clock3 },
 ]
 
-export function SidebarNav() {
-  const route = useUiStore((state) => state.route)
-  const setRoute = useUiStore((state) => state.setRoute)
-
+export function SidebarNav({ activeKey = 'home', onSelect = () => {} }: SidebarNavProps) {
   return (
-    <div className="space-y-1 px-3 py-3">
-      {NAV_ITEMS.map(({ kind, label, icon: Icon }) => (
-        <Button
-          key={kind}
-          className="w-full justify-start"
-          variant={route.kind === kind ? 'secondary' : 'ghost'}
-          onClick={() => setRoute({ kind } as Route)}
-        >
-          <Icon className="size-4" />
-          {label}
-        </Button>
-      ))}
-    </div>
+    <nav className="flex flex-col gap-0.5">
+      {NAV.map(({ key, label, icon: Icon }) => {
+        const active = key === activeKey
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSelect(key)}
+            className={
+              active
+                ? 'flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5 text-left text-sm text-sidebar-foreground'
+                : 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/40'
+            }
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{label}</span>
+          </button>
+        )
+      })}
+    </nav>
   )
 }
