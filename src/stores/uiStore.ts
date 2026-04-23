@@ -7,13 +7,22 @@ export type Route =
   | { kind: 'schedules' }
   | { kind: 'chat'; conversationId: string }
 
-export type SettingsModalState = null | 'account' | 'general' | 'about' | 'usage'
+export type SettingsModalKey =
+  | 'account'
+  | 'usage'
+  | 'permissions'
+  | 'mcp'
+  | 'sso'
+  | 'shortcuts'
+  | 'about'
+
+export type SettingsModalState = null | SettingsModalKey
 
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
   setRoute: (route: Route) => void
-  openSettings: (settingsModal: Exclude<SettingsModalState, null>) => void
+  openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
 }
 
@@ -21,6 +30,10 @@ export const useUiStore = create<UiState>((set) => ({
   route: { kind: 'home' },
   settingsModal: null,
   setRoute: (route) => set({ route }),
-  openSettings: (settingsModal) => set({ settingsModal }),
+  openSettings: (key) => {
+    const normalized: SettingsModalKey =
+      (key as string) === 'general' ? 'permissions' : (key as SettingsModalKey)
+    set({ settingsModal: normalized })
+  },
   closeSettings: () => set({ settingsModal: null }),
 }))
