@@ -19,6 +19,7 @@ import {
   sendMessage,
   stopStreaming,
   getMessages,
+  getTasks,
   createConversation,
   deleteConversation,
   getConversations,
@@ -35,7 +36,7 @@ function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
 }
 
-/** File info passed from InputBar to sendUserMessage. */
+/** File info passed from chat input UI to sendUserMessage. */
 export interface PendingFileInfo {
   id: string
   fileName: string
@@ -54,7 +55,7 @@ export function useChat() {
   // NOTE: streamingContent is intentionally NOT subscribed here.
   // Only MessageList.tsx (which renders StreamingBubble) subscribes to it
   // directly from the store. Subscribing here would force ALL useChat()
-  // consumers (Sidebar, InputBar, App) to re-render on every streaming
+  // consumers (Sidebar, ChatBottomArea, App) to re-render on every streaming
   // delta token, saturating the JS main thread and freezing the UI.
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
@@ -161,9 +162,18 @@ export function useChat() {
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
 
     try {
-      const msgs = await getMessages(id)
+      const [msgs, tasks] = await Promise.all([
+        getMessages(id),
+        getTasks(id).catch(() => []),
+      ])
       console.log('[useChat] getMessages OK, count:', msgs.length)
+      console.log('[useChat] getTasks OK, count:', tasks.length)
       useChatStore.getState().setMessages(msgs)
+      // 恢复 task 列表到 store
+      const store = useChatStore.getState()
+      for (const task of tasks) {
+        store.upsertConversationTaskState(id, task)
+      }
     } catch (err) {
       console.error('[useChat] getMessages IPC failed:', err)
     }
