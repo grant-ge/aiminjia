@@ -310,3 +310,21 @@ pub async fn open_workspace_directory(file_mgr: State<'_, Arc<FileManager>>) -> 
 
     Ok(())
 }
+
+/// Return the default folder (`~/.renlijia/defaultFolder`) as a workspace ref.
+/// The directory is guaranteed to exist because `AiJiaHome::ensure_dirs()` is
+/// called at startup.
+#[tauri::command]
+pub async fn get_default_folder(
+    aijia_home: tauri::State<'_, std::sync::Arc<crate::storage::AiJiaHome>>,
+) -> Result<serde_json::Value, String> {
+    let path = aijia_home.default_folder();
+    let display_name = "默认项目".to_string();
+    let root_path = path.to_string_lossy().to_string();
+    log::info!("[workspace] get_default_folder: {}", root_path);
+    Ok(serde_json::json!({
+        "id": "default",
+        "rootPath": root_path,
+        "displayName": display_name,
+    }))
+}

@@ -417,6 +417,7 @@ pub fn run() {
             workspace::authorize_local_directory,
             workspace::get_authorized_workspace,
             workspace::revoke_authorized_workspace,
+            workspace::get_default_folder,
             // Export commands
             export::export_conversation,
             // Plugin commands
