@@ -24,11 +24,15 @@ export interface ConversationTreeProject {
 interface ConversationTreeProps {
   projects?: ConversationTreeProject[]
   onSelectConversation?: (conversationId: string) => void
+  onRenameConversation?: (id: string) => void
+  onArchiveConversation?: (id: string) => void
 }
 
 export function ConversationTree({
   projects = [],
   onSelectConversation = () => {},
+  onRenameConversation,
+  onArchiveConversation,
 }: ConversationTreeProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
@@ -50,10 +54,13 @@ export function ConversationTree({
           {p.conversations.map((c) => (
             <ConversationRow
               key={c.id}
+              id={c.id}
               title={c.title}
               active={c.active}
               loading={c.loading}
               onClick={() => onSelectConversation(c.id)}
+              onRename={() => onRenameConversation?.(c.id)}
+              onArchive={() => onArchiveConversation?.(c.id)}
             />
           ))}
         </ProjectAccordion>
