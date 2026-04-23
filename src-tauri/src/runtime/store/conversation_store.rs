@@ -95,6 +95,7 @@ impl ConversationStore for InMemoryConversationStore {
         self.messages.lock().unwrap().remove(id);
         self.active_tasks.lock().unwrap().remove(id);
         self.compact_boundaries.lock().unwrap().remove(id);
+        self.archived.lock().unwrap().remove(id);
         Ok(())
     }
 
@@ -209,6 +210,35 @@ mod tests {
         let archived = store.get_archived_conversations().unwrap();
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0]["id"], "c1");
+    }
+
+    #[test]
+    fn test_archive_nonexistent_returns_empty() {
+        let store = InMemoryConversationStore::new();
+        // Archive an ID that was never created — no conversation data exists
+        store.archive_conversation("ghost").unwrap();
+        // filter_map drops entries with no matching conversation, so result must be empty
+        let archived = store.get_archived_conversations().unwrap();
+        assert!(
+            archived.is_empty(),
+            "archiving a non-existent conversation should yield nothing in get_archived_conversations"
+        );
+    }
+
+    #[test]
+    fn test_delete_clears_archived() {
+        let store = InMemoryConversationStore::new();
+        store.create_conversation("c1", "Title").unwrap();
+        store.archive_conversation("c1").unwrap();
+        assert_eq!(store.get_archived_conversations().unwrap().len(), 1);
+
+        store.delete_conversation("c1").unwrap();
+
+        let archived = store.get_archived_conversations().unwrap();
+        assert!(
+            archived.is_empty(),
+            "delete_conversation should remove the id from the archived set"
+        );
     }
 
     #[test]
