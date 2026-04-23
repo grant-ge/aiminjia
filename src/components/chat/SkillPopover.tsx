@@ -1,43 +1,48 @@
 import { useState } from 'react'
-import { ChevronRight, Puzzle } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { SkillPopoverPanel } from '@/components/chat-scene/SkillPopoverPanel'
 import { useSkillStore } from '@/stores/skillStore'
-import { useUiStore } from '@/stores/uiStore'
 
-export function SkillPopover() {
-  const [open, setOpen] = useState(false)
-  const skills = useSkillStore((state) => state.skills)
-  const setRoute = useUiStore((state) => state.setRoute)
+interface SkillPopoverProps {
+  open?: boolean
+  onPick?: (skillId: string) => void
+  onClose?: () => void
+}
+
+export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const skills = useSkillStore((s) => s.skills)
+
+  // Support both controlled (open/onClose) and uncontrolled (internal) usage
+  const isOpen = openProp !== undefined ? openProp : internalOpen
+
+  const handleClose = () => {
+    if (onClose) {
+      onClose()
+    } else {
+      setInternalOpen(false)
+    }
+  }
+
+  const handlePick = (skillId: string) => {
+    if (onPick) {
+      onPick(skillId)
+    }
+    handleClose()
+  }
+
+  if (!isOpen) return null
+
+  const items = skills.map((s) => ({
+    id: s.id,
+    title: s.displayName,
+    subtitle: s.shortDescription || s.description,
+    source: s.source === 'builtin' ? '内置' : '已安装',
+  }))
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost">
-          <Puzzle className="size-4" />
-          技能
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 space-y-2">
-        {skills.slice(0, 6).map((skill) => (
-          <button
-            key={skill.id}
-            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-            onClick={() => {
-              setRoute({ kind: 'skill-detail', skillId: skill.id })
-              setOpen(false)
-            }}
-            type="button"
-          >
-            <span>{skill.displayName}</span>
-            <ChevronRight className="size-4 text-muted-foreground" />
-          </button>
-        ))}
-        <Button className="w-full" variant="secondary" onClick={() => setRoute({ kind: 'skill-center' })}>
-          去技能中心
-        </Button>
-      </PopoverContent>
-    </Popover>
+    <div className="absolute bottom-full left-10 z-30 mb-3">
+      <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />
+    </div>
   )
 }
