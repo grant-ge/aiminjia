@@ -3,7 +3,7 @@
  * Based on tech-architecture.md §3.3
  */
 
-export type MessageRole = 'user' | 'assistant' | 'system'
+export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
 export interface Message {
   id: string
@@ -13,6 +13,10 @@ export interface Message {
   content: MessageContent
   /** Sender information (only present for user messages) */
   sender?: MessageSender
+  /** assistant 消息专用：工具调用入参列表，来自磁盘 toolCalls 字段 */
+  toolCalls?: AssistantToolCall[]
+  /** tool 消息专用：工具执行结果 */
+  toolResult?: ToolResultContent
 }
 
 /** Information about the message sender (for user messages) */
@@ -292,4 +296,22 @@ export interface SubAgentTranscriptEntry {
   role: string
   content: string
   toolName?: string
+}
+
+// --- Tool Call ---
+
+/** assistant 消息里的工具调用入参（来自磁盘 toolCalls 字段） */
+export interface AssistantToolCall {
+  id: string          // tool_call_id，与 tool 消息的 toolCallId 对应
+  name: string        // 工具名，如 "browse_navigate"
+  arguments: unknown  // 完整入参 JSON 对象
+}
+
+/** role: 'tool' 消息的工具结果内容 */
+export interface ToolResultContent {
+  toolCallId: string   // 与 AssistantToolCall.id 对应
+  name: string         // 工具名
+  content: string      // 完整工具输出文本
+  isError: boolean     // 是否执行失败
+  durationMs?: number  // 执行耗时（ms）
 }
