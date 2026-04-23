@@ -55,14 +55,17 @@ describe('AppSidebar', () => {
 
   it('renders a top drag-region spacer on macOS', async () => {
     // isMac is evaluated at module-load time, so we need to reset modules and
-    // re-import with a mocked platform.
-    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform')
-    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true })
+    // re-import with a mocked userAgent.
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'userAgent')
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)',
+      configurable: true,
+    })
     vi.resetModules()
     const { AppSidebar: MacSidebar } = await import('../AppSidebar')
     const { container } = render(<MacSidebar />)
     expect(container.querySelector('[data-tauri-drag-region]')).toBeInTheDocument()
-    if (orig) Object.defineProperty(navigator, 'platform', orig)
+    if (orig) Object.defineProperty(navigator, 'userAgent', orig)
     vi.resetModules()
   })
 })

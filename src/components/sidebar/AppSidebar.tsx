@@ -14,7 +14,10 @@ import { SidebarNav, type SidebarNavKey } from './SidebarNav'
 import { SidebarSectionTitle } from './SidebarSectionTitle'
 import { TenantHeader } from './TenantHeader'
 
-const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+// userAgentData is the modern API but isn't in Tauri's WebView yet; userAgent
+// is the only safe substring probe and is not deprecated.
+const isMac =
+  typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent || '')
 
 export function AppSidebar() {
   const productName = useBrandingStore((s) => s.productName)
