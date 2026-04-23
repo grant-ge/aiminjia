@@ -48,6 +48,7 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
         RuntimeEventKind::ToolCallExecuting {
             tool_call_id,
             tool_name,
+            input,
         } => Some(LegacyEvent {
             name: "tool:executing".to_string(),
             payload: json!({
@@ -55,19 +56,33 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "toolId": tool_call_id.as_str(),
                 "toolName": tool_name,
                 "runId": event.run_id.as_str(),
+                "input": input,
             }),
         }),
         RuntimeEventKind::ToolCallCompleted {
             tool_call_id,
             tool_name,
             is_error,
+            content,
+            msg_id,
+            duration_ms,
         } => Some(LegacyEvent {
             name: "tool:completed".to_string(),
             payload: json!({
+                "id": msg_id,
                 "conversationId": conversation_id,
-                "toolId": tool_call_id.as_str(),
-                "toolName": tool_name,
+                "role": "tool",
+                "createdAt": chrono::Utc::now().to_rfc3339(),
+                "content": {},
+                "toolResult": {
+                    "toolCallId": tool_call_id.as_str(),
+                    "name": tool_name,
+                    "content": content,
+                    "isError": is_error,
+                    "durationMs": duration_ms,
+                },
                 "runId": event.run_id.as_str(),
+                // legacy compat: keep success field for any consumers that still rely on it
                 "success": !is_error,
             }),
         }),
@@ -135,13 +150,22 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 },
             }),
         }),
-        RuntimeEventKind::TaskStatusChanged { task_id, status } => Some(LegacyEvent {
+        RuntimeEventKind::TaskStatusChanged {
+            task_id,
+            status,
+            subject,
+            active_form,
+            owner_agent_id,
+        } => Some(LegacyEvent {
             name: "task:status-changed".to_string(),
             payload: json!({
                 "conversationId": conversation_id,
                 "taskId": task_id.as_str(),
                 "status": status,
                 "runId": event.run_id.as_str(),
+                "subject": subject,
+                "activeForm": active_form,
+                "owner": owner_agent_id.as_ref().map(|id| id.as_str()),
             }),
         }),
         RuntimeEventKind::StopHookPreventedContinuation { reason } => Some(LegacyEvent {

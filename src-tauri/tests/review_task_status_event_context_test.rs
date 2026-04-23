@@ -48,23 +48,3 @@ fn review_task_terminal_notification_should_use_real_parent_run_context() {
         "task terminal notifications should keep the owning parent run id so the host can attribute task completion to the correct run"
     );
 }
-
-    runtime.set_status(&task_id, TaskStatus::Completed).unwrap();
-
-    let trace = host.trace();
-    let event = trace
-        .events
-        .iter()
-        .find(|event| event.name == "task:status-changed")
-        .expect("task runtime should emit task:status-changed");
-
-    assert_eq!(
-        event.payload.get("taskId").and_then(|value| value.as_str()),
-        Some("task-ctx-1")
-    );
-    assert_eq!(
-        event.payload.get("runId").and_then(|value| value.as_str()),
-        Some("run-parent-ctx"),
-        "task terminal notifications should keep the owning parent run id so the host can attribute task completion to the correct run"
-    );
-}

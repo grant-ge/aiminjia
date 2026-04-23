@@ -10,6 +10,9 @@ fn review_task_terminal_runtime_event_should_not_be_dropped_by_legacy_adapter() 
         RuntimeEventKind::TaskStatusChanged {
             task_id: TaskId::new("task-1"),
             status: "completed".to_string(),
+            subject: String::new(),
+            active_form: None,
+            owner_agent_id: None,
         },
     );
     assert!(

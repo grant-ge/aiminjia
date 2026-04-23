@@ -563,6 +563,9 @@ impl RuntimeChatTurnDriver {
                                 tool_call_id: tool_call_id.clone().into(),
                                 tool_name: tool_name.clone(),
                                 is_error: true,
+                                content: message.clone(),
+                                msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                                duration_ms: None,
                             },
                         ))
                         .await?;

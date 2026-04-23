@@ -85,7 +85,7 @@ async fn a2_fail_background_run_sets_failed_status_and_emits_task_status_changed
     let events = bus.recorded();
     assert!(events.iter().any(|event| matches!(
         &event.kind,
-        app_lib::runtime::events::RuntimeEventKind::TaskStatusChanged { task_id, status }
+        app_lib::runtime::events::RuntimeEventKind::TaskStatusChanged { task_id, status, .. }
         if task_id.as_str() == child_run_id.as_str() && status == "failed"
     )));
 }

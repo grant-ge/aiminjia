@@ -414,6 +414,7 @@ impl QueryEngine {
             RuntimeEventKind::ToolCallExecuting {
                 tool_call_id: crate::runtime::ids::ToolCallId::new(call.tool_call_id.clone()),
                 tool_name: call.tool_name.clone(),
+                input: call.args.clone(),
             },
         ))
         .await?;
@@ -439,6 +440,9 @@ impl QueryEngine {
                         ),
                         tool_name: call.tool_name.clone(),
                         is_error: false,
+                        content: tool_result.content.clone(),
+                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                        duration_ms: None,
                     },
                 ))
                 .await?;
@@ -480,6 +484,14 @@ impl QueryEngine {
                     self.record_permission_denial(&call.tool_name, &call.tool_call_id, reason);
                 }
 
+                let content = match &err {
+                    crate::runtime::tools::executor::ToolError::InputValidationError {
+                        tool_name,
+                        message,
+                    } => format!("InputValidationError for tool '{tool_name}': {message}"),
+                    other => other.to_string(),
+                };
+
                 bus.emit(RuntimeEvent::new(
                     turn.session_id().clone(),
                     turn.run_id().clone(),
@@ -489,17 +501,12 @@ impl QueryEngine {
                         ),
                         tool_name: call.tool_name.clone(),
                         is_error: true,
+                        content: content.clone(),
+                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                        duration_ms: None,
                     },
                 ))
                 .await?;
-
-                let content = match &err {
-                    crate::runtime::tools::executor::ToolError::InputValidationError {
-                        tool_name,
-                        message,
-                    } => format!("InputValidationError for tool '{tool_name}': {message}"),
-                    other => other.to_string(),
-                };
 
                 Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id: call.tool_call_id,
@@ -591,6 +598,7 @@ impl QueryEngine {
                                 "tool-call-{tool_name}"
                             )),
                             tool_name: tool_name.to_string(),
+                            input: serde_json::Value::Null, // legacy path: no original args
                         },
                     ))
                     .await?;
@@ -607,6 +615,9 @@ impl QueryEngine {
                             // Legacy run_tool_with_bus path: no error info available,
                             // default to success=true to preserve prior behaviour.
                             is_error: false,
+                            content: String::new(), // legacy path: no content available
+                            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                            duration_ms: None,
                         },
                     ))
                     .await?;

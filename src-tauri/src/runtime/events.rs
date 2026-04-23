@@ -25,13 +25,19 @@ pub enum RuntimeEventKind {
     ToolCallExecuting {
         tool_call_id: ToolCallId,
         tool_name: String,
+        input: serde_json::Value,
     },
     ToolCallCompleted {
         tool_call_id: ToolCallId,
         tool_name: String,
         /// Whether the tool execution ended in an error.
-        /// Carried through to the frontend `success` field in `tool:completed`.
         is_error: bool,
+        /// Tool output text content.
+        content: String,
+        /// Message id, used by the frontend to upsert the tool result message.
+        msg_id: String,
+        /// Optional wall-clock duration of the tool execution in milliseconds.
+        duration_ms: Option<u64>,
     },
     PermissionAskRequired {
         tool_call_id: ToolCallId,
@@ -49,6 +55,9 @@ pub enum RuntimeEventKind {
     TaskStatusChanged {
         task_id: TaskId,
         status: String,
+        subject: String,
+        active_form: Option<String>,
+        owner_agent_id: Option<AgentId>,
     },
     StopHookPreventedContinuation {
         reason: Option<String>,
