@@ -12,6 +12,7 @@ interface ChatComposerCompactProps {
   submitDisabled?: boolean
   placeholder?: string
   onOpenSkill?: () => void
+  onPickProject?: () => void
   projectLabel?: string
   modelLabel?: string
 }
@@ -23,6 +24,7 @@ export function ChatComposerCompact({
   submitDisabled = false,
   placeholder = '继续追问、修改口径，或让 AI 直接帮你创建后续任务...',
   onOpenSkill,
+  onPickProject,
   projectLabel = 'Desktop',
   modelLabel = '标准',
 }: ChatComposerCompactProps) {
@@ -76,6 +78,7 @@ export function ChatComposerCompact({
           </button>
           <button
             type="button"
+            onClick={onPickProject}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
           >
             <Folder className="h-3.5 w-3.5" />
