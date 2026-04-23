@@ -19,7 +19,7 @@ function loadFromStorage(): AuthorizedWorkspaceRef | null {
   }
 }
 
-export const useHomeStore = create<HomeState>()((set) => ({
+export const useHomeStore = create<HomeState>((set) => ({
   selectedWorkspace: loadFromStorage(),
   setSelectedWorkspace: (ws) => {
     try {
