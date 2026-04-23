@@ -1,6 +1,7 @@
 import { type PropsWithChildren, useEffect, useRef } from 'react'
 
 import { useAuthStore } from '@/stores/authStore'
+import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
 
 import { FullscreenLoader } from './FullscreenLoader'
@@ -12,6 +13,7 @@ export function AuthGate({ children }: PropsWithChildren) {
   const redirectFrom = useAuthStore((state) => state.redirectFrom)
   const restoreFromStorage = useAuthStore((state) => state.restoreFromStorage)
   const setRoute = useUiStore((state) => state.setRoute)
+  const { loadConversations } = useChat()
   const hasRestored = useRef(false)
 
   useEffect(() => {
@@ -21,6 +23,13 @@ export function AuthGate({ children }: PropsWithChildren) {
     hasRestored.current = true
     void restoreFromStorage()
   }, [restoreFromStorage])
+
+  // Load conversation history once the user is authenticated
+  useEffect(() => {
+    if (isLoggedIn) {
+      void loadConversations()
+    }
+  }, [isLoggedIn, loadConversations])
 
   useEffect(() => {
     if (isLoggedIn && redirectFrom) {
