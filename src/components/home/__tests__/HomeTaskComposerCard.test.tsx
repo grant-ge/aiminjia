@@ -2,13 +2,15 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useHomeStore } from '@/stores/homeStore'
+
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
 
 vi.mock('@/lib/tauri', () => ({
   getDefaultFolder: vi.fn().mockResolvedValue({
     id: 'default',
     rootPath: '/Users/test/.renlijia/defaultFolder',
-    displayName: '默认项目',
+    displayName: '测试默认项目', // distinct from static fallback '默认项目'
   }),
   pickLocalDirectory: vi.fn(),
   authorizeLocalDirectory: vi.fn().mockResolvedValue({ id: 'ws1', rootPath: '/tmp/proj', displayName: 'proj' }),
@@ -49,7 +51,7 @@ vi.mock('@/stores/uiStore', () => ({
 }))
 
 vi.mock('@/stores/homeStore', () => ({
-  useHomeStore: () => ({
+  useHomeStore: vi.fn().mockReturnValue({
     selectedWorkspace: null,
     setSelectedWorkspace: vi.fn(),
   }),
@@ -61,12 +63,17 @@ vi.mock('@/components/chat/SlashCommandPopover', () => ({ SlashCommandPopover: (
 describe('HomeTaskComposerCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Restore default homeStore mock so each test starts clean
+    vi.mocked(useHomeStore).mockReturnValue({
+      selectedWorkspace: null,
+      setSelectedWorkspace: vi.fn(),
+    })
   })
 
-  it('shows 默认项目 after loading default folder', async () => {
+  it('shows 测试默认项目 after loading default folder', async () => {
     render(<HomeTaskComposerCard />)
     await waitFor(() => {
-      expect(screen.getByText('默认项目')).toBeInTheDocument()
+      expect(screen.getByText('测试默认项目')).toBeInTheDocument()
     })
   })
 
@@ -75,11 +82,35 @@ describe('HomeTaskComposerCard', () => {
     vi.mocked(pickLocalDirectory).mockResolvedValueOnce('/Users/test/myproject')
 
     render(<HomeTaskComposerCard />)
-    await waitFor(() => screen.getByText('默认项目'))
+    await waitFor(() => screen.getByText('测试默认项目'))
 
-    fireEvent.click(screen.getByText('默认项目'))
+    fireEvent.click(screen.getByText('测试默认项目'))
     await waitFor(() => {
       expect(screen.getByText('myproject')).toBeInTheDocument()
+    })
+    expect(vi.mocked(pickLocalDirectory)).toHaveBeenCalledOnce()
+  })
+
+  it('persists workspace to homeStore on pick', async () => {
+    const setSelectedWorkspace = vi.fn()
+    vi.mocked(useHomeStore).mockReturnValue({
+      selectedWorkspace: null,
+      setSelectedWorkspace,
+    })
+
+    const { pickLocalDirectory } = await import('@/lib/tauri')
+    vi.mocked(pickLocalDirectory).mockResolvedValueOnce('/Users/test/myproject')
+
+    render(<HomeTaskComposerCard />)
+    await waitFor(() => screen.getByText('测试默认项目'))
+    fireEvent.click(screen.getByText('测试默认项目'))
+
+    await waitFor(() => {
+      expect(setSelectedWorkspace).toHaveBeenCalledWith({
+        id: 'myproject',
+        rootPath: '/Users/test/myproject',
+        displayName: 'myproject',
+      })
     })
   })
 })
