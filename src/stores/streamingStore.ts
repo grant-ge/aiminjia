@@ -6,6 +6,10 @@ export interface ToolExecution {
   toolId: string
   status: 'executing' | 'completed' | 'error'
   summary?: string
+  /** Unix ms timestamp when status changed to 'executing'. */
+  startedAt?: number
+  /** Elapsed ms from executing → completed/error. Set automatically. */
+  durationMs?: number
 }
 
 export type AgentPhase = 'think' | 'act' | 'observe'
@@ -370,13 +374,23 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
     addToolExecution: (execution) => {
       const { activeConversationId } = get()
       if (activeConversationId) {
-        get().addConversationToolExecution(activeConversationId, execution)
+        get().addConversationToolExecution(activeConversationId, {
+          ...execution,
+          startedAt: execution.status === 'executing' ? Date.now() : execution.startedAt,
+        })
       }
     },
 
     updateToolExecution: (toolId, updates) => {
       const { activeConversationId } = get()
       if (activeConversationId) {
+        if (updates.status === 'completed' || updates.status === 'error') {
+          const existing = get().streamStates[activeConversationId]?.toolExecutions
+            .find((t) => t.toolId === toolId)
+          if (existing?.startedAt && !updates.durationMs) {
+            updates = { ...updates, durationMs: Date.now() - existing.startedAt }
+          }
+        }
         get().updateConversationToolExecution(activeConversationId, toolId, updates)
       }
     },

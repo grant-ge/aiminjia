@@ -109,9 +109,14 @@ export function buildTurnsFromMessages(
       index: i + 1,
       name: t.toolName,
       status: toolExecStatusToStep(t.status),
+      durationMs: t.durationMs,
     }))
     const running = steps.some((s) => s.status === 'running')
-    target.toolGroup = { status: running ? 'running' : 'done', steps, durationMs: 0 }
+    target.toolGroup = {
+      status: running ? 'running' : 'done',
+      steps,
+      durationMs: steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0),
+    }
   }
 
   return turns

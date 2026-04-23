@@ -31,6 +31,8 @@ describe('buildTurnsFromMessages', () => {
     expect(turns[0].toolGroup).toBeDefined()
     expect(turns[0].toolGroup?.steps.map((s) => s.name)).toEqual(['fetch_feedback', 'cluster_topics'])
     expect(turns[0].toolGroup?.status).toBe('done')
+    // durationMs is 0 when no timestamps are available (test fixtures have no startedAt)
+    expect(turns[0].toolGroup?.durationMs).toBe(0)
   })
 
   it('marks toolGroup as running when any tool is executing', () => {
