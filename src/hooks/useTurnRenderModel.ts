@@ -122,12 +122,14 @@ export function buildTurnsFromMessages(
   return turns
 }
 
+const EMPTY_TOOL_EXECUTIONS: ToolExecution[] = []
+
 export function useTurnRenderModel(): RenderTurn[] {
   const messages = useChatStore((s) => s.messages)
   const activeId = useChatStore((s) => s.activeConversationId)
   const toolExecutions = useChatStore((s) => {
-    if (!activeId) return [] as ToolExecution[]
-    return s.streamStates[activeId]?.toolExecutions ?? []
+    if (!activeId) return EMPTY_TOOL_EXECUTIONS
+    return s.streamStates[activeId]?.toolExecutions ?? EMPTY_TOOL_EXECUTIONS
   })
   return useMemo(() => buildTurnsFromMessages(messages, toolExecutions), [messages, toolExecutions])
 }
