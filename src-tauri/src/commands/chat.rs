@@ -144,6 +144,14 @@ pub async fn get_conversations(
     adapter.get_conversations().await
 }
 
+#[tauri::command]
+pub async fn get_tasks(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    conversation_id: String,
+) -> Result<Vec<crate::models::message::TaskRecordFrontend>, String> {
+    adapter.get_tasks(conversation_id).await
+}
+
 pub mod testsupport {
     #![allow(deprecated)]
 

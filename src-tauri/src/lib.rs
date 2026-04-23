@@ -118,6 +118,7 @@ pub fn run() {
 
             // Initialize runtime orchestration state
             let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
+            let task_store = Arc::new(runtime::store::InMemoryTaskStore::new());
             let agent_store_path = aijia_home.agent_invocations_path();
             let subagent_transcript_store_dir = aijia_home.subagent_transcripts_dir();
             let agent_runtime = Arc::new(
@@ -342,6 +343,7 @@ pub fn run() {
             app.manage(file_mgr);
             app.manage(gateway);
             app.manage(run_registry);
+            app.manage(task_store);
             app.manage(secure_storage);
             app.manage(auth_manager);
             app.manage(connector_engine);
@@ -383,6 +385,7 @@ pub fn run() {
             chat::delete_conversation,
             chat::rename_conversation,
             chat::get_conversations,
+            chat::get_tasks,
             chat::is_agent_busy,
             // File commands
             file::upload_file,
