@@ -159,6 +159,17 @@ impl AppStorage {
         Ok(())
     }
 
+    pub fn archive_conversation(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::archive_conversation(&self.base_dir, id)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        conversations::get_archived_conversations(&self.base_dir)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
     pub fn get_file_paths_for_conversation(&self, conversation_id: &str) -> Result<Vec<String>> {
         Ok(conversations::get_file_paths_for_conversation(
             &self.base_dir,
@@ -1040,12 +1051,12 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
             .set_conversation_model_override(conversation_id, model_override)
     }
 
-    fn archive_conversation(&self, _id: &str) -> Result<()> {
-        todo!("Task 2: implement FileConversationStore::archive_conversation")
+    fn archive_conversation(&self, id: &str) -> Result<()> {
+        self.storage.archive_conversation(id)
     }
 
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
-        todo!("Task 2: implement FileConversationStore::get_archived_conversations")
+        self.storage.get_archived_conversations()
     }
 }
 
@@ -1112,12 +1123,12 @@ impl crate::runtime::store::ConversationStore for AppStorage {
         self.set_conversation_model_override(conversation_id, model_override)
     }
 
-    fn archive_conversation(&self, _id: &str) -> Result<()> {
-        todo!("Task 3: implement AppStorage::archive_conversation")
+    fn archive_conversation(&self, id: &str) -> Result<()> {
+        self.archive_conversation(id)
     }
 
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
-        todo!("Task 3: implement AppStorage::get_archived_conversations")
+        self.get_archived_conversations()
     }
 }
 

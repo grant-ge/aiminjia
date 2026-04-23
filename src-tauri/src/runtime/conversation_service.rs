@@ -200,3 +200,17 @@ pub async fn get_conversations(
 ) -> Result<Vec<serde_json::Value>, String> {
     db.get_conversations().map_err(|e| e.to_string())
 }
+
+pub async fn archive_conversation(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+) -> Result<(), String> {
+    db.archive_conversation(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn get_archived_conversations(
+    db: Arc<dyn ConversationStore>,
+) -> Result<Vec<serde_json::Value>, String> {
+    db.get_archived_conversations().map_err(|e| e.to_string())
+}
