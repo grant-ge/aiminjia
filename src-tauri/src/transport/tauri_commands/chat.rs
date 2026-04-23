@@ -114,15 +114,74 @@ pub fn build_history_from_compact_boundary(
 
     chat_messages.extend(filtered_messages.into_iter().filter_map(|msg| {
         let role = msg["role"].as_str()?.to_string();
-        let content =
-            build_history_message_content(&role, msg.get("content")?, has_authorized_workspace)?;
-        if content.trim().is_empty() {
-            return None;
+        match role.as_str() {
+            "tool" => {
+                let content_obj = msg.get("content")?;
+                let tool_call_id = content_obj
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let name = content_obj
+                    .get("name")
+                    .or_else(|| content_obj.get("toolName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let content_str = content_obj
+                    .get("content")
+                    .or_else(|| content_obj.get("result"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                if content_str.is_empty() && tool_call_id.is_empty() {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "role": "tool",
+                    "toolCallId": tool_call_id,
+                    "name": name,
+                    "content": content_str,
+                }))
+            }
+            "assistant" => {
+                let content_obj = msg.get("content")?;
+                let text = content_obj
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let tool_calls = content_obj.get("toolCalls");
+                if text.trim().is_empty() && tool_calls.is_none() {
+                    return None;
+                }
+                let mut out = serde_json::json!({
+                    "role": "assistant",
+                    "content": text,
+                });
+                if let Some(tcs) = tool_calls {
+                    if tcs.as_array().map_or(false, |a| !a.is_empty()) {
+                        out["toolCalls"] = tcs.clone();
+                    }
+                }
+                Some(out)
+            }
+            "user" => {
+                let content_obj = msg.get("content")?;
+                let content_str = build_history_message_content(
+                    "user",
+                    content_obj,
+                    has_authorized_workspace,
+                )?;
+                if content_str.trim().is_empty() {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "role": "user",
+                    "content": content_str,
+                }))
+            }
+            _ => None,
         }
-        Some(serde_json::json!({
-            "role": role,
-            "content": content,
-        }))
     }));
 
     chat_messages
