@@ -13,6 +13,7 @@ import { SettingsMenu, SETTINGS_MENU_ITEMS } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
 import { AccountPanel } from './panels/AccountPanel'
+import { ArchivedPanel } from './panels/ArchivedPanel'
 import { PlaceholderPanel } from './panels/PlaceholderPanel'
 import { UsagePanel } from './panels/UsagePanel'
 
@@ -106,6 +107,7 @@ export function SettingsModal() {
             {settingsModal === 'mcp' ? <PlaceholderPanel title="MCP 服务" /> : null}
             {settingsModal === 'sso' ? <PlaceholderPanel title="SSO 集成" /> : null}
             {settingsModal === 'shortcuts' ? <PlaceholderPanel title="快捷键" /> : null}
+            {settingsModal === 'archived' ? <ArchivedPanel /> : null}
           </SettingsContentBody>
         </div>
       }

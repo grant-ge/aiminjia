@@ -14,6 +14,7 @@ export type SettingsModalKey =
   | 'mcp'
   | 'sso'
   | 'shortcuts'
+  | 'archived'
   | 'about'
 
 export type SettingsModalState = null | SettingsModalKey

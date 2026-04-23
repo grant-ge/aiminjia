@@ -17,6 +17,7 @@ export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'mcp', label: 'MCP 服务' },
   { key: 'sso', label: 'SSO 集成' },
   { key: 'shortcuts', label: '快捷键' },
+  { key: 'archived', label: '归档记录' },
   { key: 'about', label: '关于 AI 小家' },
 ]
 
