@@ -618,6 +618,14 @@ export function getAuthorizedWorkspace(
 }
 
 /**
+ * Get the default folder (~/.renlijia/defaultFolder) as a workspace ref.
+ * Always returns a value; the directory is guaranteed to exist at startup.
+ */
+export function getDefaultFolder(): Promise<AuthorizedWorkspaceRef> {
+  return invoke<AuthorizedWorkspaceRef>('get_default_folder')
+}
+
+/**
  * Revoke the authorized workspace for a session.
  *
  * @param sessionId - The session whose authorization should be cleared
