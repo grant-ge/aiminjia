@@ -89,6 +89,26 @@ pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> Stor
     Ok(())
 }
 
+/// Set is_archived = true on conv.json and update the global index.
+pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    let now = Utc::now().to_rfc3339();
+    meta.is_archived = true;
+    meta.updated_at = now.clone();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.is_archived = true;
+        entry.updated_at = now;
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+
+    info!("Archived conversation: {}", id);
+    Ok(())
+}
+
 /// Get the configured model override for a conversation.
 pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResult<Option<String>> {
     let meta_path = conv_meta_path(base_dir, id);
@@ -154,6 +174,25 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
         b_time.cmp(a_time)
     });
 
+    Ok(result)
+}
+
+/// Retrieve all archived conversations, most recent first.
+pub fn get_archived_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value>> {
+    let index = read_global_index(base_dir)?;
+    let mut entries: Vec<_> = index.conversations.into_iter().filter(|e| e.is_archived).collect();
+    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let result = entries
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "id": e.id,
+                "title": e.title,
+                "updatedAt": e.updated_at,
+                "isArchived": true,
+            })
+        })
+        .collect();
     Ok(result)
 }
 
