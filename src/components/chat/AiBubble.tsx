@@ -52,9 +52,12 @@ import { useTranslation } from 'react-i18next'
 interface AiBubbleProps {
   message: Message
   isStreaming?: boolean
+  /** When true, hides the Avatar + product name header row and removes
+   *  the pl-9 body offset. Used by MessageList turn-based rendering. */
+  hideHeader?: boolean
 }
 
-export function AiBubble({ message, isStreaming }: AiBubbleProps) {
+export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
   const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
@@ -155,20 +158,22 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   if (!hasContent && !isStreaming) return null
 
   return (
-    <div className="mb-7 animate-[fadeUp_0.3s_ease]">
+    <div className={`animate-[fadeUp_0.3s_ease] ${hideHeader ? '' : 'mb-7'}`}>
       {/* Header: avatar + name */}
-      <div className="mb-2 flex items-center gap-2">
-        <Avatar variant="ai" />
-        <span
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          {productName}
-        </span>
-      </div>
+      {!hideHeader && (
+        <div className="mb-2 flex items-center gap-2">
+          <Avatar variant="ai" />
+          <span
+            className="text-sm font-semibold"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            {productName}
+          </span>
+        </div>
+      )}
 
       {/* Body — offset by avatar width */}
-      <div className="group relative pl-9">
+      <div className={`group relative ${hideHeader ? '' : 'pl-9'}`}>
         <div className="absolute right-0 top-0 z-10 hidden items-center gap-2 group-hover:flex">
           <button
             onClick={handleRegenerate}
