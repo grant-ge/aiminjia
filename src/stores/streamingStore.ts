@@ -10,6 +10,7 @@ export interface ToolExecution {
   startedAt?: number
   /** Elapsed ms from executing → completed/error. Set automatically. */
   durationMs?: number
+  input?: unknown  // 来自 tool:executing 事件
 }
 
 export type AgentPhase = 'think' | 'act' | 'observe'
@@ -18,6 +19,12 @@ export interface ConversationTaskState {
   taskId: string
   status: string
   runId: string
+  subject: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+  createdAt?: string
 }
 
 export interface TurnSummary {

@@ -13,6 +13,7 @@ export interface SessionState {
   setMessages: (messages: Message[]) => void
   addMessage: (message: Message) => void
   updateMessage: (id: string, updates: Partial<Message>) => void
+  upsertMessage: (message: Message) => void
 }
 
 interface SessionSliceBridge {
@@ -86,5 +87,15 @@ export function createSessionSlice<T extends SessionState & SessionSliceBridge>(
             ),
           }) as Partial<T>,
       ),
+    upsertMessage: (message) =>
+      apply((state) => {
+        const idx = state.messages.findIndex((m) => m.id === message.id)
+        if (idx >= 0) {
+          const updated = [...state.messages]
+          updated[idx] = message
+          return { messages: updated } as Partial<T>
+        }
+        return { messages: [...state.messages, message] } as Partial<T>
+      }),
   }
 }
