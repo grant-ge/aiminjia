@@ -1,102 +1,114 @@
+/**
+ * @designSource design.pen#S3D6p / 1MCFZ / az6ZY
+ */
 import { useState } from 'react'
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuthStore } from '@/stores/authStore'
-import { useUiStore } from '@/stores/uiStore'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { useUiStore, type SettingsModalKey } from '@/stores/uiStore'
 
-type MainTab = 'account' | 'general' | 'about' | 'usage'
+import { SettingsContentBody } from './SettingsContentBody'
+import { SettingsContentTop } from './SettingsContentTop'
+import { SettingsMenu, SETTINGS_MENU_ITEMS } from './SettingsMenu'
+import { SettingsShell } from './SettingsShell'
+import { AboutPanel } from './panels/AboutPanel'
+import { AccountPanel } from './panels/AccountPanel'
+import { PlaceholderPanel } from './panels/PlaceholderPanel'
+import { UsagePanel } from './panels/UsagePanel'
+
+const PANEL_HEIGHT: Partial<Record<SettingsModalKey, number>> = {
+  account: 680,
+  about: 760,
+  usage: 760,
+}
 
 export function SettingsModal() {
-  const currentTab = useUiStore((state) => state.settingsModal)
-  const closeSettings = useUiStore((state) => state.closeSettings)
-  const logout = useAuthStore((state) => state.logout)
-  const user = useAuthStore((state) => state.user)
-  const tenant = useAuthStore((state) => state.tenant)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const settingsModal = useUiStore((s) => s.settingsModal)
+  const closeSettings = useUiStore((s) => s.closeSettings)
+  const openSettings = useUiStore((s) => s.openSettings)
+  const user = useAuthStore((s) => s.user)
+  const tenant = useAuthStore((s) => s.tenant)
+  const logout = useAuthStore((s) => s.logout)
+  const productName = useBrandingStore((s) => s.productName)
+  const [pendingLogout, setPendingLogout] = useState(false)
 
-  if (!currentTab) return null
+  if (!settingsModal) return null
 
-  const activeTab = (currentTab as MainTab)
+  const activeLabel =
+    SETTINGS_MENU_ITEMS.find((m) => m.key === settingsModal)?.label || '设置'
 
-  const handleLogout = async () => {
-    setIsSubmitting(true)
+  const onLogout = async () => {
+    if (pendingLogout) return
+    setPendingLogout(true)
     try {
       await logout()
       closeSettings()
     } finally {
-      setIsSubmitting(false)
+      setPendingLogout(false)
     }
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) closeSettings() }}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>设置</DialogTitle>
-          <DialogDescription>管理账号、通用偏好与关于信息。</DialogDescription>
-        </DialogHeader>
-        <div className="flex gap-6">
-          <aside className="w-44 shrink-0 space-y-1">
-            {([
-              { id: 'account', label: '账号' },
-              { id: 'general', label: '通用' },
-              { id: 'about', label: '关于' },
-              { id: 'usage', label: '使用情况' },
-            ] as const).map((item) => (
-              <Button
-                key={item.id}
-                className="w-full justify-start"
-                variant={activeTab === item.id ? 'secondary' : 'ghost'}
-                onClick={() => useUiStore.getState().openSettings(item.id)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </aside>
-          <div className="min-w-0 flex-1 space-y-4">
-            {activeTab === 'account' && (
-              <div className="space-y-4">
-                <div className="rounded-lg border border-border bg-card p-4">
-                  <div className="text-sm font-medium text-foreground">{user?.name ?? user?.username ?? '未登录'}</div>
-                  <div className="mt-1 text-sm text-muted-foreground">{tenant?.name ?? '当前未绑定租户'}</div>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive">退出登录</Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>确认退出登录？</AlertDialogTitle>
-                      <AlertDialogDescription>退出后将返回登录页，本次主动退出不会保留当前现场。</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction disabled={isSubmitting} onClick={() => void handleLogout()}>退出登录</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            )}
-            {activeTab === 'general' && (
-              <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                通用设置将在后续任务中继续细化。
-              </div>
-            )}
-            {activeTab === 'about' && (
-              <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                Skill-First shell 已启用，当前版本信息会在后续验收中补齐。
-              </div>
-            )}
-            {activeTab === 'usage' && (
-              <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                用量统计面板将在后续任务中补齐。
-              </div>
-            )}
-          </div>
+    <SettingsShell
+      open
+      onClose={closeSettings}
+      height={PANEL_HEIGHT[settingsModal] || 720}
+      menu={
+        <SettingsMenu
+          activeKey={settingsModal}
+          onSelect={(k) => openSettings(k)}
+        />
+      }
+      content={
+        <div className="flex min-w-0 flex-1 flex-col">
+          <SettingsContentTop title={activeLabel} onClose={closeSettings} />
+          <SettingsContentBody>
+            {settingsModal === 'account' ? (
+              <AccountPanel
+                user={{
+                  name: user?.name ?? user?.username ?? '未登录',
+                  tenantName: tenant?.name ?? '',
+                  avatarUrl: '',
+                }}
+                onLogout={() => void onLogout()}
+              />
+            ) : null}
+            {settingsModal === 'about' ? (
+              <AboutPanel
+                appName={productName}
+                version="0.9.30"
+                tenantName="仁励家网络科技(杭州)有限公司"
+                helpLinks={[
+                  { label: '使用手册', onClick: () => {} },
+                  { label: '反馈问题', onClick: () => {} },
+                ]}
+                devInfo={[
+                  { label: '架构', value: 'Tauri 2.x · React' },
+                  { label: '更新通道', value: '稳定版' },
+                ]}
+              />
+            ) : null}
+            {settingsModal === 'usage' ? (
+              <UsagePanel
+                planName="标准版"
+                planRenewLabel="按企业账号自动续期"
+                quota={[
+                  { label: '会话次数', used: 142, total: 500 },
+                  { label: '模型调用 tokens', used: 234000, total: 1000000 },
+                ]}
+                detail={[
+                  { label: '本月会话', value: '142 次' },
+                  { label: '本月技能调用', value: '38 次' },
+                ]}
+              />
+            ) : null}
+            {settingsModal === 'permissions' ? <PlaceholderPanel title="系统权限" /> : null}
+            {settingsModal === 'mcp' ? <PlaceholderPanel title="MCP 服务" /> : null}
+            {settingsModal === 'sso' ? <PlaceholderPanel title="SSO 集成" /> : null}
+            {settingsModal === 'shortcuts' ? <PlaceholderPanel title="快捷键" /> : null}
+          </SettingsContentBody>
         </div>
-      </DialogContent>
-    </Dialog>
+      }
+    />
   )
 }

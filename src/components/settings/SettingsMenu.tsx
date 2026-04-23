@@ -9,6 +9,7 @@ export interface SettingsMenuItem {
   label: string
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', label: '账户' },
   { key: 'usage', label: '用量' },
