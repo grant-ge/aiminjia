@@ -19,7 +19,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: { preventDefault: () => void }) {
     event.preventDefault()
     try {
       setError('')
