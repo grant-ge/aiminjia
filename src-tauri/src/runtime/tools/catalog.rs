@@ -680,7 +680,7 @@ fn build_default_catalog() -> ToolCatalog {
 ///   - export_data, plan_update, progress_update, save_analysis_note（ToolPlugin 已关闭）
 ///   - save_memory, load_core_memory, distill_memories（legacy memory ToolPlugin 已关闭）
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
-    // 以下 8 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
+    // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     "bash",
     "read_workspace_file",
     "write_file",

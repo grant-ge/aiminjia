@@ -43,6 +43,7 @@ pub struct ChatTurnRequest {
     pub conversation_id: SessionId,
     pub content: String,
     pub file_ids: Vec<String>,
+    pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The run_id assigned by `SessionRuntime` for this turn.
     /// Callers should use `ChatTurnRequest::new` for ad-hoc creation (generates a
@@ -62,6 +63,7 @@ impl ChatTurnRequest {
             conversation_id: conversation_id.into(),
             content: content.into(),
             file_ids,
+            agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,

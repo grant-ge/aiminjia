@@ -1898,8 +1898,10 @@ impl TauriChatCommandAdapter {
         content: String,
         file_ids: Vec<String>,
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
+        agent_name: Option<String>,
     ) -> Result<(), String> {
         let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        request.agent_name = agent_name;
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }

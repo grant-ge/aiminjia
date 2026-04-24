@@ -85,6 +85,6 @@ impl Skill for DailyAssistantSkill {
     }
 
     fn token_budget(&self, _state: &SkillState) -> u32 {
-        4096
+        8192
     }
 }

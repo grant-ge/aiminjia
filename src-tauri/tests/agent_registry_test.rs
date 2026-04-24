@@ -42,11 +42,13 @@ fn browse_data_agent_max_iterations_is_30() {
 }
 
 #[test]
-fn daily_assistant_agent_has_eight_tools() {
+fn daily_assistant_agent_has_ten_tools() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("daily_assistant_agent").unwrap();
-    assert_eq!(def.allowed_tools.len(), 8);
+    assert_eq!(def.allowed_tools.len(), 10);
     assert!(def.allowed_tools.contains(&"bash".to_string()));
+    assert!(def.allowed_tools.contains(&"write_memory".to_string()));
+    assert!(def.allowed_tools.contains(&"search_memory".to_string()));
 }
 
 #[test]
@@ -107,4 +109,14 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
         }
         _ => panic!("DailyAssistantSkill must use ToolFilter::Only"),
     }
+}
+
+#[test]
+fn daily_assistant_token_budget_defaults_to_8192() {
+    let workspace = TempDir::new().expect("TempDir::new failed");
+    let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
+    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let skill = DailyAssistantSkill::new(storage, auth_manager);
+
+    assert_eq!(skill.token_budget(&SkillState::new("daily-assistant")), 8192);
 }

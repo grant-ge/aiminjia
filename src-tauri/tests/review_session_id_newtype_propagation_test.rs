@@ -5,6 +5,10 @@ use app_lib::runtime::ids::{RunId, SessionId};
 fn review_chat_turn_request_uses_session_id_type() {
     let request = ChatTurnRequest::new("conv-1", "hello", vec![]);
     let _: &SessionId = &request.conversation_id;
+    assert!(
+        request.agent_name.is_none(),
+        "new ChatTurnRequest should default agent_name to None"
+    );
 }
 
 #[test]

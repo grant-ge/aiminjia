@@ -1129,9 +1129,21 @@ cd src-tauri && cargo test -- --nocapture 2>&1 | tail -20
 
 - [ ] **Step 4：Commit**
 
+注意：`src-tauri/src/transport/tauri_commands/chat.rs` 与本计划文件当前同时承载
+`Task B2` / `Task D1` 的改动；这里提交时只纳入 `agent_name` 透传和 D1 相关计划更新，
+不要把 `load_history` / `filter_map` 的 B2 变更混进本 commit。
+
 ```bash
-git add src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/src/commands/chat.rs src-tauri/src/transport/tauri_commands/chat.rs
-git commit -m "fix: token_budget defaults to 8192, agentName passes through IPC to ChatTurnRequest"
+git add src-tauri/src/plugin/builtin/skills/daily_assistant.rs \
+        src-tauri/src/runtime/chat/chat_turn_driver.rs \
+        src-tauri/src/commands/chat.rs \
+        src-tauri/src/runtime/tools/catalog.rs \
+        src-tauri/tests/agent_registry_test.rs \
+        src-tauri/tests/review_session_id_newtype_propagation_test.rs \
+        src-tauri/tests/review_agent_name_passthrough_wiring_test.rs
+git add -p src-tauri/src/transport/tauri_commands/chat.rs
+git add -p docs/superpowers/plans/2026-04-24-message-storage-architecture-fix-plan.md
+git commit -m "fix(chat): raise daily token budget to 8192 and preserve agent_name in runtime request"
 ```
 
 ---
