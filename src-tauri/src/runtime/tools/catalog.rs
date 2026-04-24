@@ -579,6 +579,54 @@ fn build_default_catalog() -> ToolCatalog {
         ));
     }
 
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "AskUserQuestion",
+            "向用户提出结构化多选问题，等待用户回答后继续。\
+            \n\n用途：收集用户偏好、澄清歧义、让用户在多个方案中选择。\
+            \n\n每次调用支持 1-4 个问题，每个问题 2-4 个选项，用户始终可以选择 Other 输入自定义回答。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true),
+        json!({
+            "type": "object",
+            "required": ["questions"],
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "description": "要向用户提出的问题列表（1-4 个）",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {
+                        "type": "object",
+                        "required": ["question", "header", "options"],
+                        "properties": {
+                            "question": { "type": "string" },
+                            "header": { "type": "string" },
+                            "options": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 4,
+                                "items": {
+                                    "type": "object",
+                                    "required": ["label", "description"],
+                                    "properties": {
+                                        "label": { "type": "string" },
+                                        "description": { "type": "string" },
+                                        "preview": { "type": "string" }
+                                    }
+                                }
+                            },
+                            "multiSelect": { "type": "boolean", "default": false }
+                        }
+                    }
+                },
+                "answers": { "type": "object", "description": "用户回答（由系统填入，模型勿填）" },
+                "metadata": { "type": "object" }
+            }
+        }),
+    ));
+
     // ── Power: statistical analysis ───────────────────────────────
     c.insert(CatalogEntry::new(
         ToolDefinition::new("hypothesis_test", "统计假设检验（t-test/ANOVA/chi-square/Mann-Whitney/regression）")
@@ -691,6 +739,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "grep_content",
     "write_memory",
     "search_memory",
+    "AskUserQuestion",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

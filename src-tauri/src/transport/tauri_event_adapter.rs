@@ -127,6 +127,32 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 }),
             }),
         }),
+        RuntimeEventKind::UserInteractionRequired {
+            interaction_id,
+            tool_call_id,
+            tool_name,
+            kind,
+            payload,
+        } => Some(LegacyEvent {
+            name: "interaction:required".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "interactionId": interaction_id.as_str(),
+                "toolCallId": tool_call_id.as_str(),
+                "toolName": tool_name,
+                "kind": kind,
+                "payload": payload,
+            }),
+        }),
+        RuntimeEventKind::UserInteractionResolved { interaction_id } => Some(LegacyEvent {
+            name: "interaction:resolved".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+                "interactionId": interaction_id.as_str(),
+            }),
+        }),
         RuntimeEventKind::MessagePersisted {
             message_id,
             role,

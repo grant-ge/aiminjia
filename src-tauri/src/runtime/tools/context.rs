@@ -58,6 +58,11 @@ pub struct ToolExecutionContext {
     pub permission_store: Option<Arc<PermissionStore>>,
     /// Optional session-scoped hooks executed around tool dispatch.
     pub hook_registry: Option<Arc<HookRegistry>>,
+    /// User-submitted interaction data injected when replaying an interactive tool.
+    pub interaction_resolution: Option<serde_json::Value>,
+    /// Original tool-call request, used by interactive tools to build replayable requests.
+    pub current_tool_call_request:
+        Option<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest>,
 }
 
 impl ToolExecutionContext {
@@ -80,6 +85,8 @@ impl ToolExecutionContext {
             permission_mode: PermissionMode::Default,
             permission_store: None,
             hook_registry: None,
+            interaction_resolution: None,
+            current_tool_call_request: None,
         }
     }
 
@@ -109,6 +116,19 @@ impl ToolExecutionContext {
 
     pub fn with_hook_registry(mut self, registry: Arc<HookRegistry>) -> Self {
         self.hook_registry = Some(registry);
+        self
+    }
+
+    pub fn with_interaction_resolution(mut self, value: serde_json::Value) -> Self {
+        self.interaction_resolution = Some(value);
+        self
+    }
+
+    pub fn with_current_tool_call_request(
+        mut self,
+        request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
+    ) -> Self {
+        self.current_tool_call_request = Some(request);
         self
     }
 

@@ -211,5 +211,8 @@ async fn register_mcp_server_registers_fully_qualified_tools_and_dispatches_them
                 other
             )
         }
+        ToolDispatchOutcome::InteractionRequired(_) => {
+            panic!("unexpected InteractionRequired after allow-once decision")
+        }
     }
 }

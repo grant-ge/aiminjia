@@ -71,6 +71,8 @@ pub enum ToolDispatchOutcome {
     /// The permission pipeline returned `Ask` — user confirmation is required.
     /// The decision is returned as-is so the TurnDriver can handle it.
     AskRequired(PermissionDecision),
+    /// A tool requires structured user input before it can finish.
+    InteractionRequired(Box<crate::runtime::interaction::InteractionRequest>),
 }
 
 pub struct ToolDispatcher {
@@ -203,6 +205,9 @@ impl ToolDispatcher {
                     Ok(ToolDispatchOutcome::AskRequired(decision))
                 }
             };
+        }
+        if let Err(ToolError::InteractionRequired(request)) = result {
+            return Ok(ToolDispatchOutcome::InteractionRequired(request));
         }
         ctx.event_sink.emit("tool:completed");
         let result = result?;

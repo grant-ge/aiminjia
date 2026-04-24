@@ -5,6 +5,7 @@ import { AuthGate } from '@/components/auth/AuthGate'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
+import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
@@ -32,6 +33,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
 import { useStreamingStore } from '@/stores/streamingStore'
+import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
 
 function RouteSwitch() {
@@ -54,7 +56,10 @@ function RouteSwitch() {
 function AppShell() {
   const pendingAsks = useStreamingStore((s) => s.pendingAsks)
   const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
+  const pendingInteractions = useInteractionStore((s) => s.pendingInteractions)
+  const removeInteraction = useInteractionStore((s) => s.removeInteraction)
   const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
+  const activeInteraction = pendingInteractions[0] ?? null
 
   const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
     if (!activeAsk) return
@@ -104,6 +109,13 @@ function AppShell() {
         onDeny={handleDenyAsk}
         onCancel={handleCancelAsk}
       />
+      {activeInteraction ? (
+        <AskUserQuestionDialog
+          interactionId={activeInteraction.interactionId}
+          questions={activeInteraction.payload.questions}
+          onClose={() => removeInteraction(activeInteraction.interactionId)}
+        />
+      ) : null}
     </div>
   )
 }

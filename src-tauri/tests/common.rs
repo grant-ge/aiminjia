@@ -18,6 +18,8 @@ pub fn kind_label(kind: &RuntimeEventKind) -> &'static str {
         RuntimeEventKind::ToolCallExecuting { .. } => "ToolCallExecuting",
         RuntimeEventKind::ToolCallCompleted { .. } => "ToolCallCompleted",
         RuntimeEventKind::PermissionAskRequired { .. } => "PermissionAskRequired",
+        RuntimeEventKind::UserInteractionRequired { .. } => "UserInteractionRequired",
+        RuntimeEventKind::UserInteractionResolved { .. } => "UserInteractionResolved",
         RuntimeEventKind::AgentIdle { .. } => "AgentIdle",
         RuntimeEventKind::TaskStatusChanged { .. } => "TaskStatusChanged",
         RuntimeEventKind::StopHookPreventedContinuation { .. } => "StopHookPreventedContinuation",

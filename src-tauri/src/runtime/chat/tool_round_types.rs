@@ -85,6 +85,13 @@ pub enum RuntimeToolCallOutcome {
         /// The structured permission decision from the pipeline.
         decision: crate::runtime::tools::permission::PermissionDecision,
     },
+    /// The tool requires structured user input to continue.
+    InteractionRequired {
+        tool_call_id: String,
+        tool_name: String,
+        original_request: RuntimeToolCallRequest,
+        interaction_request: crate::runtime::interaction::InteractionRequest,
+    },
 }
 
 impl RuntimeToolCallOutcome {
@@ -93,6 +100,7 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { tool_call_id, .. } => tool_call_id,
             Self::AskRequired { tool_call_id, .. } => tool_call_id,
+            Self::InteractionRequired { tool_call_id, .. } => tool_call_id,
         }
     }
 
@@ -101,6 +109,7 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { tool_name, .. } => tool_name,
             Self::AskRequired { tool_name, .. } => tool_name,
+            Self::InteractionRequired { tool_name, .. } => tool_name,
         }
     }
 
@@ -112,6 +121,7 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { is_error, .. } => *is_error,
             Self::AskRequired { .. } => true,
+            Self::InteractionRequired { .. } => false,
         }
     }
 
@@ -123,6 +133,7 @@ impl RuntimeToolCallOutcome {
                 ..
             } => *max_result_size_chars,
             Self::AskRequired { .. } => 0,
+            Self::InteractionRequired { .. } => 0,
         }
     }
 
@@ -134,6 +145,7 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { content, .. } => content,
             Self::AskRequired { .. } => "",
+            Self::InteractionRequired { .. } => "",
         }
     }
 
@@ -145,6 +157,7 @@ impl RuntimeToolCallOutcome {
                 ..
             } => context_modifier_message.as_ref(),
             Self::AskRequired { .. } => None,
+            Self::InteractionRequired { .. } => None,
         }
     }
 
@@ -153,6 +166,7 @@ impl RuntimeToolCallOutcome {
         match self {
             Self::Completed { file_meta, .. } => file_meta.as_ref(),
             Self::AskRequired { .. } => None,
+            Self::InteractionRequired { .. } => None,
         }
     }
 
@@ -163,6 +177,7 @@ impl RuntimeToolCallOutcome {
                 ..
             } => skill_runtime_patch.as_ref(),
             Self::AskRequired { .. } => None,
+            Self::InteractionRequired { .. } => None,
         }
     }
 }

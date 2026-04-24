@@ -103,6 +103,9 @@ async fn register_runtime_adds_to_registry() {
         app_lib::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
             panic!("unexpected AskRequired for test_tool")
         }
+        app_lib::runtime::tools::ToolDispatchOutcome::InteractionRequired(_) => {
+            panic!("unexpected InteractionRequired for test_tool")
+        }
     };
     assert_eq!(content, "runtime:test_tool");
 }
@@ -156,6 +159,9 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
         app_lib::runtime::tools::ToolDispatchOutcome::Completed { result, .. } => result.content,
         app_lib::runtime::tools::ToolDispatchOutcome::AskRequired(_) => {
             panic!("unexpected AskRequired for dual_tool")
+        }
+        app_lib::runtime::tools::ToolDispatchOutcome::InteractionRequired(_) => {
+            panic!("unexpected InteractionRequired for dual_tool")
         }
     };
     assert_eq!(

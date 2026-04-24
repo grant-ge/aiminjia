@@ -49,6 +49,8 @@ import {
   onAgentIdle,
   onAgentPhase,
   onPermissionAsk,
+  onInteractionRequired,
+  onInteractionResolved,
   onStreamingStepReset,
   onFileGenerated,
   onTaskStatusChanged,
@@ -64,6 +66,8 @@ import type {
   AgentPhasePayload,
   ToolExecutingPayload,
   PermissionAskPayload,
+  InteractionRequiredPayload,
+  InteractionResolvedPayload,
   StreamingStepResetPayload,
   FileGeneratedPayload,
   TaskStatusChangedPayload,
@@ -72,6 +76,7 @@ import type {
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
 import { useStreamingStore } from '@/stores/streamingStore'
+import { useInteractionStore } from '@/stores/interactionStore'
 import { useTauriEvent } from './useTauriEvent'
 
 /** How long (ms) before a streaming conversation with no activity is force-cleared.
@@ -388,6 +393,7 @@ export function useStreaming() {
       // (e.g. agent panicked before finish_agent could emit it)
       store.clearConversationStreamState(conversationId)
       useStreamingStore.getState().clearConversationPendingAsks(conversationId)
+      useInteractionStore.getState().clearForConversation(conversationId)
     }),
   )
 
@@ -396,6 +402,20 @@ export function useStreaming() {
     onPermissionAsk((payload: PermissionAskPayload) => {
       console.log('[permission:ask]', payload.conversationId, payload.toolName, payload.toolCallId)
       useStreamingStore.getState().addPendingAsk(payload)
+    }),
+  )
+
+  // --- interaction:required / interaction:resolved ------------------------
+  useTauriEvent(() =>
+    onInteractionRequired((payload: InteractionRequiredPayload) => {
+      console.log('[interaction:required]', payload.conversationId, payload.toolName, payload.interactionId)
+      useInteractionStore.getState().addInteraction(payload)
+    }),
+  )
+
+  useTauriEvent(() =>
+    onInteractionResolved((payload: InteractionResolvedPayload) => {
+      useInteractionStore.getState().removeInteraction(payload.interactionId)
     }),
   )
 

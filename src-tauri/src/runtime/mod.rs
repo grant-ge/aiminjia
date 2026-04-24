@@ -7,6 +7,7 @@ pub mod events;
 pub mod hooks;
 pub mod identity;
 pub mod ids;
+pub mod interaction;
 pub mod mcp;
 pub mod project_memory;
 pub mod query_engine;

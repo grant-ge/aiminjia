@@ -550,6 +550,11 @@ impl ToolRegistry {
                 Err(crate::runtime::tools::ToolError::AskRequired(decision)) => {
                     return Err(ToolError::AskRequired(decision));
                 }
+                Err(crate::runtime::tools::ToolError::InteractionRequired(_)) => {
+                    return Err(ToolError::ExecutionFailed(
+                        "Runtime tool requires user interaction, but legacy registry execution cannot route interaction requests.".into(),
+                    ));
+                }
                 Err(crate::runtime::tools::ToolError::PermissionDenied(message)) => {
                     return Err(ToolError::PermissionDenied(message));
                 }
@@ -649,6 +654,11 @@ impl ToolRegistry {
                 // Legacy path: surface Ask semantics to the caller.
                 // Callers that cannot show a UI prompt should treat this as deny.
                 Err(ToolError::AskRequired(decision))
+            }
+            crate::runtime::tools::ToolDispatchOutcome::InteractionRequired(_) => {
+                Err(ToolError::ExecutionFailed(
+                    "Runtime tool requires user interaction, but legacy registry execution cannot route interaction requests.".into(),
+                ))
             }
         }
     }

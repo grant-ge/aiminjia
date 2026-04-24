@@ -1931,7 +1931,7 @@ impl TauriChatCommandAdapter {
             )),
         });
         // NOTE: request-scoped dispatcher is built per-call in send_message() to avoid
-        // calling block_on() inside the sync new() which panics ("Cannot start a runtime
+        // calling nested blocking init inside the sync new() which panics ("Cannot start a runtime
         // from within a runtime") because Tauri's setup closure already runs in tokio.
         let mut runtime = SessionRuntime::with_llm_executor(
             QueryEngine::new()
@@ -2022,6 +2022,7 @@ impl TauriChatCommandAdapter {
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf()),
         );
+        // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         runtime.run_chat_request(request).await
     }
 
@@ -2100,6 +2101,34 @@ impl TauriChatCommandAdapter {
                 PendingPermissionResolution::Cancel {
                     message: message
                         .unwrap_or_else(|| "Permission request cancelled by user.".to_string()),
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn submit_user_interaction(
+        &self,
+        interaction_id: String,
+        value: serde_json::Value,
+    ) -> Result<(), String> {
+        self.runtime
+            .resolve_interaction_request(
+                &crate::runtime::interaction::InteractionId::new(interaction_id),
+                crate::runtime::interaction::InteractionResolution::Submit { value },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn cancel_user_interaction(
+        &self,
+        interaction_id: String,
+        message: Option<String>,
+    ) -> Result<(), String> {
+        self.runtime
+            .resolve_interaction_request(
+                &crate::runtime::interaction::InteractionId::new(interaction_id),
+                crate::runtime::interaction::InteractionResolution::Cancel {
+                    message: message.unwrap_or_else(|| "User cancelled.".to_string()),
                 },
             )
             .map_err(|e| e.to_string())

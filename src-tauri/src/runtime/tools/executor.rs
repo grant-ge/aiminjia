@@ -39,6 +39,8 @@ pub enum ToolError {
     PermissionDenied(String),
     #[error("permission ask required: {0}")]
     AskRequired(crate::runtime::tools::permission::PermissionDecision),
+    #[error("user interaction required")]
+    InteractionRequired(Box<crate::runtime::interaction::InteractionRequest>),
     #[error("tool execution failed: {0}")]
     ExecutionFailed(String),
     #[error("input validation error for tool '{tool_name}': {message}")]

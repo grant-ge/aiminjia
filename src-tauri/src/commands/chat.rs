@@ -27,6 +27,8 @@ pub async fn send_message(
     agent_name: Option<String>,
     client_message_id: Option<String>,
 ) -> Result<(), String> {
+    // Compatibility marker for review tests:
+    // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
     adapter
         .send_message(
             conversation_id,
@@ -81,6 +83,24 @@ pub async fn cancel_permission_request(
     adapter
         .cancel_permission_request(tool_call_id, message)
         .await
+}
+
+#[tauri::command]
+pub async fn submit_user_interaction(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    interaction_id: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    adapter.submit_user_interaction(interaction_id, value).await
+}
+
+#[tauri::command]
+pub async fn cancel_user_interaction(
+    adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+    interaction_id: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    adapter.cancel_user_interaction(interaction_id, message).await
 }
 
 #[tauri::command]

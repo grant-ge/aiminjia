@@ -190,6 +190,9 @@ async fn mcp_end_to_end_workflow_register_execute_disconnect() {
                 other
             )
         }
+        ToolDispatchOutcome::InteractionRequired(_) => {
+            panic!("unexpected InteractionRequired after allow-once decision")
+        }
     }
 
     manager.disconnect("e2e-server").await.unwrap();

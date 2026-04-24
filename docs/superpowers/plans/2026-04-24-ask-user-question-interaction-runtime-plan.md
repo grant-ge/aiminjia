@@ -198,7 +198,7 @@ pub mod interaction;
 - [ ] **Step 4: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -30
 ```
 
@@ -328,7 +328,7 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
 - [ ] **Step 2: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -30
 ```
 
@@ -394,7 +394,7 @@ mod tests {
 ```
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo test runtime::interaction -- --nocapture 2>&1
 ```
 
@@ -403,7 +403,7 @@ cargo test runtime::interaction -- --nocapture 2>&1
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/src/runtime/interaction/ src-tauri/src/runtime/mod.rs
 git commit -m "feat(runtime): add Interaction Runtime control plane"
 ```
@@ -467,7 +467,7 @@ Self::InteractionRequired { .. } => None,
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -40
 ```
 
@@ -476,7 +476,7 @@ cargo check 2>&1 | head -40
 - [ ] **Step 4: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/src/runtime/chat/tool_round_types.rs
 git commit -m "feat(runtime): add InteractionRequired outcome variant"
 ```
@@ -761,7 +761,7 @@ pub mod ask_user_question;
 - [ ] **Step 6: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -50
 ```
 
@@ -779,14 +779,14 @@ cargo check 2>&1 | head -50
 - [ ] **Step 8: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -30
 ```
 
 - [ ] **Step 9: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/src/runtime/tools/builtin/ask_user_question.rs \
         src-tauri/src/runtime/tools/builtin/mod.rs \
         src-tauri/src/runtime/tools/catalog.rs \
@@ -964,7 +964,7 @@ ctx.current_tool_call_request = Some(original_request.clone());
 - [ ] **Step 5: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -60
 ```
 
@@ -973,7 +973,7 @@ cargo check 2>&1 | head -60
 - [ ] **Step 6: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/src/runtime/chat/chat_turn_driver.rs
 git commit -m "feat(runtime): route InteractionRequired through interaction control plane"
 ```
@@ -1108,21 +1108,21 @@ tauri::generate_handler![
 - [ ] **Step 6: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo check 2>&1 | head -50
 ```
 
 - [ ] **Step 7: 运行 review 回归测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo test review_ --tests --no-fail-fast 2>&1 | tail -20
 ```
 
 - [ ] **Step 8: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/src/runtime/events.rs \
         src-tauri/src/transport/tauri_event_adapter.rs \
         src-tauri/src/transport/tauri_commands/chat.rs \
@@ -1285,14 +1285,14 @@ const unsubInteractionResolved = await onInteractionResolved((payload) => {
 - [ ] **Step 4: TypeScript 类型检查**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 pnpm exec tsc --noEmit 2>&1 | head -30
 ```
 
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src/lib/tauri.ts src/stores/interactionStore.ts
 # 加上修改的订阅入口文件
 git commit -m "feat(frontend): add interactionStore and interaction event types"
@@ -1464,7 +1464,7 @@ const pendingInteractions = useInteractionStore((s) =>
 - [ ] **Step 3: TypeScript 类型检查**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 pnpm exec tsc --noEmit 2>&1 | head -30
 ```
 
@@ -1477,7 +1477,7 @@ pnpm test 2>&1 | tail -20
 - [ ] **Step 5: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src/components/interactions/AskUserQuestionDialog.tsx
 # 加上修改了的对话界面文件
 git commit -m "feat(frontend): add AskUserQuestionDialog"
@@ -1594,7 +1594,7 @@ async fn interaction_control_plane_cancel_for_session() {
 - [ ] **Step 2: 运行测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo test --test ask_user_question_test -- --nocapture 2>&1
 ```
 
@@ -1603,7 +1603,7 @@ cargo test --test ask_user_question_test -- --nocapture 2>&1
 - [ ] **Step 3: 提交**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 git add src-tauri/tests/ask_user_question_test.rs
 git commit -m "test(tools): add AskUserQuestion and Interaction Runtime integration tests"
 ```
@@ -1615,14 +1615,14 @@ git commit -m "test(tools): add AskUserQuestion and Interaction Runtime integrat
 - [ ] **Step 1: 运行全部 review 回归测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app/src-tauri
 cargo test review_ --tests --no-fail-fast 2>&1 | tail -30
 ```
 
 - [ ] **Step 2: 运行关键前端集成测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/dfd2/lotus-app
 pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -30
 ```
 

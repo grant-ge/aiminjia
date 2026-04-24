@@ -446,6 +446,31 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         pending_ask = Some(bubbled);
                         break 'agent_loop;
                     }
+                    ToolRoundResult::Ok(RuntimeToolCallOutcome::InteractionRequired {
+                        tool_call_id,
+                        tool_name,
+                        ..
+                    }) => {
+                        terminal_tool_results.push(SubAgentTerminalToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: tool_name.clone(),
+                            success: false,
+                            summary: "User interaction required".to_string(),
+                            generated_files: Vec::new(),
+                        });
+                        emit_tool_completed(
+                            config.app_handle.as_ref(),
+                            &config.conversation_id,
+                            &tool_call_id,
+                            false,
+                            Some("User interaction required"),
+                        );
+                        request.messages.push(ChatMessage::tool_result(
+                            &tool_call_id,
+                            &tool_name,
+                            "User interaction required; sub-agents cannot ask the user directly.".to_string(),
+                        ));
+                    }
                 }
             }
         }

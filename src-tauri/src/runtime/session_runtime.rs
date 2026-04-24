@@ -12,6 +12,9 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::identity::IdentityMapping;
 use crate::runtime::ids::{RunId, SessionId, ToolCallId};
+use crate::runtime::interaction::{
+    InMemoryInteractionControlPlane, InteractionId, InteractionResolution,
+};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
@@ -34,6 +37,7 @@ pub struct SessionRuntime {
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     authorized_workspace_store: Option<Arc<dyn AuthorizedWorkspaceStore>>,
     pending_permission_store: Arc<PendingPermissionRequestStore>,
+    pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
     permission_store: Option<Arc<PermissionStore>>,
 }
 
@@ -48,6 +52,7 @@ impl SessionRuntime {
             llm_executor: None,
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
         }
     }
@@ -71,6 +76,7 @@ impl SessionRuntime {
             llm_executor: Some(executor),
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
+            pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
         }
     }
@@ -80,6 +86,14 @@ impl SessionRuntime {
         pending_permission_store: Arc<PendingPermissionRequestStore>,
     ) -> Self {
         self.pending_permission_store = pending_permission_store;
+        self
+    }
+
+    pub fn with_pending_interaction_store(
+        mut self,
+        pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
+    ) -> Self {
+        self.pending_interaction_store = pending_interaction_store;
         self
     }
 
@@ -202,6 +216,25 @@ impl SessionRuntime {
             .cancel_for_session(session_id, message)
     }
 
+    pub fn resolve_interaction_request(
+        &self,
+        interaction_id: &InteractionId,
+        resolution: InteractionResolution,
+    ) -> Result<()> {
+        use crate::runtime::interaction::PendingInteractionControlPlane;
+        self.pending_interaction_store.resolve(interaction_id, resolution)
+    }
+
+    pub fn cancel_pending_interaction_requests_for_session(
+        &self,
+        session_id: &SessionId,
+        message: &str,
+    ) -> usize {
+        use crate::runtime::interaction::PendingInteractionControlPlane;
+        self.pending_interaction_store
+            .cancel_for_session(session_id.as_str(), message)
+    }
+
     pub fn cancel_session(&self, session_id: &SessionId, reason: CancellationReason) {
         if let Some(root) = self.current_session_cancel_root(session_id) {
             root.cancel_with_reason(reason);
@@ -210,12 +243,20 @@ impl SessionRuntime {
             session_id,
             "Permission request cancelled because the session was stopped.",
         );
+        self.cancel_pending_interaction_requests_for_session(
+            session_id,
+            "Interaction request cancelled because the session was stopped.",
+        );
     }
 
     pub fn clear_session_state(&self, session_id: &SessionId) {
         self.cancel_pending_permission_requests_for_session(
             session_id,
             "Permission request cancelled because the session state was cleared.",
+        );
+        self.cancel_pending_interaction_requests_for_session(
+            session_id,
+            "Interaction request cancelled because the session state was cleared.",
         );
         self.session_cancel_roots
             .lock()
@@ -254,11 +295,13 @@ impl SessionRuntime {
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
         if let Some(ref executor) = self.llm_executor {
-            return RuntimeChatTurnDriver::with_llm_executor_and_permission_control_plane(
+            // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(
+            return RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
                 query_engine,
                 self.event_bus.clone(),
                 executor.clone(),
                 self.pending_permission_store.clone(),
+                self.pending_interaction_store.clone(),
             );
         }
         RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())

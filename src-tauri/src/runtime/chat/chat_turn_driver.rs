@@ -29,6 +29,7 @@ use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
+use crate::runtime::interaction::{InteractionId, InteractionResolution, PendingInteractionControlPlane};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
@@ -288,6 +289,7 @@ pub struct RuntimeChatTurnDriver {
     /// S4 executor：只做 provider streaming adapter。
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
+    pending_interaction_control_plane: Option<Arc<dyn PendingInteractionControlPlane>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -406,6 +408,7 @@ impl RuntimeChatTurnDriver {
             event_bus,
             llm_executor: None,
             pending_permission_control_plane: None,
+            pending_interaction_control_plane: None,
         }
     }
 
@@ -419,6 +422,7 @@ impl RuntimeChatTurnDriver {
             event_bus,
             llm_executor: Some(executor),
             pending_permission_control_plane: None,
+            pending_interaction_control_plane: None,
         }
     }
 
@@ -433,6 +437,23 @@ impl RuntimeChatTurnDriver {
             event_bus,
             llm_executor: Some(executor),
             pending_permission_control_plane: Some(pending_permission_control_plane),
+            pending_interaction_control_plane: None,
+        }
+    }
+
+    pub fn with_llm_executor_and_control_planes(
+        query_engine: QueryEngine,
+        event_bus: RuntimeEventBus,
+        executor: Arc<dyn RuntimeLlmExecutor>,
+        pending_permission_control_plane: Arc<dyn PendingPermissionControlPlane>,
+        pending_interaction_control_plane: Arc<dyn PendingInteractionControlPlane>,
+    ) -> Self {
+        Self {
+            query_engine,
+            event_bus,
+            llm_executor: Some(executor),
+            pending_permission_control_plane: Some(pending_permission_control_plane),
+            pending_interaction_control_plane: Some(pending_interaction_control_plane),
         }
     }
 
@@ -585,6 +606,139 @@ impl RuntimeChatTurnDriver {
                 }
             };
 
+            resolved_results.push(resolved);
+        }
+
+        Ok(resolved_results)
+    }
+
+    async fn await_interaction_resolution(
+        &self,
+        cancel: &CancellationToken,
+        interaction_id: &InteractionId,
+        mut rx: tokio::sync::oneshot::Receiver<InteractionResolution>,
+    ) -> InteractionResolution {
+        loop {
+            tokio::select! {
+                resolution = &mut rx => {
+                    return resolution.unwrap_or_else(|_| InteractionResolution::Cancel {
+                        message: "Interaction request was closed before it was resolved.".to_string(),
+                    });
+                }
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if cancel.is_cancelled() {
+                        if let Some(control_plane) = self.pending_interaction_control_plane.as_ref() {
+                            let _ = control_plane.resolve(
+                                interaction_id,
+                                InteractionResolution::Cancel {
+                                    message: "Interaction request cancelled because the turn was cancelled.".to_string(),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn resolve_interaction_requests(
+        &self,
+        turn: &TurnState,
+        cancel: &CancellationToken,
+        round_results: Vec<ToolRoundResult>,
+    ) -> Result<Vec<ToolRoundResult>> {
+        let mut resolved_results = Vec::with_capacity(round_results.len());
+
+        for round_result in round_results {
+            let ToolRoundResult::Ok(RuntimeToolCallOutcome::InteractionRequired {
+                tool_call_id,
+                tool_name,
+                original_request,
+                interaction_request,
+            }) = &round_result
+            else {
+                resolved_results.push(round_result);
+                continue;
+            };
+            let Some(control_plane) = self.pending_interaction_control_plane.as_ref() else {
+                return Err(anyhow::anyhow!(
+                    "interaction control plane is required to handle InteractionRequired tool outcomes"
+                ));
+            };
+
+            let resolution_rx = control_plane.insert_pending(interaction_request.clone())?;
+            self.event_bus
+                .emit(RuntimeEvent::new(
+                    turn.session_id().clone(),
+                    turn.run_id().clone(),
+                    RuntimeEventKind::UserInteractionRequired {
+                        interaction_id: interaction_request.interaction_id.clone(),
+                        tool_call_id: interaction_request.tool_call_id.clone(),
+                        tool_name: interaction_request.tool_name.clone(),
+                        kind: interaction_request.kind.clone(),
+                        payload: interaction_request.payload.clone(),
+                    },
+                ))
+                .await?;
+
+            let resolution = self
+                .await_interaction_resolution(cancel, &interaction_request.interaction_id, resolution_rx)
+                .await;
+
+            let resolved = match resolution {
+                InteractionResolution::Submit { value } => {
+                    self.event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::UserInteractionResolved {
+                                interaction_id: interaction_request.interaction_id.clone(),
+                            },
+                        ))
+                        .await?;
+                    ToolRoundResult::Ok(
+                        self.query_engine
+                            .replay_interaction_tool_call_with_bus(
+                                turn,
+                                &self.event_bus,
+                                original_request.clone(),
+                                value,
+                            )
+                            .await
+                            .map_err(|err| anyhow::anyhow!("failed to replay interaction tool call: {err}"))?,
+                    )
+                }
+                InteractionResolution::Cancel { message } => {
+                    let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
+                    self.event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::ToolCallCompleted {
+                                tool_call_id: tool_call_id.clone().into(),
+                                tool_name: tool_name.clone(),
+                                is_error: true,
+                                content: message.clone(),
+                                msg_id: msg_id.clone(),
+                                duration_ms: None,
+                            },
+                        ))
+                        .await?;
+                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        content: message,
+                        is_error: true,
+                        msg_id,
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
+                        max_result_size_chars: 8_000,
+                        context_modifier_message: None,
+                        skill_runtime_patch: None,
+                    })
+                }
+            };
             resolved_results.push(resolved);
         }
 
@@ -1094,6 +1248,9 @@ impl RuntimeChatTurnDriver {
                     let round_results = self
                         .resolve_permission_asks(turn, &cancel, round_results)
                         .await?;
+                    let round_results = self
+                        .resolve_interaction_requests(turn, &cancel, round_results)
+                        .await?;
 
                     // Collect and merge results into state.
                     let results = tool_result_collector::collect_results(round_results);
@@ -1423,6 +1580,7 @@ mod tests {
             event_bus: bus.clone(),
             llm_executor: None,
             pending_permission_control_plane: Some(control_plane.clone()),
+            pending_interaction_control_plane: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),

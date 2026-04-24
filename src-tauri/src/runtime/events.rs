@@ -49,6 +49,16 @@ pub enum RuntimeEventKind {
         remember_options: Vec<PermissionDestination>,
         default_destination: Option<PermissionDestination>,
     },
+    UserInteractionRequired {
+        interaction_id: crate::runtime::interaction::InteractionId,
+        tool_call_id: ToolCallId,
+        tool_name: String,
+        kind: crate::runtime::interaction::InteractionKind,
+        payload: serde_json::Value,
+    },
+    UserInteractionResolved {
+        interaction_id: crate::runtime::interaction::InteractionId,
+    },
     AgentIdle {
         agent_id: AgentId,
         scope: AgentIdleScope,
@@ -98,6 +108,9 @@ impl RuntimeEvent {
             RuntimeEventKind::ToolCallExecuting { tool_call_id, .. }
             | RuntimeEventKind::ToolCallCompleted { tool_call_id, .. }
             | RuntimeEventKind::PermissionAskRequired { tool_call_id, .. } => {
+                Some(tool_call_id.clone())
+            }
+            RuntimeEventKind::UserInteractionRequired { tool_call_id, .. } => {
                 Some(tool_call_id.clone())
             }
             _ => None,

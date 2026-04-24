@@ -320,6 +320,12 @@ impl QueryEngine {
                     tool_name
                 ));
             }
+            crate::runtime::tools::ToolDispatchOutcome::InteractionRequired(_) => {
+                return Err(anyhow::anyhow!(
+                    "Tool '{}' requires user interaction before it can run.",
+                    tool_name
+                ));
+            }
         };
         event_names.push("streaming:done".to_string());
         Ok(event_names)
@@ -353,7 +359,7 @@ impl QueryEngine {
         bus: &RuntimeEventBus,
         call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
     ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
-        self.run_tool_call_with_bus_internal(turn, bus, call, None)
+        self.run_tool_call_with_bus_internal(turn, bus, call, None, None)
             .await
     }
 
@@ -375,6 +381,27 @@ impl QueryEngine {
                 updated_input: None,
                 reason: PermissionReason::Other("resolved_pending_permission".into()),
             }),
+            None,
+        )
+        .await
+    }
+
+    pub async fn replay_interaction_tool_call_with_bus(
+        &self,
+        turn: &TurnState,
+        bus: &RuntimeEventBus,
+        call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
+        interaction_resolution: serde_json::Value,
+    ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
+        self.run_tool_call_with_bus_internal(
+            turn,
+            bus,
+            call,
+            Some(PermissionDecision::Allow {
+                updated_input: None,
+                reason: PermissionReason::Other("resolved_pending_interaction".into()),
+            }),
+            Some(interaction_resolution),
         )
         .await
     }
@@ -385,6 +412,7 @@ impl QueryEngine {
         bus: &RuntimeEventBus,
         call: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest,
         permission_override: Option<PermissionDecision>,
+        interaction_resolution: Option<serde_json::Value>,
     ) -> Result<crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome> {
         use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 
@@ -429,6 +457,10 @@ impl QueryEngine {
         };
         if let Some(permission_override) = permission_override {
             ctx = ctx.with_permission_override(permission_override);
+        }
+        ctx = ctx.with_current_tool_call_request(call.clone());
+        if let Some(interaction_resolution) = interaction_resolution {
+            ctx = ctx.with_interaction_resolution(interaction_resolution);
         }
 
         // Emit ToolCallExecuting before dispatching so the UI knows the tool
@@ -507,6 +539,14 @@ impl QueryEngine {
                     capability_scopes,
                     original_request: call,
                     decision,
+                })
+            }
+            Ok(crate::runtime::tools::ToolDispatchOutcome::InteractionRequired(request)) => {
+                Ok(RuntimeToolCallOutcome::InteractionRequired {
+                    tool_call_id: call.tool_call_id.clone(),
+                    tool_name: call.tool_name.clone(),
+                    original_request: call,
+                    interaction_request: *request,
                 })
             }
             Err(err) => {
@@ -612,6 +652,12 @@ impl QueryEngine {
                 );
                 return Err(anyhow::anyhow!(
                     "Tool '{}' requires user confirmation before it can run.",
+                    tool_name
+                ));
+            }
+            crate::runtime::tools::ToolDispatchOutcome::InteractionRequired(_) => {
+                return Err(anyhow::anyhow!(
+                    "Tool '{}' requires user interaction before it can run.",
                     tool_name
                 ));
             }

@@ -42,6 +42,8 @@ export const TAURI_EVENTS = {
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
   PERMISSION_ASK: 'permission:ask',
+  INTERACTION_REQUIRED: 'interaction:required',
+  INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
 } as const
 
@@ -145,6 +147,38 @@ export interface PermissionAskPayload {
   defaultDestination: 'session' | 'workspace' | 'user' | null
 }
 
+export interface QuestionOption {
+  label: string
+  description: string
+  preview?: string
+}
+
+export interface Question {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiSelect?: boolean
+}
+
+export interface InteractionRequiredPayload {
+  conversationId: string
+  runId: string
+  interactionId: string
+  toolCallId: string
+  toolName: string
+  kind: 'askUserQuestion'
+  payload: {
+    questions: Question[]
+    metadata?: unknown
+  }
+}
+
+export interface InteractionResolvedPayload {
+  conversationId: string
+  runId: string
+  interactionId: string
+}
+
 export type TurnOutcome =
   | 'Success'
   | 'Cancelled'
@@ -244,6 +278,20 @@ export function cancelPermissionRequest(
   message?: string,
 ): Promise<void> {
   return invoke<void>('cancel_permission_request', { toolCallId, message })
+}
+
+export function submitUserInteraction(
+  interactionId: string,
+  value: { answers: Record<string, string>; annotations?: Record<string, unknown> },
+): Promise<void> {
+  return invoke<void>('submit_user_interaction', { interactionId, value })
+}
+
+export function cancelUserInteraction(
+  interactionId: string,
+  message?: string,
+): Promise<void> {
+  return invoke<void>('cancel_user_interaction', { interactionId, message })
 }
 
 /**
@@ -1080,6 +1128,22 @@ export function onPermissionAsk(
   handler: (payload: PermissionAskPayload) => void,
 ): Promise<() => void> {
   return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function onInteractionRequired(
+  handler: (payload: InteractionRequiredPayload) => void,
+): Promise<() => void> {
+  return listen<InteractionRequiredPayload>(TAURI_EVENTS.INTERACTION_REQUIRED, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function onInteractionResolved(
+  handler: (payload: InteractionResolvedPayload) => void,
+): Promise<() => void> {
+  return listen<InteractionResolvedPayload>(TAURI_EVENTS.INTERACTION_RESOLVED, (event) => {
     handler(event.payload)
   })
 }
