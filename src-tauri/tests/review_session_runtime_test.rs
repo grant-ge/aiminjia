@@ -100,6 +100,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         _conversation_id: &str,
         _content: &str,
         _file_ids: &[String],
+        _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-msg".to_string())
     }

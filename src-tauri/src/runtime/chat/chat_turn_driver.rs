@@ -51,6 +51,7 @@ pub struct ChatTurnRequest {
     /// with the single authoritative id generated for this turn.
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
+    pub client_message_id: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -67,6 +68,7 @@ impl ChatTurnRequest {
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
+            client_message_id: None,
         }
     }
 }
@@ -125,6 +127,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _conversation_id: &str,
         _content: &str,
         _file_ids: &[String],
+        _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
@@ -551,6 +554,7 @@ impl RuntimeChatTurnDriver {
                 ),
                 PendingPermissionResolution::Deny { message, .. }
                 | PendingPermissionResolution::Cancel { message } => {
+                    let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
                     self.event_bus
                         .emit(RuntimeEvent::new(
                             turn.session_id().clone(),
@@ -560,7 +564,7 @@ impl RuntimeChatTurnDriver {
                                 tool_name: tool_name.clone(),
                                 is_error: true,
                                 content: message.clone(),
-                                msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                                msg_id: msg_id.clone(),
                                 duration_ms: None,
                             },
                         ))
@@ -570,6 +574,7 @@ impl RuntimeChatTurnDriver {
                         tool_name: tool_name.clone(),
                         content: message,
                         is_error: true,
+                        msg_id,
                         file_meta: None,
                         is_degraded: false,
                         degradation_notice: None,
@@ -738,9 +743,12 @@ impl RuntimeChatTurnDriver {
                 request.conversation_id.as_str(),
                 &request.content,
                 &request.file_ids,
+                request.client_message_id.as_deref(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let pending_user_msg_id = _user_msg_id;
+        let pending_client_msg_id = request.client_message_id.clone();
 
         // ── Step 3: Precompute hook (currently no-op) ────────────────────────
         let precompute_result = executor.run_precompute(&config, &mut state).await?;
@@ -753,6 +761,28 @@ impl RuntimeChatTurnDriver {
                 session_id.clone(),
                 run_id.clone(),
                 RuntimeEventKind::StreamStarted,
+            ))
+            .await?;
+        let pending_user_content = if request.file_ids.is_empty() {
+            serde_json::json!({ "text": request.content })
+        } else {
+            let files_meta: Vec<serde_json::Value> = request
+                .file_ids
+                .iter()
+                .map(|id| serde_json::json!({ "id": id }))
+                .collect();
+            serde_json::json!({ "text": request.content, "files": files_meta })
+        };
+        self.event_bus
+            .emit(RuntimeEvent::new(
+                session_id.clone(),
+                run_id.clone(),
+                RuntimeEventKind::MessagePersisted {
+                    message_id: pending_user_msg_id.clone(),
+                    role: "user".to_string(),
+                    content: pending_user_content,
+                    client_message_id: pending_client_msg_id.clone(),
+                },
             ))
             .await?;
 
@@ -1568,6 +1598,7 @@ mod tests {
             &self,
             _conversation_id: &str,
             _content: &str,
+            _tool_calls: &[serde_json::Value],
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
         ) -> Result<String, TurnError> {
@@ -1579,6 +1610,7 @@ mod tests {
             _conversation_id: &str,
             _content: &str,
             _file_ids: &[String],
+            _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
         }

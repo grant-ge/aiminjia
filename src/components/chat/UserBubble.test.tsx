@@ -4,18 +4,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Message } from '@/types/message'
 
-const sendMessageMock = vi.fn(() => Promise.resolve())
-
-vi.mock('@/lib/tauri', () => ({
-  sendMessage: (...args: Parameters<typeof sendMessageMock>) => sendMessageMock(...args),
-}))
-
-vi.mock('@/stores/chatStore', () => ({
-  useChatStore: vi.fn(
-    (selector: (state: { activeConversationId: string | null }) => unknown) =>
-      selector({ activeConversationId: 'conv-1' }),
-  ),
-}))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -42,7 +30,8 @@ const message: Message = {
 
 describe('UserBubble edit and resend', () => {
   it('supports editing current text and re-sending', async () => {
-    render(<UserBubble message={message} />)
+    const onResend = vi.fn()
+    render(<UserBubble message={message} onResend={onResend} />)
 
     fireEvent.click(screen.getByRole('button', { name: '编辑并重发' }))
 
@@ -53,7 +42,7 @@ describe('UserBubble edit and resend', () => {
     fireEvent.click(screen.getByRole('button', { name: '重发' }))
 
     await waitFor(() => {
-      expect(sendMessageMock).toHaveBeenCalledWith('conv-1', '改后的问题')
+      expect(onResend).toHaveBeenCalledWith('改后的问题')
     })
   })
 })

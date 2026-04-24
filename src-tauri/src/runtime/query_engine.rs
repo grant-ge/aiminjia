@@ -444,10 +444,13 @@ impl QueryEngine {
         ))
         .await?;
 
+        let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
+        let dispatch_start = std::time::Instant::now();
         // Dispatch using the real args from the LLM (not a synthetic placeholder).
         let dispatch_result = dispatcher
             .dispatch(&call.tool_name, call.args.clone(), ctx)
             .await;
+        let duration_ms = dispatch_start.elapsed().as_millis() as u64;
 
         match dispatch_result {
             Ok(crate::runtime::tools::ToolDispatchOutcome::Completed {
@@ -466,8 +469,8 @@ impl QueryEngine {
                         tool_name: call.tool_name.clone(),
                         is_error: false,
                         content: tool_result.content.clone(),
-                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
-                        duration_ms: None,
+                        msg_id: msg_id.clone(),
+                        duration_ms: Some(duration_ms),
                     },
                 ))
                 .await?;
@@ -479,6 +482,7 @@ impl QueryEngine {
                     tool_name: call.tool_name,
                     content: tool_result.content,
                     is_error: false,
+                    msg_id,
                     file_meta: tool_result.file_meta,
                     is_degraded: tool_result.is_degraded,
                     degradation_notice: tool_result.degradation_notice,
@@ -530,8 +534,8 @@ impl QueryEngine {
                         tool_name: call.tool_name.clone(),
                         is_error: true,
                         content: content.clone(),
-                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
-                        duration_ms: None,
+                        msg_id: msg_id.clone(),
+                        duration_ms: Some(duration_ms),
                     },
                 ))
                 .await?;
@@ -541,6 +545,7 @@ impl QueryEngine {
                     tool_name: call.tool_name,
                     content,
                     is_error: true,
+                    msg_id,
                     file_meta: None,
                     is_degraded: false,
                     degradation_notice: None,

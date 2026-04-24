@@ -11,6 +11,7 @@ export interface ToolExecution {
   /** Elapsed ms from executing → completed/error. Set automatically. */
   durationMs?: number
   input?: unknown  // 来自 tool:executing 事件
+  output?: string   // 来自 tool:completed 事件
 }
 
 export type AgentPhase = 'think' | 'act' | 'observe'

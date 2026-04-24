@@ -1,12 +1,6 @@
 /**
  * Plan-D: 把扁平 messages + conversationStreamState.toolExecutions
  * 投影为 RenderTurn[]，供 MessageList 渲染。
- *
- * 原则：
- * 1. 每个 user message 开一个新 turn
- * 2. assistant message 并入同一个 turn
- * 3. toolExecutions 归入最后一个 turn
- * 4. AI 消息的 generatedFiles 展平到所在 turn
  */
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
@@ -23,6 +17,7 @@ export interface RenderAiSegment {
 
 export interface RenderToolStep {
   index: number
+  toolCallId: string
   name: string
   status: 'running' | 'done' | 'error'
   durationMs?: number
@@ -68,6 +63,39 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
   }
 }
 
+function ensureToolGroup(turn: RenderTurn, status: RenderToolGroup['status'] = 'running'): RenderToolGroup {
+  if (!turn.toolGroup) {
+    turn.toolGroup = { status, steps: [], durationMs: 0 }
+  }
+  return turn.toolGroup
+}
+
+function stringifyInput(input: unknown): string | undefined {
+  if (input == null) return undefined
+  try {
+    return JSON.stringify(input, null, 2)
+  } catch {
+    return String(input)
+  }
+}
+
+function truncateOutput(text: string, isError: boolean, maxLines = 20): string {
+  const lines = text.split('\n')
+  if (lines.length <= maxLines) return text
+  if (isError) {
+    return `... (total ${lines.length} lines, truncated)\n${lines.slice(-maxLines).join('\n')}`
+  }
+  return `${lines.slice(0, maxLines).join('\n')}\n... (total ${lines.length} lines, truncated)`
+}
+
+function recalcToolGroup(group: RenderToolGroup): void {
+  group.steps.forEach((step, idx) => {
+    step.index = idx + 1
+  })
+  group.durationMs = group.steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0)
+  group.status = group.steps.some((s) => s.status === 'running') ? 'running' : 'done'
+}
+
 export function buildTurnsFromMessages(
   messages: Message[],
   toolExecutions: ToolExecution[],
@@ -100,13 +128,20 @@ export function buildTurnsFromMessages(
     }
 
     if (m.role === 'assistant') {
-      // assistant 有 toolCalls → 这是一次工具调用轮次，初始化 toolGroup
-      if (m.toolCalls && m.toolCalls.length > 0) {
-        if (!current.toolGroup) {
-          current.toolGroup = { status: 'running', steps: [], durationMs: 0 }
+      if (m.toolCalls?.length) {
+        const group = ensureToolGroup(current)
+        for (const tc of m.toolCalls) {
+          if (!group.steps.some((s) => s.toolCallId === tc.id)) {
+            group.steps.push({
+              index: group.steps.length + 1,
+              toolCallId: tc.id,
+              name: tc.name,
+              status: 'running',
+              inputJson: stringifyInput(tc.arguments),
+            })
+          }
         }
       }
-      // 有文字内容才加 aiSegment
       if (m.content.text) {
         current.aiSegments.push({ id: m.id, text: m.content.text, message: m })
       }
@@ -119,48 +154,55 @@ export function buildTurnsFromMessages(
     }
 
     if (m.role === 'tool' && m.toolResult) {
-      // 确保 toolGroup 存在
-      if (!current.toolGroup) {
-        current.toolGroup = { status: 'done', steps: [], durationMs: 0 }
-      }
+      const group = ensureToolGroup(current)
       const result = m.toolResult
-      current.toolGroup.steps.push({
-        index: current.toolGroup.steps.length + 1,
-        name: result.name,
-        status: result.isError ? 'error' : 'done',
-        durationMs: result.durationMs,
-      })
-      current.toolGroup.durationMs =
-        current.toolGroup.steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0)
+      const existing = group.steps.find((s) => s.toolCallId === result.toolCallId)
+      const output = result.content ? truncateOutput(result.content, result.isError) : undefined
+      if (existing) {
+        existing.status = result.isError ? 'error' : 'done'
+        existing.output = output
+        existing.durationMs = result.durationMs
+      } else {
+        group.steps.push({
+          index: group.steps.length + 1,
+          toolCallId: result.toolCallId,
+          name: result.name,
+          status: result.isError ? 'error' : 'done',
+          output,
+          durationMs: result.durationMs,
+        })
+      }
     }
   }
 
-  // 最后一个 turn：只有当该 turn 尚无来自历史 role=tool 消息的步骤时，
-  // 才用实时 toolExecutions 覆盖（表示 streaming 正在进行中）
   if (toolExecutions.length > 0 && turns.length > 0) {
     const target = turns[turns.length - 1]
-    const hasHistoricalSteps = target.toolGroup != null && target.toolGroup.steps.length > 0
-    if (!hasHistoricalSteps) {
-      const steps: RenderToolStep[] = toolExecutions.map((t, i) => ({
-        index: i + 1,
-        name: t.toolName,
-        status: toolExecStatusToStep(t.status),
-        durationMs: t.durationMs,
-      }))
-      const running = steps.some((s) => s.status === 'running')
-      target.toolGroup = {
-        status: running ? 'running' : 'done',
-        steps,
-        durationMs: steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0),
+    const group = ensureToolGroup(target)
+    for (const t of toolExecutions) {
+      const existing = group.steps.find((s) => s.toolCallId === t.toolId)
+      const output = t.output ? truncateOutput(t.output, t.status === 'error') : undefined
+      if (existing) {
+        existing.status = toolExecStatusToStep(t.status)
+        if (t.durationMs != null) existing.durationMs = t.durationMs
+        if (t.input != null && !existing.inputJson) existing.inputJson = stringifyInput(t.input)
+        if (output && !existing.output) existing.output = output
+      } else {
+        group.steps.push({
+          index: group.steps.length + 1,
+          toolCallId: t.toolId,
+          name: t.toolName,
+          status: toolExecStatusToStep(t.status),
+          durationMs: t.durationMs,
+          inputJson: stringifyInput(t.input),
+          output,
+        })
       }
     }
   }
 
-  // 整理所有 toolGroup 最终状态
   for (const turn of turns) {
-    if (turn.toolGroup && turn.toolGroup.steps.length > 0) {
-      const hasRunning = turn.toolGroup.steps.some((s) => s.status === 'running')
-      turn.toolGroup.status = hasRunning ? 'running' : 'done'
+    if (turn.toolGroup) {
+      recalcToolGroup(turn.toolGroup)
     }
   }
 

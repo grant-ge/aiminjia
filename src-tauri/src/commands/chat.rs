@@ -25,9 +25,17 @@ pub async fn send_message(
     file_ids: Vec<String>,
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
+    client_message_id: Option<String>,
 ) -> Result<(), String> {
     adapter
-        .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
+        .send_message(
+            conversation_id,
+            content,
+            file_ids,
+            permission_mode,
+            agent_name,
+            client_message_id,
+        )
         .await
 }
 #[tauri::command]

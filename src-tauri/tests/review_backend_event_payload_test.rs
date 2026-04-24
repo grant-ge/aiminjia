@@ -151,3 +151,71 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
     );
     assert_eq!(event.payload["status"].as_str(), Some("running"));
 }
+
+
+#[tokio::test]
+async fn review_user_message_persisted_includes_client_message_id() {
+    let (bus, host) = make_bus_with_host();
+    let session_id = SessionId::new("s-user-1");
+    let run_id = RunId::new("r-user-1");
+
+    bus.emit(RuntimeEvent::new(
+        session_id.clone(),
+        run_id.clone(),
+        RuntimeEventKind::MessagePersisted {
+            message_id: "msg-abc".to_string(),
+            role: "user".to_string(),
+            content: serde_json::json!({ "text": "hello" }),
+            client_message_id: Some("client-uuid-123".to_string()),
+        },
+    ))
+    .await
+    .unwrap();
+
+    let trace = host.trace();
+    let event = trace
+        .events
+        .iter()
+        .find(|e| e.name == "message:updated")
+        .expect("message:updated must be emitted");
+
+    assert_eq!(event.payload["role"].as_str(), Some("user"));
+    assert_eq!(event.payload["id"].as_str(), Some("msg-abc"));
+    assert_eq!(
+        event.payload["clientMessageId"].as_str(),
+        Some("client-uuid-123"),
+        "message:updated for user must include clientMessageId"
+    );
+}
+
+#[tokio::test]
+async fn review_tool_completed_msg_id_matches_persisted_record() {
+    use app_lib::runtime::chat::tool_result_collector::collect_results;
+    use app_lib::runtime::chat::tool_round_driver::ToolRoundResult;
+    use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
+
+    let outcomes = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+        tool_call_id: "tc-1".to_string(),
+        tool_name: "run_python".to_string(),
+        content: "result output".to_string(),
+        is_error: false,
+        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+        file_meta: None,
+        is_degraded: false,
+        degradation_notice: None,
+        max_result_size_chars: 8000,
+        context_modifier_message: None,
+        skill_runtime_patch: None,
+    })];
+
+    let results = collect_results(outcomes);
+    let msg = &results.tool_result_messages[0];
+    let msg_id = msg["msgId"]
+        .as_str()
+        .expect("tool_result_messages[0] must have msgId field");
+    assert!(
+        msg_id.starts_with("tool-"),
+        "msgId must start with 'tool-', got: {}",
+        msg_id
+    );
+}

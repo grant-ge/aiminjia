@@ -18,6 +18,7 @@ pub enum RuntimeEventKind {
         content: String,
     },
     StreamDone,
+    StreamRetryReset,
     StreamError {
         error: String,
         raw_error: Option<String>,
@@ -69,6 +70,7 @@ pub enum RuntimeEventKind {
         message_id: String,
         role: String,
         content: serde_json::Value,
+        client_message_id: Option<String>,
     },
     TurnCompleted {
         outcome: ChatTurnOutcome,
@@ -135,6 +137,7 @@ impl RuntimeEvent {
                 message_id: message_id.into(),
                 role: role.into(),
                 content,
+                client_message_id: None,
             },
         )
     }

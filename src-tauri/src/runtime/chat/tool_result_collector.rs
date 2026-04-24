@@ -17,6 +17,7 @@
 use serde_json::{json, Value as JsonValue};
 
 use crate::runtime::chat::tool_round_driver::ToolRoundResult;
+use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 
 /// Collected output from a single tool round.
 #[derive(Debug)]
@@ -166,7 +167,12 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
 
         // Build the tool-result message as a plain JSON object (camelCase
         // matches the serialisation format of `ChatMessage`).
+        let msg_id = match round_result {
+            ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed { msg_id, .. }) => msg_id.clone(),
+            _ => format!("tool-{}", uuid::Uuid::new_v4()),
+        };
         tool_result_messages.push(json!({
+            "msgId": msg_id,
             "role": "tool",
             "toolCallId": tr_id,
             "name": tr_name,
@@ -199,6 +205,7 @@ mod tests {
             tool_name: name.to_string(),
             content: content.to_string(),
             is_error,
+            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
@@ -259,6 +266,7 @@ mod tests {
             tool_name: "edit_file".to_string(),
             content: "done".to_string(),
             is_error: false,
+            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
@@ -304,6 +312,7 @@ mod tests {
             tool_name: "switch_skill".to_string(),
             content: "switched".to_string(),
             is_error: false,
+            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,

@@ -33,6 +33,13 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 "runId": event.run_id.as_str(),
             }),
         }),
+        RuntimeEventKind::StreamRetryReset => Some(LegacyEvent {
+            name: "streaming:retry-reset".to_string(),
+            payload: json!({
+                "conversationId": conversation_id,
+                "runId": event.run_id.as_str(),
+            }),
+        }),
         RuntimeEventKind::StreamError {
             ref error,
             ref raw_error,
@@ -124,9 +131,9 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             message_id,
             role,
             content,
-        } => Some(LegacyEvent {
-            name: "message:updated".to_string(),
-            payload: json!({
+            client_message_id,
+        } => {
+            let mut payload = json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,
                 "id": message_id,
@@ -136,8 +143,15 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
                 }))["content"].clone(),
                 "createdAt": chrono::Utc::now().to_rfc3339(),
                 "runId": event.run_id.as_str(),
-            }),
-        }),
+            });
+            if let Some(client_message_id) = client_message_id {
+                payload["clientMessageId"] = json!(client_message_id);
+            }
+            Some(LegacyEvent {
+                name: "message:updated".to_string(),
+                payload,
+            })
+        }
         RuntimeEventKind::AgentIdle { agent_id, scope } => Some(LegacyEvent {
             name: "agent:idle".to_string(),
             payload: json!({

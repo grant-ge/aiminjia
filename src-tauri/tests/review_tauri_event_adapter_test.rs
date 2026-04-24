@@ -180,6 +180,7 @@ fn message_persisted_maps_to_message_updated_with_ids_role_run_id_and_created_at
         message_id: "msg-001".to_string(),
         role: "assistant".to_string(),
         content: json!({ "text": "你好" }),
+        client_message_id: None,
     });
 
     assert_eq!(legacy.name, "message:updated");

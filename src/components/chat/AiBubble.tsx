@@ -41,7 +41,6 @@ import {
 } from '@/components/rich-content'
 import { TypingIndicator } from './TypingIndicator'
 import { useChatStore } from '@/stores/chatStore'
-import { sendMessage } from '@/lib/tauri'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useCallback } from 'react'
 import { markdownToHtml } from '@/lib/markdown'
@@ -55,9 +54,10 @@ interface AiBubbleProps {
   /** When true, hides the Avatar + product name header row and removes
    *  the pl-9 body offset. Used by MessageList turn-based rendering. */
   hideHeader?: boolean
+  onUserResponse?: (text: string) => void
 }
 
-export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
+export function AiBubble({ message, isStreaming, hideHeader, onUserResponse }: AiBubbleProps) {
   const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
@@ -68,21 +68,9 @@ export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
   /** Send a user choice back to the agent loop as a message. */
   const handleUserResponse = useCallback(
     (responseText: string) => {
-      if (!conversationId) return
-      sendMessage(conversationId, responseText).catch((err) => {
-        console.error('[AiBubble] Failed to send user response:', err)
-        useNotificationStore.getState().push({
-          level: 'error',
-          title: t('aiBubble.sendFailed'),
-          message: t('aiBubble.sendFailedDesc'),
-          actions: [],
-          dismissible: true,
-          autoHide: 5,
-          context: 'toast',
-        })
-      })
+      onUserResponse?.(responseText)
     },
-    [conversationId, t],
+    [onUserResponse],
   )
 
   /** Open a generated report file via system default app. */

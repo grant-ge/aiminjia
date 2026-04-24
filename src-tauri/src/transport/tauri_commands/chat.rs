@@ -472,6 +472,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                             MAX_STREAM_RETRIES,
                             input.conversation_id
                         );
+                        let _ = bus
+                            .emit(RuntimeEvent::new(
+                                session_id.clone(),
+                                run_id.clone(),
+                                RuntimeEventKind::StreamRetryReset,
+                            ))
+                            .await;
                         tokio::time::sleep(std::time::Duration::from_secs(STREAM_RETRY_DELAY_SECS))
                             .await;
                         continue;
@@ -537,6 +544,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 "[run_llm_step] Chunk timeout retryable (attempt {}/{}) conv={}",
                                 stream_retry_count, MAX_STREAM_RETRIES, input.conversation_id
                             );
+                            let _ = bus
+                                .emit(RuntimeEvent::new(
+                                    session_id.clone(),
+                                    run_id.clone(),
+                                    RuntimeEventKind::StreamRetryReset,
+                                ))
+                                .await;
                             iter_content.clear();
                             tool_calls.clear();
                             stream_needs_retry = true;
@@ -616,6 +630,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                         stream_retry_count, MAX_STREAM_RETRIES,
                                         input.conversation_id
                                     );
+                                    let _ = bus
+                                        .emit(RuntimeEvent::new(
+                                            session_id.clone(),
+                                            run_id.clone(),
+                                            RuntimeEventKind::StreamRetryReset,
+                                        ))
+                                        .await;
                                     iter_content.clear();
                                     tool_calls.clear();
                                     stream_needs_retry = true;
@@ -818,6 +839,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         conversation_id: &str,
         content: &str,
         file_ids: &[String],
+        _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
@@ -899,7 +921,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         tool_messages: &[serde_json::Value],
     ) -> Result<(), TurnError> {
         for msg in tool_messages {
-            let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
+            let msg_id = msg
+                .get("msgId")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("tool-{}", uuid::Uuid::new_v4()));
             // 直接取三个字段，缺失时跳过整条而非写 null
             let tool_call_id = match msg.get("toolCallId").and_then(|v| v.as_str()) {
                 Some(v) => v.to_string(),
@@ -1977,9 +2003,11 @@ impl TauriChatCommandAdapter {
         file_ids: Vec<String>,
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
+        client_message_id: Option<String>,
     ) -> Result<(), String> {
         let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
         request.agent_name = agent_name;
+        request.client_message_id = client_message_id;
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }

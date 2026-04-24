@@ -157,6 +157,7 @@ fn collect_results_counts_success_and_error() {
             tool_name: "search".to_string(),
             content: "found it".to_string(),
             is_error: false,
+            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
@@ -169,6 +170,7 @@ fn collect_results_counts_success_and_error() {
             tool_name: "load".to_string(),
             content: "error loading".to_string(),
             is_error: true,
+            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
             file_meta: None,
             is_degraded: false,
             degradation_notice: None,
@@ -190,6 +192,7 @@ fn runtime_tool_call_outcome_exposes_declared_max_result_size_chars() {
         tool_name: "echo".to_string(),
         content: "ok".to_string(),
         is_error: false,
+        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
         file_meta: None,
         is_degraded: false,
         degradation_notice: None,
@@ -209,6 +212,7 @@ fn collect_results_truncation_message_includes_guidance() {
         tool_name: "search_files".to_string(),
         content: long,
         is_error: false,
+        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
         file_meta: None,
         is_degraded: false,
         degradation_notice: None,
@@ -231,6 +235,7 @@ fn collect_results_uses_per_result_limit_not_global_default() {
         tool_name: "list_directory".to_string(),
         content: content_6k,
         is_error: false,
+        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
         file_meta: None,
         is_degraded: false,
         degradation_notice: None,
@@ -252,6 +257,7 @@ fn collect_results_keeps_content_within_declared_limit() {
         tool_name: "execute_python".to_string(),
         content: content_5k,
         is_error: false,
+        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
         file_meta: None,
         is_degraded: false,
         degradation_notice: None,
@@ -453,7 +459,7 @@ async fn driver_s4_message_persisted_carries_content() {
     let persisted = events.iter().find(|e| {
         matches!(
             &e.kind,
-            app_lib::runtime::events::RuntimeEventKind::MessagePersisted { .. }
+            app_lib::runtime::events::RuntimeEventKind::MessagePersisted { role, .. } if role == "assistant"
         )
     });
     assert!(persisted.is_some(), "no MessagePersisted event");
@@ -1034,6 +1040,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _conversation_id: &str,
         _content: &str,
         _file_ids: &[String],
+        _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())
     }
