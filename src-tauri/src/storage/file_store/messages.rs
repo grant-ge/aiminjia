@@ -9,7 +9,7 @@
 //! but a higher `_rev` is appended. On read, only the highest `_rev` per `seq`
 //! is kept.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -26,6 +26,10 @@ use crate::llm::content_filter::strip_hallucinated_xml;
 
 /// Maximum messages per shard file.
 const SHARD_CAPACITY: u64 = 100;
+
+fn messages_path(base_dir: &Path, conversation_id: &str) -> PathBuf {
+    conv_dir(base_dir, conversation_id).join("messages.jsonl")
+}
 
 // ─── Shard metadata (_current file) ──────────────────────────────────────────
 
@@ -128,8 +132,14 @@ pub fn insert_message(
     let content: serde_json::Value = serde_json::from_str(content_json)?;
 
     let record = StoredMessage {
-        seq: meta.next_seq,
-        rev: 1,
+        seq: Some(meta.next_seq),
+        rev: Some(1),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        run_id: None,
+        schema_version: None,
+        sequence: None,
         id: id.to_string(),
         conversation_id: conversation_id.to_string(),
         role: role.to_string(),
@@ -142,6 +152,26 @@ pub fn insert_message(
 
     // Update conversation's updatedAt
     let conv_meta_path = conv_dir(base_dir, conversation_id).join("conv.json");
+    if conv_meta_path.exists() {
+        if let Ok(mut conv) =
+            super::io::read_json_safe::<super::types::ConversationMeta>(&conv_meta_path)
+        {
+            conv.updated_at = Utc::now().to_rfc3339();
+            let _ = super::io::atomic_write_json(&conv_meta_path, &conv);
+        }
+    }
+
+    Ok(())
+}
+
+/// Insert a message into the single-file transcript store.
+///
+/// Duplicate ids use append-only last-writer-wins semantics on read.
+pub fn insert_message_v2(base_dir: &Path, msg: &StoredMessage) -> StorageResult<()> {
+    let path = messages_path(base_dir, &msg.conversation_id);
+    append_jsonl(&path, msg)?;
+
+    let conv_meta_path = conv_dir(base_dir, &msg.conversation_id).join("conv.json");
     if conv_meta_path.exists() {
         if let Ok(mut conv) =
             super::io::read_json_safe::<super::types::ConversationMeta>(&conv_meta_path)
@@ -182,6 +212,32 @@ pub fn get_messages(
     Ok(deduped.into_iter().map(message_to_json).collect())
 }
 
+/// Read all single-file messages using id-based last-writer-wins semantics.
+pub fn get_messages_v2(base_dir: &Path, conversation_id: &str) -> StorageResult<Vec<StoredMessage>> {
+    let path = messages_path(base_dir, conversation_id);
+    let all: Vec<StoredMessage> = read_jsonl(&path)?;
+    let mut by_id: HashMap<String, StoredMessage> = HashMap::new();
+
+    for msg in all {
+        by_id.insert(msg.id.clone(), msg);
+    }
+
+    let mut result: Vec<StoredMessage> = by_id.into_values().collect();
+    result.sort_by(|a, b| {
+        match (a.sequence, b.sequence) {
+            (Some(a_seq), Some(b_seq)) => a_seq
+                .cmp(&b_seq)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+                .then_with(|| a.id.cmp(&b.id)),
+            _ => a
+                .created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id)),
+        }
+    });
+    Ok(result)
+}
+
 /// Get the most recent N messages for a conversation.
 ///
 /// Reads shards in reverse order, stopping once we have enough messages.
@@ -203,8 +259,8 @@ pub fn get_recent_messages(
         }
 
         // Count unique seqs to check if we have enough (avoid full dedup)
-        let unique_seqs: std::collections::HashSet<u64> = all_msgs.iter().map(|m| m.seq).collect();
-        if unique_seqs.len() >= limit {
+        let unique_message_keys: HashSet<String> = all_msgs.iter().map(message_dedup_key).collect();
+        if unique_message_keys.len() >= limit {
             break;
         }
     }
@@ -215,6 +271,61 @@ pub fn get_recent_messages(
     let recent: Vec<serde_json::Value> = deduped.drain(start..).map(message_to_json).collect();
 
     Ok(recent)
+}
+
+/// Read the most recent N single-file messages after id-based dedup.
+pub fn get_recent_messages_v2(
+    base_dir: &Path,
+    conversation_id: &str,
+    limit: usize,
+) -> StorageResult<Vec<StoredMessage>> {
+    let all = get_messages_v2(base_dir, conversation_id)?;
+    let start = all.len().saturating_sub(limit);
+    Ok(all.into_iter().skip(start).collect())
+}
+
+/// Migrate legacy sharded message files into the single-file transcript.
+pub fn migrate_shards_to_single_file(base_dir: &Path, conversation_id: &str) -> StorageResult<()> {
+    let dir = conv_dir(base_dir, conversation_id);
+    let mut shards: Vec<(u32, PathBuf)> = fs::read_dir(&dir)?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with("messages.") || !name.ends_with(".jsonl") || name == "messages.jsonl" {
+                return None;
+            }
+            let middle = &name["messages.".len()..name.len() - ".jsonl".len()];
+            middle.parse::<u32>().ok().map(|n| (n, entry.path()))
+        })
+        .collect();
+
+    if shards.is_empty() {
+        return Ok(());
+    }
+
+    shards.sort_by_key(|(num, _)| *num);
+
+    let target = messages_path(base_dir, conversation_id);
+    let mut next_sequence = 0_u64;
+
+    for (_, shard) in &shards {
+        let records: Vec<StoredMessage> = read_jsonl(shard)?;
+        for mut msg in records {
+            next_sequence += 1;
+            msg.sequence = Some(next_sequence);
+            msg.seq = None;
+            msg.rev = None;
+            append_jsonl(&target, &msg)?;
+        }
+    }
+
+    for (_, shard) in shards {
+        let _ = fs::remove_file(shard);
+    }
+    let _ = fs::remove_file(dir.join("_current"));
+    let _ = fs::remove_file(dir.join("_current.tmp"));
+
+    Ok(())
 }
 
 /// Update the content of an existing message (append-only).
@@ -228,73 +339,91 @@ pub fn update_message_content(
     content_json: &str,
 ) -> StorageResult<()> {
     let meta = read_shard_meta(base_dir, conversation_id);
+    let mut all_records: Vec<StoredMessage> = Vec::new();
 
     for shard_num in 1..=meta.shard {
         let path = shard_path(base_dir, conversation_id, shard_num);
-        let records: Vec<StoredMessage> = match read_jsonl(&path) {
-            Ok(r) => r,
+        match read_jsonl(&path) {
+            Ok(records) => all_records.extend(records),
             Err(_) => continue,
-        };
-
-        // Find the message
-        if let Some(original) = records.iter().rev().find(|m| m.id == id) {
-            let content: serde_json::Value =
-                serde_json::from_str(content_json).unwrap_or(serde_json::json!({}));
-
-            // Find the max rev for this seq
-            let max_rev = records
-                .iter()
-                .filter(|m| m.seq == original.seq)
-                .map(|m| m.rev)
-                .max()
-                .unwrap_or(0);
-
-            let updated = StoredMessage {
-                seq: original.seq,
-                rev: max_rev + 1,
-                id: original.id.clone(),
-                conversation_id: original.conversation_id.clone(),
-                role: original.role.clone(),
-                content,
-                created_at: original.created_at.clone(),
-            };
-
-            // Append to the current active shard (not the one where original is)
-            let active_path = shard_path(base_dir, conversation_id, meta.shard);
-            append_jsonl(&active_path, &updated)?;
-
-            return Ok(());
         }
     }
 
-    Err(StorageError::not_found(format!(
-        "Message not found: {}",
-        id
-    )))
+    // Use the last persisted version across all shards so repeated updates on
+    // transitional missing-seq records continue from the latest content/rev.
+    let Some(original) = all_records.iter().rev().find(|m| m.id == id) else {
+        return Err(StorageError::not_found(format!(
+            "Message not found: {}",
+            id
+        )));
+    };
+
+    let content: serde_json::Value =
+        serde_json::from_str(content_json).unwrap_or(serde_json::json!({}));
+    let original_key = message_dedup_key(original);
+
+    let max_rev = all_records
+        .iter()
+        .filter(|m| message_dedup_key(m) == original_key)
+        .map(|m| m.rev_or(0))
+        .max()
+        .unwrap_or(0);
+
+    let updated = StoredMessage {
+        seq: original.seq,
+        rev: Some(max_rev + 1),
+        tool_calls: original.tool_calls.clone(),
+        tool_call_id: original.tool_call_id.clone(),
+        name: original.name.clone(),
+        run_id: original.run_id.clone(),
+        schema_version: original.schema_version,
+        sequence: original.sequence,
+        id: original.id.clone(),
+        conversation_id: original.conversation_id.clone(),
+        role: original.role.clone(),
+        content,
+        created_at: original.created_at.clone(),
+    };
+
+    // Append to the current active shard (not necessarily where original was).
+    let active_path = shard_path(base_dir, conversation_id, meta.shard);
+    append_jsonl(&active_path, &updated)?;
+
+    Ok(())
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Deduplicate messages: keep only the highest `_rev` per `seq`.
 fn dedup_messages(messages: Vec<StoredMessage>) -> Vec<StoredMessage> {
-    // Build a map: seq → message with highest rev
-    let mut best: HashMap<u64, StoredMessage> = HashMap::new();
+    // Prefer legacy shard seq for dedup; if missing during transition, fall back
+    // to id so malformed records do not collapse into one bucket.
+    let mut best: HashMap<String, StoredMessage> = HashMap::new();
     for msg in messages {
-        match best.entry(msg.seq) {
+        let key = message_dedup_key(&msg);
+        match best.entry(key) {
             std::collections::hash_map::Entry::Vacant(e) => {
                 e.insert(msg);
             }
             std::collections::hash_map::Entry::Occupied(mut e) => {
-                if msg.rev > e.get().rev {
+                if msg.rev_or(0) > e.get().rev_or(0) {
                     *e.get_mut() = msg;
                 }
             }
         }
     }
 
-    // Sort by seq ascending (chronological order)
+    // Sort by legacy seq when available; for malformed transitional records
+    // without seq, fall back to stable chronological fields instead of HashMap
+    // iteration order.
     let mut result: Vec<StoredMessage> = best.into_values().collect();
-    result.sort_by_key(|m| m.seq);
+    result.sort_by(|a, b| match (a.seq, b.seq) {
+        (Some(a_seq), Some(b_seq)) => a_seq.cmp(&b_seq),
+        _ => a
+            .created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.id.cmp(&b.id)),
+    });
     result
 }
 
@@ -304,11 +433,26 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
     let sender = msg.content.get("sender").cloned();
 
     if msg.role == "tool" {
-        // role=tool messages store toolCallId/name/content inside `content`.
-        // The frontend expects a top-level `toolResult` field.
-        let tool_call_id = msg.content.get("toolCallId").cloned().unwrap_or(serde_json::Value::Null);
-        let name = msg.content.get("name").cloned().unwrap_or(serde_json::Value::Null);
-        let content_text = msg.content.get("content").cloned().unwrap_or(serde_json::Value::Null);
+        // Tool records may come from legacy content-embedded fields or the new
+        // top-level schema fields; the frontend still expects `toolResult`.
+        let tool_call_id = msg
+            .tool_call_id
+            .clone()
+            .map(serde_json::Value::String)
+            .or_else(|| msg.content.get("toolCallId").cloned())
+            .unwrap_or(serde_json::Value::Null);
+        let name = msg
+            .name
+            .clone()
+            .map(serde_json::Value::String)
+            .or_else(|| msg.content.get("name").cloned())
+            .unwrap_or(serde_json::Value::Null);
+        let content_text = msg
+            .content
+            .get("content")
+            .cloned()
+            .or_else(|| msg.content.get("text").cloned())
+            .unwrap_or(serde_json::Value::Null);
         let is_error = msg.content.get("isError").cloned().unwrap_or(serde_json::json!(false));
         let duration_ms = msg.content.get("durationMs").cloned();
         let mut tool_result = serde_json::json!({
@@ -337,9 +481,9 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
         msg.content
     };
 
-    // For assistant messages, also expose top-level toolCalls if stored in content
+    // Assistant tool calls may also come from the new top-level schema fields.
     let tool_calls = if msg.role == "assistant" {
-        content.get("toolCalls").cloned()
+        msg.tool_calls.clone().map(serde_json::Value::Array).or_else(|| content.get("toolCalls").cloned())
     } else {
         None
     };
@@ -358,6 +502,14 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
         }
     }
     out
+}
+
+fn message_dedup_key(msg: &StoredMessage) -> String {
+    if let Some(seq) = msg.seq {
+        format!("seq:{seq}")
+    } else {
+        format!("id:{}", msg.id)
+    }
 }
 
 /// Strip hallucinated XML from assistant message content.text field.
@@ -459,6 +611,28 @@ mod tests {
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0]["content"]["text"], "updated"); // Updated content
         assert_eq!(msgs[1]["content"]["text"], "reply");
+    }
+
+    #[test]
+    fn shard_storage_keeps_seq_and_rev_on_disk_for_dedup() {
+        let (base, _dir) = setup();
+
+        insert_message(&base, "m1", "c1", "user", r#"{"text":"original"}"#).unwrap();
+        update_message_content(&base, "m1", "c1", r#"{"text":"updated"}"#).unwrap();
+
+        let msgs = get_messages(&base, "c1").unwrap();
+        assert_eq!(msgs.len(), 1, "dedup should still collapse updated shard records");
+        assert_eq!(msgs[0]["content"]["text"], "updated");
+
+        let shard_raw = fs::read_to_string(shard_path(&base, "c1", 1)).unwrap();
+        let lines: Vec<&str> = shard_raw.lines().collect();
+        assert_eq!(lines.len(), 2, "append-only shard should keep original and updated record");
+
+        for line in lines {
+            let json: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(json.get("seq").is_some(), "shard record must persist seq");
+            assert!(json.get("_rev").is_some(), "shard record must persist _rev");
+        }
     }
 
     #[test]

@@ -85,6 +85,7 @@ impl AppStorage {
             session_id: uuid::Uuid::new_v4().to_string(),
         };
         storage.initialize()?;
+        storage.run_startup_migrations();
         info!(
             "File storage initialized at {:?} (session={})",
             base_dir,
@@ -124,6 +125,43 @@ impl AppStorage {
         }
 
         Ok(())
+    }
+
+    fn run_startup_migrations(&self) {
+        let conv_base = self.base_dir.join("conversations");
+        let Ok(entries) = fs::read_dir(&conv_base) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let conv_id = entry.file_name().to_string_lossy().to_string();
+            let conv_path = entry.path();
+            let has_new = conv_path.join("messages.jsonl").exists();
+            let has_shards = fs::read_dir(&conv_path)
+                .ok()
+                .map(|children| {
+                    children.flatten().any(|child| {
+                        let name = child.file_name().to_string_lossy().to_string();
+                        name.starts_with("messages.")
+                            && name.ends_with(".jsonl")
+                            && name != "messages.jsonl"
+                    })
+                })
+                .unwrap_or(false);
+
+            if has_shards && !has_new {
+                if let Err(err) = messages::migrate_shards_to_single_file(&self.base_dir, &conv_id) {
+                    warn!("[migration] shard->single failed for {}: {}", conv_id, err);
+                }
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -195,6 +233,16 @@ impl AppStorage {
 
     pub fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         Ok(messages::get_messages(&self.base_dir, conversation_id)?)
+    }
+
+    pub fn insert_chat_message_record(&self, msg: &types::StoredMessage) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        messages::insert_message_v2(&self.base_dir, msg)?;
+        Ok(())
+    }
+
+    pub fn get_messages_v2(&self, conversation_id: &str) -> Result<Vec<types::StoredMessage>> {
+        Ok(messages::get_messages_v2(&self.base_dir, conversation_id)?)
     }
 
     pub fn append_compact_boundary(
