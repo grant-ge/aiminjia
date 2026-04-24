@@ -1,40 +1,38 @@
-/**
- * @designSource design.pen technical card derivative (Card / Card Action)
- * @sizing r-8 border 1 padding 16
- */
 import type { ReactNode } from 'react'
-
-import { Button } from '@/components/ui/button'
 
 interface SkillCardProps {
   title: string
+  meta: string
   desc: string
   iconNode: ReactNode
-  onUse: () => void
-  onOpen: () => void
+  onClick: () => void
+  size?: 'hot' | 'office'
 }
 
-export function SkillCard({ title, desc, iconNode, onUse, onOpen }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, onClick, size = 'office' }: SkillCardProps) {
+  const isHot = size === 'hot'
+  const height = isHot ? 'h-[140px]' : 'h-[120px]'
+  const iconSize = isHot ? 'h-9 w-9' : 'h-[34px] w-[34px]'
+
   return (
     <div
       data-testid="skill-card"
-      className="flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm transition-colors hover:border-primary/40"
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      className={`flex ${height} cursor-pointer flex-col rounded-[14px] border border-border bg-card p-4 transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
     >
-      <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-primary-subtle">
+      <div className="flex items-center gap-2.5">
+        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-[10px] bg-brand-primary-subtle`}>
           {iconNode}
         </div>
-        <div className="text-sm font-semibold text-foreground">{title}</div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-sm font-semibold text-foreground">{title}</span>
+          <span className="text-[12px] font-medium text-brand-secondary">{meta}</span>
+        </div>
       </div>
-      <p className="flex-1 text-[13px] text-muted-foreground">{desc}</p>
-      <div className="mt-4 flex items-center gap-2">
-        <Button variant="secondary" className="flex-1" onClick={onOpen}>
-          详情
-        </Button>
-        <Button className="flex-1" onClick={onUse}>
-          使用
-        </Button>
-      </div>
+      <p className="mt-2.5 line-clamp-2 text-[12px] text-muted-foreground">{desc}</p>
     </div>
   )
 }
