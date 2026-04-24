@@ -186,6 +186,87 @@ pub fn build_history_from_compact_boundary(
     chat_messages
 }
 
+#[derive(Debug, Clone)]
+pub struct GatewayChatMessages {
+    pub messages: Vec<crate::llm::streaming::ChatMessage>,
+    pub dropped_count: usize,
+}
+
+pub fn deserialize_chat_messages_for_gateway(
+    input: &[serde_json::Value],
+    conversation_id: &str,
+) -> GatewayChatMessages {
+    let mut messages = Vec::new();
+    let mut dropped_count = 0usize;
+
+    for value in input {
+        match serde_json::from_value::<crate::llm::streaming::ChatMessage>(value.clone()) {
+            Ok(message) => messages.push(message),
+            Err(error) => {
+                dropped_count += 1;
+                log::warn!(
+                    "[run_llm_step] Failed to deserialize message for conv={}: {} — value: {}",
+                    conversation_id,
+                    error,
+                    serde_json::to_string(value).unwrap_or_default()
+                );
+            }
+        }
+    }
+
+    GatewayChatMessages {
+        messages,
+        dropped_count,
+    }
+}
+
+pub fn load_history_via_runtime_history(
+    db: &AppStorage,
+    conversation_id: &str,
+    has_authorized_workspace: bool,
+) -> Result<Vec<serde_json::Value>, TurnError> {
+    let stored = db
+        .get_messages_v2(conversation_id)
+        .map_err(|e| TurnError::PersistenceError(format!("load_history failed: {}", e)))?;
+    let latest_boundary = db
+        .list_compact_boundaries(conversation_id)
+        .map_err(|e| TurnError::PersistenceError(format!("load boundaries failed: {}", e)))?
+        .into_iter()
+        .last();
+    let config = crate::runtime::chat::history::HistoryConfig {
+        has_authorized_workspace,
+        ..crate::runtime::chat::history::HistoryConfig::default()
+    };
+    let chat_messages = crate::runtime::chat::history::build_chat_history(
+        &stored,
+        latest_boundary.as_ref(),
+        &config,
+    )
+    .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
+
+    Ok(chat_messages
+        .iter()
+        .map(|message| {
+            let mut value = serde_json::json!({
+                "role": message.role,
+                "content": message.content,
+            });
+            if let Some(tool_calls) = &message.tool_calls {
+                if let Ok(serialized) = serde_json::to_value(tool_calls) {
+                    value["toolCalls"] = serialized;
+                }
+            }
+            if let Some(tool_call_id) = &message.tool_call_id {
+                value["toolCallId"] = tool_call_id.clone().into();
+            }
+            if let Some(name) = &message.name {
+                value["name"] = name.clone().into();
+            }
+            value
+        })
+        .collect())
+}
+
 fn build_skill_session_store(
     memory_store: Option<Arc<dyn crate::runtime::store::MemoryStore>>,
 ) -> Arc<SkillSessionStore> {
@@ -291,11 +372,16 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let settings = build_gateway_settings(input.llm_settings);
 
         // --- Convert JsonValue messages to ChatMessage ---
-        let chat_messages: Vec<ChatMessage> = input
-            .messages
-            .iter()
-            .filter_map(|v| serde_json::from_value(v.clone()).ok())
-            .collect();
+        let gateway_messages =
+            deserialize_chat_messages_for_gateway(&input.messages, input.conversation_id);
+        let chat_messages: Vec<ChatMessage> = gateway_messages.messages;
+        if gateway_messages.dropped_count > 0 {
+            log::error!(
+                "[run_llm_step] conv={} DROPPED {} messages during deserialization — context may be incomplete",
+                input.conversation_id,
+                gateway_messages.dropped_count
+            );
+        }
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -1174,39 +1260,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
     ) -> Result<Vec<serde_json::Value>, TurnError> {
-        const HISTORY_LIMIT: u32 = 50;
-
-        let raw_messages = self
-            .services
-            .db
-            .get_recent_messages(conversation_id, HISTORY_LIMIT)
-            .map_err(|e| {
-                TurnError::PersistenceError(format!("Failed to load conversation history: {}", e))
-            })?;
-        let has_authorized_workspace =
-            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id)
-                .is_some();
-        let latest_boundary = self
-            .services
-            .db
-            .list_compact_boundaries(conversation_id)
-            .map_err(|e| {
-                TurnError::PersistenceError(format!("Failed to load compact boundaries: {}", e))
-            })?
-            .into_iter()
-            .last();
-
-        let chat_messages = build_history_from_compact_boundary(
-            raw_messages,
-            latest_boundary.as_ref(),
-            has_authorized_workspace,
-        );
+        let authorized_workspace =
+            chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
+        let chat_messages = load_history_via_runtime_history(
+            &self.services.db,
+            conversation_id,
+            authorized_workspace.is_some(),
+        )?;
 
         log::info!(
-            "[load_history] conv={} loaded {} messages (limit={})",
+            "[load_history] conv={} loaded {} messages via history.rs",
             conversation_id,
             chat_messages.len(),
-            HISTORY_LIMIT,
         );
 
         Ok(chat_messages)
