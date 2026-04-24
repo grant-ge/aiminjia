@@ -1,4 +1,24 @@
-import { Search } from 'lucide-react'
+import {
+  BarChart2,
+  Briefcase,
+  Building2,
+  Clipboard,
+  Coins,
+  FileSearch,
+  FileText,
+  Folder,
+  Heart,
+  PenLine,
+  Scale,
+  Scroll,
+  Search,
+  ShoppingCart,
+  Smartphone,
+  Target,
+  TrendingUp,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
@@ -12,6 +32,32 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 import { SkillUploadModal } from './SkillUploadModal'
+
+const ICONS: Record<string, LucideIcon> = {
+  'bar-chart-2': BarChart2,
+  briefcase: Briefcase,
+  'building-2': Building2,
+  clipboard: Clipboard,
+  'clipboard-list': Clipboard,
+  coins: Coins,
+  'file-search': FileSearch,
+  'file-text': FileText,
+  folder: Folder,
+  heart: Heart,
+  'pen-line': PenLine,
+  scale: Scale,
+  scroll: Scroll,
+  'shopping-cart': ShoppingCart,
+  smartphone: Smartphone,
+  target: Target,
+  'trending-up': TrendingUp,
+  users: Users,
+}
+
+function getSkillIcon(icon: string) {
+  const Icon = ICONS[icon] ?? FileText
+  return <Icon className="h-4 w-4 text-primary" />
+}
 
 export function SkillCenterPage() {
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
@@ -72,17 +118,17 @@ export function SkillCenterPage() {
       gap="gap-5"
     >
       <SkillHotSection>
-          {recommended.slice(0, 4).map((skill) => (
-            <SkillCard
-              key={skill.id}
-              size="hot"
-              title={skill.displayName}
-              meta={getSkillMeta(skill.source, skill.category)}
-              desc={skill.shortDescription || skill.description}
-              iconNode={null}
-              onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
-            />
-          ))}
+        {recommended.slice(0, 4).map((skill) => (
+          <SkillCard
+            key={skill.id}
+            size="hot"
+            title={skill.displayName}
+            meta={getSkillMeta(skill.source, skill.category)}
+            desc={skill.shortDescription || skill.description}
+            iconNode={getSkillIcon(skill.icon)}
+            onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
+          />
+        ))}
         </SkillHotSection>
       <SkillOfficeSection
         categoryBar={
@@ -99,7 +145,7 @@ export function SkillCenterPage() {
             title={skill.displayName}
             meta={getSkillMeta(skill.source, skill.category)}
             desc={skill.shortDescription || skill.description}
-            iconNode={null}
+            iconNode={getSkillIcon(skill.icon)}
             onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
           />
         ))}
