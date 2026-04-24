@@ -64,6 +64,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             key={i}
             iconNode={<Sparkles className="h-4 w-4 text-primary" />}
             title={skill.displayName}
+            meta={skill.source === 'builtin' ? '内置' : '自定义'}
             desc={p}
             onClick={() => void createConversationFromSkill(skill.id)}
           />
