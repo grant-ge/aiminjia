@@ -232,7 +232,8 @@ export function useStreaming() {
         if (optimistic) {
           const idx = store.messages.findIndex((m) => m.id === clientMessageId)
           const updated = [...store.messages]
-          updated[idx] = message
+          // 保留 optimistic message 的前端字段（sender 等），后端 echo 覆盖 id/createdAt 等持久化字段
+          updated[idx] = { ...optimistic, ...message }
           store.setMessages(updated)
           return
         }

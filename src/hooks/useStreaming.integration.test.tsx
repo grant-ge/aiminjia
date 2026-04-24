@@ -203,7 +203,46 @@ describe('useStreaming integration review', () => {
     expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
   })
 
+  it('preserves optimistic user message sender when persisted echo replaces client id', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      messages: [{
+        id: 'client-1',
+        conversationId: 'conv-1',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'hello' },
+        sender: { name: 'Alice', isLoggedIn: true },
+      }],
+    })
 
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const messageUpdatedHandler = tauriEventMock.listeners.get('message:updated')
+    act(() => {
+      messageUpdatedHandler?.({
+        payload: {
+          id: 'msg-1',
+          conversationId: 'conv-1',
+          role: 'user',
+          createdAt: '2026-04-24T00:00:01Z',
+          content: { text: 'hello' },
+          clientMessageId: 'client-1',
+        },
+      })
+    })
+
+    expect(useChatStore.getState().messages).toEqual([{
+      id: 'msg-1',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-24T00:00:01Z',
+      content: { text: 'hello' },
+      sender: { name: 'Alice', isLoggedIn: true },
+      clientMessageId: 'client-1',
+    }])
+  })
 
   it('does not remove optimistic user message on streaming:done', async () => {
     useChatStore.setState({

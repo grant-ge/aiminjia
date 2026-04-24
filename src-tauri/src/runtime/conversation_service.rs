@@ -10,8 +10,6 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
-use tauri::AppHandle;
-use tauri::Emitter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeleteConversationOutcome {
@@ -242,27 +240,31 @@ pub fn should_auto_title(
     Ok(has_user && has_assistant)
 }
 
-/// Fire-and-forget entry point. All errors are logged and swallowed.
+/// Generate and set a title for the conversation.
+/// Returns the rename outcome (new conversationId + title) so the caller
+/// (transport layer) can emit any necessary events.
+/// All errors are logged and swallowed; returns None on failure.
 pub async fn generate_and_set_title(
     db: Arc<dyn crate::runtime::store::conversation_store::ConversationStore>,
     gateway: Arc<LlmGateway>,
-    app: AppHandle,
     conversation_id: String,
     settings: AppSettings,
-) {
-    match generate_and_set_title_inner(db, gateway, app, conversation_id, settings).await {
-        Ok(()) => {}
-        Err(e) => log::warn!("[auto-title] failed: {}", e),
+) -> Option<RenameConversationOutcome> {
+    match generate_and_set_title_inner(db, gateway, conversation_id, settings).await {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            log::warn!("[auto-title] failed: {}", e);
+            None
+        }
     }
 }
 
 async fn generate_and_set_title_inner(
     db: Arc<dyn crate::runtime::store::conversation_store::ConversationStore>,
     gateway: Arc<LlmGateway>,
-    app: AppHandle,
     conversation_id: String,
     settings: AppSettings,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<RenameConversationOutcome>> {
     // Check title guard inline (no message fetch needed here)
     let convs = db.get_conversations()?;
     let current_title = convs
@@ -271,7 +273,7 @@ async fn generate_and_set_title_inner(
         .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
     if current_title != "New Conversation" {
-        return Ok(());
+        return Ok(None);
     }
 
     // Fetch messages once
@@ -281,7 +283,7 @@ async fn generate_and_set_title_inner(
         .iter()
         .any(|m| m["role"].as_str() == Some("assistant"));
     if !has_user || !has_assistant {
-        return Ok(());
+        return Ok(None);
     }
 
     let extract_text = |m: &serde_json::Value| -> String {
@@ -339,16 +341,8 @@ async fn generate_and_set_title_inner(
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let _ = app.emit(
-        "conversation:title-updated",
-        serde_json::json!({
-            "conversationId": outcome.conversation_id,
-            "title": outcome.new_title,
-        }),
-    );
-
     log::info!("[auto-title] set title: {}", outcome.new_title);
-    Ok(())
+    Ok(Some(outcome))
 }
 
 pub async fn get_conversations(

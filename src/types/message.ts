@@ -17,6 +17,8 @@ export interface Message {
   toolCalls?: AssistantToolCall[]
   /** tool 消息专用：工具执行结果 */
   toolResult?: ToolResultContent
+  /** 后端 echo 回的 optimistic id，仅出现在 message:updated role=user 时 */
+  clientMessageId?: string
 }
 
 /** Information about the message sender (for user messages) */
