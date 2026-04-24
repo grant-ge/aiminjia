@@ -92,3 +92,30 @@ fn compact_messages_via_llm_stub(
 ) -> CompactLlmOutput {
     compact_messages_via_llm(messages, summary_text)
 }
+
+#[test]
+fn compact_preserves_tail_tool_round() {
+    let messages = vec![
+        json!({ "role": "user", "content": "q1" }),
+        json!({ "role": "assistant", "content": "a1" }),
+        json!({ "role": "user", "content": "q2" }),
+        json!({
+            "role": "assistant",
+            "content": "",
+            "toolCalls": [{ "id": "tc_1", "name": "exec", "arguments": {} }],
+        }),
+        json!({
+            "role": "tool",
+            "toolCallId": "tc_1",
+            "name": "exec",
+            "content": "result",
+        }),
+    ];
+
+    let output = compact_messages_via_llm_stub(messages, "摘要".to_string());
+    assert_eq!(output.new_messages.len(), 5);
+    assert_eq!(output.new_messages[2]["content"], "q2");
+    assert!(output.new_messages[3]["toolCalls"].is_array());
+    assert_eq!(output.new_messages[4]["role"], "tool");
+    assert_eq!(output.new_messages[4]["toolCallId"], "tc_1");
+}

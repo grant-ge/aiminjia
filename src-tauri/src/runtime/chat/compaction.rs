@@ -282,18 +282,17 @@ pub fn compact_messages_via_llm(
     summary_text: String,
 ) -> CompactLlmOutput {
     let pre_tokens = (estimate_total_chars(&messages) / 4) as u64;
-
-    let latest_user = messages
+    let tail_start = messages
         .iter()
-        .rev()
-        .find(|message| {
+        .rposition(|message| {
             message.get("role").and_then(|value| value.as_str()) == Some("user")
                 && message
                     .get("isCompactSummary")
                     .and_then(|value| value.as_bool())
                     != Some(true)
         })
-        .cloned();
+        .unwrap_or_else(|| messages.len().saturating_sub(1));
+    let tail_round = messages[tail_start..].to_vec();
 
     let boundary = serde_json::json!({
         "role": "system",
@@ -314,9 +313,7 @@ pub fn compact_messages_via_llm(
     });
 
     let mut new_messages = vec![boundary, summary_message];
-    if let Some(latest_user) = latest_user {
-        new_messages.push(latest_user);
-    }
+    new_messages.extend(tail_round);
 
     let post_tokens = (estimate_total_chars(&new_messages) / 4) as u64;
 
