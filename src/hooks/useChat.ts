@@ -73,7 +73,7 @@ export function useChat() {
 
     const conversation: Conversation = {
       id: optimisticId,
-      title: 'New Conversation',
+      title: '新对话',
       createdAt: now,
       updatedAt: now,
       isArchived: false,
@@ -140,7 +140,7 @@ export function useChat() {
         const raw = await getConversations()
         const convs: Conversation[] = raw.map((c) => ({
           id: (c.id as string) ?? '',
-          title: (c.title as string) ?? 'New Conversation',
+          title: (c.title as string) ?? '新对话',
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
@@ -232,7 +232,7 @@ export function useChat() {
         const now = new Date().toISOString()
         store = useChatStore.getState()
         store.setConversations([
-          { id: backendId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+          { id: backendId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
           ...store.conversations,
         ])
         store.setActiveConversation(backendId)
@@ -325,7 +325,7 @@ export function useChat() {
       const raw = await getConversations()
       const convs: Conversation[] = raw.map((c) => ({
         id: (c.id as string) ?? '',
-        title: (c.title as string) ?? 'New Conversation',
+        title: (c.title as string) ?? '新对话',
         createdAt: (c.createdAt as string) ?? new Date().toISOString(),
         updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
         isArchived: (c.isArchived as boolean) ?? false,
