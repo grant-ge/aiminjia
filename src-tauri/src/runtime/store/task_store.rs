@@ -29,7 +29,7 @@ impl TaskStore for InMemoryTaskStore {
         self.tasks
             .lock()
             .unwrap()
-            .insert(record.task_id.as_str().to_string(), record);
+            .insert(record.task_id().as_str().to_string(), record);
         Ok(())
     }
 

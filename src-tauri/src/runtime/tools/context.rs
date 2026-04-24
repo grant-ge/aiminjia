@@ -58,6 +58,8 @@ pub struct ToolExecutionContext {
     pub permission_store: Option<Arc<PermissionStore>>,
     /// Optional session-scoped hooks executed around tool dispatch.
     pub hook_registry: Option<Arc<HookRegistry>>,
+    /// Task V2 persistence root (AiJiaHome), used by task runtime tools.
+    pub task_store_root: Option<std::path::PathBuf>,
 }
 
 impl ToolExecutionContext {
@@ -80,6 +82,7 @@ impl ToolExecutionContext {
             permission_mode: PermissionMode::Default,
             permission_store: None,
             hook_registry: None,
+            task_store_root: None,
         }
     }
 

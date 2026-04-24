@@ -612,6 +612,62 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     // ── Support: memory tools ─────────────────────────────────────
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TaskCreate",
+            "创建一条持久化任务，用于当前 session/agent 工作清单。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["subject", "description"],
+            "properties": {
+                "subject": { "type": "string", "description": "任务短标题" },
+                "description": { "type": "string", "description": "任务详细说明" },
+                "activeForm": { "type": "string", "description": "进行中展示文案，如 Running tests" },
+                "metadata": { "type": "object", "description": "可选元数据" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TaskUpdate",
+            "更新、删除或设置任务依赖、owner、status、metadata。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["taskId"],
+            "properties": {
+                "taskId": { "type": "string", "description": "任务 ID" },
+                "subject": { "type": "string", "description": "新的任务标题" },
+                "description": { "type": "string", "description": "新的任务描述" },
+                "activeForm": { "type": "string", "description": "进行中展示文案" },
+                "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "deleted"] },
+                "owner": { "type": "string", "description": "任务 owner agent/name" },
+                "addBlocks": { "type": "array", "items": { "type": "string" } },
+                "addBlockedBy": { "type": "array", "items": { "type": "string" } },
+                "metadata": { "type": "object", "description": "metadata merge；value=null 表示删除 key" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "TaskList",
+            "列出当前 task list 的所有任务及阻塞状态。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true),
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+    ));
+
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "write_memory",
@@ -691,6 +747,9 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "grep_content",
     "write_memory",
     "search_memory",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskList",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

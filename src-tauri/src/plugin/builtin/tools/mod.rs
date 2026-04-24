@@ -93,6 +93,9 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     // ── RuntimeTool 注册（正确路径，走 ToolDispatcher）─────────────────────
     use crate::runtime::tools::builtin::bash::BashTool;
     use crate::runtime::tools::builtin::grep::GrepContentTool;
+    use crate::runtime::tools::builtin::task_tools::{
+        TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
+    };
     use crate::runtime::tools::builtin::workspace::{
         EditFileRuntimeTool, GetFileInfoRuntimeTool, ListDirectoryRuntimeTool,
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
@@ -117,5 +120,14 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry.register_runtime(Arc::new(BashTool)).await;
     registry.register_runtime(Arc::new(GrepContentTool)).await;
+    registry
+        .register_runtime(Arc::new(TaskCreateRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TaskUpdateRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TaskListRuntimeTool))
+        .await;
     registry.validate_catalog_consistency().await;
 }

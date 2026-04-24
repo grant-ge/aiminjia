@@ -19,12 +19,17 @@ fn review_task_terminal_notification_should_use_real_parent_run_context() {
 
     runtime
         .create_task(TaskRecord {
-            task_id: task_id.clone(),
+            id: task_id.as_str().to_string(),
+            description: String::new(),
+            owner: None,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
             session_id: SessionId::new("test-session"),
             parent_run_id: RunId::new("run-parent-ctx"),
             owner_agent_id: None,
             subject: "review task".to_string(),
-            status: TaskStatus::Running,
+            status: TaskStatus::InProgress,
             active_form: None,
         })
         .unwrap();
