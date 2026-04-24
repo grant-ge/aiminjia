@@ -20,7 +20,7 @@ describe('TaskStatusList', () => {
 
   it('renders running task with spinner icon', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-abcd1234', status: 'running', runId: 'run-1' },
+      { taskId: 'task-abcd1234', status: 'running', runId: 'run-1', subject: '' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)
@@ -30,7 +30,7 @@ describe('TaskStatusList', () => {
 
   it('renders completed task with check icon', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-abcd1234', status: 'completed', runId: 'run-1' },
+      { taskId: 'task-abcd1234', status: 'completed', runId: 'run-1', subject: '' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)
@@ -40,7 +40,7 @@ describe('TaskStatusList', () => {
 
   it('renders failed task with red icon', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-abcd1234', status: 'failed', runId: 'run-1' },
+      { taskId: 'task-abcd1234', status: 'failed', runId: 'run-1', subject: '' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)
@@ -50,8 +50,8 @@ describe('TaskStatusList', () => {
 
   it('auto-expands when any task is running', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-1', status: 'completed', runId: 'run-1' },
-      { taskId: 'task-2', status: 'running', runId: 'run-2' },
+      { taskId: 'task-1', status: 'completed', runId: 'run-1', subject: '' },
+      { taskId: 'task-2', status: 'running', runId: 'run-2', subject: '' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)
@@ -61,8 +61,8 @@ describe('TaskStatusList', () => {
 
   it('is collapsed by default when no running tasks', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-1', status: 'completed', runId: 'run-1' },
-      { taskId: 'task-2', status: 'completed', runId: 'run-2' },
+      { taskId: 'task-1', status: 'completed', runId: 'run-1', subject: '' },
+      { taskId: 'task-2', status: 'completed', runId: 'run-2', subject: '' },
     ]
     const { container } = render(<TaskStatusList tasks={tasks} />)
     const details = container.querySelector('details')
@@ -72,8 +72,8 @@ describe('TaskStatusList', () => {
 
   it('displays semantic subtask labels and keeps full task id as weak hint', () => {
     const tasks: ConversationTaskState[] = [
-      { taskId: 'task-abcd1234', status: 'pending', runId: 'run-1' },
-      { taskId: 'task-efgh5678', status: 'pending', runId: 'run-2' },
+      { taskId: 'task-abcd1234', status: 'pending', runId: 'run-1', subject: '' },
+      { taskId: 'task-efgh5678', status: 'pending', runId: 'run-2', subject: '' },
     ]
 
     render(<TaskStatusList tasks={tasks} />)

@@ -7,7 +7,7 @@ import { ConversationRow } from '../ConversationRow'
 describe('ConversationRow', () => {
   it('renders title with left padding 30 (indent under project)', () => {
     const { container } = render(
-      <ConversationRow title="测试会话" onClick={() => {}} />,
+      <ConversationRow id="c1" title="测试会话" onClick={() => {}} />,
     )
     const btn = container.querySelector('button')
     expect(btn?.className).toMatch(/pl-\[30px\]/)
@@ -15,21 +15,21 @@ describe('ConversationRow', () => {
 
   it('uses sidebar-accent bg when active', () => {
     const { container } = render(
-      <ConversationRow title="X" active onClick={() => {}} />,
+      <ConversationRow id="c2" title="X" active onClick={() => {}} />,
     )
     expect(container.querySelector('button')?.className).toMatch(/bg-sidebar-accent/)
   })
 
   it('shows a loader icon when loading', () => {
     const { container } = render(
-      <ConversationRow title="X" loading onClick={() => {}} />,
+      <ConversationRow id="c3" title="X" loading onClick={() => {}} />,
     )
     expect(container.querySelector('[data-icon="loader"]')).toBeInTheDocument()
   })
 
   it('invokes onClick on click', () => {
     const onClick = vi.fn()
-    render(<ConversationRow title="X" onClick={onClick} />)
+    render(<ConversationRow id="c4" title="X" onClick={onClick} />)
     screen.getByRole('button').click()
     expect(onClick).toHaveBeenCalledTimes(1)
   })

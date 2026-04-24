@@ -244,6 +244,7 @@ describe('chatStore — task states', () => {
       taskId: 'task-1',
       status: 'completed',
       runId: 'run-1',
+      subject: '',
     })
 
     expect(useChatStore.getState().taskStates['c1']).toEqual([
@@ -251,6 +252,7 @@ describe('chatStore — task states', () => {
         taskId: 'task-1',
         status: 'completed',
         runId: 'run-1',
+        subject: '',
       },
     ])
   })
@@ -262,11 +264,13 @@ describe('chatStore — task states', () => {
       taskId: 'task-1',
       status: 'running',
       runId: 'run-1',
+      subject: '',
     })
     store.upsertConversationTaskState('c1', {
       taskId: 'task-1',
       status: 'failed',
       runId: 'run-1',
+      subject: '',
     })
 
     expect(useChatStore.getState().taskStates['c1']).toEqual([
@@ -274,6 +278,7 @@ describe('chatStore — task states', () => {
         taskId: 'task-1',
         status: 'failed',
         runId: 'run-1',
+        subject: '',
       },
     ])
   })

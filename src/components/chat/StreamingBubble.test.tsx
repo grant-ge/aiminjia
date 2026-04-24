@@ -159,8 +159,8 @@ describe('StreamingBubble — S1+S2 combined', () => {
       ],
       taskStates: {
         'conv-1': [
-          { taskId: 'task-running-1', status: 'running', runId: 'run-1' },
-          { taskId: 'task-done-0000', status: 'completed', runId: 'run-0' },
+          { taskId: 'task-running-1', status: 'running', runId: 'run-1', subject: '' },
+          { taskId: 'task-done-0000', status: 'completed', runId: 'run-0', subject: '' },
         ],
       },
     })

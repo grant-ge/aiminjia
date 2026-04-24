@@ -263,11 +263,26 @@ async fn generate_and_set_title_inner(
     conversation_id: String,
     settings: AppSettings,
 ) -> anyhow::Result<()> {
-    if !should_auto_title(db.as_ref(), &conversation_id)? {
+    // Check title guard inline (no message fetch needed here)
+    let convs = db.get_conversations()?;
+    let current_title = convs
+        .iter()
+        .find(|c| c["id"].as_str() == Some(conversation_id.as_str()))
+        .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    if current_title != "New Conversation" {
         return Ok(());
     }
 
+    // Fetch messages once
     let messages = db.get_messages(&conversation_id)?;
+    let has_user = messages.iter().any(|m| m["role"].as_str() == Some("user"));
+    let has_assistant = messages
+        .iter()
+        .any(|m| m["role"].as_str() == Some("assistant"));
+    if !has_user || !has_assistant {
+        return Ok(());
+    }
 
     let extract_text = |m: &serde_json::Value| -> String {
         m["content"]["text"]
@@ -295,10 +310,10 @@ async fn generate_and_set_title_inner(
         anyhow::bail!("no user message content found");
     }
 
-    let llm_messages = vec![
-        ChatMessage::text("user", &first_user),
-        ChatMessage::text("assistant", &first_assistant),
-    ];
+    let mut llm_messages = vec![ChatMessage::text("user", &first_user)];
+    if !first_assistant.is_empty() {
+        llm_messages.push(ChatMessage::text("assistant", &first_assistant));
+    }
 
     let system_prompt =
         "你是一个对话标题生成器。根据下面的对话内容，用 6 到 12 个中文字生成一个简洁的标题，\

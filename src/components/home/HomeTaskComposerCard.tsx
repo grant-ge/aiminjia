@@ -97,6 +97,17 @@ export function HomeTaskComposerCard() {
       if (workspacePath) {
         try {
           await authorizeLocalDirectory(workspacePath, backendId)
+          // Patch workspaceName into the optimistic conversation so the sidebar
+          // groups it correctly without waiting for a full getConversations reload.
+          const ws = displayWorkspace
+          if (ws?.displayName) {
+            const s = useChatStore.getState()
+            s.setConversations(
+              s.conversations.map((c) =>
+                c.id === backendId ? { ...c, workspaceName: ws.displayName } : c,
+              ),
+            )
+          }
         } catch (err) {
           console.error('[HomeTaskComposerCard] Failed to authorize workspace:', err)
           // Non-fatal: proceed without workspace authorization
