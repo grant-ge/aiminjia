@@ -13,9 +13,9 @@ export function HomeMascotHero({ mascotUrl, title, subtitle }: HomeMascotHeroPro
     <div className="flex flex-col items-center gap-4">
       <div
         data-testid="home-mascot"
-        className="h-16 w-16 overflow-hidden rounded-full"
+        className="h-16 w-16 overflow-hidden"
       >
-        <img src={mascotUrl} alt="" className="h-full w-full object-cover" />
+        <img src={mascotUrl} alt="" className="w-full" />
       </div>
       <div className="text-[30px] font-bold leading-tight text-foreground">
         {title}

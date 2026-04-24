@@ -43,7 +43,7 @@ import { TypingIndicator } from './TypingIndicator'
 import { useChatStore } from '@/stores/chatStore'
 import { sendMessage } from '@/lib/tauri'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { markdownToHtml } from '@/lib/markdown'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useProductName } from '@/hooks/useProductName'
@@ -61,7 +61,6 @@ export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
   const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
-  const messages = useChatStore((s) => s.messages)
   const productName = useProductName()
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
@@ -120,33 +119,7 @@ export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
     })
   }, [conversationId, t])
 
-  const handleRegenerate = useCallback(() => {
-    if (!conversationId) return
-    const currentIndex = messages.findIndex((item) => item.id === message.id)
-    if (currentIndex <= 0) return
-
-    for (let i = currentIndex - 1; i >= 0; i -= 1) {
-      const candidate = messages[i]
-      if (candidate.role !== 'user') continue
-      const text = candidate.content.text?.trim()
-      if (!text) continue
-      sendMessage(conversationId, text).catch((err) => {
-        console.error('[AiBubble] Failed to regenerate:', err)
-        useNotificationStore.getState().push({
-          level: 'error',
-          title: t('aiBubble.sendFailed'),
-          message: t('aiBubble.sendFailedDesc'),
-          actions: [],
-          dismissible: true,
-          autoHide: 5,
-          context: 'toast',
-        })
-      })
-      return
-    }
-  }, [conversationId, message.id, messages, t])
-
-  // Skip rendering if no meaningful content (prevents blank bubbles from
+// Skip rendering if no meaningful content (prevents blank bubbles from
   // historical empty messages or tool-call-only iterations)
   const hasContent = MESSAGE_CONTENT_RENDER_ORDER.some((field) => {
     const value = content[field]
@@ -174,21 +147,7 @@ export function AiBubble({ message, isStreaming, hideHeader }: AiBubbleProps) {
 
       {/* Body — offset by avatar width */}
       <div className={`group relative ${hideHeader ? '' : 'pl-9'}`}>
-        <div className="absolute right-0 top-0 z-10 hidden items-center gap-2 group-hover:flex">
-          <button
-            onClick={handleRegenerate}
-            className="rounded-md px-2 py-1 text-xs transition-colors"
-            style={{
-              color: 'var(--color-text-muted)',
-              background: 'var(--color-bg-elevated)',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            {t('aiBubble.regenerate', '重新生成')}
-          </button>
-          <CopyButton text={content.text} />
-        </div>
-        {MESSAGE_CONTENT_RENDER_ORDER.map((field) => {
+{MESSAGE_CONTENT_RENDER_ORDER.map((field) => {
           const value = content[field]
           if (value === undefined || value === null) return null
           return (
@@ -359,36 +318,6 @@ function ContentRenderer({
     default:
       return null
   }
-}
-
-/** Copy button that appears on hover over the AI message body. */
-function CopyButton({ text }: { text?: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = useCallback(() => {
-    if (!text) return
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }, [text])
-
-  if (!text) return null
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="rounded-md px-2 py-1 text-xs transition-colors"
-      style={{
-        color: copied ? 'var(--color-semantic-green)' : 'var(--color-text-muted)',
-        background: 'var(--color-bg-elevated)',
-        border: '1px solid var(--color-border)',
-      }}
-    >
-      {copied ? t('common.copied') : t('common.copy')}
-    </button>
-  )
 }
 
 /** Renders text content with full markdown support (tables, headings, lists, code). */

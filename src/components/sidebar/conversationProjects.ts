@@ -1,19 +1,20 @@
 /**
- * Plan-A：把 useChat() 的 flat conversations 转成 project-grouped 结构。
+ * 把 useChat() 的 flat conversations 转成 project-grouped 结构。
  *
- * 项目分组当前由 `conversation.projectId` 决定，未提供则归到 "默认项目"。
- * （后端 Conversation 模型当前没有 projectId 字段，所以一切落到默认项目；
- *  待后续后端字段补齐后无需改本文件，只需提供 projectId/projectName。）
+ * 分组依据：conversation.workspaceName（后端从 authorized_workspace_store 注入）。
+ * 未绑定工作目录的对话归到"默认文件夹"。
  */
 import type { ConversationTreeProject } from './ConversationTree'
 
 export interface RawConversation {
   id: string
   title: string
-  projectId?: string | null
-  projectName?: string | null
+  workspaceName?: string | null
   loading?: boolean
 }
+
+const DEFAULT_PROJECT_ID = 'default'
+const DEFAULT_PROJECT_NAME = '默认文件夹'
 
 export function groupConversationsByProject(
   conversations: RawConversation[],
@@ -21,8 +22,8 @@ export function groupConversationsByProject(
 ): ConversationTreeProject[] {
   const map = new Map<string, ConversationTreeProject>()
   for (const c of conversations) {
-    const projectId = c.projectId || 'default'
-    const projectName = c.projectName || '默认项目'
+    const projectId = c.workspaceName ?? DEFAULT_PROJECT_ID
+    const projectName = c.workspaceName ?? DEFAULT_PROJECT_NAME
     let project = map.get(projectId)
     if (!project) {
       project = { id: projectId, name: projectName, conversations: [] }
@@ -35,5 +36,9 @@ export function groupConversationsByProject(
       loading: c.loading,
     })
   }
-  return [...map.values()]
+  // 默认文件夹排在最后
+  const entries = [...map.entries()]
+  const defaultEntry = entries.find(([id]) => id === DEFAULT_PROJECT_ID)
+  const rest = entries.filter(([id]) => id !== DEFAULT_PROJECT_ID)
+  return [...rest, ...(defaultEntry ? [defaultEntry] : [])].map(([, p]) => p)
 }

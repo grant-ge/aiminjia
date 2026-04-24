@@ -139,12 +139,23 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
-    /// 持久化本轮 tool result 消息到存储。纯 I/O，不含事件发射。
+    /// 持久化 tool result 消息到存储。纯 I/O，不含事件发射。
     /// 默认 no-op；生产 executor 必须 override。
     async fn persist_tool_messages(
         &self,
         _conversation_id: &str,
         _tool_messages: &[serde_json::Value],
+    ) -> Result<(), TurnError> {
+        Ok(())
+    }
+
+    /// 持久化单次 iteration 的 assistant[toolCalls] 消息（无文字内容，无生成文件）。
+    /// 在工具执行前调用，使存储顺序正确反映 assistant → tools 穿插结构。
+    /// 默认 no-op；生产 executor 必须 override。
+    async fn persist_iteration_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _tool_calls: &[serde_json::Value],
     ) -> Result<(), TurnError> {
         Ok(())
     }
@@ -1103,6 +1114,20 @@ impl RuntimeChatTurnDriver {
                         history_batch.push(msg);
                     }
                     state.append_messages_batch(history_batch);
+
+                    // 先持久化本次 iteration 的 assistant[toolCalls]，再持久化 tool results，
+                    // 保证存储顺序与执行顺序一致（assistant → tools 穿插）。
+                    if !normalized_tool_calls.is_empty() {
+                        if let Err(e) = executor
+                            .persist_iteration_assistant_message(
+                                config.conversation_id.as_str(),
+                                &normalized_tool_calls,
+                            )
+                            .await
+                        {
+                            log::warn!("[chat_turn_driver] Failed to persist iteration assistant message: {}", e);
+                        }
+                    }
                     // 持久化本轮 tool 消息（忽略错误，不阻断流程）
                     if !tool_msgs_for_persist.is_empty() {
                         if let Err(e) = executor
@@ -1176,11 +1201,13 @@ impl RuntimeChatTurnDriver {
         };
 
         // ── Step 7: Persist assistant message ─────────────────────────────────
+        // tool_calls 已在每次 iteration 通过 persist_iteration_assistant_message 存入，
+        // 这里只需存最终文字总结和 generatedFiles。
         let message_id = executor
             .persist_assistant_message(
                 config.conversation_id.as_str(),
                 &state.full_content,
-                &state.all_tool_calls,
+                &[],
                 &state.generated_file_ids,
                 &state.all_file_metas,
             )

@@ -44,7 +44,7 @@ function mapAuthState(info: CloudAuthInfo, models: CloudModel[]) {
 export const useAuthStore = create<AuthState>((set) => ({
   ...EMPTY_AUTH_STATE,
   redirectFrom: null,
-  isAuthPending: false,
+  isAuthPending: true,
 
   setAuth: (info) =>
     set({

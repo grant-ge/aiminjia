@@ -24,7 +24,7 @@ export function ChatTopBar({
   trailing,
 }: ChatTopBarProps) {
   return (
-    <header data-tauri-drag-region className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-6">
+    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex min-w-0 items-center gap-3">
         <div className="truncate text-[15px] font-semibold text-foreground">
           {title}

@@ -212,12 +212,16 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--sidebar-border);
+  background: color-mix(in srgb, var(--primary) 40%, var(--color-border));
 }
 
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
 }
 
 /* ===== Animations ===== */

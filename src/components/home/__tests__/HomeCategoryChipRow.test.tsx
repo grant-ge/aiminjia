@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { HomeCategoryChipRow } from '../HomeCategoryChipRow'
 
 const ITEMS = [
-  { key: 'recommend', label: '为你推荐' },
-  { key: 'writing', label: '文案有意' },
-  { key: 'industry', label: '行业研究' },
+  { key: 'recommend', label: '为你推荐', icon: 'sparkles' as const },
+  { key: 'writing', label: '规划专家', icon: 'pencil' as const },
+  { key: 'industry', label: '研究专家', icon: 'search' as const },
 ]
 
 describe('HomeCategoryChipRow', () => {
@@ -16,15 +16,15 @@ describe('HomeCategoryChipRow', () => {
       <HomeCategoryChipRow items={ITEMS} activeKey="recommend" onSelect={() => {}} />,
     )
     expect(screen.getByRole('button', { name: /为你推荐/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /行业研究/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /研究专家/ })).toBeInTheDocument()
   })
 
-  it('marks the active chip with brand-primary-subtle background', () => {
+  it('marks the active chip with elevated background styling', () => {
     render(
       <HomeCategoryChipRow items={ITEMS} activeKey="recommend" onSelect={() => {}} />,
     )
     const active = screen.getByRole('button', { name: /为你推荐/ })
-    expect(active.className).toMatch(/bg-brand-primary-subtle/)
+    expect(active.className).toMatch(/bg-background/)
   })
 
   it('calls onSelect with key on click', () => {
@@ -32,7 +32,15 @@ describe('HomeCategoryChipRow', () => {
     render(
       <HomeCategoryChipRow items={ITEMS} activeKey="recommend" onSelect={onSelect} />,
     )
-    fireEvent.click(screen.getByRole('button', { name: /行业研究/ }))
+    fireEvent.click(screen.getByRole('button', { name: /研究专家/ }))
     expect(onSelect).toHaveBeenCalledWith('industry')
+  })
+
+  it('uses space-between layout on the row container', () => {
+    const { container } = render(
+      <HomeCategoryChipRow items={ITEMS} activeKey="recommend" onSelect={() => {}} />,
+    )
+    const row = container.firstElementChild
+    expect(row?.className).toMatch(/justify-between/)
   })
 })

@@ -2,7 +2,7 @@
  * @designSource design.pen#47U5w (nv1/nv2/nv3)
  * @sizing each row padding [6,8], gap 2
  */
-import { Blocks, Clock3, Sparkles, type LucideIcon } from 'lucide-react'
+import { Blocks, Clock3, SquarePen, type LucideIcon } from 'lucide-react'
 
 export type SidebarNavKey = 'home' | 'skill-center' | 'schedules'
 
@@ -12,14 +12,14 @@ interface SidebarNavProps {
 }
 
 const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon }> = [
-  { key: 'home', label: '新任务', icon: Sparkles },
+  { key: 'home', label: '新任务', icon: SquarePen },
   { key: 'skill-center', label: '技能中心', icon: Blocks },
   { key: 'schedules', label: '定时任务', icon: Clock3 },
 ]
 
 export function SidebarNav({ activeKey = 'home', onSelect = () => {} }: SidebarNavProps) {
   return (
-    <nav className="flex flex-col gap-0.5">
+    <nav className="flex flex-col gap-0.5 my-4">
       {NAV.map(({ key, label, icon: Icon }) => {
         const active = key === activeKey
         return (

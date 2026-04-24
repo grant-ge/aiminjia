@@ -36,7 +36,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
         />
       ) : null}
       <div className="relative flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="relative flex flex-1 flex-col overflow-hidden">
           <ChatArea />
           <ChatBottomArea />
         </div>

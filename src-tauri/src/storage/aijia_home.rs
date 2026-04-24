@@ -72,6 +72,11 @@ impl AiJiaHome {
         self.skills_dir().join("_drafts")
     }
 
+    /// 未绑定工作目录的对话使用的默认文件夹 `~/.renlijia/defaultFolder/`。
+    pub fn default_folder(&self) -> PathBuf {
+        self.root.join("defaultFolder")
+    }
+
     /// 确保所有必需子目录存在。
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.root)?;
@@ -82,6 +87,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.screenshots_dir())?;
         std::fs::create_dir_all(self.crypto_dir())?;
         std::fs::create_dir_all(self.site_profiles_dir())?;
+        std::fs::create_dir_all(self.default_folder())?;
         Ok(())
     }
 }

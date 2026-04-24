@@ -755,6 +755,32 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(msg_id)
     }
 
+    async fn persist_iteration_assistant_message(
+        &self,
+        conversation_id: &str,
+        tool_calls: &[serde_json::Value],
+    ) -> Result<(), TurnError> {
+        if tool_calls.is_empty() {
+            return Ok(());
+        }
+        let msg_id = uuid::Uuid::new_v4().to_string();
+        let content_json = build_assistant_content_json("", tool_calls, None).to_string();
+        log::info!(
+            "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={}",
+            msg_id, conversation_id
+        );
+        persist_assistant_content_json(
+            self.services.db.clone(),
+            self.services.assistant_write_queue.clone(),
+            msg_id,
+            conversation_id.to_string(),
+            content_json,
+        )
+        .await
+        .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
+        Ok(())
+    }
+
     async fn persist_tool_messages(
         &self,
         conversation_id: &str,

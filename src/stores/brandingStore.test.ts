@@ -43,4 +43,13 @@ describe('brandingStore', () => {
     expect(useBrandingStore.getState().accentColor).toBe(DEFAULTS.accentColor)
     expect(useBrandingStore.getState().isCustom).toBe(false)
   })
+
+  it('统一使用本地品牌头像资源，不采纳租户 logoUrl', () => {
+    useBrandingStore.getState().applyBranding({
+      productName: '租户 A',
+      logoUrl: 'https://example.com/tenant-logo.png',
+    })
+
+    expect(useBrandingStore.getState().logoUrl).toBe(DEFAULTS.logoUrl)
+  })
 })

@@ -15,10 +15,14 @@ export function AccountPanel({ user, onLogout }: AccountPanelProps) {
   return (
     <>
       <div className="flex items-center gap-3.5 rounded-[14px] bg-secondary p-[18px]">
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-muted">
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-primary">
           {user.avatarUrl ? (
             <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
-          ) : null}
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-primary-foreground">
+              {user.name.charAt(0).toUpperCase()}
+            </span>
+          )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="text-sm font-bold text-foreground">{user.name}</div>

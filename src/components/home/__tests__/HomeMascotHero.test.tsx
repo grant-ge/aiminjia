@@ -19,13 +19,21 @@ describe('HomeMascotHero', () => {
     ).toBeInTheDocument()
   })
 
-  it('mascot is 64x64 with full radius', () => {
+  it('mascot is 64x64 without forced rounding', () => {
     const { container } = render(
       <HomeMascotHero mascotUrl="/x.png" title="t" subtitle="s" />,
     )
     const mascot = container.querySelector('[data-testid="home-mascot"]')
     expect(mascot?.className).toMatch(/h-16/)
     expect(mascot?.className).toMatch(/w-16/)
-    expect(mascot?.className).toMatch(/rounded-full/)
+    expect(mascot?.className).not.toMatch(/rounded-full/)
+  })
+
+  it('renders mascot image with width-only sizing to avoid cropping', () => {
+    const { container } = render(
+      <HomeMascotHero mascotUrl="/x.png" title="t" subtitle="s" />,
+    )
+    const img = container.querySelector('[data-testid="home-mascot"] img')
+    expect(img?.className).toBe('w-full')
   })
 })

@@ -135,20 +135,24 @@ export function buildTurnsFromMessages(
     }
   }
 
-  // 最后一个 turn：用实时 toolExecutions 覆盖/补充 toolGroup（turn 正在进行时）
+  // 最后一个 turn：只有当该 turn 尚无来自历史 role=tool 消息的步骤时，
+  // 才用实时 toolExecutions 覆盖（表示 streaming 正在进行中）
   if (toolExecutions.length > 0 && turns.length > 0) {
     const target = turns[turns.length - 1]
-    const steps: RenderToolStep[] = toolExecutions.map((t, i) => ({
-      index: i + 1,
-      name: t.toolName,
-      status: toolExecStatusToStep(t.status),
-      durationMs: t.durationMs,
-    }))
-    const running = steps.some((s) => s.status === 'running')
-    target.toolGroup = {
-      status: running ? 'running' : 'done',
-      steps,
-      durationMs: steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0),
+    const hasHistoricalSteps = target.toolGroup != null && target.toolGroup.steps.length > 0
+    if (!hasHistoricalSteps) {
+      const steps: RenderToolStep[] = toolExecutions.map((t, i) => ({
+        index: i + 1,
+        name: t.toolName,
+        status: toolExecStatusToStep(t.status),
+        durationMs: t.durationMs,
+      }))
+      const running = steps.some((s) => s.status === 'running')
+      target.toolGroup = {
+        status: running ? 'running' : 'done',
+        steps,
+        durationMs: steps.reduce((acc, s) => acc + (s.durationMs ?? 0), 0),
+      }
     }
   }
 

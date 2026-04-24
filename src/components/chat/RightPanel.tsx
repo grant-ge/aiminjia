@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import {
   ChevronDown,
-  ChevronRight,
   CheckCircle2,
   XCircle,
   MinusCircle,
@@ -18,6 +17,8 @@ import { useChatStore } from '@/stores/chatStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
 import type { GeneratedFile } from '@/types/message'
 
+const EMPTY_TASKS: ConversationTaskState[] = []
+
 // ─── RightPanel root ──────────────────────────────────────────────────────────
 
 interface RightPanelProps {
@@ -26,7 +27,7 @@ interface RightPanelProps {
 
 export function RightPanel({ conversationId }: RightPanelProps) {
   return (
-    <div className="flex w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
+    <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
       <div className="px-4 py-4">
         <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
       </div>
@@ -40,7 +41,7 @@ export function RightPanel({ conversationId }: RightPanelProps) {
 // ─── TaskSection ──────────────────────────────────────────────────────────────
 
 function TaskSection({ conversationId }: { conversationId: string }) {
-  const tasks = useChatStore((s) => s.taskStates[conversationId] ?? [])
+  const tasks = useChatStore((s) => s.taskStates[conversationId] ?? EMPTY_TASKS)
   const hasRunning = tasks.some((t) => t.status === 'running')
   const [open, setOpen] = useState(true)
 
@@ -201,18 +202,28 @@ function ArtifactFileIcon({ fileType }: { fileType: string }) {
 // ─── SkillMcpSection ──────────────────────────────────────────────────────────
 
 function SkillMcpSection() {
+  const [open, setOpen] = useState(true)
+
   return (
     <div className="border-b border-border">
       <button
         type="button"
+        onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
-        onClick={() => {
-          // TODO: 跳转到技能与 MCP 配置页（占位）
-        }}
       >
         <span className="text-[13px] font-semibold text-foreground">技能与 MCP</span>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 text-muted-foreground transition-transform duration-150',
+            !open && '-rotate-90',
+          )}
+        />
       </button>
+      {open && (
+        <div className="px-4 pb-3">
+          <p className="text-[12px] text-muted-foreground">暂无调用</p>
+        </div>
+      )}
     </div>
   )
 }

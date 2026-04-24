@@ -303,6 +303,33 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
     // Extract sender from content if present (for user messages)
     let sender = msg.content.get("sender").cloned();
 
+    if msg.role == "tool" {
+        // role=tool messages store toolCallId/name/content inside `content`.
+        // The frontend expects a top-level `toolResult` field.
+        let tool_call_id = msg.content.get("toolCallId").cloned().unwrap_or(serde_json::Value::Null);
+        let name = msg.content.get("name").cloned().unwrap_or(serde_json::Value::Null);
+        let content_text = msg.content.get("content").cloned().unwrap_or(serde_json::Value::Null);
+        let is_error = msg.content.get("isError").cloned().unwrap_or(serde_json::json!(false));
+        let duration_ms = msg.content.get("durationMs").cloned();
+        let mut tool_result = serde_json::json!({
+            "toolCallId": tool_call_id,
+            "name": name,
+            "content": content_text,
+            "isError": is_error,
+        });
+        if let Some(d) = duration_ms {
+            tool_result["durationMs"] = d;
+        }
+        return serde_json::json!({
+            "id": msg.id,
+            "conversationId": msg.conversation_id,
+            "role": "tool",
+            "content": {},
+            "toolResult": tool_result,
+            "createdAt": msg.created_at,
+        });
+    }
+
     // Sanitize assistant message text: strip hallucinated XML tags from historical data
     let content = if msg.role == "assistant" {
         sanitize_assistant_content(msg.content)
@@ -310,14 +337,27 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
         msg.content
     };
 
-    serde_json::json!({
+    // For assistant messages, also expose top-level toolCalls if stored in content
+    let tool_calls = if msg.role == "assistant" {
+        content.get("toolCalls").cloned()
+    } else {
+        None
+    };
+
+    let mut out = serde_json::json!({
         "id": msg.id,
         "conversationId": msg.conversation_id,
         "role": msg.role,
         "content": content,
         "createdAt": msg.created_at,
         "sender": sender,
-    })
+    });
+    if let Some(tcs) = tool_calls {
+        if tcs.as_array().map_or(false, |a| !a.is_empty()) {
+            out["toolCalls"] = tcs;
+        }
+    }
+    out
 }
 
 /// Strip hallucinated XML from assistant message content.text field.

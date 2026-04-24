@@ -8,7 +8,13 @@ export function LoginCard({ children }: PropsWithChildren) {
   return (
     <div
       data-testid="login-card"
-      className="flex w-[460px] flex-col gap-5 rounded-[18px] border border-border bg-card px-10 pb-8 pt-10"
+      className="relative flex w-[460px] flex-col gap-5 rounded-[18px] border border-white/60 px-10 pb-8 pt-10"
+      style={{
+        background: 'rgba(255, 255, 255, 0.75)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.9) inset',
+      }}
     >
       {children}
     </div>

@@ -11,7 +11,7 @@ import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from '@/styles/sk
 export const DEFAULTS = {
   productName: 'AI小家',
   productNameEn: 'AIjia',
-  logoUrl: '/app-icon.png',
+  logoUrl: '/brand-avatar-gold.svg',
   accentColor: DEFAULT_ACCENT_COLOR,
   fontFamily: '',
 }
@@ -63,19 +63,6 @@ function normalizeAccentColor(input?: string): string {
   return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(input) ? input : DEFAULTS.accentColor
 }
 
-function resolveLogoUrl(raw: string): string {
-  if (!raw || raw.startsWith('/')) return raw
-  try {
-    const u = new URL(raw)
-    if (u.protocol === 'http:' || u.protocol === 'https:') {
-      return `https://ai-tenant.renlijia.com/api/file?url=${encodeURIComponent(raw)}`
-    }
-  } catch {
-    // ignore invalid urls and keep raw string
-  }
-  return raw
-}
-
 function setWindowTitle(title: string) {
   const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
@@ -95,7 +82,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     if (!tenant) return
 
     const productName = hasValue(tenant.productName) ? tenant.productName : DEFAULTS.productName
-    const logoUrl = hasValue(tenant.logoUrl) ? resolveLogoUrl(tenant.logoUrl) : DEFAULTS.logoUrl
+    const logoUrl = DEFAULTS.logoUrl
     const fontFamily = hasValue(tenant.fontFamily) ? tenant.fontFamily : DEFAULTS.fontFamily
     const accentColor = normalizeAccentColor(tenant.accentColor)
 

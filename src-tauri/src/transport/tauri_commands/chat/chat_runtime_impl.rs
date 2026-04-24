@@ -45,7 +45,8 @@ pub(crate) async fn build_visible_tool_defs(
     }
 }
 
-pub(crate) fn load_authorized_workspace(
+/// 只查真实绑定，不做 defaultFolder fallback。用于列表展示场景。
+pub(crate) fn load_explicit_workspace(
     app: &AppHandle,
     conversation_id: &str,
 ) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
@@ -62,6 +63,42 @@ pub(crate) fn load_authorized_workspace(
             root_path: aw.root_path,
             display_name: aw.display_name,
         })
+}
+
+pub(crate) fn load_authorized_workspace(
+    app: &AppHandle,
+    conversation_id: &str,
+) -> Option<crate::runtime::store::AuthorizedWorkspaceRef> {
+    let explicit = app
+        .try_state::<Arc<RuntimeRepositoryFacade>>()
+        .and_then(|facade| {
+            facade
+                .authorized_workspace_store()
+                .get_current_for_session(&SessionId::new(conversation_id.to_string()))
+                .ok()
+                .flatten()
+        })
+        .map(|aw| crate::runtime::store::AuthorizedWorkspaceRef {
+            id: aw.id,
+            root_path: aw.root_path,
+            display_name: aw.display_name,
+        });
+
+    if explicit.is_some() {
+        return explicit;
+    }
+
+    // 未绑定工作目录时，fallback 到 ~/.renlijia/defaultFolder/。
+    let default_path = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+    if let Err(e) = std::fs::create_dir_all(&default_path) {
+        log::warn!("[workspace-auth] failed to create defaultFolder: {}", e);
+        return None;
+    }
+    Some(crate::runtime::store::AuthorizedWorkspaceRef {
+        id: "default".to_string(),
+        root_path: default_path,
+        display_name: "默认文件夹".to_string(),
+    })
 }
 
 pub(crate) fn build_llm_content(

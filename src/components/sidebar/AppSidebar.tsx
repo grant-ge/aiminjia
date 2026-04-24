@@ -21,6 +21,7 @@ import { ConversationTree } from './ConversationTree'
 import { groupConversationsByProject } from './conversationProjects'
 import { SidebarFooterSettings } from './SidebarFooterSettings'
 import { SidebarNav, type SidebarNavKey } from './SidebarNav'
+import { SidebarSectionTitle } from './SidebarSectionTitle'
 import { TenantHeader } from './TenantHeader'
 
 // userAgentData is the modern API but isn't in Tauri's WebView yet; userAgent
@@ -91,6 +92,7 @@ export function AppSidebar() {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <SidebarSectionTitle label="项目" />
         <div className="-mr-2 flex-1 overflow-auto">
           <ConversationTree
             projects={projects}

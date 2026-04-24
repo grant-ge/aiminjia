@@ -6,10 +6,10 @@ import { useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
+import { StreamingBubble } from '@/components/chat/StreamingBubble'
 import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
-import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
 import { useChatStore } from '@/stores/chatStore'
 import { useTurnRenderModel } from '@/hooks/useTurnRenderModel'
@@ -17,6 +17,10 @@ import { useTurnRenderModel } from '@/hooks/useTurnRenderModel'
 export function MessageList() {
   const turns = useTurnRenderModel()
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const streamingContent = useChatStore((s) => {
+    const activeId = s.activeConversationId
+    return activeId ? (s.streamStates[activeId]?.streamingContent ?? '') : ''
+  })
   const [expansion, setExpansion] = useState<
     Record<number, { expanded: boolean; stepIndex: number | null }>
   >({})
@@ -28,9 +32,6 @@ export function MessageList() {
         return (
           <div key={i} className="flex flex-col gap-4">
             {t.userMessage ? <UserMessageBubble text={t.userMessage.text} /> : null}
-            {t.aiSegments.map((s) => (
-              <AiBubble key={s.id} message={s.message} hideHeader />
-            ))}
             {t.toolGroup ? (
               <ToolGroupCard
                 status={t.toolGroup.status}
@@ -49,6 +50,9 @@ export function MessageList() {
                 }
               />
             ) : null}
+            {t.aiSegments.map((s) => (
+              <AiBubble key={s.id} message={s.message} hideHeader />
+            ))}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard
                 key={f.id}
@@ -67,7 +71,7 @@ export function MessageList() {
           </div>
         )
       })}
-      {isStreaming ? <TypingIndicator variant="organize" /> : null}
+      {isStreaming ? <StreamingBubble content={streamingContent} /> : null}
     </div>
   )
 }

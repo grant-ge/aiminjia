@@ -44,4 +44,8 @@ describe('design.pen token alignment', () => {
     const value = tokenValue(name)
     expect(value?.toLowerCase()).toBe(expected.toLowerCase())
   })
+
+  it('sets pointer cursor for enabled buttons globally', () => {
+    expect(CSS).toMatch(/button:not\(\s*:disabled\s*\)\s*\{[^}]*cursor:\s*pointer;/s)
+  })
 })

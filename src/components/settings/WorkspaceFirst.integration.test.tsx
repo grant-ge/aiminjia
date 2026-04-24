@@ -47,7 +47,7 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-import { InputBar } from '@/components/layout/InputBar'
+import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { WorkspaceAuthPanel } from './WorkspaceAuthPanel'
 import { useChatStore } from '@/stores/chatStore'
 
@@ -68,10 +68,10 @@ describe('Workspace-First frontend integration', () => {
 
   it('propagates settings authorization into the chat input visibility state', async () => {
     render(
-      <>
-        <WorkspaceAuthPanel sessionId="conv-workspace" />
-        <InputBar />
-      </>,
+        <>
+          <WorkspaceAuthPanel sessionId="conv-workspace" />
+          <ChatBottomArea />
+        </>,
     )
 
     expect(screen.queryByText(/已连接本地目录：/)).not.toBeInTheDocument()
@@ -114,9 +114,9 @@ describe('Workspace-First frontend integration', () => {
       messages: [],
     })
 
-    render(<InputBar />)
+    render(<ChatBottomArea />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'inputBar.attachData' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
     fireEvent.click(await screen.findByText('连接本地目录（不复制）'))
 
     await waitFor(() => {

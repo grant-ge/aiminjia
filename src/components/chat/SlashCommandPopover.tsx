@@ -1,5 +1,5 @@
 /**
- * SlashCommandPopover — skill picker triggered by typing "/" in InputBar.
+ * SlashCommandPopover — skill picker triggered by typing "/" in the chat input.
  *
  * Renders a floating list of skills, filtered by the text after the slash.
  * Parent owns the open/close state and the filter text; this component

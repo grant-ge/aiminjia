@@ -12,7 +12,7 @@ interface TenantHeaderProps {
 
 export function TenantHeader({
   name = '',
-  logoUrl = '/app-icon.png',
+  logoUrl = '/brand-avatar-gold.svg',
   onClick,
 }: TenantHeaderProps) {
   return (
@@ -21,10 +21,10 @@ export function TenantHeader({
       onClick={onClick}
       className="flex w-full items-center justify-between gap-2 rounded-md p-2 text-left transition-colors hover:bg-sidebar-accent/50"
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
         <div
           data-testid="tenant-logo"
-          className="h-8 w-8 shrink-0 overflow-hidden rounded-[10px] border border-sidebar-border"
+          className="h-6 w-6 shrink-0 overflow-hidden rounded-[10px]"
         >
           <img
             src={logoUrl}

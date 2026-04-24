@@ -13,7 +13,7 @@ export function SidebarFooterSettings({ onClick }: SidebarFooterSettingsProps) {
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/40 my-2"
     >
       <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span>设置</span>

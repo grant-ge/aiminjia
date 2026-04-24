@@ -33,6 +33,7 @@ export interface Conversation {
   createdAt: string
   updatedAt: string
   isArchived: boolean
+  workspaceName?: string
 }
 
 /**

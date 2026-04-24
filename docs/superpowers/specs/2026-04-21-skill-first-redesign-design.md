@@ -111,7 +111,9 @@ Pencil 变量（`design.pen` 已定义 dark/light 两套，本轮稿只画 light
 - **阴影**：弹窗 `0 8px 24px rgba(0,0,0,0.08)`；hover 卡片 `0 2px 6px rgba(0,0,0,0.05)`。
 - **间距栅格**：4 基，常用 8/12/16/24/32。
 - **字号**：H1 22 / H2 18 / H3 15 Medium / Body 14 / Caption 12 / Label 11。
-- **字体**：系统默认（.AppleSystemUIFont / PingFang SC）。
+- **字体**：**苹方**（中文 `PingFang SC`，西文 `Inter`）；Pencil 侧若 `PingFang` 不可用则回退 `Inter`，代码侧 CSS 回退链：`"PingFang SC", "Microsoft YaHei", Inter, system-ui, sans-serif`。
+- **品牌头像**：统一使用 `assets/avatar/金底.png`（金色底 + 白色「A」标），Pencil/代码侧渲染时裁成**圆角**（头像容器 `border-radius: 50%` 或对应 shadcn Avatar 组件）。禁止使用方角原图。
+- **主体名称**：版权/租户主体文案统一为 **「仁励家网络科技(杭州)有限公司」**（此前 spec 中 "仁恕家网络" 为错写，全部替换）。
 - **图标**：沿用 shadcn 图标风格（lucide 单色描边）。
 
 ## 4. 通用组件清单（Pencil 第一阶段绘制目标）
