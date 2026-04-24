@@ -2,8 +2,9 @@ import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
 import { listSkills, type SkillInfo } from '@/lib/tauri'
+import { MOCK_SKILLS } from '@/data/mock-skills'
 
-const RECOMMENDED_SKILL_IDS = ['writing-plans', 'skill-smith', 'table-analysis', 'ppt-builder', 'research-brief']
+const RECOMMENDED_SKILL_IDS = ['org-diagnosis', 'okr-coaching', 'sales-analysis', 'finance-analysis']
 
 interface SkillState {
   skills: SkillInfo[]
@@ -18,7 +19,7 @@ interface SkillState {
 }
 
 export const useSkillStore = create<SkillState>((set, get) => ({
-  skills: [],
+  skills: MOCK_SKILLS,
   recommendedIds: RECOMMENDED_SKILL_IDS,
   isLoading: false,
   listByCategory(id) {

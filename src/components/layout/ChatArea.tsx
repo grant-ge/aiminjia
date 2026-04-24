@@ -8,7 +8,6 @@ import { openFileByName } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 import { MessageList } from '@/components/chat/MessageList'
-import { WelcomeScreen } from '@/components/chat/WelcomeScreen'
 
 /** Scroll a container to the very bottom using scrollTop (avoids scrollIntoView rendering issues). */
 function scrollToBottom(el: HTMLElement | null, smooth = false) {
@@ -125,7 +124,7 @@ export function ChatArea() {
       onScroll={handleScroll}
     >
       <div className="mx-auto max-w-[1032px] pt-6 pb-40">
-        {messages.length === 0 ? <WelcomeScreen /> : <MessageList />}
+        <MessageList />
       </div>
     </div>
   )

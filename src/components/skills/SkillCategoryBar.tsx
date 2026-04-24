@@ -1,7 +1,3 @@
-/**
- * @designSource design.pen#ueSct catBar
- * @sizing row gap 8; chip padding [6,12] r-6
- */
 export interface SkillCategoryItem {
   key: string
   label: string
@@ -25,11 +21,11 @@ export function SkillCategoryBar({ items, activeKey, onSelect }: SkillCategoryBa
             onClick={() => onSelect(it.key)}
             className={
               active
-                ? 'rounded-md bg-secondary px-3 py-1.5 text-[13px] font-semibold text-foreground shadow-sm'
-                : 'rounded-md px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted'
+                ? 'rounded-full bg-brand-primary-subtle px-3.5 py-2 text-[13px] font-semibold text-primary'
+                : 'rounded-full px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/60'
             }
           >
-            {it.key === activeKey ? it.label : it.label}
+            {it.label}
           </button>
         )
       })}

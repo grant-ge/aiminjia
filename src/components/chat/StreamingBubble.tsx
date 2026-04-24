@@ -26,6 +26,7 @@ const EMPTY_TASK_STATES: Array<{
   taskId: string
   status: string
   runId: string
+  subject: string
 }> = []
 
 export function StreamingBubble({ content }: StreamingBubbleProps) {

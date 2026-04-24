@@ -16,12 +16,22 @@ export function ChatPage({ conversationId }: ChatPageProps) {
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
   const streamStates = useChatStore((s) => s.streamStates)
+  const activeConversationId = useChatStore((s) => s.activeConversationId)
   const isStreaming = streamStates[conversationId]?.isStreaming ?? false
   const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
 
   useEffect(() => {
-    void switchConversation(conversationId)
-  }, [conversationId, switchConversation])
+    // Every code path that calls setRoute({ kind: 'chat', conversationId }) also
+    // calls setActiveConversation(conversationId) first. So on mount,
+    // activeConversationId === conversationId is always true for new conversations
+    // and the sidebar's own switchConversation call already handles getMessages.
+    // Only call switchConversation here when the route conversationId differs from
+    // what the store considers active — a defensive guard for unexpected navigations.
+    if (activeConversationId !== conversationId) {
+      void switchConversation(conversationId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">

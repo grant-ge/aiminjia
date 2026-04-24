@@ -5,30 +5,45 @@ import { describe, expect, it, vi } from 'vitest'
 import { SkillCard } from '../SkillCard'
 
 describe('SkillCard', () => {
-  it('renders title, desc and fires actions', () => {
-    const onUse = vi.fn()
-    const onOpen = vi.fn()
+  it('renders title, meta, desc and fires onClick on card click', () => {
+    const onClick = vi.fn()
     render(
       <SkillCard
         title="数据分析"
+        meta="内置 · HR"
         desc="上传 Excel 或 CSV，一键生成报告"
         iconNode={<span data-testid="ic">ic</span>}
-        onUse={onUse}
-        onOpen={onOpen}
+        onClick={onClick}
       />,
     )
     expect(screen.getByText('数据分析')).toBeInTheDocument()
+    expect(screen.getByText('内置 · HR')).toBeInTheDocument()
+    expect(screen.getByText('上传 Excel 或 CSV，一键生成报告')).toBeInTheDocument()
     expect(screen.getByTestId('ic')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /使用/ }))
-    expect(onUse).toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('skill-card'))
+    expect(onClick).toHaveBeenCalled()
   })
 
-  it('uses border-1 r-lg class on the card root', () => {
+  it('hot size applies h-[140px] class', () => {
     const { container } = render(
-      <SkillCard title="t" desc="d" iconNode={null} onUse={() => {}} onOpen={() => {}} />,
+      <SkillCard title="t" meta="m" desc="d" iconNode={null} onClick={() => {}} size="hot" />,
     )
     const card = container.querySelector('[data-testid="skill-card"]')
-    expect(card?.className).toMatch(/border/)
-    expect(card?.className).toMatch(/rounded-lg|rounded-md|rounded-\[8px\]/)
+    expect(card?.className).toMatch(/h-\[140px\]/)
+  })
+
+  it('office size (default) applies h-[120px] class', () => {
+    const { container } = render(
+      <SkillCard title="t" meta="m" desc="d" iconNode={null} onClick={() => {}} />,
+    )
+    const card = container.querySelector('[data-testid="skill-card"]')
+    expect(card?.className).toMatch(/h-\[120px\]/)
+  })
+
+  it('has no 详情 or 使用 buttons', () => {
+    render(
+      <SkillCard title="t" meta="m" desc="d" iconNode={null} onClick={() => {}} />,
+    )
+    expect(screen.queryByRole('button', { name: /详情|使用/ })).toBeNull()
   })
 })

@@ -11509,7 +11509,7 @@
                                                   "name": "sk1IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "shopping-bag",
+                                                  "iconFontName": "building-2",
                                                   "iconFontFamily": "lucide",
                                                   "fill": "$--primary"
                                                 }
@@ -11530,7 +11530,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "1688 智能选品",
+                                                  "content": "组织诊断报告",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -11540,7 +11540,7 @@
                                                   "id": "ORkBh",
                                                   "name": "sk1Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "内置 · 电商",
+                                                  "content": "内置 · HR",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -11556,7 +11556,7 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "按品类、利润与热度筛选商品，并提供 1688 货源参考链接。",
+                                          "content": "六盒子模型 + 麦肯锡 7S 框架诊断，输出组织优化建议。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"
@@ -11605,9 +11605,9 @@
                                                   "name": "sk2IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "image",
+                                                  "iconFontName": "target",
                                                   "iconFontFamily": "lucide",
-                                                  "fill": "$--brand-secondary"
+                                                  "fill": "#DBAA22"
                                                 }
                                               ]
                                             },
@@ -11626,7 +11626,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "淘宝图素材优化",
+                                                  "content": "OKR 制定辅导",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -11636,7 +11636,7 @@
                                                   "id": "j8M9Z",
                                                   "name": "sk2Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "内置 · 电商",
+                                                  "content": "内置 · 通用",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -11652,7 +11652,7 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "一键优化主图与详情页素材，提升点击率与转化率。",
+                                          "content": "帮助团队拆解目标、关键结果与行动计划。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"
@@ -11701,7 +11701,7 @@
                                                   "name": "sk3IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "flame",
+                                                  "iconFontName": "file-text",
                                                   "iconFontFamily": "lucide",
                                                   "fill": "#EA580C"
                                                 }
@@ -11722,7 +11722,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "爆款拆解",
+                                                  "content": "商业方案撰写",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -11732,7 +11732,7 @@
                                                   "id": "83omt",
                                                   "name": "sk3Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "内置 · 内容创作",
+                                                  "content": "内置 · 财务",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -11748,7 +11748,7 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "输入爆款链接，输出结构拆解、目标人群与改写建议。",
+                                          "content": "快速生成商业计划、项目方案与汇报材料。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"
@@ -11772,7 +11772,7 @@
                                   "id": "o7hoR",
                                   "name": "ofcTitle",
                                   "fill": "$--foreground",
-                                  "content": "办公效率",
+                                  "content": "全部技能",
                                   "fontFamily": "Inter",
                                   "fontSize": 15,
                                   "fontWeight": "600"
@@ -11802,7 +11802,7 @@
                                           "id": "5ECRj",
                                           "name": "ca0t",
                                           "fill": "$--primary",
-                                          "content": "通用工具",
+                                          "content": "全部",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "600"
@@ -11825,7 +11825,7 @@
                                           "id": "V5eGy",
                                           "name": "ca1t",
                                           "fill": "$--muted-foreground",
-                                          "content": "电商",
+                                          "content": "HR",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -11848,7 +11848,7 @@
                                           "id": "I8W6f",
                                           "name": "ca2t",
                                           "fill": "$--muted-foreground",
-                                          "content": "门店与财务",
+                                          "content": "财务",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -11871,7 +11871,7 @@
                                           "id": "wrJAv",
                                           "name": "ca3t",
                                           "fill": "$--muted-foreground",
-                                          "content": "设计与制造",
+                                          "content": "法务",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -11894,7 +11894,7 @@
                                           "id": "j2Rvz",
                                           "name": "ca4t",
                                           "fill": "$--muted-foreground",
-                                          "content": "开发",
+                                          "content": "销售",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -11917,7 +11917,7 @@
                                           "id": "lcnDt",
                                           "name": "ca5t",
                                           "fill": "$--muted-foreground",
-                                          "content": "律所",
+                                          "content": "运营",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -11940,53 +11940,7 @@
                                           "id": "afpJa",
                                           "name": "ca6t",
                                           "fill": "$--muted-foreground",
-                                          "content": "媒介",
-                                          "fontFamily": "Inter",
-                                          "fontSize": 13,
-                                          "fontWeight": "500"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "qW6iA",
-                                      "name": "ca7",
-                                      "cornerRadius": 999,
-                                      "padding": [
-                                        8,
-                                        14
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "sqX1v",
-                                          "name": "ca7t",
-                                          "fill": "$--muted-foreground",
-                                          "content": "运营",
-                                          "fontFamily": "Inter",
-                                          "fontSize": 13,
-                                          "fontWeight": "500"
-                                        }
-                                      ]
-                                    },
-                                    {
-                                      "type": "frame",
-                                      "id": "mbXl5",
-                                      "name": "ca8",
-                                      "cornerRadius": 999,
-                                      "padding": [
-                                        8,
-                                        14
-                                      ],
-                                      "alignItems": "center",
-                                      "children": [
-                                        {
-                                          "type": "text",
-                                          "id": "vIH9q",
-                                          "name": "ca8t",
-                                          "fill": "$--muted-foreground",
-                                          "content": "内容创作",
+                                          "content": "通用",
                                           "fontFamily": "Inter",
                                           "fontSize": 13,
                                           "fontWeight": "500"
@@ -12044,9 +11998,9 @@
                                                   "name": "ok1IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "chart-column",
+                                                  "iconFontName": "ruler",
                                                   "iconFontFamily": "lucide",
-                                                  "fill": "$--brand-secondary"
+                                                  "fill": "#3F3F46"
                                                 }
                                               ]
                                             },
@@ -12065,7 +12019,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "数据分析",
+                                                  "content": "HR数据分析成熟度评估",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -12075,7 +12029,7 @@
                                                   "id": "oCrZY",
                                                   "name": "ok1Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "AI 小家内置",
+                                                  "content": "内置 · HR",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -12091,7 +12045,7 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "上传 Excel 或 CSV，快速生成可视化分析报告。",
+                                          "content": "评估 HR 数据治理、分析能力与决策成熟度。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"
@@ -12140,9 +12094,9 @@
                                                   "name": "ok2IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "chart-line",
+                                                  "iconFontName": "chart-column",
                                                   "iconFontFamily": "lucide",
-                                                  "fill": "$--primary"
+                                                  "fill": "#DBAA22"
                                                 }
                                               ]
                                             },
@@ -12161,7 +12115,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "ECharts 图表生成",
+                                                  "content": "销售数据分析",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -12171,7 +12125,7 @@
                                                   "id": "wfKOB",
                                                   "name": "ok2Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "AI 小家内置",
+                                                  "content": "内置 · 销售",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -12187,7 +12141,7 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "按需生成柱状图、折线图、漏斗图等可交互图表。",
+                                          "content": "分析销售漏斗、成交趋势、客户结构与增长机会。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"
@@ -12236,7 +12190,7 @@
                                                   "name": "ok3IcG",
                                                   "width": 18,
                                                   "height": 18,
-                                                  "iconFontName": "compass",
+                                                  "iconFontName": "scale",
                                                   "iconFontFamily": "lucide",
                                                   "fill": "#16A34A"
                                                 }
@@ -12257,7 +12211,7 @@
                                                   "fill": "$--foreground",
                                                   "textGrowth": "fixed-width",
                                                   "width": 240,
-                                                  "content": "通用助理",
+                                                  "content": "劳动合规风险检查",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 14,
                                                   "fontWeight": "600"
@@ -12267,7 +12221,7 @@
                                                   "id": "WtiZt",
                                                   "name": "ok3Meta",
                                                   "fill": "$--brand-secondary",
-                                                  "content": "AI 小家内置",
+                                                  "content": "内置 · 法务",
                                                   "fontFamily": "Inter",
                                                   "fontSize": 12,
                                                   "fontWeight": "500"
@@ -12283,7 +12237,862 @@
                                           "fill": "$--muted-foreground",
                                           "textGrowth": "fixed-width",
                                           "width": 240,
-                                          "content": "用于日常问答与文档处理，快速了解 AI 小家的能力。",
+                                          "content": "识别劳动合同、用工流程与制度中的合规风险。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "biftH",
+                                  "name": "ofcGridRow2",
+                                  "width": "fill_container",
+                                  "gap": 16,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "Oosv8",
+                                      "name": "ok4",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "g7sW1",
+                                          "name": "ok4H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "zg6vU",
+                                              "name": "ok4Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#FBF3DC",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "8NKQE",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "briefcase",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#DBAA22"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "ToJbY",
+                                              "name": "ok4B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "9bGsO",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "薪酬市场对标分析",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "ZZHTs",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · HR",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "5B0nB",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "对照行业薪酬区间，评估公司薪酬竞争力。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "FOWei",
+                                      "name": "ok5",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "IrEN0",
+                                          "name": "ok5H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "e1I2C",
+                                              "name": "ok5Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#FBE2D9",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "ZWCKX",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "shopping-cart",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#EA580C"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "5Llwf",
+                                              "name": "ok5B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "lQa0i",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "运营数据分析",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "XnEv3",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 运营",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "KtvOj",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "分析 GMV、活跃用户、留存率与渠道效果。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "NMpa2",
+                                      "name": "ok6",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "WFBS4",
+                                          "name": "ok6H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "esQmz",
+                                              "name": "ok6Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#DCFCE7",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "pOJjm",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "trending-up",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#16A34A"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "8V8FT",
+                                              "name": "ok6B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "KufLK",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "财务数据分析",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "GdQzB",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 财务",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "WWV8Z",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "解读收入结构、成本走势与盈利能力变化。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "2EWZo",
+                                  "name": "ofcGridRow3",
+                                  "width": "fill_container",
+                                  "gap": 16,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "XZnse",
+                                      "name": "ok7",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "759MC",
+                                          "name": "ok7H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "yttXt",
+                                              "name": "ok7Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#EDE9FE",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "1nlnV",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "file-check",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#7C3AED"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "zE2Qr",
+                                              "name": "ok7B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "WEAh9",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "合同风险审查",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "XFOVU",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 法务",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "TxPW6",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "识别合同条款中的权责不对等与潜在法律风险。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "pHBr8",
+                                      "name": "ok8",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "10Pdo",
+                                          "name": "ok8H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "TbILF",
+                                              "name": "ok8Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#EDE9FE",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "fSAax",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "scroll",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#7C3AED"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "QRfuf",
+                                              "name": "ok8B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "8zw8S",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "规章制度合规审查",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "fymTX",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 法务",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "yKLKC",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "检查员工手册与内部制度的合法性与完整性。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "c6jb4",
+                                      "name": "ok9",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "8RuOr",
+                                          "name": "ok9H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "JHxU9",
+                                              "name": "ok9Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#F3F4F6",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "fG9wA",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "users",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#3F3F46"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "MzUrl",
+                                              "name": "ok9B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "z2FwF",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "客户细分分析",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "RqvVV",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 销售",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "3nLNV",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "基于客户特征、行为和价值进行分群与策略建议。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "hQr87",
+                                  "name": "ofcGridRow4",
+                                  "width": "fill_container",
+                                  "gap": 16,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "EjOhV",
+                                      "name": "ok10",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "ojp3I",
+                                          "name": "ok10H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "RkeLO",
+                                              "name": "ok10Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#F3F4F6",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "9TTqC",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "folder-open",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#3F3F46"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "qyTIv",
+                                              "name": "ok10B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "j3rfW",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "多文件处理",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "cs6Vr",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · 通用",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "YZ5Fq",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "批量读取、汇总、对比多个文档或数据文件。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "IsF6v",
+                                      "name": "ok11",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "rGwpr",
+                                          "name": "ok11H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "MxieF",
+                                              "name": "ok11Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#DCFCE7",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "gjMMX",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "chart-line",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#16A34A"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "CYrKP",
+                                              "name": "ok11B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "kA6Bm",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "员工敬业度分析",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "enhop",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · HR",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "J3tQy",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "分析调研结果，识别影响员工体验的关键因素。",
+                                          "fontFamily": "Inter",
+                                          "fontSize": 12,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "NgUll",
+                                      "name": "ok12",
+                                      "width": "fill_container",
+                                      "height": 120,
+                                      "fill": "#fafafa",
+                                      "cornerRadius": 14,
+                                      "stroke": {
+                                        "align": "inside",
+                                        "thickness": 1,
+                                        "fill": "#e5e5e5"
+                                      },
+                                      "layout": "vertical",
+                                      "gap": 10,
+                                      "padding": 16,
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "0qajX",
+                                          "name": "ok12H",
+                                          "width": "fill_container",
+                                          "gap": 10,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "qsBoo",
+                                              "name": "ok12Ic",
+                                              "width": 34,
+                                              "height": 34,
+                                              "fill": "#FBF3DC",
+                                              "cornerRadius": 10,
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "icon_font",
+                                                  "id": "pcVnz",
+                                                  "width": 18,
+                                                  "height": 18,
+                                                  "iconFontName": "clipboard-list",
+                                                  "iconFontFamily": "lucide",
+                                                  "fill": "#DBAA22"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "jKowi",
+                                              "name": "ok12B",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 2,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "9VUdQ",
+                                                  "fill": "#0a0a0a",
+                                                  "textGrowth": "fixed-width",
+                                                  "width": 240,
+                                                  "content": "绩效体系设计向导",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "600"
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "2Uu4W",
+                                                  "fill": "#3F3F46",
+                                                  "content": "内置 · HR",
+                                                  "fontFamily": "Inter",
+                                                  "fontSize": 12,
+                                                  "fontWeight": "500"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "4MJN4",
+                                          "fill": "#737373",
+                                          "textGrowth": "fixed-width",
+                                          "width": 240,
+                                          "content": "设计绩效流程、指标体系与评估表单。",
                                           "fontFamily": "Inter",
                                           "fontSize": 12,
                                           "fontWeight": "normal"

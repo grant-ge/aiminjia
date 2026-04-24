@@ -1,15 +1,11 @@
 export type SkillCategoryId =
   | 'recommended'
-  | 'general'
-  | 'ecommerce'
+  | 'hr'
   | 'finance'
-  | 'design'
-  | 'dev'
   | 'legal'
-  | 'media'
-  | 'health'
+  | 'sales'
   | 'ops'
-  | 'content'
+  | 'general'
 
 export interface SkillCategory {
   id: Exclude<SkillCategoryId, 'recommended'>
@@ -18,14 +14,10 @@ export interface SkillCategory {
 }
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
-  { id: 'general', name: '通用工具', icon: 'wrench' },
-  { id: 'ecommerce', name: '电商', icon: 'shopping-cart' },
-  { id: 'finance', name: '门店与财务', icon: 'store' },
-  { id: 'design', name: '设计与制造', icon: 'pencil-ruler' },
-  { id: 'dev', name: '开发', icon: 'code' },
-  { id: 'legal', name: '律所', icon: 'scale' },
-  { id: 'media', name: '媒介', icon: 'megaphone' },
-  { id: 'health', name: '健康与学习', icon: 'heart-pulse' },
-  { id: 'ops', name: '运营', icon: 'trending-up' },
-  { id: 'content', name: '内容创作', icon: 'feather' },
+  { id: 'hr',      name: 'HR',   icon: 'users' },
+  { id: 'finance', name: '财务', icon: 'bar-chart-2' },
+  { id: 'legal',   name: '法务', icon: 'scale' },
+  { id: 'sales',   name: '销售', icon: 'trending-up' },
+  { id: 'ops',     name: '运营', icon: 'settings' },
+  { id: 'general', name: '通用', icon: 'wrench' },
 ]
