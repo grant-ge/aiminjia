@@ -10,7 +10,6 @@ import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useChat } from '@/hooks/useChat'
 import { useSkillStore } from '@/stores/skillStore'
-import { useUiStore, type Route } from '@/stores/uiStore'
 
 interface SkillDetailPageProps {
   skillId: string
@@ -24,7 +23,6 @@ const TRY_PROMPTS = [
 
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
-  const setRoute = useUiStore((s) => s.setRoute)
   const { createConversationFromSkill } = useChat()
 
   if (!skill) {
@@ -67,8 +65,7 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             iconNode={<Sparkles className="h-4 w-4 text-primary" />}
             title={skill.displayName}
             desc={p}
-            onOpen={() => setRoute({ kind: 'skill-detail', skillId: skill.id } as Route)}
-            onUse={() => void createConversationFromSkill(skill.id)}
+            onClick={() => void createConversationFromSkill(skill.id)}
           />
         ))}
       </SkillTryGrid>
