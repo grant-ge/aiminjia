@@ -96,6 +96,16 @@ impl SessionRuntime {
         self
     }
 
+    /// Replace the base `QueryEngine` (and clear any cached per-session engines).
+    /// Used by the transport layer to inject a per-request ToolDispatcher without
+    /// calling `block_on` inside a sync constructor.
+    pub fn with_query_engine(mut self, query_engine: QueryEngine) -> Self {
+        self.query_engine = query_engine;
+        // Clear cached per-session engines so they inherit the new base engine.
+        self.session_query_engines = Arc::new(Mutex::new(HashMap::new()));
+        self
+    }
+
     pub fn with_skill_sessions(
         mut self,
         skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,

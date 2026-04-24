@@ -70,7 +70,9 @@ impl Skill for DailyAssistantSkill {
 
     fn system_prompt(&self, _state: &SkillState) -> String {
         let persona = self.db.get_active_persona().ok();
-        let product_name = tauri::async_runtime::block_on(self.auth_manager.get_auth_info())
+        // Use futures::executor::block_on instead of tauri::async_runtime::block_on to avoid
+        // "Cannot start a runtime from within a runtime" panic when called on a tokio thread.
+        let product_name = futures::executor::block_on(self.auth_manager.get_auth_info())
             .tenant
             .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
         prompts::get_system_prompt(None, persona.as_ref(), product_name.as_deref())

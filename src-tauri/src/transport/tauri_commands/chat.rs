@@ -1930,49 +1930,11 @@ impl TauriChatCommandAdapter {
                 crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
             )),
         });
-        // Build a request-scoped dispatcher so production turns can see the same
-        // request-scoped runtime tools as worker paths (load_file / execute_python / etc.).
-        let connector_engine = services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .map(|v| v.inner().clone());
-        let agent_runtime = services
-            .app
-            .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
-            .map(|v| v.inner().clone());
-        let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
-            storage: services.db.clone(),
-            file_manager: services.file_mgr.clone(),
-            workspace_path: services.file_mgr.workspace_path().to_path_buf(),
-            conversation_id: String::new(),
-            session_id: crate::runtime::ids::SessionId::new(String::new()),
-            run_id: None,
-            agent_id: None,
-            tavily_api_key: None,
-            bocha_api_key: None,
-            app_handle: Some(services.app.clone()),
-            session_manager: services.session_mgr.clone(),
-            auth_manager: Some(services.auth_manager.clone()),
-            connector_engine,
-            use_cloud: false,
-            model: String::new(),
-            gateway: Some(services.gateway.clone()),
-            tool_registry: Some(services.tool_registry.clone()),
-            app_settings: Some(Arc::new(AppSettings::default())),
-            agent_runtime,
-            event_bus: None,
-            skill_registry: Some(services.skill_registry.clone()),
-            skill_sessions: Some(services.skill_sessions.clone()),
-            authorized_workspace: None,
-            read_file_state: None,
-            cancellation: None,
-            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
-        };
-        let runtime_dispatcher = tauri::async_runtime::block_on(
-            services.tool_registry.to_runtime_dispatcher(request_scoped_runtime_deps)
-        );
+        // NOTE: request-scoped dispatcher is built per-call in send_message() to avoid
+        // calling block_on() inside the sync new() which panics ("Cannot start a runtime
+        // from within a runtime") because Tauri's setup closure already runs in tokio.
         let mut runtime = SessionRuntime::with_llm_executor(
-            QueryEngine::with_dispatcher(runtime_dispatcher)
+            QueryEngine::new()
                 .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
             bus,
             llm_executor,
@@ -2011,7 +1973,56 @@ impl TauriChatCommandAdapter {
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
-        self.runtime.run_chat_request(request).await
+
+        let session_id = request.conversation_id.clone();
+        let connector_engine = self
+            .services
+            .app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .map(|v| v.inner().clone());
+        let agent_runtime = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
+            .map(|v| v.inner().clone());
+        let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
+            storage: self.services.db.clone(),
+            file_manager: self.services.file_mgr.clone(),
+            workspace_path: self.services.file_mgr.workspace_path().to_path_buf(),
+            conversation_id: session_id.as_str().to_string(),
+            session_id: session_id.clone(),
+            run_id: None,
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: Some(self.services.app.clone()),
+            session_manager: self.services.session_mgr.clone(),
+            auth_manager: Some(self.services.auth_manager.clone()),
+            connector_engine,
+            use_cloud: false,
+            model: String::new(),
+            gateway: Some(self.services.gateway.clone()),
+            tool_registry: Some(self.services.tool_registry.clone()),
+            app_settings: Some(Arc::new(AppSettings::default())),
+            agent_runtime,
+            event_bus: None,
+            skill_registry: Some(self.services.skill_registry.clone()),
+            skill_sessions: Some(self.services.skill_sessions.clone()),
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: request.permission_mode,
+        };
+        let runtime_dispatcher = self
+            .services
+            .tool_registry
+            .to_runtime_dispatcher(request_scoped_runtime_deps)
+            .await;
+        let runtime = self.runtime.clone().with_query_engine(
+            QueryEngine::with_dispatcher(runtime_dispatcher)
+                .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf()),
+        );
+        runtime.run_chat_request(request).await
     }
 
     pub fn flush_pending_message_writes(&self) -> Result<(), String> {

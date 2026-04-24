@@ -1568,3 +1568,29 @@ async fn driver_s4_get_env_info_error_falls_back_to_empty_string() {
         captured[0]
     );
 }
+
+#[test]
+fn review_chat_adapter_new_has_no_block_on() {
+    // TauriChatCommandAdapter::new() is a sync function called in Tauri's setup closure,
+    // which already runs inside the tokio runtime. Calling block_on() there panics with
+    // "Cannot start a runtime from within a runtime".
+    let content = std::fs::read_to_string(
+        "src/transport/tauri_commands/chat.rs"
+    ).expect("chat.rs must exist");
+
+    // Find the new() fn body and check it has no block_on
+    // Simple heuristic: extract text between "pub fn new(" and the matching "-> Self {"
+    // then verify no block_on before the first "pub async fn" that follows
+    let new_fn_start = content.find("pub fn new(").expect("new() must exist in chat.rs");
+    let after_new = &content[new_fn_start..];
+    // The new() body ends at "Self { runtime, services }" — find next pub fn after new()
+    let next_pub_fn = after_new[10..].find("\n    pub ").unwrap_or(after_new.len());
+    let new_fn_body = &after_new[..next_pub_fn + 10];
+
+    assert!(
+        !new_fn_body.contains("block_on("),
+        "TauriChatCommandAdapter::new() must not call block_on() — it runs inside \
+         Tauri's tokio runtime and nested block_on panics at startup. \
+         Move async initialization into send_message() or use spawn."
+    );
+}
