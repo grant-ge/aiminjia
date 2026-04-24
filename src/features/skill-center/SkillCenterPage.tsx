@@ -29,8 +29,11 @@ export function SkillCenterPage() {
   )
 
   const recommended = listByCategory('recommended')
-  const officeSkills = category === 'recommended' ? skills : listByCategory(category)
-  const showHot = category === 'recommended'
+  const recommendedIdSet = new Set(recommended.map((s) => s.id))
+  const officeSkills =
+    category === 'recommended'
+      ? skills.filter((s) => !recommendedIdSet.has(s.id))
+      : listByCategory(category)
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
@@ -68,9 +71,8 @@ export function SkillCenterPage() {
       padding="px-7 pt-6 pb-8"
       gap="gap-5"
     >
-      {showHot && (
-        <SkillHotSection>
-          {recommended.slice(0, 3).map((skill) => (
+      <SkillHotSection>
+          {recommended.slice(0, 4).map((skill) => (
             <SkillCard
               key={skill.id}
               size="hot"
@@ -82,7 +84,6 @@ export function SkillCenterPage() {
             />
           ))}
         </SkillHotSection>
-      )}
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar

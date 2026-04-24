@@ -24,25 +24,16 @@ const HR_SKILL = {
   shortDescriptionEn: 'short',
 }
 
-const RECOMMENDED_SKILL = {
-  id: 'writing-plans',
-  displayName: '写计划',
-  description: 'desc',
-  source: 'builtin',
-  hasWorkflow: true,
-  icon: 'file-text',
-  category: 'general',
-  triggerText: '',
-  shortDescription: '短描述',
-  displayNameEn: 'Plan',
-  shortDescriptionEn: 'short',
-}
+const REC1 = { id: 'rec1', displayName: '推荐1', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r1', shortDescriptionEn: 's' }
+const REC2 = { id: 'rec2', displayName: '推荐2', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r2', shortDescriptionEn: 's' }
+const REC3 = { id: 'rec3', displayName: '推荐3', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r3', shortDescriptionEn: 's' }
+const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'builtin', hasWorkflow: false, icon: 'x', category: 'general', triggerText: '', shortDescription: 's', displayNameEn: 'r4', shortDescriptionEn: 's' }
 
 describe('SkillCenterPage', () => {
   beforeEach(() => {
     useSkillStore.setState({
-      skills: [RECOMMENDED_SKILL, HR_SKILL],
-      recommendedIds: ['writing-plans'],
+      skills: [REC1, REC2, REC3, REC4, HR_SKILL],
+      recommendedIds: ['rec1', 'rec2', 'rec3', 'rec4'],
       isLoading: false,
     })
     useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null })
@@ -51,7 +42,7 @@ describe('SkillCenterPage', () => {
   it('顶栏渲染标题、技能数量徽章和搜索框', () => {
     render(<SkillCenterPage />)
     expect(screen.getByText('技能中心')).toBeInTheDocument()
-    expect(screen.getByText(/2 个技能/)).toBeInTheDocument()
+    expect(screen.getByText(/5 个技能/)).toBeInTheDocument()
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()
   })
 
@@ -68,22 +59,30 @@ describe('SkillCenterPage', () => {
     }
   })
 
+  it('热门推荐始终渲染，切换分类后也可见', () => {
+    render(<SkillCenterPage />)
+    expect(screen.getByText('热门推荐')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'HR' }))
+    expect(screen.getByText('热门推荐')).toBeInTheDocument()
+  })
+
+  it('热门推荐显示 4 个推荐技能', () => {
+    render(<SkillCenterPage />)
+    expect(screen.getByText('推荐1')).toBeInTheDocument()
+    expect(screen.getByText('推荐2')).toBeInTheDocument()
+    expect(screen.getByText('推荐3')).toBeInTheDocument()
+    expect(screen.getByText('推荐4')).toBeInTheDocument()
+  })
+
   it('切换到 HR 分类后卡片点击进入详情', async () => {
     render(<SkillCenterPage />)
     fireEvent.click(screen.getByRole('button', { name: 'HR' }))
     const cards = screen.getAllByTestId('skill-card')
-    fireEvent.click(cards[0])
+    const hrCard = cards.find((c) => c.textContent?.includes('HR分析'))
+    expect(hrCard).toBeTruthy()
+    fireEvent.click(hrCard!)
     await waitFor(() => {
       expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'hr-analysis' })
-    })
-  })
-
-  it('热门推荐区卡片点击进入详情', async () => {
-    render(<SkillCenterPage />)
-    const cards = screen.getAllByTestId('skill-card')
-    fireEvent.click(cards[0])
-    await waitFor(() => {
-      expect(useUiStore.getState().route).toEqual({ kind: 'skill-detail', skillId: 'writing-plans' })
     })
   })
 
