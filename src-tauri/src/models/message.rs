@@ -152,18 +152,18 @@ impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend 
         use crate::runtime::task::task_models::TaskStatus;
         let status_str = match r.status {
             TaskStatus::Pending => "pending",
-            TaskStatus::Running => "running",
+            TaskStatus::InProgress => "in_progress",
             TaskStatus::Completed => "completed",
             TaskStatus::Failed => "failed",
             TaskStatus::Cancelled => "cancelled",
         };
         Self {
-            task_id: r.task_id.as_str().to_string(),
+            task_id: r.id,
             session_id: r.session_id.as_str().to_string(),
             subject: r.subject,
             status: status_str.to_string(),
             active_form: r.active_form,
-            owner: r.owner_agent_id.map(|id| id.as_str().to_string()),
+            owner: r.owner.or_else(|| r.owner_agent_id.map(|id| id.as_str().to_string())),
         }
     }
 }

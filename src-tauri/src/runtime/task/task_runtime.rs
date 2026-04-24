@@ -52,7 +52,7 @@ impl TaskRuntime {
         if let Some(bus) = &self.event_bus {
             let status_str = match &status {
                 TaskStatus::Pending => "pending",
-                TaskStatus::Running => "running",
+                TaskStatus::InProgress => "in_progress",
                 TaskStatus::Completed => "completed",
                 TaskStatus::Failed => "failed",
                 TaskStatus::Cancelled => "cancelled",

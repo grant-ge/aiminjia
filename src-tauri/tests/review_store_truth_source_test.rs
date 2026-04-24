@@ -58,12 +58,17 @@ fn review_resume_related_store_records_should_roundtrip_when_present() {
     let task_store = InMemoryTaskStore::new();
     task_store
         .create_task(TaskRecord {
-            task_id: TaskId::new("task-present"),
+            id: "task-present".to_string(),
+            description: String::new(),
+            owner: None,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
             session_id: SessionId::new("test-session"),
             parent_run_id: RunId::new("run-present"),
             owner_agent_id: None,
             subject: "resume probe".to_string(),
-            status: TaskStatus::Running,
+            status: TaskStatus::InProgress,
             active_form: None,
         })
         .unwrap();
@@ -73,6 +78,6 @@ fn review_resume_related_store_records_should_roundtrip_when_present() {
             .unwrap()
             .unwrap()
             .status,
-        TaskStatus::Running
+        TaskStatus::InProgress
     );
 }

@@ -195,7 +195,7 @@ TaskStatus::Completed => "completed",
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -80
 ```
 
@@ -380,7 +380,7 @@ pub use task_v2_store::FileTaskV2Store;
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -60
 ```
 
@@ -425,7 +425,7 @@ ctx.task_store_root = Some(aijia_home_path.clone());
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -80
 ```
 
@@ -518,7 +518,7 @@ c.insert(CatalogEntry::new(
 - [ ] **Step 5: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -60
 ```
 
@@ -745,7 +745,7 @@ pub mod task_tools;
 - [ ] **Step 5: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -80
 ```
 
@@ -896,7 +896,7 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
 - [ ] **Step 2: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -80
 ```
 
@@ -925,7 +925,7 @@ registry.register_runtime(Arc::new(TaskListRuntimeTool)).await;
 - [ ] **Step 2: 编译验证**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo check 2>&1 | head -80
 ```
 
@@ -944,13 +944,13 @@ cargo check 2>&1 | head -80
 use tempfile::TempDir;
 use serde_json::json;
 
-use lotus_app::runtime::cancellation::CancellationToken;
-use lotus_app::runtime::tools::builtin::task_tools::{
+use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::tools::builtin::task_tools::{
     TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
 };
-use lotus_app::runtime::tools::catalog::{DAILY_ALLOWED_TOOLS, TOOL_CATALOG};
-use lotus_app::runtime::tools::context::ToolExecutionContext;
-use lotus_app::runtime::tools::RuntimeTool;
+use app_lib::runtime::tools::catalog::{DAILY_ALLOWED_TOOLS, TOOL_CATALOG};
+use app_lib::runtime::tools::context::ToolExecutionContext;
+use app_lib::runtime::tools::RuntimeTool;
 
 fn ctx(root: &TempDir) -> ToolExecutionContext {
     let mut ctx = ToolExecutionContext::new(
@@ -1039,7 +1039,7 @@ async fn task_update_delete_removes_task() {
 - [ ] **Step 2: 运行测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo test --test task_tools_test -- --nocapture 2>&1
 ```
 
@@ -1114,7 +1114,7 @@ Task V2 第一版可以不新增前端 UI：
 - [ ] **Step 1: 验证前端无类型修改**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app
 pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -30
 ```
 
@@ -1127,21 +1127,21 @@ pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integra
 - [ ] **Step 1: Rust 新增测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo test --test task_tools_test -- --nocapture 2>&1
 ```
 
 - [ ] **Step 2: Rust review 测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app/src-tauri
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app/src-tauri
 cargo test review_ --tests --no-fail-fast 2>&1 | tail -30
 ```
 
 - [ ] **Step 3: 前端关键测试**
 
 ```bash
-cd /Users/a20250311/IdeaProjects/lotus-app
+cd /Users/a20250311/.codex/worktrees/7526/lotus-app
 pnpm exec vitest run src/lib/tauri.events.test.ts src/hooks/useStreaming.integration.test.tsx src/stores/chatStore.test.ts 2>&1 | tail -30
 ```
 

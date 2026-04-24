@@ -63,6 +63,8 @@ pub struct ToolExecutionContext {
     /// Original tool-call request, used by interactive tools to build replayable requests.
     pub current_tool_call_request:
         Option<crate::runtime::chat::tool_round_types::RuntimeToolCallRequest>,
+    /// Task V2 persistence root (AiJiaHome), used by task runtime tools.
+    pub task_store_root: Option<std::path::PathBuf>,
 }
 
 impl ToolExecutionContext {
@@ -87,6 +89,7 @@ impl ToolExecutionContext {
             hook_registry: None,
             interaction_resolution: None,
             current_tool_call_request: None,
+            task_store_root: None,
         }
     }
 

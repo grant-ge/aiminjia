@@ -120,7 +120,12 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
 
     runtime
         .create_task(TaskRecord {
-            task_id: task_id.clone(),
+            id: task_id.as_str().to_string(),
+            description: String::new(),
+            owner: None,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
             session_id: SessionId::new("session-payload"),
             parent_run_id: RunId::new("run-payload-1"),
             owner_agent_id: None,
@@ -130,7 +135,7 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
         })
         .unwrap();
 
-    runtime.set_status(&task_id, TaskStatus::Running).unwrap();
+    runtime.set_status(&task_id, TaskStatus::InProgress).unwrap();
 
     let trace = host.trace();
     let event = trace
@@ -149,7 +154,7 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
         Some("探索中…"),
         "payload must include activeForm"
     );
-    assert_eq!(event.payload["status"].as_str(), Some("running"));
+    assert_eq!(event.payload["status"].as_str(), Some("in_progress"));
 }
 
 

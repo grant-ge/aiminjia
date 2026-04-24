@@ -8,7 +8,12 @@ fn review_list_for_session_filters_by_session_id() {
     let store = InMemoryTaskStore::new();
 
     store.create_task(TaskRecord {
-        task_id: TaskId::new("t1"),
+        id: "t1".to_string(),
+        description: String::new(),
+        owner: None,
+        blocks: vec![],
+        blocked_by: vec![],
+        metadata: None,
         session_id: SessionId::new("conv-abc"),
         parent_run_id: RunId::new("run-1"),
         owner_agent_id: None,
@@ -18,19 +23,24 @@ fn review_list_for_session_filters_by_session_id() {
     }).unwrap();
 
     store.create_task(TaskRecord {
-        task_id: TaskId::new("t2"),
+        id: "t2".to_string(),
+        description: String::new(),
+        owner: None,
+        blocks: vec![],
+        blocked_by: vec![],
+        metadata: None,
         session_id: SessionId::new("conv-xyz"),
         parent_run_id: RunId::new("run-2"),
         owner_agent_id: None,
         subject: "Task in conv-xyz".to_string(),
-        status: TaskStatus::Running,
+        status: TaskStatus::InProgress,
         active_form: Some("探索中…".to_string()),
     }).unwrap();
 
     let result = store.list_for_session(&SessionId::new("conv-abc")).unwrap();
 
     assert_eq!(result.len(), 1, "must only return tasks for conv-abc");
-    assert_eq!(result[0].task_id.as_str(), "t1");
+    assert_eq!(result[0].task_id().as_str(), "t1");
     assert_eq!(result[0].subject, "Task in conv-abc");
 }
 
@@ -48,7 +58,12 @@ fn review_task_record_frontend_serialization() {
     use app_lib::models::message::TaskRecordFrontend;
 
     let record = TaskRecord {
-        task_id: TaskId::new("t3"),
+        id: "t3".to_string(),
+        description: String::new(),
+        owner: None,
+        blocks: vec![],
+        blocked_by: vec![],
+        metadata: None,
         session_id: SessionId::new("conv-s"),
         parent_run_id: RunId::new("run-3"),
         owner_agent_id: None,
