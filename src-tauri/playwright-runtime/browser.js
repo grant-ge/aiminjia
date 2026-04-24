@@ -9,14 +9,18 @@
  *   Response: {"id":1, "result":{...}} or {"id":1, "error":"..."}
  */
 
+process.stderr.write('[playwright] Process starting, loading modules...\n');
 const { chromium } = require('playwright');
 const readline = require('readline');
 const path = require('path');
 const fs = require('fs');
+process.stderr.write('[playwright] Modules loaded successfully\n');
 
 let browser = null;
 let context = null;
 let page = null;
+let downloadDir = '/tmp/aijia-downloads';
+let lastDownloadPath = null;
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -209,6 +213,23 @@ async function handleLaunch(params) {
     context = await browser.newContext();
     page = await context.newPage();
   }
+
+  // Download handling — save downloaded files and track last download path
+  lastDownloadPath = null;
+  downloadDir = path.join(params.userDataDir || '/tmp', 'downloads');
+  try { fs.mkdirSync(downloadDir, { recursive: true }); } catch (e) {}
+
+  page.on('download', async (download) => {
+    const filename = download.suggestedFilename();
+    const savePath = path.join(downloadDir, filename);
+    try {
+      await download.saveAs(savePath);
+      lastDownloadPath = savePath;
+      log(`DOWNLOAD_COMPLETE: ${savePath} (${filename})`);
+    } catch (e) {
+      log(`DOWNLOAD_FAILED: ${e.message}`);
+    }
+  });
 
   log('Browser launched');
 
@@ -852,6 +873,163 @@ async function handleExtractWithPagination(params) {
     sampleRows: allRows.slice(0, 3),
   };
 }
+// ── Frame-level operations (CDP-level, bypasses same-origin) ────
+
+/**
+ * Inspect all frames using Playwright locator API — works across cross-origin iframes.
+ * Returns list of frames with their visible buttons, links, and text content summary.
+ */
+async function handleFrameInspect(params) {
+  if (!page) return { error: 'Browser not launched' };
+
+  // Wait for page to be fully loaded (BI dashboards render asynchronously)
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+
+  // If only 1 frame and page looks empty, wait a bit for iframes/content to load
+  let frames = page.frames();
+  if (frames.length <= 1) {
+    log('frame_inspect: only main frame found, waiting 3s for async content...');
+    await page.waitForTimeout(3000);
+    frames = page.frames();
+  }
+
+  log(`frame_inspect: scanning ${frames.length} frames`);
+
+  const result = [];
+
+  for (let i = 0; i < frames.length; i++) {
+    const frame = frames[i];
+    const frameUrl = frame.url();
+    if (frameUrl === 'about:blank') continue;
+
+    const frameInfo = { index: i, url: frameUrl, buttons: [], links: [], text: '' };
+
+    try {
+      // Use a focused selector — avoid overly broad [class*="btn"] which matches hundreds of elements
+      const btnLocator = frame.locator('button, [role="button"], a[download]');
+      const btnCount = await Promise.race([
+        btnLocator.count(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      ]).catch(() => 0);
+      log(`frame_inspect: frame ${i} has ${btnCount} buttons`);
+
+      for (let b = 0; b < Math.min(btnCount, 20); b++) {
+        const btn = btnLocator.nth(b);
+        const visible = await btn.isVisible().catch(() => false);
+        if (!visible) continue;
+        // Use only locator-safe methods (no evaluate — it's blocked by cross-origin)
+        const text = await btn.textContent({ timeout: 2000 }).catch(() => '');
+        const ariaLabel = await btn.getAttribute('aria-label').catch(() => null);
+        const title = await btn.getAttribute('title').catch(() => null);
+        const label = (text || ariaLabel || title || '').trim().replace(/\s+/g, ' ').substring(0, 80);
+        if (!label) continue;
+        frameInfo.buttons.push({ label, index: frameInfo.buttons.length });
+      }
+
+      // Links — only visible ones with text
+      const linkLocator = frame.locator('a[href]:visible');
+      const linkCount = await Promise.race([
+        linkLocator.count(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      ]).catch(() => 0);
+      log(`frame_inspect: frame ${i} has ${linkCount} links`);
+
+      for (let l = 0; l < Math.min(linkCount, 20); l++) {
+        const link = linkLocator.nth(l);
+        const text = await link.textContent({ timeout: 2000 }).catch(() => '');
+        const href = await link.getAttribute('href').catch(() => '');
+        const label = (text || '').trim().replace(/\s+/g, ' ').substring(0, 80);
+        if (!label || !href || href === '#' || href.startsWith('javascript:')) continue;
+        frameInfo.links.push({ label, href });
+      }
+
+      // Brief text summary — use textContent with timeout
+      const bodyText = await frame.locator('body').first().innerText({ timeout: 3000 }).catch(() => '');
+      frameInfo.text = bodyText.substring(0, 500).trim();
+    } catch (e) {
+      log(`frame_inspect: frame ${i} error: ${e.message}`);
+    }
+
+    if (frameInfo.buttons.length > 0 || frameInfo.links.length > 0 || frameInfo.text.length > 0) {
+      result.push(frameInfo);
+    }
+  }
+
+  log(`frame_inspect: found ${result.length} frames with content`);
+  return { frames: result, totalFrames: frames.length };
+}
+
+/**
+ * Click an element in a specific frame using Playwright locator — bypasses cross-origin.
+ * Supports matching by text content, CSS selector, or button index.
+ */
+async function handleFrameClick(params) {
+  if (!page) return { error: 'Browser not launched' };
+
+  const { frameIndex, text, selector, buttonIndex, waitForDownload } = params;
+  const frames = page.frames();
+  const frame = (frameIndex != null && frameIndex < frames.length)
+    ? frames[frameIndex] : page.mainFrame();
+
+  log(`frame_click: frame=${frameIndex || 0}, text=${text || ''}, selector=${selector || ''}, buttonIndex=${buttonIndex ?? ''}`);
+
+  try {
+    let locator;
+    if (text) {
+      // Match by visible text (most reliable for cross-origin)
+      locator = frame.getByText(text, { exact: false });
+    } else if (selector) {
+      locator = frame.locator(selector);
+    } else if (buttonIndex != null) {
+      // Click the Nth button
+      locator = frame.locator('button, [role="button"], a.btn, [class*="btn"]').nth(buttonIndex);
+    } else {
+      return { error: 'Must provide text, selector, or buttonIndex' };
+    }
+
+    const count = await locator.count();
+    if (count === 0) {
+      return { error: `No element found matching: text=${text}, selector=${selector}`, found: 0 };
+    }
+
+    // If waitForDownload, set up download listener before clicking
+    if (waitForDownload) {
+      const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+      await locator.first().click();
+      const download = await downloadPromise;
+      if (download) {
+        const filename = download.suggestedFilename();
+        const savePath = path.join(downloadDir, filename);
+        try {
+          await download.saveAs(savePath);
+          log(`frame_click: download saved to ${savePath}`);
+          return { success: true, download: { path: savePath, filename } };
+        } catch (e) {
+          log(`frame_click: download save failed: ${e.message}`);
+          return { success: true, download: { error: e.message, filename } };
+        }
+      }
+      log('frame_click: no download triggered within 15s');
+      return { success: true, download: null };
+    }
+
+    await locator.first().click();
+    // Wait for any resulting navigation or render
+    await page.waitForTimeout(1000);
+
+    return { success: true, matchCount: count };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+/**
+ * Get last download file path (from page.on('download') listener).
+ */
+async function handleGetDownload() {
+  return { path: lastDownloadPath };
+}
+
 // ── Main Loop ───────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -864,8 +1042,22 @@ const HANDLERS = {
   fetch: handleFetch,
   screenshot: handleScreenshot,
   show_page: handleShowPage,
+  frame_inspect: handleFrameInspect,
+  frame_click: handleFrameClick,
+  get_download: handleGetDownload,
   shutdown: handleShutdown,
 };
+
+log('Playwright sidecar ready, waiting for commands on stdin');
+
+// Catch uncaught exceptions to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  log(`UNCAUGHT EXCEPTION: ${err.message}\n${err.stack}`);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  log(`UNHANDLED REJECTION: ${reason}`);
+});
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
@@ -910,5 +1102,3 @@ process.on('SIGINT', async () => {
   await handleShutdown();
   process.exit(0);
 });
-
-log('Playwright sidecar ready, waiting for commands on stdin');

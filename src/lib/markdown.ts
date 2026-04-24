@@ -145,11 +145,7 @@ function renderTable(lines: string[]): string {
   const alignments = isTableSeparator(lines[1]) ? parseAlignments(lines[1]) : []
   const bodyStart = isTableSeparator(lines[1]) ? 2 : 1
 
-  const alignStyle = (i: number) => {
-    const a = alignments[i]
-    if (!a || a === 'left') return ''
-    return ` style="text-align:${a}"`
-  }
+  const align = (i: number) => alignments[i] || 'left'
 
   let html =
     '<div style="overflow-x:auto;margin:12px 0"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;line-height:1.5">'
@@ -157,7 +153,7 @@ function renderTable(lines: string[]): string {
   // Header
   html += '<thead><tr>'
   for (let i = 0; i < headerCells.length; i++) {
-    html += `<th${alignStyle(i)} style="padding:8px 12px;border-bottom:2px solid var(--color-border);text-align:${alignments[i] || 'left'};font-weight:600;color:var(--color-text-primary);background:var(--color-bg-base);white-space:nowrap">${inlineFmt(headerCells[i])}</th>`
+    html += `<th style="text-align:${align(i)};padding:8px 12px;border-bottom:2px solid var(--color-border);font-weight:600;color:var(--color-text-primary);background:var(--color-bg-base);white-space:nowrap">${inlineFmt(headerCells[i])}</th>`
   }
   html += '</tr></thead>'
 
@@ -166,11 +162,11 @@ function renderTable(lines: string[]): string {
   for (let r = bodyStart; r < lines.length; r++) {
     const cells = parseTableRow(lines[r])
     const isEven = (r - bodyStart) % 2 === 0
-    const rowBg = isEven ? '' : ' background:var(--color-bg-base)'
+    const rowBg = isEven ? '' : 'background:var(--color-bg-base);'
     html += '<tr>'
     for (let i = 0; i < Math.max(cells.length, headerCells.length); i++) {
       const cell = cells[i] || ''
-      html += `<td${alignStyle(i)} style="padding:7px 12px;border-bottom:1px solid var(--color-border-subtle);color:var(--color-text-secondary);${rowBg}">${inlineFmt(cell)}</td>`
+      html += `<td style="text-align:${align(i)};padding:7px 12px;border-bottom:1px solid var(--color-border-subtle);color:var(--color-text-secondary);${rowBg}">${inlineFmt(cell)}</td>`
     }
     html += '</tr>'
   }
@@ -317,7 +313,16 @@ function _markdownToHtmlImpl(md: string): string {
       while (i < lines.length) {
         const cur = lines[i]
         const curTrimmed = cur.trim()
-        if (curTrimmed === '') { i++; break }
+        if (curTrimmed === '') {
+          let peek = i + 1
+          while (peek < lines.length && lines[peek].trim() === '') peek++
+          if (peek < lines.length && /^[-*+]\s/.test(lines[peek].trim())) {
+            i = peek
+            continue
+          }
+          i++
+          break
+        }
         if (/^[-*+]\s/.test(curTrimmed)) {
           items.push({ text: curTrimmed.replace(/^[-*+]\s/, ''), extras: '' })
           i++
@@ -344,7 +349,17 @@ function _markdownToHtmlImpl(md: string): string {
       while (i < lines.length) {
         const cur = lines[i]
         const curTrimmed = cur.trim()
-        if (curTrimmed === '') { i++; break }
+        // Blank line: peek ahead — if next non-blank line is also an ordered item, skip the blank and continue
+        if (curTrimmed === '') {
+          let peek = i + 1
+          while (peek < lines.length && lines[peek].trim() === '') peek++
+          if (peek < lines.length && /^\d+[.)]\s/.test(lines[peek].trim())) {
+            i = peek
+            continue
+          }
+          i++
+          break
+        }
         if (/^\d+[.)]\s/.test(curTrimmed)) {
           items.push({ text: curTrimmed.replace(/^\d+[.)]\s/, ''), extras: '' })
           i++

@@ -412,6 +412,35 @@ impl PlaywrightBrowser {
         Ok(result)
     }
 
+    /// Inspect all frames using Playwright locator API (bypasses cross-origin).
+    pub async fn frame_inspect(&self) -> Result<Value, String> {
+        self.ensure_running().await?;
+        info!("[Playwright] frame_inspect");
+        self.send_command("frame_inspect", serde_json::json!({})).await
+    }
+
+    /// Click an element in a specific frame using Playwright locator (bypasses cross-origin).
+    pub async fn frame_click(
+        &self,
+        frame_index: Option<u32>,
+        text: Option<&str>,
+        selector: Option<&str>,
+        button_index: Option<u32>,
+        wait_for_download: bool,
+    ) -> Result<Value, String> {
+        self.ensure_running().await?;
+        info!("[Playwright] frame_click: frame={:?}, text={:?}, selector={:?}, buttonIndex={:?}, download={}",
+            frame_index, text, selector, button_index, wait_for_download);
+        let params = serde_json::json!({
+            "frameIndex": frame_index,
+            "text": text,
+            "selector": selector,
+            "buttonIndex": button_index,
+            "waitForDownload": wait_for_download,
+        });
+        self.send_command("frame_click", params).await
+    }
+
     /// Check and increment per-turn rate limit.
     pub async fn check_rate_limit(&self, max_per_turn: u32) -> Result<(), String> {
         let mut state = self.state.lock().await;
@@ -480,6 +509,7 @@ impl PlaywrightBrowser {
     // ── Internals ───────────────────────────────────────────────
 
     /// Ensure Node.js sidecar is running, launch if needed.
+    /// On first launch failure due to corrupted profile, wipes the profile and retries once.
     async fn ensure_running(&self) -> Result<(), String> {
         let mut state = self.state.lock().await;
         if state.process.is_some() {
@@ -487,36 +517,38 @@ impl PlaywrightBrowser {
         }
         drop(state); // Release lock during launch
 
+        match self.launch_sidecar(false).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                warn!("[Playwright] First launch failed: {}. Wiping profile and retrying...", e);
+                // Wipe the corrupted profile and retry
+                let user_data_dir = self.get_app_data_dir().join("playwright-profile");
+                if user_data_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&user_data_dir);
+                    info!("[Playwright] Wiped corrupted profile at {:?}", user_data_dir);
+                }
+                self.launch_sidecar(true).await
+            }
+        }
+    }
+
+    /// Internal: launch the Node.js sidecar + Chromium browser.
+    /// `is_retry` = true means we already wiped the profile on a previous failure.
+    async fn launch_sidecar(&self, is_retry: bool) -> Result<(), String> {
         let node_path = self.find_node()?;
         let script_path = self.find_browser_js()?;
         let browsers_path = self.find_browsers_dir()?;
         let user_data_dir = self.get_app_data_dir().join("playwright-profile");
         std::fs::create_dir_all(&user_data_dir).ok();
 
-        // Clean up stale profile locks from previous crashes
-        let singleton_lock = user_data_dir.join("SingletonLock");
-        if singleton_lock.exists() {
-            warn!("[Playwright] Removing stale SingletonLock, killing orphaned Chromium");
-            // Kill all Chromium processes spawned by Playwright (our browsers dir)
-            let browsers_dir_str = browsers_path.to_string_lossy().to_string();
-            let _ = std::process::Command::new("pkill")
-                .args(["-f", &browsers_dir_str])
-                .output();
-            // Also try killing by profile dir
-            let dir_str = user_data_dir.to_string_lossy().to_string();
-            let _ = std::process::Command::new("pkill")
-                .args(["-f", &dir_str])
-                .output();
-            // Also kill by "Google Chrome for Testing" (Playwright's Chromium name)
-            let _ = std::process::Command::new("pkill")
-                .args(["-f", "Google Chrome for Testing"])
-                .output();
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-            // Force remove lock file
-            let _ = std::fs::remove_file(&singleton_lock);
-            // Also remove SingletonSocket and SingletonCookie
-            let _ = std::fs::remove_file(user_data_dir.join("SingletonSocket"));
-            let _ = std::fs::remove_file(user_data_dir.join("SingletonCookie"));
+        // Kill orphaned Chromium processes
+        self.kill_orphaned_chromium(&browsers_path, &user_data_dir).await;
+
+        // Clean up crash artifacts that can prevent Chromium from starting
+        Self::clean_profile_crash_artifacts(&user_data_dir);
+
+        if is_retry {
+            info!("[Playwright] Retry launch with fresh profile");
         }
 
         info!("[Playwright] Launching sidecar: node={:?}, script={:?}", node_path, script_path);
@@ -588,6 +620,85 @@ impl PlaywrightBrowser {
         drop(state);
         *self.io.lock().await = Some(io);
         Ok(())
+    }
+
+    /// Kill any orphaned Chromium processes from previous crashes.
+    async fn kill_orphaned_chromium(&self, browsers_path: &std::path::Path, user_data_dir: &std::path::Path) {
+        let singleton_lock = user_data_dir.join("SingletonLock");
+        if !singleton_lock.exists() {
+            return;
+        }
+        warn!("[Playwright] Removing stale SingletonLock, killing orphaned Chromium");
+        let browsers_dir_str = browsers_path.to_string_lossy().to_string();
+        let _ = std::process::Command::new("pkill").args(["-f", &browsers_dir_str]).output();
+        let dir_str = user_data_dir.to_string_lossy().to_string();
+        let _ = std::process::Command::new("pkill").args(["-f", &dir_str]).output();
+        let _ = std::process::Command::new("pkill").args(["-f", "Google Chrome for Testing"]).output();
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        let _ = std::fs::remove_file(&singleton_lock);
+        let _ = std::fs::remove_file(user_data_dir.join("SingletonSocket"));
+        let _ = std::fs::remove_file(user_data_dir.join("SingletonCookie"));
+    }
+
+    /// Remove crash artifacts from the Chromium profile that can cause startup failures.
+    /// These files are expendable — Chromium regenerates them on next clean startup.
+    fn clean_profile_crash_artifacts(user_data_dir: &std::path::Path) {
+        // GPU shader caches — most common cause of Chromium startup crashes
+        let cache_dirs = [
+            "Default/GPUCache",
+            "Default/DawnGraphiteCache",
+            "Default/DawnWebGPUCache",
+            "GraphiteDawnCache",
+            "GrShaderCache",
+        ];
+        for dir in &cache_dirs {
+            let path = user_data_dir.join(dir);
+            if path.exists() {
+                if let Err(e) = std::fs::remove_dir_all(&path) {
+                    warn!("[Playwright] Failed to clean {}: {}", dir, e);
+                } else {
+                    info!("[Playwright] Cleaned crash-prone cache: {}", dir);
+                }
+            }
+        }
+
+        // Session/tab restore data — can cause crashes if corrupted
+        let session_files = [
+            "Default/Sessions",
+            "Default/Session Storage",
+            "Default/LOCK",
+            "RunningChromeVersion",
+        ];
+        for f in &session_files {
+            let path = user_data_dir.join(f);
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            } else if path.exists() || path.is_symlink() {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+
+        // Fix crash marker in Preferences
+        let prefs_path = user_data_dir.join("Default/Preferences");
+        if prefs_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&prefs_path) {
+                let fixed = content.replace(r#""exit_type":"Crashed""#, r#""exit_type":"Normal""#);
+                if fixed != content {
+                    let _ = std::fs::write(&prefs_path, &fixed);
+                    info!("[Playwright] Fixed crash marker in Preferences");
+                }
+            }
+        }
+
+        // Remove macOS temp files (.com.google.chrome.for.testing.*)
+        if let Ok(entries) = std::fs::read_dir(user_data_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(".com.google.chrome") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
     }
 
     /// Send a JSON-RPC command to the sidecar and return the result.
@@ -676,6 +787,8 @@ impl PlaywrightBrowser {
     }
 
     /// Clean up dead process state so `ensure_running()` will relaunch.
+    /// Kills the sidecar child process AND any orphaned Chromium processes
+    /// it may have spawned (which outlive the sidecar if it crashes).
     async fn cleanup_dead_process(&self) {
         warn!("[Playwright] Cleaning up dead process state");
         *self.io.lock().await = None;
@@ -685,9 +798,19 @@ impl PlaywrightBrowser {
         }
         state.active_origin = None;
         state.active_url = None;
-        // Clean up profile lock
-        let lock_path = self.get_app_data_dir().join("playwright-profile/SingletonLock");
-        let _ = std::fs::remove_file(&lock_path);
+        drop(state);
+
+        // Kill orphaned Chromium processes that outlive the sidecar
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "Google Chrome for Testing"])
+            .output();
+
+        // Clean up profile artifacts that could prevent next launch
+        let profile_dir = self.get_app_data_dir().join("playwright-profile");
+        let _ = std::fs::remove_file(profile_dir.join("SingletonLock"));
+        let _ = std::fs::remove_file(profile_dir.join("SingletonSocket"));
+        let _ = std::fs::remove_file(profile_dir.join("SingletonCookie"));
+        Self::clean_profile_crash_artifacts(&profile_dir);
     }
 
     async fn auto_explore(&self, title: &str, _origin: &str, url_path: &str, iframe_src: Option<String>) -> PageProfile {

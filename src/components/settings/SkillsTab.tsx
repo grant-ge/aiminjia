@@ -302,7 +302,7 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
           )}
         </div>
       ) : (
-        <SkillMarketplace />
+        <SkillMarketplace onInstalled={loadSkills} />
       )}
     </div>
   )

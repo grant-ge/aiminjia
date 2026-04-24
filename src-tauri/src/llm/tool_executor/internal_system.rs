@@ -180,6 +180,107 @@ pub(crate) async fn handle_page_execute_js(ctx: &PluginContext, args: &Value) ->
     Ok(output)
 }
 
+/// Handle frame_inspect — scan all frames for interactive elements (bypasses cross-origin).
+pub(crate) async fn handle_frame_inspect(ctx: &PluginContext, _args: &Value) -> Result<String> {
+    let engine = ctx.connector_engine.as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    info!("[CONNECTOR] frame_inspect");
+
+    let result = engine.browser_frame_inspect().await
+        .map_err(|e| {
+            warn!("[CONNECTOR] frame_inspect failed: error={}", e);
+            anyhow!(e)
+        })?;
+
+    let frames = result["frames"].as_array();
+    let total = result["totalFrames"].as_u64().unwrap_or(0);
+
+    let mut output = format!("Found {} frames (total: {}):\n\n", frames.map_or(0, |f| f.len()), total);
+
+    if let Some(frames) = frames {
+        for frame in frames {
+            let idx = frame["index"].as_u64().unwrap_or(0);
+            let url = frame["url"].as_str().unwrap_or("");
+            output.push_str(&format!("### Frame {} — {}\n", idx, url));
+
+            if let Some(buttons) = frame["buttons"].as_array() {
+                if !buttons.is_empty() {
+                    output.push_str("**Buttons:**\n");
+                    for btn in buttons {
+                        let label = btn["label"].as_str().unwrap_or("");
+                        let btn_idx = btn["index"].as_u64().unwrap_or(0);
+                        output.push_str(&format!("  [{}] {}\n", btn_idx, label));
+                    }
+                }
+            }
+
+            if let Some(links) = frame["links"].as_array() {
+                if !links.is_empty() {
+                    output.push_str("**Links:**\n");
+                    for link in links {
+                        let label = link["label"].as_str().unwrap_or("");
+                        let href = link["href"].as_str().unwrap_or("");
+                        output.push_str(&format!("  - {} → {}\n", label, href));
+                    }
+                }
+            }
+
+            let text = frame["text"].as_str().unwrap_or("");
+            if !text.is_empty() {
+                output.push_str(&format!("**Text preview:** {}\n", &text[..text.len().min(200)]));
+            }
+
+            output.push('\n');
+        }
+    } else {
+        output.push_str("No frames with interactive elements found.\n");
+    }
+
+    Ok(output)
+}
+
+/// Handle frame_click — click element in a specific frame (bypasses cross-origin).
+pub(crate) async fn handle_frame_click(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let engine = ctx.connector_engine.as_ref()
+        .ok_or_else(|| anyhow!("Internal app connector not initialized"))?;
+
+    let frame_index = args.get("frame_index").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let text = optional_str(args, "text");
+    let selector = optional_str(args, "selector");
+    let button_index = args.get("button_index").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let wait_for_download = args.get("wait_for_download").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    info!("[CONNECTOR] frame_click: frame={:?}, text={:?}, selector={:?}, buttonIndex={:?}, download={}",
+        frame_index, text, selector, button_index, wait_for_download);
+
+    let result = engine.browser_frame_click(
+        frame_index, text, selector, button_index, wait_for_download,
+    ).await.map_err(|e| {
+        warn!("[CONNECTOR] frame_click failed: error={}", e);
+        anyhow!(e)
+    })?;
+
+    if let Some(err) = result.get("error").and_then(|e| e.as_str()) {
+        return Ok(format!("Click failed: {}", err));
+    }
+
+    let mut output = String::from("Click successful.\n");
+
+    if let Some(download) = result.get("download") {
+        if download.is_null() {
+            output.push_str("No download was triggered.\n");
+        } else if let Some(path) = download.get("path").and_then(|p| p.as_str()) {
+            let filename = download.get("filename").and_then(|f| f.as_str()).unwrap_or("unknown");
+            output.push_str(&format!("File downloaded: {} ({})\n", path, filename));
+        } else if let Some(err) = download.get("error").and_then(|e| e.as_str()) {
+            output.push_str(&format!("Download error: {}\n", err));
+        }
+    }
+
+    Ok(output)
+}
+
 /// Handle browse_and_extract tool invocations.
 /// Handle browse_data tool — delegate to browser sub-agent.
 pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Result<String> {
@@ -354,6 +455,8 @@ pub(crate) async fn handle_browse_data(ctx: &PluginContext, args: &Value) -> Res
             "page_execute_js".to_string(),
             "extract_table_data".to_string(),
             "extract_with_pagination".to_string(),
+            "frame_inspect".to_string(),
+            "frame_click".to_string(),
         ],
         max_iterations: 30,
         dynamic_context,

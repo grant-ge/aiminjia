@@ -63,6 +63,7 @@ bytes = "1"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
+urlencoding = "2"
 
 # Plugin system
 async-trait = "0.1"

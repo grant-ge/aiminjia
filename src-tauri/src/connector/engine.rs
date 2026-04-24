@@ -105,6 +105,29 @@ impl ConnectorEngine {
         pw.extract_with_pagination(save_path, pagination_js, max_pages).await
     }
 
+    pub async fn browser_frame_inspect(&self) -> Result<Value, String> {
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
+        info!("[CONNECTOR] browser_frame_inspect");
+        pw.frame_inspect().await
+    }
+
+    pub async fn browser_frame_click(
+        &self,
+        frame_index: Option<u32>,
+        text: Option<&str>,
+        selector: Option<&str>,
+        button_index: Option<u32>,
+        wait_for_download: bool,
+    ) -> Result<Value, String> {
+        let pw = self.playwright_browser.read().await;
+        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
+        pw.check_rate_limit(MAX_BROWSER_REQUESTS_PER_TURN).await?;
+        info!("[CONNECTOR] browser_frame_click");
+        pw.frame_click(frame_index, text, selector, button_index, wait_for_download).await
+    }
+
     pub async fn browser_screenshot(&self) -> Option<std::path::PathBuf> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref()?;

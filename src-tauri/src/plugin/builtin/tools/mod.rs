@@ -23,6 +23,8 @@ pub mod browse_and_extract;
 pub mod browse_data;
 pub mod extract_table_data;
 pub mod extract_with_pagination;
+pub mod frame_inspect;
+pub mod frame_click;
 // Skill-smith — conversational skill creation (Phase 11 M3.1)
 pub mod skill_smith_create_draft;
 pub mod skill_smith_write_file;
@@ -60,6 +62,8 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(browse_data::BrowseDataTool),
         Arc::new(extract_table_data::ExtractTableDataTool),
         Arc::new(extract_with_pagination::ExtractWithPaginationTool),
+        Arc::new(frame_inspect::FrameInspectTool),
+        Arc::new(frame_click::FrameClickTool),
         // Skill-smith (Phase 11 M3.1)
         Arc::new(skill_smith_create_draft::SkillSmithCreateDraftTool),
         Arc::new(skill_smith_write_file::SkillSmithWriteFileTool),

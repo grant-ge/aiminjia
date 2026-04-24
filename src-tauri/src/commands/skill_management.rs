@@ -396,22 +396,37 @@ pub async fn stop_skill_watch() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 /// Marketplace skill package returned from the API.
+///
+/// Serialized as camelCase for Tauri IPC (→ TypeScript).
+/// Deserialized from snake_case Go JSON via `#[serde(alias)]` on each field.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceSkillItem {
     pub id: i64,
+    #[serde(alias = "plugin_id")]
     pub plugin_id: String,
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub category: String,
+    #[serde(default)]
     pub icon: String,
+    #[serde(default)]
     pub version: String,
+    #[serde(default)]
     pub scope: String,
+    #[serde(default)]
     pub status: String,
+    #[serde(default)]
     pub downloads: i64,
+    #[serde(default)]
     pub featured: bool,
+    #[serde(default, alias = "package_size")]
     pub package_size: i64,
+    #[serde(default, alias = "tenant_name")]
     pub tenant_name: String,
+    #[serde(default, alias = "created_at")]
     pub created_at: String,
 }
 
@@ -426,6 +441,7 @@ pub struct MarketplaceResponse {
 }
 
 /// List skill packages from the cloud marketplace.
+/// Returns both the employee's tenant-scoped published skills and public marketplace skills.
 #[tauri::command]
 pub async fn list_marketplace_skills(
     auth: tauri::State<'_, Arc<crate::auth::AuthManager>>,
@@ -438,27 +454,17 @@ pub async fn list_marketplace_skills(
 
     let client = reqwest::Client::new();
     let mut url = format!(
-        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}&scope=public",
+        "https://ai-tenant.renlijia.com/v1/skill-packages?page={}&size={}",
         page, size
     );
     if let Some(cat) = &category {
         if !cat.is_empty() {
-            url.push_str(&format!("&category={}", cat));
+            url.push_str(&format!("&category={}", urlencoding::encode(cat)));
         }
     }
     if let Some(q) = &search {
         if !q.is_empty() {
-            // Simple percent-encode for CJK search terms
-            let encoded: String = q.chars().map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
-                    c.to_string()
-                } else {
-                    let mut buf = [0u8; 4];
-                    c.encode_utf8(&mut buf);
-                    buf[..c.len_utf8()].iter().map(|b| format!("%{:02X}", b)).collect()
-                }
-            }).collect();
-            url.push_str(&format!("&search={}", encoded));
+            url.push_str(&format!("&search={}", urlencoding::encode(q)));
         }
     }
 
@@ -524,11 +530,26 @@ pub async fn install_marketplace_skill(
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let package_url = body["package_url"]
+    let package_url = body["data"]["package_url"]
         .as_str()
-        .or_else(|| body["data"]["package_url"].as_str())
+        .or_else(|| body["package_url"].as_str())
+        .or_else(|| body["data"]["url"].as_str())
         .ok_or("No package_url in response")?
         .to_string();
+
+    // Security: validate download URL domain
+    if let Ok(parsed) = url::Url::parse(&package_url) {
+        let host = parsed.host_str().unwrap_or("");
+        if !host.ends_with(".aliyuncs.com")
+            && !host.ends_with(".renlijia.com")
+            && !host.ends_with(".oss-cn-hangzhou.aliyuncs.com")
+        {
+            return Err(format!(
+                "Untrusted download domain: {}. Expected *.aliyuncs.com or *.renlijia.com",
+                host
+            ));
+        }
+    }
 
     // Step 2: Download the zip file
     let zip_resp = client
@@ -584,7 +605,18 @@ pub async fn install_marketplace_skill(
     }
 
     log::info!("Marketplace: installed skill '{}' to {:?}", plugin_id, dest);
-    Ok(format!("Installed '{}' — restart app to activate", plugin_id))
+
+    // Hot-reload: register the new skill so it's usable without app restart.
+    let installed_path = dest.to_string_lossy().to_string();
+    if let Err(e) = reload_skill(app.clone(), installed_path).await {
+        log::warn!(
+            "Marketplace: hot-reload failed for '{}' (will activate on next restart): {}",
+            plugin_id, e
+        );
+        return Ok(format!("Installed '{}' — restart app to activate", plugin_id));
+    }
+
+    Ok(format!("Installed '{}' — ready to use", plugin_id))
 }
 
 /// Copy a directory recursively. Symlinks are skipped (path-traversal defense).
@@ -649,6 +681,11 @@ pub(crate) fn pack_skill_to_dir(
         for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
+            // Skip symlinks to prevent path traversal (consistent with copy_dir_recursive)
+            if path.is_symlink() {
+                log::warn!("Skipping symlink during pack: {}", path.display());
+                continue;
+            }
             let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
             let name = relative.to_string_lossy().to_string();
 
