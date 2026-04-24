@@ -20,7 +20,7 @@ export function SkillCard({ title, meta, desc, iconNode, onClick, size = 'office
       role="button"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
       className={`flex ${height} cursor-pointer flex-col rounded-[14px] border border-border bg-card p-4 transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
     >
       <div className="flex items-center gap-2.5">
