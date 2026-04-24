@@ -1651,6 +1651,17 @@ impl TauriChatCommandAdapter {
         Self { runtime, services }
     }
 
+    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
+        TauriLegacyTurnExecutor {
+            services: self.services.clone(),
+            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            )),
+        }
+        .load_llm_settings()
+        .await
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -1658,11 +1669,30 @@ impl TauriChatCommandAdapter {
         file_ids: Vec<String>,
         agent_name: Option<String>,
     ) -> Result<(), String> {
-        let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        let mut request = ChatTurnRequest::new(conversation_id.clone(), content, file_ids);
         if let Some(agent_name) = agent_name {
             request = request.with_agent_name(agent_name);
         }
-        self.runtime.run_chat_request(request).await
+        let result = self.runtime.run_chat_request(request).await;
+
+        if result.is_ok() {
+            if let Ok(resolved) = self.load_llm_settings().await {
+                let db = self.services.db.clone() as Arc<dyn ConversationStore>;
+                let gateway = self.services.gateway.clone();
+                let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                    Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+                let conv_id = conversation_id.clone();
+                let settings = build_gateway_settings(&resolved);
+                tauri::async_runtime::spawn(async move {
+                    conversation_service::generate_and_set_title(
+                        db, gateway, host, conv_id, settings,
+                    )
+                    .await;
+                });
+            }
+        }
+
+        result
     }
 
     pub fn flush_pending_message_writes(&self) -> Result<(), String> {

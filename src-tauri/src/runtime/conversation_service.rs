@@ -10,8 +10,7 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::store::conversation_store::ConversationStore;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
-use tauri::AppHandle;
-use tauri::Emitter;
+use crate::transport::runtime_host::RuntimeHost;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeleteConversationOutcome {
@@ -246,11 +245,11 @@ pub fn should_auto_title(
 pub async fn generate_and_set_title(
     db: Arc<dyn crate::runtime::store::conversation_store::ConversationStore>,
     gateway: Arc<LlmGateway>,
-    app: AppHandle,
+    host: Arc<dyn RuntimeHost>,
     conversation_id: String,
     settings: AppSettings,
 ) {
-    match generate_and_set_title_inner(db, gateway, app, conversation_id, settings).await {
+    match generate_and_set_title_inner(db, gateway, host, conversation_id, settings).await {
         Ok(()) => {}
         Err(e) => log::warn!("[auto-title] failed: {}", e),
     }
@@ -259,7 +258,7 @@ pub async fn generate_and_set_title(
 async fn generate_and_set_title_inner(
     db: Arc<dyn crate::runtime::store::conversation_store::ConversationStore>,
     gateway: Arc<LlmGateway>,
-    app: AppHandle,
+    host: Arc<dyn RuntimeHost>,
     conversation_id: String,
     settings: AppSettings,
 ) -> anyhow::Result<()> {
@@ -339,7 +338,7 @@ async fn generate_and_set_title_inner(
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let _ = app.emit(
+    let _ = host.emit_legacy_event(
         "conversation:title-updated",
         serde_json::json!({
             "conversationId": outcome.conversation_id,
