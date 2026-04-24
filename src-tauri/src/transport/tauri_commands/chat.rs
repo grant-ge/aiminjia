@@ -867,20 +867,29 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             return Ok(());
         }
         let msg_id = uuid::Uuid::new_v4().to_string();
-        let content_json = build_assistant_content_json("", tool_calls, None).to_string();
         log::info!(
             "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={}",
             msg_id, conversation_id
         );
-        persist_assistant_content_json(
-            self.services.db.clone(),
-            self.services.assistant_write_queue.clone(),
-            msg_id,
-            conversation_id.to_string(),
-            content_json,
-        )
-        .await
-        .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
+        let stored = crate::storage::file_store::types::StoredMessage {
+            id: msg_id,
+            conversation_id: conversation_id.to_string(),
+            role: "assistant".to_string(),
+            content: serde_json::json!({ "text": "" }),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            tool_calls: Some(tool_calls.to_vec()),
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: Some(2),
+            sequence: None,
+            seq: None,
+            rev: None,
+        };
+        self.services
+            .db
+            .insert_chat_message_record(&stored)
+            .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
         Ok(())
     }
 
@@ -909,18 +918,22 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let content_json = serde_json::json!({
-                "toolCallId": tool_call_id,
-                "name": name,
-                "content": content,
-            })
-            .to_string();
-            if let Err(e) = self.services.db.insert_message(
-                &msg_id,
-                conversation_id,
-                "tool",
-                &content_json,
-            ) {
+            let stored = crate::storage::file_store::types::StoredMessage {
+                id: msg_id.clone(),
+                conversation_id: conversation_id.to_string(),
+                role: "tool".to_string(),
+                content: serde_json::json!({ "text": content }),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                tool_call_id: Some(tool_call_id),
+                name: Some(name),
+                tool_calls: None,
+                run_id: None,
+                schema_version: Some(2),
+                sequence: None,
+                seq: None,
+                rev: None,
+            };
+            if let Err(e) = self.services.db.insert_chat_message_record(&stored) {
                 log::warn!(
                     "[persist_tool_messages] Failed to save tool message id={} conv={}: {}",
                     msg_id,
