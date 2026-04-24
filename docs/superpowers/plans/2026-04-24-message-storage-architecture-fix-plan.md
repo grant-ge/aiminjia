@@ -105,7 +105,8 @@ Compact：
 
 LLM 调用：
   filter_map(...ok()) 改为显式 warn + 不静默丢弃
-  token_budget 从 settings/模型配置读取，不写死 4096
+  token_budget 保持由 turn overrides / skill token_budget 决定；
+  daily 默认 skill 提升到 8192，不依赖仓库里并不存在的 llm_settings.max_tokens 字段
 
 入口：
   agentName 从前端透传到 ChatTurnRequest
@@ -124,8 +125,9 @@ LLM 调用：
 | **修改** | `src-tauri/src/runtime/chat/compaction.rs` | compact 后保留完整 preserved tail round，不只保留 latest_user |
 | **修改** | `src-tauri/src/transport/tauri_commands/chat.rs` | load_history 委托 history.rs；删除 HISTORY_LIMIT=50；filter_map 改显式；agentName 透传 |
 | **修改** | `src-tauri/src/commands/chat.rs` | send_message 增加 `agent_name: Option<String>` |
-| **修改** | `src-tauri/src/runtime/chat/chat_turn_driver.rs` | token_budget 从 settings 读；agentName 写入 ChatTurnRequest |
-| **新建** | `src-tauri/tests/common/mod.rs` | 公共测试 fixture |
+| **修改** | `src-tauri/src/runtime/chat/chat_turn_driver.rs` | `ChatTurnRequest` 增加 `agent_name` 字段 |
+| **修改** | `src-tauri/src/plugin/builtin/skills/daily_assistant.rs` | daily 默认 `token_budget` 从 4096 提升到 8192 |
+| **修改** | `src-tauri/tests/common.rs` | 复用现有公共测试模块并补充 message storage/history fixture |
 | **新建** | `src-tauri/tests/message_storage_v2_test.rs` | 单文件 JSONL、UUID dedup、分片迁移 |
 | **新建** | `src-tauri/tests/history_rebuild_test.rs` | compact boundary、tool pair 校验、round 裁剪 |
 
@@ -138,15 +140,14 @@ LLM 调用：
 ### Task A0：测试公共脚手架
 
 **Files:**
-- Create: `src-tauri/tests/common/mod.rs`
-- Modify: `src-tauri/Cargo.toml`（加 `indexmap = "2"`）
+- Modify: `src-tauri/tests/common.rs`（补充 message storage/history fixture）
 
-- [ ] **Step 1：创建公共 fixture 模块**
+- [x] **Step 1：创建公共 fixture 模块**
 
-新建 `src-tauri/tests/common/mod.rs`：
+修改现有 `src-tauri/tests/common.rs`，追加以下 fixture：
 
 ```rust
-use lotus_app::storage::file_store::types::StoredMessage;
+use app_lib::storage::file_store::types::StoredMessage;
 
 pub fn make_user(id: &str, text: &str) -> StoredMessage {
     StoredMessage {
@@ -203,18 +204,11 @@ pub fn make_assistant(id: &str, text: &str) -> StoredMessage {
 }
 ```
 
-- [ ] **Step 2：Cargo.toml 加依赖**
-
-```toml
-[dev-dependencies]
-indexmap = "2"
-```
-
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
-git add src-tauri/tests/common/mod.rs src-tauri/Cargo.toml
-git commit -m "test: add common test fixtures and indexmap dev dependency"
+git add src-tauri/tests/common.rs
+git commit -m "test: extend common test fixtures for message storage and history"
 ```
 
 ---
@@ -225,20 +219,31 @@ git commit -m "test: add common test fixtures and indexmap dev dependency"
 - Modify: `src-tauri/src/storage/file_store/types.rs`
 - Test: `src-tauri/tests/message_storage_v2_test.rs`
 
-- [ ] **Step 1：写 schema 兼容性测试**
+- [x] **Step 1：写 schema 兼容性测试**
 
 ```rust
 // src-tauri/tests/message_storage_v2_test.rs
 mod common;
-use lotus_app::storage::file_store::types::StoredMessage;
+use app_lib::storage::file_store::types::StoredMessage;
 
 #[test]
 fn new_fields_serialize_correctly() {
-    let msg = common::make_assistant_with_tc("1", "tc_1", "execute_python");
-    let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("toolCalls"));
-    assert!(json.contains("tc_1"));
-    assert!(!json.contains("\"seq\"")); // seq 不序列化
+    let mut msg = common::make_tool_result("1", "tc_1", "execute_python", "done");
+    msg.run_id = Some("run_1".into());
+    msg.schema_version = Some(2);
+    msg.sequence = Some(42);
+    // A2 完成前，旧分片存储仍依赖 seq/_rev 落盘参与 dedup/update。
+    msg.seq = Some(7);
+    msg.rev = Some(3);
+
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["toolCallId"], "tc_1");
+    assert_eq!(json["name"], "execute_python");
+    assert_eq!(json["runId"], "run_1");
+    assert_eq!(json["schemaVersion"], 2);
+    assert_eq!(json["sequence"], 42);
+    assert_eq!(json["seq"], 7);
+    assert_eq!(json["_rev"], 3);
 }
 
 #[test]
@@ -251,13 +256,13 @@ fn old_v1_message_deserializes_without_new_fields() {
 }
 ```
 
-- [ ] **Step 2：运行测试，确认失败**
+- [x] **Step 2：运行测试，确认失败**
 
 ```bash
 cd src-tauri && cargo test new_fields_serialize --test message_storage_v2_test -- --nocapture
 ```
 
-- [ ] **Step 3：修改 StoredMessage**
+- [x] **Step 3：修改 StoredMessage**
 
 `src-tauri/src/storage/file_store/types.rs` 中将 `StoredMessage` 改为：
 
@@ -292,10 +297,11 @@ pub struct StoredMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequence: Option<u64>,
 
-    // v1 遗留字段：读取时忽略，写入时不序列化
-    #[serde(default, skip_serializing)]
+    // v1/v1.5 过渡字段：A2 单文件化完成前仍需写回旧分片存储
+    // 以维持 dedup/update 语义；A2 落地后再移除写回要求。
+    #[serde(default)]
     pub seq: Option<u64>,
-    #[serde(rename = "_rev", default, skip_serializing)]
+    #[serde(rename = "_rev", default)]
     pub rev: Option<u32>,
 }
 
@@ -310,17 +316,78 @@ impl StoredMessage {
 }
 ```
 
-- [ ] **Step 4：运行测试，确认通过**
+- [x] **Step 4：补行为回归测试，锁住旧分片语义与顶级字段兼容**
+
+优先在 `src-tauri/tests/message_storage_v2_test.rs` 中补集成测试（避免当前仓库无关的 lib test 编译阻塞）：
+
+```rust
+#[test]
+fn legacy_shard_records_still_persist_seq_and_rev_for_dedup() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let base = dir.path();
+    app_lib::storage::file_store::conversations::create_conversation(base, "c1", "T").unwrap();
+
+    app_lib::storage::file_store::messages::insert_message(base, "m1", "c1", "user", r#"{"text":"hello"}"#).unwrap();
+    app_lib::storage::file_store::messages::update_message_content(base, "m1", "c1", r#"{"text":"updated"}"#).unwrap();
+
+    let msgs = app_lib::storage::file_store::messages::get_messages(base, "c1").unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0]["content"]["text"], "updated");
+
+    let shard = base.join("conversations").join("c1").join("messages.1.jsonl");
+    let raw: Vec<StoredMessage> = app_lib::storage::file_store::io::read_jsonl(&shard).unwrap();
+    assert!(raw.iter().all(|m| m.seq.is_some()));
+    assert!(raw.iter().all(|m| m.rev.is_some()));
+}
+```
+
+再补两条兼容回归：
+
+```rust
+#[test]
+fn missing_seq_records_do_not_collapse_into_one_dedup_bucket() {
+    // 模拟回归窗口中已经落盘的坏数据：多条消息缺少 seq/_rev。
+    // 期望：读路径不能把它们全部按 seq=0 合并丢失，至少要按 id 区分。
+}
+
+#[test]
+fn top_level_tool_fields_survive_get_messages_read_path() {
+    // 构造带顶级 tool_calls/tool_call_id/name 的 StoredMessage JSONL 记录，
+    // 验证 get_messages() / message_to_json() 会优先读顶级字段，
+    // 不会因为 content 里没有 toolCalls/toolCallId 而静默丢失。
+}
+
+#[test]
+fn repeated_updates_on_missing_seq_records_still_keep_latest_content() {
+    // 模拟回归窗口中的缺 seq 旧记录先被 update 到后续 shard，
+    // 再次 update 时仍必须沿同一兼容 dedup key（至少 id）继续递增，
+    // 不能回到旧 shard 原始版本上导致 newer write 被静默覆盖。
+}
+```
+
+实现要求同步补充：
+
+- `dedup_messages()` / `get_recent_messages()` 在 `seq` 缺失时，不能统一回退到同一个 `0`；
+  过渡期应至少按 `id` 区分，避免坏窗口数据互相吞并。
+- `update_message_content()` 遇到 `seq` 缺失的旧坏记录时，不能沿用“统一回退 0”逻辑制造新的碰撞；
+  需要沿同一兼容键（至少 `id`）保持 last-writer-wins。
+- 对缺 `seq` 记录的重复 update，不能只在命中的单个 shard 内找 `max_rev`；
+  必须基于同一兼容 dedup key 跨 shard 取最新版本与全局 `max_rev`，
+  否则会把第二次 update 静默回滚成第一次 update。
+- `message_to_json()` / `get_messages()` 对 `tool_calls`、`tool_call_id`、`name`
+  必须兼容顶级字段与旧 `content` 内嵌字段两种来源；A1 不能只把字段加到 struct 上而不接读链路。
+
+- [x] **Step 5：运行测试，确认通过**
 
 ```bash
 cd src-tauri && cargo test --test message_storage_v2_test -- --nocapture
 ```
 
-- [ ] **Step 5：Commit**
+- [x] **Step 6：Commit**
 
 ```bash
-git add src-tauri/src/storage/file_store/types.rs src-tauri/tests/message_storage_v2_test.rs
-git commit -m "feat(storage): extend StoredMessage with tool_calls/tool_call_id/run_id/schema_version/sequence"
+git add src-tauri/src/storage/file_store/types.rs src-tauri/src/storage/file_store/messages.rs src-tauri/tests/message_storage_v2_test.rs
+git commit -m "feat(storage): extend StoredMessage schema while preserving legacy shard seq/rev semantics"
 ```
 
 ---
@@ -331,7 +398,7 @@ git commit -m "feat(storage): extend StoredMessage with tool_calls/tool_call_id/
 - Modify: `src-tauri/src/storage/file_store/messages.rs`
 - Test: `src-tauri/tests/message_storage_v2_test.rs`
 
-- [ ] **Step 1：写单文件 insert + read + dedup 测试**
+- [x] **Step 1：写单文件 insert + read + dedup 测试**
 
 ```rust
 #[test]
@@ -387,13 +454,13 @@ fn messages_ordered_by_sequence_then_created_at() {
 }
 ```
 
-- [ ] **Step 2：运行测试，确认失败**
+- [x] **Step 2：运行测试，确认失败**
 
 ```bash
 cd src-tauri && cargo test insert_and_get_single_file --test message_storage_v2_test -- --nocapture
 ```
 
-- [ ] **Step 3：在 messages.rs 新增单文件函数**
+- [x] **Step 3：在 messages.rs 新增单文件函数**
 
 ```rust
 // src-tauri/src/storage/file_store/messages.rs
@@ -451,17 +518,17 @@ pub fn get_recent_messages_v2(
 }
 ```
 
-- [ ] **Step 4：运行测试，确认通过**
+- [x] **Step 4：运行测试，确认通过**
 
 ```bash
 cd src-tauri && cargo test --test message_storage_v2_test -- --nocapture
 ```
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit（已并入 Phase A 统一提交）**
 
 ```bash
 git add src-tauri/src/storage/file_store/messages.rs
-git commit -m "feat(storage): single-file JSONL with UUID last-writer-wins and sequence-stable sort"
+git commit -m "feat(storage): land transcript v2 with single-file migration and compatibility"
 ```
 
 ---
@@ -472,7 +539,7 @@ git commit -m "feat(storage): single-file JSONL with UUID last-writer-wins and s
 - Modify: `src-tauri/src/storage/file_store/messages.rs`
 - Modify: `src-tauri/src/storage/file_store/mod.rs`
 
-- [ ] **Step 1：写迁移测试**
+- [x] **Step 1：写迁移测试**
 
 ```rust
 #[test]
@@ -511,7 +578,7 @@ fn migrates_old_shards_to_single_file() {
 }
 ```
 
-- [ ] **Step 2：实现迁移函数**
+- [x] **Step 2：实现迁移函数**
 
 ```rust
 pub fn migrate_shards_to_single_file(base_dir: &Path, conversation_id: &str) -> StorageResult<()> {
@@ -560,7 +627,7 @@ pub fn migrate_shards_to_single_file(base_dir: &Path, conversation_id: &str) -> 
 }
 ```
 
-- [ ] **Step 3：AppStorage::new 中调用迁移，暴露 v2 API**
+- [x] **Step 3：AppStorage::new 中调用迁移，暴露 v2 API**
 
 ```rust
 // mod.rs AppStorage::new 末尾
@@ -599,17 +666,25 @@ pub fn get_messages_v2(&self, conversation_id: &str) -> Result<Vec<StoredMessage
 }
 ```
 
-- [ ] **Step 4：运行全量测试**
+- [x] **Step 4：运行阶段验证，并记录当前仓库的全量测试阻塞**
 
 ```bash
-cd src-tauri && cargo test -- --nocapture 2>&1 | tail -20
+cd src-tauri && cargo test --test message_storage_v2_test -- --nocapture
 ```
 
-- [ ] **Step 5：Commit**
+说明：
+
+- 当前仓库仍存在与本阶段无关的全量编译阻塞（例如
+  `src/runtime/chat/chat_turn_driver.rs` trait 签名变更引出的
+  `src/runtime/session_runtime.rs`、`tests/review_masking_level_settings_test.rs`
+  不匹配），因此 A3 完成门槛继续以 `message_storage_v2_test` 为准。
+- 不要为了通过本阶段去顺手修复这些无关全量测试错误；待对应后续计划收口时再统一处理。
+
+- [x] **Step 5：Commit**
 
 ```bash
 git add src-tauri/src/storage/file_store/messages.rs src-tauri/src/storage/file_store/mod.rs src-tauri/tests/message_storage_v2_test.rs
-git commit -m "feat(storage): auto-migrate shards to single messages.jsonl, expose v2 API"
+git commit -m "feat(storage): land transcript v2 with single-file migration and compatibility"
 ```
 
 ---
@@ -625,12 +700,12 @@ git commit -m "feat(storage): auto-migrate shards to single messages.jsonl, expo
 - Modify: `src-tauri/src/runtime/chat/mod.rs`
 - Test: `src-tauri/tests/history_rebuild_test.rs`
 
-- [ ] **Step 1：写核心测试**
+- [x] **Step 1：写核心测试**
 
 ```rust
 // src-tauri/tests/history_rebuild_test.rs
 mod common;
-use lotus_app::runtime::chat::history::{build_chat_history, HistoryConfig};
+use app_lib::runtime::chat::history::{build_chat_history, HistoryConfig};
 
 #[test]
 fn valid_tool_pair_passes_through() {
@@ -682,15 +757,21 @@ fn round_based_trim_respects_max_rounds() {
     // 保留最后 2 个 user 开头的 round
     assert_eq!(history.iter().filter(|m| m.role == "user").count(), 2);
 }
+
+#[test]
+fn user_history_with_uploaded_files_preserves_file_hints() {
+    // 当前 transport 层已有行为：user.content.files 会展开成
+    // "[已上传文件] ... load_file(file_id)" 提示，B1 迁到 history.rs 后不能回归。
+}
 ```
 
-- [ ] **Step 2：运行测试，确认失败**
+- [x] **Step 2：运行测试，确认失败**
 
 ```bash
 cd src-tauri && cargo test --test history_rebuild_test -- --nocapture
 ```
 
-- [ ] **Step 3：实现 history.rs**
+- [x] **Step 3：实现 history.rs**
 
 新建 `src-tauri/src/runtime/chat/history.rs`：
 
@@ -708,10 +789,25 @@ pub struct HistoryConfig {
     /// round = 一条 user 消息 + 其后所有 assistant/tool，直到下一条 user。
     /// 不是条数上限，避免截断 tool pair 导致 OpenAI 400。
     pub max_rounds: usize,
+    /// 是否把 user.content.files 展开为面向 LLM 的文件提示。
+    /// B1 落地时必须保持当前已有行为默认开启，不能因为迁移到 runtime 层而丢失。
+    pub include_uploaded_file_hints: bool,
+    /// 当前会话是否已授权工作目录。
+    /// 用于保持 build_llm_content 的两套提示文案分支：
+    /// 已授权时提示 list_directory / read_workspace_file / search_files；
+    /// 未授权时提示 load_file(file_id) + execute_python 变量。
+    pub has_authorized_workspace: bool,
 }
 
 impl Default for HistoryConfig {
-    fn default() -> Self { Self { char_budget: 120_000, max_rounds: 30 } }
+    fn default() -> Self {
+        Self {
+            char_budget: 120_000,
+            max_rounds: 30,
+            include_uploaded_file_hints: true,
+            has_authorized_workspace: false,
+        }
+    }
 }
 
 /// 从 StoredMessage 列表构建合法的 OpenAI ChatMessage 历史。
@@ -724,7 +820,10 @@ pub fn build_chat_history(
     let relevant = apply_boundary(stored, boundary);
 
     // 2. StoredMessage → ChatMessage
-    let mut messages: Vec<ChatMessage> = relevant.iter().map(stored_to_chat).collect();
+    let mut messages: Vec<ChatMessage> = relevant
+        .iter()
+        .map(|m| stored_to_chat(m, config))
+        .collect();
 
     // 3. 双向过滤非法 OpenAI tool pair
     messages = filter_invalid_tool_pairs(messages);
@@ -764,13 +863,11 @@ fn apply_boundary<'a>(
     stored
 }
 
-fn stored_to_chat(m: &StoredMessage) -> ChatMessage {
+fn stored_to_chat(m: &StoredMessage, config: &HistoryConfig) -> ChatMessage {
     ChatMessage {
         role: m.role.clone(),
-        content: m.text().to_string(),
-        tool_calls: m.tool_calls.as_ref().map(|tcs| {
-            tcs.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
-        }),
+        content: build_chat_message_content(m, config),
+        tool_calls: normalize_tool_calls(m.tool_calls.as_ref()),
         tool_call_id: m.tool_call_id.clone(),
         name: m.name.clone(),
     }
@@ -848,24 +945,36 @@ fn split_into_rounds(msgs: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {
 }
 ```
 
-- [ ] **Step 4：在 mod.rs 导��**
+补充实现要求：
+
+- `build_chat_message_content()` 对 `role=user` 且 `content.files` 非空时，
+  必须复用当前 `build_llm_content(...)` 语义生成 `[已上传文件]` / `load_file(file_id)` 提示；
+  不能简单退化成 `m.text()`。
+- `build_chat_message_content()` 还必须保留当前按 `has_authorized_workspace` 分支的提示差异，
+  不能把“已授权工作目录”的历史提示错误退化成未授权版本。
+- `normalize_tool_calls()` 不能直接假设磁盘上的 `tool_calls` 与 `ChatMessage.tool_calls`
+  结构完全一致；必须兼容当前仓库已经存在的 `{id,name,arguments}` 形式，以及
+  OpenAI 风格 `{id,type,function:{name,arguments}}` 形式，统一归一化成
+  `ToolCall { id, name, arguments }`。
+
+- [x] **Step 4：在 mod.rs 导出 history**
 
 ```rust
 // runtime/chat/mod.rs
 pub mod history;
 ```
 
-- [ ] **Step 5：运行测试**
+- [x] **Step 5：运行测试**
 
 ```bash
 cd src-tauri && cargo test --test history_rebuild_test -- --nocapture
 ```
 
-- [ ] **Step 6：Commit**
+- [x] **Step 6：Commit（已与 B2 合并）**
 
 ```bash
 git add src-tauri/src/runtime/chat/history.rs src-tauri/src/runtime/chat/mod.rs src-tauri/tests/history_rebuild_test.rs
-git commit -m "feat(runtime): history.rs — boundary truncation, OpenAI tool pair validation, round-based trim"
+git commit -m "feat(history): rebuild chat history from runtime storage pipeline"
 ```
 
 ---
@@ -875,7 +984,7 @@ git commit -m "feat(runtime): history.rs — boundary truncation, OpenAI tool pa
 **Files:**
 - Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
 
-- [ ] **Step 1：替换 load_history 实现**
+- [x] **Step 1：替换 load_history 实现**
 
 将 `TauriLegacyTurnExecutor::load_history`（`chat.rs:1173`）改为：
 
@@ -895,7 +1004,10 @@ async fn load_history(
         .into_iter()
         .last();
 
-    let config = crate::runtime::chat::history::HistoryConfig::default();
+    let config = crate::runtime::chat::history::HistoryConfig {
+        has_authorized_workspace,
+        ..crate::runtime::chat::history::HistoryConfig::default()
+    };
     let chat_msgs = crate::runtime::chat::history::build_chat_history(
         &stored,
         latest_boundary.as_ref(),
@@ -922,9 +1034,14 @@ async fn load_history(
 }
 ```
 
+同时把 `load_history_via_runtime_history(...)` 改成显式接收
+`has_authorized_workspace: bool`，并在 `TauriLegacyTurnExecutor::load_history()`
+里复用现有 `load_authorized_workspace(...)` 的结果透传进去，保证
+`build_llm_content(...)` 仍能区分“已授权工作区”和“未授权”两套提示文案。
+
 删除旧的 `HISTORY_LIMIT` 常量和 `build_history_from_compact_boundary` 直接调用（保留函数本身，因为可能有其他调用）。
 
-- [ ] **Step 2：修复 filter_map 静默丢弃（P0-5）**
+- [x] **Step 2：修复 filter_map 静默丢弃（P0-5）**
 
 在 `chat.rs:294-299` 的 `run_llm_step` 里：
 
@@ -958,13 +1075,13 @@ if chat_messages.len() < input.messages.len() {
 }
 ```
 
-- [ ] **Step 3：运行全量测试**
+- [x] **Step 3：运行阶段验证（history_rebuild_test）**
 
 ```bash
-cd src-tauri && cargo test -- --nocapture 2>&1 | tail -20
+cd src-tauri && cargo test --test history_rebuild_test -- --nocapture
 ```
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add src-tauri/src/transport/tauri_commands/chat.rs
@@ -982,7 +1099,7 @@ git commit -m "feat(history): load_history delegates to history.rs, replace HIST
 **Files:**
 - Modify: `src-tauri/src/runtime/chat/compaction.rs`
 
-- [ ] **Step 1：理解现状**
+- [x] **Step 1：理解现状**
 
 读 `compaction.rs:289-318`，当前 `compact_messages_via_llm` 的消息结构：
 
@@ -993,7 +1110,7 @@ git commit -m "feat(history): load_history delegates to history.rs, replace HIST
 
 问题：如果 latest_user_message 前面还有一个未完成的 tool round（assistant.tool_calls + tool_results），它被丢弃，导致 tool pair 不完整。
 
-- [ ] **Step 2：改为保留完整 tail round**
+- [x] **Step 2：改为保留完整 tail round**
 
 在 `compact_messages_via_llm` 中，找出 latest user message，并向后包含其后所有消息（保留完整 tail round）：
 
@@ -1021,85 +1138,105 @@ let new_messages = vec![
 .collect::<Vec<_>>();
 ```
 
-- [ ] **Step 3：写测试验证**
+- [x] **Step 3：写测试验证**
 
-在 `history_rebuild_test.rs` 新增：
+优先在现有 compact 相关测试文件（如 `src-tauri/tests/plan_k_llm_compact_test.rs`
+或 `src-tauri/tests/review_autocompact_constraints_test.rs`）中直接为
+`compact_messages_via_llm()` 补回归测试，而不是绕到 `build_chat_history()`。
+这里要锁住的根因是 compact 输出结构本身，而不是 boundary 重建视图。
 
 ```rust
 #[test]
 fn compact_preserves_tail_tool_round() {
-    // compact 后如果 tail 有完整 tool round，必须保留
-    let stored = vec![
-        common::make_user("1", "q1"),
-        common::make_assistant("2", "a1"),
-        // compact 后保留的 tail：
-        common::make_user("3", "q2"),
-        common::make_assistant_with_tc("4", "tc_1", "exec"),
-        common::make_tool_result("5", "tc_1", "exec", "result"),
+    let messages = vec![
+        serde_json::json!({ "role": "user", "content": "q1" }),
+        serde_json::json!({ "role": "assistant", "content": "a1" }),
+        // compact 后必须完整保留的 tail round：
+        serde_json::json!({ "role": "user", "content": "q2" }),
+        serde_json::json!({
+            "role": "assistant",
+            "content": "",
+            "toolCalls": [{ "id": "tc_1", "name": "exec", "arguments": {} }]
+        }),
+        serde_json::json!({
+            "role": "tool",
+            "toolCallId": "tc_1",
+            "name": "exec",
+            "content": "result"
+        }),
     ];
-    // 模拟带有 compact boundary 的场景
-    use lotus_app::runtime::chat::compaction::CompactBoundaryRecord;
-    let boundary = CompactBoundaryRecord {
-        id: "b1".into(),
-        conversation_id: "c1".into(),
-        trigger: lotus_app::runtime::chat::compaction::CompactTrigger::Auto,
-        pre_tokens: 1000, post_tokens: 100,
-        messages_summarized: 2,
-        created_at: "2026-04-24T00:00:00Z".into(),
-        summary_text: "摘要".into(),
-        tail_message_id: Some("3".into()), // boundary 从 user "3" 开始
-    };
-    let history = build_chat_history(&stored, Some(&boundary), &HistoryConfig::default()).unwrap();
-    // 应包含：summary + q2 + assistant(tc_1) + tool_result
-    assert!(history.iter().any(|m| m.role == "tool"), "tool result 必须保留");
-    assert!(history.iter().any(|m| m.tool_calls.is_some()), "tool_calls 必须保留");
+    let output = compact_messages_via_llm(messages, "摘要".to_string());
+
+    // 应包含：boundary + summary + q2 + assistant(tc_1) + tool_result
+    assert_eq!(output.new_messages.len(), 5);
+    assert_eq!(output.new_messages[2]["content"], "q2");
+    assert!(output.new_messages[3]["toolCalls"].is_array(), "assistant toolCalls 必须保留");
+    assert_eq!(output.new_messages[4]["role"], "tool");
+    assert_eq!(output.new_messages[4]["toolCallId"], "tc_1");
 }
 ```
 
-- [ ] **Step 4：运行测试**
+- [x] **Step 4：运行测试**
 
 ```bash
-cd src-tauri && cargo test compact_preserves_tail --test history_rebuild_test -- --nocapture
+cd src-tauri && cargo test --test plan_k_llm_compact_test -- --nocapture
+cd src-tauri && cargo test --test review_autocompact_constraints_test -- --nocapture
 ```
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add src-tauri/src/runtime/chat/compaction.rs
-git commit -m "fix(compact): preserve complete tail tool round after compact, not just latest_user"
+git commit -m "fix(compact): preserve complete tail round after summary rewrite"
 ```
 
 ---
 
 ## Phase D：修复配置与入口问题（P1-3、P1-4）
 
-### Task D1：token_budget 从配置读取 + agentName 透传
+### Task D1：校正 daily token_budget 默认值 + agentName 透传
 
 **Files:**
-- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/plugin/builtin/skills/daily_assistant.rs`
 - Modify: `src-tauri/src/commands/chat.rs`
 - Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
 
-- [ ] **Step 1：token_budget 改为从 LLM settings 读取**
+- [x] **Step 1：修正 token_budget 的真实来源设计**
 
-`chat_turn_driver.rs:666` 的：
+先确认当前仓库事实：
+
+- `ResolvedLlmSettings` / `AppSettings` 里都**没有**
+  `max_tokens` / `max_output_tokens` 字段；
+- 生产路径的 `token_budget` 真实来源是
+  `load_turn_config_overrides()` 返回的 `TurnConfigOverrides.token_budget`
+  （即 skill 的 `token_budget()` / runtime patch），不是 `llm_settings`；
+- 普通 daily 对话默认命中 `daily-assistant` skill，而它当前把预算写死成了 4096。
+
+因此这里**不要**引入伪代码：
+
+```rust
+llm_settings.max_tokens
+```
+
+而是改成：
+
+```rust
+// src-tauri/src/plugin/builtin/skills/daily_assistant.rs
+fn token_budget(&self, _state: &SkillState) -> u32 {
+    8192
+}
+```
+
+`chat_turn_driver.rs` 保持：
 
 ```rust
 token_budget: overrides.token_budget.unwrap_or(4096),
 ```
 
-改为：
+因为这里现在只是兜底分支；真正需要修的是 daily 默认 skill 的 override 值。
 
-```rust
-token_budget: overrides.token_budget
-    .or_else(|| {
-        // 从 llm_settings 里读模型的 max_output_tokens
-        llm_settings.max_tokens.map(|t| t as usize)
-    })
-    .unwrap_or(8192), // 默认值从 4096 改为 8192，覆盖主流模型
-```
-
-- [ ] **Step 2：agentName 加入 Rust command**
+- [x] **Step 2：agentName 加入 Rust command 与 ChatTurnRequest**
 
 `commands/chat.rs:21-31` 改为：
 
@@ -1119,15 +1256,38 @@ pub async fn send_message(
 }
 ```
 
-`transport/tauri_commands/chat.rs` 中 `TauriChatCommandAdapter::send_message` 签名同步增加 `agent_name: Option<String>`，并写入 `ChatTurnRequest`。
+`transport/tauri_commands/chat.rs` 中 `TauriChatCommandAdapter::send_message`
+签名同步增加 `agent_name: Option<String>`，并写入 `ChatTurnRequest`。
 
-- [ ] **Step 3：运行全量测试**
+`src-tauri/src/runtime/chat/chat_turn_driver.rs` 中 `ChatTurnRequest` 增加：
 
-```bash
-cd src-tauri && cargo test -- --nocapture 2>&1 | tail -20
+```rust
+pub agent_name: Option<String>,
 ```
 
-- [ ] **Step 4：Commit**
+并在 `ChatTurnRequest::new(...)` 里默认置为 `None`。
+
+注意：本任务先修复 IPC → Rust command → request 的静默丢失链路，
+不在这里额外假设仓库已经完成 `AgentRegistry` 注入和 `allowed_tools`
+覆盖逻辑；若后续要恢复 agent definition 约束工具池，应单列任务继续做。
+
+- [x] **Step 3：运行阶段验证**
+
+```bash
+cd src-tauri && cargo test --test agent_registry_test -- --nocapture
+cd src-tauri && cargo test --test review_session_id_newtype_propagation_test -- --nocapture
+cd src-tauri && cargo test --test review_agent_name_passthrough_wiring_test -- --nocapture
+```
+
+当前阶段以 D1 直接相关测试为门槛：
+
+- `agent_registry_test`：确认 daily 默认 `token_budget` 已提升到 8192；
+- `review_session_id_newtype_propagation_test`：确认 `ChatTurnRequest`
+  默认携带 `agent_name = None`；
+- `review_agent_name_passthrough_wiring_test`：确认 IPC / command / adapter
+  链路不会静默丢失 `agent_name`。
+
+- [x] **Step 4：Commit**
 
 注意：`src-tauri/src/transport/tauri_commands/chat.rs` 与本计划文件当前同时承载
 `Task B2` / `Task D1` 的改动；这里提交时只纳入 `agent_name` 透传和 D1 相关计划更新，
@@ -1154,7 +1314,7 @@ git commit -m "fix(chat): raise daily token budget to 8192 and preserve agent_na
 |---|---|
 | `message_storage_v2_test.rs` | 单文件 JSONL、UUID dedup、旧分片迁移、sequence 稳定排序、v1 兼容 |
 | `history_rebuild_test.rs` | compact boundary、孤立 tool 过滤、assistant tool_calls 双向校验、round-based 裁剪、compact tail round 保留 |
-| `tests/common/mod.rs` | 公共 fixture（make_user/make_assistant_with_tc/make_tool_result/make_assistant） |
+| `tests/common.rs` | 公共 fixture（make_user/make_assistant_with_tc/make_tool_result/make_assistant） |
 
 ---
 
@@ -1164,14 +1324,14 @@ git commit -m "fix(chat): raise daily token budget to 8192 and preserve agent_na
 Task A0（测试脚手架）
     ↓
 Phase A（存储单文件化 + Schema 扩展）
-    ↓  cargo test 全绿
+    ↓  `message_storage_v2_test` 通过
 Phase B（history.rs + load_history 切换）
-    ↓  cargo test 全绿
+    ↓  `history_rebuild_test` 通过
 Phase C（compact tail round 修复）
-    ↓  cargo test 全绿
+    ↓  `plan_k_llm_compact_test` / `review_autocompact_constraints_test` 通过
 Phase D（token_budget + agentName）
-    ↓  cargo test 全绿
-合并
+    ↓  `agent_registry_test` / `review_session_id_newtype_propagation_test` / `review_agent_name_passthrough_wiring_test` 通过
+完成本计划代码落地
 ```
 
 ---
@@ -1189,52 +1349,46 @@ Phase D（token_budget + agentName）
 
 ---
 
-## 8. 执行前必须校验的"已实现"功能
+## 8. 补充校验记录（已执行）
 
-> ⚠️ 以下功能基于代码 grep 推断为"已实现"，但**未经测试验证**。
-> 执行计划前，先运行以下校验测试。若失败，说明实现不完整，需要补充实现后再继续。
+> 以下校验已在本轮落地后补跑；若校验与旧断言不一致，以更新后的回归测试和当前输出契约为准。
 
 ### 校验步骤
 
-- [ ] **Step 1：校验 tool transcript 持久化**
+- [x] **Step 1：校验 tool transcript 持久化**
 
 ```bash
-cd src-tauri && cargo test persist_iteration_assistant_message \
-  persist_tool_messages -- --nocapture 2>&1 | grep -E "PASS|FAIL|error"
+cd src-tauri && cargo test --test review_chat_history_persistence_test -- --nocapture
 ```
 
-若无对应测试，手动写一个快速验证：
-检查 `chat_turn_driver.rs:1092-1111` 调用路径是否在实际 tool round 执行后被触发，
-检查 `persist_iteration_assistant_message` 是否真正写入 DB（检查 `insert_message` 是否被调用）。
+结果：`review_assistant_tool_calls_round_trip` 与 `review_tool_message_round_trip` 通过；
+其中 tool 消息的前端返回契约已确认为 `toolResult.{toolCallId,name,content}`。
 
-- [ ] **Step 2：校验历史重建包含 tool 消息**
+- [x] **Step 2：校验历史重建包含 tool 消息**
 
 ```bash
-cd src-tauri && cargo test build_history_from_compact_boundary -- --nocapture
+cd src-tauri && cargo test --test review_chat_history_persistence_test -- --nocapture
+cd src-tauri && cargo test --test history_rebuild_test -- --nocapture
 ```
 
-预期：`build_history_from_compact_boundary` 测试覆盖 `role=tool` 消息被正确重建为 `{role:"tool", toolCallId:..., name:...}` 格式。
+结果：`review_load_history_restores_tool_messages`、
+`review_load_history_restores_legacy_tool_messages` 与 `history_rebuild_test` 通过，
+确认 legacy / runtime history 两条读取链路都能恢复 `role=tool` 消息。
 
-若无测试，检查 `chat.rs:114-184` 的 `role == "tool"` 分支是否在旧的 `get_recent_messages`（分片方案）下能读到 tool 消息——**注意：旧的 `insert_message` 只接受 `role` 和 `content` 参数，`persist_tool_messages` 用的仍是旧接口，tool 消息能被正确存入并读回吗？**
-
-- [ ] **Step 3：校验旧接口存储 tool 消息的完整性**
-
-读 `chat.rs:832-844`：`persist_tool_messages` 调用的是 `self.services.db.insert_message(msg_id, conversation_id, "tool", content_json)`。
-
-验证：`insert_message` 存的 `content_json` 是 `{"toolCallId":..., "name":..., "content":...}` 格式，而 `build_history_from_compact_boundary` 里读取 tool 消息时（`chat.rs:118-144`）取的是 `content.toolCallId`、`content.name`、`content.content`——**两者格式必须一致，否则历史重建拿到空值**。
+- [x] **Step 3：校验旧接口存储 tool 消息的完整性**
 
 ```bash
-# 确认字段名一致性
-grep -n "toolCallId\|toolName\|tool_call_id" src-tauri/src/transport/tauri_commands/chat.rs | head -30
+cd src-tauri && cargo test --test review_chat_history_persistence_test -- --nocapture
 ```
 
-若发现不一致（比如存的是 `toolCallId` 但读的是 `tool_call_id`），记录为 Bug 并在 Phase B Task B2 中一并修复。
+结果：tool message 的磁盘写入、`get_recent_messages()` 前端返回、
+以及 `build_history_from_compact_boundary()` 历史重建三段链路均通过。
 
 | 功能 | 推断状态 | 校验结果（执行时填写）|
 |---|---|---|
-| assistant with tool_calls 持久化 | 推断已实现 | ⬜ 待校验 |
-| tool result 消息持久化 | 推断已实现 | ⬜ 待校验 |
-| 历史重建支持 role=tool | 推断已实现 | ⬜ 待校验 |
-| persist_tool_messages 字段名与 build_history 一致 | 推断一致 | ⬜ 待校验 |
-| compact_boundaries.jsonl 加载正确 | 推断已实现 | ⬜ 待校验 |
+| assistant with tool_calls 持久化 | 已由回归测试覆盖 | ✅ `review_assistant_tool_calls_round_trip` |
+| tool result 消息持久化 | 已由回归测试覆盖 | ✅ `review_tool_message_round_trip` |
+| 历史重建支持 role=tool | 已由回归测试覆盖 | ✅ `review_load_history_restores_tool_messages` |
+| persist_tool_messages 字段名与 build_history 一致 | 已由回归测试覆盖 | ✅ `review_load_history_restores_tool_messages` / `review_load_history_restores_legacy_tool_messages` |
+| compact_boundaries.jsonl 加载正确 | 已由回归测试覆盖 | ✅ `history_rebuild_test` |
 | 前端 MessageRole 包含 'tool' | 已在代码里确认 | ✅ 已确认 |

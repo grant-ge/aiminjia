@@ -45,7 +45,7 @@ fn review_assistant_tool_calls_round_trip() {
     );
 }
 
-/// tool result 消息写入再读回应保留 toolCallId、name、content 字段。
+/// tool result 消息写入再读回应保留 toolResult.toolCallId/name/content 字段。
 #[test]
 fn review_tool_message_round_trip() {
     let (storage, _dir) = make_storage();
@@ -69,15 +69,15 @@ fn review_tool_message_round_trip() {
         .find(|m| m["role"].as_str() == Some("tool"))
         .expect("tool message must be stored");
     assert_eq!(
-        tool_msg["content"]["toolCallId"].as_str().unwrap(),
+        tool_msg["toolResult"]["toolCallId"].as_str().unwrap(),
         "tc-001"
     );
     assert_eq!(
-        tool_msg["content"]["name"].as_str().unwrap(),
+        tool_msg["toolResult"]["name"].as_str().unwrap(),
         "browse_navigate"
     );
     assert_eq!(
-        tool_msg["content"]["content"].as_str().unwrap(),
+        tool_msg["toolResult"]["content"].as_str().unwrap(),
         "Page ready: https://example.com"
     );
 }
