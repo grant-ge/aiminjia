@@ -160,14 +160,32 @@ invoke('send_message')
 
 ## 存储结构
 
-所有运行时数据持久化到 workspace 目录（`AppStorage`，基于 JSON 文件）：
+所有运行时数据持久化到 `~/.renlijia/`（`AiJiaHome::from_home()`），不再使用 Tauri app data dir（后者仅用于启动时一次性迁移）：
 
-- `conversations/{id}/` — 对话数据（`conv.json`、`messages.*.jsonl`、`file_index.json`）
-- `workspace/uploads/` — 用户上传文件的副本
-- `workspace/exports/` / `reports/` / `charts/` / `analysis/` — 生成物
-- `shared/memory/` — 跨对话记忆
+```
+~/.renlijia/
+├── conversations/{id}/
+│   ├── conv.json                  # 对话元数据
+│   ├── messages.N.jsonl           # 消息分片（100 条/片）
+│   ├── _current                   # 分片指针 "shard_num:next_seq"
+│   ├── compact_boundaries.jsonl   # 压缩边界记录
+│   └── file_index.json            # 文件索引
+├── subagent_transcripts/          # 子代理完整转录（JSON 数组）
+├── skills/                        # 本地 skill 文件
+├── crypto/                        # 加密主密钥
+├── screenshots/
+├── site-profiles/
+├── mcp_servers.json
+├── permissions.json
+└── agent_invocations.json
+```
 
-本地数据路径：macOS `~/Library/Application Support/com.aijia.app/`，Windows `%APPDATA%\com.aijia.app\`
+workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放生成物：
+
+- `uploads/` — 用户上传文件副本
+- `reports/` / `charts/` / `analysis/` — 生成物
+- `logs/` — 运行日志
+- `temp/` — 临时 Python 脚本
 
 ## 重要架构决策与约束
 

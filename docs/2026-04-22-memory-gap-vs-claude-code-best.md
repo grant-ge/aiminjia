@@ -297,18 +297,22 @@ Plan-U4（`docs/superpowers/plans/2026-04-19-plan-u4-memory-runtime-native.md`�
   - 实现 `RuntimeTool` trait，输入参数：`name / type / description / content`，调用 `ProjectMemoryService::save_memory()`
   - 注册到 `ToolRegistry`，加入 `DAILY_ALLOWED_TOOLS`
   - 新增 `memory-mechanics` system prompt section：告知模型何时保存、保存什么类型、frontmatter 写法示例
+  - **对标**：`claude-code-best` 中模型通过 `FileWrite`/`FileEdit` 工具直接操作 `~/.claude/projects/<git-root>/memory/` 下的文件；`memory-mechanics` system prompt section 告知模型何时保存、用哪种 type、frontmatter 格式（`src/memdir/memoryTypes.ts`）
 
 - [ ] **T2** `[U4原有 U4-3]` 实现 `SearchMemoryTool` 作为 RuntimeTool，替代 legacy `memory_search` ToolPlugin
   - 暂用现有词元匹配召回，G2（Sonnet sideQuery）在阶段二替换
+  - **对标**：`claude-code-best` 的 `findRelevantMemories.ts` 通过 `scanMemoryFiles()` 扫描所有记忆文件的 frontmatter 构建候选清单，再由 `selectRelevantMemories()` 调用 Sonnet 语义筛选；T2 阶段只实现扫描+词元匹配这一层，语义筛选在 T8 补充
 
 - [ ] **T3** `[U4原有 U4-4]` 让 legacy memory 代码正式退场
   - `plugin/builtin/tools/memory_save/search/core/distill.rs` → 删除（已注释，彻底移除）
   - `llm/tool_executor/memory.rs` → 停止 re-export，移除 `PluginContext` 依赖
   - 保留 `ensure_legacy_migrated()` 数据迁移逻辑（仅迁移，不调用旧工具）
+  - **对标**：`claude-code-best` 只有 `src/memdir/` 一套统一实现，无 legacy 并行；所有记忆读写均走 `memdir.ts` 的统一接口，无双轨并存
 
 - [ ] **T4** `[新增]` 为 `save_project_memory` / `distill_project_memory` Tauri command 补充 TypeScript 封装
   - 在 `src/lib/tauri.ts` 中添加对应 invoke 函数
   - 前端应急路径：用户可通过 UI 手动触发写回
+  - **对标**：`claude-code-best` 前端通过 `loadMemoryPrompt()`（`src/memdir/memdir.ts`）和 `getAutoMemPath()`（`src/memdir/paths.ts`）提供统一入口访问记忆路径，前端不直接操作文件但有类型化的统一访问接口
 
 ### 阶段二：分类与召回质量
 
@@ -316,39 +320,47 @@ Plan-U4（`docs/superpowers/plans/2026-04-19-plan-u4-memory-runtime-native.md`�
   - 扩展 `ProjectMemoryType` 枚举，添加 `Feedback` 变体
   - 更新 frontmatter 文档，补充 `when_to_save`（纠正 + 确认双通道）、`body_structure`（rule + Why + How to apply）
   - 更新模型侧 `memory-mechanics` prompt，明确 feedback 写法示例
+  - **对标**：`claude-code-best` 的 `src/memdir/memoryTypes.ts` 定义四类型（user / feedback / project / reference）；`feedback` 类型的 `when_to_save` 明确要求同时捕获失败纠正和成功确认两条通道，`body_structure` 要求包含 rule + **Why:** + **How to apply:** 三要素
 
 - [ ] **T6** `[U4原有 U4-2]` 将 `ProjectMemoryService` 实例提升至 Session 级 owner
   - `QueryEngine` 或 `SessionRuntime` 持有单一 `ProjectMemoryService` 实例，跨 turn 复用
   - 持有 `already_surfaced: HashSet<String>`（已展示条目 path），传入 `load_context()` 过滤
+  - **对标**：`claude-code-best` 的 `QueryEngine`（`src/query-engine.ts`）跨 turn 持有 `loadedNestedMemoryPaths: Set<string>`，确保同一 session 内同一记忆文件只加载一次，避免重复注入
 
 - [ ] **T7** `[新增]` 在 `load_context()` 中引入 `recent_tools` 去噪参数
   - 函数签名：`load_context(query, already_surfaced, recent_tools) -> ProjectMemoryContext`
   - 当 `recent_tools` 包含某工具时，跳过该工具的使用文档类条目（但保留其警告/陷阱类条目）
+  - **对标**：`claude-code-best` 的 `findRelevantMemories(query, alreadySurfaced, recentTools)` 第三个参数（`src/memdir/findRelevantMemories.ts` 第 92-95 行）；system prompt 明确"跳过工具使用文档，但仍保留工具的警告和陷阱条目"
 
 - [ ] **T8** `[新增]` 引入 Sonnet sideQuery 作为召回后端（可选，优先级低于 T5-T7）
-  - 替换 `select_relevant_entries()` 中的词元匹配
-  - 依赖 `LlmGateway`，需通过 `CapabilityContext` 或独立注入
-  - 前置条件：T6 完成（Session 级 owner 才能缓存 sideQuery 开销）
+  - 替换 `select_relevant_entries()` 中的词元匹配，调用独立 Sonnet API 做语义筛选
+  - **架构约束**：CLAUDE.md 明确 `CapabilityContext` 不应扩大传入 `LlmGateway` 等编排层对象。sideQuery 需要 `LlmGateway`，因此需要在 `ProjectMemoryService` 构造时从外部注入（而非通过 `CapabilityContext` 获取），或将 sideQuery 的调用提升到 `SessionRuntime` / `QueryEngine` 层再传结果进来。具体方案在实现阶段决策。
+  - 前置条件：T6 完成（Session 级 owner 持有实例，否则每 turn 新建 sideQuery 开销过大）
+  - **对标**：`claude-code-best` 的 `selectRelevantMemories()` 调用 `sideQuery(getDefaultSonnetModel(), ...)` 做语义筛选（`src/memdir/findRelevantMemories.ts` 第 98-121 行），max_tokens=256，输出 JSON schema；sideQuery 是独立于主模型的轻量侧路 API 调用
 
 ### 阶段三：注入规范化
 
 - [ ] **T9** `[新增]` 在 system prompt 中添加 "Before recommending from memory" section
   - 参考 `claude-code-best/src/memdir/memoryTypes.ts` 的 `TRUSTING_RECALL_SECTION`
   - 内容：引用文件路径前检查是否存在，引用函数名前 grep 确认；"忽略记忆"的严格语义定义
+  - **对标**：`claude-code-best` 的 `TRUSTING_RECALL_SECTION`（`src/memdir/memoryTypes.ts`）；标题 "Before recommending from memory" 经 A/B 测试验证（3/3 胜出），要求模型在推荐前验证文件/函数是否仍存在；并明确"忽略记忆"语义为视 MEMORY.md 为空，而非"承认后覆盖"
 
 - [ ] **T10** `[新增]` 为 `MEMORY.md` 的 `rebuild_index()` 添加双重上限
   - `MAX_INDEX_LINES = 200`，`MAX_INDEX_BYTES = 25_000`
   - 超出时截断并追加警告行
+  - **对标**：`claude-code-best` 的 `memdir.ts` 定义 `MAX_ENTRYPOINT_LINES = 200` 和 `MAX_ENTRYPOINT_BYTES = 25_000`（`src/memdir/memdir.ts` 第 35-38 行），`truncateEntrypointContent()` 在超出任一上限时截断并追加警告；字节上限专门捕捉单条目内容特别长的异常场景
 
 - [ ] **T11** `[新增]` 将记忆内容从 `dynamic_context` 字符串中提取为独立注入通道
   - 记忆内容（`[项目记忆]` 块）不再与 env_info / precompute 等动态内容混拼
   - 作为独立 user context message 注入，与 system prompt 中的记忆指导分离
   - 前置条件：Plan-U3 上下文主线落地（context assembly 主线）
+  - **对标**：`claude-code-best` 的 `context.ts` 中 `getSystemContext()` 将 `MEMORY.md` 内容作为独立 **user context message** 注入（区别于 system prompt），利用 Prompt Cache prefix 共享；记忆指导（mechanics）与记忆内容分两条完全独立的通道
 
 - [ ] **T12** `[新增]` 修复 Cognitive Memory 与 Project Memory 互斥逻辑
   - 移除 `if project_memory_ctx.is_empty()` 的互斥条件
   - 两者按优先级叠加注入（Project Memory 在前，Cognitive Memory 在后）
   - 需评估 token 预算影响
+  - **对标**：`claude-code-best` 只有 `src/memdir/` 一套统一记忆体系，不存在两层并行互斥的问题；lotus 的目标是将 Cognitive Memory 与 Project Memory 对齐为单一体系，最终由 Project Memory 完全取代 Cognitive Memory
 
 ### 阶段四：可观测性与前端体验
 
@@ -356,20 +368,24 @@ Plan-U4（`docs/superpowers/plans/2026-04-19-plan-u4-memory-runtime-native.md`�
   - `MemoryLoaded { count: usize }`（turn 开始时加载了 N 条记忆）
   - `MemorySaved { name: String, memory_type: String }`（LLM 写入了一条记忆）
   - 在 `tauri_event_adapter.rs` 中添加对应的 Tauri event 映射
+  - **对标**：`claude-code-best` 中记忆操作对用户透明无需专用事件；lotus 因记忆是独立进程需要事件通知，参考已有 `MessagePersisted` 事件的 `RuntimeEventKind` 模式（`src-tauri/src/runtime/events.rs`）来实现
 
 - [ ] **T14** `[新增]` 前端 Memory 管理 UI（SettingsModal 新增 Memory Tab）
   - 展示当前 workspace 下所有 project memory 条目
   - 支持查看条目详情、手动删除、手动触发 distill
   - 展示 Cognitive Memory（`mem.md`）内容预览
+  - **对标**：`claude-code-best` 通过 `/memory` slash command 查看和管理记忆，用户也可直接 `cat ~/.claude/projects/.../MEMORY.md` 查看；lotus 需要 GUI 面板替代命令行操作
 
 - [ ] **T15** `[新增]` `Persona.memoryHints` 编辑控件
   - `PersonaTab.tsx` 添加 memoryHints tag-list 编辑器
+  - **对标**：`claude-code-best` 的 `CLAUDE.md` 中的 system prompt section 可由用户配置；`memoryHints` 对应"用户自定义 memory 指导 prompt"，让用户告知 AI 哪类信息值得记忆
 
 ### 阶段五：长对话优化（低优先级，依赖外部条件）
 
 - [ ] **T16** `[新增]` 研究 Session Memory 与 compact 联动的可行性
   - 前置条件：Plan-U3 上下文主线、autocompact（Plan-K）落地
   - 目标：压缩时直接复用已有记忆文件，减少摘要 API 调用
+  - **对标**：`claude-code-best` 的 `sessionMemoryCompact.ts` 定义 `DEFAULT_SM_COMPACT_CONFIG`（`src/services/compact/sessionMemoryCompact.ts` 第 57-61 行）；`tengu_session_memory` + `tengu_sm_compact` 两个 feature flag 同时开启时，压缩直接使用 Session Memory 文件作摘要，无需额外 API 调用
 
 ---
 
