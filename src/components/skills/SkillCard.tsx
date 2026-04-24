@@ -5,11 +5,12 @@ interface SkillCardProps {
   meta: string
   desc: string
   iconNode: ReactNode
+  iconBg?: string
   onClick: () => void
   size?: 'hot' | 'office'
 }
 
-export function SkillCard({ title, meta, desc, iconNode, onClick, size = 'office' }: SkillCardProps) {
+export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-primary-subtle', onClick, size = 'office' }: SkillCardProps) {
   const isHot = size === 'hot'
   const height = isHot ? 'h-[140px]' : 'h-[120px]'
   const iconSize = isHot ? 'h-9 w-9' : 'h-[34px] w-[34px]'
@@ -24,7 +25,7 @@ export function SkillCard({ title, meta, desc, iconNode, onClick, size = 'office
       className={`flex ${height} cursor-pointer flex-col rounded-[14px] border border-border bg-card p-4 transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-[10px] bg-brand-primary-subtle`}>
+        <div className={`flex ${iconSize} shrink-0 items-center justify-center rounded-[10px] ${iconBg}`}>
           {iconNode}
         </div>
         <div className="flex min-w-0 flex-col gap-0.5">

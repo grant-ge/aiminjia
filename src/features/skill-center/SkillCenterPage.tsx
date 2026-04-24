@@ -54,9 +54,22 @@ const ICONS: Record<string, LucideIcon> = {
   users: Users,
 }
 
+const CATEGORY_STYLE: Record<string, { bg: string }> = {
+  hr:      { bg: 'bg-blue-500' },
+  finance: { bg: 'bg-emerald-500' },
+  legal:   { bg: 'bg-violet-500' },
+  sales:   { bg: 'bg-orange-500' },
+  ops:     { bg: 'bg-rose-500' },
+  general: { bg: 'bg-amber-500' },
+}
+
 function getSkillIcon(icon: string) {
   const Icon = ICONS[icon] ?? FileText
-  return <Icon className="h-4 w-4 text-primary" />
+  return <Icon className="h-4 w-4 text-white" />
+}
+
+function getIconBg(category: string) {
+  return CATEGORY_STYLE[category]?.bg ?? 'bg-slate-500'
 }
 
 export function SkillCenterPage() {
@@ -126,6 +139,7 @@ export function SkillCenterPage() {
             meta={getSkillMeta(skill.source, skill.category)}
             desc={skill.shortDescription || skill.description}
             iconNode={getSkillIcon(skill.icon)}
+            iconBg={getIconBg(skill.category)}
             onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
           />
         ))}
@@ -146,6 +160,7 @@ export function SkillCenterPage() {
             meta={getSkillMeta(skill.source, skill.category)}
             desc={skill.shortDescription || skill.description}
             iconNode={getSkillIcon(skill.icon)}
+            iconBg={getIconBg(skill.category)}
             onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
           />
         ))}
