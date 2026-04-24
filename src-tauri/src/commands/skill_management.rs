@@ -106,14 +106,25 @@ pub async fn install_custom_skill(
 
     let dest = custom_dir.join(&plugin_id);
     if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
+        return Err(format!(
+            "conflict:{}",
+            plugin_id
+        ));
     }
 
     // Copy directory recursively
     copy_dir_recursive(&source, &dest).map_err(|e| e.to_string())?;
 
+    // Hot-reload so the skill is usable immediately
+    if let Err(e) = reload_skill(app.clone(), dest.to_string_lossy().to_string()).await {
+        return Err(format!(
+            "技能文件已安装但热重载失败，请重启应用: {}",
+            e
+        ));
+    }
+
     Ok(format!(
-        "Installed skill '{}' — restart app to activate",
+        "Installed skill '{}'",
         plugin_id
     ))
 }

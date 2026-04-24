@@ -114,17 +114,18 @@ async fn commit_impl(
     }
 
     // 4. Hot-reload: register the new skill so it's usable without app restart.
-    //    Best-effort: if registry reload fails, the skill is still installed
-    //    and will load on next startup.
     let installed_path = result.installed_path.clone();
     if let Err(e) =
         crate::commands::skill_management::reload_skill(app.clone(), installed_path).await
     {
-        log::warn!(
-            "commit_skill_draft: hot-reload failed for '{}' (skill committed to disk, will activate on next restart): {}",
-            result.skill_id,
-            e
+        log::error!(
+            "commit_skill_draft: hot-reload failed for '{}': {}",
+            result.skill_id, e
         );
+        return Err(format!(
+            "技能文件已安装到 {}，但热重载失败，请重启应用激活: {}",
+            result.installed_path, e
+        ));
     }
 
     Ok(result)

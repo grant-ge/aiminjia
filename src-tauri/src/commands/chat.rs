@@ -923,10 +923,61 @@ pub async fn send_message(
                         );
 
                         let workflow = skill.workflow().unwrap();
-                        let initial_step = &workflow.initial_step;
-                        let step_num = initial_step.strip_prefix("step")
-                            .and_then(|n| n.parse::<u32>().ok())
-                            .unwrap_or(0);
+
+                        // --- Resume support: parse "resume:DRAFT_ID" from message ---
+                        // Format: "我想创建一个技能 resume:XXXXXXXXXXXX" (12 hex chars)
+                        // Maps draft stage → step number to skip already-completed steps.
+                        let parsed_draft_id = content.find("resume:")
+                            .map(|pos| content[pos + 7..].trim())
+                            .filter(|s| s.len() >= 12)
+                            .map(|s| s[..12].to_string())
+                            .filter(|s| s.chars().all(|c| c.is_ascii_hexdigit()));
+                        let (start_step_num, resume_draft_id) = match parsed_draft_id {
+                            Some(draft_id) => {
+                                match crate::commands::skill_smith::get_draft_info(&app, &draft_id) {
+                                    Ok((stage, skill_name, files)) => {
+                                        log::info!(
+                                            "[skill-smith] Resuming draft {} (name={:?}, stage='{}', files={:?}) for conv {}",
+                                            draft_id, skill_name, stage, files, conversation_id
+                                        );
+                                        let step = match stage.as_str() {
+                                            "intent" => 1u32,
+                                            "manifest" => 2,
+                                            "workflow" => 3,
+                                            "prompts" => 4,
+                                            _ => 0,
+                                        };
+                                        (step, Some(draft_id))
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "[skill-smith] Draft {} not found or invalid: {}. Starting fresh.",
+                                            draft_id, e
+                                        );
+                                        (0u32, None)
+                                    }
+                                }
+                            }
+                            None => (0u32, None),
+                        };
+
+                        let step_id = format!("step{}", start_step_num);
+                        let step_num = start_step_num;
+
+                        // Bind the resumed draft and inject context
+                        if let Some(ref draft_id) = resume_draft_id {
+                            let draft_key = format!("skill_smith:{}:draft_id", conversation_id);
+                            if let Err(e) = db.set_memory(&draft_key, draft_id, Some("system")) {
+                                log::error!("[skill-smith] Failed to bind draft {} to conv {}: {}", draft_id, conversation_id, e);
+                            }
+                            // Inject existing draft content as analysis note so the LLM knows what's done
+                            if let Ok(ctx) = crate::commands::skill_smith::build_resume_context(&app, draft_id) {
+                                let ctx_key = format!("note:{}:skill_smith_resume_context", conversation_id);
+                                if let Err(e) = db.set_memory(&ctx_key, &ctx, Some("system")) {
+                                    log::warn!("[skill-smith] Failed to save resume context: {}", e);
+                                }
+                            }
+                        }
 
                         if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
                             log::error!("Failed to set mode to 'confirming': {}", e);
@@ -942,7 +993,7 @@ pub async fn send_message(
                         }
 
                         let mut state = SkillState::new(&skill_id);
-                        state.current_step = Some(initial_step.clone());
+                        state.current_step = Some(step_id);
                         state.has_files = has_files;
                         Some(build_config_from_skill(&*skill, &state, &tool_registry, &db, &conversation_id).await)
                     }

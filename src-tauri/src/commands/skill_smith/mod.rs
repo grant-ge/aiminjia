@@ -246,6 +246,81 @@ pub async fn list_skill_draft_files(
     Ok(files)
 }
 
+/// Get the stage and summary of a specific draft (for resume logic in chat activation).
+/// Returns (stage, skill_name, draft_file_list).
+pub fn get_draft_info(app: &AppHandle, draft_id: &str) -> Result<(String, Option<String>, Vec<String>), String> {
+    validate_draft_id(draft_id)?;
+    let root = drafts_root(app)?;
+    let path = root.join(draft_id);
+    if !path.is_dir() {
+        return Err(format!("Draft '{}' not found", draft_id));
+    }
+    let summary = summarize_draft(&path, draft_id)?;
+    // Collect existing file names for context injection
+    let mut files = Vec::new();
+    let _ = walk_draft_dir(&path, &path, &mut files);
+    let file_names: Vec<String> = files.iter().map(|f| f.relative_path.clone()).collect();
+    Ok((summary.stage, summary.skill_name, file_names))
+}
+
+/// Build a context summary of an existing draft for injection into the LLM
+/// system prompt when resuming. Reads key files and produces a markdown note.
+pub fn build_resume_context(app: &AppHandle, draft_id: &str) -> Result<String, String> {
+    validate_draft_id(draft_id)?;
+    let root = drafts_root(app)?;
+    let path = root.join(draft_id);
+    if !path.is_dir() {
+        return Err(format!("Draft '{}' not found", draft_id));
+    }
+
+    let mut ctx = String::from("## 已有的技能草稿内容（从上次创建中恢复）\n\n");
+    ctx.push_str(&format!("Draft ID: `{}`\n\n", draft_id));
+
+    // Read plugin.toml if exists
+    let plugin_path = path.join("plugin.toml");
+    if plugin_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&plugin_path) {
+            ctx.push_str("### plugin.toml\n```toml\n");
+            ctx.push_str(&content);
+            ctx.push_str("\n```\n\n");
+        }
+    }
+
+    // Read workflow.toml if exists
+    let workflow_path = path.join("workflow.toml");
+    if workflow_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&workflow_path) {
+            ctx.push_str("### workflow.toml\n```toml\n");
+            ctx.push_str(&content);
+            ctx.push_str("\n```\n\n");
+        }
+    }
+
+    // List prompts if they exist
+    let prompts_dir = path.join("prompts");
+    if prompts_dir.is_dir() {
+        let mut prompt_files: Vec<String> = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&prompts_dir) {
+            for entry in rd.filter_map(Result::ok) {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".md") {
+                        prompt_files.push(name.to_string());
+                    }
+                }
+            }
+        }
+        if !prompt_files.is_empty() {
+            prompt_files.sort();
+            ctx.push_str(&format!("### 已生成的 prompt 文件\n{}\n\n",
+                prompt_files.iter().map(|f| format!("- prompts/{}", f)).collect::<Vec<_>>().join("\n")
+            ));
+        }
+    }
+
+    ctx.push_str("请基于以上已有内容继续完成当前步骤，不要重复已完成的工作。\n");
+    Ok(ctx)
+}
+
 /// List all known drafts (for WelcomeScreen / SkillsTab banner resume UI).
 /// Sorted by last_modified desc.
 #[tauri::command]

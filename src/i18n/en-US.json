@@ -187,6 +187,7 @@
       "uninstall": "Uninstall",
       "selectFolder": "Select skill directory",
       "confirmUninstall": "Uninstall skill \"{{name}}\"?",
+      "conflictMessage": "Skill \"{{name}}\" already exists. Overwrite?",
       "empty": "No custom skills installed",
       "emptyHint": "Click \"Install Skill\" to add custom skill packs",
       "createNew": "Create New",

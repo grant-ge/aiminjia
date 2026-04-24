@@ -187,6 +187,7 @@
       "uninstall": "卸载",
       "selectFolder": "选择技能目录",
       "confirmUninstall": "确定要卸载技能「{{name}}」吗？",
+      "conflictMessage": "已存在同名技能「{{name}}」，是否覆盖？",
       "empty": "暂无自定义技能",
       "emptyHint": "点击「安装技能」添加自定义技能包",
       "createNew": "创建新技能",

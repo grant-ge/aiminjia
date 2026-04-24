@@ -65,10 +65,8 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
   }, [reload])
 
   const handleResume = useCallback(
-    (_draftId: string) => {
-      // M2: trigger a fresh skill-smith session. M3 will wire up a
-      // `resumeDraftId` parameter that jumps to the matching step.
-      sendUserMessage(SKILL_SMITH_TRIGGER)
+    (draftId: string) => {
+      sendUserMessage(`${SKILL_SMITH_TRIGGER} resume:${draftId}`)
       onAfterResume?.()
     },
     [sendUserMessage, onAfterResume],

@@ -6,9 +6,7 @@
 
 1. 设计 2-10 个步骤的工作流
 2. 调用 `skill_smith_write_file(relative_path="workflow.toml", content=<TOML内容>)`
-3. 调用 `skill_smith_validate()` 验证
-4. 有 error → 修复 → 重写 → 重新验证
-5. 向用户展示步骤设计并确认
+3. 向用户展示步骤设计并确认（validate 留到 step3 prompts 全部生成后再做）
 
 ## workflow.toml 模板
 
@@ -69,13 +67,13 @@ advance_on = "confirm"
 用简洁的流程图展示：
 - 第 1 步：XX → 第 2 步：XX → 第 3 步：XX
 
-"这个工作流程是否合适？可以调整步骤数量和内容。"
+"这个工作流程是否合适？可以调整步骤数量和内容。没问题的话请说「继续」。"
 
 ## 关键约束
 
 - 每个 step 的 `id` 必须唯一且按 step0、step1... 递增
-- `prompt` 路径为 `prompts/stepN.md`（step3 会生成这些文件）
+- `prompt` 路径为 `prompts/stepN.md`（下一步会生成这些文件）
 - `advance_on` 三选一：any（用户发任何消息即进入下一步）、confirm（需要用户确认）、auto（自动进入）
 - 第一步通常用 `advance_on = "any"`，后续步骤用 `confirm`
 
-⚠️ validate 未通过前不要告诉用户"已完成"。
+⚠️ 本步只生成 workflow.toml，不做 validate（prompt 文件尚未生成，校验必然失败）。
