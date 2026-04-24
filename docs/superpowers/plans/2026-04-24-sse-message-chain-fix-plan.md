@@ -2,12 +2,75 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+---
+
+## 背景与原始需求
+
+### 项目背景
+
+**AIjia（AI小家）** 是一个 Tauri 2.x 桌面应用，React/TypeScript 前端 + Rust 后端，通过 Tauri IPC + SSE 事件实现前后端实时通信。
+
+- 运行时数据存储：`~/.renlijia/`
+- LLM：OpenAI-compatible API（DeepSeek、Qwen、Volcano 等）
+- 主要 Rust 入口：`src-tauri/src/`
+- 主要 TS 入口：`src/`
+- 设计文档：`docs/superpowers/specs/2026-04-24-sse-message-chain-audit-design.md`
+
+### 原始需求
+
+> "按照前端的链路排查一下 UI 是否把全部的消息都对接了"
+
+调查发现：前端 `useTurnRenderModel` 的渲染路径无法展示工具入参和工具输出，同时发现了多个 P0/P1 级别的 bug。
+
+### 核心发现（调查结论）
+
+后端会产生以下几类消息，前端对接情况如下：
+
+| 消息类型 | 前端 UI 能否展示 | 缺口 |
+|---|---|---|
+| user message | ✅ 完整 | — |
+| assistant 纯文本 | ✅ 完整 | — |
+| assistant + toolCalls（工具调用入参） | ⚠️ 部分 | `ToolGroupCard` 展开后入参为空 |
+| role=tool 结果（工具输出） | ⚠️ 部分 | `ToolGroupCard` 展开后输出为空 |
+| streaming 实时工具状态 | ⚠️ 部分 | 实时 input 不展示 |
+
+**另外发现的 P0/P1 bug（非原始需求，但影响功能正确性）：**
+- 用户消息切换会话后重复出现（optimistic id 与 DB id 不一致）
+- 工具结果切换会话后重复出现（tool result 事件 id 与 DB id 不一致）
+- 后台会话的工具消息会串入当前对话界面
+- 快速切换会话可能显示错误历史
+- 乐观 user message 在请求失败后不回滚
+
+---
+
+## 执行范围选择
+
+本计划包含 4 个 Phase，执行者可根据优先级选择：
+
+### 最小范围（原始需求）
+**只执行 Phase 3（Task C1 + C2）**
+
+修复工具消息展示缺口，让 `ToolGroupCard` 能正确展示工具入参和输出：
+- Task C1：`ToolExecution` 加 `output` 字段
+- Task C2：重写 `buildTurnsFromMessages`，按 `toolCallId` merge，补 `inputJson`/`output`
+
+改动面：仅 `src/hooks/useTurnRenderModel.ts`、`src/stores/streamingStore.ts`、测试文件。
+
+### 完整范围（推荐）
+**按顺序执行 Phase 1 → 2 → 3 → 4**
+
+修复全部 P0/P1 问题。Phase 之间有依赖关系（Phase 3 不依赖 Phase 1/2，但 Phase 1 完成后 Phase 3 的 optimistic 替换才能真正闭环）。
+
+**如果只执行 Phase 3，请忽略 Phase 1、2、4 的所有 Task。**
+
+---
+
 **Goal:** 修复 SSE 消息全链路中的消息重复、消息错乱、工具渲染缺失、状态卡死等问题，覆盖 P0/P1 优先级的 10 个已确认 bug。
 
 **Architecture:**
 - Phase 1：消息 ID 一致性（后端 → 前端 `clientMessageId` 精确替换 optimistic user message；tool result 事件与 DB 使用同一 msg_id）
 - Phase 2：前端状态守卫（tool:completed 会话过滤、switchConversation 竞态、失败回滚、busy 卡死）
-- Phase 3：工具渲染补全（`useTurnRenderModel` 按 toolCallId merge，补 inputJson/output/durationMs）
+- Phase 3：工具渲染补全（`useTurnRenderModel` 按 toolCallId merge，补 inputJson/output/durationMs）**← 原始需求核心**
 - Phase 4：LLM retry reset + 类型清理
 
 **Tech Stack:** Rust 1.77+、TypeScript、Tauri 2.x、Zustand、React、Vitest
