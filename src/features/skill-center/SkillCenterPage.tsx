@@ -33,7 +33,8 @@ export function SkillCenterPage() {
   const showHot = category === 'recommended'
 
   function getSkillMeta(source: string, cat: string) {
-    const label = SKILL_CATEGORIES.find((c) => c.id === cat)?.name ?? cat
+    const normalizedCategory = cat || 'general'
+    const label = SKILL_CATEGORIES.find((c) => c.id === normalizedCategory)?.name ?? '通用'
     const sourceLabel = source === 'builtin' ? '内置' : '自定义'
     return `${sourceLabel} · ${label}`
   }
@@ -41,7 +42,7 @@ export function SkillCenterPage() {
   return (
     <PageSectionShell
       topBar={
-        <header className="flex h-14 items-center justify-between border-b border-border px-6">
+        <header data-tauri-drag-region className="flex h-14 items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
             <span className="text-[18px] font-bold text-foreground">技能中心</span>
             <span className="rounded-full bg-secondary px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
