@@ -1,22 +1,26 @@
-//! WorkerRunConfig 必须有 control_plane 字段，可接受 Option<Arc<dyn PendingPermissionControlPlane>>。
-
-use std::sync::Arc;
-
-use app_lib::runtime::agent::worker_runtime::WorkerRunConfig;
-use app_lib::runtime::store::PendingPermissionControlPlane;
-use app_lib::runtime::tools::permission::PermissionMode;
+//! Pending permission control plane 的 owner 已收敛到 RuntimeChatTurnDriver；
+//! worker config 不应再回退持有旧字段。
 
 #[test]
-fn review_worker_run_config_accepts_optional_control_plane() {
-    let _config = WorkerRunConfig {
-        allowed_tools: vec![],
-        conversation_id: "c".into(),
-        parent_run_id: None,
-        background: false,
-        app_handle: None,
-        cancel_token: None,
-        permission_mode: PermissionMode::Default,
-        control_plane: None::<Arc<dyn PendingPermissionControlPlane>>,
-    };
-    // 若能编译即通过
+fn review_worker_config_no_longer_owns_control_plane_field() {
+    let worker_src = std::fs::read_to_string("src/runtime/agent/worker_runtime.rs")
+        .expect("read worker_runtime.rs");
+    assert!(
+        !worker_src.contains("pub control_plane:"),
+        "WorkerRunConfig 不应重新持有 control_plane 字段"
+    );
+}
+
+#[test]
+fn review_runtime_chat_driver_owns_pending_permission_control_plane() {
+    let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
+        .expect("read chat_turn_driver.rs");
+    assert!(
+        driver_src.contains("pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>"),
+        "RuntimeChatTurnDriver 应继续持有 pending_permission_control_plane"
+    );
+    assert!(
+        driver_src.contains("with_llm_executor_and_permission_control_plane"),
+        "RuntimeChatTurnDriver 应保留 control plane 注入入口"
+    );
 }

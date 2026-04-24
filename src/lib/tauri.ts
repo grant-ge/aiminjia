@@ -1454,3 +1454,26 @@ export function connectMcpServer(serverName: string): Promise<McpServerStatus> {
 export function disconnectMcpServer(serverName: string): Promise<void> {
   return invoke<void>('disconnect_mcp_server', { serverName })
 }
+
+// ---------------------------------------------------------------------------
+// Project Memory Commands
+// ---------------------------------------------------------------------------
+
+export interface ProjectMemoryEntryDraft {
+  memoryType: 'user_preference' | 'project_constraint' | 'reference_info' | 'feedback'
+  name: string
+  description: string
+  content: string
+  source?: string
+}
+
+export function saveProjectMemory(
+  workspacePath: string,
+  memory: ProjectMemoryEntryDraft,
+): Promise<string> {
+  return invoke<string>('save_project_memory', { workspacePath, memory })
+}
+
+export function distillProjectMemory(workspacePath: string): Promise<number> {
+  return invoke<number>('distill_project_memory', { workspacePath })
+}

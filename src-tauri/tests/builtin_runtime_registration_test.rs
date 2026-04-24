@@ -129,6 +129,65 @@ async fn all_four_workspace_runtime_tools_are_registered() {
 }
 
 #[tokio::test]
+async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
+    let registry = ToolRegistry::new();
+    register_builtin_tools(&registry).await;
+
+    let schemas = registry.get_all_schemas().await;
+    let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
+    for tool_name in &["write_memory", "search_memory"] {
+        assert!(
+            names.contains(tool_name),
+            "Expected '{}' in schemas, got: {:?}",
+            tool_name,
+            names
+        );
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+
+    let write_result = registry
+        .execute(
+            "write_memory",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({
+                "name": "user-prefers-boxplot",
+                "memory_type": "user_preference",
+                "description": "用户偏好用箱型图展示薪资分布",
+                "content": "用户明确表示喜欢用箱型图（box plot）展示薪资分布，不喜欢柱状图。"
+            }),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("write_memory should execute via request-scoped runtime tool");
+
+    assert!(
+        write_result.content.contains("\"status\": \"saved\""),
+        "write_memory should return saved JSON result: {}",
+        write_result.content
+    );
+
+    let search_result = registry
+        .execute(
+            "search_memory",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({
+                "query": "boxplot 箱型图"
+            }),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("search_memory should execute via request-scoped runtime tool");
+
+    assert!(
+        search_result.content.contains("user-prefers-boxplot"),
+        "search_memory should recall the saved entry: {}",
+        search_result.content
+    );
+}
+
+#[tokio::test]
 async fn bash_runtime_tool_executes_via_registry() {
     let registry = ToolRegistry::new();
     register_builtin_tools(&registry).await;

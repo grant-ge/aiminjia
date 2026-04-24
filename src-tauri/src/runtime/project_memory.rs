@@ -11,10 +11,12 @@ const LEGACY_MIGRATION_ENTRY_NAME: &str = "legacy-core-memory";
 const MAX_RECALLED_ENTRIES: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProjectMemoryType {
     UserPreference,
     ProjectConstraint,
     ReferenceInfo,
+    Feedback,
 }
 
 impl ProjectMemoryType {
@@ -23,6 +25,7 @@ impl ProjectMemoryType {
             Self::UserPreference => "user_preference",
             Self::ProjectConstraint => "project_constraint",
             Self::ReferenceInfo => "reference_info",
+            Self::Feedback => "feedback",
         }
     }
 
@@ -31,6 +34,7 @@ impl ProjectMemoryType {
             "user_preference" => Some(Self::UserPreference),
             "project_constraint" => Some(Self::ProjectConstraint),
             "reference_info" => Some(Self::ReferenceInfo),
+            "feedback" => Some(Self::Feedback),
             _ => None,
         }
     }
@@ -102,6 +106,7 @@ impl ProjectMemoryEntry {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectMemoryEntryDraft {
     pub memory_type: ProjectMemoryType,
     pub name: String,
@@ -463,4 +468,37 @@ fn stable_hash(input: impl AsRef<str>) -> u64 {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_service(dir: &std::path::Path) -> ProjectMemoryService {
+        let workspace = dir.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        ProjectMemoryService::new(dir, &workspace)
+    }
+
+    #[test]
+    fn test_feedback_type_roundtrip() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let service = make_service(dir.path());
+
+        let draft = ProjectMemoryEntryDraft {
+            memory_type: ProjectMemoryType::Feedback,
+            name: "no-mock-db".to_string(),
+            description: "不 mock 数据库，上季度因 mock/prod 差异导致迁移失败".to_string(),
+            content: "集成测试必须连接真实数据库，不使用 mock。\n\n**Why:** 上季度 mock 测试全部通过但生产迁移失败。\n**How to apply:** 任何涉及数据库 schema 或查询的测试一律走真实连接。".to_string(),
+            source: None,
+        };
+
+        let saved = service.save_memory(draft).unwrap();
+        assert!(saved.path.exists());
+
+        let ctx = service.load_context("mock database").unwrap();
+        let entry = ctx.recalled_entries.iter().find(|e| e.name == "no-mock-db");
+        assert!(entry.is_some(), "feedback entry should be recalled");
+        assert_eq!(entry.unwrap().memory_type, ProjectMemoryType::Feedback);
+    }
 }

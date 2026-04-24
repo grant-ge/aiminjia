@@ -14,6 +14,8 @@ const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "search_files",
     "get_file_info",
     "grep_content",
+    "write_memory",
+    "search_memory",
 ];
 
 #[test]

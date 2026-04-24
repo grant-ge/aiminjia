@@ -9,6 +9,7 @@ pub mod chart;
 pub mod chart_capability;
 pub mod file;
 pub mod grep;
+pub mod memory;
 pub mod network;
 pub mod python;
 pub mod python_execution;

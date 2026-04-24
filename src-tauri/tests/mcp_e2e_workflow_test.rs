@@ -93,6 +93,8 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         app_settings: None,
         agent_runtime: None,
         event_bus: None,
+        skill_registry: None,
+        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,

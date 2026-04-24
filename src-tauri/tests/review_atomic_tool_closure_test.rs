@@ -46,6 +46,8 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         app_settings: None,
         agent_runtime: None,
         event_bus: None,
+        skill_registry: None,
+        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,

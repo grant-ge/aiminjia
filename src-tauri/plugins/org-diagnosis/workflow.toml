@@ -2,7 +2,7 @@
 id = "step0"
 name = "症状收集（四维自查）"
 prompt = "prompts/step0.md"
-tools_only = ["save_memory", "search_memory"]
+tools_only = ["write_memory", "search_memory"]
 max_iterations = 8
 token_budget = 8192
 advance_on = "any"

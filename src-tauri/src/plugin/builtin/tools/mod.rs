@@ -23,10 +23,6 @@
 //! - `progress_update` — 无 RuntimeTool 替代，待删除
 //! - `plan_update` — 无 RuntimeTool 替代，待删除
 //! - `slides_gen` — 无 RuntimeTool 替代，待删除
-//! - `memory_save` — 无 RuntimeTool 替代，待删除
-//! - `memory_search` — 无 RuntimeTool 替代，待删除
-//! - `memory_core` — 无 RuntimeTool 替代，待删除
-//! - `memory_distill` — 无 RuntimeTool 替代，待删除
 //! - `browse_and_extract` — 复合工具，无 RuntimeTool 替代，待删除
 //!
 //! 见 `plugin/registry.rs::execute()` 的 `#[deprecated]` 注解。
@@ -44,10 +40,6 @@ pub mod extract_table_data;
 pub mod extract_with_pagination;
 pub mod file_load;
 pub mod hypothesis_test;
-pub mod memory_core;
-pub mod memory_distill;
-pub mod memory_save;
-pub mod memory_search;
 pub mod page_execute_js;
 pub mod plan_update;
 pub mod progress_update;
@@ -90,10 +82,6 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     //     Arc::new(progress_update::ProgressUpdateTool),   // 待删除
     //     Arc::new(plan_update::PlanUpdateTool),           // 待删除
     //     Arc::new(slides_gen::SlidesGenTool),             // 待删除
-    //     Arc::new(memory_save::MemorySaveTool),           // 待删除
-    //     Arc::new(memory_search::MemorySearchTool),       // 待删除
-    //     Arc::new(memory_core::CoreMemoryTool),           // 待删除
-    //     Arc::new(memory_distill::MemoryDistillTool),     // 待删除
     //     Arc::new(browse_navigate::BrowseNavigateTool),   // 替代: BrowseNavigateRuntimeTool
     //     Arc::new(read_page_content::ReadPageContentTool),// 替代: ReadPageContentRuntimeTool
     //     Arc::new(page_execute_js::PageExecuteJsTool),    // 替代: PageExecuteJsRuntimeTool

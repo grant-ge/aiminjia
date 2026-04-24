@@ -611,6 +611,57 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    // ── Support: memory tools ─────────────────────────────────────
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "write_memory",
+            "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["name", "memory_type", "description", "content"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "记忆条目名称，简短唯一，用于索引"
+                },
+                "memory_type": {
+                    "type": "string",
+                    "enum": ["user_preference", "project_constraint", "reference_info", "feedback"],
+                    "description": "记忆类型"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "一句话描述，用于未来相关性判断"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "记忆正文；feedback 类型建议包含规则本体、Why、How to apply"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "search_memory",
+            "在本地记忆库中按关键词搜索相关记忆条目，返回最多 5 条最相关结果。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true),
+        json!({
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "搜索关键词或问题描述"
+                }
+            }
+        }),
+    ));
+
     c
 }
 
@@ -627,7 +678,7 @@ fn build_default_catalog() -> ToolCatalog {
 ///   - load_file, execute_python（request-scoped，未全局注册）
 ///   - browse_data, generate_report, generate_chart（request-scoped，未全局注册）
 ///   - export_data, plan_update, progress_update, save_analysis_note（ToolPlugin 已关闭）
-///   - save_memory, search_memory（ToolPlugin 已关闭）
+///   - save_memory, load_core_memory, distill_memories（legacy memory ToolPlugin 已关闭）
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 8 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     "bash",
@@ -638,6 +689,8 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "search_files",
     "get_file_info",
     "grep_content",
+    "write_memory",
+    "search_memory",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

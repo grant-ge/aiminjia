@@ -28,6 +28,39 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 - 记忆：不要假设系统一定提供长期记忆能力；若上下文里没有明确事实，就基于当前对话和已加载内容作答
 - 分析：任何数据分析、统计或结论都必须来自实际执行结果，不得编造"#;
 
+/// Memory mechanics section — 对标 claude-code-best 的记忆写回/召回指导。
+const MEMORY_MECHANICS_SECTION: &str = r#"
+
+【记忆管理】
+你拥有跨对话持久化记忆能力，可通过 `write_memory` 与 `search_memory` 操作项目记忆。
+
+何时调用 `write_memory`
+- 用户明确要求“记住”“下次也这样”
+- 用户纠正你的行为或确认一个长期适用的做法
+- 识别到稳定的用户偏好、项目约束、外部系统指针
+
+何时调用 `search_memory`
+- 当前问题明显依赖历史偏好、既有项目约束、过去确认过的做法
+- 回答前需要确认是否已有相关记忆，避免重复追问
+
+不要保存
+- 可从当前代码、文件、git 历史直接推导的信息
+- 只在本次对话临时有效的状态
+
+类型约定
+- `user_preference`：用户偏好
+- `project_constraint`：项目约束
+- `reference_info`：外部系统指针
+- `feedback`：AI 行为纠正或确认
+
+`feedback` 建议写法：规则本体 + `**Why:**` + `**How to apply:**`
+
+引用记忆前要防漂移
+- 涉及文件路径先确认文件仍存在
+- 涉及函数名、变量名先在代码里确认仍存在
+- 用户说“忽略记忆”时，视作当前没有可用记忆，不引用也不比较旧记忆
+"#;
+
 /// System prompt 构建模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptMode {
@@ -227,7 +260,10 @@ pub fn build_system_prompt_parts(
         Some(name) if !name.is_empty() && name != "AI小家" => base_raw.replace("AI小家", name),
         _ => base_raw.to_string(),
     };
-    let static_section = format!("{}{}", base, TOOL_PREFERENCE_SECTION);
+    let static_section = format!(
+        "{}{}{}",
+        base, TOOL_PREFERENCE_SECTION, MEMORY_MECHANICS_SECTION
+    );
 
     // ── dynamic_section: persona + mode prompt ───────────────────────
     let mut dynamic_parts: Vec<String> = Vec::new();
@@ -693,7 +729,8 @@ mod tests {
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
         for retired_tool in [
             "save_memory",
-            "search_memory",
+            "load_core_memory",
+            "distill_memories",
             "plan_update",
             "progress_update",
             "save_analysis_note",
@@ -708,5 +745,30 @@ mod tests {
                 retired_tool
             );
         }
+    }
+
+    #[test]
+    fn test_memory_mechanics_section_mentions_runtime_memory_tools_only() {
+        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        setup_prompts(&bundled, &[("base", "AI小家"), ("daily", "")]);
+        fs::create_dir_all(&user).unwrap();
+        init_prompts(&bundled, &user);
+
+        let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
+        assert!(
+            parts.static_section.contains("write_memory"),
+            "static section must mention write_memory guidance"
+        );
+        assert!(
+            parts.static_section.contains("search_memory"),
+            "static section must mention search_memory guidance"
+        );
+        assert!(
+            !parts.static_section.contains("save_memory"),
+            "static section must not mention retired legacy memory tool names"
+        );
     }
 }

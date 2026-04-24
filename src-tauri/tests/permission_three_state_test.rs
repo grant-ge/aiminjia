@@ -303,6 +303,8 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         app_settings: None,
         agent_runtime: None,
         event_bus: None,
+        skill_registry: None,
+        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,

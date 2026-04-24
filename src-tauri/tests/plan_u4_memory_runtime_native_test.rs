@@ -337,9 +337,8 @@ fn u4_compat_tool_definition_helper_excludes_retired_memory_tools() {
 
     for retired in [
         "save_memory",
-        "search_memory",
-        "core_memory",
-        "distill_memory",
+        "load_core_memory",
+        "distill_memories",
     ] {
         assert!(
             !names.iter().any(|name| name == retired),

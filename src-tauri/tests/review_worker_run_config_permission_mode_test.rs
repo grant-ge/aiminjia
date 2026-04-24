@@ -13,7 +13,6 @@ fn review_worker_run_config_has_permission_mode_field() {
         app_handle: None,
         cancel_token: None,
         permission_mode: PermissionMode::Plan,
-        control_plane: None,
     };
     assert_eq!(config.permission_mode, PermissionMode::Plan);
 }
@@ -28,7 +27,6 @@ fn review_worker_run_config_default_permission_mode_is_default() {
         app_handle: None,
         cancel_token: None,
         permission_mode: PermissionMode::Default,
-        control_plane: None,
     };
     assert_eq!(config.permission_mode, PermissionMode::Default);
 }

@@ -113,6 +113,8 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "execute_python",
     "generate_report",
     "generate_chart",
+    "write_memory",
+    "search_memory",
     "switch_skill",
 ];
 
@@ -890,6 +892,18 @@ impl ToolRegistry {
                     )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
             }
+            "write_memory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
+                builtin::memory::MemoryDeps {
+                    app_data_dir: ctx.storage.base_dir().to_path_buf(),
+                    workspace_path: ctx.workspace_path.clone(),
+                },
+            )) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            "search_memory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
+                builtin::memory::MemoryDeps {
+                    app_data_dir: ctx.storage.base_dir().to_path_buf(),
+                    workspace_path: ctx.workspace_path.clone(),
+                },
+            )) as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "switch_skill" => match (ctx.skill_registry.clone(), ctx.skill_sessions.clone()) {
                 (Some(skill_registry), Some(skill_sessions)) => Some(
                     Arc::new(builtin::switch_skill::SwitchSkillRuntimeTool::new(
