@@ -6,19 +6,17 @@
 import type { Message } from '@/types/message'
 import { Avatar } from '@/components/common/Avatar'
 import { FileAttachmentChip } from './FileAttachmentChip'
-import { sendMessage } from '@/lib/tauri'
-import { useChatStore } from '@/stores/chatStore'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface UserBubbleProps {
   message: Message
+  onResend?: (text: string) => void
 }
 
-export function UserBubble({ message }: UserBubbleProps) {
+export function UserBubble({ message, onResend }: UserBubbleProps) {
   const { t } = useTranslation()
   const { content, sender } = message
-  const conversationId = useChatStore((s) => s.activeConversationId)
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(content.text ?? '')
   const hasFiles = content.files && content.files.length > 0
@@ -30,11 +28,10 @@ export function UserBubble({ message }: UserBubbleProps) {
 
   const handleResend = useCallback(() => {
     const text = draft.trim()
-    if (!conversationId || !text) return
-    sendMessage(conversationId, text).finally(() => {
-      setIsEditing(false)
-    })
-  }, [conversationId, draft])
+    if (!text) return
+    onResend?.(text)
+    setIsEditing(false)
+  }, [draft, onResend])
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildTurnsFromMessages } from '../useTurnRenderModel'
-import type { Message } from '@/types/message'
+import type { AssistantToolCall, Message, ToolResultContent } from '@/types/message'
 import type { ToolExecution } from '@/stores/streamingStore'
 
 function userMsg(id: string, text: string): Message {
@@ -10,6 +10,14 @@ function userMsg(id: string, text: string): Message {
 
 function aiMsg(id: string, text: string): Message {
   return { id, conversationId: 'c1', role: 'assistant', createdAt: new Date().toISOString(), content: { text } }
+}
+
+function assistantMsgWithToolCalls(id: string, toolCalls: AssistantToolCall[]): Message {
+  return { id, conversationId: 'c1', role: 'assistant', createdAt: new Date().toISOString(), content: { text: '' }, toolCalls }
+}
+
+function toolResultMsg(id: string, toolResult: ToolResultContent): Message {
+  return { id, conversationId: 'c1', role: 'tool', createdAt: new Date().toISOString(), content: { text: '' }, toolResult }
 }
 
 describe('buildTurnsFromMessages', () => {
@@ -49,5 +57,47 @@ describe('buildTurnsFromMessages', () => {
     const turns = buildTurnsFromMessages([userMsg('u1', 'hi'), msg], [])
     expect(turns[0].aiSegments[0].message).toBe(msg)
     expect(turns[0].aiSegments[0].id).toBe('a1')
+  })
+
+  it('maps inputJson from assistant.toolCalls by toolCallId', () => {
+    const msgs = [
+      userMsg('u1', 'go'),
+      assistantMsgWithToolCalls('a1', [
+        { id: 'tc-1', name: 'run_python', arguments: { code: 'print(1)' } },
+      ]),
+      toolResultMsg('t1', { toolCallId: 'tc-1', name: 'run_python', content: '1\n', isError: false }),
+    ]
+    const turns = buildTurnsFromMessages(msgs, [])
+    const step = turns[0].toolGroup?.steps[0]
+    expect(step?.toolCallId).toBe('tc-1')
+    expect(step?.inputJson).toContain('print(1)')
+    expect(step?.output).toContain('1')
+  })
+
+  it('does not confuse same-name tools called twice', () => {
+    const msgs = [
+      userMsg('u1', 'go'),
+      assistantMsgWithToolCalls('a1', [
+        { id: 'tc-1', name: 'browse', arguments: { url: 'http://a.com' } },
+        { id: 'tc-2', name: 'browse', arguments: { url: 'http://b.com' } },
+      ]),
+      toolResultMsg('t1', { toolCallId: 'tc-1', name: 'browse', content: 'page A', isError: false }),
+      toolResultMsg('t2', { toolCallId: 'tc-2', name: 'browse', content: 'page B', isError: false }),
+    ]
+    const steps = buildTurnsFromMessages(msgs, [])[0].toolGroup?.steps ?? []
+    expect(steps).toHaveLength(2)
+    expect(steps.find((s) => s.toolCallId === 'tc-1')?.output).toContain('page A')
+    expect(steps.find((s) => s.toolCallId === 'tc-2')?.output).toContain('page B')
+  })
+
+  it('error output preserved in step output', () => {
+    const msgs = [
+      userMsg('u1', 'go'),
+      assistantMsgWithToolCalls('a1', [{ id: 'tc-1', name: 'run_python', arguments: {} }]),
+      toolResultMsg('t1', { toolCallId: 'tc-1', name: 'run_python', content: 'Traceback...\nValueError: bad', isError: true }),
+    ]
+    const step = buildTurnsFromMessages(msgs, [])[0].toolGroup?.steps[0]
+    expect(step?.status).toBe('error')
+    expect(step?.output).toBeDefined()
   })
 })

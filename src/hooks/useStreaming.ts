@@ -32,6 +32,7 @@
  *  render loop and freezing the UI.
  */
 import { useEffect, useRef } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
@@ -40,6 +41,7 @@ import {
   onStreamingDelta,
   onStreamingDone,
   onStreamingError,
+  onStreamingRetryReset,
   onMessageUpdated,
   onToolExecuting,
   onToolCompleted,
@@ -51,11 +53,13 @@ import {
   onFileGenerated,
   onTaskStatusChanged,
   onTurnCompleted,
+  TAURI_EVENTS,
 } from '@/lib/tauri'
 import type {
   StreamingDeltaPayload,
   StreamingDonePayload,
   StreamingErrorPayload,
+  StreamingRetryResetPayload,
   AgentIdlePayload,
   AgentPhasePayload,
   ToolExecutingPayload,
@@ -183,19 +187,27 @@ export function useStreaming() {
 
   // --- streaming:error -------------------------------------------------
   useTauriEvent(() =>
-    onStreamingError(({ conversationId, error, errorType, partialContent }: StreamingErrorPayload) => {
-      console.error('[streaming:error]', conversationId, errorType ?? 'unknown', error)
+    onStreamingError(({ conversationId, error, rawError }: StreamingErrorPayload) => {
+      console.error('[streaming:error]', conversationId, rawError ?? 'unknown', error)
       // Flush buffered deltas so partial content is preserved before clearing
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
       const store = useChatStore.getState()
       store.clearConversationStreamState(conversationId)
       store.removeBusyConversation(conversationId)
+      if (conversationId === store.activeConversationId) {
+        const lastUserMsg = [...store.messages]
+          .reverse()
+          .find((m) => m.role === 'user' && m.conversationId === conversationId)
+        if (lastUserMsg && !lastUserMsg.id.startsWith('msg-')) {
+          store.removeMessage(lastUserMsg.id)
+        }
+      }
 
       // Show longer auto-hide for timeout errors (user needs time to read)
-      const autoHideSecs = errorType === 'chunk_timeout' || errorType === 'agent_timeout' ? 15 : 8
+      const autoHideSecs = rawError === 'chunk_timeout' || rawError === 'agent_timeout' ? 15 : 8
 
-      const suffix = partialContent ? i18n.t('errors.partialSaved') : ''
+      const suffix = ''
 
       useNotificationStore.getState().push({
         level: 'error',
@@ -214,6 +226,17 @@ export function useStreaming() {
     onMessageUpdated((message) => {
       console.log('[message:updated] id:', message.id, 'role:', message.role, 'convId:', message.conversationId)
       const store = useChatStore.getState()
+      const clientMessageId = (message as Message & { clientMessageId?: string }).clientMessageId
+      if (message.role === 'user' && clientMessageId && message.conversationId === store.activeConversationId) {
+        const optimistic = store.messages.find((m) => m.id === clientMessageId)
+        if (optimistic) {
+          const idx = store.messages.findIndex((m) => m.id === clientMessageId)
+          const updated = [...store.messages]
+          updated[idx] = message
+          store.setMessages(updated)
+          return
+        }
+      }
       // Always process messages for the active conversation.
       // For non-active conversations, the message is already persisted in DB
       // and will be loaded when the user switches to that conversation
@@ -246,8 +269,18 @@ export function useStreaming() {
           flushConversationDeltas(message.conversationId)
           delete lastActivityRef.current[message.conversationId]
           store.clearConversationStreamState(message.conversationId)
+          store.removeBusyConversation(message.conversationId)
         }
       }
+    }),
+  )
+
+  // --- streaming:retry-reset -------------------------------------------
+  useTauriEvent(() =>
+    onStreamingRetryReset(({ conversationId }: StreamingRetryResetPayload) => {
+      console.log('[streaming:retry-reset]', conversationId)
+      delete deltaBufferRef.current[conversationId]
+      useChatStore.getState().resetConversationStreamContent(conversationId)
     }),
   )
 
@@ -271,14 +304,18 @@ export function useStreaming() {
     onToolCompleted((message: Message) => {
       console.log('[tool:completed]', message.conversationId, message.toolResult?.name)
       touchActivity(message.conversationId)
-      useChatStore.getState().upsertMessage(message)
+      const store = useChatStore.getState()
+      if (message.conversationId === store.activeConversationId) {
+        store.upsertMessage(message)
+      }
       if (message.toolResult) {
-        useChatStore.getState().updateConversationToolExecution(
+        store.updateConversationToolExecution(
           message.conversationId,
           message.toolResult.toolCallId,
           {
             status: message.toolResult.isError ? 'error' : 'completed',
             durationMs: message.toolResult.durationMs,
+            output: message.toolResult.content,
           },
         )
       }
@@ -307,6 +344,18 @@ export function useStreaming() {
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
     }),
+  )
+
+  useTauriEvent(() =>
+    listen<{ conversationId: string; reason?: string }>(
+      TAURI_EVENTS.STOP_PREVENTED_CONTINUATION,
+      (event) => {
+        const { conversationId } = event.payload
+        console.warn('[stop:prevented-continuation]', conversationId)
+        useChatStore.getState().clearConversationStreamState(conversationId)
+        useChatStore.getState().removeBusyConversation(conversationId)
+      },
+    ),
   )
 
   // --- agent:phase --------------------------------------------------------

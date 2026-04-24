@@ -14,6 +14,7 @@ export interface SessionState {
   addMessage: (message: Message) => void
   updateMessage: (id: string, updates: Partial<Message>) => void
   upsertMessage: (message: Message) => void
+  removeMessage: (id: string) => void
 }
 
 interface SessionSliceBridge {
@@ -97,5 +98,7 @@ export function createSessionSlice<T extends SessionState & SessionSliceBridge>(
         }
         return { messages: [...state.messages, message] } as Partial<T>
       }),
+    removeMessage: (id) =>
+      apply((state) => ({ messages: state.messages.filter((m) => m.id !== id) } as Partial<T>)),
   }
 }

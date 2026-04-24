@@ -629,7 +629,8 @@ mod tests {
         assert_eq!(lines.len(), 2, "append-only shard should keep original and updated record");
 
         for line in lines {
-            let json: serde_json::Value = serde_json::from_str(line).unwrap();
+            let json_line = line.trim_end_matches("\t\u{2713}");
+            let json: serde_json::Value = serde_json::from_str(json_line).unwrap();
             assert!(json.get("seq").is_some(), "shard record must persist seq");
             assert!(json.get("_rev").is_some(), "shard record must persist _rev");
         }

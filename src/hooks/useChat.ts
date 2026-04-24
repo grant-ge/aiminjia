@@ -9,7 +9,7 @@
  * from render time. This keeps dependencies stable ([]) and avoids
  * infinite re-render loops.
  */
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -62,6 +62,7 @@ export function useChat() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const switchVersionRef = useRef(0)
 
   /**
    * Create a brand-new conversation and make it active.
@@ -157,6 +158,7 @@ export function useChat() {
    */
   const switchConversation = useCallback(async (id: string) => {
     console.log('[useChat] switchConversation, id:', id)
+    const loadVersion = ++switchVersionRef.current
     const store = useChatStore.getState()
     store.setActiveConversation(id)
     store.setMessages([])
@@ -167,6 +169,7 @@ export function useChat() {
         getMessages(id),
         getTasks(id).catch(() => []),
       ])
+      if (switchVersionRef.current !== loadVersion) return
       console.log('[useChat] getMessages OK, count:', msgs.length)
       console.log('[useChat] getTasks OK, count:', tasks.length)
       useChatStore.getState().setMessages(msgs)
@@ -279,11 +282,12 @@ export function useChat() {
     try {
       const fileIds = files?.map((f) => f.id)
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, text, fileIds, agentName)
+      await sendMessage(conversationId, text, fileIds, agentName, messageId)
       console.log('[useChat] sendMessage IPC returned OK')
     } catch (err) {
       console.error('[useChat] sendMessage IPC failed:', err)
       const s = useChatStore.getState()
+      s.removeMessage(messageId)
       s.clearConversationStreamState(conversationId)
       s.removeBusyConversation(conversationId)
       // Show error toast so user knows the message failed

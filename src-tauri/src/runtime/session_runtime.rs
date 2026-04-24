@@ -399,6 +399,7 @@ mod tests {
             &self,
             _conversation_id: &str,
             _content: &str,
+            _tool_calls: &[serde_json::Value],
             _generated_file_ids: &[String],
             _file_metas: &[serde_json::Value],
         ) -> anyhow::Result<String, TurnError> {
@@ -410,6 +411,7 @@ mod tests {
             _conversation_id: &str,
             _content: &str,
             _file_ids: &[String],
+            _client_message_id: Option<&str>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("user-msg".to_string())
         }

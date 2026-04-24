@@ -24,8 +24,11 @@ export const TAURI_EVENTS = {
   STREAMING_DELTA: 'streaming:delta',
   STREAMING_DONE: 'streaming:done',
   STREAMING_ERROR: 'streaming:error',
+  STREAMING_RETRY_RESET: 'streaming:retry-reset',
   MESSAGE_UPDATED: 'message:updated',
   ANALYSIS_STEP_CHANGED: 'analysis:step-changed',
+  STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
+  /** @deprecated 后端不发送此事件 */
   FILE_PARSED: 'file:parsed',
   FILE_GENERATED: 'file:generated',
   NOTIFICATION: 'notification',
@@ -53,18 +56,17 @@ export interface StreamingDeltaPayload {
 
 export interface StreamingDonePayload {
   conversationId: string
-  messageId: string
 }
 
 export interface StreamingErrorPayload {
   conversationId: string
   error: string
-  errorType?: 'chunk_timeout' | 'stream_error' | 'gateway_error' | 'agent_timeout'
   rawError?: string
-  partialContent?: boolean
-  timeoutSeconds?: number
-  iteration?: number
-  maxIterations?: number
+}
+
+export interface StreamingRetryResetPayload {
+  conversationId: string
+  runId?: string
 }
 
 export interface AgentIdlePayload {
@@ -185,12 +187,14 @@ export function sendMessage(
   content: string,
   fileIds?: string[],
   agentName?: string | null,
+  clientMessageId?: string,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
     content,
     fileIds: fileIds ?? [],
     agentName: agentName ?? null,
+    clientMessageId: clientMessageId ?? null,
   })
 }
 
@@ -903,6 +907,14 @@ export function onStreamingError(
   handler: (payload: StreamingErrorPayload) => void,
 ): Promise<() => void> {
   return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function onStreamingRetryReset(
+  handler: (payload: StreamingRetryResetPayload) => void,
+): Promise<() => void> {
+  return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
     handler(event.payload)
   })
 }

@@ -203,6 +203,66 @@ describe('useStreaming integration review', () => {
     expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
   })
 
+
+
+  it('does not remove optimistic user message on streaming:done', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-done',
+      messages: [{
+        id: 'client-1',
+        conversationId: 'conv-done',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'hello' },
+      }],
+      streamStates: {
+        'conv-done': { isStreaming: true, streamingContent: 'ok', toolExecutions: [] },
+      },
+      isStreaming: true,
+      streamingContent: 'ok',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const doneHandler = tauriEventMock.listeners.get('streaming:done')
+    act(() => {
+      doneHandler?.({ payload: { conversationId: 'conv-done' } })
+    })
+
+    expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-1'])
+  })
+
+  it('rolls back only same-conversation optimistic user message on streaming:error', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-active',
+      messages: [{
+        id: 'client-active',
+        conversationId: 'conv-active',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'keep me' },
+      }],
+      streamStates: {
+        'conv-background': { isStreaming: true, streamingContent: 'bad', toolExecutions: [] },
+      },
+      isStreaming: false,
+      streamingContent: '',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const errorHandler = tauriEventMock.listeners.get('streaming:error')
+    act(() => {
+      errorHandler?.({ payload: { conversationId: 'conv-background', error: 'failed' } })
+    })
+
+    expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-active'])
+  })
+
   it('registers a listener for turn:completed events', async () => {
     render(<HookHarness />)
     await waitForListeners()

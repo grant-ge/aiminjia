@@ -51,6 +51,8 @@ pub enum RuntimeToolCallOutcome {
         /// Whether the tool reported an error (content still contains the
         /// error description that the LLM should reason over).
         is_error: bool,
+        /// Stable message id shared by the tool:completed event and DB record.
+        msg_id: String,
         /// Metadata for the generated file, if the tool produced one.
         file_meta: Option<FileMeta>,
         /// Whether the tool result was degraded (e.g. PDF→HTML fallback).

@@ -12,10 +12,12 @@ import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
 import { useChatStore } from '@/stores/chatStore'
+import { useChat } from '@/hooks/useChat'
 import { useTurnRenderModel } from '@/hooks/useTurnRenderModel'
 
 export function MessageList() {
   const turns = useTurnRenderModel()
+  const { sendUserMessage } = useChat()
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => {
     const activeId = s.activeConversationId
@@ -51,7 +53,7 @@ export function MessageList() {
               />
             ) : null}
             {t.aiSegments.map((s) => (
-              <AiBubble key={s.id} message={s.message} hideHeader />
+              <AiBubble key={s.id} message={s.message} hideHeader onUserResponse={sendUserMessage} />
             ))}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard
