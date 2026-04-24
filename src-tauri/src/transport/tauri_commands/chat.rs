@@ -1662,6 +1662,20 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    async fn load_llm_settings_for_turn(
+        &self,
+        request: &ChatTurnRequest,
+    ) -> Result<ResolvedLlmSettings, TurnError> {
+        TauriLegacyTurnExecutor {
+            services: self.services.clone(),
+            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            )),
+        }
+        .load_llm_settings_for_turn(request)
+        .await
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -1676,19 +1690,32 @@ impl TauriChatCommandAdapter {
         let result = self.runtime.run_chat_request(request).await;
 
         if result.is_ok() {
-            if let Ok(resolved) = self.load_llm_settings().await {
-                let db = self.services.db.clone() as Arc<dyn ConversationStore>;
-                let gateway = self.services.gateway.clone();
-                let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
-                    Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
-                let conv_id = conversation_id.clone();
-                let settings = build_gateway_settings(&resolved);
-                tauri::async_runtime::spawn(async move {
-                    conversation_service::generate_and_set_title(
-                        db, gateway, host, conv_id, settings,
-                    )
-                    .await;
-                });
+            // Quick synchronous guard: only attempt title generation when needed.
+            let needs_title = conversation_service::should_auto_title(
+                &*self.services.db,
+                &conversation_id,
+            )
+            .unwrap_or(false);
+
+            if needs_title {
+                // Load settings with the correct conversation context so per-conversation
+                // model overrides are respected.
+                let dummy_request =
+                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
+                    let db = self.services.db.clone() as Arc<dyn ConversationStore>;
+                    let gateway = self.services.gateway.clone();
+                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+                    let conv_id = conversation_id.clone();
+                    let settings = build_gateway_settings(&resolved);
+                    tauri::async_runtime::spawn(async move {
+                        conversation_service::generate_and_set_title(
+                            db, gateway, host, conv_id, settings,
+                        )
+                        .await;
+                    });
+                }
             }
         }
 
