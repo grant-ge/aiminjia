@@ -15,6 +15,7 @@ use crate::runtime::tools::permission::AllowAllPermissionPipeline;
 use crate::runtime::tools::permission::{
     apply_permission_mode, PermissionDecision, PermissionPipeline,
 };
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptBehavior {
@@ -122,6 +123,24 @@ impl ToolDispatcher {
         mut input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolDispatchOutcome, ToolError> {
+        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let diag =
+            |event: &str, ok: Option<bool>, error: Option<String>, payload: Option<Value>| {
+                let mut event_obj = DiagnosticEvent::new(event, DiagnosticSource::Backend)
+                    .conversation_id(ctx.session_id.as_str())
+                    .run_id(ctx.run_id.as_str())
+                    .tool_call_id(ctx.tool_call_id.as_str());
+                if let Some(ok) = ok {
+                    event_obj = event_obj.ok(ok);
+                }
+                if let Some(error) = error {
+                    event_obj = event_obj.error(error);
+                }
+                if let Some(payload) = payload {
+                    event_obj = event_obj.payload(payload);
+                }
+                record_diagnostic(&workspace, event_obj);
+            };
         let tool = {
             let tools = self.tools.read().unwrap();
             tools
@@ -130,6 +149,12 @@ impl ToolDispatcher {
                 .ok_or_else(|| ToolError::ExecutionFailed(format!("unknown tool: {tool_name}")))?
         };
         let definition = tool.definition();
+        diag(
+            "tool.execute.started",
+            Some(true),
+            None,
+            Some(serde_json::json!({ "toolName": tool_name })),
+        );
 
         if let Some(registry) = ctx.hook_registry.as_ref() {
             let runner = HookRunner::new();
@@ -176,9 +201,21 @@ impl ToolDispatcher {
         match permission_decision {
             PermissionDecision::Allow { .. } => {}
             PermissionDecision::Deny { message, .. } => {
+                diag(
+                    "permission.resolve.completed",
+                    Some(true),
+                    None,
+                    Some(serde_json::json!({ "toolName": tool_name, "resolution": "deny" })),
+                );
                 return Err(ToolError::PermissionDenied(message));
             }
             decision @ PermissionDecision::Ask { .. } => {
+                diag(
+                    "permission.resolve.completed",
+                    Some(true),
+                    None,
+                    Some(serde_json::json!({ "toolName": tool_name, "resolution": "ask" })),
+                );
                 return Ok(ToolDispatchOutcome::AskRequired(decision));
             }
         }
@@ -207,10 +244,28 @@ impl ToolDispatcher {
             };
         }
         if let Err(ToolError::InteractionRequired(request)) = result {
+            diag(
+                "interaction.required.received",
+                Some(true),
+                None,
+                Some(serde_json::json!({
+                    "toolName": tool_name,
+                    "interactionId": request.interaction_id.as_str(),
+                })),
+            );
             return Ok(ToolDispatchOutcome::InteractionRequired(request));
         }
         ctx.event_sink.emit("tool:completed");
         let result = result?;
+        diag(
+            "tool.execute.completed",
+            Some(true),
+            None,
+            Some(serde_json::json!({
+                "toolName": tool_name,
+                "isError": false,
+            })),
+        );
         let mut prevent_continuation = false;
         let mut stop_reason = None;
         if let Some(registry) = ctx.hook_registry.as_ref() {

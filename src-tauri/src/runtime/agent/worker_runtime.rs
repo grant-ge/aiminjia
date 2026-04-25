@@ -25,6 +25,7 @@ use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::capability::{DefaultFileOperations, FileStateCache};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 use crate::llm::sub_agent::{SubAgentConfig, SubAgentResult, SubAgentRuntimeDeps};
 
@@ -118,6 +119,32 @@ impl<'a> SubagentWorkerRuntime<'a> {
         mut request: WorkerTurnRequest,
         config: WorkerRunConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
+        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let subagent_diag = |event: &str,
+                             ok: Option<bool>,
+                             error: Option<String>,
+                             payload: Option<serde_json::Value>| {
+            let mut diag = DiagnosticEvent::new(event, DiagnosticSource::Backend)
+                .conversation_id(self.runtime_deps.conversation_id.clone())
+                .payload(payload.unwrap_or_else(|| serde_json::json!({})));
+            if let Some(ok) = ok {
+                diag = diag.ok(ok);
+            }
+            if let Some(error) = error {
+                diag = diag.error(error);
+            }
+            record_diagnostic(&workspace, diag);
+        };
+        subagent_diag(
+            "subagent.spawn.started",
+            Some(true),
+            None,
+            Some(serde_json::json!({
+                "conversationId": self.runtime_deps.conversation_id,
+                "parentRunId": config.parent_run_id.as_ref().map(|id| id.as_str().to_string()),
+                "background": config.background,
+            })),
+        );
         let agent_runtime = self
             .runtime_deps
             .agent_runtime
@@ -329,8 +356,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 );
             }
 
-            let round_driver =
-                ToolRoundDriver::new(query_engine.clone()).with_allowed_tools(allowed_tools.clone());
+            let round_driver = ToolRoundDriver::new(query_engine.clone())
+                .with_allowed_tools(allowed_tools.clone());
             let round_results = round_driver
                 .execute_round(&turn, &tool_event_bus, runtime_tool_calls)
                 .await;
@@ -468,7 +495,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         request.messages.push(ChatMessage::tool_result(
                             &tool_call_id,
                             &tool_name,
-                            "User interaction required; sub-agents cannot ask the user directly.".to_string(),
+                            "User interaction required; sub-agents cannot ask the user directly."
+                                .to_string(),
                         ));
                     }
                 }
@@ -569,8 +597,37 @@ impl<'a> SubagentWorkerRuntime<'a> {
         );
 
         if let Some(decision) = pending_ask {
+            subagent_diag(
+                "subagent.failed",
+                Some(false),
+                None,
+                Some(serde_json::json!({
+                    "reason": "permission_ask",
+                    "childRunId": child_run_id.as_str(),
+                })),
+            );
             return Err(LegacyToolError::AskRequired(decision));
         }
+
+        subagent_diag(
+            if cancelled {
+                "subagent.failed"
+            } else {
+                "subagent.completed"
+            },
+            Some(!cancelled),
+            if cancelled {
+                Some("subagent cancelled".to_string())
+            } else {
+                None
+            },
+            Some(serde_json::json!({
+                "childRunId": child_run_id.as_str(),
+                "iterationsUsed": iterations_used,
+                "generatedFiles": generated_files.len(),
+                "cancelled": cancelled,
+            })),
+        );
 
         Ok(SubAgentResult {
             output,

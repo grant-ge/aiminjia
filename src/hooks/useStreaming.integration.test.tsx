@@ -30,6 +30,7 @@ import { useStreaming } from './useStreaming'
 import { useChatStore } from '@/stores/chatStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 
 function HookHarness() {
   useStreaming()
@@ -58,6 +59,7 @@ describe('useStreaming integration review', () => {
       streamingContent: '',
       toolExecutions: [],
     })
+    useDiagnosticsStore.getState().clearDiagnostics()
     useNotificationStore.getState().dismissAll()
   })
 
@@ -68,6 +70,39 @@ describe('useStreaming integration review', () => {
     expect(tauriEventMock.listeners.has('task:status-changed')).toBe(
       true,
     )
+
+    view.unmount()
+  })
+
+  it('appends backend diagnostics events into the diagnostics store', async () => {
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const diagnosticsHandler = tauriEventMock.listeners.get('diagnostics:event')
+    expect(diagnosticsHandler).toBeTypeOf('function')
+
+    act(() => {
+      diagnosticsHandler?.({
+        payload: {
+          ts: '2026-04-25T00:00:00.000Z',
+          seq: 101,
+          category: 'diagnostics',
+          level: 'info',
+          source: 'backend',
+          event: 'turn.started',
+          conversationId: 'conv-diag',
+          runId: 'run-diag',
+          payload: { phase: 'start' },
+        },
+      })
+    })
+
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'turn.started',
+      source: 'backend',
+      conversationId: 'conv-diag',
+      runId: 'run-diag',
+    })
 
     view.unmount()
   })
@@ -167,6 +202,7 @@ describe('useStreaming integration review', () => {
     })
 
     expect(useStreamingStore.getState().pendingAsks.get('tc-abc')).toBeDefined()
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'permission.ask.received')).toBe(true)
   })
 
   it('clears pending asks for conversation when streaming:done arrives', async () => {
@@ -201,6 +237,7 @@ describe('useStreaming integration review', () => {
     })
 
     expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
   })
 
   it('preserves optimistic user message sender when persisted echo replaces client id', async () => {

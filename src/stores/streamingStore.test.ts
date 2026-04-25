@@ -1,10 +1,16 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useChatStore } from './chatStore'
 import { useStreamingStore } from './streamingStore'
 import type { PendingAsk } from './streamingStore'
+import { useDiagnosticsStore } from './diagnosticsStore'
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}))
 
 function resetChatStore() {
+  useDiagnosticsStore.getState().clearDiagnostics()
   useChatStore.setState({
     conversations: [],
     activeConversationId: null,
@@ -45,6 +51,7 @@ describe('streamingStore view', () => {
 
     expect(useChatStore.getState().streamStates['c1']?.isStreaming).toBe(true)
     expect(useChatStore.getState().streamStates['c1']?.streamingContent).toBe('hello world')
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.streaming.append')).toBe(true)
   })
 
   it('preserves tool executions when clearing a conversation stream state', () => {
@@ -60,6 +67,7 @@ describe('streamingStore view', () => {
 
     expect(useChatStore.getState().streamStates['c1']?.isStreaming).toBe(false)
     expect(useChatStore.getState().streamStates['c1']?.toolExecutions).toHaveLength(1)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.streaming.clear')).toBe(true)
   })
 
   it('recomputes legacy tool execution fields for the active conversation', () => {

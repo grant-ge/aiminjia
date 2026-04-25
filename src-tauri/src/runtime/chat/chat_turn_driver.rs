@@ -38,6 +38,7 @@ use crate::runtime::store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
 };
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 pub fn build_user_content_json(
     content: &str,
@@ -439,6 +440,30 @@ fn build_renlijia_md_context_message(
     }))
 }
 
+fn record_turn_diagnostic(
+    workspace_path: &Path,
+    event: &str,
+    session_id: &crate::runtime::ids::SessionId,
+    run_id: &crate::runtime::ids::RunId,
+    ok: Option<bool>,
+    error: Option<String>,
+    payload: Option<serde_json::Value>,
+) {
+    let mut diag = DiagnosticEvent::new(event, DiagnosticSource::Backend)
+        .conversation_id(session_id.as_str())
+        .run_id(run_id.as_str());
+    if let Some(ok) = ok {
+        diag = diag.ok(ok);
+    }
+    if let Some(error) = error {
+        diag = diag.error(error);
+    }
+    if let Some(payload) = payload {
+        diag = diag.payload(payload);
+    }
+    record_diagnostic(workspace_path, diag);
+}
+
 impl RuntimeChatTurnDriver {
     pub fn new(query_engine: QueryEngine, event_bus: RuntimeEventBus) -> Self {
         Self {
@@ -611,8 +636,63 @@ impl RuntimeChatTurnDriver {
                             anyhow::anyhow!("failed to replay approved tool call: {err}")
                         })?,
                 ),
-                PendingPermissionResolution::Deny { message, .. }
-                | PendingPermissionResolution::Cancel { message } => {
+                PendingPermissionResolution::Deny { message, .. } => {
+                    record_turn_diagnostic(
+                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        "permission.resolve.completed",
+                        turn.session_id(),
+                        turn.run_id(),
+                        Some(true),
+                        None,
+                        Some(serde_json::json!({
+                            "toolCallId": tool_call_id,
+                            "toolName": tool_name,
+                            "resolution": "deny",
+                        })),
+                    );
+                    let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
+                    self.event_bus
+                        .emit(RuntimeEvent::new(
+                            turn.session_id().clone(),
+                            turn.run_id().clone(),
+                            RuntimeEventKind::ToolCallCompleted {
+                                tool_call_id: tool_call_id.clone().into(),
+                                tool_name: tool_name.clone(),
+                                is_error: true,
+                                content: message.clone(),
+                                msg_id: msg_id.clone(),
+                                duration_ms: None,
+                            },
+                        ))
+                        .await?;
+                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        content: message,
+                        is_error: true,
+                        msg_id,
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
+                        max_result_size_chars: 8_000,
+                        context_modifier_message: None,
+                        skill_runtime_patch: None,
+                    })
+                }
+                PendingPermissionResolution::Cancel { message } => {
+                    record_turn_diagnostic(
+                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        "permission.resolve.completed",
+                        turn.session_id(),
+                        turn.run_id(),
+                        Some(true),
+                        None,
+                        Some(serde_json::json!({
+                            "toolCallId": tool_call_id,
+                            "toolName": tool_name,
+                            "resolution": "cancel",
+                        })),
+                    );
                     let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
                     self.event_bus
                         .emit(RuntimeEvent::new(
@@ -729,6 +809,20 @@ impl RuntimeChatTurnDriver {
 
             let resolved = match resolution {
                 InteractionResolution::Submit { value } => {
+                    record_turn_diagnostic(
+                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        "interaction.resolve.completed",
+                        turn.session_id(),
+                        turn.run_id(),
+                        Some(true),
+                        None,
+                        Some(serde_json::json!({
+                            "interactionId": interaction_request.interaction_id.as_str(),
+                            "toolCallId": tool_call_id,
+                            "toolName": tool_name,
+                            "resolution": "submit",
+                        })),
+                    );
                     self.event_bus
                         .emit(RuntimeEvent::new(
                             turn.session_id().clone(),
@@ -753,6 +847,20 @@ impl RuntimeChatTurnDriver {
                     )
                 }
                 InteractionResolution::Cancel { message } => {
+                    record_turn_diagnostic(
+                        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                        "interaction.resolve.completed",
+                        turn.session_id(),
+                        turn.run_id(),
+                        Some(true),
+                        None,
+                        Some(serde_json::json!({
+                            "interactionId": interaction_request.interaction_id.as_str(),
+                            "toolCallId": tool_call_id,
+                            "toolName": tool_name,
+                            "resolution": "cancel",
+                        })),
+                    );
                     let msg_id = format!("tool-{}", uuid::Uuid::new_v4());
                     self.event_bus
                         .emit(RuntimeEvent::new(
@@ -877,6 +985,18 @@ impl RuntimeChatTurnDriver {
             run_id: request.run_id.clone(),
             hook_registry: request.hook_registry.clone(),
         };
+        record_turn_diagnostic(
+            &config.workspace_path,
+            "turn.config.loaded",
+            turn.session_id(),
+            turn.run_id(),
+            Some(true),
+            None,
+            Some(serde_json::json!({
+                "maxIterations": config.max_iterations,
+                "tokenBudget": config.token_budget,
+            })),
+        );
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
         // messages 顺序：[system-reminder, renlijia-md-meta?, ...history, current-user-content]
@@ -917,6 +1037,17 @@ impl RuntimeChatTurnDriver {
             .load_history(request.conversation_id.as_str())
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        record_turn_diagnostic(
+            &workspace_path,
+            "turn.history.loaded",
+            turn.session_id(),
+            turn.run_id(),
+            Some(true),
+            None,
+            Some(serde_json::json!({
+                "historyCount": history.len(),
+            })),
+        );
 
         let user_message = serde_json::json!({
             "role": "user",
@@ -932,6 +1063,18 @@ impl RuntimeChatTurnDriver {
         initial_messages.push(user_message);
 
         let mut state = TurnIterationState::new(initial_messages);
+        record_turn_diagnostic(
+            &workspace_path,
+            "turn.started",
+            turn.session_id(),
+            turn.run_id(),
+            Some(true),
+            None,
+            Some(serde_json::json!({
+                "conversationId": request.conversation_id.as_str(),
+                "userMessageLength": request.content.len(),
+            })),
+        );
 
         // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
         // Legacy path wrote the user message to DB before spawning agent_loop.
@@ -1409,6 +1552,37 @@ impl RuntimeChatTurnDriver {
         } else {
             ChatTurnOutcome::Success
         };
+        match &final_outcome {
+            ChatTurnOutcome::Cancelled => record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.cancelled",
+                &session_id,
+                &run_id,
+                Some(true),
+                None,
+                None,
+            ),
+            ChatTurnOutcome::Success => record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.completed",
+                &session_id,
+                &run_id,
+                Some(true),
+                None,
+                None,
+            ),
+            other => record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.completed",
+                &session_id,
+                &run_id,
+                Some(true),
+                None,
+                Some(serde_json::json!({
+                    "outcome": format!("{:?}", other),
+                })),
+            ),
+        }
 
         // ── Step 7: Persist assistant message ─────────────────────────────────
         // tool_calls 已在每次 iteration 通过 persist_iteration_assistant_message 存入，
@@ -1608,14 +1782,13 @@ mod tests {
 
     #[test]
     fn build_user_content_json_includes_selected_skill_metadata() {
-        let content = build_user_content_json(
-            "用这个技能吧",
-            &[],
-            Some("salary-query"),
-            Some("薪资查询"),
-        );
+        let content =
+            build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
 
-        assert_eq!(content.get("text").and_then(|value| value.as_str()), Some("用这个技能吧"));
+        assert_eq!(
+            content.get("text").and_then(|value| value.as_str()),
+            Some("用这个技能吧")
+        );
         assert_eq!(
             content
                 .get("skillCommand")

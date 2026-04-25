@@ -16,9 +16,11 @@ import {
   TAURI_EVENTS,
   approvePermissionRequest,
   denyPermissionRequest,
+  onDiagnosticsEvent,
   onPermissionAsk,
   onTurnCompleted,
   onTaskStatusChanged,
+  type DiagnosticsEventPayload,
   type AgentIdlePayload,
   type TurnCompletedPayload,
 } from './tauri'
@@ -63,6 +65,38 @@ describe('tauri event contract', () => {
 
     expect(tauriEventMock.listen).toHaveBeenCalledWith(
       'permission:ask',
+      expect.any(Function),
+    )
+  })
+
+  it('exposes diagnostics event constant with correct value', () => {
+    expect(TAURI_EVENTS.DIAGNOSTICS_EVENT).toBe('diagnostics:event')
+  })
+
+  it('DiagnosticsEventPayload keeps frontend store fields stable', () => {
+    const payload: DiagnosticsEventPayload = {
+      ts: '2026-04-25T00:00:00.000Z',
+      seq: 12,
+      category: 'diagnostics',
+      level: 'info',
+      source: 'backend',
+      event: 'turn.started',
+      conversationId: 'conv-1',
+      runId: 'run-1',
+    }
+
+    expect(payload.source).toBe('backend')
+    expect(payload.category).toBe('diagnostics')
+    expect(payload.seq).toBe(12)
+  })
+
+  it('onDiagnosticsEvent registers listener with correct event name', async () => {
+    const handler = vi.fn()
+
+    await onDiagnosticsEvent(handler)
+
+    expect(tauriEventMock.listen).toHaveBeenCalledWith(
+      'diagnostics:event',
       expect.any(Function),
     )
   })
