@@ -39,7 +39,6 @@ use crate::runtime::store::{
 };
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 
-
 pub fn build_user_content_json(
     content: &str,
     file_ids: &[String],
@@ -1605,6 +1604,39 @@ mod tests {
         assert_eq!(request.permission_mode, PermissionMode::Default);
         assert_eq!(request.selected_skill_id, None);
         assert_eq!(request.selected_skill_label, None);
+    }
+
+    #[test]
+    fn build_user_content_json_includes_selected_skill_metadata() {
+        let content = build_user_content_json(
+            "用这个技能吧",
+            &[],
+            Some("salary-query"),
+            Some("薪资查询"),
+        );
+
+        assert_eq!(content.get("text").and_then(|value| value.as_str()), Some("用这个技能吧"));
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("id"))
+                .and_then(|value| value.as_str()),
+            Some("salary-query")
+        );
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("command"))
+                .and_then(|value| value.as_str()),
+            Some("/salary-query")
+        );
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("label"))
+                .and_then(|value| value.as_str()),
+            Some("薪资查询")
+        );
     }
 
     #[tokio::test]

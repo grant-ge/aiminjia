@@ -277,6 +277,82 @@ fn build_skill_session_store(
     }
 }
 
+async fn resolve_skill_turn_context_for_request(
+    skill_sessions: &SkillSessionStore,
+    skill_registry: &SkillRegistry,
+    all_tool_names: &[String],
+    request: &ChatTurnRequest,
+) -> Result<(crate::runtime::chat::skill_session::SkillTurnContext, bool), TurnError> {
+    let has_files = !request.file_ids.is_empty();
+    let selected_skill_id = request
+        .selected_skill_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+
+    if let Some(selected_skill_id) = selected_skill_id {
+        log::info!(
+            "[skill-command][turn-config-selected-skill] trace_id={:?} conversation_id={} selected_skill_id={} selected_skill_label={:?}",
+            request
+                .client_message_id
+                .as_deref()
+                .or(Some(selected_skill_id)),
+            request.conversation_id,
+            selected_skill_id,
+            request.selected_skill_label,
+        );
+
+        let mut ctx = skill_sessions
+            .switch_skill(
+                skill_registry,
+                all_tool_names,
+                request.conversation_id.as_str(),
+                selected_skill_id,
+                has_files,
+            )
+            .await
+            .map_err(|err| {
+                TurnError::PersistenceError(format!(
+                    "Failed to switch selected skill '{}': {err}",
+                    selected_skill_id
+                ))
+            })?;
+
+        // Claude Code Best treats explicit command loading as already resolved.
+        // Do not expose switch_skill in the same turn, or the model can re-pick a different skill.
+        match ctx.allowed_tools.as_mut() {
+            Some(allowed_tools) => {
+                allowed_tools.remove("switch_skill");
+            }
+            None => {
+                ctx.allowed_tools = Some(
+                    all_tool_names
+                        .iter()
+                        .filter(|name| name.as_str() != "switch_skill")
+                        .cloned()
+                        .collect::<std::collections::HashSet<_>>(),
+                );
+            }
+        }
+
+        return Ok((ctx, true));
+    }
+
+    let ctx = skill_sessions
+        .resolve_turn_context(
+            skill_registry,
+            all_tool_names,
+            request.conversation_id.as_str(),
+            request.content.as_str(),
+            has_files,
+        )
+        .await
+        .map_err(|err| {
+            TurnError::PersistenceError(format!("Failed to resolve skill session: {err}"))
+        })?;
+    Ok((ctx, false))
+}
+
 #[derive(Clone)]
 struct TauriChatServices {
     db: Arc<AppStorage>,
@@ -1242,18 +1318,36 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .map(|def| def.name)
             .collect::<Vec<_>>();
 
-        let skill_ctx = self
-            .services
-            .skill_sessions
-            .resolve_turn_context(
-                self.services.skill_registry.as_ref(),
-                &all_tools,
-                request.conversation_id.as_str(),
-                request.content.as_str(),
-                !request.file_ids.is_empty(),
-            )
-            .await
-            .map_err(|err| TurnError::PersistenceError(format!("Failed to resolve skill session: {err}")))?;
+        let (skill_ctx, explicit_selection) = resolve_skill_turn_context_for_request(
+            self.services.skill_sessions.as_ref(),
+            self.services.skill_registry.as_ref(),
+            &all_tools,
+            request,
+        )
+        .await?;
+
+        log::info!(
+            "[skill-command][turn-config-resolved] trace_id={:?} conversation_id={} selected_skill_id={:?} selected_skill_label={:?} resolved_skill_id={} explicit_selection={} allowed_tools_count={} switch_skill_allowed={}",
+            request
+                .client_message_id
+                .as_deref()
+                .or(request.selected_skill_id.as_deref()),
+            request.conversation_id,
+            request.selected_skill_id,
+            request.selected_skill_label,
+            skill_ctx.skill_id,
+            explicit_selection,
+            skill_ctx
+                .allowed_tools
+                .as_ref()
+                .map(|tools| tools.len())
+                .unwrap_or(all_tools.len()),
+            skill_ctx
+                .allowed_tools
+                .as_ref()
+                .map(|tools| tools.contains("switch_skill"))
+                .unwrap_or(true),
+        );
 
         let authorized_workspace =
             chat_runtime_impl::load_authorized_workspace(&self.services.app, request.conversation_id.as_str());
@@ -1534,6 +1628,7 @@ mod tests {
         prompt_prefix: &'static str,
         default_tools: Vec<String>,
         workflow: Option<WorkflowDefinition>,
+        allow_all_tools: bool,
     }
 
     #[async_trait]
@@ -1565,7 +1660,11 @@ mod tests {
         }
 
         fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
-            ToolFilter::Only(self.default_tools.clone())
+            if self.allow_all_tools {
+                ToolFilter::All
+            } else {
+                ToolFilter::Only(self.default_tools.clone())
+            }
         }
 
         fn workflow(&self) -> Option<WorkflowDefinition> {
@@ -1576,6 +1675,7 @@ mod tests {
             match state.current_step.as_deref() {
                 Some("step0") => Some(vec!["search_files".to_string()]),
                 Some("step1") => Some(vec!["read_workspace_file".to_string()]),
+                _ if self.allow_all_tools => None,
                 _ => Some(self.default_tools.clone()),
             }
         }
@@ -1599,6 +1699,7 @@ mod tests {
                     prompt_prefix: "daily",
                     default_tools: vec!["bash".to_string()],
                     workflow: None,
+                    allow_all_tools: false,
                 }),
                 "test",
             )
@@ -1614,11 +1715,158 @@ mod tests {
                         initial_step: "step0".to_string(),
                         steps: vec![],
                     }),
+                    allow_all_tools: false,
                 }),
                 "test",
             )
             .await;
         registry
+            .register(
+                Arc::new(TestSkill {
+                    id: "salary-query",
+                    trigger: None,
+                    prompt_prefix: "salary",
+                    default_tools: vec!["bash".to_string(), "switch_skill".to_string()],
+                    workflow: None,
+                    allow_all_tools: false,
+                }),
+                "test",
+            )
+            .await;
+        registry
+            .register(
+                Arc::new(TestSkill {
+                    id: "all-tools-skill",
+                    trigger: None,
+                    prompt_prefix: "all-tools",
+                    default_tools: Vec::new(),
+                    workflow: None,
+                    allow_all_tools: true,
+                }),
+                "test",
+            )
+            .await;
+        registry
+    }
+
+    #[tokio::test]
+    async fn selected_skill_id_overrides_activation_detection_for_turn_context() {
+        let registry = registry_with_test_skills().await;
+        let skill_sessions = SkillSessionStore::new();
+        let all_tools = vec![
+            "bash".to_string(),
+            "search_files".to_string(),
+            "read_workspace_file".to_string(),
+            "switch_skill".to_string(),
+        ];
+        let mut request = ChatTurnRequest::new("c-selected-skill", "请分析这个问题", Vec::new());
+        request.client_message_id = Some("client-selected".to_string());
+        request.selected_skill_id = Some("salary-query".to_string());
+        request.selected_skill_label = Some("salary-query".to_string());
+
+        let (ctx, explicit) = resolve_skill_turn_context_for_request(
+            &skill_sessions,
+            &registry,
+            &all_tools,
+            &request,
+        )
+        .await
+        .expect("selected skill should resolve");
+
+        assert!(explicit, "selected_skill_id should mark this as explicit selection");
+        assert_eq!(ctx.skill_id, "salary-query");
+        assert!(
+            ctx.system_prompt.starts_with("salary:"),
+            "expected selected salary-query prompt, got {}",
+            ctx.system_prompt
+        );
+        assert!(
+            !ctx.allowed_tools
+                .as_ref()
+                .map(|tools| tools.contains("switch_skill"))
+                .unwrap_or(false),
+            "explicit skill turn must not expose switch_skill"
+        );
+
+        let restored = skill_sessions
+            .resolve_turn_context(
+                &registry,
+                &all_tools,
+                "c-selected-skill",
+                "继续",
+                false,
+            )
+            .await
+            .expect("explicit skill state should persist for following turns");
+
+        assert_eq!(restored.skill_id, "salary-query");
+    }
+
+    #[tokio::test]
+    async fn missing_selected_skill_id_keeps_activation_detection() {
+        let registry = registry_with_test_skills().await;
+        let skill_sessions = SkillSessionStore::new();
+        let all_tools = vec![
+            "bash".to_string(),
+            "search_files".to_string(),
+            "read_workspace_file".to_string(),
+            "switch_skill".to_string(),
+        ];
+        let request = ChatTurnRequest::new("c-auto-skill", "请分析这个问题", Vec::new());
+
+        let (ctx, explicit) = resolve_skill_turn_context_for_request(
+            &skill_sessions,
+            &registry,
+            &all_tools,
+            &request,
+        )
+        .await
+        .expect("activation detection should resolve");
+
+        assert!(!explicit, "missing selected_skill_id should use automatic detection");
+        assert_eq!(ctx.skill_id, "comp-analysis");
+        assert!(
+            ctx.allowed_tools
+                .as_ref()
+                .map(|tools| tools.contains("switch_skill"))
+                .unwrap_or(false),
+            "automatic skill turn should keep switch_skill available"
+        );
+    }
+
+    #[tokio::test]
+    async fn selected_skill_id_with_all_tools_still_hides_switch_skill() {
+        let registry = registry_with_test_skills().await;
+        let skill_sessions = SkillSessionStore::new();
+        let all_tools = vec![
+            "bash".to_string(),
+            "search_files".to_string(),
+            "read_workspace_file".to_string(),
+            "switch_skill".to_string(),
+        ];
+        let mut request = ChatTurnRequest::new("c-selected-all-tools", "用全工具技能", Vec::new());
+        request.selected_skill_id = Some("all-tools-skill".to_string());
+        request.selected_skill_label = Some("all-tools-skill".to_string());
+
+        let (ctx, explicit) = resolve_skill_turn_context_for_request(
+            &skill_sessions,
+            &registry,
+            &all_tools,
+            &request,
+        )
+        .await
+        .expect("all-tools selected skill should resolve");
+
+        assert!(explicit, "selected_skill_id should mark this as explicit selection");
+        let allowed_tools = ctx
+            .allowed_tools
+            .as_ref()
+            .expect("explicit all-tools skill turn should narrow allowed_tools");
+        assert!(allowed_tools.contains("bash"));
+        assert!(
+            !allowed_tools.contains("switch_skill"),
+            "explicit all-tools skill turn must not expose switch_skill"
+        );
     }
 
     #[test]
