@@ -3,17 +3,21 @@
 ## 基本要求
 
 - 全程中文回答。
-- 只在当前分支 `pzc` 开发，不创建 worktree，不切到其他分支。
-- 优先使用 superpowers 相关 skill；按场景使用 `brainstorming`、`subagent-driven-development`、`test-driven-development`、`systematic-debugging`、`verification-before-completion` 等。
+- 全套使用 superpowers 相关能力：每次任务开始先检查适用 skill，并按场景组合使用 `brainstorming`、`subagent-driven-development`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`、`requesting-code-review` 等。
+- 优先拆解问题并多用子 agent 协作：探索、架构对标、实现、审查、验证等职责尽量拆成边界清晰的任务交给合适的子 agent。
+- 子 agent 任务必须写清楚目标、上下文、写集、验收标准和禁止事项；多个子 agent 不能写同一批文件或覆盖彼此产出。
+- 主 agent 负责统筹计划、分配任务、集成结果、处理冲突、复核子 agent 产出，并完成最终验证。
 - 后台智能体按任务难度选择模型：机械型/小范围实现用快模型；跨模块集成/调试用标准模型；架构对标/审查用高能力模型。
-- 只有在任务彼此独立、写集不冲突时才并行；并行不能以牺牲验证质量为代价。
+- 只有在任务彼此独立、写集不冲突时才并行；涉及同一模块、同一路由、同一状态层或同一 UI 区域的任务必须合并处理或串行推进。
 
-## 总目标
+## 执行流程
 
-- 按计划文件顺序持续执行：`Plan-U -> Plan-V -> Plan-AA -> Plan-AB -> Plan-AC -> Plan-AD -> Plan-AE -> Plan-W -> Plan-X -> Plan-Y -> Plan-Z -> Plan-AF`，直到全部执行完。
-- 如果某个计划在执行过程中已经不合理，先直接修改对应计划文件，再继续执行修改后的计划。
-- 不要随意跳过计划顺序；如果要调整执行顺序，必须先把计划本身改清楚。
-- 中途不需要停下来征求确认；按 TDD 与验证流程连续推进。
+- 先理解需求、现有代码和相关文档；复杂需求先用 `brainstorming` 或 `writing-plans` 明确方案与计划。
+- 实现功能或修复缺陷时优先走 TDD：先补测试或明确可复现验证，再实现代码。
+- 遇到测试失败、行为异常或根因不明的问题，先用 `systematic-debugging` 定位根因，不要凭猜测改代码。
+- 完成前必须用 `verification-before-completion` 做验证；不能在没有证据的情况下声称完成、通过或修复。
+- 需要审查重大实现、跨模块改动或子 agent 产出时，使用 `requesting-code-review` 或安排独立子 agent 审查。
+- 如果计划或实现边界已经不合理，先修改对应计划/文档，再继续执行修改后的方案。
 
 ## 架构对标
 
@@ -26,6 +30,6 @@
 
 - 当前仓库：`/Users/a20250311/IdeaProjects/lotus-app`
 - 当前架构对标基线：`/Users/a20250311/github/claude-code-best`
-- 当前主线目标：先完成对 `Plan-U` 到 `Plan-AF` 的执行，不再沿用旧的 `Plan-J -> Plan-T` 目标。
-- 当前执行要求：持续使用 superpowers 相关 skill，在当前分支 `pzc` 连续推进；如发现计划边界与对标实现不一致，先修计划再落地实现。
-- 当前并行策略：只并行无共享写集的任务；`Plan-Z/Z3` 与 `Plan-AF/AF1/AF2` 统一视为同一个 `Sidebar` 写集，必须合并处理。
+- 当前执行要求：持续使用完整 superpowers 工作流；如发现计划边界与对标实现不一致，先修计划再落地实现。
+- 当前子 agent 策略：优先把可独立验证的问题交给子 agent 处理，并保持任务边界、写集、验证口径清晰。
+- 当前并行策略：只并行无共享写集的任务；共享上下文或共享写集的任务必须合并处理或串行推进。

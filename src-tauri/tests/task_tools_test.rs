@@ -1,8 +1,8 @@
-use tempfile::TempDir;
 use serde_json::json;
+use tempfile::TempDir;
 
-use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::models::message::TaskRecordFrontend;
+use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::task::task_models::{TaskRecord, TaskStatus};
 use app_lib::runtime::task::FileTaskV2Store;
@@ -28,8 +28,16 @@ fn ctx(root: &TempDir) -> ToolExecutionContext {
 #[test]
 fn task_tools_are_in_catalog_and_daily_allowed() {
     for name in ["TaskCreate", "TaskUpdate", "TaskList"] {
-        assert!(TOOL_CATALOG.get_entry(name).is_some(), "{} catalog entry missing", name);
-        assert!(DAILY_ALLOWED_TOOLS.contains(&name), "{} missing from DAILY_ALLOWED_TOOLS", name);
+        assert!(
+            TOOL_CATALOG.get_entry(name).is_some(),
+            "{} catalog entry missing",
+            name
+        );
+        assert!(
+            DAILY_ALLOWED_TOOLS.contains(&name),
+            "{} missing from DAILY_ALLOWED_TOOLS",
+            name
+        );
     }
 }
 
@@ -39,11 +47,17 @@ async fn task_create_persists_and_task_list_reads() {
     let create = TaskCreateRuntimeTool;
     let list = TaskListRuntimeTool;
 
-    let create_result = create.execute(json!({
-        "subject": "Write test",
-        "description": "Write a regression test",
-        "activeForm": "Writing test"
-    }), ctx(&root)).await.unwrap();
+    let create_result = create
+        .execute(
+            json!({
+                "subject": "Write test",
+                "description": "Write a regression test",
+                "activeForm": "Writing test"
+            }),
+            ctx(&root),
+        )
+        .await
+        .unwrap();
 
     assert!(create_result.content.contains("Task #1 created"));
 
@@ -58,21 +72,35 @@ async fn task_update_changes_status_and_owner() {
     let update = TaskUpdateRuntimeTool;
     let list = TaskListRuntimeTool;
 
-    create.execute(json!({
-        "subject": "Implement feature",
-        "description": "Implement feature details"
-    }), ctx(&root)).await.unwrap();
+    create
+        .execute(
+            json!({
+                "subject": "Implement feature",
+                "description": "Implement feature details"
+            }),
+            ctx(&root),
+        )
+        .await
+        .unwrap();
 
-    let update_result = update.execute(json!({
-        "taskId": "1",
-        "status": "in_progress",
-        "owner": "agent-a"
-    }), ctx(&root)).await.unwrap();
+    let update_result = update
+        .execute(
+            json!({
+                "taskId": "1",
+                "status": "in_progress",
+                "owner": "agent-a"
+            }),
+            ctx(&root),
+        )
+        .await
+        .unwrap();
 
     assert!(update_result.content.contains("Updated task #1"));
 
     let list_result = list.execute(json!({}), ctx(&root)).await.unwrap();
-    assert!(list_result.content.contains("#1 [in_progress] Implement feature (agent-a)"));
+    assert!(list_result
+        .content
+        .contains("#1 [in_progress] Implement feature (agent-a)"));
 }
 
 #[tokio::test]
@@ -82,15 +110,27 @@ async fn task_update_delete_removes_task() {
     let update = TaskUpdateRuntimeTool;
     let list = TaskListRuntimeTool;
 
-    create.execute(json!({
-        "subject": "Temporary task",
-        "description": "Will be deleted"
-    }), ctx(&root)).await.unwrap();
+    create
+        .execute(
+            json!({
+                "subject": "Temporary task",
+                "description": "Will be deleted"
+            }),
+            ctx(&root),
+        )
+        .await
+        .unwrap();
 
-    update.execute(json!({
-        "taskId": "1",
-        "status": "deleted"
-    }), ctx(&root)).await.unwrap();
+    update
+        .execute(
+            json!({
+                "taskId": "1",
+                "status": "deleted"
+            }),
+            ctx(&root),
+        )
+        .await
+        .unwrap();
 
     let list_result = list.execute(json!({}), ctx(&root)).await.unwrap();
     assert_eq!(list_result.content, "No tasks found");
@@ -102,25 +142,28 @@ fn task_frontend_records_are_loaded_from_file_task_v2_store() {
     let store = FileTaskV2Store::new(root.path().to_path_buf());
     let session_id = SessionId::new("sess-file-task-ui");
 
-    store.create(
-        session_id.as_str(),
-        &TaskRecord {
-            id: "1".to_string(),
-            subject: "Fix task monitor".to_string(),
-            description: "Read Task V2 files for the right panel".to_string(),
-            active_form: Some("Fixing task monitor".to_string()),
-            owner: Some("agent-a".to_string()),
-            status: TaskStatus::InProgress,
-            blocks: vec![],
-            blocked_by: vec![],
-            metadata: None,
-            session_id: session_id.clone(),
-            parent_run_id: RunId::new("run-file-task-ui"),
-            owner_agent_id: None,
-        },
-    ).unwrap();
+    store
+        .create(
+            session_id.as_str(),
+            &TaskRecord {
+                id: "1".to_string(),
+                subject: "Fix task monitor".to_string(),
+                description: "Read Task V2 files for the right panel".to_string(),
+                active_form: Some("Fixing task monitor".to_string()),
+                owner: Some("agent-a".to_string()),
+                status: TaskStatus::InProgress,
+                blocks: vec![],
+                blocked_by: vec![],
+                metadata: None,
+                session_id: session_id.clone(),
+                parent_run_id: RunId::new("run-file-task-ui"),
+                owner_agent_id: None,
+            },
+        )
+        .unwrap();
 
-    let tasks = TaskRecordFrontend::list_from_task_v2_store(root.path(), session_id.as_str()).unwrap();
+    let tasks =
+        TaskRecordFrontend::list_from_task_v2_store(root.path(), session_id.as_str()).unwrap();
 
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0].task_id, "1");

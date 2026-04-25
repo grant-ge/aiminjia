@@ -312,6 +312,41 @@ export function getTasks(
   return invoke('get_tasks', { conversationId })
 }
 
+export type ScheduleStatus = 'enabled' | 'disabled'
+
+export interface ScheduleRecord {
+  id: string
+  title: string
+  prompt: string
+  cron: string
+  humanSchedule: string
+  status: ScheduleStatus
+  nextRunAt?: string | null
+  timezone: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateScheduleRequest {
+  title: string
+  prompt: string
+  cron: string
+  timezone?: string
+  enabled?: boolean
+}
+
+export function listSchedules(): Promise<ScheduleRecord[]> {
+  return invoke<ScheduleRecord[]>('list_schedules')
+}
+
+export function createSchedule(request: CreateScheduleRequest): Promise<ScheduleRecord> {
+  return invoke<ScheduleRecord>('create_schedule', { request })
+}
+
+export function deleteSchedule(id: string): Promise<boolean> {
+  return invoke<boolean>('delete_schedule', { id })
+}
+
 export function getSubagentTranscript(
   transcriptRef: string,
 ): Promise<SubAgentTranscriptEntry[]> {

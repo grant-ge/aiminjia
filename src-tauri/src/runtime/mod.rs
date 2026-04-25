@@ -13,6 +13,8 @@ pub mod project_memory;
 pub mod query_engine;
 pub mod renlijia_md;
 pub mod run_registry;
+pub mod schedule;
+pub mod schedule_runner;
 pub mod session_runtime;
 pub mod state;
 pub mod store;

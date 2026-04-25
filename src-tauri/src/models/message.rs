@@ -165,7 +165,9 @@ impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend 
             subject: r.subject,
             status: status_str.to_string(),
             active_form: r.active_form,
-            owner: r.owner.or_else(|| r.owner_agent_id.map(|id| id.as_str().to_string())),
+            owner: r
+                .owner
+                .or_else(|| r.owner_agent_id.map(|id| id.as_str().to_string())),
         }
     }
 }

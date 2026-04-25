@@ -352,6 +352,13 @@ pub fn run() {
             app.manage(agent_runtime);
             app.manage(chat_adapter);
 
+            runtime::schedule_runner::spawn_schedule_runner(
+                aijia_home.clone(),
+                app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                    .inner()
+                    .clone(),
+            );
+
             // Skill-smith: cleanup expired drafts on startup (non-blocking).
             // Draft files older than 7 days are removed to keep _drafts/ tidy.
             let cleanup_handle = app.handle().clone();
@@ -439,6 +446,10 @@ pub fn run() {
             // Project memory commands
             commands::project_memory::save_project_memory,
             commands::project_memory::distill_project_memory,
+            // Schedule commands
+            commands::schedules::list_schedules,
+            commands::schedules::create_schedule,
+            commands::schedules::delete_schedule,
             // Auth commands
             commands::auth::cloud_login,
             commands::auth::cloud_logout,
