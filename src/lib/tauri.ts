@@ -13,6 +13,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
+import { recordDiagnostic, recordDiagnosticError } from './diagnostics'
+export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnostics'
+export { recordFrontendDiagnostic } from './tauriDiagnostics'
+
 import type { Message, SubAgentTranscriptEntry } from '@/types/message'
 import type { Settings } from '@/types/settings'
 
@@ -769,31 +773,6 @@ export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: numb
 }
 
 
-export type DiagnosticLevel = 'debug' | 'info' | 'warn' | 'error'
-
-export interface FrontendDiagnosticPayload {
-  event: string
-  level?: DiagnosticLevel
-  ok?: boolean
-  conversationId?: string
-  runId?: string
-  messageId?: string
-  clientMessageId?: string
-  toolCallId?: string
-  agentId?: string
-  interactionId?: string
-  taskId?: string
-  command?: string
-  durationMs?: number
-  elapsedMs?: number
-  error?: string
-  payload?: unknown
-}
-
-export function recordFrontendDiagnostic(diagnostic: FrontendDiagnosticPayload): Promise<void> {
-  return invoke<void>('record_frontend_diagnostic', { diagnostic })
-}
-
 // ---------------------------------------------------------------------------
 // Plugin Commands
 // ---------------------------------------------------------------------------
@@ -983,6 +962,70 @@ export function importPersonas(json: string): Promise<string> {
 // Typed Event Listeners
 // ---------------------------------------------------------------------------
 
+interface TauriEventEnvelope<T> {
+  payload: T
+}
+
+function getStringField(payload: unknown, key: string): string | undefined {
+  if (!payload || typeof payload !== 'object' || !(key in payload)) return undefined
+  const value = (payload as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function getConversationIdFromPayload(payload: unknown): string | undefined {
+  return getStringField(payload, 'conversationId')
+}
+
+function getRunIdFromPayload(payload: unknown): string | undefined {
+  return getStringField(payload, 'runId')
+}
+
+export function createInstrumentedEventHandler<T>(
+  eventName: string,
+  handler: (event: TauriEventEnvelope<T>) => void | Promise<void>,
+): (event: TauriEventEnvelope<T>) => Promise<void> {
+  return async (event) => {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const conversationId = getConversationIdFromPayload(event.payload)
+    const runId = getRunIdFromPayload(event.payload)
+
+    recordDiagnostic({
+      event: 'event.received',
+      conversationId,
+      runId,
+      payload: { eventName, payload: event.payload },
+    })
+    recordDiagnostic({
+      event: 'event.handler.started',
+      conversationId,
+      runId,
+      payload: { eventName },
+    })
+
+    try {
+      await handler(event)
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      recordDiagnostic({
+        event: 'event.handler.completed',
+        ok: true,
+        conversationId,
+        runId,
+        durationMs: Math.round(endedAt - startedAt),
+        payload: { eventName },
+      })
+    } catch (error) {
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      recordDiagnosticError('event.handler.failed', error, {
+        conversationId,
+        runId,
+        durationMs: Math.round(endedAt - startedAt),
+        payload: { eventName },
+      })
+      throw error
+    }
+  }
+}
+
 /**
  * Listen for streaming text deltas as the AI model generates a response.
  *
@@ -992,9 +1035,9 @@ export function importPersonas(json: string): Promise<string> {
 export function onStreamingDelta(
   handler: (payload: StreamingDeltaPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDeltaPayload>(TAURI_EVENTS.STREAMING_DELTA, (event) => {
+  return listen<StreamingDeltaPayload>(TAURI_EVENTS.STREAMING_DELTA, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DELTA, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1006,9 +1049,9 @@ export function onStreamingDelta(
 export function onStreamingDone(
   handler: (payload: StreamingDonePayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDonePayload>(TAURI_EVENTS.STREAMING_DONE, (event) => {
+  return listen<StreamingDonePayload>(TAURI_EVENTS.STREAMING_DONE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DONE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1020,17 +1063,17 @@ export function onStreamingDone(
 export function onStreamingError(
   handler: (payload: StreamingErrorPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, (event) => {
+  return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_ERROR, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export function onStreamingRetryReset(
   handler: (payload: StreamingRetryResetPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
+  return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1043,9 +1086,9 @@ export function onStreamingRetryReset(
 export function onMessageUpdated(
   handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<Message>(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
+  return listen<Message>(TAURI_EVENTS.MESSAGE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1057,9 +1100,9 @@ export function onMessageUpdated(
 export function onAnalysisStepChanged(
   handler: (payload: { step: number; status: string }) => void,
 ): Promise<() => void> {
-  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
+  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1071,9 +1114,9 @@ export function onAnalysisStepChanged(
 export function onNotification(
   handler: (payload: { level: string; title: string; message: string }) => void,
 ): Promise<() => void> {
-  return listen<{ level: string; title: string; message: string }>(TAURI_EVENTS.NOTIFICATION, (event) => {
+  return listen<{ level: string; title: string; message: string }>(TAURI_EVENTS.NOTIFICATION, createInstrumentedEventHandler(TAURI_EVENTS.NOTIFICATION, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1085,9 +1128,9 @@ export function onNotification(
 export function onToolExecuting(
   handler: (payload: ToolExecutingPayload) => void,
 ): Promise<() => void> {
-  return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
+  return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1099,9 +1142,9 @@ export function onToolExecuting(
 export function onToolCompleted(
   handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<Message>(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
+  return listen<Message>(TAURI_EVENTS.TOOL_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1113,9 +1156,9 @@ export function onToolCompleted(
 export function onConversationTitleUpdated(
   handler: (payload: { conversationId: string; title: string }) => void,
 ): Promise<() => void> {
-  return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
+  return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1127,9 +1170,9 @@ export function onConversationTitleUpdated(
 export function onAgentIdle(
   handler: (payload: AgentIdlePayload) => void,
 ): Promise<() => void> {
-  return listen<AgentIdlePayload>(TAURI_EVENTS.AGENT_IDLE, (event) => {
+  return listen<AgentIdlePayload>(TAURI_EVENTS.AGENT_IDLE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_IDLE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1141,9 +1184,9 @@ export function onAgentIdle(
 export function onAgentPhase(
   handler: (payload: AgentPhasePayload) => void,
 ): Promise<() => void> {
-  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, (event) => {
+  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_PHASE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1156,9 +1199,9 @@ export function onAgentPhase(
 export function onStreamingStepReset(
   handler: (payload: StreamingStepResetPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
+  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1171,9 +1214,9 @@ export function onStreamingStepReset(
 export function onFileGenerated(
   handler: (payload: FileGeneratedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, (event) => {
+  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, createInstrumentedEventHandler(TAURI_EVENTS.FILE_GENERATED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -1185,41 +1228,41 @@ export function onFileGenerated(
 export function onTaskStatusChanged(
   handler: (payload: TaskStatusChangedPayload) => void,
 ): Promise<() => void> {
-  return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
+  return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export function onPermissionAsk(
   handler: (payload: PermissionAskPayload) => void,
 ): Promise<() => void> {
-  return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, (event) => {
+  return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, createInstrumentedEventHandler(TAURI_EVENTS.PERMISSION_ASK, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export function onInteractionRequired(
   handler: (payload: InteractionRequiredPayload) => void,
 ): Promise<() => void> {
-  return listen<InteractionRequiredPayload>(TAURI_EVENTS.INTERACTION_REQUIRED, (event) => {
+  return listen<InteractionRequiredPayload>(TAURI_EVENTS.INTERACTION_REQUIRED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_REQUIRED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export function onInteractionResolved(
   handler: (payload: InteractionResolvedPayload) => void,
 ): Promise<() => void> {
-  return listen<InteractionResolvedPayload>(TAURI_EVENTS.INTERACTION_RESOLVED, (event) => {
+  return listen<InteractionResolvedPayload>(TAURI_EVENTS.INTERACTION_RESOLVED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_RESOLVED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export function onTurnCompleted(
   handler: (payload: TurnCompletedPayload) => void,
 ): Promise<() => void> {
-  return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, (event) => {
+  return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 export interface AuthExpiredPayload {
@@ -1234,9 +1277,9 @@ export interface AuthExpiredPayload {
 export function onAuthExpired(
   handler: (payload: AuthExpiredPayload) => void,
 ): Promise<() => void> {
-  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
+  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, createInstrumentedEventHandler(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1496,9 +1539,9 @@ export function dryRunSkillDraft(draftId: string): Promise<DryRunReport> {
 export function onSkillFileChanged(
   handler: (skillPath: string) => void,
 ): Promise<() => void> {
-  return listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => {
+  return listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 // ---------------------------------------------------------------------------

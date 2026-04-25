@@ -1,6 +1,6 @@
 import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
-import { recordFrontendDiagnostic } from './tauri'
-import type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauri'
+import { recordFrontendDiagnostic } from './tauriDiagnostics'
+import type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnostics'
 
 export type { DiagnosticLevel }
 export type DiagnosticSource = 'frontend' | 'backend'
