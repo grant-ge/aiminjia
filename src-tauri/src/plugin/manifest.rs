@@ -263,6 +263,40 @@ fn parse_frontmatter_map(frontmatter: &str) -> std::collections::HashMap<String,
         let key = k.trim().to_string();
         let value = v.trim();
 
+        let block_style = match value {
+            ">" | ">-" | ">+" => Some('>'),
+            "|" | "|-" | "|+" => Some('|'),
+            _ => None,
+        };
+
+        if let Some(block_style) = block_style {
+            let mut block_lines = Vec::new();
+            while i < lines.len() {
+                let child = lines[i];
+                if child.trim().is_empty() {
+                    block_lines.push(String::new());
+                    i += 1;
+                    continue;
+                }
+                if !child.starts_with(' ') && !child.starts_with('\t') {
+                    break;
+                }
+                block_lines.push(child.trim().to_string());
+                i += 1;
+            }
+            let parsed = if block_style == '>' {
+                block_lines
+                    .into_iter()
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                block_lines.join("\n").trim().to_string()
+            };
+            out.insert(key, parsed);
+            continue;
+        }
+
         if value.is_empty() {
             let mut items = Vec::new();
             while i < lines.len() {
@@ -554,6 +588,85 @@ token_budget: 5000
             manifest.defaults.as_ref().and_then(|d| d.max_iterations),
             Some(7)
         );
-        assert_eq!(manifest.defaults.as_ref().and_then(|d| d.token_budget), Some(5000));
+        assert_eq!(
+            manifest.defaults.as_ref().and_then(|d| d.token_budget),
+            Some(5000)
+        );
+    }
+
+    #[test]
+    fn test_skill_md_frontmatter_supports_folded_description() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("salary-query");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+name: salary-query
+description: >
+  查询和分析薪资表数据，输出 KPI、趋势和异常。
+  支持按月份、部门和人员维度汇总。
+---
+# Salary Query
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(manifest.plugin.id, "salary-query");
+        assert_eq!(
+            manifest.plugin.description.as_deref(),
+            Some("查询和分析薪资表数据，输出 KPI、趋势和异常。 支持按月份、部门和人员维度汇总。")
+        );
+    }
+
+    #[test]
+    fn test_skill_md_frontmatter_supports_literal_description() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("literal-skill");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+name: literal-skill
+description: |
+  第一行说明
+  第二行说明
+---
+# Literal Skill
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(
+            manifest.plugin.description.as_deref(),
+            Some("第一行说明\n第二行说明")
+        );
+    }
+
+    #[test]
+    fn test_skill_md_frontmatter_supports_chomping_indicators() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("chomping-skill");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+name: chomping-skill
+description: >-
+  第一段说明
+  第二段说明
+---
+# Chomping Skill
+"#,
+        )
+        .unwrap();
+
+        let manifest = read_manifest_from_skill_dir(Path::new(&dir)).unwrap();
+        assert_eq!(
+            manifest.plugin.description.as_deref(),
+            Some("第一段说明 第二段说明")
+        );
     }
 }
