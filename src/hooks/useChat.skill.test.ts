@@ -40,6 +40,7 @@ describe('useChat skill launch', () => {
     useSkillStore.setState({
       skills: [
         { id: 'skill-smith', displayName: '创建自己的技能', description: '', source: 'builtin', hasWorkflow: true, icon: 'file-text', category: 'general', triggerText: '我想创建一个技能', shortDescription: '', displayNameEn: 'Skill Smith', shortDescriptionEn: '' },
+        { id: 'salary-query', displayName: '薪酬查询', description: '', source: 'local', hasWorkflow: true, icon: 'file-text', category: 'general', triggerText: '/salary-query', shortDescription: '', displayNameEn: 'Salary Query', shortDescriptionEn: '' },
       ],
       recommendedIds: [],
       isLoading: false,
@@ -87,6 +88,54 @@ describe('useChat skill launch', () => {
       label: 'salary-query',
       command: '/salary-query',
     })
+  })
+
+  it('sendUserMessage 将手动输入的 slash skill 解析为技能命令 metadata', async () => {
+    useChatStore.setState({ activeConversationId: 'conv-skill' })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendUserMessage('/salary-query 帮我分析薪酬')
+    })
+
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-skill',
+      '帮我分析薪酬',
+      undefined,
+      undefined,
+      expect.any(String),
+      'salary-query',
+      '薪酬查询',
+    )
+    expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('帮我分析薪酬')
+    expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBe('/salary-query 帮我分析薪酬')
+    expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toEqual({
+      id: 'salary-query',
+      label: '薪酬查询',
+      command: '/salary-query',
+    })
+  })
+
+  it('sendUserMessage 不解析未知 slash 文本', async () => {
+    useChatStore.setState({ activeConversationId: 'conv-skill' })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendUserMessage('/not-a-skill hello')
+    })
+
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-skill',
+      '/not-a-skill hello',
+      undefined,
+      undefined,
+      expect.any(String),
+      undefined,
+      undefined,
+    )
+    expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('/not-a-skill hello')
+    expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBeUndefined()
+    expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toBeUndefined()
   })
 
 })

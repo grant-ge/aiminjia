@@ -38,6 +38,29 @@ function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+function resolveManualSkillCommand(text: string): {
+  text: string
+  selectedSkillId: string
+  skillCommand: SkillCommandBreadcrumb
+} | null {
+  const match = text.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/)
+  if (!match) return null
+
+  const skillId = match[1]
+  const skill = useSkillStore.getState().getById(skillId)
+  if (!skill) return null
+
+  return {
+    text: match[2]?.trimStart() ?? '',
+    selectedSkillId: skill.id,
+    skillCommand: {
+      id: skill.id,
+      label: skill.displayName || skill.id,
+      command: `/${skill.id}`,
+    },
+  }
+}
+
 /** File info passed from chat input UI to sendUserMessage. */
 export interface PendingFileInfo {
   id: string
@@ -250,10 +273,13 @@ export function useChat() {
       }
     }
 
+    const manualSkillCommand = selectedSkillId ? null : resolveManualSkillCommand(text)
+    const effectiveText = manualSkillCommand?.text ?? text
+    const effectiveSelectedSkillId = selectedSkillId ?? manualSkillCommand?.selectedSkillId
     const messageId = generateId()
     const now = new Date().toISOString()
 
-    const selectedSkillCommand = selectedSkillId
+    const selectedSkillCommand = effectiveSelectedSkillId
       ? useChatStore.getState().selectedSkillCommands[conversationId]
       : undefined
     const skillCommand: SkillCommandBreadcrumb | undefined = selectedSkillCommand
@@ -262,10 +288,11 @@ export function useChat() {
           label: selectedSkillCommand.label,
           command: selectedSkillCommand.command,
         }
-      : selectedSkillId
-        ? { id: selectedSkillId, label: selectedSkillId, command: `/${selectedSkillId}` }
-        : undefined
-    const commandText = skillCommand ? `${skillCommand.command} ${text}`.trim() : undefined
+      : manualSkillCommand?.skillCommand
+        ?? (effectiveSelectedSkillId
+          ? { id: effectiveSelectedSkillId, label: effectiveSelectedSkillId, command: `/${effectiveSelectedSkillId}` }
+          : undefined)
+    const commandText = skillCommand ? `${skillCommand.command} ${effectiveText}`.trim() : undefined
     // Build the optimistic user message
     const auth = useAuthStore.getState()
     const userMessage: Message = {
@@ -274,7 +301,7 @@ export function useChat() {
       role: 'user',
       createdAt: now,
       content: {
-        text,
+        text: effectiveText,
         commandText,
         skillCommand,
         files: files?.map((f) => ({
@@ -297,6 +324,7 @@ export function useChat() {
       conversationId,
       clientMessageId: messageId,
       selectedSkillId,
+      effectiveSelectedSkillId,
       selectedSkillCommand,
       commandText,
       skillCommand,
@@ -308,7 +336,7 @@ export function useChat() {
     try {
       const fileIds = files?.map((f) => f.id)
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, text, fileIds, agentName, messageId, selectedSkillId, skillCommand?.label)
+      await sendMessage(conversationId, effectiveText, fileIds, agentName, messageId, effectiveSelectedSkillId, skillCommand?.label)
       console.log('[useChat] sendMessage IPC returned OK')
       return true
     } catch (err) {

@@ -68,8 +68,9 @@ export function SlashCommandPopover({
   const visibleSkills = useMemo(() => {
     return skills
       .filter((s) => {
-        // Exclude daily-assistant (the fallback one) and skills without icon
-        if (s.id === 'daily-assistant' || !s.icon) return false
+        // Exclude only the fallback assistant. Local SKILL.md based skills may not define an icon,
+        // but slash search should still find them by id/name.
+        if (s.id === 'daily-assistant') return false
         // Score filter
         return scoreSkill(s, filterText) > 0
       })
@@ -206,7 +207,7 @@ export function SlashCommandPopover({
                 onClick={() => onSelect(skill)}
                 onMouseEnter={() => setSelectionState({ filterText, index: idx })}
               >
-                <span className="mt-0.5 text-base leading-none">{skill.icon}</span>
+                <span className="mt-0.5 text-base leading-none">{skill.icon || '✦'}</span>
                 <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                   <div className="flex items-center gap-2">
                     <span

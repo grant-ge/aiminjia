@@ -59,6 +59,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 import { useChatStore } from '@/stores/chatStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { ChatBottomArea } from '../ChatBottomArea'
 
 describe('ChatBottomArea', () => {
@@ -70,6 +71,13 @@ describe('ChatBottomArea', () => {
       conversations: [],
       messages: [],
       selectedSkillCommands: {},
+    })
+    useSkillStore.setState({
+      skills: [
+        { id: 'salary-query', displayName: '薪酬查询', description: '', source: 'local', hasWorkflow: true, icon: '', category: 'general', triggerText: '/salary-query', shortDescription: '', displayNameEn: 'Salary Query', shortDescriptionEn: '' },
+      ],
+      recommendedIds: [],
+      isLoading: false,
     })
   })
 
@@ -119,6 +127,23 @@ describe('ChatBottomArea', () => {
     expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
     expect(screen.getByText('/skill-smith')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /当前已加载技能 创建自己的技能/ })).toBeInTheDocument()
+  })
+
+  it('turns typed slash skill command into composer token', () => {
+    render(<ChatBottomArea />)
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '/salary-query 你好' },
+    })
+
+    expect(screen.getByText('薪酬查询')).toBeInTheDocument()
+    expect(screen.getByText('/salary-query')).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('你好')
+    expect(useChatStore.getState().selectedSkillCommands['conv-chat-bottom']).toEqual({
+      id: 'salary-query',
+      label: '薪酬查询',
+      command: '/salary-query',
+    })
   })
 
   it('does not leak selected skill command across conversations', () => {

@@ -97,12 +97,14 @@ export function ChatBottomArea() {
     slashMatch,
     slashOpen,
     handleSkillPick,
+    handleInputChange,
     handleSlashSelect,
     handleSlashClose,
   } = useSkillComposer({
     input,
     setInput,
     textareaRef,
+    conversationId: activeConversationId,
   })
 
   useEffect(() => {
@@ -252,7 +254,7 @@ export function ChatBottomArea() {
 
           <ChatComposerCompact
             value={input}
-            onChange={setInput}
+            onChange={handleInputChange}
             onSubmit={(value) => void handleSend(value)}
             submitDisabled={isSendDisabled}
             placeholder={pendingFiles.length > 0 ? t('inputBar.placeholderWithFile') : t('inputBar.placeholder')}
