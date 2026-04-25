@@ -58,7 +58,7 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
         <DialogHeader>
           <DialogTitle>上传技能</DialogTitle>
           <DialogDescription>
-            选择一个包含 <code>plugin.toml</code> 或 <code>SKILL.md</code> 的本地技能目录，安装后会自动刷新技能中心。
+            选择一个包含 <code>SKILL.md</code> 的本地技能目录，安装后会自动刷新技能中心。
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">

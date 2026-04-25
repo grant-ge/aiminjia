@@ -24,6 +24,13 @@ describe('SkillUploadModal', () => {
     useNotificationStore.setState({ notifications: [] })
   })
 
+  it('提示只支持包含 SKILL.md 的技能目录', () => {
+    render(<SkillUploadModal open onOpenChange={vi.fn()} />)
+
+    expect(screen.getByText(/选择一个包含/)).toHaveTextContent('选择一个包含 SKILL.md 的本地技能目录，安装后会自动刷新技能中心。')
+    expect(screen.queryByText(/plugin\.toml/)).not.toBeInTheDocument()
+  })
+
   it('选择本地技能目录后调用 upload 并关闭弹窗', async () => {
     const onOpenChange = vi.fn()
     const upload = vi.fn().mockResolvedValue(undefined)
