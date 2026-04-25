@@ -24,7 +24,7 @@ export function useWorkspaceAuthorization() {
         const now = new Date().toISOString()
         const store = useChatStore.getState()
         store.setConversations([
-          { id: newId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+          { id: newId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
           ...store.conversations,
         ])
         store.setActiveConversation(newId)

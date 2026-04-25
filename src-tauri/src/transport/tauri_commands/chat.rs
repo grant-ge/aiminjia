@@ -1959,6 +1959,31 @@ impl TauriChatCommandAdapter {
         Self { runtime, services }
     }
 
+    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
+        TauriLegacyTurnExecutor {
+            services: self.services.clone(),
+            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            )),
+        }
+        .load_llm_settings()
+        .await
+    }
+
+    async fn load_llm_settings_for_turn(
+        &self,
+        request: &ChatTurnRequest,
+    ) -> Result<ResolvedLlmSettings, TurnError> {
+        TauriLegacyTurnExecutor {
+            services: self.services.clone(),
+            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            )),
+        }
+        .load_llm_settings_for_turn(request)
+        .await
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -1968,7 +1993,7 @@ impl TauriChatCommandAdapter {
         agent_name: Option<String>,
         client_message_id: Option<String>,
     ) -> Result<(), String> {
-        let mut request = ChatTurnRequest::new(conversation_id, content, file_ids);
+        let mut request = ChatTurnRequest::new(conversation_id.clone(), content, file_ids);
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
         if let Some(permission_mode) = permission_mode {
@@ -2024,7 +2049,39 @@ impl TauriChatCommandAdapter {
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf()),
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
-        runtime.run_chat_request(request).await
+        let result = runtime.run_chat_request(request).await;
+
+        if result.is_ok() {
+            // Quick synchronous guard: only attempt title generation when needed.
+            let needs_title = conversation_service::should_auto_title(
+                &*self.services.db,
+                &conversation_id,
+            )
+            .unwrap_or(false);
+
+            if needs_title {
+                // Load settings with the correct conversation context so per-conversation
+                // model overrides are respected.
+                let dummy_request =
+                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
+                    let db = self.services.db.clone() as Arc<dyn ConversationStore>;
+                    let gateway = self.services.gateway.clone();
+                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+                    let conv_id = conversation_id.clone();
+                    let settings = build_gateway_settings(&resolved);
+                    tauri::async_runtime::spawn(async move {
+                        conversation_service::generate_and_set_title(
+                            db, gateway, host, conv_id, settings,
+                        )
+                        .await;
+                    });
+                }
+            }
+        }
+
+        result
     }
 
     pub fn flush_pending_message_writes(&self) -> Result<(), String> {

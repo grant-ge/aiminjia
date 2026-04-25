@@ -85,7 +85,7 @@ export function HomeTaskComposerCard() {
       const now = new Date().toISOString()
       const store = useChatStore.getState()
       store.setConversations([
-        { id: backendId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+        { id: backendId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
         ...store.conversations,
       ])
       store.setActiveConversation(backendId)
