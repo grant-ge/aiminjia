@@ -195,7 +195,7 @@ export function useChat() {
     text: string,
     files?: PendingFileInfo[],
     agentName?: string | null,
-  ) => {
+  ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
     console.log('[useChat] sendUserMessage, conversationId:', conversationId, 'text:', text.slice(0, 50))
@@ -211,7 +211,7 @@ export function useChat() {
         autoHide: 5,
         context: 'toast',
       })
-      return
+      return false
     }
 
     // Block if max concurrent conversations reached
@@ -225,7 +225,7 @@ export function useChat() {
         autoHide: 5,
         context: 'toast',
       })
-      return
+      return false
     }
 
     // Auto-create a conversation if none is active
@@ -245,7 +245,7 @@ export function useChat() {
         conversationId = backendId
       } catch (err) {
         console.error('[useChat] Failed to auto-create conversation:', err)
-        return
+        return false
       }
     }
 
@@ -285,6 +285,7 @@ export function useChat() {
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
       await sendMessage(conversationId, text, fileIds, agentName, messageId)
       console.log('[useChat] sendMessage IPC returned OK')
+      return true
     } catch (err) {
       console.error('[useChat] sendMessage IPC failed:', err)
       const s = useChatStore.getState()
@@ -301,6 +302,7 @@ export function useChat() {
         autoHide: 8,
         context: 'toast',
       })
+      return false
     }
   }, [])
 
@@ -386,12 +388,13 @@ export function useChat() {
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
     const skill = useSkillStore.getState().getById(skillId)
-    const trigger = skill?.triggerText?.trim()
-    if (trigger) {
-      await sendUserMessage(trigger)
-    }
+    useChatStore.getState().setSelectedSkillCommand(conversationId, {
+      id: skillId,
+      label: skill?.displayName || skillId,
+      command: `/${skillId}`,
+    })
     return conversationId
-  }, [createNewConversation, sendUserMessage])
+  }, [createNewConversation])
 
   return {
     // State (subscribed for re-rendering)

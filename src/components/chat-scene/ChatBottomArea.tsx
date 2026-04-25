@@ -86,6 +86,8 @@ export function ChatBottomArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const selectedSkillCommand = useChatStore((s) => activeConversationId ? s.selectedSkillCommands[activeConversationId] ?? null : null)
+  const clearSelectedSkillCommand = useChatStore((s) => s.clearSelectedSkillCommand)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFiles } = useFileUpload()
   const openSettings = useUiStore((s) => s.openSettings)
@@ -144,7 +146,7 @@ export function ChatBottomArea() {
 
     const IPC_TIMEOUT_MS = 15_000
     try {
-      await Promise.race([
+      const sent = await Promise.race([
         sendUserMessage(
           trimmed || t('inputBar.analyzeFile'),
           fileInfos.length > 0 ? fileInfos : undefined,
@@ -153,15 +155,17 @@ export function ChatBottomArea() {
           setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS),
         ),
       ])
+      if (sent) {
+        setInput('')
+        setPendingFiles([])
+        clearSelectedSkillCommand(activeConversationId)
+      }
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed or timed out:', err)
     } finally {
       setIsSending(false)
     }
-
-    setInput('')
-    setPendingFiles([])
-  }, [input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
+  }, [activeConversationId, clearSelectedSkillCommand, input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) return
@@ -253,6 +257,8 @@ export function ChatBottomArea() {
                 onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
               />
             ) : null}
+            skillCommand={selectedSkillCommand}
+            onClearSkillCommand={() => clearSelectedSkillCommand(activeConversationId)}
             textareaRef={textareaRef}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => { isComposingRef.current = true }}

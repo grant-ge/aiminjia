@@ -24,11 +24,37 @@ import {
   useStreamingStore,
 } from './streamingStore'
 
-export type ChatState = SessionState & StreamingState
+export interface ComposerSkillCommand {
+  id: string
+  label: string
+  command: string
+}
+
+export type ChatState = SessionState & StreamingState & {
+  selectedSkillCommands: Record<string, ComposerSkillCommand>
+  setSelectedSkillCommand: (conversationId: string, command: ComposerSkillCommand | null) => void
+  clearSelectedSkillCommand: (conversationId?: string | null) => void
+}
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   ...createSessionSlice<ChatState>(set, get),
   ...createStreamingSlice<ChatState>(set, get),
+  selectedSkillCommands: {},
+  setSelectedSkillCommand: (conversationId, command) => set((state) => {
+    const next = { ...state.selectedSkillCommands }
+    if (command) {
+      next[conversationId] = command
+    } else {
+      delete next[conversationId]
+    }
+    return { selectedSkillCommands: next }
+  }),
+  clearSelectedSkillCommand: (conversationId) => set((state) => {
+    if (!conversationId) return { selectedSkillCommands: state.selectedSkillCommands }
+    const next = { ...state.selectedSkillCommands }
+    delete next[conversationId]
+    return { selectedSkillCommands: next }
+  }),
 }))
 
 bindSessionStore(useChatStore)

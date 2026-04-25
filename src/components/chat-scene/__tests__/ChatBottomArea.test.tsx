@@ -6,7 +6,7 @@ const chatState = vi.hoisted(() => ({
   isStreaming: false,
 }))
 
-const sendUserMessageMock = vi.hoisted(() => vi.fn(async () => undefined))
+const sendUserMessageMock = vi.hoisted(() => vi.fn(async () => true))
 const stopCurrentStreamMock = vi.hoisted(() => vi.fn())
 const selectAndUploadFilesMock = vi.hoisted(() => vi.fn(async () => []))
 const selectAndAuthorizeDirectoryMock = vi.hoisted(() => vi.fn(async () => undefined))
@@ -69,6 +69,7 @@ describe('ChatBottomArea', () => {
       activeConversationId: 'conv-chat-bottom',
       conversations: [],
       messages: [],
+      selectedSkillCommands: {},
     })
   })
 
@@ -101,4 +102,90 @@ describe('ChatBottomArea', () => {
     fireEvent.click(screen.getByRole('button', { name: '停止' }))
     expect(stopCurrentStreamMock).toHaveBeenCalled()
   })
+
+  it('renders selected skill command token from chat store', () => {
+    useChatStore.setState({
+      selectedSkillCommands: {
+        'conv-chat-bottom': {
+          id: 'skill-smith',
+          label: '创建自己的技能',
+          command: '/skill-smith',
+        },
+      },
+    })
+
+    render(<ChatBottomArea />)
+
+    expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
+    expect(screen.getByText('/skill-smith')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /当前已加载技能 创建自己的技能/ })).toBeInTheDocument()
+  })
+
+  it('does not leak selected skill command across conversations', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-other',
+      selectedSkillCommands: {
+        'conv-chat-bottom': {
+          id: 'skill-smith',
+          label: '创建自己的技能',
+          command: '/skill-smith',
+        },
+      },
+    })
+
+    render(<ChatBottomArea />)
+
+    expect(screen.queryByText('创建自己的技能')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开技能选择' })).toBeInTheDocument()
+  })
+
+  it('keeps token and input when sendUserMessage reports failure', async () => {
+    sendUserMessageMock.mockResolvedValueOnce(false)
+    useChatStore.setState({
+      selectedSkillCommands: {
+        'conv-chat-bottom': {
+          id: 'skill-smith',
+          label: '创建自己的技能',
+          command: '/skill-smith',
+        },
+      },
+    })
+
+    render(<ChatBottomArea />)
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
+    })
+
+    expect(screen.getByRole('textbox')).toHaveValue('hello')
+    expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
+  })
+
+  it('clears token and input after successful send', async () => {
+    sendUserMessageMock.mockResolvedValueOnce(true)
+    useChatStore.setState({
+      selectedSkillCommands: {
+        'conv-chat-bottom': {
+          id: 'skill-smith',
+          label: '创建自己的技能',
+          command: '/skill-smith',
+        },
+      },
+    })
+
+    render(<ChatBottomArea />)
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox')).toHaveValue('')
+    })
+
+    expect(screen.queryByText('创建自己的技能')).not.toBeInTheDocument()
+  })
+
 })

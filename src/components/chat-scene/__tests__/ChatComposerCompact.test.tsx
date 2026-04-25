@@ -91,6 +91,31 @@ describe('ChatComposerCompact', () => {
     expect(onStop).toHaveBeenCalled()
   })
 
+  it('renders skill token, loaded skill button state, and clears token', () => {
+    const onClearSkillCommand = vi.fn()
+
+    render(
+      <ChatComposerCompact
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        skillCommand={{
+          id: 'skill-smith',
+          label: '创建自己的技能',
+          command: '/skill-smith',
+        }}
+        onClearSkillCommand={onClearSkillCommand}
+      />,
+    )
+
+    expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
+    expect(screen.getByText('/skill-smith')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /当前已加载技能 创建自己的技能/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '移除技能 创建自己的技能' }))
+    expect(onClearSkillCommand).toHaveBeenCalledTimes(1)
+  })
+
   it('uses zero gap on the left action group', () => {
     const { container } = render(
       <ChatComposerCompact value="" onChange={() => {}} onSubmit={() => {}} />,

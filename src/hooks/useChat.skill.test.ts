@@ -35,6 +35,7 @@ describe('useChat skill launch', () => {
       isStreaming: false,
       streamingContent: '',
       toolExecutions: [],
+      selectedSkillCommands: {},
     })
     useSkillStore.setState({
       skills: [
@@ -46,20 +47,19 @@ describe('useChat skill launch', () => {
     useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null })
   })
 
-  it('createConversationFromSkill 创建会话并发送技能 triggerText', async () => {
+  it('createConversationFromSkill 创建会话并设置技能命令 token', async () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
       await result.current.createConversationFromSkill('skill-smith')
     })
 
-    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
-      'conv-skill',
-      '我想创建一个技能',
-      undefined,
-      undefined,
-      expect.any(String),
-    )
+    expect(tauriMock.sendMessage).not.toHaveBeenCalled()
+    expect(useChatStore.getState().selectedSkillCommands['conv-skill']).toEqual({
+      id: 'skill-smith',
+      label: '创建自己的技能',
+      command: '/skill-smith',
+    })
     expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-skill' })
   })
 })

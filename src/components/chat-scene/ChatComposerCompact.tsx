@@ -3,7 +3,9 @@
  * @sizing r-18 border 1 bg card padding [16,18,14,18] gap 12
  */
 import { useRef, type KeyboardEvent, type ReactNode, type RefObject, type CompositionEventHandler } from 'react'
-import { ArrowUp, Blocks, Folder, Mic, Plus, ShieldCheck } from 'lucide-react'
+import { ArrowUp, Blocks, Folder, Mic, Plus, ShieldCheck, Sparkles, X } from 'lucide-react'
+
+import type { ComposerSkillCommand } from '@/stores/chatStore'
 
 interface ChatComposerCompactProps {
   value: string
@@ -24,6 +26,8 @@ interface ChatComposerCompactProps {
   onOpenAttachment?: () => void
   pendingFilesSlot?: ReactNode
   topSlot?: ReactNode
+  skillCommand?: ComposerSkillCommand | null
+  onClearSkillCommand?: () => void
   textareaRef?: RefObject<HTMLTextAreaElement | null>
   onCompositionStart?: CompositionEventHandler<HTMLTextAreaElement>
   onCompositionEnd?: CompositionEventHandler<HTMLTextAreaElement>
@@ -49,6 +53,8 @@ export function ChatComposerCompact({
   onOpenAttachment,
   pendingFilesSlot,
   topSlot,
+  skillCommand,
+  onClearSkillCommand,
   textareaRef,
   onCompositionStart,
   onCompositionEnd,
@@ -74,6 +80,37 @@ export function ChatComposerCompact({
       >
         {topSlot}
         {pendingFilesSlot}
+        {skillCommand ? (
+          <div className="mb-2 flex items-center gap-2">
+            <div
+              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[13px] font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
+              style={{
+                borderColor: 'var(--color-accent-border)',
+                background: 'var(--color-accent-subtle)',
+                color: 'var(--color-accent-700)',
+              }}
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full text-white" style={{ background: 'var(--color-accent)' }}>
+                <Sparkles className="h-3.5 w-3.5" />
+              </span>
+              <span className="truncate">{skillCommand.label}</span>
+              <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[11px] font-medium" style={{ color: 'var(--color-accent-600)' }}>
+                {skillCommand.command}
+              </span>
+              {onClearSkillCommand ? (
+                <button
+                  type="button"
+                  aria-label={`移除技能 ${skillCommand.label}`}
+                  onClick={onClearSkillCommand}
+                  className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full transition-colors hover:bg-[var(--color-accent-muted)]"
+                  style={{ color: 'var(--color-accent-700)' }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <textarea
           ref={ref}
           value={value}
@@ -99,10 +136,16 @@ export function ChatComposerCompact({
             <button
               type="button"
               onClick={onOpenSkill}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
+              aria-label={skillCommand ? `打开技能选择，当前已加载技能 ${skillCommand.label}` : '打开技能选择'}
+              aria-pressed={Boolean(skillCommand)}
+              className={skillCommand
+                ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold transition-colors hover:bg-[var(--color-accent-muted)]'
+                : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted'
+              }
+              style={skillCommand ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' } : undefined}
             >
               <Blocks className="h-3.5 w-3.5" />
-              <span>技能</span>
+              <span>{skillCommand ? '技能已加载' : '技能'}</span>
             </button>
             <button
               type="button"
