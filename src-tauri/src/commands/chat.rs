@@ -1,5 +1,31 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
+
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
+
+fn diagnostics_workspace() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn record_command_event(
+    event: &str,
+    conversation_id: Option<&str>,
+    ok: Option<bool>,
+    command: Option<&str>,
+) {
+    let mut diag = DiagnosticEvent::new(event, DiagnosticSource::Backend);
+    if let Some(conversation_id) = conversation_id {
+        diag = diag.conversation_id(conversation_id);
+    }
+    if let Some(ok) = ok {
+        diag = diag.ok(ok);
+    }
+    if let Some(command) = command {
+        diag = diag.command(command);
+    }
+    record_diagnostic(&diagnostics_workspace(), diag);
+}
 
 /// Check which conversations have active agent tasks.
 ///
@@ -31,7 +57,14 @@ pub async fn send_message(
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
-    adapter
+    let diagnostic_conversation_id = conversation_id.clone();
+    record_command_event(
+        "backend.command.started",
+        Some(&conversation_id),
+        None,
+        Some("chat.send_message"),
+    );
+    let result = adapter
         .send_message(
             conversation_id,
             content,
@@ -42,14 +75,51 @@ pub async fn send_message(
             selected_skill_id,
             selected_skill_label,
         )
-        .await
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            Some(&diagnostic_conversation_id),
+            Some(true),
+            Some("chat.send_message"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            Some(&diagnostic_conversation_id),
+            Some(false),
+            Some("chat.send_message"),
+        ),
+    }
+    result
 }
 #[tauri::command]
 pub async fn stop_streaming(
     adapter: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
     conversation_id: String,
 ) -> Result<(), String> {
-    adapter.stop_streaming(conversation_id).await
+    let diagnostic_conversation_id = conversation_id.clone();
+    record_command_event(
+        "backend.command.started",
+        Some(&conversation_id),
+        None,
+        Some("chat.stop_streaming"),
+    );
+    let result = adapter.stop_streaming(conversation_id).await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            Some(&diagnostic_conversation_id),
+            Some(true),
+            Some("chat.stop_streaming"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            Some(&diagnostic_conversation_id),
+            Some(false),
+            Some("chat.stop_streaming"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -60,9 +130,24 @@ pub async fn approve_permission_request(
     remember: Option<bool>,
     destination: Option<crate::runtime::tools::permission::PermissionDestination>,
 ) -> Result<(), String> {
-    adapter
+    let result = adapter
         .approve_permission_request(tool_call_id, updated_input, remember, destination)
-        .await
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            None,
+            Some(true),
+            Some("chat.approve_permission_request"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            None,
+            Some(false),
+            Some("chat.approve_permission_request"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -73,9 +158,24 @@ pub async fn deny_permission_request(
     remember: Option<bool>,
     destination: Option<crate::runtime::tools::permission::PermissionDestination>,
 ) -> Result<(), String> {
-    adapter
+    let result = adapter
         .deny_permission_request(tool_call_id, message, remember, destination)
-        .await
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            None,
+            Some(true),
+            Some("chat.deny_permission_request"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            None,
+            Some(false),
+            Some("chat.deny_permission_request"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -84,9 +184,24 @@ pub async fn cancel_permission_request(
     tool_call_id: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    adapter
+    let result = adapter
         .cancel_permission_request(tool_call_id, message)
-        .await
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            None,
+            Some(true),
+            Some("chat.cancel_permission_request"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            None,
+            Some(false),
+            Some("chat.cancel_permission_request"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -95,7 +210,22 @@ pub async fn submit_user_interaction(
     interaction_id: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
-    adapter.submit_user_interaction(interaction_id, value).await
+    let result = adapter.submit_user_interaction(interaction_id, value).await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            None,
+            Some(true),
+            Some("chat.submit_user_interaction"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            None,
+            Some(false),
+            Some("chat.submit_user_interaction"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -104,9 +234,24 @@ pub async fn cancel_user_interaction(
     interaction_id: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    adapter
+    let result = adapter
         .cancel_user_interaction(interaction_id, message)
-        .await
+        .await;
+    match &result {
+        Ok(()) => record_command_event(
+            "backend.command.completed",
+            None,
+            Some(true),
+            Some("chat.cancel_user_interaction"),
+        ),
+        Err(_) => record_command_event(
+            "backend.command.failed",
+            None,
+            Some(false),
+            Some("chat.cancel_user_interaction"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]

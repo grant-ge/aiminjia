@@ -204,6 +204,29 @@ export interface TurnCompletedPayload {
   message?: string
 }
 
+export interface DiagnosticsEventPayload {
+  ts: string
+  seq: number
+  category: 'diagnostics'
+  level: 'debug' | 'info' | 'warn' | 'error'
+  source: 'frontend' | 'backend'
+  event: string
+  ok?: boolean
+  conversationId?: string
+  runId?: string
+  messageId?: string
+  clientMessageId?: string
+  toolCallId?: string
+  agentId?: string
+  interactionId?: string
+  taskId?: string
+  command?: string
+  durationMs?: number
+  elapsedMs?: number
+  error?: string
+  payload?: unknown
+}
+
 export interface AgentInfo {
   name: string
   description: string
@@ -1263,6 +1286,14 @@ export function onTurnCompleted(
   return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
     handler(event.payload)
   }))
+}
+
+export function onDiagnosticsEvent(
+  handler: (payload: DiagnosticsEventPayload) => void,
+): Promise<() => void> {
+  return listen<DiagnosticsEventPayload>(TAURI_EVENTS.DIAGNOSTICS_EVENT, (event) => {
+    handler(event.payload)
+  })
 }
 
 export interface AuthExpiredPayload {

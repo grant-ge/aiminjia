@@ -1,4 +1,4 @@
-use app_lib::telemetry::{DiagnosticEvent, DiagnosticLevel, DiagnosticSource};
+use app_lib::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticLevel, DiagnosticSource};
 use tempfile::TempDir;
 
 #[test]
@@ -49,7 +49,7 @@ fn diagnostics_can_share_metrics_jsonl_file_and_export_all() {
         workspace,
         &[("name", "read_file"), ("status", "ok")],
     );
-    app_lib::telemetry::record_diagnostic(
+    record_diagnostic(
         workspace,
         DiagnosticEvent::new("chat.submit.started", DiagnosticSource::Frontend)
             .conversation_id("conv_test")
@@ -76,4 +76,30 @@ fn diagnostics_can_share_metrics_jsonl_file_and_export_all() {
             && entry["conversationId"] == "conv_test"
             && entry["runId"] == "run_test"
     }));
+}
+
+#[test]
+fn backend_diagnostic_writes_queryable_jsonl() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path();
+
+    record_diagnostic(
+        workspace,
+        DiagnosticEvent::new("backend.command.started", DiagnosticSource::Backend)
+            .conversation_id("conv-1")
+            .run_id("run-1")
+            .tool_call_id("tool-1")
+            .payload(serde_json::json!({"toolName":"send_message"})),
+    );
+
+    let raw = std::fs::read_to_string(workspace.join("logs/metrics.jsonl")).unwrap();
+    assert!(!raw.contains('\t'));
+    let value: serde_json::Value = serde_json::from_str(raw.trim()).unwrap();
+    assert_eq!(value["category"], "diagnostics");
+    assert_eq!(value["event"], "backend.command.started");
+    assert_eq!(value["source"], "backend");
+    assert_eq!(value["conversationId"], "conv-1");
+    assert_eq!(value["runId"], "run-1");
+    assert_eq!(value["toolCallId"], "tool-1");
+    assert_eq!(value["payload"]["toolName"], "send_message");
 }

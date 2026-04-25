@@ -74,6 +74,39 @@ describe('useStreaming integration review', () => {
     view.unmount()
   })
 
+  it('appends backend diagnostics events into the diagnostics store', async () => {
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const diagnosticsHandler = tauriEventMock.listeners.get('diagnostics:event')
+    expect(diagnosticsHandler).toBeTypeOf('function')
+
+    act(() => {
+      diagnosticsHandler?.({
+        payload: {
+          ts: '2026-04-25T00:00:00.000Z',
+          seq: 101,
+          category: 'diagnostics',
+          level: 'info',
+          source: 'backend',
+          event: 'turn.started',
+          conversationId: 'conv-diag',
+          runId: 'run-diag',
+          payload: { phase: 'start' },
+        },
+      })
+    })
+
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'turn.started',
+      source: 'backend',
+      conversationId: 'conv-diag',
+      runId: 'run-diag',
+    })
+
+    view.unmount()
+  })
+
   it('writes task terminal notifications into the chat store', async () => {
     const view = render(<HookHarness />)
     await waitForListeners()

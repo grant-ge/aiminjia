@@ -34,6 +34,7 @@
 import { useEffect, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '@/stores/chatStore'
+import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { recordDiagnostic } from '@/lib/diagnostics'
 import i18n from '@/i18n'
@@ -56,6 +57,7 @@ import {
   onFileGenerated,
   onTaskStatusChanged,
   onTurnCompleted,
+  onDiagnosticsEvent,
   TAURI_EVENTS,
 } from '@/lib/tauri'
 import type {
@@ -73,6 +75,7 @@ import type {
   FileGeneratedPayload,
   TaskStatusChangedPayload,
   TurnCompletedPayload,
+  DiagnosticsEventPayload,
 } from '@/lib/tauri'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
@@ -522,6 +525,12 @@ export function useStreaming() {
   useTauriEvent(() =>
     onInteractionResolved((payload: InteractionResolvedPayload) => {
       useInteractionStore.getState().removeInteraction(payload.interactionId)
+    }),
+  )
+
+  useTauriEvent(() =>
+    onDiagnosticsEvent((payload: DiagnosticsEventPayload) => {
+      useDiagnosticsStore.getState().appendDiagnostic(payload)
     }),
   )
 

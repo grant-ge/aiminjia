@@ -11,6 +11,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 use crate::storage::file_store::io;
 
@@ -39,7 +40,7 @@ pub enum DiagnosticSource {
     Backend,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticEvent {
     pub ts: String,
@@ -408,6 +409,27 @@ pub fn record_diagnostic(workspace: &Path, event: DiagnosticEvent) {
     }
 }
 
+fn record_diagnostic_and_emit_with<F>(workspace: &Path, event: DiagnosticEvent, emit: F)
+where
+    F: FnOnce(&DiagnosticEvent) -> Result<(), String>,
+{
+    record_diagnostic(workspace, event.clone());
+    if let Err(err) = emit(&event) {
+        log::warn!("[telemetry] Failed to emit diagnostic event: {}", err);
+    }
+}
+
+pub fn record_diagnostic_and_emit(
+    app: &tauri::AppHandle,
+    workspace: &Path,
+    event: DiagnosticEvent,
+) {
+    record_diagnostic_and_emit_with(workspace, event, |event| {
+        app.emit("diagnostics:event", event)
+            .map_err(|err: tauri::Error| err.to_string())
+    });
+}
+
 /// Export all metrics entries as a JSON array string.
 ///
 /// Returns `(json_content, entry_count)`.
@@ -598,6 +620,41 @@ mod tests {
         assert!(value.get("fields").is_none());
         assert!(value["ts"].as_str().unwrap().ends_with('Z'));
         assert!(value["seq"].as_u64().unwrap() >= 1);
+    }
+
+    #[test]
+    fn test_record_diagnostic_and_emit_writes_first_then_emits_same_event() {
+        let dir = TempDir::new().unwrap();
+        let workspace = dir.path();
+
+        let event = DiagnosticEvent::new("diagnostics.event.received", DiagnosticSource::Backend)
+            .conversation_id("conv_1")
+            .run_id("run_1")
+            .payload(serde_json::json!({"source":"backend"}));
+
+        let mut emitted: Option<DiagnosticEvent> = None;
+        record_diagnostic_and_emit_with(workspace, event.clone(), |payload| {
+            emitted = Some(payload.clone());
+            Ok(())
+        });
+
+        let raw = std::fs::read_to_string(metrics_path(workspace)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(raw.lines().next().unwrap()).unwrap();
+
+        assert_eq!(value["event"], "diagnostics.event.received");
+        assert_eq!(value["conversationId"], "conv_1");
+        assert_eq!(value["runId"], "run_1");
+        assert_eq!(value["payload"]["source"], "backend");
+        assert_eq!(
+            emitted.as_ref().map(|event| event.event.as_str()),
+            Some("diagnostics.event.received")
+        );
+        assert_eq!(
+            emitted
+                .as_ref()
+                .and_then(|event| event.conversation_id.as_deref()),
+            Some("conv_1")
+        );
     }
 
     #[test]

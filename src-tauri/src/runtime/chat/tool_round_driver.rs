@@ -16,6 +16,7 @@ use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::tools::InterruptBehavior;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 /// Browser tool names that receive a special guidance message when blocked.
 const BROWSER_TOOLS: &[&str] = &[
@@ -43,6 +44,36 @@ pub enum ToolRoundResult {
 pub struct ToolRoundDriver {
     query_engine: QueryEngine,
     allowed_tools: Option<Vec<String>>,
+}
+
+fn record_tool_round_diagnostic(
+    turn: &TurnState,
+    event: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+    ok: Option<bool>,
+    error: Option<String>,
+    payload: Option<serde_json::Value>,
+) {
+    let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut diag = DiagnosticEvent::new(event, DiagnosticSource::Backend)
+        .conversation_id(turn.session_id().as_str())
+        .run_id(turn.run_id().as_str())
+        .tool_call_id(tool_call_id)
+        .payload(serde_json::json!({ "toolName": tool_name }));
+    if let Some(ok) = ok {
+        diag = diag.ok(ok);
+    }
+    if let Some(error) = error {
+        diag = diag.error(error);
+    }
+    if let Some(mut payload_value) = payload {
+        if let serde_json::Value::Object(ref mut map) = payload_value {
+            map.insert("toolName".to_string(), serde_json::json!(tool_name));
+        }
+        diag = diag.payload(payload_value);
+    }
+    record_diagnostic(&workspace, diag);
 }
 
 impl ToolRoundDriver {
@@ -79,6 +110,15 @@ impl ToolRoundDriver {
         bus: &RuntimeEventBus,
         calls: Vec<RuntimeToolCallRequest>,
     ) -> Vec<ToolRoundResult> {
+        record_tool_round_diagnostic(
+            turn,
+            "tool.round.started",
+            "",
+            "",
+            Some(true),
+            None,
+            Some(serde_json::json!({ "callCount": calls.len() })),
+        );
         // Partition into blocked / permitted while preserving original indices.
         let mut results: Vec<(usize, ToolRoundResult)> = Vec::with_capacity(calls.len());
         let mut permitted: Vec<(usize, RuntimeToolCallRequest)> = Vec::new();
@@ -184,7 +224,17 @@ impl ToolRoundDriver {
 
         // Sort by original index to preserve input ordering.
         results.sort_by_key(|(idx, _)| *idx);
-        results.into_iter().map(|(_, r)| r).collect()
+        let final_results: Vec<ToolRoundResult> = results.into_iter().map(|(_, r)| r).collect();
+        record_tool_round_diagnostic(
+            turn,
+            "tool.round.completed",
+            "",
+            "",
+            Some(true),
+            None,
+            Some(serde_json::json!({ "callCount": final_results.len() })),
+        );
+        final_results
     }
 
     /// Check whether a call should be blocked by the allowed-tools filter.
