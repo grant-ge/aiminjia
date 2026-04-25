@@ -45,6 +45,7 @@ export const TAURI_EVENTS = {
   INTERACTION_REQUIRED: 'interaction:required',
   INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
+  DIAGNOSTICS_EVENT: 'diagnostics:event',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -765,6 +766,32 @@ export function clearMetrics(): Promise<{ deletedFiles: number }> {
  */
 export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: number }> {
   return invoke<{ entryCount: number; totalBytes: number }>('get_metrics_info')
+}
+
+
+export type DiagnosticLevel = 'debug' | 'info' | 'warn' | 'error'
+
+export interface FrontendDiagnosticPayload {
+  event: string
+  level?: DiagnosticLevel
+  ok?: boolean
+  conversationId?: string
+  runId?: string
+  messageId?: string
+  clientMessageId?: string
+  toolCallId?: string
+  agentId?: string
+  interactionId?: string
+  taskId?: string
+  command?: string
+  durationMs?: number
+  elapsedMs?: number
+  error?: string
+  payload?: unknown
+}
+
+export function recordFrontendDiagnostic(diagnostic: FrontendDiagnosticPayload): Promise<void> {
+  return invoke<void>('record_frontend_diagnostic', { diagnostic })
 }
 
 // ---------------------------------------------------------------------------
