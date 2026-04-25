@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { usePluginStore } from '@/stores/pluginStore'
+import { useSkillStore } from '@/stores/skillStore'
 import type { SkillInfo } from '@/lib/tauri'
 
 interface SlashCommandPopoverProps {
@@ -54,7 +54,7 @@ export function SlashCommandPopover({
 }: SlashCommandPopoverProps) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
-  const skills = usePluginStore((s) => s.skills)
+  const skills = useSkillStore((s) => s.skills)
   const [selectionState, setSelectionState] = useState({ filterText: '', index: 0 })
   const listRef = useRef<HTMLUListElement>(null)
 

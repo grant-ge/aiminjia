@@ -1,13 +1,15 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
+const createConversationFromSkillMock = vi.hoisted(() => vi.fn())
+
 vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({ createConversationFromSkill: vi.fn() }),
+  useChat: () => ({ createConversationFromSkill: createConversationFromSkillMock }),
 }))
 
 const HR_SKILL = {
@@ -31,10 +33,12 @@ const REC4 = { id: 'rec4', displayName: '推荐4', description: 'd', source: 'bu
 
 describe('SkillCenterPage', () => {
   beforeEach(() => {
+    createConversationFromSkillMock.mockClear()
     useSkillStore.setState({
       skills: [REC1, REC2, REC3, REC4, HR_SKILL],
       recommendedIds: ['rec1', 'rec2', 'rec3', 'rec4'],
       isLoading: false,
+      reload: vi.fn().mockResolvedValue(undefined),
     })
     useUiStore.setState({ route: { kind: 'skill-center' }, settingsModal: null })
   })
@@ -51,6 +55,15 @@ describe('SkillCenterPage', () => {
     expect(screen.getByRole('button', { name: '上传技能资料' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /创建技能/ })).toBeInTheDocument()
   })
+
+  it('点击创建技能会进入 skill-smith 创建流程', () => {
+    render(<SkillCenterPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /创建技能/ }))
+
+    expect(createConversationFromSkillMock).toHaveBeenCalledWith('skill-smith')
+  })
+
 
   it('分类 bar 包含全部/HR/财务/法务/销售/运营/通用', () => {
     render(<SkillCenterPage />)
@@ -90,5 +103,56 @@ describe('SkillCenterPage', () => {
     render(<SkillCenterPage />)
     expect(screen.queryByRole('button', { name: /^详情$/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /^使用$/ })).toBeNull()
+  })
+
+  it('挂载后从后端刷新技能列表', async () => {
+    useSkillStore.setState({ skills: [], recommendedIds: ['rec1'], isLoading: false })
+    const reload = vi.fn().mockResolvedValue(undefined)
+    useSkillStore.setState({ reload })
+
+    render(<SkillCenterPage />)
+
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+  })
+
+  it('搜索框按名称或描述过滤技能', () => {
+    render(<SkillCenterPage />)
+    fireEvent.change(screen.getByPlaceholderText('搜索技能名称或场景'), { target: { value: 'HR' } })
+
+    expect(screen.getByText('HR分析')).toBeInTheDocument()
+    expect(screen.queryByText('推荐1')).toBeNull()
+  })
+
+  it('加载中显示状态文案', () => {
+    useSkillStore.setState({ skills: [], isLoading: true, reload: vi.fn().mockResolvedValue(undefined) })
+
+    render(<SkillCenterPage />)
+
+    expect(screen.getByText('正在加载技能...')).toBeInTheDocument()
+  })
+
+  it('空列表显示空状态并支持重试', async () => {
+    const reload = vi.fn().mockResolvedValue(undefined)
+    useSkillStore.setState({ skills: [], isLoading: false, reload })
+
+    render(<SkillCenterPage />)
+    fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
+
+    expect(screen.getByText('还没有可用技能')).toBeInTheDocument()
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+  })
+
+  it('加载失败显示错误和重试按钮', async () => {
+    const reload = vi.fn().mockRejectedValue(new Error('backend down'))
+    useSkillStore.setState({ skills: [], isLoading: false, reload })
+
+    render(<SkillCenterPage />)
+
+    await waitFor(() => expect(screen.getByText('技能加载失败')).toBeInTheDocument())
+    expect(screen.getByText('backend down')).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    })
+    expect(reload).toHaveBeenCalledTimes(2)
   })
 })

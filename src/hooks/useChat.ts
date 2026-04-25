@@ -14,6 +14,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
+import { useSkillStore } from '@/stores/skillStore'
 import i18n from '@/i18n'
 import {
   sendMessage,
@@ -382,11 +383,15 @@ export function useChat() {
   }, [loadConversations])
 
   const createConversationFromSkill = useCallback(async (skillId: string) => {
-    void skillId
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
+    const skill = useSkillStore.getState().getById(skillId)
+    const trigger = skill?.triggerText?.trim()
+    if (trigger) {
+      await sendUserMessage(trigger)
+    }
     return conversationId
-  }, [createNewConversation])
+  }, [createNewConversation, sendUserMessage])
 
   return {
     // State (subscribed for re-rendering)

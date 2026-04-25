@@ -19,7 +19,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { SkillCard } from '@/components/skills/SkillCard'
@@ -28,6 +28,7 @@ import { SkillHotSection } from '@/components/skills/SkillHotSection'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
+import { useChat } from '@/hooks/useChat'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -74,10 +75,30 @@ function getIconBg(category: string) {
 
 export function SkillCenterPage() {
   const [category, setCategory] = useState<SkillCategoryId>('recommended')
+  const [query, setQuery] = useState('')
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const skills = useSkillStore((s) => s.skills)
+  const isLoading = useSkillStore((s) => s.isLoading)
+  const reload = useSkillStore((s) => s.reload)
   const listByCategory = useSkillStore((s) => s.listByCategory)
   const setRoute = useUiStore((s) => s.setRoute)
+  const { createConversationFromSkill } = useChat()
+
+  const loadSkills = async () => {
+    setLoadError(null)
+    try {
+      await reload()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setLoadError(message)
+      console.error('Failed to load skills:', error)
+    }
+  }
+
+  useEffect(() => {
+    void loadSkills()
+  }, [reload])
 
   const categoryItems = useMemo(
     () => [
@@ -87,12 +108,26 @@ export function SkillCenterPage() {
     [],
   )
 
-  const recommended = listByCategory('recommended')
+  const normalizedQuery = query.trim().toLowerCase()
+  const matchesQuery = (skill: (typeof skills)[number]) => {
+    if (!normalizedQuery) return true
+    return [
+      skill.displayName,
+      skill.displayNameEn,
+      skill.description,
+      skill.shortDescription,
+      skill.shortDescriptionEn,
+      skill.triggerText,
+      skill.category,
+    ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+  }
+
+  const recommended = listByCategory('recommended').filter(matchesQuery)
   const recommendedIdSet = new Set(recommended.map((s) => s.id))
   const officeSkills =
     category === 'recommended'
-      ? skills.filter((s) => !recommendedIdSet.has(s.id))
-      : listByCategory(category)
+      ? skills.filter((s) => !recommendedIdSet.has(s.id)).filter(matchesQuery)
+      : listByCategory(category).filter(matchesQuery)
 
   function getSkillMeta(source: string, cat: string) {
     const normalizedCategory = cat || 'general'
@@ -115,15 +150,18 @@ export function SkillCenterPage() {
             <div className="flex h-[34px] w-[220px] items-center gap-2 rounded-full bg-secondary px-3">
               <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
                 className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
                 placeholder="搜索技能名称或场景"
-                readOnly
               />
             </div>
             <Button variant="outline" onClick={() => setUploadOpen(true)}>
               上传技能资料
             </Button>
-            <Button>+ 创建技能</Button>
+            <Button onClick={() => void createConversationFromSkill('skill-smith')}>
+              + 创建技能
+            </Button>
           </div>
         </header>
       }
@@ -131,7 +169,13 @@ export function SkillCenterPage() {
       gap="gap-5"
     >
       <SkillHotSection>
-        {recommended.slice(0, 4).map((skill) => (
+        {isLoading && skills.length === 0 ? (
+          <SkillCenterState title="正在加载技能..." />
+        ) : loadError && skills.length === 0 ? (
+          <SkillCenterState title="技能加载失败" desc={loadError} actionLabel="重试" onAction={() => void loadSkills()} />
+        ) : recommended.length === 0 && officeSkills.length === 0 ? (
+          <SkillCenterState title="还没有可用技能" desc="可以上传本地技能目录，或点击创建技能开始制作。" actionLabel="重新加载" onAction={() => void loadSkills()} />
+        ) : recommended.slice(0, 4).map((skill) => (
           <SkillCard
             key={skill.id}
             size="hot"
@@ -153,7 +197,7 @@ export function SkillCenterPage() {
           />
         }
       >
-        {officeSkills.map((skill) => (
+        {!isLoading && !loadError && officeSkills.map((skill) => (
           <SkillCard
             key={skill.id}
             title={skill.displayName}
@@ -167,5 +211,29 @@ export function SkillCenterPage() {
       </SkillOfficeSection>
       <SkillUploadModal open={uploadOpen} onOpenChange={setUploadOpen} />
     </PageSectionShell>
+  )
+}
+
+function SkillCenterState({
+  title,
+  desc,
+  actionLabel,
+  onAction,
+}: {
+  title: string
+  desc?: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="col-span-full rounded-[14px] border border-dashed border-border bg-card/60 p-6 text-sm">
+      <div className="font-semibold text-foreground">{title}</div>
+      {desc ? <p className="mt-1 text-muted-foreground">{desc}</p> : null}
+      {actionLabel && onAction ? (
+        <Button className="mt-3" variant="outline" size="sm" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      ) : null}
+    </div>
   )
 }

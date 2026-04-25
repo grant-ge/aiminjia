@@ -42,7 +42,7 @@ export function RightPanel({ conversationId }: RightPanelProps) {
 
 function TaskSection({ conversationId }: { conversationId: string }) {
   const tasks = useChatStore((s) => s.taskStates[conversationId] ?? EMPTY_TASKS)
-  const hasRunning = tasks.some((t) => t.status === 'running')
+  const hasRunning = tasks.some((t) => isRunningTaskStatus(t.status))
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
@@ -96,7 +96,7 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
         >
           {task.subject}
         </span>
-        {task.status === 'running' && task.activeForm && (
+        {isRunningTaskStatus(task.status) && task.activeForm && (
           <span className="text-[11px] text-primary">{task.activeForm}</span>
         )}
       </div>
@@ -106,6 +106,7 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
 
 function TaskStatusIcon({ status }: { status: string }) {
   switch (status) {
+    case 'in_progress':
     case 'running':
       return <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-primary" />
     case 'completed':
@@ -119,6 +120,10 @@ function TaskStatusIcon({ status }: { status: string }) {
     default:
       return <Circle className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground/40" />
   }
+}
+
+function isRunningTaskStatus(status: string) {
+  return status === 'running' || status === 'in_progress'
 }
 
 // ─── ArtifactSection ──────────────────────────────────────────────────────────

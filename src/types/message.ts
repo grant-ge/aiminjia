@@ -15,6 +15,8 @@ export interface Message {
   sender?: MessageSender
   /** assistant 消息专用：工具调用入参列表，来自磁盘 toolCalls 字段 */
   toolCalls?: AssistantToolCall[]
+  /** tool 消息关联的运行 ID（实时事件携带，历史消息可能没有） */
+  runId?: string
   /** tool 消息专用：工具执行结果 */
   toolResult?: ToolResultContent
   /** 后端 echo 回的 optimistic id，仅出现在 message:updated role=user 时 */

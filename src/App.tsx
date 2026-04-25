@@ -32,6 +32,7 @@ import { useBrowserStore } from '@/stores/browserStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -129,6 +130,7 @@ function App() {
     getPluginInfo()
       .then(({ tools, skills }) => {
         usePluginStore.getState().setAll(tools, skills)
+        useSkillStore.setState({ skills, isLoading: false })
       })
       .catch((err) => console.error('Failed to load plugin info:', err))
   }, [])

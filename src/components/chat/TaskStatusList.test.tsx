@@ -28,6 +28,17 @@ describe('TaskStatusList', () => {
     expect(screen.getByRole('img', { name: /running/i })).toBeTruthy()
   })
 
+  it('treats task v2 in_progress as running', () => {
+    const tasks: ConversationTaskState[] = [
+      { taskId: 'task-v2-running', status: 'in_progress', runId: 'run-1', subject: '' },
+    ]
+
+    render(<TaskStatusList tasks={tasks} />)
+
+    expect(screen.getByRole('img', { name: /running/i })).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  })
+
   it('renders completed task with check icon', () => {
     const tasks: ConversationTaskState[] = [
       { taskId: 'task-abcd1234', status: 'completed', runId: 'run-1', subject: '' },

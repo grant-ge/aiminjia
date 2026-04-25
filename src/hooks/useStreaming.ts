@@ -76,6 +76,7 @@ import type {
 import { useAnalysisStore } from '@/stores/analysisStore'
 import type { StepStatus } from '@/types/analysis'
 import { useStreamingStore } from '@/stores/streamingStore'
+import type { ConversationTaskState } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useTauriEvent } from './useTauriEvent'
 
@@ -315,6 +316,12 @@ export function useStreaming() {
         store.upsertMessage(message)
       }
       if (message.toolResult) {
+        if (message.toolResult.name === 'TaskCreate' && !message.toolResult.isError) {
+          const task = extractTaskCreateState(message)
+          if (task) {
+            store.upsertConversationTaskState(message.conversationId, task)
+          }
+        }
         store.updateConversationToolExecution(
           message.conversationId,
           message.toolResult.toolCallId,
@@ -327,6 +334,17 @@ export function useStreaming() {
       }
     }),
   )
+
+  function extractTaskCreateState(message: Message): ConversationTaskState | null {
+    const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
+    if (!match) return null
+    return {
+      taskId: match[1],
+      status: 'pending',
+      runId: message.runId ?? '',
+      subject: match[2],
+    }
+  }
 
   // --- analysis:step-changed --------------------------------------------
   useTauriEvent(() =>

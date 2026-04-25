@@ -8,6 +8,7 @@ interface TaskStatusListProps {
 
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
+    case 'in_progress':
     case 'running':
       return (
         <svg
@@ -56,7 +57,7 @@ export function TaskStatusList({ tasks }: TaskStatusListProps) {
 
   if (tasks.length === 0) return null
 
-  const runningCount = tasks.filter((task) => task.status === 'running').length
+  const runningCount = tasks.filter((task) => task.status === 'running' || task.status === 'in_progress').length
   const isOpen = runningCount > 0
 
   const summaryText = runningCount > 0

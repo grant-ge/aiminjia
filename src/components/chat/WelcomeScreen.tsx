@@ -2,7 +2,7 @@
  * WelcomeScreen — greeting + general mode entry + flat skill grid.
  * Skill list is no longer filtered by persona.
   */
-import { usePluginStore } from '@/stores/pluginStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
@@ -10,7 +10,7 @@ import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 export function WelcomeScreen() {
   const { t } = useTranslation()
-  const skills = usePluginStore((s) => s.skills)
+  const skills = useSkillStore((s) => s.skills)
   const productName = useProductName()
   const { sendUserMessage } = useChat()
 

@@ -2,6 +2,10 @@ use tempfile::TempDir;
 use serde_json::json;
 
 use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::models::message::TaskRecordFrontend;
+use app_lib::runtime::ids::{RunId, SessionId};
+use app_lib::runtime::task::task_models::{TaskRecord, TaskStatus};
+use app_lib::runtime::task::FileTaskV2Store;
 use app_lib::runtime::tools::builtin::task_tools::{
     TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
 };
@@ -90,4 +94,39 @@ async fn task_update_delete_removes_task() {
 
     let list_result = list.execute(json!({}), ctx(&root)).await.unwrap();
     assert_eq!(list_result.content, "No tasks found");
+}
+
+#[test]
+fn task_frontend_records_are_loaded_from_file_task_v2_store() {
+    let root = TempDir::new().unwrap();
+    let store = FileTaskV2Store::new(root.path().to_path_buf());
+    let session_id = SessionId::new("sess-file-task-ui");
+
+    store.create(
+        session_id.as_str(),
+        &TaskRecord {
+            id: "1".to_string(),
+            subject: "Fix task monitor".to_string(),
+            description: "Read Task V2 files for the right panel".to_string(),
+            active_form: Some("Fixing task monitor".to_string()),
+            owner: Some("agent-a".to_string()),
+            status: TaskStatus::InProgress,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
+            session_id: session_id.clone(),
+            parent_run_id: RunId::new("run-file-task-ui"),
+            owner_agent_id: None,
+        },
+    ).unwrap();
+
+    let tasks = TaskRecordFrontend::list_from_task_v2_store(root.path(), session_id.as_str()).unwrap();
+
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].task_id, "1");
+    assert_eq!(tasks[0].run_id, "run-file-task-ui");
+    assert_eq!(tasks[0].subject, "Fix task monitor");
+    assert_eq!(tasks[0].status, "in_progress");
+    assert_eq!(tasks[0].active_form.as_deref(), Some("Fixing task monitor"));
+    assert_eq!(tasks[0].owner.as_deref(), Some("agent-a"));
 }

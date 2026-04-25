@@ -1,10 +1,9 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
-import { listSkills, type SkillInfo } from '@/lib/tauri'
-import { MOCK_SKILLS } from '@/data/mock-skills'
+import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
-const RECOMMENDED_SKILL_IDS = ['org-diagnosis', 'okr-coaching', 'sales-analysis', 'finance-analysis']
+const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
 
 interface SkillState {
   skills: SkillInfo[]
@@ -15,11 +14,11 @@ interface SkillState {
   reload: () => Promise<void>
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
-  upload: (file: File) => Promise<void>
+  upload: (sourcePath: string) => Promise<void>
 }
 
 export const useSkillStore = create<SkillState>((set, get) => ({
-  skills: MOCK_SKILLS,
+  skills: [],
   recommendedIds: RECOMMENDED_SKILL_IDS,
   isLoading: false,
   listByCategory(id) {
@@ -45,10 +44,12 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   async install() {
     throw new Error('技能市场即将开放')
   },
-  async uninstall() {
-    throw new Error('卸载功能即将开放')
+  async uninstall(id) {
+    await uninstallCustomSkill(id)
+    await get().reload()
   },
-  async upload() {
-    throw new Error('上传功能即将开放')
+  async upload(sourcePath) {
+    await installCustomSkill(sourcePath)
+    await get().reload()
   },
 }))

@@ -2283,20 +2283,10 @@ impl TauriChatCommandAdapter {
         &self,
         conversation_id: String,
     ) -> Result<Vec<crate::models::message::TaskRecordFrontend>, String> {
-        use crate::runtime::ids::SessionId;
-        use crate::runtime::store::TaskStore;
-
-        let task_store = self
-            .services
-            .app
-            .try_state::<Arc<crate::runtime::store::InMemoryTaskStore>>()
-            .ok_or_else(|| "task_store not registered".to_string())?;
-
-        let session_id = SessionId::new(conversation_id.clone());
-        task_store
-            .inner()
-            .list_for_session(&session_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
-            .map_err(|e| e.to_string())
+        crate::models::message::TaskRecordFrontend::list_from_task_v2_store(
+            self.services.db.base_dir(),
+            &conversation_id,
+        )
+        .map_err(|e| e.to_string())
     }
 }

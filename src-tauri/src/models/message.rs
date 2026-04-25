@@ -139,6 +139,7 @@ impl From<SubagentTranscriptEntryRecord> for SubAgentTranscriptEntryFrontend {
 pub struct TaskRecordFrontend {
     pub task_id: String,
     pub session_id: String,
+    pub run_id: String,
     pub subject: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,11 +161,24 @@ impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend 
         Self {
             task_id: r.id,
             session_id: r.session_id.as_str().to_string(),
+            run_id: r.parent_run_id.as_str().to_string(),
             subject: r.subject,
             status: status_str.to_string(),
             active_form: r.active_form,
             owner: r.owner.or_else(|| r.owner_agent_id.map(|id| id.as_str().to_string())),
         }
+    }
+}
+
+impl TaskRecordFrontend {
+    pub fn list_from_task_v2_store(
+        aijia_home: &std::path::Path,
+        conversation_id: &str,
+    ) -> anyhow::Result<Vec<Self>> {
+        let store = crate::runtime::task::FileTaskV2Store::new(aijia_home.to_path_buf());
+        store
+            .list(conversation_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
     }
 }
 

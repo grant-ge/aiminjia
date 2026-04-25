@@ -43,7 +43,7 @@ export function HomePage() {
         <div className="w-full">
           <HomeTaskComposerCard />
         </div>
-        <div className="border border-border w-full rounded-[22px]">
+        <div className="mt-3 w-full rounded-[22px] border border-border">
           <HomeCategoryChipRow
             items={HOME_EXPERT_CATEGORIES}
             activeKey={activeChip}

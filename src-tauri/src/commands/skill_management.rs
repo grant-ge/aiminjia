@@ -63,10 +63,7 @@ fn install_custom_skill_to_dir(custom_dir: &Path, source: &Path) -> Result<Strin
 
     copy_dir_recursive(source, &dest).map_err(|e| e.to_string())?;
 
-    Ok(format!(
-        "Installed skill '{}' — restart app to activate",
-        plugin_id
-    ))
+    Ok(format!("Installed skill '{}'", plugin_id))
 }
 
 fn load_skill_for_reload(
@@ -94,7 +91,18 @@ pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result
     let source = PathBuf::from(&source_path);
     let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
     let custom_dir = aijia_home.skills_dir();
-    install_custom_skill_to_dir(&custom_dir, &source)
+    let message = install_custom_skill_to_dir(&custom_dir, &source)?;
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&source)
+        .map_err(|e| format!("Failed to read skill manifest: {}", e))?;
+    let installed_path = custom_dir.join(&manifest.plugin.id);
+    if let Err(e) = reload_skill(app.clone(), installed_path.to_string_lossy().to_string()).await {
+        log::warn!(
+            "install_custom_skill: hot-reload failed for '{}' (installed on disk, will activate on next restart): {}",
+            manifest.plugin.id,
+            e
+        );
+    }
+    Ok(message)
 }
 
 /// Uninstall a custom skill by ID.
@@ -842,7 +850,7 @@ description: "test"
         let custom_dir = tmp.path().join("installed-skills");
         let message = install_custom_skill_to_dir(&custom_dir, &source_dir).unwrap();
 
-        assert_eq!(message, "Installed skill 'skill-md-only' — restart app to activate");
+        assert_eq!(message, "Installed skill 'skill-md-only'");
         assert!(custom_dir.join("skill-md-only").join("SKILL.md").exists());
     }
 
