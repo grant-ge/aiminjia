@@ -1,6 +1,7 @@
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::workspace::WorkspaceManager;
+use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticLevel, DiagnosticSource};
 use std::sync::Arc;
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
@@ -176,6 +177,138 @@ pub async fn get_metrics_info(
         "entryCount": entry_count,
         "totalBytes": total_bytes,
     }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendDiagnosticPayload {
+    pub event: String,
+    pub level: Option<DiagnosticLevel>,
+    pub ok: Option<bool>,
+    pub conversation_id: Option<String>,
+    pub run_id: Option<String>,
+    pub message_id: Option<String>,
+    pub client_message_id: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub interaction_id: Option<String>,
+    pub task_id: Option<String>,
+    pub command: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub elapsed_ms: Option<u64>,
+    pub error: Option<String>,
+    pub payload: Option<serde_json::Value>,
+}
+
+impl FrontendDiagnosticPayload {
+    fn into_event(self) -> DiagnosticEvent {
+        let mut event = DiagnosticEvent::new(self.event, DiagnosticSource::Frontend);
+
+        if let Some(level) = self.level {
+            event = event.level(level);
+        }
+        if let Some(ok) = self.ok {
+            event = event.ok(ok);
+        }
+        if let Some(value) = self.conversation_id {
+            event = event.conversation_id(value);
+        }
+        if let Some(value) = self.run_id {
+            event = event.run_id(value);
+        }
+        if let Some(value) = self.message_id {
+            event = event.message_id(value);
+        }
+        if let Some(value) = self.client_message_id {
+            event = event.client_message_id(value);
+        }
+        if let Some(value) = self.tool_call_id {
+            event = event.tool_call_id(value);
+        }
+        if let Some(value) = self.agent_id {
+            event = event.agent_id(value);
+        }
+        if let Some(value) = self.interaction_id {
+            event = event.interaction_id(value);
+        }
+        if let Some(value) = self.task_id {
+            event = event.task_id(value);
+        }
+        if let Some(value) = self.command {
+            event = event.command(value);
+        }
+        if let Some(value) = self.duration_ms {
+            event = event.duration_ms(value);
+        }
+        if let Some(value) = self.elapsed_ms {
+            event = event.elapsed_ms(value);
+        }
+        if let Some(value) = self.error {
+            event = event.error(value);
+        }
+        if let Some(value) = self.payload {
+            event = event.payload(value);
+        }
+
+        event
+    }
+}
+
+/// Persist a frontend-originated diagnostic event into the workspace metrics JSONL file.
+#[tauri::command]
+pub async fn record_frontend_diagnostic(
+    file_mgr: State<'_, Arc<FileManager>>,
+    diagnostic: FrontendDiagnosticPayload,
+) -> Result<(), String> {
+    let workspace = file_mgr.workspace_path();
+    record_diagnostic(&workspace, diagnostic.into_event());
+    Ok(())
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+
+    #[test]
+    fn frontend_diagnostic_payload_deserializes_camel_case_and_maps_to_event() {
+        let payload: FrontendDiagnosticPayload = serde_json::from_value(serde_json::json!({
+            "event": "ipc.invoke.failed",
+            "level": "debug",
+            "ok": false,
+            "conversationId": "conv_1",
+            "runId": "run_1",
+            "messageId": "msg_1",
+            "clientMessageId": "client_msg_1",
+            "toolCallId": "tool_1",
+            "agentId": "agent_1",
+            "interactionId": "interaction_1",
+            "taskId": "task_1",
+            "command": "curl -H 'Authorization: Bearer command-secret' https://example.test",
+            "durationMs": 12,
+            "elapsedMs": 34,
+            "error": "Authorization: Bearer error-secret",
+            "payload": {"header": "Authorization: Bearer payload-secret"}
+        }))
+        .unwrap();
+
+        let value = serde_json::to_value(payload.into_event()).unwrap();
+        assert_eq!(value["category"], "diagnostics");
+        assert_eq!(value["source"], "frontend");
+        assert_eq!(value["level"], "error");
+        assert_eq!(value["event"], "ipc.invoke.failed");
+        assert_eq!(value["conversationId"], "conv_1");
+        assert_eq!(value["runId"], "run_1");
+        assert_eq!(value["clientMessageId"], "client_msg_1");
+        assert_eq!(value["toolCallId"], "tool_1");
+        assert_eq!(value["durationMs"], 12);
+        assert_eq!(value["elapsedMs"], 34);
+
+        let raw = serde_json::to_string(&value).unwrap();
+        assert!(!raw.contains("command-secret"));
+        assert!(!raw.contains("error-secret"));
+        assert!(!raw.contains("payload-secret"));
+        assert!(raw.contains("[REDACTED]"));
+    }
 }
 
 /// Authorize a local directory for tool access within a session.

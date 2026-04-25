@@ -418,6 +418,7 @@ pub fn run() {
             workspace::export_metrics,
             workspace::clear_metrics,
             workspace::get_metrics_info,
+            workspace::record_frontend_diagnostic,
             workspace::authorize_local_directory,
             workspace::get_authorized_workspace,
             workspace::revoke_authorized_workspace,
