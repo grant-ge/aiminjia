@@ -49,10 +49,12 @@ impl SkillSessionStore {
         skill_id: &str,
         has_files: bool,
     ) -> Result<SkillTurnContext> {
-        let _default_skill = registry
-            .get_default()
-            .await
-            .ok_or_else(|| anyhow!("default skill '{}' is not registered", registry.default_skill_id()))?;
+        let _default_skill = registry.get_default().await.ok_or_else(|| {
+            anyhow!(
+                "default skill '{}' is not registered",
+                registry.default_skill_id()
+            )
+        })?;
         let skill = registry
             .get(skill_id)
             .await
@@ -84,10 +86,12 @@ impl SkillSessionStore {
         user_message: &str,
         has_files: bool,
     ) -> Result<SkillTurnContext> {
-        let default_skill = registry
-            .get_default()
-            .await
-            .ok_or_else(|| anyhow!("default skill '{}' is not registered", registry.default_skill_id()))?;
+        let default_skill = registry.get_default().await.ok_or_else(|| {
+            anyhow!(
+                "default skill '{}' is not registered",
+                registry.default_skill_id()
+            )
+        })?;
         let stored_state = self.load_state(conversation_id)?;
 
         let mut state = stored_state.unwrap_or_else(|| SkillState::new(default_skill.id()));
@@ -97,7 +101,8 @@ impl SkillSessionStore {
             .unwrap_or_else(|| default_skill.clone());
 
         if skill.id() != default_skill.id() {
-            state = apply_step_transition(skill.as_ref(), default_skill.as_ref(), state, user_message);
+            state =
+                apply_step_transition(skill.as_ref(), default_skill.as_ref(), state, user_message);
             skill = registry
                 .get(state.skill_id.as_str())
                 .await
@@ -143,7 +148,8 @@ impl SkillSessionStore {
         let Some(memory_store) = self.memory_store.as_ref() else {
             return Ok(None);
         };
-        let Some(serialized_state) = memory_store.get(&skill_state_memory_key(conversation_id))? else {
+        let Some(serialized_state) = memory_store.get(&skill_state_memory_key(conversation_id))?
+        else {
             return Ok(None);
         };
         let state = match serde_json::from_str::<SkillState>(&serialized_state) {
@@ -182,16 +188,18 @@ fn skill_state_memory_key(conversation_id: &str) -> String {
     format!("note:{}:active_skill_state", conversation_id)
 }
 
-fn ensure_switch_skill_tool(
-    allowed_tools: Option<HashSet<String>>,
-) -> Option<HashSet<String>> {
+fn ensure_switch_skill_tool(allowed_tools: Option<HashSet<String>>) -> Option<HashSet<String>> {
     allowed_tools.map(|mut names| {
         names.insert("switch_skill".to_string());
         names
     })
 }
 
-fn initialize_state_for_turn(skill: &dyn Skill, mut state: SkillState, has_files: bool) -> SkillState {
+fn initialize_state_for_turn(
+    skill: &dyn Skill,
+    mut state: SkillState,
+    has_files: bool,
+) -> SkillState {
     state.skill_id = skill.id().to_string();
     state.has_files = has_files;
     state.resolved_step_prompt = None;
@@ -236,7 +244,9 @@ fn apply_step_transition(
             state.resolved_step_prompt = None;
             state
         }
-        StepAction::Finish | StepAction::Abort => initial_state_for_skill(default_skill, state.has_files),
+        StepAction::Finish | StepAction::Abort => {
+            initial_state_for_skill(default_skill, state.has_files)
+        }
     }
 }
 
@@ -435,13 +445,7 @@ mod tests {
         ];
 
         let activated = store
-            .resolve_turn_context(
-                &registry,
-                &all_tools,
-                "conv-progress",
-                "请分析一下",
-                false,
-            )
+            .resolve_turn_context(&registry, &all_tools, "conv-progress", "请分析一下", false)
             .await
             .expect("activate");
         assert_eq!(activated.state.current_step.as_deref(), Some("step0"));
@@ -467,6 +471,40 @@ mod tests {
             .expect("fallback");
         assert_eq!(fallback.skill_id, "daily-assistant");
         assert_eq!(fallback.state.current_step, None);
+    }
+
+    #[tokio::test]
+    async fn explicit_switch_uses_selected_skill_even_without_keyword_match() {
+        let registry = registry_with_test_skills().await;
+        let store = SkillSessionStore::new();
+        let all_tools = vec![
+            "bash".to_string(),
+            "search_files".to_string(),
+            "read_workspace_file".to_string(),
+            "switch_skill".to_string(),
+        ];
+
+        let switched = store
+            .switch_skill(
+                &registry,
+                &all_tools,
+                "conv-selected-token",
+                "comp-analysis",
+                false,
+            )
+            .await
+            .expect("selected skill should switch explicitly");
+
+        assert_eq!(switched.skill_id, "comp-analysis");
+        assert_eq!(switched.system_prompt, "skill:step0");
+        assert_eq!(switched.state.current_step.as_deref(), Some("step0"));
+
+        let persisted = store
+            .resolve_turn_context(&registry, &all_tools, "conv-selected-token", "继续", false)
+            .await
+            .expect("explicitly selected skill should persist");
+        assert_eq!(persisted.skill_id, "comp-analysis");
+        assert_eq!(persisted.state.current_step.as_deref(), Some("step1"));
     }
 
     #[tokio::test]
@@ -503,13 +541,7 @@ mod tests {
         );
 
         let persisted = store
-            .resolve_turn_context(
-                &registry,
-                &all_tools,
-                "conv-explicit-switch",
-                "继续",
-                true,
-            )
+            .resolve_turn_context(&registry, &all_tools, "conv-explicit-switch", "继续", true)
             .await
             .expect("switch should persist into next turn");
         assert_eq!(persisted.skill_id, "comp-analysis");
@@ -540,13 +572,7 @@ mod tests {
             .expect("explicit switch should persist the initial state");
 
         let advanced = store
-            .resolve_turn_context(
-                &registry,
-                &all_tools,
-                "conv-persisted-skill",
-                "继续",
-                true,
-            )
+            .resolve_turn_context(&registry, &all_tools, "conv-persisted-skill", "继续", true)
             .await
             .expect("state should advance before restart");
         assert_eq!(advanced.state.current_step.as_deref(), Some("step1"));
@@ -615,18 +641,11 @@ mod tests {
         store.clear_session("conv-reconnect");
 
         let restored = store
-            .resolve_turn_context(
-                &registry,
-                &all_tools,
-                "conv-reconnect",
-                "我回来了",
-                true,
-            )
+            .resolve_turn_context(&registry, &all_tools, "conv-reconnect", "我回来了", true)
             .await
             .expect("cleared in-memory state should restore from persistence");
 
         assert_eq!(restored.skill_id, "comp-analysis");
         assert_eq!(restored.state.current_step.as_deref(), Some("step1"));
     }
-
 }

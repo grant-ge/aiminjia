@@ -22,4 +22,25 @@ describe('UserMessageBubble', () => {
     const bubble = container.querySelector('[data-testid="user-bubble"]')
     expect(bubble?.className).toMatch(/max-w-\[80%\]/)
   })
+
+  it('renders selected skill as a visible token inside the user bubble', () => {
+    const { container } = render(
+      <UserMessageBubble
+        text="你可以做什么"
+        commandText="/salary-query 你可以做什么"
+        skillCommand={{ id: 'salary-query', label: 'salary-query', command: '/salary-query' }}
+      />,
+    )
+
+    const bubble = container.querySelector('[data-testid="user-bubble"]')
+    const token = screen.getByTestId('user-skill-token')
+    const text = screen.getByText('你可以做什么')
+    expect(bubble).toContainElement(token)
+    expect(bubble).toContainElement(text)
+    expect(token).toHaveTextContent('salary-query')
+    expect(token).toHaveAttribute('title', '/salary-query')
+    expect(token.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('/salary-query')).not.toBeInTheDocument()
+  })
+
 })

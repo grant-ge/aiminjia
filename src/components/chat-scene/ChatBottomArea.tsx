@@ -136,6 +136,16 @@ export function ChatBottomArea() {
     if (!trimmed && pendingFiles.length === 0) return
     if (isStreaming || isSending) return
 
+    console.debug('[skill-command][composer-submit]', {
+      traceId: activeConversationId,
+      conversationId: activeConversationId,
+      selectedSkillId: selectedSkillCommand?.id ?? null,
+      selectedSkillCommand,
+      hasOverrideText: overrideText !== undefined,
+      textLength: trimmed.length,
+      pendingFileCount: pendingFiles.length,
+    })
+
     setIsSending(true)
     const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
       id: f.id,
@@ -150,6 +160,8 @@ export function ChatBottomArea() {
         sendUserMessage(
           trimmed || t('inputBar.analyzeFile'),
           fileInfos.length > 0 ? fileInfos : undefined,
+          undefined,
+          selectedSkillCommand?.id ?? undefined,
         ),
         new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS),
@@ -165,7 +177,7 @@ export function ChatBottomArea() {
     } finally {
       setIsSending(false)
     }
-  }, [activeConversationId, clearSelectedSkillCommand, input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
+  }, [activeConversationId, clearSelectedSkillCommand, input, isSending, isStreaming, pendingFiles, selectedSkillCommand, sendUserMessage, t])
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) return

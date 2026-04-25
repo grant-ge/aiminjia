@@ -25,6 +25,9 @@ export function UserBubble({ message, onResend }: UserBubbleProps) {
   const displayName = sender?.name || t('userBubble.me')
   const isLoggedIn = sender?.isLoggedIn ?? false
   const canEdit = Boolean(content.text?.trim())
+  const commandText = content.commandText ?? (content.skillCommand
+    ? `${content.skillCommand.command} ${content.text ?? ''}`.trim()
+    : undefined)
 
   const handleResend = useCallback(() => {
     const text = draft.trim()
@@ -54,6 +57,12 @@ export function UserBubble({ message, onResend }: UserBubbleProps) {
             {content.files!.map((file) => (
               <FileAttachmentChip key={file.id} file={file} />
             ))}
+          </div>
+        )}
+
+        {commandText && !isEditing && (
+          <div className="mb-1.5 rounded-full border px-2.5 py-1 text-xs font-medium" style={{ borderColor: 'var(--color-accent-border)', background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' }}>
+            {commandText}
           </div>
         )}
 

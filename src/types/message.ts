@@ -48,8 +48,16 @@ export interface Conversation {
  * options → anomalies → insights → rootCauses → generatedFiles →
  * reports → searchSources → execSummary → confirmations
  */
+export interface SkillCommandBreadcrumb {
+  id: string
+  label: string
+  command: string
+}
+
 export interface MessageContent {
   text?: string
+  commandText?: string
+  skillCommand?: SkillCommandBreadcrumb
   files?: FileAttachment[]
   codeBlocks?: CodeBlock[]
   codeResults?: CodeResult[]

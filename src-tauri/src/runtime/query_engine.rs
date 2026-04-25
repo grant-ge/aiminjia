@@ -188,6 +188,11 @@ impl QueryEngine {
         self.read_file_state.clone()
     }
 
+    #[cfg(test)]
+    pub fn authorized_workspace_for_test(&self) -> Option<AuthorizedWorkspaceRef> {
+        self.authorized_workspace.clone()
+    }
+
     pub fn get_total_usage(&self) -> TotalTokenUsage {
         self.total_usage
             .lock()

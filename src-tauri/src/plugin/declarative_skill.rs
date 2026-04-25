@@ -94,8 +94,16 @@ impl DeclarativeSkill {
             .map(|p| p.include_app_base)
             .unwrap_or(true);
 
-        // Load plugin-local base prompt (lives in prompts/ subdirectory alongside step prompts)
-        let base_prompt = Self::load_prompt(plugin_dir, "prompts/base.md");
+        // Load plugin-local base prompt. For SKILL.md-only skills, mirror
+        // Claude Code Best's prompt-command model by using the markdown body.
+        let base_prompt = {
+            let prompt_base = Self::load_prompt(plugin_dir, "prompts/base.md");
+            if prompt_base.is_empty() {
+                Self::load_skill_md_body(plugin_dir)
+            } else {
+                prompt_base
+            }
+        };
 
         // Load extract prompts (for checkpoint extraction at step boundaries)
         // base_extract.md is OPTIONAL — absence is silent (returns empty string).
@@ -219,6 +227,33 @@ impl DeclarativeSkill {
             name_en,
             short_desc_en,
         })
+    }
+
+    fn load_skill_md_body(plugin_dir: &Path) -> String {
+        let path = plugin_dir.join("SKILL.md");
+        let Ok(content) = std::fs::read_to_string(path) else {
+            return String::new();
+        };
+
+        let mut lines = content.lines();
+        if lines.next().map(str::trim) != Some("---") {
+            return content.trim().to_string();
+        }
+
+        for line in lines.by_ref() {
+            if line.trim() == "---" {
+                return lines
+                    .collect::<Vec<_>>()
+                    .join(
+                        "
+",
+                    )
+                    .trim()
+                    .to_string();
+            }
+        }
+
+        String::new()
     }
 
     fn load_prompt(plugin_dir: &Path, rel_path: &str) -> String {
@@ -640,6 +675,34 @@ mod tests {
         assert!(skill.should_activate("请进行薪酬分析v2", true, "other-skill"));
         assert!(!skill.should_activate("请进行薪酬分析v2", true, "comp-analysis-v2"));
         assert!(!skill.should_activate("请进行薪酬分析", true, "daily-assistant"));
+    }
+
+    #[test]
+    fn skill_md_only_body_is_loaded_as_base_prompt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join("salary-query");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            r#"---
+name: salary-query
+description: 查询薪资
+include_app_base: false
+---
+# Salary Query
+
+Use this skill body as the prompt.
+"#,
+        )
+        .unwrap();
+
+        let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&skill_dir).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, &skill_dir).unwrap();
+        let prompt = skill.system_prompt(&SkillState::new("salary-query"));
+
+        assert!(prompt.contains("# Salary Query"));
+        assert!(prompt.contains("Use this skill body as the prompt."));
+        assert!(!prompt.contains("name: salary-query"));
     }
 
     /// Verify max_iterations per step.

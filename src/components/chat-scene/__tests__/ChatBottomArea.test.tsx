@@ -91,7 +91,7 @@ describe('ChatBottomArea', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
 
     await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
+      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, undefined)
     })
   })
 
@@ -157,7 +157,7 @@ describe('ChatBottomArea', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
 
     await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
+      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, 'skill-smith')
     })
 
     expect(screen.getByRole('textbox')).toHaveValue('hello')
@@ -185,6 +185,7 @@ describe('ChatBottomArea', () => {
       expect(screen.getByRole('textbox')).toHaveValue('')
     })
 
+    expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, 'skill-smith')
     expect(screen.queryByText('创建自己的技能')).not.toBeInTheDocument()
   })
 

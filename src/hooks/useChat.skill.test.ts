@@ -62,4 +62,31 @@ describe('useChat skill launch', () => {
     })
     expect(useUiStore.getState().route).toEqual({ kind: 'chat', conversationId: 'conv-skill' })
   })
+
+  it('sendUserMessage 透传 selectedSkillId 且用户消息保持原文', async () => {
+    useChatStore.setState({ activeConversationId: 'conv-skill' })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendUserMessage('帮我分析薪酬', undefined, undefined, 'salary-query')
+    })
+
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-skill',
+      '帮我分析薪酬',
+      undefined,
+      undefined,
+      expect.any(String),
+      'salary-query',
+      'salary-query',
+    )
+    expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('帮我分析薪酬')
+    expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBe('/salary-query 帮我分析薪酬')
+    expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toEqual({
+      id: 'salary-query',
+      label: 'salary-query',
+      command: '/salary-query',
+    })
+  })
+
 })

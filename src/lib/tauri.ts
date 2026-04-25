@@ -222,6 +222,8 @@ export function sendMessage(
   fileIds?: string[],
   agentName?: string | null,
   clientMessageId?: string,
+  selectedSkillId?: string | null,
+  selectedSkillLabel?: string | null,
 ): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
@@ -229,6 +231,8 @@ export function sendMessage(
     fileIds: fileIds ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
+    selectedSkillId: selectedSkillId ?? null,
+    selectedSkillLabel: selectedSkillLabel ?? null,
   })
 }
 

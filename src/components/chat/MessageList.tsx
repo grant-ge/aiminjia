@@ -33,7 +33,13 @@ export function MessageList() {
         const e = expansion[i] ?? { expanded: true, stepIndex: null }
         return (
           <div key={i} className="flex flex-col gap-4">
-            {t.userMessage ? <UserMessageBubble text={t.userMessage.text} /> : null}
+            {t.userMessage ? (
+              <UserMessageBubble
+                text={t.userMessage.text}
+                commandText={t.userMessage.commandText}
+                skillCommand={t.userMessage.skillCommand}
+              />
+            ) : null}
             {t.toolGroup ? (
               <ToolGroupCard
                 status={t.toolGroup.status}

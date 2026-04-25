@@ -159,6 +159,19 @@ pub fn map_runtime_event(event: &RuntimeEvent) -> Option<LegacyEvent> {
             content,
             client_message_id,
         } => {
+            let skill_command = content.get("skillCommand");
+            let command_text = content.get("commandText").and_then(|value| value.as_str());
+            log::info!(
+                "[skill-command][message-persisted-event] trace_id={} conversation_id={} run_id={} message_id={} role={} client_message_id={:?} has_skill_command={} command_text_len={}",
+                client_message_id.as_deref().unwrap_or(event.run_id.as_str()),
+                conversation_id,
+                event.run_id.as_str(),
+                message_id,
+                role,
+                client_message_id,
+                skill_command.is_some(),
+                command_text.map(str::len).unwrap_or(0)
+            );
             let mut payload = json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,

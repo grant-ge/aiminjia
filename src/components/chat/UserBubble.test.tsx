@@ -29,6 +29,24 @@ const message: Message = {
 }
 
 describe('UserBubble edit and resend', () => {
+  it('renders selected skill as slash command breadcrumb', () => {
+    render(
+      <UserBubble
+        message={{
+          ...message,
+          content: {
+            text: '这个技能有什么用',
+            commandText: '/salary-query 这个技能有什么用',
+            skillCommand: { id: 'salary-query', label: '薪酬市场查询助手', command: '/salary-query' },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('/salary-query 这个技能有什么用')).toBeInTheDocument()
+    expect(screen.getByText('这个技能有什么用')).toBeInTheDocument()
+  })
+
   it('supports editing current text and re-sending', async () => {
     const onResend = vi.fn()
     render(<UserBubble message={message} onResend={onResend} />)

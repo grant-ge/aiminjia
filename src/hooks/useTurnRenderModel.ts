@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 
 import { useChatStore } from '@/stores/chatStore'
 import type { ToolExecution } from '@/stores/streamingStore'
-import type { GeneratedFile, Message } from '@/types/message'
+import type { GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
 
 export interface RenderAiSegment {
   id: string
@@ -39,7 +39,7 @@ export interface RenderGeneratedFile {
 }
 
 export interface RenderTurn {
-  userMessage?: { id: string; text: string }
+  userMessage?: { id: string; text: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
   generatedFiles: RenderGeneratedFile[]
@@ -96,6 +96,34 @@ function recalcToolGroup(group: RenderToolGroup): void {
   group.status = group.steps.some((s) => s.status === 'running') ? 'running' : 'done'
 }
 
+
+function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn['userMessage']> {
+  const rawText = message.content.text ?? ''
+  if (message.content.skillCommand || message.content.commandText) {
+    return {
+      id: message.id,
+      text: rawText,
+      commandText: message.content.commandText,
+      skillCommand: message.content.skillCommand,
+    }
+  }
+
+  const slashMatch = rawText.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/)
+  if (!slashMatch) {
+    return { id: message.id, text: rawText }
+  }
+
+  const skillId = slashMatch[1]
+  const text = slashMatch[2]?.trimStart() ?? ''
+  const command = `/${skillId}`
+  return {
+    id: message.id,
+    text,
+    commandText: rawText,
+    skillCommand: { id: skillId, label: skillId, command },
+  }
+}
+
 export function buildTurnsFromMessages(
   messages: Message[],
   toolExecutions: ToolExecution[],
@@ -106,7 +134,7 @@ export function buildTurnsFromMessages(
   for (const m of messages) {
     if (m.role === 'user') {
       current = {
-        userMessage: { id: m.id, text: m.content.text ?? '' },
+        userMessage: normalizeUserMessageForRender(m),
         aiSegments: [],
         toolGroup: undefined,
         generatedFiles: [],

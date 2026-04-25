@@ -230,7 +230,6 @@ export function useStreaming() {
   // --- message:updated -------------------------------------------------
   useTauriEvent(() =>
     onMessageUpdated((message) => {
-      console.log('[message:updated] id:', message.id, 'role:', message.role, 'convId:', message.conversationId)
       const store = useChatStore.getState()
       const clientMessageId = (message as Message & { clientMessageId?: string }).clientMessageId
       if (message.role === 'user' && clientMessageId && message.conversationId === store.activeConversationId) {
@@ -238,8 +237,26 @@ export function useStreaming() {
         if (optimistic) {
           const idx = store.messages.findIndex((m) => m.id === clientMessageId)
           const updated = [...store.messages]
-          // 保留 optimistic message 的前端字段（sender 等），后端 echo 覆盖 id/createdAt 等持久化字段
-          updated[idx] = { ...optimistic, ...message }
+          const runId = (message as Message & { runId?: string }).runId
+          const merged = {
+            ...optimistic,
+            ...message,
+            content: { ...optimistic.content, ...message.content },
+          }
+          console.debug('[skill-command][message-updated-merge]', {
+            traceId: runId ?? clientMessageId,
+            conversationId: message.conversationId,
+            clientMessageId,
+            persistedMessageId: message.id,
+            runId,
+            optimisticSkillCommand: optimistic.content.skillCommand,
+            persistedSkillCommand: message.content.skillCommand,
+            mergedSkillCommand: merged.content.skillCommand,
+            optimisticCommandText: optimistic.content.commandText,
+            persistedCommandText: message.content.commandText,
+            mergedCommandText: merged.content.commandText,
+          })
+          updated[idx] = merged
           store.setMessages(updated)
           return
         }

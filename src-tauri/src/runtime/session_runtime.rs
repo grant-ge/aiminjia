@@ -279,6 +279,22 @@ impl SessionRuntime {
                 id: aw.id,
                 root_path: aw.root_path,
                 display_name: aw.display_name,
+            })
+            .or_else(|| {
+                let default_path = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+                if let Err(err) = std::fs::create_dir_all(&default_path) {
+                    log::warn!(
+                        "[session_runtime] failed to create defaultFolder for session {}: {}",
+                        session_id.as_str(),
+                        err
+                    );
+                    return None;
+                }
+                Some(AuthorizedWorkspaceRef {
+                    id: "default".to_string(),
+                    root_path: default_path,
+                    display_name: "默认项目".to_string(),
+                })
             });
         let mut engines = self
             .session_query_engines
@@ -465,6 +481,8 @@ mod tests {
             _content: &str,
             _file_ids: &[String],
             _client_message_id: Option<&str>,
+            _selected_skill_id: Option<&str>,
+            _selected_skill_label: Option<&str>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("user-msg".to_string())
         }
@@ -583,6 +601,19 @@ mod tests {
             seen_root.lock().unwrap().clone(),
             Some(external_workspace.path().to_path_buf())
         );
+    }
+
+    #[test]
+    fn query_engine_for_session_falls_back_to_default_folder_when_unbound() {
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new());
+        let session_id = crate::runtime::ids::SessionId::new("session-default-folder");
+
+        let engine = runtime.query_engine_for_session(&session_id);
+        let captured = engine.authorized_workspace_for_test();
+        let default_folder = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+
+        assert_eq!(captured.as_ref().map(|ws| ws.root_path.as_path()), Some(default_folder.as_path()));
+        assert_eq!(captured.as_ref().map(|ws| ws.display_name.as_str()), Some("默认项目"));
     }
 
     #[test]

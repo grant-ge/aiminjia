@@ -20,8 +20,8 @@ use crate::runtime::chat::tool_result_collector;
 use crate::runtime::chat::tool_round_driver::{ToolRoundDriver, ToolRoundResult};
 use crate::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
 use crate::runtime::chat::turn_config::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnConfigOverrides,
-    TurnError, TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, TurnConfig, TurnConfigOverrides, TurnError,
+    TurnIterationState, MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
 };
 use crate::runtime::chat::turn_outcome::ChatTurnOutcome;
 use crate::runtime::event_bus::RuntimeEventBus;
@@ -29,13 +29,46 @@ use crate::runtime::events::{AgentIdleScope, RuntimeEvent, RuntimeEventKind};
 use crate::runtime::hooks::config::{HookEvent, HookRegistry};
 use crate::runtime::hooks::HookRunner;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
-use crate::runtime::interaction::{InteractionId, InteractionResolution, PendingInteractionControlPlane};
+use crate::runtime::interaction::{
+    InteractionId, InteractionResolution, PendingInteractionControlPlane,
+};
 use crate::runtime::query_engine::QueryEngine;
 use crate::runtime::state::TurnState;
 use crate::runtime::store::{
     PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
 };
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
+
+
+pub fn build_user_content_json(
+    content: &str,
+    file_ids: &[String],
+    selected_skill_id: Option<&str>,
+    selected_skill_label: Option<&str>,
+) -> serde_json::Value {
+    let mut value = serde_json::json!({ "text": content });
+    if !file_ids.is_empty() {
+        value["files"] = serde_json::Value::Array(
+            file_ids
+                .iter()
+                .map(|id| serde_json::json!({ "id": id }))
+                .collect(),
+        );
+    }
+    if let Some(skill_id) = selected_skill_id.map(str::trim).filter(|id| !id.is_empty()) {
+        let command = format!("/{skill_id}");
+        value["commandText"] = serde_json::json!(format!("{} {}", command, content).trim());
+        value["skillCommand"] = serde_json::json!({
+            "id": skill_id,
+            "label": selected_skill_label
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(skill_id),
+            "command": command,
+        });
+    }
+    value
+}
 
 /// The chat turn request type.  Defined here to avoid circular imports between
 /// `session_runtime` and `chat`.
@@ -53,6 +86,8 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
+    pub selected_skill_id: Option<String>,
+    pub selected_skill_label: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -70,6 +105,8 @@ impl ChatTurnRequest {
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
             client_message_id: None,
+            selected_skill_id: None,
+            selected_skill_label: None,
         }
     }
 }
@@ -129,6 +166,8 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _content: &str,
         _file_ids: &[String],
         _client_message_id: Option<&str>,
+        _selected_skill_id: Option<&str>,
+        _selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
@@ -682,7 +721,11 @@ impl RuntimeChatTurnDriver {
                 .await?;
 
             let resolution = self
-                .await_interaction_resolution(cancel, &interaction_request.interaction_id, resolution_rx)
+                .await_interaction_resolution(
+                    cancel,
+                    &interaction_request.interaction_id,
+                    resolution_rx,
+                )
                 .await;
 
             let resolved = match resolution {
@@ -705,7 +748,9 @@ impl RuntimeChatTurnDriver {
                                 value,
                             )
                             .await
-                            .map_err(|err| anyhow::anyhow!("failed to replay interaction tool call: {err}"))?,
+                            .map_err(|err| {
+                                anyhow::anyhow!("failed to replay interaction tool call: {err}")
+                            })?,
                     )
                 }
                 InteractionResolution::Cancel { message } => {
@@ -898,6 +943,8 @@ impl RuntimeChatTurnDriver {
                 &request.content,
                 &request.file_ids,
                 request.client_message_id.as_deref(),
+                request.selected_skill_id.as_deref(),
+                request.selected_skill_label.as_deref(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -917,16 +964,12 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = if request.file_ids.is_empty() {
-            serde_json::json!({ "text": request.content })
-        } else {
-            let files_meta: Vec<serde_json::Value> = request
-                .file_ids
-                .iter()
-                .map(|id| serde_json::json!({ "id": id }))
-                .collect();
-            serde_json::json!({ "text": request.content, "files": files_meta })
-        };
+        let pending_user_content = build_user_content_json(
+            &request.content,
+            &request.file_ids,
+            request.selected_skill_id.as_deref(),
+            request.selected_skill_label.as_deref(),
+        );
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id.clone(),
@@ -1260,7 +1303,8 @@ impl RuntimeChatTurnDriver {
                     );
                     history_batch.push(assistant_history_message);
 
-                    let tool_msgs_for_persist: Vec<serde_json::Value> = results.tool_result_messages.clone();
+                    let tool_msgs_for_persist: Vec<serde_json::Value> =
+                        results.tool_result_messages.clone();
 
                     for msg in results.tool_result_messages {
                         history_batch.push(msg);
@@ -1292,7 +1336,10 @@ impl RuntimeChatTurnDriver {
                     // 持久化本轮 tool 消息（忽略错误，不阻断流程）
                     if !tool_msgs_for_persist.is_empty() {
                         if let Err(e) = executor
-                            .persist_tool_messages(config.conversation_id.as_str(), &tool_msgs_for_persist)
+                            .persist_tool_messages(
+                                config.conversation_id.as_str(),
+                                &tool_msgs_for_persist,
+                            )
                             .await
                         {
                             log::warn!("[chat_turn_driver] Failed to persist tool messages: {}", e);
@@ -1470,9 +1517,7 @@ fn apply_skill_runtime_patch(
     config.token_budget = patch.token_budget;
 }
 
-fn stable_allowed_tools_vec(
-    allowed_tools: &Option<HashSet<String>>,
-) -> Option<Vec<String>> {
+fn stable_allowed_tools_vec(allowed_tools: &Option<HashSet<String>>) -> Option<Vec<String>> {
     allowed_tools.as_ref().map(|allowed| {
         let mut names: Vec<String> = allowed.iter().cloned().collect();
         names.sort();
@@ -1491,9 +1536,7 @@ mod tests {
     use crate::runtime::store::{
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
-    use crate::runtime::tools::permission::{
-        PermissionDecision, PermissionMode, PermissionReason,
-    };
+    use crate::runtime::tools::permission::{PermissionDecision, PermissionMode, PermissionReason};
     use crate::runtime::tools::{
         AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
         ToolExecutionContext, ToolResult,
@@ -1501,8 +1544,8 @@ mod tests {
     use async_trait::async_trait;
     use serde_json::json;
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
     use tokio::sync::oneshot;
 
     struct RecordingPermissionControlPlane {
@@ -1550,10 +1593,7 @@ mod tests {
             0
         }
 
-        fn pending_count_for_session(
-            &self,
-            _session_id: &crate::runtime::ids::SessionId,
-        ) -> usize {
+        fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
             0
         }
     }
@@ -1563,6 +1603,8 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
+        assert_eq!(request.selected_skill_id, None);
+        assert_eq!(request.selected_skill_label, None);
     }
 
     #[tokio::test]
@@ -1769,6 +1811,8 @@ mod tests {
             _content: &str,
             _file_ids: &[String],
             _client_message_id: Option<&str>,
+            _selected_skill_id: Option<&str>,
+            _selected_skill_label: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
         }
@@ -1864,5 +1908,4 @@ mod tests {
             vec!["execute_python".to_string(), "switch_skill".to_string()]
         );
     }
-
 }

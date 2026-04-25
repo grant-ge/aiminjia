@@ -26,6 +26,8 @@ pub async fn send_message(
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
     client_message_id: Option<String>,
+    selected_skill_id: Option<String>,
+    selected_skill_label: Option<String>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
@@ -37,6 +39,8 @@ pub async fn send_message(
             permission_mode,
             agent_name,
             client_message_id,
+            selected_skill_id,
+            selected_skill_label,
         )
         .await
 }
@@ -100,7 +104,9 @@ pub async fn cancel_user_interaction(
     interaction_id: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    adapter.cancel_user_interaction(interaction_id, message).await
+    adapter
+        .cancel_user_interaction(interaction_id, message)
+        .await
 }
 
 #[tauri::command]

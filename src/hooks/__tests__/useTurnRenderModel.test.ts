@@ -100,4 +100,37 @@ describe('buildTurnsFromMessages', () => {
     expect(step?.status).toBe('error')
     expect(step?.output).toBeDefined()
   })
+
+  it('preserves skill command metadata on user messages for the chat-scene UI', () => {
+    const msg: Message = {
+      ...userMsg('u1', '你可以做什么'),
+      content: {
+        text: '你可以做什么',
+        commandText: '/salary-query 你可以做什么',
+        skillCommand: { id: 'salary-query', label: 'salary-query', command: '/salary-query' },
+      },
+    }
+
+    const turns = buildTurnsFromMessages([msg], [])
+
+    expect(turns[0].userMessage).toEqual({
+      id: 'u1',
+      text: '你可以做什么',
+      commandText: '/salary-query 你可以做什么',
+      skillCommand: { id: 'salary-query', label: 'salary-query', command: '/salary-query' },
+    })
+  })
+
+
+  it('normalizes slash command user text into skill command metadata', () => {
+    const turns = buildTurnsFromMessages([userMsg('u1', '/salary-query 看看你的技能能力')], [])
+
+    expect(turns[0].userMessage).toEqual({
+      id: 'u1',
+      text: '看看你的技能能力',
+      commandText: '/salary-query 看看你的技能能力',
+      skillCommand: { id: 'salary-query', label: 'salary-query', command: '/salary-query' },
+    })
+  })
+
 })

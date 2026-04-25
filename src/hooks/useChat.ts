@@ -28,7 +28,7 @@ import {
   renameConversation as tauriRenameConversation,
   archiveConversation as tauriArchiveConversation,
 } from '@/lib/tauri'
-import type { Conversation, Message } from '@/types/message'
+import type { Conversation, Message, SkillCommandBreadcrumb } from '@/types/message'
 
 /** Maximum concurrent conversations allowed (must match backend). */
 const MAX_CONCURRENT_AGENTS = 3
@@ -195,6 +195,7 @@ export function useChat() {
     text: string,
     files?: PendingFileInfo[],
     agentName?: string | null,
+    selectedSkillId?: string | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -252,6 +253,19 @@ export function useChat() {
     const messageId = generateId()
     const now = new Date().toISOString()
 
+    const selectedSkillCommand = selectedSkillId
+      ? useChatStore.getState().selectedSkillCommands[conversationId]
+      : undefined
+    const skillCommand: SkillCommandBreadcrumb | undefined = selectedSkillCommand
+      ? {
+          id: selectedSkillCommand.id,
+          label: selectedSkillCommand.label,
+          command: selectedSkillCommand.command,
+        }
+      : selectedSkillId
+        ? { id: selectedSkillId, label: selectedSkillId, command: `/${selectedSkillId}` }
+        : undefined
+    const commandText = skillCommand ? `${skillCommand.command} ${text}`.trim() : undefined
     // Build the optimistic user message
     const auth = useAuthStore.getState()
     const userMessage: Message = {
@@ -261,6 +275,8 @@ export function useChat() {
       createdAt: now,
       content: {
         text,
+        commandText,
+        skillCommand,
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
@@ -276,6 +292,15 @@ export function useChat() {
     }
 
     store = useChatStore.getState()
+    console.debug('[skill-command][optimistic-user-message]', {
+      traceId: messageId,
+      conversationId,
+      clientMessageId: messageId,
+      selectedSkillId,
+      selectedSkillCommand,
+      commandText,
+      skillCommand,
+    })
     store.addMessage(userMessage)
     store.setConversationStreaming(conversationId, true)
     store.addBusyConversation(conversationId)
@@ -283,7 +308,7 @@ export function useChat() {
     try {
       const fileIds = files?.map((f) => f.id)
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, text, fileIds, agentName, messageId)
+      await sendMessage(conversationId, text, fileIds, agentName, messageId, selectedSkillId, skillCommand?.label)
       console.log('[useChat] sendMessage IPC returned OK')
       return true
     } catch (err) {

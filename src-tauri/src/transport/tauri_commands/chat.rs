@@ -841,23 +841,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         content: &str,
         file_ids: &[String],
         _client_message_id: Option<&str>,
+        selected_skill_id: Option<&str>,
+        selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
-        // Build the same content_json structure as legacy_send_message_impl
-        let content_json = if file_ids.is_empty() {
-            serde_json::json!({ "text": content }).to_string()
-        } else {
-            let files_meta: Vec<serde_json::Value> = file_ids
-                .iter()
-                .map(|id| serde_json::json!({ "id": id }))
-                .collect();
-            serde_json::json!({
-                "text": content,
-                "files": files_meta,
-            })
-            .to_string()
-        };
+        let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
+            content,
+            file_ids,
+            selected_skill_id,
+            selected_skill_label,
+        )
+        .to_string();
 
         if let Err(e) =
             self.services
@@ -1992,10 +1987,23 @@ impl TauriChatCommandAdapter {
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
+        selected_skill_id: Option<String>,
+        selected_skill_label: Option<String>,
     ) -> Result<(), String> {
+        log::info!(
+            "[skill-command][send-message] trace_id={:?} conversation_id={} client_message_id={:?} selected_skill_id={:?} selected_skill_label={:?} content_len={}",
+            client_message_id.as_deref().or(selected_skill_id.as_deref()),
+            conversation_id,
+            client_message_id,
+            selected_skill_id,
+            selected_skill_label,
+            content.len()
+        );
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, file_ids);
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
+        request.selected_skill_id = selected_skill_id;
+        request.selected_skill_label = selected_skill_label;
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
@@ -2365,7 +2373,7 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
             "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
             schedule.title, fire_at, schedule.prompt
         );
-        self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
+        self.send_message(conversation_id, prompt, Vec::new(), None, None, None, None, None)
             .await
             .map_err(anyhow::Error::msg)
     }
