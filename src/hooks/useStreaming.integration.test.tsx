@@ -30,6 +30,7 @@ import { useStreaming } from './useStreaming'
 import { useChatStore } from '@/stores/chatStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 
 function HookHarness() {
   useStreaming()
@@ -58,6 +59,7 @@ describe('useStreaming integration review', () => {
       streamingContent: '',
       toolExecutions: [],
     })
+    useDiagnosticsStore.getState().clearDiagnostics()
     useNotificationStore.getState().dismissAll()
   })
 
@@ -167,6 +169,7 @@ describe('useStreaming integration review', () => {
     })
 
     expect(useStreamingStore.getState().pendingAsks.get('tc-abc')).toBeDefined()
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'permission.ask.received')).toBe(true)
   })
 
   it('clears pending asks for conversation when streaming:done arrives', async () => {
@@ -201,6 +204,7 @@ describe('useStreaming integration review', () => {
     })
 
     expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
   })
 
   it('preserves optimistic user message sender when persisted echo replaces client id', async () => {

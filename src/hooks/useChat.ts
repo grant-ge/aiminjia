@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useSkillStore } from '@/stores/skillStore'
 import i18n from '@/i18n'
+import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
   sendMessage,
   stopStreaming,
@@ -72,6 +73,7 @@ export function useChat() {
     const store = useChatStore.getState()
     const optimisticId = generateId()
     const now = new Date().toISOString()
+    recordDiagnostic({ event: 'conversation.create.started', conversationId: optimisticId })
 
     const conversation: Conversation = {
       id: optimisticId,
@@ -89,6 +91,11 @@ export function useChat() {
     try {
       const backendId = await createConversation()
       console.log('[useChat] createConversation OK, backendId:', backendId)
+      recordDiagnostic({
+        event: 'conversation.create.completed',
+        ok: true,
+        conversationId: backendId ?? optimisticId,
+      })
 
       // Replace optimistic ID with the backend-generated ID
       if (backendId && backendId !== optimisticId) {
@@ -104,6 +111,7 @@ export function useChat() {
       }
     } catch (err) {
       console.error('[useChat] createConversation IPC failed:', err)
+      recordDiagnosticError('conversation.create.failed', err, { conversationId: optimisticId })
       // Rollback
       const current = useChatStore.getState()
       current.setConversations(current.conversations.filter((c) => c.id !== optimisticId))
@@ -119,6 +127,7 @@ export function useChat() {
    */
   const removeConversation = useCallback(async (id: string) => {
     console.log('[useChat] deleteConversation called, id:', id)
+    recordDiagnostic({ event: 'conversation.delete.started', conversationId: id })
     const store = useChatStore.getState()
 
     store.setConversations(store.conversations.filter((c) => c.id !== id))
@@ -135,8 +144,10 @@ export function useChat() {
     try {
       await deleteConversation(id)
       console.log('[useChat] deleteConversation IPC succeeded')
+      recordDiagnostic({ event: 'conversation.delete.completed', ok: true, conversationId: id })
     } catch (err) {
       console.error('[useChat] deleteConversation IPC failed:', err)
+      recordDiagnosticError('conversation.delete.failed', err, { conversationId: id })
       // Rollback: reload conversations from backend
       try {
         const raw = await getConversations()
@@ -159,6 +170,7 @@ export function useChat() {
    */
   const switchConversation = useCallback(async (id: string) => {
     console.log('[useChat] switchConversation, id:', id)
+    recordDiagnostic({ event: 'conversation.switch.started', conversationId: id })
     const loadVersion = ++switchVersionRef.current
     const store = useChatStore.getState()
     store.setActiveConversation(id)
@@ -173,6 +185,12 @@ export function useChat() {
       if (switchVersionRef.current !== loadVersion) return
       console.log('[useChat] getMessages OK, count:', msgs.length)
       console.log('[useChat] getTasks OK, count:', tasks.length)
+      recordDiagnostic({
+        event: 'conversation.switch.completed',
+        ok: true,
+        conversationId: id,
+        payload: { messageCount: msgs.length, taskCount: tasks.length },
+      })
       useChatStore.getState().setMessages(msgs)
       // 恢复 task 列表到 store
       const store = useChatStore.getState()
@@ -181,6 +199,7 @@ export function useChat() {
       }
     } catch (err) {
       console.error('[useChat] getMessages IPC failed:', err)
+      recordDiagnosticError('conversation.switch.failed', err, { conversationId: id })
     }
   }, [])
 
@@ -252,6 +271,12 @@ export function useChat() {
 
     const messageId = generateId()
     const now = new Date().toISOString()
+    recordDiagnostic({
+      event: 'chat.submit.started',
+      conversationId,
+      clientMessageId: messageId,
+      payload: { messageLength: text.length, fileCount: files?.length ?? 0 },
+    })
 
     const selectedSkillCommand = selectedSkillId
       ? useChatStore.getState().selectedSkillCommands[conversationId]
@@ -310,9 +335,16 @@ export function useChat() {
       console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
       await sendMessage(conversationId, text, fileIds, agentName, messageId, selectedSkillId, skillCommand?.label)
       console.log('[useChat] sendMessage IPC returned OK')
+      recordDiagnostic({
+        event: 'chat.submit.completed',
+        ok: true,
+        conversationId,
+        clientMessageId: messageId,
+      })
       return true
     } catch (err) {
       console.error('[useChat] sendMessage IPC failed:', err)
+      recordDiagnosticError('chat.submit.failed', err, { conversationId, clientMessageId: messageId })
       const s = useChatStore.getState()
       s.removeMessage(messageId)
       s.clearConversationStreamState(conversationId)
@@ -339,6 +371,7 @@ export function useChat() {
     const store = useChatStore.getState()
     const convId = store.activeConversationId
     if (convId) {
+      recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
       store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
@@ -386,14 +419,22 @@ export function useChat() {
    */
   const renameConversation = useCallback(async (id: string, newTitle: string) => {
     const store = useChatStore.getState()
+    recordDiagnostic({ event: 'conversation.rename.started', conversationId: id, payload: { titleLength: newTitle.length } })
     store.setConversations(
       store.conversations.map((c) => c.id === id ? { ...c, title: newTitle } : c)
     )
-    await tauriRenameConversation(id, newTitle)
+    try {
+      await tauriRenameConversation(id, newTitle)
+      recordDiagnostic({ event: 'conversation.rename.completed', ok: true, conversationId: id })
+    } catch (err) {
+      recordDiagnosticError('conversation.rename.failed', err, { conversationId: id })
+      throw err
+    }
   }, [])
 
   const archiveConversation = useCallback(async (id: string) => {
     const store = useChatStore.getState()
+    recordDiagnostic({ event: 'conversation.archive.started', conversationId: id })
     // 乐观更新：从列表移除
     store.setConversations(store.conversations.filter((c) => c.id !== id))
     // 如果归档的是当前对话，切回 null
@@ -402,8 +443,10 @@ export function useChat() {
     }
     try {
       await tauriArchiveConversation(id)
+      recordDiagnostic({ event: 'conversation.archive.completed', ok: true, conversationId: id })
     } catch (err) {
       console.error('[useChat] archiveConversation failed:', err)
+      recordDiagnosticError('conversation.archive.failed', err, { conversationId: id })
       // 失败则重新加载
       await loadConversations()
     }

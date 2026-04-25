@@ -35,6 +35,7 @@ import { useEffect, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { recordDiagnostic } from '@/lib/diagnostics'
 import i18n from '@/i18n'
 import type { Message } from '@/types/message'
 import {
@@ -127,6 +128,11 @@ export function useStreaming() {
     for (const convId of keys) {
       const accumulated = buffer[convId]
       if (accumulated) {
+        recordDiagnostic({
+          event: 'streaming.delta.flushed',
+          conversationId: convId,
+          payload: { deltaLength: accumulated.length },
+        })
         useChatStore.getState().appendConversationStreamingContent(convId, accumulated)
       }
     }
@@ -161,6 +167,11 @@ export function useStreaming() {
   function flushConversationDeltas(conversationId: string) {
     const buffered = deltaBufferRef.current[conversationId]
     if (buffered) {
+      recordDiagnostic({
+        event: 'streaming.delta.flushed',
+        conversationId,
+        payload: { deltaLength: buffered.length, mode: 'sync' },
+      })
       useChatStore.getState().appendConversationStreamingContent(conversationId, buffered)
     }
     delete deltaBufferRef.current[conversationId]
@@ -170,6 +181,11 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingDelta(({ conversationId, delta }: StreamingDeltaPayload) => {
       touchActivity(conversationId)
+      recordDiagnostic({
+        event: 'streaming.delta.received',
+        conversationId,
+        payload: { deltaLength: delta.length },
+      })
       // Buffer the delta instead of immediately updating the store
       deltaBufferRef.current[conversationId] =
         (deltaBufferRef.current[conversationId] ?? '') + delta
@@ -181,6 +197,7 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingDone(({ conversationId }: StreamingDonePayload) => {
       console.log('[streaming:done] conversationId:', conversationId)
+      recordDiagnostic({ event: 'streaming.done.received', conversationId })
       // Flush buffered deltas synchronously before clearing stream state
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
@@ -195,6 +212,14 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingError(({ conversationId, error, rawError }: StreamingErrorPayload) => {
       console.error('[streaming:error]', conversationId, rawError ?? 'unknown', error)
+      recordDiagnostic({
+        event: 'streaming.error.received',
+        level: 'error',
+        ok: false,
+        conversationId,
+        error,
+        payload: { rawError },
+      })
       // Flush buffered deltas so partial content is preserved before clearing
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
@@ -290,6 +315,11 @@ export function useStreaming() {
         const streamState = store.streamStates[message.conversationId]
         if (streamState?.isStreaming) {
           console.log('[message:updated] Clearing streaming state for %s (assistant message persisted)', message.conversationId)
+          recordDiagnostic({
+            event: 'streaming.done.received',
+            conversationId: message.conversationId,
+            payload: { source: 'assistant.message.persisted' },
+          })
           flushConversationDeltas(message.conversationId)
           delete lastActivityRef.current[message.conversationId]
           store.clearConversationStreamState(message.conversationId)
@@ -303,6 +333,7 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingRetryReset(({ conversationId }: StreamingRetryResetPayload) => {
       console.log('[streaming:retry-reset]', conversationId)
+      recordDiagnostic({ event: 'streaming.retry_reset.received', conversationId })
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
     }),
@@ -313,6 +344,12 @@ export function useStreaming() {
     onToolExecuting(({ conversationId, toolName, toolId, purpose, input }: ToolExecutingPayload) => {
       console.log('[tool:executing]', conversationId, toolName, toolId)
       touchActivity(conversationId)
+      recordDiagnostic({
+        event: 'tool.executing.received',
+        conversationId,
+        toolCallId: toolId,
+        payload: { toolName, purpose },
+      })
       useChatStore.getState().addConversationToolExecution(conversationId, {
         toolName,
         toolId,
@@ -328,6 +365,13 @@ export function useStreaming() {
     onToolCompleted((message: Message) => {
       console.log('[tool:completed]', message.conversationId, message.toolResult?.name)
       touchActivity(message.conversationId)
+      recordDiagnostic({
+        event: 'tool.completed.received',
+        conversationId: message.conversationId,
+        toolCallId: message.toolResult?.toolCallId,
+        ok: !message.toolResult?.isError,
+        payload: { toolName: message.toolResult?.name },
+      })
       const store = useChatStore.getState()
       if (message.conversationId === store.activeConversationId) {
         store.upsertMessage(message)
@@ -367,6 +411,10 @@ export function useStreaming() {
   useTauriEvent(() =>
     onAnalysisStepChanged(({ step, status }) => {
       console.log('[analysis:step-changed]', step, status)
+      recordDiagnostic({
+        event: 'analysis.step.changed.received',
+        payload: { step, status },
+      })
       const store = useAnalysisStore.getState()
       store.setCurrentStep(step)
       store.setStepStatus(step, status as StepStatus)
@@ -381,6 +429,11 @@ export function useStreaming() {
     onStreamingStepReset(({ conversationId, step }: StreamingStepResetPayload) => {
       console.log('[streaming:step-reset] conversationId:', conversationId, 'step:', step)
       touchActivity(conversationId)
+      recordDiagnostic({
+        event: 'streaming.step_reset.received',
+        conversationId,
+        payload: { step },
+      })
       // Discard buffered deltas from the previous step
       delete deltaBufferRef.current[conversationId]
       useChatStore.getState().resetConversationStreamContent(conversationId)
@@ -393,6 +446,7 @@ export function useStreaming() {
       (event) => {
         const { conversationId } = event.payload
         console.warn('[stop:prevented-continuation]', conversationId)
+        recordDiagnostic({ event: 'streaming.stop_prevented.received', conversationId })
         useChatStore.getState().clearConversationStreamState(conversationId)
         useChatStore.getState().removeBusyConversation(conversationId)
       },
@@ -402,6 +456,7 @@ export function useStreaming() {
   // --- agent:phase --------------------------------------------------------
   useTauriEvent(() =>
     onAgentPhase(({ conversationId, phase }: AgentPhasePayload) => {
+      recordDiagnostic({ event: 'agent.phase.received', conversationId, payload: { phase } })
       useChatStore.getState().setConversationAgentPhase(conversationId, phase)
     }),
   )
@@ -420,6 +475,7 @@ export function useStreaming() {
       }
 
       console.log('[agent:idle] conversationId:', conversationId, 'scope:', effectiveScope, 'Agent finished, clearing busy state')
+      recordDiagnostic({ event: 'agent.idle.received', conversationId, payload: { scope: effectiveScope, agentId } })
       flushConversationDeltas(conversationId)
       delete lastActivityRef.current[conversationId]
       const store = useChatStore.getState()
@@ -436,6 +492,13 @@ export function useStreaming() {
   useTauriEvent(() =>
     onPermissionAsk((payload: PermissionAskPayload) => {
       console.log('[permission:ask]', payload.conversationId, payload.toolName, payload.toolCallId)
+      recordDiagnostic({
+        event: 'permission.ask.received',
+        conversationId: payload.conversationId,
+        runId: payload.runId,
+        toolCallId: payload.toolCallId,
+        payload: { toolName: payload.toolName, mode: payload.mode },
+      })
       useStreamingStore.getState().addPendingAsk(payload)
     }),
   )
@@ -444,6 +507,14 @@ export function useStreaming() {
   useTauriEvent(() =>
     onInteractionRequired((payload: InteractionRequiredPayload) => {
       console.log('[interaction:required]', payload.conversationId, payload.toolName, payload.interactionId)
+      recordDiagnostic({
+        event: 'interaction.required.received',
+        conversationId: payload.conversationId,
+        runId: payload.runId,
+        toolCallId: payload.toolCallId,
+        interactionId: payload.interactionId,
+        payload: { toolName: payload.toolName, kind: payload.kind },
+      })
       useInteractionStore.getState().addInteraction(payload)
     }),
   )
@@ -632,6 +703,11 @@ export function useStreaming() {
             convId,
             now - lastActive,
           )
+          recordDiagnostic({
+            event: 'streaming.watchdog.stale_detected',
+            conversationId: convId,
+            payload: { lastActivityAt: lastActive, now },
+          })
           delete deltaBufferRef.current[convId]
           delete lastActivityRef.current[convId]
           store.clearConversationStreamState(convId)

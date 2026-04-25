@@ -158,7 +158,7 @@ export function buildDiagnosticEvent(input: DiagnosticInput): DiagnosticEvent {
 export function recordDiagnostic(input: DiagnosticInput): DiagnosticEvent {
   const event = buildDiagnosticEvent(input)
   useDiagnosticsStore.getState().appendDiagnostic(event)
-  void recordFrontendDiagnostic(event).catch((error: unknown) => {
+  void Promise.resolve(recordFrontendDiagnostic(event)).catch((error: unknown) => {
     useDiagnosticsStore.getState().appendDiagnostic(
       buildDiagnosticEvent({
         event: 'diagnostics.forward.failed',

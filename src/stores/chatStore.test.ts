@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chatStore'
 import type { Message, Conversation } from '@/types/message'
+import { useDiagnosticsStore } from './diagnosticsStore'
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}))
 
 // Reset store between tests
 beforeEach(() => {
+  useDiagnosticsStore.getState().clearDiagnostics()
   useChatStore.setState({
     conversations: [],
     activeConversationId: null,
@@ -77,6 +83,10 @@ describe('chatStore — messages', () => {
   it('sets messages', () => {
     useChatStore.getState().setMessages([msg1, msg2])
     expect(useChatStore.getState().messages).toHaveLength(2)
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.messages.set',
+      payload: { messageCount: 2 },
+    })
   })
 
   it('adds a message', () => {
@@ -103,6 +113,17 @@ describe('chatStore — messages', () => {
     useChatStore.getState().setMessages([msg1])
     useChatStore.getState().updateMessage('nonexistent', { content: { text: 'X' } })
     expect(useChatStore.getState().messages[0].content.text).toBe('Hello')
+  })
+
+  it('records diagnostics when a message is upserted', () => {
+    useChatStore.getState().upsertMessage(msg1)
+
+    expect(useChatStore.getState().messages).toHaveLength(1)
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.messages.upsert',
+      conversationId: 'c1',
+      messageId: 'm1',
+    })
   })
 })
 
@@ -137,6 +158,11 @@ describe('chatStore — streaming', () => {
     useChatStore.getState().setStreamingContent('Hello')
     useChatStore.getState().appendStreamingContent(' World')
     expect(useChatStore.getState().streamingContent).toBe('Hello World')
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.streaming.append',
+      conversationId: 'c1',
+      payload: { deltaLength: 6 },
+    })
   })
 
   it('handles multiple appends', () => {
@@ -215,10 +241,12 @@ describe('chatStore — busy conversations', () => {
     store.addBusyConversation('c1')
     store.addBusyConversation('c2')
     expect(useChatStore.getState().busyConversations.size).toBe(2)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.busy.add')).toBe(true)
 
     store.removeBusyConversation('c1')
     expect(useChatStore.getState().busyConversations.size).toBe(1)
     expect(useChatStore.getState().busyConversations.has('c2')).toBe(true)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.busy.remove')).toBe(true)
   })
 
   it('setBusyConversations replaces entire set', () => {
