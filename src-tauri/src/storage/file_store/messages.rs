@@ -191,6 +191,12 @@ pub fn get_messages(
     base_dir: &Path,
     conversation_id: &str,
 ) -> StorageResult<Vec<serde_json::Value>> {
+    let single_file = messages_path(base_dir, conversation_id);
+    if single_file.exists() {
+        let messages = get_messages_v2(base_dir, conversation_id)?;
+        return Ok(messages.into_iter().map(message_to_json).collect());
+    }
+
     let meta = read_shard_meta(base_dir, conversation_id);
     let mut all_msgs: Vec<StoredMessage> = Vec::new();
 
@@ -247,6 +253,12 @@ pub fn get_recent_messages(
     conversation_id: &str,
     limit: u32,
 ) -> StorageResult<Vec<serde_json::Value>> {
+    let single_file = messages_path(base_dir, conversation_id);
+    if single_file.exists() {
+        let recent = get_recent_messages_v2(base_dir, conversation_id, limit as usize)?;
+        return Ok(recent.into_iter().map(message_to_json).collect());
+    }
+
     let meta = read_shard_meta(base_dir, conversation_id);
     let limit = limit as usize;
     let mut all_msgs: Vec<StoredMessage> = Vec::new();

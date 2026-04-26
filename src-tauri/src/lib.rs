@@ -41,6 +41,12 @@ pub fn run() {
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
             }
+            if let Err(e) = storage::migration::reconcile_legacy_conversations_if_needed(
+                &app_data_dir,
+                aijia_home.root(),
+            ) {
+                log::warn!("[setup] legacy conversation migration warning (non-fatal): {}", e);
+            }
             app.manage(aijia_home.clone());
             let runtime_paths = runtime::dependencies::RuntimePaths::new(
                 aijia_home.runtimes_dir(),

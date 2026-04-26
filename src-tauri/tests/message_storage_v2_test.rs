@@ -277,6 +277,24 @@ fn insert_and_get_single_file() {
 }
 
 #[test]
+fn app_storage_get_messages_reads_single_file_transcript() {
+    let (storage, _dir) = setup_storage();
+
+    let mut first = common::make_user("1", "hello");
+    first.sequence = Some(1);
+    let mut second = common::make_assistant("2", "hi");
+    second.sequence = Some(2);
+    insert_message_v2(storage.base_dir(), &first).expect("insert first single-file message");
+    insert_message_v2(storage.base_dir(), &second).expect("insert second single-file message");
+
+    let messages = storage.get_messages("c1").expect("read frontend messages");
+
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["content"]["text"], "hello");
+    assert_eq!(messages[1]["content"]["text"], "hi");
+}
+
+#[test]
 fn update_via_same_id_last_wins() {
     let (storage, _dir) = setup_storage();
 
