@@ -213,6 +213,7 @@ fn ad3_llm_step_input_exposes_estimated_tokens() {
     let llm_settings = ResolvedLlmSettings::default();
     let input = LlmStepInput {
         system_prompt: "sys",
+        openai_system_message: None,
         dynamic_context: "",
         messages: vec![],
         tool_defs: &[],

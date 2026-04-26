@@ -136,6 +136,7 @@ impl TurnIterationState {
 #[derive(Debug)]
 pub struct LlmStepInput<'a> {
     pub system_prompt: &'a str,
+    pub openai_system_message: Option<serde_json::Value>,
     pub dynamic_context: &'a str,
     pub messages: Vec<JsonValue>, // decayed 副本，非原始 messages 引用
     pub tool_defs: &'a [JsonValue],

@@ -1244,6 +1244,10 @@ impl RuntimeChatTurnDriver {
 
             let input = LlmStepInput {
                 system_prompt: &config.system_prompt,
+                openai_system_message: config
+                    .prompt_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.openai_system_message()),
                 dynamic_context: &dynamic_context,
                 // Pass a clone of the current messages slice so executor cannot
                 // mutate driver state.

@@ -1,12 +1,14 @@
 pub mod cache;
 pub mod reminders;
+pub mod renderer_openai;
 pub mod sections;
 pub mod types;
 
 pub use cache::PromptSectionCache;
 pub use reminders::ReminderBuilder;
+pub use renderer_openai::OpenAiChatPromptRenderer;
 pub use sections::{PromptAssembler, PromptBuildContext, PromptSectionSpec};
 pub use types::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId, PromptSystemView,
-    SYSTEM_PROMPT_DYNAMIC_BOUNDARY, TurnPromptSnapshot,
+    TurnPromptSnapshot, SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
 };

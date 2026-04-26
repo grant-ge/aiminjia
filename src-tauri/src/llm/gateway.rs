@@ -185,7 +185,9 @@ impl LlmGateway {
         // Uses role "user" for maximum provider compatibility (some providers
         // don't support multiple system messages).
         if let Some(ctx) = context_message {
-            let insert_pos = if system_prompt.is_some() { 1 } else { 0 };
+            let has_system_prefix = system_prompt.is_some()
+                || masked_messages.first().map(|message| message.role.as_str()) == Some("system");
+            let insert_pos = if has_system_prefix { 1 } else { 0 };
             masked_messages.insert(insert_pos, ChatMessage::text("user", ctx));
         }
 
@@ -743,6 +745,51 @@ mod tests {
             "invalid JSON in response"
         )));
         assert!(!is_retryable_error(&anyhow::anyhow!("unknown error")));
+    }
+
+    #[test]
+    fn build_request_inserts_dynamic_context_after_existing_system_message() {
+        let route = RouteResult {
+            provider: "openai".to_string(),
+            api_key: String::new(),
+            model_hint: "gpt-4o".to_string(),
+            use_tools: false,
+            endpoint_url: String::new(),
+            model_type: "chat".to_string(),
+        };
+        let settings = AppSettings {
+            primary_model: "openai".to_string(),
+            auto_model_routing: false,
+            ..AppSettings::default()
+        };
+
+        let request = LlmGateway::build_request(
+            vec![
+                ChatMessage::text("system", "existing system"),
+                ChatMessage::text("user", "original user"),
+            ],
+            &route,
+            true,
+            None,
+            Some("dynamic context"),
+            None,
+            4096,
+            &settings,
+        );
+
+        let roles_and_content: Vec<(&str, &str)> = request
+            .messages
+            .iter()
+            .map(|message| (message.role.as_str(), message.content.as_str()))
+            .collect();
+        assert_eq!(
+            roles_and_content,
+            vec![
+                ("system", "existing system"),
+                ("user", "dynamic context"),
+                ("user", "original user"),
+            ]
+        );
     }
 
     #[test]

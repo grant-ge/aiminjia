@@ -449,13 +449,30 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // --- Convert JsonValue messages to ChatMessage ---
         let gateway_messages =
             deserialize_chat_messages_for_gateway(&input.messages, input.conversation_id);
-        let chat_messages: Vec<ChatMessage> = gateway_messages.messages;
+        let mut chat_messages: Vec<ChatMessage> = gateway_messages.messages;
         if gateway_messages.dropped_count > 0 {
             log::error!(
                 "[run_llm_step] conv={} DROPPED {} messages during deserialization — context may be incomplete",
                 input.conversation_id,
                 gateway_messages.dropped_count
             );
+        }
+        if let Some(value) = input.openai_system_message.clone() {
+            match serde_json::from_value::<ChatMessage>(value) {
+                Ok(system_chat_message) => chat_messages.insert(0, system_chat_message),
+                Err(error) => {
+                    log::warn!(
+                        "[run_llm_step] Failed to deserialize OpenAI system message for conv={}: {}. Falling back to legacy system_prompt.",
+                        input.conversation_id,
+                        error
+                    );
+                    if !input.system_prompt.trim().is_empty() {
+                        chat_messages.insert(0, ChatMessage::text("system", input.system_prompt));
+                    }
+                }
+            }
+        } else if !input.system_prompt.trim().is_empty() {
+            chat_messages.insert(0, ChatMessage::text("system", input.system_prompt));
         }
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
@@ -516,7 +533,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     &settings,
                     chat_messages.clone(),
                     masking_level.clone(),
-                    Some(input.system_prompt),
+                    None,
                     dynamic_ctx_opt,
                     effective_tools.clone(),
                     input.token_budget as u32,

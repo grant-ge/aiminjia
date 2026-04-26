@@ -130,6 +130,12 @@ impl TurnPromptSnapshot {
         self.assembly.flatten()
     }
 
+    pub fn openai_system_message(&self) -> Option<serde_json::Value> {
+        crate::runtime::chat::prompt::OpenAiChatPromptRenderer::render_system_message(
+            &self.assembly,
+        )
+    }
+
     pub fn initial_user_reminders(&self) -> &[serde_json::Value] {
         &self.initial_user_reminders
     }
