@@ -44,7 +44,10 @@ pub fn build_chat_history(
         if !boundary.summary_text.is_empty() {
             messages.insert(
                 0,
-                ChatMessage::text("user", format!("<context>\n{}\n</context>", boundary.summary_text)),
+                ChatMessage::text(
+                    "user",
+                    format!("<context>\n{}\n</context>", boundary.summary_text),
+                ),
             );
         }
     }
@@ -57,7 +60,11 @@ fn apply_boundary<'a>(
     boundary: Option<&CompactBoundaryRecord>,
 ) -> &'a [StoredMessage] {
     if let Some(boundary) = boundary {
-        if let Some(tail_id) = boundary.tail_message_id.as_deref().filter(|value| !value.is_empty()) {
+        if let Some(tail_id) = boundary
+            .tail_message_id
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
             if let Some(index) = stored.iter().position(|message| message.id == tail_id) {
                 return &stored[index..];
             }
@@ -84,7 +91,11 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
 fn build_chat_message_content(message: &StoredMessage, config: &HistoryConfig) -> String {
     if message.role == "user" && config.include_uploaded_file_hints {
         if let Some(text) = message.content.get("text").and_then(|value| value.as_str()) {
-            if let Some(files) = message.content.get("files").and_then(|value| value.as_array()) {
+            if let Some(files) = message
+                .content
+                .get("files")
+                .and_then(|value| value.as_array())
+            {
                 if !files.is_empty() {
                     return crate::transport::tauri_commands::chat::chat_runtime_impl::build_llm_content(
                         text,
@@ -136,8 +147,9 @@ fn normalize_tool_call(value: &serde_json::Value) -> Option<ToolCall> {
         .unwrap_or(serde_json::json!({}));
 
     let arguments = match arguments {
-        serde_json::Value::String(raw) => serde_json::from_str(&raw)
-            .unwrap_or_else(|_| serde_json::Value::String(raw)),
+        serde_json::Value::String(raw) => {
+            serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::Value::String(raw))
+        }
         other => other,
     };
 
@@ -167,7 +179,13 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
     let declared_ids: HashSet<String> = messages
         .iter()
         .filter(|message| message.role == "assistant")
-        .flat_map(|message| message.tool_calls.iter().flatten().map(|tool_call| tool_call.id.clone()))
+        .flat_map(|message| {
+            message
+                .tool_calls
+                .iter()
+                .flatten()
+                .map(|tool_call| tool_call.id.clone())
+        })
         .collect();
 
     messages
@@ -185,7 +203,9 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
         .map(|mut message| {
             if message.role == "assistant" {
                 if let Some(tool_calls) = message.tool_calls.clone() {
-                    let all_responded = tool_calls.iter().all(|tool_call| responded_ids.contains(&tool_call.id));
+                    let all_responded = tool_calls
+                        .iter()
+                        .all(|tool_call| responded_ids.contains(&tool_call.id));
                     if !all_responded {
                         message.tool_calls = None;
                     }
@@ -215,7 +235,9 @@ fn trim_to_budget(messages: Vec<ChatMessage>, config: &HistoryConfig) -> Vec<Cha
         kept.remove(0);
     }
 
-    kept.into_iter().flat_map(|round| round.iter().cloned()).collect()
+    kept.into_iter()
+        .flat_map(|round| round.iter().cloned())
+        .collect()
 }
 
 fn split_into_rounds(messages: &[ChatMessage]) -> Vec<Vec<ChatMessage>> {

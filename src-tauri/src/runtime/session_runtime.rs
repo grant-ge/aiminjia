@@ -222,7 +222,8 @@ impl SessionRuntime {
         resolution: InteractionResolution,
     ) -> Result<()> {
         use crate::runtime::interaction::PendingInteractionControlPlane;
-        self.pending_interaction_store.resolve(interaction_id, resolution)
+        self.pending_interaction_store
+            .resolve(interaction_id, resolution)
     }
 
     pub fn cancel_pending_interaction_requests_for_session(
@@ -281,7 +282,8 @@ impl SessionRuntime {
                 display_name: aw.display_name,
             })
             .or_else(|| {
-                let default_path = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+                let default_path =
+                    crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
                 if let Err(err) = std::fs::create_dir_all(&default_path) {
                     log::warn!(
                         "[session_runtime] failed to create defaultFolder for session {}: {}",
@@ -406,8 +408,8 @@ mod tests {
     use async_trait::async_trait;
     use serde_json::Value;
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
     struct CapturePermissionModeTool {
@@ -446,12 +448,14 @@ mod tests {
             match self.next_step.fetch_add(1, Ordering::SeqCst) {
                 0 => Ok(LlmStepResult::ToolCalls {
                     assistant_content: String::new(),
-                    tool_calls: vec![crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
-                        tool_call_id: "tc-session-mode".to_string(),
-                        tool_name: "capture_permission_mode".to_string(),
-                        args: serde_json::json!({}),
-                        purpose: None,
-                    }],
+                    tool_calls: vec![
+                        crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                            tool_call_id: "tc-session-mode".to_string(),
+                            tool_name: "capture_permission_mode".to_string(),
+                            args: serde_json::json!({}),
+                            purpose: None,
+                        },
+                    ],
                     tokens_in: 0,
                     tokens_out: 0,
                 }),
@@ -487,7 +491,10 @@ mod tests {
             Ok("user-msg".to_string())
         }
 
-        async fn build_system_prompt(&self, _conversation_id: &str) -> anyhow::Result<String, TurnError> {
+        async fn build_system_prompt(
+            &self,
+            _conversation_id: &str,
+        ) -> anyhow::Result<String, TurnError> {
             Ok("system".to_string())
         }
 
@@ -520,7 +527,10 @@ mod tests {
         let mut request = ChatTurnRequest::new("conv-session-mode", "run capture", vec![]);
         request.permission_mode = PermissionMode::DontAsk;
 
-        runtime.run_chat_request(request).await.expect("run_chat_request");
+        runtime
+            .run_chat_request(request)
+            .await
+            .expect("run_chat_request");
 
         assert_eq!(*seen_mode.lock().unwrap(), Some(PermissionMode::DontAsk));
     }
@@ -612,8 +622,14 @@ mod tests {
         let captured = engine.authorized_workspace_for_test();
         let default_folder = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
 
-        assert_eq!(captured.as_ref().map(|ws| ws.root_path.as_path()), Some(default_folder.as_path()));
-        assert_eq!(captured.as_ref().map(|ws| ws.display_name.as_str()), Some("默认项目"));
+        assert_eq!(
+            captured.as_ref().map(|ws| ws.root_path.as_path()),
+            Some(default_folder.as_path())
+        );
+        assert_eq!(
+            captured.as_ref().map(|ws| ws.display_name.as_str()),
+            Some("默认项目")
+        );
     }
 
     #[test]

@@ -37,6 +37,7 @@ pub(crate) struct BrowseDataLauncherDeps {
     read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     cancellation: Option<CancellationToken>,
     app_handle: Option<tauri::AppHandle>,
+    runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
 impl BrowseDataLauncherDeps {
@@ -61,6 +62,7 @@ impl BrowseDataLauncherDeps {
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
             app_handle: ctx.app_handle.clone(),
+            runtime_resolver: ctx.runtime_resolver.clone(),
         }
     }
 
@@ -92,6 +94,7 @@ impl BrowseDataLauncherDeps {
             read_file_state: self.read_file_state,
             cancellation: self.cancellation,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: self.runtime_resolver,
         }
     }
 }
@@ -397,6 +400,7 @@ async fn launch_browse_data_with_runtime_deps(
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             app_handle: ctx.app_handle.clone(),
+            runtime_resolver: ctx.runtime_resolver.clone(),
         },
         config,
         app_settings,
@@ -764,6 +768,7 @@ mod tests {
             read_file_state,
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: None,
         }
     }
 

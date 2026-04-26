@@ -40,7 +40,9 @@ fn review_assistant_tool_calls_round_trip() {
         "toolCalls must survive storage round-trip"
     );
     assert_eq!(
-        content["toolCalls"][0]["arguments"]["url"].as_str().unwrap(),
+        content["toolCalls"][0]["arguments"]["url"]
+            .as_str()
+            .unwrap(),
         "https://example.com"
     );
 }

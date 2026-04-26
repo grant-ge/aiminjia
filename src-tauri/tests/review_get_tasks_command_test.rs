@@ -7,35 +7,39 @@ use app_lib::runtime::task::task_models::{TaskRecord, TaskStatus};
 fn review_list_for_session_filters_by_session_id() {
     let store = InMemoryTaskStore::new();
 
-    store.create_task(TaskRecord {
-        id: "t1".to_string(),
-        description: String::new(),
-        owner: None,
-        blocks: vec![],
-        blocked_by: vec![],
-        metadata: None,
-        session_id: SessionId::new("conv-abc"),
-        parent_run_id: RunId::new("run-1"),
-        owner_agent_id: None,
-        subject: "Task in conv-abc".to_string(),
-        status: TaskStatus::Pending,
-        active_form: None,
-    }).unwrap();
+    store
+        .create_task(TaskRecord {
+            id: "t1".to_string(),
+            description: String::new(),
+            owner: None,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
+            session_id: SessionId::new("conv-abc"),
+            parent_run_id: RunId::new("run-1"),
+            owner_agent_id: None,
+            subject: "Task in conv-abc".to_string(),
+            status: TaskStatus::Pending,
+            active_form: None,
+        })
+        .unwrap();
 
-    store.create_task(TaskRecord {
-        id: "t2".to_string(),
-        description: String::new(),
-        owner: None,
-        blocks: vec![],
-        blocked_by: vec![],
-        metadata: None,
-        session_id: SessionId::new("conv-xyz"),
-        parent_run_id: RunId::new("run-2"),
-        owner_agent_id: None,
-        subject: "Task in conv-xyz".to_string(),
-        status: TaskStatus::InProgress,
-        active_form: Some("探索中…".to_string()),
-    }).unwrap();
+    store
+        .create_task(TaskRecord {
+            id: "t2".to_string(),
+            description: String::new(),
+            owner: None,
+            blocks: vec![],
+            blocked_by: vec![],
+            metadata: None,
+            session_id: SessionId::new("conv-xyz"),
+            parent_run_id: RunId::new("run-2"),
+            owner_agent_id: None,
+            subject: "Task in conv-xyz".to_string(),
+            status: TaskStatus::InProgress,
+            active_form: Some("探索中…".to_string()),
+        })
+        .unwrap();
 
     let result = store.list_for_session(&SessionId::new("conv-abc")).unwrap();
 
@@ -48,7 +52,9 @@ fn review_list_for_session_filters_by_session_id() {
 #[test]
 fn review_list_for_session_returns_empty_for_unknown_session() {
     let store = InMemoryTaskStore::new();
-    let result = store.list_for_session(&SessionId::new("no-such-session")).unwrap();
+    let result = store
+        .list_for_session(&SessionId::new("no-such-session"))
+        .unwrap();
     assert!(result.is_empty());
 }
 

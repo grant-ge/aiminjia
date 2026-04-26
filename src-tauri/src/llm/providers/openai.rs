@@ -738,7 +738,11 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         // Normalize here so all downstream code (allowed check, dispatch, logging) works.
         let normalized_name = if name.starts_with("mcp_") {
             let stripped = name.strip_prefix("mcp_").unwrap().to_string();
-            log::info!("[SSE] Stripped mcp_ prefix from tool name: '{}' → '{}'", name, stripped);
+            log::info!(
+                "[SSE] Stripped mcp_ prefix from tool name: '{}' → '{}'",
+                name,
+                stripped
+            );
             stripped
         } else {
             name

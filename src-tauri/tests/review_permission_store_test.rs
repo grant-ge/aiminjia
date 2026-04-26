@@ -4,12 +4,12 @@ use app_lib::runtime::ids::{RunId, SessionId, ToolCallId};
 use app_lib::runtime::store::permission_store::{
     PermissionScope, PermissionSource, PermissionStore, PermissionStoreSnapshot, PolicyDecision,
 };
+use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::definition::ToolDefinition;
 use app_lib::runtime::tools::permission::{
     persist_permission_decision, PermissionDecision, PermissionDestination, PermissionPipeline,
     StorePolicyPipeline,
 };
-use app_lib::runtime::tools::context::ToolExecutionContext;
 use tempfile::TempDir;
 
 const TOOL: &str = "mcp__demo__tool";
@@ -30,7 +30,11 @@ fn ctx() -> ToolExecutionContext {
 }
 
 fn authorize(store: Arc<PermissionStore>, tool_name: &str, scopes: &[&str]) -> PermissionDecision {
-    StorePolicyPipeline::new(store).authorize(&definition(tool_name, scopes), &serde_json::json!({}), &ctx())
+    StorePolicyPipeline::new(store).authorize(
+        &definition(tool_name, scopes),
+        &serde_json::json!({}),
+        &ctx(),
+    )
 }
 
 fn read_snapshot(path: &std::path::Path) -> PermissionStoreSnapshot {
@@ -39,11 +43,17 @@ fn read_snapshot(path: &std::path::Path) -> PermissionStoreSnapshot {
 }
 
 fn assert_allow(decision: PermissionDecision) {
-    assert!(matches!(decision, PermissionDecision::Allow { .. }), "expected Allow");
+    assert!(
+        matches!(decision, PermissionDecision::Allow { .. }),
+        "expected Allow"
+    );
 }
 
 fn assert_deny(decision: PermissionDecision) {
-    assert!(matches!(decision, PermissionDecision::Deny { .. }), "expected Deny");
+    assert!(
+        matches!(decision, PermissionDecision::Deny { .. }),
+        "expected Deny"
+    );
 }
 
 #[test]
@@ -66,7 +76,10 @@ fn session_remembered_allow_applies_in_session_without_writing_workspace_or_user
 
     assert_allow(authorize(store, TOOL, &[SCOPE]));
     assert!(
-        !workspace_file.exists() || !std::fs::read_to_string(&workspace_file).unwrap().contains(TOOL),
+        !workspace_file.exists()
+            || !std::fs::read_to_string(&workspace_file)
+                .unwrap()
+                .contains(TOOL),
         "session rule must not be persisted to workspace file"
     );
     assert!(
@@ -89,7 +102,10 @@ fn workspace_remembered_allow_records_workspace_rule() {
         PermissionDestination::Workspace,
     );
 
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysAllow));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysAllow)
+    );
     let snapshot = read_snapshot(&workspace_file);
     let rule = snapshot
         .rules
@@ -113,7 +129,10 @@ fn user_remembered_allow_records_user_rule() {
         PermissionDestination::User,
     );
 
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysAllow));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysAllow)
+    );
     let snapshot = read_snapshot(&user_file);
     let rule = snapshot
         .rules
@@ -136,7 +155,10 @@ fn remembered_deny_denies_same_tool_and_scope_without_asking() {
     );
 
     assert_deny(authorize(store.clone(), TOOL, &[SCOPE]));
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysDeny));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysDeny)
+    );
 }
 
 #[test]
@@ -176,8 +198,14 @@ fn remembering_multi_scope_tool_records_all_scopes() {
         PermissionDestination::Workspace,
     );
 
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysAllow));
-    assert_eq!(store.get_for_scope(TOOL, "custom:data"), Some(PolicyDecision::AlwaysAllow));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysAllow)
+    );
+    assert_eq!(
+        store.get_for_scope(TOOL, "custom:data"),
+        Some(PolicyDecision::AlwaysAllow)
+    );
     let snapshot = read_snapshot(&workspace_file);
     let workspace_rules = snapshot
         .rules
@@ -196,7 +224,8 @@ fn ask_decision_defaults_remember_destination_to_session() {
         remember_options,
         default_destination,
         ..
-    } = decision else {
+    } = decision
+    else {
         panic!("unknown mcp scope without stored rule should ask");
     };
 
@@ -213,7 +242,10 @@ fn workspace_and_user_rules_are_read_after_reconstructing_permission_store() {
     let user_file = dir.path().join("user-permissions.json");
 
     {
-        let store = PermissionStore::with_layer_files(Some(workspace_file.clone()), Some(user_file.clone()));
+        let store = PermissionStore::with_layer_files(
+            Some(workspace_file.clone()),
+            Some(user_file.clone()),
+        );
         persist_permission_decision(
             &store,
             TOOL,
@@ -223,8 +255,14 @@ fn workspace_and_user_rules_are_read_after_reconstructing_permission_store() {
         );
     }
 
-    let reloaded = Arc::new(PermissionStore::with_layer_files(Some(workspace_file), Some(user_file)));
-    assert_eq!(reloaded.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysAllow));
+    let reloaded = Arc::new(PermissionStore::with_layer_files(
+        Some(workspace_file),
+        Some(user_file),
+    ));
+    assert_eq!(
+        reloaded.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysAllow)
+    );
     assert_allow(authorize(reloaded, TOOL, &[SCOPE]));
 }
 
@@ -247,7 +285,10 @@ fn later_rule_for_same_tool_and_scope_overwrites_earlier_rule() {
         PermissionDestination::Workspace,
     );
 
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysDeny));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysDeny)
+    );
     assert_deny(authorize(store, TOOL, &[SCOPE]));
 }
 
@@ -270,6 +311,9 @@ fn workspace_rule_takes_priority_over_conflicting_user_rule() {
         PermissionDestination::Workspace,
     );
 
-    assert_eq!(store.get_for_scope(TOOL, SCOPE), Some(PolicyDecision::AlwaysDeny));
+    assert_eq!(
+        store.get_for_scope(TOOL, SCOPE),
+        Some(PolicyDecision::AlwaysDeny)
+    );
     assert_deny(authorize(store, TOOL, &[SCOPE]));
 }

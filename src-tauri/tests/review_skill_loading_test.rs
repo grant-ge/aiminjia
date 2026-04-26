@@ -71,13 +71,17 @@ fn skill_install_copies_manifest_to_plugin_id_directory_and_overwrites_same_id()
     let manifest = read_manifest_from_skill_dir(&installed).unwrap();
     assert_eq!(manifest.plugin.id, "payroll-skill");
 
-    std::fs::write(source.join("SKILL.md"), r#"---
+    std::fs::write(
+        source.join("SKILL.md"),
+        r#"---
 id: "payroll-skill"
 name: "Payroll Analysis"
 description: "Summarise payroll analysis workflow"
 ---
 FULL SKILL BODY v2
-"#).unwrap();
+"#,
+    )
+    .unwrap();
     install_skill_to(&custom_dir, &source);
 
     let installed_dirs: Vec<_> = std::fs::read_dir(&custom_dir)
@@ -85,8 +89,14 @@ FULL SKILL BODY v2
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().is_dir())
         .collect();
-    assert_eq!(installed_dirs.len(), 1, "same plugin_id should overwrite, not duplicate");
-    assert!(std::fs::read_to_string(installed.join("SKILL.md")).unwrap().contains("v2"));
+    assert_eq!(
+        installed_dirs.len(),
+        1,
+        "same plugin_id should overwrite, not duplicate"
+    );
+    assert!(std::fs::read_to_string(installed.join("SKILL.md"))
+        .unwrap()
+        .contains("v2"));
 }
 
 #[tokio::test]
@@ -131,9 +141,14 @@ async fn switch_skill_returns_skill_runtime_patch_and_launching_result_once_per_
 
     assert_eq!(result.tool_name, "switch_skill");
     assert!(result.content.contains("Switched to skill 'payroll-skill'"));
-    let data = result.data.expect("switch_skill should return runtime patch data");
+    let data = result
+        .data
+        .expect("switch_skill should return runtime patch data");
     assert_eq!(data["skill_control"]["skill_id"], "payroll-skill");
-    assert!(data["skill_control"]["system_prompt"].as_str().unwrap().contains("BASE PROMPT CONTENT"));
+    assert!(data["skill_control"]["system_prompt"]
+        .as_str()
+        .unwrap()
+        .contains("BASE PROMPT CONTENT"));
 }
 
 #[tokio::test]
@@ -148,11 +163,23 @@ async fn resolving_same_skill_conversation_reuses_single_session_summary_state()
     let all_tools = vec!["switch_skill".to_string()];
 
     let first = sessions
-        .resolve_turn_context(&registry, &all_tools, "conv-skill-loading", "payroll", false)
+        .resolve_turn_context(
+            &registry,
+            &all_tools,
+            "conv-skill-loading",
+            "payroll",
+            false,
+        )
         .await
         .unwrap();
     let second = sessions
-        .resolve_turn_context(&registry, &all_tools, "conv-skill-loading", "payroll again", false)
+        .resolve_turn_context(
+            &registry,
+            &all_tools,
+            "conv-skill-loading",
+            "payroll again",
+            false,
+        )
         .await
         .unwrap();
 

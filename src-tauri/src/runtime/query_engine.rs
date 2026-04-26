@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use serde_json::json;
 
 use crate::runtime::chat::PermissionDenialRecord;
+use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
 use crate::runtime::state::TurnState;
@@ -43,6 +44,8 @@ pub struct QueryEngine {
     max_budget_usd: Option<f64>,
     /// Simplified cost estimate rate shared across input/output tokens.
     cost_per_1k_tokens: Option<f64>,
+    /// Managed Node/Python runtime resolver propagated into capability contexts.
+    runtime_resolver: Option<ManagedRuntimeResolver>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -54,15 +57,10 @@ pub struct TotalTokenUsage {
 fn extract_skill_runtime_patch(
     data: Option<&serde_json::Value>,
 ) -> Option<crate::runtime::chat::tool_round_types::SkillRuntimePatch> {
-    let control = data
-        .and_then(|value| value.get("skill_control"))
-        .or(data)?;
+    let control = data.and_then(|value| value.get("skill_control")).or(data)?;
 
     let skill_id = control.get("skill_id")?.as_str()?.to_string();
-    let system_prompt = control
-        .get("system_prompt")?
-        .as_str()?
-        .to_string();
+    let system_prompt = control.get("system_prompt")?.as_str()?.to_string();
     let tool_defs = control
         .get("tool_defs")
         .and_then(|value| value.as_array())
@@ -110,6 +108,7 @@ impl QueryEngine {
             permission_denials: Arc::new(Mutex::new(Vec::new())),
             max_budget_usd: None,
             cost_per_1k_tokens: None,
+            runtime_resolver: None,
         }
     }
 
@@ -129,6 +128,7 @@ impl QueryEngine {
             permission_denials: Arc::new(Mutex::new(Vec::new())),
             max_budget_usd: self.max_budget_usd,
             cost_per_1k_tokens: self.cost_per_1k_tokens,
+            runtime_resolver: self.runtime_resolver.clone(),
         }
     }
 
@@ -162,6 +162,14 @@ impl QueryEngine {
     /// operate through `CapabilityContext.file_ops` without a `PluginContext`.
     pub fn with_file_ops(mut self, file_ops: Arc<dyn FileOperations>) -> Self {
         self.file_ops = Some(file_ops);
+        self
+    }
+
+    pub fn with_runtime_resolver(
+        mut self,
+        runtime_resolver: Option<ManagedRuntimeResolver>,
+    ) -> Self {
+        self.runtime_resolver = runtime_resolver;
         self
     }
 
@@ -454,6 +462,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                runtime_resolver: self.runtime_resolver.clone(),
                 is_subagent: turn.agent_id().is_some(),
             });
             ctx.with_capability(capability)
@@ -635,6 +644,7 @@ impl QueryEngine {
                 read_file_state: Some(self.read_file_state.clone()),
                 file_reading_limits: None,
                 notification_sink: None,
+                runtime_resolver: self.runtime_resolver.clone(),
                 is_subagent: turn.agent_id().is_some(),
             });
             ctx.with_capability(capability)

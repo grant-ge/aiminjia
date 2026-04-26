@@ -32,7 +32,13 @@ impl FileTaskV2Store {
     fn sanitize(input: &str) -> String {
         input
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect()
     }
 
@@ -64,7 +70,10 @@ impl FileTaskV2Store {
     }
 
     fn write_highwatermark(&self, task_list_id: &str, value: u64) -> Result<()> {
-        self.atomic_write(&self.highwatermark_path(task_list_id), value.to_string().as_bytes())
+        self.atomic_write(
+            &self.highwatermark_path(task_list_id),
+            value.to_string().as_bytes(),
+        )
     }
 
     fn atomic_write(&self, path: &Path, bytes: &[u8]) -> Result<()> {

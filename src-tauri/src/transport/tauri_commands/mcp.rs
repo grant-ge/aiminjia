@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::mcp::{
     build_mcp_connection, McpServerConfig, McpServerManager, McpServerState, McpServerStatus,
 };
@@ -76,11 +77,13 @@ pub async fn add_mcp_server(
     config: McpServerConfigDto,
     manager: State<'_, Arc<McpServerManager>>,
     config_store: State<'_, Arc<McpConfigStore>>,
+    runtime_resolver: State<'_, ManagedRuntimeResolver>,
 ) -> Result<(), String> {
     let config: McpServerConfig = config.into();
     config_store.add(config.clone())?;
 
-    let connection = build_mcp_connection(&config).map_err(|err| err.to_string())?;
+    let connection = build_mcp_connection(&config, Some(runtime_resolver.inner().clone()))
+        .map_err(|err| err.to_string())?;
     if let Err(err) = manager.register(connection).await {
         let _ = config_store.remove(&config.name);
         return Err(err.to_string());

@@ -45,12 +45,14 @@ fn default_aijia_home() -> Option<PathBuf> {
 }
 
 fn required_str<'a>(input: &'a Value, key: &str, tool: &str) -> Result<&'a str, ToolError> {
-    input.get(key).and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).ok_or_else(|| {
-        ToolError::InputValidationError {
+    input
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| ToolError::InputValidationError {
             tool_name: tool.to_string(),
             message: format!("missing required string field `{}`", key),
-        }
-    })
+        })
 }
 
 fn parse_status(status: &str) -> Result<TaskStatus, ToolError> {
@@ -85,7 +87,12 @@ fn format_task_line(task: &TaskRecord) -> String {
         line.push_str(&format!(" ({})", owner));
     }
     if !task.blocked_by.is_empty() {
-        let blockers = task.blocked_by.iter().map(|id| format!("#{}", id)).collect::<Vec<_>>().join(", ");
+        let blockers = task
+            .blocked_by
+            .iter()
+            .map(|id| format!("#{}", id))
+            .collect::<Vec<_>>()
+            .join(", ");
         line.push_str(&format!(" [blocked by {}]", blockers));
     }
     line
@@ -99,18 +106,31 @@ impl RuntimeTool for TaskCreateRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("TaskCreate", "创建任务"))
     }
 
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { true }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
 
-    async fn execute(&self, input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let subject = required_str(&input, "subject", "TaskCreate")?.to_string();
         let description = required_str(&input, "description", "TaskCreate")?.to_string();
-        let active_form = input.get("activeForm").and_then(|v| v.as_str()).map(str::to_string);
+        let active_form = input
+            .get("activeForm")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
         let metadata = input.get("metadata").and_then(|v| v.as_object()).map(|m| {
-            m.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<HashMap<_, _>>()
+            m.iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<HashMap<_, _>>()
         });
         let store = store_for(&ctx)?;
         let list_id = task_list_id(&ctx);
-        let id = store.next_id(&list_id).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let id = store
+            .next_id(&list_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let task = TaskRecord {
             id: id.clone(),
             subject: subject.clone(),
@@ -125,7 +145,9 @@ impl RuntimeTool for TaskCreateRuntimeTool {
             parent_run_id: ctx.run_id.clone(),
             owner_agent_id: ctx.agent_id.clone(),
         };
-        store.create(&list_id, &task).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        store
+            .create(&list_id, &task)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         Ok(ToolResult::new(
             "TaskCreate",
             format!("Task #{} created successfully: {}", id, subject),
@@ -142,17 +164,35 @@ impl RuntimeTool for TaskListRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("TaskList", "列出任务"))
     }
 
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { true }
-    fn is_read_only(&self, _input: &Value) -> bool { true }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
 
-    async fn execute(&self, _input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        _input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let store = store_for(&ctx)?;
         let list_id = task_list_id(&ctx);
-        let tasks = store.list(&list_id).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let tasks = store
+            .list(&list_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         if tasks.is_empty() {
-            return Ok(ToolResult::new("TaskList", "No tasks found", Some(json!({ "tasks": [] }))));
+            return Ok(ToolResult::new(
+                "TaskList",
+                "No tasks found",
+                Some(json!({ "tasks": [] })),
+            ));
         }
-        let content = tasks.iter().map(format_task_line).collect::<Vec<_>>().join("\n");
+        let content = tasks
+            .iter()
+            .map(format_task_line)
+            .collect::<Vec<_>>()
+            .join("\n");
         let data = json!({ "tasks": tasks.iter().map(task_to_json).collect::<Vec<_>>() });
         Ok(ToolResult::new("TaskList", content, Some(data)))
     }
@@ -166,9 +206,15 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             .unwrap_or_else(|| ToolDefinition::new("TaskUpdate", "更新任务"))
     }
 
-    fn is_concurrency_safe(&self, _input: &Value) -> bool { true }
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
 
-    async fn execute(&self, input: Value, ctx: ToolExecutionContext) -> Result<ToolResult, ToolError> {
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
         let store = store_for(&ctx)?;
         let list_id = task_list_id(&ctx);
         let task_id = required_str(&input, "taskId", "TaskUpdate")?;
@@ -195,10 +241,16 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
 
         if let Some(status) = input.get("status").and_then(|v| v.as_str()) {
             if status == "deleted" {
-                let deleted = store.delete(&list_id, task_id).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+                let deleted = store
+                    .delete(&list_id, task_id)
+                    .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
                 return Ok(ToolResult::new(
                     "TaskUpdate",
-                    if deleted { format!("Deleted task #{}", task_id) } else { format!("Task #{} not found", task_id) },
+                    if deleted {
+                        format!("Deleted task #{}", task_id)
+                    } else {
+                        format!("Task #{} not found", task_id)
+                    },
                     Some(json!({
                         "success": deleted,
                         "taskId": task_id,
@@ -267,7 +319,9 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
             updated_fields.push("metadata".into());
         }
 
-        store.update(&list_id, &task).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        store
+            .update(&list_id, &task)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         let status_change = if old_status != task.status {
             Some(json!({ "from": old_status.as_str(), "to": task.status.as_str() }))

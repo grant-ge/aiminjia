@@ -35,10 +35,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Create placeholder for bundled Python runtime
-        run: |
-          mkdir -p src-tauri/python-runtime
-          touch src-tauri/python-runtime/.gitkeep
 
       - name: Rust compile check
         working-directory: src-tauri

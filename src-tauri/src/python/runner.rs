@@ -9,6 +9,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
@@ -101,6 +102,28 @@ impl PythonRunner {
             python_home,
             sandbox,
         }
+    }
+
+    /// Create a runner from a runtime resolver.
+    pub fn with_runtime_resolver(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        runtime_resolver: Arc<dyn crate::runtime::dependencies::RuntimeResolver>,
+    ) -> anyhow::Result<Self> {
+        let deps = runtime_resolver
+            .workspace_dependencies()
+            .context("failed to resolve managed Python runtime dependencies")?;
+        Ok(Self::with_runtime(
+            workspace_path,
+            sandbox,
+            deps.python,
+            None,
+        ))
+    }
+
+    /// Return the configured Python binary path.
+    pub fn python_binary_path(&self) -> &Path {
+        &self.python_binary
     }
 
     /// Execute Python code string.
@@ -275,8 +298,10 @@ impl PythonRunner {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        let output = cmd.output().await
-            .context(format!("Python not found: {}", self.python_binary.display()))?;
+        let output = cmd.output().await.context(format!(
+            "Python not found: {}",
+            self.python_binary.display()
+        ))?;
 
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if version.is_empty() {

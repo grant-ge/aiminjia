@@ -35,7 +35,6 @@ pub fn event_labels(events: &[app_lib::runtime::events::RuntimeEvent]) -> Vec<&'
     events.iter().map(|e| kind_label(&e.kind)).collect()
 }
 
-
 use app_lib::storage::file_store::types::StoredMessage;
 
 #[allow(dead_code)]

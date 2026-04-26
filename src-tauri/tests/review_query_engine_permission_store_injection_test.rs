@@ -11,6 +11,6 @@ use app_lib::runtime::store::PermissionStore;
 #[test]
 fn review_session_runtime_accepts_permission_store() {
     let store = Arc::new(PermissionStore::in_memory());
-    let _runtime =
-        SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new()).with_permission_store(store);
+    let _runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+        .with_permission_store(store);
 }

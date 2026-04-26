@@ -213,7 +213,10 @@ pub fn get_messages(
 }
 
 /// Read all single-file messages using id-based last-writer-wins semantics.
-pub fn get_messages_v2(base_dir: &Path, conversation_id: &str) -> StorageResult<Vec<StoredMessage>> {
+pub fn get_messages_v2(
+    base_dir: &Path,
+    conversation_id: &str,
+) -> StorageResult<Vec<StoredMessage>> {
     let path = messages_path(base_dir, conversation_id);
     let all: Vec<StoredMessage> = read_jsonl(&path)?;
     let mut by_id: HashMap<String, StoredMessage> = HashMap::new();
@@ -223,17 +226,15 @@ pub fn get_messages_v2(base_dir: &Path, conversation_id: &str) -> StorageResult<
     }
 
     let mut result: Vec<StoredMessage> = by_id.into_values().collect();
-    result.sort_by(|a, b| {
-        match (a.sequence, b.sequence) {
-            (Some(a_seq), Some(b_seq)) => a_seq
-                .cmp(&b_seq)
-                .then_with(|| a.created_at.cmp(&b.created_at))
-                .then_with(|| a.id.cmp(&b.id)),
-            _ => a
-                .created_at
-                .cmp(&b.created_at)
-                .then_with(|| a.id.cmp(&b.id)),
-        }
+    result.sort_by(|a, b| match (a.sequence, b.sequence) {
+        (Some(a_seq), Some(b_seq)) => a_seq
+            .cmp(&b_seq)
+            .then_with(|| a.created_at.cmp(&b.created_at))
+            .then_with(|| a.id.cmp(&b.id)),
+        _ => a
+            .created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.id.cmp(&b.id)),
     });
     Ok(result)
 }
@@ -291,7 +292,10 @@ pub fn migrate_shards_to_single_file(base_dir: &Path, conversation_id: &str) -> 
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with("messages.") || !name.ends_with(".jsonl") || name == "messages.jsonl" {
+            if !name.starts_with("messages.")
+                || !name.ends_with(".jsonl")
+                || name == "messages.jsonl"
+            {
                 return None;
             }
             let middle = &name["messages.".len()..name.len() - ".jsonl".len()];
@@ -453,7 +457,11 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
             .cloned()
             .or_else(|| msg.content.get("text").cloned())
             .unwrap_or(serde_json::Value::Null);
-        let is_error = msg.content.get("isError").cloned().unwrap_or(serde_json::json!(false));
+        let is_error = msg
+            .content
+            .get("isError")
+            .cloned()
+            .unwrap_or(serde_json::json!(false));
         let duration_ms = msg.content.get("durationMs").cloned();
         let mut tool_result = serde_json::json!({
             "toolCallId": tool_call_id,
@@ -483,7 +491,10 @@ fn message_to_json(msg: StoredMessage) -> serde_json::Value {
 
     // Assistant tool calls may also come from the new top-level schema fields.
     let tool_calls = if msg.role == "assistant" {
-        msg.tool_calls.clone().map(serde_json::Value::Array).or_else(|| content.get("toolCalls").cloned())
+        msg.tool_calls
+            .clone()
+            .map(serde_json::Value::Array)
+            .or_else(|| content.get("toolCalls").cloned())
     } else {
         None
     };
@@ -621,12 +632,20 @@ mod tests {
         update_message_content(&base, "m1", "c1", r#"{"text":"updated"}"#).unwrap();
 
         let msgs = get_messages(&base, "c1").unwrap();
-        assert_eq!(msgs.len(), 1, "dedup should still collapse updated shard records");
+        assert_eq!(
+            msgs.len(),
+            1,
+            "dedup should still collapse updated shard records"
+        );
         assert_eq!(msgs[0]["content"]["text"], "updated");
 
         let shard_raw = fs::read_to_string(shard_path(&base, "c1", 1)).unwrap();
         let lines: Vec<&str> = shard_raw.lines().collect();
-        assert_eq!(lines.len(), 2, "append-only shard should keep original and updated record");
+        assert_eq!(
+            lines.len(),
+            2,
+            "append-only shard should keep original and updated record"
+        );
 
         for line in lines {
             let json_line = line.trim_end_matches("\t\u{2713}");

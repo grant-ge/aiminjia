@@ -41,10 +41,7 @@ pub struct CommitResult {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn commit_skill_draft(
-    app: AppHandle,
-    draft_id: String,
-) -> Result<CommitResult, String> {
+pub async fn commit_skill_draft(app: AppHandle, draft_id: String) -> Result<CommitResult, String> {
     commit_impl(&app, &draft_id, false).await
 }
 
@@ -86,11 +83,7 @@ pub async fn export_skill_draft(
 // Implementation (shim-split for testability)
 // ---------------------------------------------------------------------------
 
-async fn commit_impl(
-    app: &AppHandle,
-    draft_id: &str,
-    force: bool,
-) -> Result<CommitResult, String> {
+async fn commit_impl(app: &AppHandle, draft_id: &str, force: bool) -> Result<CommitResult, String> {
     let draft = draft_dir(app, draft_id)?;
     if !draft.is_dir() {
         return Err(format!("Draft '{}' not found", draft_id));
@@ -147,10 +140,8 @@ pub(crate) fn commit_draft_to(
 ) -> Result<CommitResult, String> {
     let skill_id = extract_skill_id(src_draft)?;
 
-    std::fs::create_dir_all(target_parent).map_err(|e| format!(
-        "Failed to create skills dir: {}",
-        e
-    ))?;
+    std::fs::create_dir_all(target_parent)
+        .map_err(|e| format!("Failed to create skills dir: {}", e))?;
     let target = target_parent.join(&skill_id);
     let exists = target.exists();
 
@@ -165,11 +156,13 @@ pub(crate) fn commit_draft_to(
     // Staging directory — survives a crash to be cleaned up on next commit.
     let staging = target_parent.join(format!("{}{}", skill_id, STAGING_SUFFIX));
     if staging.exists() {
-        std::fs::remove_dir_all(&staging).map_err(|e| format!(
-            "Failed to clear stale staging dir '{}': {}",
-            staging.display(),
-            e
-        ))?;
+        std::fs::remove_dir_all(&staging).map_err(|e| {
+            format!(
+                "Failed to clear stale staging dir '{}': {}",
+                staging.display(),
+                e
+            )
+        })?;
     }
 
     // Phase A: copy draft → staging (does not touch target).
@@ -196,10 +189,7 @@ pub(crate) fn commit_draft_to(
     // Phase C: rename staging → target.
     if let Err(e) = std::fs::rename(&staging, &target) {
         let _ = std::fs::remove_dir_all(&staging);
-        return Err(format!(
-            "Failed to move staged dir into place: {}",
-            e
-        ));
+        return Err(format!("Failed to move staged dir into place: {}", e));
     }
 
     // Phase D: cleanup draft. Best-effort — a leftover draft dir is harmless
@@ -281,7 +271,9 @@ icon = "🛠️"
         assert!(!result.conflict);
         assert!(target_parent.join("my-test-skill").is_dir());
         assert!(target_parent.join("my-test-skill/plugin.toml").is_file());
-        assert!(target_parent.join("my-test-skill/prompts/step0.md").is_file());
+        assert!(target_parent
+            .join("my-test-skill/prompts/step0.md")
+            .is_file());
         // Draft cleaned up
         assert!(!draft.exists(), "draft should be removed after commit");
     }
@@ -363,10 +355,14 @@ icon = "🛠️"
         let tmp = tempfile::tempdir().unwrap();
         let draft = tmp.path().join("draft");
         std::fs::create_dir_all(&draft).unwrap();
-        std::fs::write(draft.join("plugin.toml"), r#"[plugin]
+        std::fs::write(
+            draft.join("plugin.toml"),
+            r#"[plugin]
 name = "no id"
 type = "skill"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let target_parent = tmp.path().join("skills");
         let err = commit_draft_to(&draft, &target_parent, false).unwrap_err();
@@ -508,7 +504,11 @@ type = "skill"
         assert!(json.contains("\"skillId\""), "got: {}", json);
         assert!(json.contains("\"installedPath\""), "got: {}", json);
         assert!(!json.contains("skill_id"), "found snake_case: {}", json);
-        assert!(!json.contains("installed_path"), "found snake_case: {}", json);
+        assert!(
+            !json.contains("installed_path"),
+            "found snake_case: {}",
+            json
+        );
     }
 
     #[test]

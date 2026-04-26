@@ -174,7 +174,11 @@ impl ConversationStore for InMemoryConversationStore {
         let convs = self.conversations.lock().unwrap();
         Ok(archived
             .iter()
-            .filter_map(|id| convs.get(id).map(|title| serde_json::json!({ "id": id, "title": title, "isArchived": true })))
+            .filter_map(|id| {
+                convs.get(id).map(
+                    |title| serde_json::json!({ "id": id, "title": title, "isArchived": true }),
+                )
+            })
             .collect())
     }
 }

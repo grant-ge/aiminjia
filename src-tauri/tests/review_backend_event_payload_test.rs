@@ -40,10 +40,7 @@ async fn review_tool_executing_payload_includes_input() {
         .find(|e| e.name == "tool:executing")
         .expect("tool:executing must be emitted");
 
-    assert_eq!(
-        event.payload["toolName"].as_str(),
-        Some("browse_navigate"),
-    );
+    assert_eq!(event.payload["toolName"].as_str(), Some("browse_navigate"),);
     assert_eq!(
         event.payload["input"]["url"].as_str(),
         Some("https://example.com"),
@@ -135,7 +132,9 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
         })
         .unwrap();
 
-    runtime.set_status(&task_id, TaskStatus::InProgress).unwrap();
+    runtime
+        .set_status(&task_id, TaskStatus::InProgress)
+        .unwrap();
 
     let trace = host.trace();
     let event = trace
@@ -156,7 +155,6 @@ fn review_task_status_changed_payload_includes_subject_and_active_form() {
     );
     assert_eq!(event.payload["status"].as_str(), Some("in_progress"));
 }
-
 
 #[tokio::test]
 async fn review_user_message_persisted_includes_client_message_id() {

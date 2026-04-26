@@ -182,7 +182,11 @@ impl AuthClient {
     /// List available models from the server.
     pub async fn list_models(&self, session_key: &str) -> Result<Vec<CloudModelInfo>> {
         let url = format!("{}/v1/models", BASE_URL);
-        log::info!("[list_models] GET {} session_key_len={}", url, session_key.len());
+        log::info!(
+            "[list_models] GET {} session_key_len={}",
+            url,
+            session_key.len()
+        );
         let resp = self
             .client
             .get(&url)
@@ -191,7 +195,8 @@ impl AuthClient {
             .await?;
 
         let status = resp.status();
-        let request_id = resp.headers()
+        let request_id = resp
+            .headers()
             .get("x-request-id")
             .or_else(|| resp.headers().get("lotus-request-id"))
             .or_else(|| resp.headers().get("x-lotus-request-id"))
@@ -203,7 +208,12 @@ impl AuthClient {
 
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            log::error!("[list_models] failed: status={} request_id={} body={}", status, request_id, body);
+            log::error!(
+                "[list_models] failed: status={} request_id={} body={}",
+                status,
+                request_id,
+                body
+            );
             return Err(parse_api_error(status.as_u16(), &body));
         }
 

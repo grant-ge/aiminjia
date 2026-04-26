@@ -4,8 +4,11 @@ use std::sync::Arc;
 
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use app_lib::python::runner::PythonRunner;
+use app_lib::python::sandbox::SandboxConfig;
 use app_lib::python::session::{migrate_loaded_keys_to_run_scope, session_key_for_run};
 use app_lib::runtime::cancellation::CancellationToken;
+use app_lib::runtime::dependencies::StaticRuntimeResolver;
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::storage::file_manager::FileManager;
 use app_lib::storage::file_store::AppStorage;
@@ -20,6 +23,31 @@ fn python_sessions_are_scoped_by_run_id_and_legacy_loaded_keys_are_migrated() {
     assert_ne!(parent_key, child_key);
     assert_eq!(migrated.source_prefix, "loaded:conv-1");
     assert_eq!(migrated.target_prefix, "loaded:run-child");
+}
+
+#[test]
+fn python_runner_uses_managed_python_from_runtime_resolver() {
+    let workspace = TempDir::new().expect("TempDir::new should succeed");
+    let workspace_path = workspace.path().to_path_buf();
+    let sandbox = SandboxConfig::for_workspace(&workspace_path);
+    let resolver = Arc::new(StaticRuntimeResolver::new(
+        std::path::PathBuf::from("/tmp/managed-python/bin/python3"),
+        std::path::PathBuf::from("/tmp/managed-node/bin/node"),
+        std::path::PathBuf::from("/tmp/managed-node/bin/npm"),
+        std::path::PathBuf::from("/tmp/managed-node/bin/npx"),
+        std::path::PathBuf::from("/tmp/managed-uv/bin/uv"),
+        std::path::PathBuf::from("/tmp/managed-uv/bin/uvx"),
+        std::path::PathBuf::from("/tmp/managed-node/node_modules"),
+        std::path::PathBuf::from("/tmp/managed-python/lib/python3.12/site-packages"),
+    ));
+
+    let runner = PythonRunner::with_runtime_resolver(workspace_path, sandbox, resolver)
+        .expect("runner should be created from runtime resolver");
+
+    assert_eq!(
+        runner.python_binary_path(),
+        std::path::Path::new("/tmp/managed-python/bin/python3")
+    );
 }
 
 fn build_test_plugin_ctx(
@@ -63,6 +91,7 @@ fn build_test_plugin_ctx(
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
+        runtime_resolver: None,
     }
 }
 

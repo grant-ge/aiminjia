@@ -97,7 +97,10 @@ fn a2_agent_status_failed_serde_roundtrip() {
     assert_eq!(serialized, r#""Failed""#);
     let deserialized: app_lib::runtime::agent::invocation::AgentStatus =
         serde_json::from_str(&serialized).unwrap();
-    assert_eq!(deserialized, app_lib::runtime::agent::invocation::AgentStatus::Failed);
+    assert_eq!(
+        deserialized,
+        app_lib::runtime::agent::invocation::AgentStatus::Failed
+    );
 }
 
 #[tokio::test]

@@ -103,12 +103,16 @@ impl PlaywrightBrowser {
         };
 
         // Navigate with auto-recovery: if browser was closed by user, restart and retry once
-        let nav_result = match self.send_command("navigate", serde_json::json!({ "url": actual_url })).await {
+        let nav_result = match self
+            .send_command("navigate", serde_json::json!({ "url": actual_url }))
+            .await
+        {
             Ok(r) => r,
             Err(e) if e.contains("closed") || e.contains("restart") => {
                 warn!("[Playwright] Browser was closed, restarting and retrying navigate");
                 self.ensure_running().await?;
-                self.send_command("navigate", serde_json::json!({ "url": actual_url })).await?
+                self.send_command("navigate", serde_json::json!({ "url": actual_url }))
+                    .await?
             }
             Err(e) => return Err(e),
         };
@@ -546,7 +550,9 @@ impl PlaywrightBrowser {
         state.active_origin = None;
         state.active_url = None;
         // Clean up profile lock
-        let lock_path = self.get_aijia_home_dir().join("playwright-profile/SingletonLock");
+        let lock_path = self
+            .get_aijia_home_dir()
+            .join("playwright-profile/SingletonLock");
         let _ = std::fs::remove_file(&lock_path);
         info!("[Playwright] Shutdown complete");
     }
@@ -637,7 +643,8 @@ impl PlaywrightBrowser {
         );
 
         let mut node_cmd = tokio::process::Command::new(&node_path);
-        node_cmd.arg(&script_path)
+        node_cmd
+            .arg(&script_path)
             .env("PLAYWRIGHT_BROWSERS_PATH", &browsers_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -648,7 +655,8 @@ impl PlaywrightBrowser {
             use std::os::windows::process::CommandExt;
             node_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        let mut child = node_cmd.spawn()
+        let mut child = node_cmd
+            .spawn()
             .map_err(|e| format!("Failed to launch Playwright sidecar: {}", e))?;
 
         let stdin = child.stdin.take().ok_or("Failed to get stdin")?;
@@ -826,7 +834,9 @@ impl PlaywrightBrowser {
         state.active_origin = None;
         state.active_url = None;
         // Clean up profile lock
-        let lock_path = self.get_aijia_home_dir().join("playwright-profile/SingletonLock");
+        let lock_path = self
+            .get_aijia_home_dir()
+            .join("playwright-profile/SingletonLock");
         let _ = std::fs::remove_file(&lock_path);
     }
 

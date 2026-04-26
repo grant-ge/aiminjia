@@ -493,10 +493,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         match store.get_for_path("write_file", &lookup_path) {
             Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                 Some(PermissionDecision::Deny {
-                    message: format!(
-                        "Write to '{}' is blocked by stored PathGlob policy.",
-                        path
-                    ),
+                    message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
                     reason: PermissionReason::StoredPolicy,
                 })
             }
@@ -588,10 +585,7 @@ impl RuntimeTool for EditFileRuntimeTool {
         match store.get_for_path("edit_file", &lookup_path) {
             Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                 Some(PermissionDecision::Deny {
-                    message: format!(
-                        "Write to '{}' is blocked by stored PathGlob policy.",
-                        path
-                    ),
+                    message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
                     reason: PermissionReason::StoredPolicy,
                 })
             }

@@ -344,12 +344,13 @@ mod tests {
         assert_eq!(patch.token_budget, 6000);
         assert_eq!(
             patch.allowed_tools.as_deref(),
-            Some(&[
-                "load_file".to_string(),
-                "execute_python".to_string(),
-                "switch_skill".to_string(),
-            ][..])
+            Some(
+                &[
+                    "load_file".to_string(),
+                    "execute_python".to_string(),
+                    "switch_skill".to_string(),
+                ][..]
+            )
         );
     }
-
 }

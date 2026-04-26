@@ -643,8 +643,22 @@ impl<'a> SubagentWorkerRuntime<'a> {
         child_read_file_state: Arc<FileStateCache>,
         child_run_id: RunId,
     ) -> QueryEngine {
-        let (python_binary, python_home) =
-            crate::python::runner::resolve_python_path(self.runtime_deps.app_handle.as_ref());
+        let (python_binary, python_home) = self
+            .runtime_deps
+            .runtime_resolver
+            .as_ref()
+            .and_then(|resolver| {
+                resolver
+                    .workspace_dependencies()
+                    .ok()
+                    .map(|deps| (deps.python, None))
+            })
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "managed runtime resolver unavailable for worker file operations; using inert Python path"
+                );
+                (std::path::PathBuf::from("__managed_runtime_resolver_missing__"), None)
+            });
         let file_ops = Arc::new(DefaultFileOperations {
             storage: self.runtime_deps.storage.clone(),
             file_manager: self.runtime_deps.file_manager.clone(),
@@ -660,6 +674,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             .with_authorized_workspace(self.runtime_deps.authorized_workspace.clone())
             .with_browser_available(self.runtime_deps.connector_engine.is_some())
             .with_file_ops(file_ops)
+            .with_runtime_resolver(self.runtime_deps.runtime_resolver.clone())
             .with_read_file_state(child_read_file_state)
     }
 }

@@ -10,10 +10,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::streaming::ToolDefinition;
+use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::store::permission_store::PermissionStore;
 use crate::runtime::tools::capability::{CapabilityContext, StorageCapability};
-use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::runtime::tools::permission::StorePolicyPipeline;
+use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::runtime::tools::{
     CapabilityPermissionPipeline, LegacyToolAdapter, PermissionPipeline, ToolDispatcher,
 };
@@ -50,6 +51,7 @@ pub struct RequestScopedRuntimeDeps {
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
+    pub runtime_resolver: Option<ManagedRuntimeResolver>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -81,6 +83,7 @@ impl RequestScopedRuntimeDeps {
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
+            runtime_resolver: ctx.runtime_resolver.clone(),
         }
     }
 
@@ -97,6 +100,29 @@ impl RequestScopedRuntimeDeps {
         next.cancellation = cancellation;
         next.read_file_state = read_file_state;
         next
+    }
+
+    pub fn with_runtime_resolver(mut self, runtime_resolver: ManagedRuntimeResolver) -> Self {
+        self.runtime_resolver = Some(runtime_resolver);
+        self
+    }
+
+    fn python_runtime(
+        &self,
+    ) -> crate::runtime::dependencies::RuntimeDependencyResult<(
+        std::path::PathBuf,
+        Option<std::path::PathBuf>,
+    )> {
+        if let Some(resolver) = &self.runtime_resolver {
+            let deps = resolver.workspace_dependencies()?;
+            return Ok((deps.python, None));
+        }
+
+        Err(
+            crate::runtime::dependencies::RuntimeDependencyError::ResolverUnavailable(
+                "RequestScopedRuntimeDeps has no RuntimeResolver".to_string(),
+            ),
+        )
     }
 }
 
@@ -479,20 +505,25 @@ impl ToolRegistry {
                     authorized_workspace: ctx.authorized_workspace.clone(),
                 };
                 let browser_available = ctx.connector_engine.is_some();
-                let file_ops = (name == "load_file").then(|| {
-                    let (python_binary, python_home) =
-                        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
-                    Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
-                        storage: ctx.storage.clone(),
-                        file_manager: ctx.file_manager.clone(),
-                        workspace_path: ctx.workspace_path.clone(),
-                        conversation_id: ctx.conversation_id.clone(),
-                        run_id: ctx.run_id.clone(),
-                        python_binary: Some(python_binary),
-                        python_home,
-                    })
-                        as Arc<dyn crate::runtime::tools::capability::FileOperations>
-                });
+                let file_ops = if name == "load_file" {
+                    let (python_binary, python_home) = ctx
+                        .python_runtime()
+                        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
+                    Some(
+                        Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
+                            storage: ctx.storage.clone(),
+                            file_manager: ctx.file_manager.clone(),
+                            workspace_path: ctx.workspace_path.clone(),
+                            conversation_id: ctx.conversation_id.clone(),
+                            run_id: ctx.run_id.clone(),
+                            python_binary: Some(python_binary),
+                            python_home,
+                        })
+                            as Arc<dyn crate::runtime::tools::capability::FileOperations>,
+                    )
+                } else {
+                    None
+                };
                 let cap = CapabilityContext {
                     storage: Some(storage),
                     workspace_id: Some(ctx.conversation_id.clone()),
@@ -503,6 +534,7 @@ impl ToolRegistry {
                         crate::runtime::tools::capability::FileReadingLimits::default(),
                     ),
                     notification_sink: None,
+                    runtime_resolver: ctx.runtime_resolver.clone(),
                     is_subagent: ctx.agent_id.is_some(),
                 };
                 std::sync::Arc::new(cap)
@@ -628,6 +660,7 @@ impl ToolRegistry {
                 read_file_state: ctx.read_file_state.clone(),
                 cancellation: ctx.cancellation.clone(),
                 permission_mode: ctx.permission_mode,
+                runtime_resolver: ctx.runtime_resolver.clone(),
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
@@ -849,8 +882,15 @@ impl ToolRegistry {
             "execute_python" => {
                 use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
 
-                let (python_binary, python_home) =
-                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let (python_binary, python_home) = match ctx.python_runtime() {
+                    Ok(runtime) => runtime,
+                    Err(err) => {
+                        return Some(Arc::new(builtin::python::ExecutePythonRuntimeTool::error(
+                            err.to_string(),
+                        ))
+                            as Arc<dyn crate::runtime::tools::RuntimeTool>);
+                    }
+                };
                 let python = Arc::new(DefaultPythonExecution::new(
                     ctx.session_manager.clone(),
                     python_binary.clone(),
@@ -872,8 +912,10 @@ impl ToolRegistry {
             "generate_report" => {
                 use crate::runtime::tools::builtin::report_capability::DefaultReportCapability;
 
-                let (python_binary, python_home) =
-                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let (python_binary, python_home) = match ctx.python_runtime() {
+                    Ok(runtime) => runtime,
+                    Err(_) => return None,
+                };
                 let capability = Arc::new(DefaultReportCapability {
                     storage: ctx.storage.clone(),
                     file_manager: ctx.file_manager.clone(),
@@ -891,8 +933,10 @@ impl ToolRegistry {
             "generate_chart" => {
                 use crate::runtime::tools::builtin::chart_capability::DefaultChartCapability;
 
-                let (python_binary, python_home) =
-                    crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+                let (python_binary, python_home) = match ctx.python_runtime() {
+                    Ok(runtime) => runtime,
+                    Err(_) => return None,
+                };
                 let capability = Arc::new(DefaultChartCapability {
                     storage: ctx.storage.clone(),
                     workspace_path: ctx.workspace_path.clone(),
@@ -910,21 +954,27 @@ impl ToolRegistry {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
-            )) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            ))
+                as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "search_memory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
-            )) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            ))
+                as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "switch_skill" => match (ctx.skill_registry.clone(), ctx.skill_sessions.clone()) {
-                (Some(skill_registry), Some(skill_sessions)) => Some(
-                    Arc::new(builtin::switch_skill::SwitchSkillRuntimeTool::new(
+                (Some(skill_registry), Some(skill_sessions)) => {
+                    let tool = builtin::switch_skill::SwitchSkillRuntimeTool::new(
                         skill_registry,
                         skill_sessions,
-                        ctx.tool_registry.clone().unwrap_or_else(|| Arc::new(ToolRegistry::new())),
-                    ).await) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                ),
+                        ctx.tool_registry
+                            .clone()
+                            .unwrap_or_else(|| Arc::new(ToolRegistry::new())),
+                    )
+                    .await;
+                    Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                }
                 _ => None,
             },
             _ => None,

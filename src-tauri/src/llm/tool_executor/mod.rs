@@ -22,10 +22,10 @@ mod progress;
 mod python;
 mod report;
 mod search;
+pub(crate) mod skill_smith;
 mod slides;
 mod stats;
 mod util;
-pub(crate) mod skill_smith;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -161,6 +161,7 @@ pub(crate) mod tests {
             read_file_state: None,
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: None,
         }
     }
 

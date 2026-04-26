@@ -65,10 +65,7 @@ pub struct DryRunReport {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn dry_run_skill_draft(
-    app: AppHandle,
-    draft_id: String,
-) -> Result<DryRunReport, String> {
+pub async fn dry_run_skill_draft(app: AppHandle, draft_id: String) -> Result<DryRunReport, String> {
     let dir = draft_dir(&app, &draft_id)?;
     if !dir.is_dir() {
         return Err(format!("Draft '{}' not found", draft_id));
@@ -542,7 +539,10 @@ advance_on = "confirm"
         );
         assert_eq!(report.checks.len(), 6);
         assert_eq!(check(&report, "schema").status, CheckStatus::Pass);
-        assert_eq!(check(&report, "prompts-reference").status, CheckStatus::Pass);
+        assert_eq!(
+            check(&report, "prompts-reference").status,
+            CheckStatus::Pass
+        );
         assert_eq!(check(&report, "prompts-content").status, CheckStatus::Pass);
         assert_eq!(check(&report, "python-scripts").status, CheckStatus::Pass);
         assert_eq!(check(&report, "knowledge").status, CheckStatus::Pass);
@@ -560,13 +560,14 @@ advance_on = "confirm"
         let report = dry_run_draft_dir(tmp.path());
         assert!(!report.pass);
         assert_eq!(check(&report, "schema").status, CheckStatus::Fail);
-        assert_eq!(check(&report, "prompts-reference").status, CheckStatus::Fail);
-        // Report should mention the missing file
-        assert!(
-            check(&report, "prompts-reference")
-                .detail
-                .contains("step1.md")
+        assert_eq!(
+            check(&report, "prompts-reference").status,
+            CheckStatus::Fail
         );
+        // Report should mention the missing file
+        assert!(check(&report, "prompts-reference")
+            .detail
+            .contains("step1.md"));
     }
 
     #[test]
@@ -711,10 +712,7 @@ advance_on = "confirm"
     fn pass_flag_is_true_iff_no_fail() {
         let tmp = make_loadable_draft();
         let report = dry_run_draft_dir(tmp.path());
-        let any_fail = report
-            .checks
-            .iter()
-            .any(|c| c.status == CheckStatus::Fail);
+        let any_fail = report.checks.iter().any(|c| c.status == CheckStatus::Fail);
         assert_eq!(report.pass, !any_fail);
     }
 }

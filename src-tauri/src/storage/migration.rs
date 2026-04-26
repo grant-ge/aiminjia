@@ -123,7 +123,6 @@ mod tests {
         assert_eq!(content, "new");
     }
 
-
     #[test]
     fn test_merges_into_precreated_skills_dir_without_overwrite() {
         let old = TempDir::new().unwrap();

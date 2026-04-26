@@ -130,7 +130,10 @@ impl RuntimeLlmExecutor for MemoryTurnExecutor {
         Ok(self.env_info.clone())
     }
 
-    async fn load_renlijia_md(&self, workspace_path: &Path) -> Result<Vec<RenlijiaMdFile>, TurnError> {
+    async fn load_renlijia_md(
+        &self,
+        workspace_path: &Path,
+    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
         Ok(self.renlijia_files.clone())
     }
@@ -146,7 +149,9 @@ impl RuntimeLlmExecutor for MemoryTurnExecutor {
             .push((workspace_path.to_path_buf(), query.to_string()));
         match &self.project_memory {
             ProjectMemoryBehavior::Context(ctx) => Ok(ctx.clone()),
-            ProjectMemoryBehavior::Error(message) => Err(TurnError::PersistenceError(message.clone())),
+            ProjectMemoryBehavior::Error(message) => {
+                Err(TurnError::PersistenceError(message.clone()))
+            }
         }
     }
 
@@ -229,9 +234,16 @@ async fn turn_loads_project_memory_once_with_current_user_message_as_query() {
     std::fs::create_dir_all(&workspace).unwrap();
     let executor = Arc::new(MemoryTurnExecutor::new(workspace.clone(), project_memory()));
     let mut turn = make_turn("conv-memory-query");
-    let request = ChatTurnRequest::new("conv-memory-query", "请继续分析薪资分布，优先用箱线图", vec![]);
+    let request = ChatTurnRequest::new(
+        "conv-memory-query",
+        "请继续分析薪资分布，优先用箱线图",
+        vec![],
+    );
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     let calls = executor.project_calls();
     assert_eq!(calls.len(), 1);
@@ -245,12 +257,16 @@ async fn project_memory_is_injected_into_dynamic_context_before_env_info() {
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
     let executor = Arc::new(
-        MemoryTurnExecutor::new(workspace, project_memory()).with_env_info("# env_info\nPlatform: test"),
+        MemoryTurnExecutor::new(workspace, project_memory())
+            .with_env_info("# env_info\nPlatform: test"),
     );
     let mut turn = make_turn("conv-memory-dynamic");
     let request = ChatTurnRequest::new("conv-memory-dynamic", "薪资 箱线图", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     let dynamic = &executor.dynamic_contexts()[0];
     assert!(dynamic.starts_with("[动态上下文 — 请勿回复此消息]"));
@@ -268,7 +284,10 @@ async fn project_memory_stays_out_of_message_history() {
     let mut turn = make_turn("conv-memory-not-message");
     let request = ChatTurnRequest::new("conv-memory-not-message", "薪资 箱线图", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     let dynamic = &executor.dynamic_contexts()[0];
     assert!(dynamic.contains("薪资分析偏好箱线图"));
@@ -289,7 +308,10 @@ async fn empty_project_memory_falls_back_to_legacy_core_memory() {
     let mut turn = make_turn("conv-memory-core");
     let request = ChatTurnRequest::new("conv-memory-core", "anything", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     assert_eq!(executor.project_calls().len(), 1);
     assert_eq!(executor.core_calls(), vec!["conv-memory-core".to_string()]);
@@ -310,7 +332,10 @@ async fn non_empty_project_memory_skips_legacy_core_memory() {
     let mut turn = make_turn("conv-memory-no-core");
     let request = ChatTurnRequest::new("conv-memory-no-core", "薪资 箱线图", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     assert_eq!(executor.project_calls().len(), 1);
     assert!(executor.core_calls().is_empty());
@@ -324,15 +349,20 @@ async fn multi_step_turn_reuses_single_project_memory_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let executor = Arc::new(MemoryTurnExecutor::new(workspace, project_memory()).with_responses(vec![
-        tool_call_step("tc-memory-1"),
-        tool_call_step("tc-memory-2"),
-        content_complete(),
-    ]));
+    let executor = Arc::new(
+        MemoryTurnExecutor::new(workspace, project_memory()).with_responses(vec![
+            tool_call_step("tc-memory-1"),
+            tool_call_step("tc-memory-2"),
+            content_complete(),
+        ]),
+    );
     let mut turn = make_turn("conv-memory-multi");
     let request = ChatTurnRequest::new("conv-memory-multi", "薪资 箱线图", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     assert_eq!(executor.project_calls().len(), 1);
     let contexts = executor.dynamic_contexts();
@@ -355,7 +385,10 @@ async fn project_memory_load_failure_degrades_without_blocking_turn() {
     let mut turn = make_turn("conv-memory-error");
     let request = ChatTurnRequest::new("conv-memory-error", "anything", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     assert_eq!(executor.dynamic_contexts().len(), 1);
     let dynamic = &executor.dynamic_contexts()[0];
@@ -369,11 +402,17 @@ async fn empty_project_memory_rendering_does_not_inject_empty_memory_headers() {
     let tmp = tempfile::tempdir().unwrap();
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let executor = Arc::new(MemoryTurnExecutor::new(workspace, ProjectMemoryContext::default()));
+    let executor = Arc::new(MemoryTurnExecutor::new(
+        workspace,
+        ProjectMemoryContext::default(),
+    ));
     let mut turn = make_turn("conv-memory-empty");
     let request = ChatTurnRequest::new("conv-memory-empty", "anything", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     let dynamic = &executor.dynamic_contexts()[0];
     assert!(dynamic.starts_with("[动态上下文 — 请勿回复此消息]"));
@@ -398,7 +437,10 @@ async fn project_memory_renlijia_md_and_env_info_remain_separate_context_blocks(
     let mut turn = make_turn("conv-memory-separate");
     let request = ChatTurnRequest::new("conv-memory-separate", "薪资 箱线图", vec![]);
 
-    driver(executor.clone()).run_chat_turn(&mut turn, &request).await.unwrap();
+    driver(executor.clone())
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .unwrap();
 
     let dynamic = &executor.dynamic_contexts()[0];
     assert!(dynamic.contains("[项目记忆]"));

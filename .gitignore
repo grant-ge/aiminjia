@@ -26,8 +26,6 @@ src-tauri/target
 *.sln
 *.sw?
 
-# Python runtime (downloaded via setup-python.sh)
-src-tauri/python-runtime/
 
 # Tauri generated
 src-tauri/gen/

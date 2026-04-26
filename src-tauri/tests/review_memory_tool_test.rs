@@ -20,17 +20,14 @@ fn ctx() -> ToolExecutionContext {
 }
 
 fn parse_result(result: &app_lib::runtime::tools::ToolResult) -> Value {
-    result
-        .data
-        .clone()
-        .unwrap_or_else(|| serde_json::from_str(&result.content).expect("tool content should be json"))
+    result.data.clone().unwrap_or_else(|| {
+        serde_json::from_str(&result.content).expect("tool content should be json")
+    })
 }
 
 fn entries_dir(dir: &std::path::Path) -> std::path::PathBuf {
-    let service = app_lib::runtime::project_memory::ProjectMemoryService::new(
-        dir,
-        &dir.join("workspace"),
-    );
+    let service =
+        app_lib::runtime::project_memory::ProjectMemoryService::new(dir, &dir.join("workspace"));
     service.memory_root().join("entries")
 }
 
@@ -58,7 +55,9 @@ async fn write_memory_saves_entry_and_returns_structured_saved_result() {
     let path = parsed["path"].as_str().expect("path should be string");
     assert!(path.ends_with(".md"));
     assert!(!path.starts_with('/'), "path should be relative: {path}");
-    assert!(entries_dir(dir.path()).join(path.strip_prefix("entries/").unwrap_or(path)).exists());
+    assert!(entries_dir(dir.path())
+        .join(path.strip_prefix("entries/").unwrap_or(path))
+        .exists());
 }
 
 #[tokio::test]
@@ -81,10 +80,18 @@ async fn write_memory_invalid_memory_type_returns_clear_error_without_writing_fi
         .to_string();
 
     assert!(err.contains("unknown memory_type"));
-    for valid in ["user_preference", "project_constraint", "reference_info", "feedback"] {
+    for valid in [
+        "user_preference",
+        "project_constraint",
+        "reference_info",
+        "feedback",
+    ] {
         assert!(err.contains(valid), "error should list {valid}: {err}");
     }
-    assert!(!entries_dir(dir.path()).exists(), "invalid type must not write entry files");
+    assert!(
+        !entries_dir(dir.path()).exists(),
+        "invalid type must not write entry files"
+    );
 }
 
 #[tokio::test]
@@ -120,7 +127,10 @@ async fn write_memory_missing_required_fields_return_clear_errors_without_writin
         .to_string();
     assert!(missing_content.contains("missing 'content'"));
 
-    assert!(!entries_dir(dir.path()).exists(), "missing fields must not write entry files");
+    assert!(
+        !entries_dir(dir.path()).exists(),
+        "missing fields must not write entry files"
+    );
 }
 
 #[tokio::test]
@@ -163,7 +173,10 @@ async fn search_memory_recalls_relevant_entry_as_structured_results() {
     assert_eq!(parsed["count"], 1);
     assert_eq!(parsed["results"][0]["name"], "boxplot-salary-preference");
     assert_eq!(parsed["results"][0]["type"], "user_preference");
-    assert!(parsed["results"][0]["content"].as_str().unwrap().contains("salary distribution"));
+    assert!(parsed["results"][0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("salary distribution"));
     assert!(!parsed.to_string().contains("release-freeze"));
 }
 

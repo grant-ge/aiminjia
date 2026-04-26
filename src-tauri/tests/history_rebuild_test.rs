@@ -26,10 +26,14 @@ fn valid_tool_pair_passes_through() {
         common::make_assistant("4", "done"),
     ];
 
-    let history = build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+    let history =
+        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
     assert_eq!(history.len(), 4);
     assert_eq!(history[1].role, "assistant");
-    assert!(history[1].tool_calls.as_ref().is_some_and(|calls| calls.len() == 1));
+    assert!(history[1]
+        .tool_calls
+        .as_ref()
+        .is_some_and(|calls| calls.len() == 1));
     assert_eq!(history[2].role, "tool");
     assert_eq!(history[2].tool_call_id.as_deref(), Some("tc_1"));
 }
@@ -42,7 +46,8 @@ fn orphan_tool_dropped() {
         common::make_assistant("3", "ok"),
     ];
 
-    let history = build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+    let history =
+        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
     assert!(!history.iter().any(|m| m.role == "tool"));
 }
 
@@ -54,7 +59,8 @@ fn assistant_without_result_tool_calls_cleared() {
         common::make_assistant("3", "done"),
     ];
 
-    let history = build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
+    let history =
+        build_chat_history(&stored, None, &HistoryConfig::default()).expect("build history");
     let assistant_with_tool_calls = history
         .iter()
         .find(|m| m.role == "assistant" && m.tool_calls.is_some());
@@ -69,7 +75,10 @@ fn round_based_trim_respects_max_rounds() {
     let mut stored = Vec::new();
     for i in 0..5u64 {
         stored.push(common::make_user(&(i * 2).to_string(), &format!("q{}", i)));
-        stored.push(common::make_assistant(&(i * 2 + 1).to_string(), &format!("a{}", i)));
+        stored.push(common::make_assistant(
+            &(i * 2 + 1).to_string(),
+            &format!("a{}", i),
+        ));
     }
 
     let config = HistoryConfig {
@@ -105,8 +114,8 @@ fn boundary_summary_and_tail_slice_are_applied() {
         tail_message_id: Some("3".into()),
     };
 
-    let history =
-        build_chat_history(&stored, Some(&boundary), &HistoryConfig::default()).expect("build history");
+    let history = build_chat_history(&stored, Some(&boundary), &HistoryConfig::default())
+        .expect("build history");
     assert_eq!(history.len(), 3);
     assert_eq!(history[0].role, "user");
     assert!(history[0].content.contains("summary text"));
@@ -128,7 +137,8 @@ fn user_history_with_uploaded_files_preserves_file_hints() {
         ]
     });
 
-    let history = build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
+    let history =
+        build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
     assert_eq!(history.len(), 1);
     assert!(history[0].content.contains("[已上传文件]"));
     assert!(history[0].content.contains("file-1"));
@@ -200,7 +210,10 @@ fn load_history_via_runtime_history_uses_v2_storage_and_boundary() {
     let history = load_history_via_runtime_history(&storage, "c1", false).expect("load history");
     assert_eq!(history.len(), 3);
     assert_eq!(history[0]["role"], "user");
-    assert!(history[0]["content"].as_str().unwrap_or("").contains("summary text"));
+    assert!(history[0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("summary text"));
     assert_eq!(history[1]["content"], "new question");
     assert_eq!(history[2]["content"], "new answer");
 }

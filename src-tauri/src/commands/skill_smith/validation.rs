@@ -41,11 +41,9 @@ const ICON_CHAR_MIN: usize = 1;
 const ICON_CHAR_MAX: usize = 4; // covers emoji + variation selector + ZWJ pairs
 const PROMPT_MIN_BYTES: usize = 50; // below this → warning
 
-pub(crate) const VALID_CATEGORIES: &[&str] =
-    &["general", "hr", "finance", "legal", "sales", "ops"];
+pub(crate) const VALID_CATEGORIES: &[&str] = &["general", "hr", "finance", "legal", "sales", "ops"];
 
-pub(crate) const VALID_MODEL_PREFERENCES: &[&str] =
-    &["fast", "balanced", "deep_reasoning"];
+pub(crate) const VALID_MODEL_PREFERENCES: &[&str] = &["fast", "balanced", "deep_reasoning"];
 
 pub(crate) const VALID_ADVANCE_ON: &[&str] = &["any", "confirm", "auto"];
 
@@ -226,7 +224,9 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
                     rule: "frontmatter".into(),
                     actual: e.clone(),
                     message: format!("SKILL.md frontmatter 解析失败 ({})", e),
-                    fix_hint: Some("检查 YAML frontmatter，至少提供 name，必要时显式提供 id".into()),
+                    fix_hint: Some(
+                        "检查 YAML frontmatter，至少提供 name，必要时显式提供 id".into(),
+                    ),
                 }),
             }
         } else {
@@ -344,7 +344,10 @@ fn validate_plugin_section(
                     "plugin.id",
                     "reserved",
                     id,
-                    &format!("plugin.id '{}' 与内置技能冲突 (reserved by built-in skill)", id),
+                    &format!(
+                        "plugin.id '{}' 与内置技能冲突 (reserved by built-in skill)",
+                        id
+                    ),
                     Some("换一个不同的 id，建议加前缀如 'custom-' 或公司名缩写"),
                 ));
             }
@@ -703,7 +706,9 @@ fn validate_prompt_files(
     warnings: &mut Vec<ValidationError>,
 ) {
     for (i, step) in workflow.steps.iter().enumerate() {
-        let Some(rel_prompt) = &step.prompt else { continue };
+        let Some(rel_prompt) = &step.prompt else {
+            continue;
+        };
 
         // Defensive: prompt path must not contain traversal
         if rel_prompt.contains("..") || rel_prompt.starts_with('/') {
@@ -788,7 +793,9 @@ fn is_valid_plugin_id(id: &str) -> bool {
         return false;
     }
     let mut chars = id.chars();
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !first.is_ascii_lowercase() {
         return false;
     }
@@ -814,11 +821,7 @@ fn err(
     }
 }
 
-fn build_summary(
-    valid: bool,
-    errors: &[ValidationError],
-    warnings: &[ValidationError],
-) -> String {
+fn build_summary(valid: bool, errors: &[ValidationError], warnings: &[ValidationError]) -> String {
     if valid && warnings.is_empty() {
         return "校验通过 (validation passed)".to_string();
     }
@@ -1024,7 +1027,10 @@ advance_on = "confirm"
         let dir = tmp.path();
         let bad = std::fs::read_to_string(dir.join("plugin.toml"))
             .unwrap()
-            .replace(r#"preference = "deep_reasoning""#, r#"preference = "creative""#);
+            .replace(
+                r#"preference = "deep_reasoning""#,
+                r#"preference = "creative""#,
+            );
         std::fs::write(dir.join("plugin.toml"), bad).unwrap();
 
         let report = validate_draft_dir(dir);
@@ -1109,7 +1115,11 @@ prompt = "prompts/step1.md"
 
         let report = validate_draft_dir(dir);
         // Still valid (warnings don't block)
-        assert!(report.valid, "short prompt should be warning, got: {:?}", report);
+        assert!(
+            report.valid,
+            "short prompt should be warning, got: {:?}",
+            report
+        );
         assert!(report
             .warnings
             .iter()
@@ -1140,7 +1150,10 @@ prompt = "prompts/step1.md"
         std::fs::write(dir.join("plugin.toml"), extended).unwrap();
 
         let report = validate_draft_dir(dir);
-        assert!(report.valid, "unknown sections should be allowed for Phase 4 forward-compat");
+        assert!(
+            report.valid,
+            "unknown sections should be allowed for Phase 4 forward-compat"
+        );
     }
 
     #[test]

@@ -309,6 +309,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
+        runtime_resolver: None,
     };
 
     let result = registry

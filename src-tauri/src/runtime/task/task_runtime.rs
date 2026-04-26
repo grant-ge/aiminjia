@@ -75,12 +75,8 @@ impl TaskRuntime {
                         .as_ref()
                         .map(|r| r.subject.clone())
                         .unwrap_or_default(),
-                    active_form: task_record
-                        .as_ref()
-                        .and_then(|r| r.active_form.clone()),
-                    owner_agent_id: task_record
-                        .as_ref()
-                        .and_then(|r| r.owner_agent_id.clone()),
+                    active_form: task_record.as_ref().and_then(|r| r.active_form.clone()),
+                    owner_agent_id: task_record.as_ref().and_then(|r| r.owner_agent_id.clone()),
                 },
             );
             let bus = bus.clone();

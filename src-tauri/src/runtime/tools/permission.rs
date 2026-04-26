@@ -440,5 +440,4 @@ mod tests {
         let network = check_scope_capability("network", &ctx_without_capability());
         assert!(network.is_none());
     }
-
 }

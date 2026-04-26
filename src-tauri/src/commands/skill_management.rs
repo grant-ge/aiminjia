@@ -346,8 +346,9 @@ pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
     if !dir.is_dir() {
         return Err("Not a valid directory".to_string());
     }
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&dir)
-        .map_err(|_| "No plugin.toml or SKILL.md found — not a valid skill directory".to_string())?;
+    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&dir).map_err(|_| {
+        "No plugin.toml or SKILL.md found — not a valid skill directory".to_string()
+    })?;
     let plugin_id = manifest.plugin.id;
 
     let output_path = dir
@@ -662,15 +663,14 @@ pub async fn install_marketplace_skill(
     ))
 }
 
-pub(crate) fn pack_skill_to_dir(
-    skill_dir: &Path,
-    output_dir: &Path,
-) -> Result<PathBuf, String> {
+pub(crate) fn pack_skill_to_dir(skill_dir: &Path, output_dir: &Path) -> Result<PathBuf, String> {
     if !skill_dir.is_dir() {
         return Err("Skill directory does not exist".to_string());
     }
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(skill_dir)
-        .map_err(|_| "No plugin.toml or SKILL.md found — not a valid skill directory".to_string())?;
+    let manifest =
+        crate::plugin::manifest::read_manifest_from_skill_dir(skill_dir).map_err(|_| {
+            "No plugin.toml or SKILL.md found — not a valid skill directory".to_string()
+        })?;
     let plugin_id = manifest.plugin.id;
 
     std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;

@@ -6,7 +6,6 @@ use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
     TurnError,
 };
-use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
@@ -14,6 +13,7 @@ use app_lib::runtime::project_memory::{
     ProjectMemoryContext, ProjectMemoryEntryDraft, ProjectMemoryService, ProjectMemoryType,
 };
 use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 
@@ -224,7 +224,10 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_renlijia_md(&self, workspace_path: &Path) -> Result<Vec<RenlijiaMdFile>, TurnError> {
+    async fn load_renlijia_md(
+        &self,
+        workspace_path: &Path,
+    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
         Ok(self.renlijia_md_files.clone())
     }
@@ -335,11 +338,7 @@ fn u4_compat_tool_definition_helper_excludes_retired_memory_tools() {
         .map(|tool| tool.name)
         .collect::<Vec<_>>();
 
-    for retired in [
-        "save_memory",
-        "load_core_memory",
-        "distill_memories",
-    ] {
+    for retired in ["save_memory", "load_core_memory", "distill_memories"] {
         assert!(
             !names.iter().any(|name| name == retired),
             "compat llm::tools helper must not expose retired memory tool '{}'",

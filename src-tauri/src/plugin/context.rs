@@ -45,6 +45,7 @@ use crate::plugin::registry::ToolRegistry;
 use crate::python::session::PythonSessionManager;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
 use crate::runtime::tools::capability::FileStateCache;
@@ -115,6 +116,9 @@ pub struct PluginContext {
     /// Transitional bridge for legacy ToolPlugin paths that still need the
     /// current permission mode for nested runtime launches.
     pub permission_mode: PermissionMode,
+    /// Transitional bridge for legacy ToolPlugin paths that still need managed
+    /// Node/Python runtime dependencies while they migrate to runtime tools.
+    pub runtime_resolver: Option<ManagedRuntimeResolver>,
 }
 
 impl PluginContext {

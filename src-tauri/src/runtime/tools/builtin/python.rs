@@ -42,6 +42,7 @@ pub struct ExecutePythonRuntimeTool {
     model: Option<String>,
     python_binary: Option<PathBuf>,
     python_home: Option<PathBuf>,
+    error_message: Option<String>,
 }
 
 impl ExecutePythonRuntimeTool {
@@ -55,6 +56,7 @@ impl ExecutePythonRuntimeTool {
             model: None,
             python_binary: None,
             python_home: None,
+            error_message: None,
         }
     }
 
@@ -76,6 +78,21 @@ impl ExecutePythonRuntimeTool {
             model: Some(model),
             python_binary: Some(python_binary),
             python_home,
+            error_message: None,
+        }
+    }
+
+    pub fn error(message: String) -> Self {
+        Self {
+            stub_mode: false,
+            python: None,
+            storage: None,
+            file_manager: None,
+            requested_run_id: None,
+            model: None,
+            python_binary: None,
+            python_home: None,
+            error_message: Some(message),
         }
     }
 
@@ -115,6 +132,10 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
+        if let Some(message) = &self.error_message {
+            return Err(ToolError::ExecutionFailed(message.clone()));
+        }
+
         if self.stub_mode {
             return Err(ToolError::ExecutionFailed(
                 "ExecutePythonRuntimeTool: stub mode, real execution not available".into(),

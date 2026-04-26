@@ -173,7 +173,8 @@ except Exception as e:
         .map_err(|e| format!("Failed to write export script: {}", e))?;
 
     let mut py_cmd = tokio::process::Command::new("python3");
-    py_cmd.arg("-u")
+    py_cmd
+        .arg("-u")
         .arg(&script_path)
         .env("PYTHONIOENCODING", "utf-8");
     #[cfg(target_os = "windows")]
@@ -181,7 +182,9 @@ except Exception as e:
         use std::os::windows::process::CommandExt;
         py_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    let py_output = py_cmd.output().await
+    let py_output = py_cmd
+        .output()
+        .await
         .map_err(|e| format!("Failed to run python3: {}", e))?;
 
     // Cleanup script
@@ -222,7 +225,10 @@ except Exception as e:
 
     // Handle fallback case (PDF → HTML fallback when weasyprint not available)
     let was_fallback = status == "fallback_html";
-    let fallback_message = python_output.get("error").and_then(|v| v.as_str()).map(String::from);
+    let fallback_message = python_output
+        .get("error")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let (final_path, final_stored_path, final_filename, final_ext) = if was_fallback {
         let html_filename = output_filename.replace(".pdf", ".html");
         let html_stored = format!("exports/{}", html_filename);

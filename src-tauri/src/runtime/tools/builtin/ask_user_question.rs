@@ -37,7 +37,10 @@ impl RuntimeTool for AskUserQuestionRuntimeTool {
     ) -> Result<ToolResult, ToolError> {
         if let Some(resolution) = ctx.interaction_resolution.as_ref() {
             let questions = input.get("questions").cloned().unwrap_or_else(|| json!([]));
-            let answers = resolution.get("answers").cloned().unwrap_or_else(|| json!({}));
+            let answers = resolution
+                .get("answers")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             let annotations = resolution.get("annotations").cloned();
 
             let mut result_data = json!({
@@ -101,6 +104,8 @@ impl RuntimeTool for AskUserQuestionRuntimeTool {
             original_request,
         };
 
-        Err(ToolError::InteractionRequired(Box::new(interaction_request)))
+        Err(ToolError::InteractionRequired(Box::new(
+            interaction_request,
+        )))
     }
 }

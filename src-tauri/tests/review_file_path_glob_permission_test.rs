@@ -35,7 +35,10 @@ async fn review_write_file_path_glob_deny_blocks_matching_path() {
     );
     let ctx = make_ctx(store, &tmp);
     let decision = WriteFileRuntimeTool
-        .check_permissions(&json!({"path": "blocked/output.csv", "content": "a,b"}), &ctx)
+        .check_permissions(
+            &json!({"path": "blocked/output.csv", "content": "a,b"}),
+            &ctx,
+        )
         .await;
     assert!(
         matches!(decision, Some(PermissionDecision::Deny { .. })),
@@ -49,7 +52,10 @@ async fn review_write_file_no_matching_glob_returns_none() {
     let store = Arc::new(PermissionStore::in_memory());
     let ctx = make_ctx(store, &tmp);
     let decision = WriteFileRuntimeTool
-        .check_permissions(&json!({"path": "output/result.csv", "content": "a,b"}), &ctx)
+        .check_permissions(
+            &json!({"path": "output/result.csv", "content": "a,b"}),
+            &ctx,
+        )
         .await;
     assert!(decision.is_none(), "No glob rule should return None");
 }

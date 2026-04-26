@@ -1,8 +1,8 @@
-use app_lib::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
-use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::auth::AuthManager;
 use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
 use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
+use app_lib::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
+use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::storage::file_store::AppStorage;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -26,12 +26,18 @@ fn browse_data_agent_has_six_browser_tools() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("browse_data_agent").unwrap();
     assert_eq!(def.allowed_tools.len(), 6);
-    assert!(def.allowed_tools.contains(&"browse_and_extract".to_string()));
+    assert!(def
+        .allowed_tools
+        .contains(&"browse_and_extract".to_string()));
     assert!(def.allowed_tools.contains(&"browse_navigate".to_string()));
     assert!(def.allowed_tools.contains(&"read_page_content".to_string()));
     assert!(def.allowed_tools.contains(&"page_execute_js".to_string()));
-    assert!(def.allowed_tools.contains(&"extract_table_data".to_string()));
-    assert!(def.allowed_tools.contains(&"extract_with_pagination".to_string()));
+    assert!(def
+        .allowed_tools
+        .contains(&"extract_table_data".to_string()));
+    assert!(def
+        .allowed_tools
+        .contains(&"extract_with_pagination".to_string()));
 }
 
 #[test]
@@ -59,14 +65,7 @@ fn registry_list_returns_all_builtins() {
 }
 
 #[allow(dead_code)]
-fn _keep_definition_types_used(
-    _: AgentDefinition,
-    _: AgentModel,
-    _: AgentPrompt,
-    _: AgentSource,
-) {
-}
-
+fn _keep_definition_types_used(_: AgentDefinition, _: AgentModel, _: AgentPrompt, _: AgentSource) {}
 
 #[test]
 fn browse_data_agent_tools_match_legacy_hardcoded_list() {
@@ -89,7 +88,6 @@ fn browse_data_agent_tools_match_legacy_hardcoded_list() {
     }
     assert_eq!(def.allowed_tools.len(), expected.len());
 }
-
 
 #[test]
 fn daily_assistant_tool_filter_matches_registry_definition() {
@@ -118,5 +116,8 @@ fn daily_assistant_token_budget_defaults_to_8192() {
     let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
     let skill = DailyAssistantSkill::new(storage, auth_manager);
 
-    assert_eq!(skill.token_budget(&SkillState::new("daily-assistant")), 8192);
+    assert_eq!(
+        skill.token_budget(&SkillState::new("daily-assistant")),
+        8192
+    );
 }

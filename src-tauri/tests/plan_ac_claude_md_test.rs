@@ -7,11 +7,11 @@ use app_lib::runtime::chat::{
     ChatTurnRequest, LlmStepInput, LlmStepResult, RuntimeChatTurnDriver, RuntimeLlmExecutor,
     TurnError,
 };
-use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::renlijia_md::RenlijiaMdFile;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 
@@ -34,7 +34,9 @@ async fn ac1_load_project_renlijia_md_from_workspace() {
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    let project_file = files.iter().find(|f| f.path == workspace.join("RENLIJIA.md"));
+    let project_file = files
+        .iter()
+        .find(|f| f.path == workspace.join("RENLIJIA.md"));
     assert!(project_file.is_some(), "should find workspace RENLIJIA.md");
     assert!(project_file
         .expect("project file")
@@ -165,7 +167,10 @@ impl RuntimeLlmExecutor for RenlijiaMdContextExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_renlijia_md(&self, workspace_path: &Path) -> Result<Vec<RenlijiaMdFile>, TurnError> {
+    async fn load_renlijia_md(
+        &self,
+        workspace_path: &Path,
+    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
         Ok(self.renlijia_md_files.clone())
     }

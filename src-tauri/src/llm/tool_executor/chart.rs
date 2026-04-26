@@ -22,8 +22,13 @@ pub(crate) async fn handle_generate_chart(
     ctx: &PluginContext,
     args: &Value,
 ) -> Result<FileGenResult> {
-    let (python_binary, python_home) =
-        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let python_binary = deps.python;
+    let python_home = None;
     let capability = DefaultChartCapability {
         storage: ctx.storage.clone(),
         workspace_path: ctx.workspace_path.clone(),
@@ -383,7 +388,13 @@ mod tests {
 
     #[test]
     fn test_build_chart_python_nine_box_renders_grid() {
-        let code = build_chart_python("nine_box", "九宫格", "/tmp/d.json", "/tmp/o.json", "/tmp/c.html");
+        let code = build_chart_python(
+            "nine_box",
+            "九宫格",
+            "/tmp/d.json",
+            "/tmp/o.json",
+            "/tmp/c.html",
+        );
         // Nine-box branch must read data['grid'] and emit a Heatmap
         assert!(code.contains("data.get('grid'"));
         assert!(code.contains("go.Heatmap"));

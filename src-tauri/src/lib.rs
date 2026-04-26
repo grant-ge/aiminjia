@@ -37,10 +37,42 @@ pub fn run() {
             aijia_home
                 .ensure_dirs()
                 .expect("Failed to create ~/.renlijia dirs");
-            if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root()) {
+            if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
+            {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
             }
             app.manage(aijia_home.clone());
+            let runtime_paths = runtime::dependencies::RuntimePaths::new(
+                aijia_home.runtimes_dir(),
+                "renlijia-primary-runtime",
+            )
+            .expect("Failed to initialize managed runtime paths");
+            let platform = runtime::dependencies::RuntimePlatform::current()
+                .expect("Failed to identify managed runtime platform");
+            let manifest_url = runtime::dependencies::configured_runtime_manifest_url();
+            let runtime_manager: runtime::dependencies::ManagedRuntimeManager = Arc::new(
+                runtime::dependencies::RuntimeManager::new(
+                    runtime_paths.clone(),
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .with_manifest_source(
+                    runtime::dependencies::RuntimeManifestSource::Url(manifest_url),
+                    "primary",
+                    platform,
+                ),
+            );
+            let runtime_resolver: runtime::dependencies::ManagedRuntimeResolver =
+                runtime_manager.clone();
+            {
+                let runtime_manager = runtime_manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = runtime_manager.ensure_managed().await {
+                        log::warn!("[runtime] background ensure failed: {}", error);
+                    }
+                });
+            }
+            app.manage(runtime_manager.clone());
+            app.manage(runtime_resolver.clone());
 
             // Initialize prompt store from external .md files
             let resource_dir = app
@@ -192,7 +224,10 @@ pub fn run() {
 
             tauri::async_runtime::block_on(async {
                 for config in persisted_mcp_configs {
-                    let connection = match runtime::mcp::build_mcp_connection(&config) {
+                    let connection = match runtime::mcp::build_mcp_connection(
+                        &config,
+                        Some(runtime_resolver.clone()),
+                    ) {
                         Ok(connection) => connection,
                         Err(err) => {
                             log::warn!(
@@ -302,10 +337,12 @@ pub fn run() {
             app.manage(facade);
 
             // Initialize Python session manager for persistent REPL sessions
-            let session_mgr = Arc::new(python::session::PythonSessionManager::new(
-                fm_path.clone(),
-                Some(app.handle()),
-            ));
+            let session_mgr = Arc::new(
+                python::session::PythonSessionManager::with_lazy_runtime_resolver(
+                    fm_path.clone(),
+                    runtime_resolver.clone(),
+                ),
+            );
 
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new(
@@ -435,6 +472,11 @@ pub fn run() {
             transport::tauri_commands::mcp::remove_mcp_server,
             transport::tauri_commands::mcp::connect_mcp_server,
             transport::tauri_commands::mcp::disconnect_mcp_server,
+            transport::tauri_commands::runtime::runtime_get_health,
+            transport::tauri_commands::runtime::runtime_ensure,
+            transport::tauri_commands::runtime::runtime_reinstall,
+            transport::tauri_commands::runtime::runtime_cleanup_old_versions,
+            transport::tauri_commands::runtime::runtime_cancel_operation,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
@@ -638,10 +680,12 @@ include_app_base: false
         let skill_registry = SkillRegistry::new("daily-assistant");
         skill_registry
             .register(
-                Arc::new(crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
-                    storage.clone(),
-                    Arc::new(crate::auth::AuthManager::new(storage.clone(), None)),
-                )),
+                Arc::new(
+                    crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
+                        storage.clone(),
+                        Arc::new(crate::auth::AuthManager::new(storage.clone(), None)),
+                    ),
+                ),
                 "builtin",
             )
             .await;

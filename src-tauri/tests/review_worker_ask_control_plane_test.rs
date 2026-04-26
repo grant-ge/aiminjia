@@ -16,7 +16,9 @@ fn review_runtime_chat_driver_owns_pending_permission_control_plane() {
     let driver_src = std::fs::read_to_string("src/runtime/chat/chat_turn_driver.rs")
         .expect("read chat_turn_driver.rs");
     assert!(
-        driver_src.contains("pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>"),
+        driver_src.contains(
+            "pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>"
+        ),
         "RuntimeChatTurnDriver 应继续持有 pending_permission_control_plane"
     );
     assert!(

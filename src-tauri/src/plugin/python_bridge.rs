@@ -19,6 +19,25 @@ use super::context::PluginContext;
 use super::manifest::PluginManifest;
 use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
+fn managed_python_runner(
+    workspace_path: std::path::PathBuf,
+    resolver: Option<&crate::runtime::dependencies::ManagedRuntimeResolver>,
+) -> Result<PythonRunner, String> {
+    let resolver = resolver.ok_or_else(|| {
+        "managed runtime resolver is required for Python bridge tools".to_string()
+    })?;
+    let deps = resolver
+        .workspace_dependencies()
+        .map_err(|err| err.to_string())?;
+    let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&workspace_path);
+    Ok(PythonRunner::with_config_from_path(
+        deps.python,
+        None,
+        workspace_path,
+        sandbox,
+    ))
+}
+
 /// A Python-based tool plugin.
 pub struct PythonToolBridge {
     id: String,
@@ -92,7 +111,7 @@ impl PythonToolBridge {
         );
         let full_code = format!("{}\n{}", bootstrap, code);
 
-        let runner = PythonRunner::new(workspace_path.to_path_buf(), None);
+        let runner = managed_python_runner(workspace_path.to_path_buf(), None)?;
         let result = runner
             .execute(&full_code)
             .await
@@ -184,7 +203,9 @@ impl ToolPlugin for PythonToolBridge {
             data_file = data_file.to_string_lossy(),
         );
 
-        let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+        let runner =
+            managed_python_runner(ctx.workspace_path.clone(), ctx.runtime_resolver.as_ref())
+                .map_err(ToolError::ExecutionFailed)?;
         let result = runner
             .execute(&code)
             .await

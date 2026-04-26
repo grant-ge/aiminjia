@@ -10,7 +10,6 @@ pub struct SkillRuntimePatch {
     pub token_budget: usize,
 }
 
-
 /// A single tool call request coming from the LLM.
 ///
 /// Carries all information needed to route and execute one tool invocation,

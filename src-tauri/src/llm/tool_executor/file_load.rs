@@ -492,8 +492,13 @@ pub(crate) fn unmask_text(text: &str, unmask_map: &HashMap<String, String>) -> S
 /// that still thread a `PluginContext` (e.g. legacy ToolPlugin, auto-load in
 /// execute_python) do not have to migrate atomically.
 pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Result<String> {
-    let (python_binary, python_home) =
-        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let python_binary = deps.python;
+    let python_home = None;
     let params = LoadFileParams {
         storage: &ctx.storage,
         file_manager: &ctx.file_manager,
@@ -626,7 +631,9 @@ pub(crate) async fn handle_load_file_core(
             parse_sandbox,
         )
     } else {
-        PythonRunner::with_config(workspace_pathbuf, parse_sandbox, None)
+        return Err(anyhow!(
+            "managed Python runtime is required for file parsing"
+        ));
     };
     info!(
         "[TOOL:load_file] Starting parse_file for format={:?} path={}",

@@ -2,6 +2,7 @@ use std::fs;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use app_lib::runtime::dependencies::StaticRuntimeResolver;
 use app_lib::runtime::mcp::{
     build_mcp_connection, McpConnection, McpError, McpServerConfig, StdioMcpConnection,
 };
@@ -85,15 +86,31 @@ for raw in sys.stdin:
     script_path
 }
 
+fn managed_runtime_resolver() -> Arc<dyn app_lib::runtime::dependencies::RuntimeResolver> {
+    Arc::new(StaticRuntimeResolver::new(
+        "/tmp/renlijia/python/bin/python3".into(),
+        "/tmp/renlijia/node/bin/node".into(),
+        "/tmp/renlijia/node/bin/npm".into(),
+        "/tmp/renlijia/node/bin/npx".into(),
+        "/tmp/renlijia/uv/bin/uv".into(),
+        "/tmp/renlijia/uv/bin/uvx".into(),
+        "/tmp/renlijia/node/node_modules".into(),
+        "/tmp/renlijia/python/site-packages".into(),
+    ))
+}
+
 #[tokio::test]
 async fn stdio_connection_performs_initialize_list_and_call() {
     let script_path = write_fixture_server();
-    let connection = Arc::new(StdioMcpConnection::new(McpServerConfig {
-        name: "fixture".to_string(),
-        transport_type: "stdio".to_string(),
-        endpoint: format!("python3 {}", script_path.display()),
-        env_vars: None,
-    }));
+    let connection = Arc::new(StdioMcpConnection::new(
+        McpServerConfig {
+            name: "fixture".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: format!("python3 {}", script_path.display()),
+            env_vars: None,
+        },
+        None,
+    ));
 
     connection.connect().await.unwrap();
     assert!(connection.is_connected());
@@ -117,12 +134,15 @@ async fn stdio_connection_performs_initialize_list_and_call() {
 
 #[test]
 fn connection_factory_rejects_unsupported_transport() {
-    let connection = build_mcp_connection(&McpServerConfig {
-        name: "unsupported".to_string(),
-        transport_type: "http".to_string(),
-        endpoint: "http://localhost:3000/mcp".to_string(),
-        env_vars: None,
-    })
+    let connection = build_mcp_connection(
+        &McpServerConfig {
+            name: "unsupported".to_string(),
+            transport_type: "http".to_string(),
+            endpoint: "http://localhost:3000/mcp".to_string(),
+            env_vars: None,
+        },
+        None,
+    )
     .expect("factory should still build an unsupported placeholder connection");
 
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -131,4 +151,98 @@ fn connection_factory_rejects_unsupported_transport() {
         .expect_err("unsupported transport should fail on connect");
 
     assert!(matches!(err, McpError::UnsupportedTransport(kind) if kind == "http"));
+}
+
+#[test]
+fn stdio_connection_resolves_renlijia_runtime_placeholders_before_spawn() {
+    let connection = StdioMcpConnection::new(
+        McpServerConfig {
+            name: "node-server".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: "${renlijia.node} server.js --runner ${renlijia.npx}".to_string(),
+            env_vars: None,
+        },
+        Some(managed_runtime_resolver()),
+    );
+
+    let (program, args) = connection
+        .resolved_stdio_command_for_test()
+        .expect("placeholder command should resolve");
+
+    assert_eq!(program, "/tmp/renlijia/node/bin/node");
+    assert_eq!(
+        args,
+        vec![
+            "server.js".to_string(),
+            "--runner".to_string(),
+            "/tmp/renlijia/node/bin/npx".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn stdio_connection_preserves_quoted_arguments_and_embedded_placeholders() {
+    let connection = StdioMcpConnection::new(
+        McpServerConfig {
+            name: "quoted-node-server".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: r#"${renlijia.node} "server path.js" --runner=${renlijia.npx} '--json={"mode":"safe"}'"#.to_string(),
+            env_vars: None,
+        },
+        Some(managed_runtime_resolver()),
+    );
+
+    let (program, args) = connection
+        .resolved_stdio_command_for_test()
+        .expect("quoted command should parse and resolve");
+
+    assert_eq!(program, "/tmp/renlijia/node/bin/node");
+    assert_eq!(
+        args,
+        vec![
+            "server path.js".to_string(),
+            "--runner=/tmp/renlijia/node/bin/npx".to_string(),
+            "--json={\"mode\":\"safe\"}".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn stdio_connection_rejects_runtime_placeholder_without_resolver() {
+    let connection = StdioMcpConnection::new(
+        McpServerConfig {
+            name: "node-server".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: "${renlijia.node} server.js".to_string(),
+            env_vars: None,
+        },
+        None,
+    );
+
+    let message = connection
+        .resolved_stdio_command_for_test()
+        .expect_err("placeholder without resolver should fail")
+        .to_string();
+
+    assert!(message.contains("requires a RuntimeResolver"));
+}
+
+#[test]
+fn stdio_connection_rejects_unknown_runtime_placeholder() {
+    let connection = StdioMcpConnection::new(
+        McpServerConfig {
+            name: "ruby-server".to_string(),
+            transport_type: "stdio".to_string(),
+            endpoint: "${renlijia.ruby} server.rb".to_string(),
+            env_vars: None,
+        },
+        Some(managed_runtime_resolver()),
+    );
+
+    let message = connection
+        .resolved_stdio_command_for_test()
+        .expect_err("unknown placeholder should fail")
+        .to_string();
+
+    assert!(message.contains("unknown MCP stdio runtime placeholder"));
 }

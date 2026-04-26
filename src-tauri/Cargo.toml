@@ -60,6 +60,7 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 once_cell = "1"
 bytes = "1"
+sha2 = "0.10"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
@@ -68,6 +69,8 @@ url = "2"
 async-trait = "0.1"
 toml = "0.8"
 zip = "2"
+tar = "0.4"
+flate2 = "1"
 
 # File watching (skill dev mode hot-reload)
 notify = "7"
@@ -77,6 +80,9 @@ regex = "1"
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tempfile = "3"

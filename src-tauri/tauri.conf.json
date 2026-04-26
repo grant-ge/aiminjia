@@ -51,7 +51,6 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "src/python": "python-runtime",
       "playwright-runtime": "playwright-runtime",
       "prompts": "prompts",
       "plugins": "plugins"

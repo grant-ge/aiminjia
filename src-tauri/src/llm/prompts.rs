@@ -213,7 +213,9 @@ static PROMPT_STORE: LazyLock<RwLock<PromptStore>> = LazyLock::new(|| {
 /// Initialize the prompt store. Must be called once at app startup.
 pub fn init_prompts(resource_dir: &Path, data_root: &Path) {
     let store = PromptStore::new(resource_dir, data_root);
-    let mut guard = PROMPT_STORE.write().expect("PromptStore write lock poisoned");
+    let mut guard = PROMPT_STORE
+        .write()
+        .expect("PromptStore write lock poisoned");
     *guard = store;
 }
 

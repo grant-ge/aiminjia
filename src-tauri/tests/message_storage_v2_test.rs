@@ -2,11 +2,11 @@ mod common;
 
 use std::fs;
 
-use app_lib::storage::file_store::AppStorage;
 use app_lib::storage::file_store::messages::{
     get_messages_v2, insert_message_v2, migrate_shards_to_single_file,
 };
 use app_lib::storage::file_store::types::StoredMessage;
+use app_lib::storage::file_store::AppStorage;
 use tempfile::TempDir;
 
 fn setup_storage() -> (AppStorage, TempDir) {
@@ -18,7 +18,11 @@ fn setup_storage() -> (AppStorage, TempDir) {
     (storage, dir)
 }
 
-fn shard_path(base_dir: &std::path::Path, conversation_id: &str, shard_num: u64) -> std::path::PathBuf {
+fn shard_path(
+    base_dir: &std::path::Path,
+    conversation_id: &str,
+    shard_num: u64,
+) -> std::path::PathBuf {
     base_dir
         .join("conversations")
         .join(conversation_id)
@@ -40,7 +44,10 @@ fn new_fields_serialize_correctly() {
     assert_eq!(json["runId"], "run_1");
     assert_eq!(json["sequence"], 42);
     assert_eq!(json["schemaVersion"], 2);
-    assert!(json.get("toolCalls").is_none(), "toolCalls should be absent for tool result fixtures");
+    assert!(
+        json.get("toolCalls").is_none(),
+        "toolCalls should be absent for tool result fixtures"
+    );
 }
 
 #[test]
@@ -49,9 +56,18 @@ fn assistant_tool_calls_serialize_with_camel_case_field_names() {
     let json = serde_json::to_value(&msg).expect("serialize assistant tool call message");
 
     assert_eq!(json["toolCalls"][0]["id"], "tc_2");
-    assert!(json.get("toolCallId").is_none(), "assistant message should not emit toolCallId when absent");
-    assert!(json.get("runId").is_none(), "runId should be omitted when absent");
-    assert!(json.get("sequence").is_none(), "sequence should be omitted when absent");
+    assert!(
+        json.get("toolCallId").is_none(),
+        "assistant message should not emit toolCallId when absent"
+    );
+    assert!(
+        json.get("runId").is_none(),
+        "runId should be omitted when absent"
+    );
+    assert!(
+        json.get("sequence").is_none(),
+        "sequence should be omitted when absent"
+    );
 }
 
 #[test]
@@ -97,15 +113,22 @@ fn legacy_shard_records_still_persist_seq_and_rev_for_dedup() {
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0]["content"]["text"], "updated");
 
-    let shard_raw = fs::read_to_string(shard_path(storage.base_dir(), "c1", 1)).expect("read shard");
+    let shard_raw =
+        fs::read_to_string(shard_path(storage.base_dir(), "c1", 1)).expect("read shard");
     for line in shard_raw.lines() {
         let json_str = line
             .split_once('\t')
             .map(|(json, _)| json)
             .expect("strip jsonl completion marker");
         let json: serde_json::Value = serde_json::from_str(json_str).expect("parse shard line");
-        assert!(json.get("seq").is_some(), "legacy shard record must still persist seq");
-        assert!(json.get("_rev").is_some(), "legacy shard record must still persist _rev");
+        assert!(
+            json.get("seq").is_some(),
+            "legacy shard record must still persist seq"
+        );
+        assert!(
+            json.get("_rev").is_some(),
+            "legacy shard record must still persist _rev"
+        );
     }
 }
 
@@ -138,7 +161,11 @@ fn missing_seq_records_do_not_collapse_into_one_dedup_bucket() {
     .expect("write shard");
 
     let messages = storage.get_messages("c1").expect("read messages");
-    assert_eq!(messages.len(), 2, "records without seq must not dedup into one bucket");
+    assert_eq!(
+        messages.len(),
+        2,
+        "records without seq must not dedup into one bucket"
+    );
     assert_eq!(messages[0]["content"]["text"], "first");
     assert_eq!(messages[1]["content"]["text"], "second");
 }
@@ -213,7 +240,10 @@ fn repeated_updates_on_missing_seq_records_still_keep_latest_content() {
     });
     fs::write(
         &shard,
-        format!("{}\t✓\n", serde_json::to_string(&original).expect("serialize original")),
+        format!(
+            "{}\t✓\n",
+            serde_json::to_string(&original).expect("serialize original")
+        ),
     )
     .expect("write shard");
     fs::write(conv_dir.join("_current"), "2:1").expect("force later updates into shard 2");
@@ -228,8 +258,7 @@ fn repeated_updates_on_missing_seq_records_still_keep_latest_content() {
     let messages = storage.get_messages("c1").expect("read messages");
     assert_eq!(messages.len(), 1);
     assert_eq!(
-        messages[0]["content"]["text"],
-        "updated twice",
+        messages[0]["content"]["text"], "updated twice",
         "missing-seq update path must keep the latest revision even across shards"
     );
 }
@@ -298,7 +327,10 @@ fn migrates_old_shards_to_single_file() {
         });
         fs::write(
             conv_dir.join(format!("messages.{}.jsonl", i + 1)),
-            format!("{}\t✓\n", serde_json::to_string(&record).expect("serialize shard record")),
+            format!(
+                "{}\t✓\n",
+                serde_json::to_string(&record).expect("serialize shard record")
+            ),
         )
         .expect("write legacy shard");
     }
@@ -332,7 +364,10 @@ fn app_storage_exposes_v2_message_api_after_migration() {
     });
     fs::write(
         conv_dir.join("messages.1.jsonl"),
-        format!("{}\t✓\n", serde_json::to_string(&legacy).expect("serialize legacy record")),
+        format!(
+            "{}\t✓\n",
+            serde_json::to_string(&legacy).expect("serialize legacy record")
+        ),
     )
     .expect("write legacy shard");
     fs::write(conv_dir.join("_current"), "1:2").expect("write shard cursor");

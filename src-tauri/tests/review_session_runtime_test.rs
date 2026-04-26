@@ -3,14 +3,18 @@ use std::time::Duration;
 
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
-use app_lib::runtime::chat::turn_config::{LlmStepInput, LlmStepResult, TurnConfigOverrides, TurnError};
+use app_lib::runtime::chat::turn_config::{
+    LlmStepInput, LlmStepResult, TurnConfigOverrides, TurnError,
+};
 use app_lib::runtime::chat::{ChatTurnOutcome, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::session_runtime::{ChatTurnRequest, SessionRuntime};
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use app_lib::runtime::tools::{
+    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -58,7 +62,10 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         bus: &RuntimeEventBus,
         cancel: &CancellationToken,
     ) -> Result<LlmStepResult, TurnError> {
-        self.captured_messages.lock().unwrap().push(input.messages.clone());
+        self.captured_messages
+            .lock()
+            .unwrap()
+            .push(input.messages.clone());
         if self.wait_for_cancel {
             for _ in 0..100 {
                 if cancel.is_cancelled() {
@@ -166,7 +173,10 @@ fn kind_label(kind: &RuntimeEventKind) -> &'static str {
 }
 
 fn index_of(labels: &[&str], label: &str) -> usize {
-    labels.iter().position(|item| *item == label).expect("label should exist")
+    labels
+        .iter()
+        .position(|item| *item == label)
+        .expect("label should exist")
 }
 
 fn dummy_tool_call(id: &str) -> RuntimeToolCallRequest {
@@ -180,12 +190,14 @@ fn dummy_tool_call(id: &str) -> RuntimeToolCallRequest {
 
 #[tokio::test]
 async fn normal_turn_emits_complete_lifecycle_events_in_order() {
-    let executor = Arc::new(SessionTestExecutor::new(vec![LlmStepResult::ContentComplete {
-        content: "你好！".to_string(),
-        tokens_in: 3,
-        tokens_out: 5,
-        stop_reason: Some("end_turn".to_string()),
-    }]));
+    let executor = Arc::new(SessionTestExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "你好！".to_string(),
+            tokens_in: 3,
+            tokens_out: 5,
+            stop_reason: Some("end_turn".to_string()),
+        },
+    ]));
     let runtime = runtime(executor, false);
 
     runtime
@@ -216,12 +228,14 @@ async fn normal_turn_emits_complete_lifecycle_events_in_order() {
 
 #[tokio::test]
 async fn all_events_in_one_turn_share_the_same_run_id() {
-    let executor = Arc::new(SessionTestExecutor::new(vec![LlmStepResult::ContentComplete {
-        content: "OK".to_string(),
-        tokens_in: 1,
-        tokens_out: 1,
-        stop_reason: Some("end_turn".to_string()),
-    }]));
+    let executor = Arc::new(SessionTestExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "OK".to_string(),
+            tokens_in: 1,
+            tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
+        },
+    ]));
     let runtime = runtime(executor, false);
 
     runtime
@@ -231,8 +245,13 @@ async fn all_events_in_one_turn_share_the_same_run_id() {
 
     let events = runtime.recorded_events();
     let first_run_id = events[0].run_id.as_str().to_string();
-    assert!(events.iter().all(|event| event.run_id.as_str() == first_run_id));
-    assert_eq!(events.first().unwrap().run_id, events.last().unwrap().run_id);
+    assert!(events
+        .iter()
+        .all(|event| event.run_id.as_str() == first_run_id));
+    assert_eq!(
+        events.first().unwrap().run_id,
+        events.last().unwrap().run_id
+    );
 }
 
 #[tokio::test]
@@ -254,18 +273,37 @@ async fn tool_call_result_is_sent_to_next_llm_step_and_turn_completes() {
     let runtime = runtime(executor.clone(), true);
 
     runtime
-        .run_chat_request(ChatTurnRequest::new("conv-session-tool", "use tool", vec![]))
+        .run_chat_request(ChatTurnRequest::new(
+            "conv-session-tool",
+            "use tool",
+            vec![],
+        ))
         .await
         .unwrap();
 
     let events = runtime.recorded_events();
     let labels: Vec<_> = events.iter().map(|event| kind_label(&event.kind)).collect();
-    assert_eq!(labels.iter().filter(|label| **label == "ToolCallExecuting").count(), 1);
-    assert_eq!(labels.iter().filter(|label| **label == "ToolCallCompleted").count(), 1);
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|label| **label == "ToolCallExecuting")
+            .count(),
+        1
+    );
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|label| **label == "ToolCallCompleted")
+            .count(),
+        1
+    );
     assert!(index_of(&labels, "ToolCallExecuting") < index_of(&labels, "ToolCallCompleted"));
     assert!(events.iter().any(|event| matches!(
         event.kind,
-        RuntimeEventKind::TurnCompleted { outcome: ChatTurnOutcome::Success, .. }
+        RuntimeEventKind::TurnCompleted {
+            outcome: ChatTurnOutcome::Success,
+            ..
+        }
     )));
     assert!(labels.contains(&"StreamDone"));
     assert_eq!(labels.last(), Some(&"AgentIdle"));
@@ -292,7 +330,11 @@ async fn cancellation_exits_turn_without_hanging_and_emits_cancelled_completion(
         let runtime = runtime.clone();
         async move {
             runtime
-                .run_chat_request(ChatTurnRequest::new("conv-session-cancel", "cancel", vec![]))
+                .run_chat_request(ChatTurnRequest::new(
+                    "conv-session-cancel",
+                    "cancel",
+                    vec![],
+                ))
                 .await
         }
     });
@@ -310,9 +352,15 @@ async fn cancellation_exits_turn_without_hanging_and_emits_cancelled_completion(
     let events = runtime.recorded_events();
     assert!(events.iter().any(|event| matches!(
         event.kind,
-        RuntimeEventKind::TurnCompleted { outcome: ChatTurnOutcome::Cancelled, .. }
+        RuntimeEventKind::TurnCompleted {
+            outcome: ChatTurnOutcome::Cancelled,
+            ..
+        }
     )));
-    assert!(matches!(events.last().unwrap().kind, RuntimeEventKind::AgentIdle { .. }));
+    assert!(matches!(
+        events.last().unwrap().kind,
+        RuntimeEventKind::AgentIdle { .. }
+    ));
 }
 
 #[tokio::test]
@@ -359,5 +407,8 @@ async fn max_iterations_reached_ends_turn_after_configured_limit() {
             ..
         }
     )));
-    assert!(matches!(events.last().unwrap().kind, RuntimeEventKind::AgentIdle { .. }));
+    assert!(matches!(
+        events.last().unwrap().kind,
+        RuntimeEventKind::AgentIdle { .. }
+    ));
 }

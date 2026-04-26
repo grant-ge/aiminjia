@@ -90,6 +90,7 @@ pub fn build_iteration_context(
 /// - 当前工作目录 / 已授权目录
 /// - git 状态摘要（失败时静默跳过）
 /// - 操作系统平台
+/// - Runtime 工具绝对路径（可选）
 ///
 /// Contract:
 /// - `authorized = Some((root_path_str, display_name))` 表示用户已连接本地目录，且它是
@@ -102,6 +103,7 @@ pub fn build_iteration_context(
 pub async fn build_env_info(
     workspace_path: &std::path::PathBuf,
     authorized: Option<(&str, &str)>,
+    runtime_info: Option<&ManagedRuntimeEnvInfo>,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -148,7 +150,39 @@ pub async fn build_env_info(
     };
     parts.push(format!("Platform: {}", platform));
 
+    if let Some(runtime_info) = runtime_info {
+        parts.push(runtime_info.format_for_env_info());
+    }
+
     format!("\n\n[当前环境]\n{}", parts.join("\n"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedRuntimeEnvInfo {
+    pub runtime_root: std::path::PathBuf,
+    pub python_path: std::path::PathBuf,
+    pub node_path: std::path::PathBuf,
+    pub npm_path: std::path::PathBuf,
+    pub npx_path: std::path::PathBuf,
+    pub uv_path: std::path::PathBuf,
+    pub uvx_path: std::path::PathBuf,
+}
+
+impl ManagedRuntimeEnvInfo {
+    pub fn format_for_env_info(&self) -> String {
+        [
+            "Runtime: 已安装".to_string(),
+            format!("Runtime 当前目录: {}", self.runtime_root.display()),
+            format!("Python: {}", self.python_path.display()),
+            format!("Node: {}", self.node_path.display()),
+            format!("npm: {}", self.npm_path.display()),
+            format!("npx: {}", self.npx_path.display()),
+            format!("uv: {}", self.uv_path.display()),
+            format!("uvx: {}", self.uvx_path.display()),
+            "规则: 当用户要求运行 Python、Node、npm、npx、uv 或相关脚本时，默认使用以上 Runtime 绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。".to_string(),
+        ]
+        .join("\n")
+    }
 }
 
 #[cfg(test)]
@@ -237,6 +271,7 @@ mod tests {
         let result = build_env_info(
             &workspace_path,
             authorized.as_ref().map(|(p, n)| (p.as_str(), n.as_str())),
+            None,
         )
         .await;
         assert!(
@@ -254,7 +289,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_env_info_without_authorized_workspace() {
         let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
-        let result = build_env_info(&workspace_path, None).await;
+        let result = build_env_info(&workspace_path, None, None).await;
         assert!(
             result.contains("[当前环境]"),
             "must have env section header"
@@ -270,7 +305,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_env_info_platform_info() {
         let workspace_path = std::path::PathBuf::from("/tmp");
-        let result = build_env_info(&workspace_path, None).await;
+        let result = build_env_info(&workspace_path, None, None).await;
         let has_platform =
             result.contains("darwin") || result.contains("windows") || result.contains("linux");
         assert!(has_platform, "must include OS type, got: {}", result);
@@ -281,7 +316,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let workspace_path = temp_dir.path().to_path_buf();
 
-        let result = build_env_info(&workspace_path, None).await;
+        let result = build_env_info(&workspace_path, None, None).await;
 
         assert!(
             result.contains("[当前环境]"),
@@ -313,6 +348,7 @@ mod tests {
         let result = build_env_info(
             &workspace_path,
             Some((authorized_root.to_string_lossy().as_ref(), "授权目录")),
+            None,
         )
         .await;
 
@@ -330,4 +366,34 @@ mod tests {
             result
         );
     }
+
+    #[tokio::test]
+    async fn test_build_env_info_includes_runtime_paths_and_natural_language_rule() {
+        let workspace_path = std::path::PathBuf::from("/tmp/test-workspace");
+        let runtime_info = ManagedRuntimeEnvInfo {
+            runtime_root: "/cache/renlijia/current".into(),
+            python_path: "/cache/renlijia/python/bin/python3".into(),
+            node_path: "/cache/renlijia/node/bin/node".into(),
+            npm_path: "/cache/renlijia/node/bin/npm".into(),
+            npx_path: "/cache/renlijia/node/bin/npx".into(),
+            uv_path: "/cache/renlijia/uv/bin/uv".into(),
+            uvx_path: "/cache/renlijia/uv/bin/uvx".into(),
+        };
+
+        let result = build_env_info(&workspace_path, None, Some(&runtime_info)).await;
+
+        assert!(result.contains("Runtime: 已安装"));
+        assert!(result.contains("Runtime 当前目录: /cache/renlijia/current"));
+        assert!(result.contains("Python: /cache/renlijia/python/bin/python3"));
+        assert!(result.contains("Node: /cache/renlijia/node/bin/node"));
+        assert!(result.contains("npm: /cache/renlijia/node/bin/npm"));
+        assert!(result.contains("npx: /cache/renlijia/node/bin/npx"));
+        assert!(result.contains("uv: /cache/renlijia/uv/bin/uv"));
+        assert!(result.contains("uvx: /cache/renlijia/uv/bin/uvx"));
+        assert!(result.contains("当用户要求运行 Python、Node、npm、npx、uv 或相关脚本时"));
+        assert!(result.contains("默认使用以上 Runtime 绝对路径"));
+        assert!(result.contains("只有用户明确要求系统环境时"));
+        assert!(!result.contains("仁励家 Runtime"));
+    }
+
 }

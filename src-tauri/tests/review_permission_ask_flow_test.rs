@@ -26,7 +26,11 @@ use serde_json::{json, Value};
 
 fn make_turn(conversation_id: &str) -> TurnState {
     let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
-    TurnState::new(mapping, RunId::new("run-permission-ask-flow"), "hi".to_string())
+    TurnState::new(
+        mapping,
+        RunId::new("run-permission-ask-flow"),
+        "hi".to_string(),
+    )
 }
 
 async fn wait_for_pending_request(
@@ -204,11 +208,20 @@ async fn ask_event_contains_full_permission_information() {
     assert!(!pending.message.is_empty());
     assert!(pending.suggestions.contains(&"Allow once".to_string()));
     assert!(pending.suggestions.contains(&"Deny".to_string()));
-    assert!(pending.remember_options.contains(&PermissionDestination::Session));
-    assert!(pending.remember_options.contains(&PermissionDestination::Workspace));
-    assert!(pending.remember_options.contains(&PermissionDestination::User));
+    assert!(pending
+        .remember_options
+        .contains(&PermissionDestination::Session));
+    assert!(pending
+        .remember_options
+        .contains(&PermissionDestination::Workspace));
+    assert!(pending
+        .remember_options
+        .contains(&PermissionDestination::User));
     assert_eq!(pending.mode, PermissionMode::Default);
-    assert_eq!(pending.default_destination, Some(PermissionDestination::Session));
+    assert_eq!(
+        pending.default_destination,
+        Some(PermissionDestination::Session)
+    );
 
     let events = bus.recorded();
     let ask_event = events
@@ -312,7 +325,10 @@ async fn allow_resolution_replays_tool_and_returns_successful_tool_result_to_llm
         .iter()
         .find(|message| message.get("toolCallId").and_then(Value::as_str) == Some("tc-allow"))
         .expect("tool result should be sent to LLM");
-    assert!(tool_result["content"].as_str().unwrap_or_default().contains("执行完成"));
+    assert!(tool_result["content"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("执行完成"));
 }
 
 #[tokio::test]
@@ -372,7 +388,10 @@ async fn deny_resolution_returns_error_tool_result_and_turn_continues() {
                 && message.get("toolCallId").and_then(Value::as_str) == Some("tc-deny")
         })
         .expect("denied ask should produce tool result");
-    assert!(tool_result["content"].as_str().unwrap_or_default().contains("用户拒绝"));
+    assert!(tool_result["content"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("用户拒绝"));
 }
 
 #[tokio::test]
@@ -425,7 +444,10 @@ async fn cancel_resolution_is_treated_as_denied_tool_result_without_hanging() {
         RuntimeEventKind::ToolCallCompleted { tool_call_id, is_error: true, content, .. }
             if tool_call_id.as_str() == "tc-cancel" && !content.is_empty()
     )));
-    assert!(executor.all_messages().len() >= 2, "turn should continue after cancel");
+    assert!(
+        executor.all_messages().len() >= 2,
+        "turn should continue after cancel"
+    );
 }
 
 #[tokio::test]

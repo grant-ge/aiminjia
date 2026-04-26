@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 
+use crate::runtime::dependencies::{ManagedRuntimeResolver, WorkspaceDependencies};
 use crate::runtime::mcp::types::{McpServerConfig, McpToolDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +64,7 @@ struct StdioProcessIo {
 
 pub struct StdioMcpConnection {
     config: McpServerConfig,
+    runtime_resolver: Option<ManagedRuntimeResolver>,
     connected: AtomicBool,
     next_request_id: AtomicU64,
     io: Mutex<Option<StdioProcessIo>>,
@@ -70,9 +72,10 @@ pub struct StdioMcpConnection {
 }
 
 impl StdioMcpConnection {
-    pub fn new(config: McpServerConfig) -> Self {
+    pub fn new(config: McpServerConfig, runtime_resolver: Option<ManagedRuntimeResolver>) -> Self {
         Self {
             config,
+            runtime_resolver,
             connected: AtomicBool::new(false),
             next_request_id: AtomicU64::new(1),
             io: Mutex::new(None),
@@ -161,12 +164,15 @@ impl StdioMcpConnection {
         self.write_message(&notification).await
     }
 
-    fn parse_stdio_command(endpoint: &str) -> McpResult<(String, Vec<String>)> {
-        let parts: Vec<String> = endpoint
-            .split_whitespace()
-            .filter(|part| !part.is_empty())
-            .map(ToOwned::to_owned)
-            .collect();
+    fn parse_stdio_command(
+        endpoint: &str,
+        runtime_resolver: Option<&ManagedRuntimeResolver>,
+    ) -> McpResult<(String, Vec<String>)> {
+        let raw_parts = split_stdio_command(endpoint)?;
+        let mut parts = Vec::with_capacity(raw_parts.len());
+        for part in raw_parts {
+            parts.push(Self::resolve_stdio_placeholders(&part, runtime_resolver)?);
+        }
 
         if parts.is_empty() {
             return Err(McpError::ConnectionFailed(
@@ -177,9 +183,129 @@ impl StdioMcpConnection {
         Ok((parts[0].clone(), parts.into_iter().skip(1).collect()))
     }
 
+    fn resolve_stdio_placeholders(
+        token: &str,
+        runtime_resolver: Option<&ManagedRuntimeResolver>,
+    ) -> McpResult<String> {
+        let mut resolved = String::with_capacity(token.len());
+        let mut rest = token;
+
+        while let Some(start) = rest.find("${renlijia.") {
+            resolved.push_str(&rest[..start]);
+            let placeholder_start = &rest[start..];
+            let Some(end) = placeholder_start.find('}') else {
+                return Err(McpError::ConnectionFailed(format!(
+                    "invalid MCP stdio runtime placeholder: {placeholder_start}"
+                )));
+            };
+            let placeholder = &placeholder_start[..=end];
+            resolved.push_str(&Self::resolve_stdio_placeholder(
+                placeholder,
+                runtime_resolver,
+            )?);
+            rest = &placeholder_start[end + 1..];
+        }
+
+        resolved.push_str(rest);
+        Ok(resolved)
+    }
+
+    fn resolve_stdio_placeholder(
+        token: &str,
+        runtime_resolver: Option<&ManagedRuntimeResolver>,
+    ) -> McpResult<String> {
+        let Some(name) = token
+            .strip_prefix("${renlijia.")
+            .and_then(|rest| rest.strip_suffix('}'))
+        else {
+            return Err(McpError::ConnectionFailed(format!(
+                "invalid MCP stdio runtime placeholder: {token}"
+            )));
+        };
+
+        let resolver = runtime_resolver.ok_or_else(|| {
+            McpError::ConnectionFailed(format!(
+                "MCP stdio runtime placeholder {token} requires a RuntimeResolver"
+            ))
+        })?;
+        let deps = resolver
+            .workspace_dependencies()
+            .map_err(|err| McpError::ConnectionFailed(err.to_string()))?;
+
+        Self::dependency_path(name, &deps).ok_or_else(|| {
+            McpError::ConnectionFailed(format!("unknown MCP stdio runtime placeholder: {token}"))
+        })
+    }
+
+    fn dependency_path(name: &str, deps: &WorkspaceDependencies) -> Option<String> {
+        let path = match name {
+            "python" => &deps.python,
+            "node" => &deps.node,
+            "npm" => &deps.npm,
+            "npx" => &deps.npx,
+            "uv" => &deps.uv,
+            "uvx" => &deps.uvx,
+            _ => return None,
+        };
+        Some(path.to_string_lossy().into_owned())
+    }
+
     fn env_map(&self) -> HashMap<String, String> {
         self.config.env_vars.clone().unwrap_or_default()
     }
+
+    #[doc(hidden)]
+    pub fn resolved_stdio_command_for_test(&self) -> McpResult<(String, Vec<String>)> {
+        Self::parse_stdio_command(&self.config.endpoint, self.runtime_resolver.as_ref())
+    }
+}
+
+fn split_stdio_command(endpoint: &str) -> McpResult<Vec<String>> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
+
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut quote = Quote::None;
+    let mut chars = endpoint.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Quote::None, c) if c.is_whitespace() => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            (Quote::None, '\'') => quote = Quote::Single,
+            (Quote::None, '"') => quote = Quote::Double,
+            (Quote::Single, '\'') => quote = Quote::None,
+            (Quote::Double, '"') => quote = Quote::None,
+            (Quote::None | Quote::Double, '\\') => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                } else {
+                    current.push(ch);
+                }
+            }
+            (_, c) => current.push(c),
+        }
+    }
+
+    if quote != Quote::None {
+        return Err(McpError::ConnectionFailed(
+            "stdio endpoint command has an unterminated quote".to_string(),
+        ));
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    Ok(parts)
 }
 
 #[async_trait]
@@ -189,7 +315,8 @@ impl McpConnection for StdioMcpConnection {
             return Ok(());
         }
 
-        let (program, args) = Self::parse_stdio_command(&self.config.endpoint)?;
+        let (program, args) =
+            Self::parse_stdio_command(&self.config.endpoint, self.runtime_resolver.as_ref())?;
         let mut command = Command::new(program);
         command
             .args(args)
@@ -373,9 +500,15 @@ impl McpConnection for UnsupportedMcpConnection {
     }
 }
 
-pub fn build_mcp_connection(config: &McpServerConfig) -> McpResult<SharedMcpConnection> {
+pub fn build_mcp_connection(
+    config: &McpServerConfig,
+    runtime_resolver: Option<ManagedRuntimeResolver>,
+) -> McpResult<SharedMcpConnection> {
     match config.transport_type.as_str() {
-        "stdio" => Ok(Arc::new(StdioMcpConnection::new(config.clone()))),
+        "stdio" => Ok(Arc::new(StdioMcpConnection::new(
+            config.clone(),
+            runtime_resolver,
+        ))),
         _ => Ok(Arc::new(UnsupportedMcpConnection::new(config.clone()))),
     }
 }

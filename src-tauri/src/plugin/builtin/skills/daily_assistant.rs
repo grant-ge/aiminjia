@@ -21,7 +21,10 @@ pub struct DailyAssistantSkill {
 
 impl DailyAssistantSkill {
     fn fallback_allowed_tools() -> Vec<String> {
-        DAILY_ALLOWED_TOOLS.iter().map(|tool| tool.to_string()).collect()
+        DAILY_ALLOWED_TOOLS
+            .iter()
+            .map(|tool| tool.to_string())
+            .collect()
     }
 
     pub fn new(db: Arc<AppStorage>, auth_manager: Arc<AuthManager>) -> Self {

@@ -288,8 +288,7 @@ impl SiteMap {
         let dir = Self::cache_dir(data_root);
         std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
         let path = Self::file_path(data_root, &self.origin);
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("serialize: {}", e))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {}", e))?;
         std::fs::write(&path, json).map_err(|e| format!("write: {}", e))?;
         info!(
             "[SiteMap] Saved {} pages for {} → {:?}",

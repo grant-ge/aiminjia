@@ -1693,3 +1693,86 @@ export function saveProjectMemory(
 export function distillProjectMemory(workspacePath: string): Promise<number> {
   return invoke<number>('distill_project_memory', { workspacePath })
 }
+
+// ---------------------------------------------------------------------------
+// Runtime Commands
+// ---------------------------------------------------------------------------
+
+export interface RuntimeToolHealth {
+  version: string
+  path: string
+}
+
+export interface RuntimeHealth {
+  bundleVersion: string
+  node: RuntimeToolHealth | null
+  npm: RuntimeToolHealth | null
+  npx: RuntimeToolHealth | null
+  python: RuntimeToolHealth | null
+  uv: RuntimeToolHealth | null
+  uvx: RuntimeToolHealth | null
+}
+
+
+export type RuntimeOperationKind = 'ensure' | 'reinstall'
+export type RuntimeOperationPhase =
+  | 'manifest'
+  | 'download'
+  | 'checksum'
+  | 'extract'
+  | 'smokeTest'
+  | 'promote'
+  | 'health'
+export type RuntimeOperationStatus = 'started' | 'progress' | 'retrying' | 'completed' | 'failed' | 'cancelled'
+
+export interface RuntimeOperationProgressPayload {
+  operationId: string
+  kind: RuntimeOperationKind
+  phase: RuntimeOperationPhase
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+  percent?: number | null
+  attempt: number
+  maxAttempts: number
+  resumed: boolean
+  status: RuntimeOperationStatus
+  message?: string | null
+  error?: string | null
+}
+
+export interface RuntimeCleanupResult {
+  removedVersions: string[]
+  keptVersions: string[]
+}
+
+export const RUNTIME_OPERATION_PROGRESS = 'runtime:operation-progress'
+
+export async function onRuntimeOperationProgress(
+  handler: (payload: RuntimeOperationProgressPayload) => void,
+): Promise<() => void> {
+  const { listen } = await import('@tauri-apps/api/event')
+  return listen<RuntimeOperationProgressPayload>(RUNTIME_OPERATION_PROGRESS, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function getRuntimeHealth(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_get_health')
+}
+
+export function ensureRuntime(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_ensure')
+}
+
+export function reinstallRuntime(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_reinstall')
+}
+
+
+export function cancelRuntimeOperation(operationId: string): Promise<boolean> {
+  return invoke<boolean>('runtime_cancel_operation', { operationId })
+}
+
+export function cleanupOldRuntimeVersions(keepVersions: number): Promise<RuntimeCleanupResult> {
+  return invoke<RuntimeCleanupResult>('runtime_cleanup_old_versions', { keepVersions })
+}

@@ -163,8 +163,12 @@ mod tests {
             seen_mode: seen_mode.clone(),
         });
         let plugin_ctx = PluginContext {
-            storage: Arc::new(crate::storage::file_store::AppStorage::new(temp_dir.path()).unwrap()),
-            file_manager: Arc::new(crate::storage::file_manager::FileManager::new(temp_dir.path())),
+            storage: Arc::new(
+                crate::storage::file_store::AppStorage::new(temp_dir.path()).unwrap(),
+            ),
+            file_manager: Arc::new(crate::storage::file_manager::FileManager::new(
+                temp_dir.path(),
+            )),
             workspace_path: temp_dir.path().to_path_buf(),
             conversation_id: "conv-legacy-mode".to_string(),
             session_id: crate::runtime::ids::SessionId::new("conv-legacy-mode"),
@@ -192,6 +196,7 @@ mod tests {
             read_file_state: None,
             cancellation: None,
             permission_mode: PermissionMode::Default,
+            runtime_resolver: None,
         };
         let adapter = LegacyToolAdapter::from_plugin(plugin, plugin_ctx);
         let runtime_ctx =

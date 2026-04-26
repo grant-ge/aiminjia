@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::definition::ToolDefinition;
 use app_lib::runtime::tools::executor::{ToolError, ToolResult};
@@ -11,6 +10,7 @@ use app_lib::runtime::tools::permission::{
     PermissionDecision, PermissionPipeline, PermissionReason,
 };
 use app_lib::runtime::tools::{RuntimeTool, ToolDispatcher};
+use async_trait::async_trait;
 use serde_json::{json, Value};
 
 struct AlwaysDenyPipeline;
@@ -49,7 +49,9 @@ async fn review_mcp_tool_pipeline_deny_prevents_execute() {
     dispatcher.register(Arc::new(PanickingMcpTool));
 
     let ctx = ToolExecutionContext::for_test("conv", "run", "tc");
-    let result = dispatcher.dispatch("mcp__srv__panic_tool", json!({}), ctx).await;
+    let result = dispatcher
+        .dispatch("mcp__srv__panic_tool", json!({}), ctx)
+        .await;
 
     assert!(
         matches!(result, Err(ToolError::PermissionDenied(_))),

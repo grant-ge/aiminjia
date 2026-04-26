@@ -56,8 +56,14 @@ fn memory_save_rebuilds_memory_index_with_entry_link_and_description() {
         .unwrap();
 
     let index = std::fs::read_to_string(service.entrypoint_path()).unwrap();
-    assert!(index.contains("薪资分析偏好箱线图"), "MEMORY.md must contain entry name");
-    assert!(index.contains("用户偏好用箱线图展示薪资分布"), "MEMORY.md must contain entry description");
+    assert!(
+        index.contains("薪资分析偏好箱线图"),
+        "MEMORY.md must contain entry name"
+    );
+    assert!(
+        index.contains("用户偏好用箱线图展示薪资分布"),
+        "MEMORY.md must contain entry description"
+    );
 }
 
 // ── 意图 2：不同 workspace 的记忆互相隔离 ──────────────────────────────────
@@ -162,8 +168,14 @@ fn memory_load_context_falls_back_to_index_when_no_entries_match() {
 
     assert_eq!(ctx.recalled_entries.len(), 0);
     let rendered = ctx.render_for_prompt();
-    assert!(!rendered.contains("[相关记忆]"), "must not show recall block when no match");
-    assert!(rendered.contains("MEMORY.md"), "must fall back to index text");
+    assert!(
+        !rendered.contains("[相关记忆]"),
+        "must not show recall block when no match"
+    );
+    assert!(
+        rendered.contains("MEMORY.md"),
+        "must fall back to index text"
+    );
 }
 
 // ── 意图 4：legacy core memory 被懒迁移且迁移幂等 ─────────────────────────
@@ -186,7 +198,10 @@ fn memory_legacy_core_memory_is_lazily_migrated_on_first_load() {
         .memory_root()
         .join("entries")
         .join("legacy-core-memory.md");
-    assert!(legacy_entry.exists(), "legacy entry file must be created on first load");
+    assert!(
+        legacy_entry.exists(),
+        "legacy entry file must be created on first load"
+    );
 
     let content = std::fs::read_to_string(&legacy_entry).unwrap();
     assert!(content.contains("type: project_constraint"));
@@ -228,7 +243,11 @@ fn memory_legacy_migration_is_idempotent_on_repeated_load() {
         })
         .collect();
 
-    assert_eq!(legacy_entries.len(), 1, "legacy migration must only run once");
+    assert_eq!(
+        legacy_entries.len(),
+        1,
+        "legacy migration must only run once"
+    );
 }
 
 // ── 意图 5：distill_index 从现有 entry 文件重建 MEMORY.md ─────────────────
@@ -253,7 +272,11 @@ fn memory_distill_rebuilds_index_from_valid_entries_and_skips_corrupt_ones() {
     )
     .unwrap();
     // 损坏 entry（无 frontmatter）
-    std::fs::write(entries_dir.join("corrupt.md"), "这是没有 frontmatter 的内容\n").unwrap();
+    std::fs::write(
+        entries_dir.join("corrupt.md"),
+        "这是没有 frontmatter 的内容\n",
+    )
+    .unwrap();
     // 清空 MEMORY.md
     std::fs::write(service.entrypoint_path(), "").unwrap();
 
@@ -300,11 +323,21 @@ fn memory_saving_same_name_and_description_twice_overwrites_not_duplicates() {
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
         .collect();
 
-    assert_eq!(md_files.len(), 1, "same name+description must overwrite, not duplicate");
+    assert_eq!(
+        md_files.len(),
+        1,
+        "same name+description must overwrite, not duplicate"
+    );
 
     let content = std::fs::read_to_string(md_files[0].path()).unwrap();
-    assert!(content.contains("v2 内容"), "file must contain latest content");
-    assert!(!content.contains("v1 内容"), "file must not contain stale content");
+    assert!(
+        content.contains("v2 内容"),
+        "file must contain latest content"
+    );
+    assert!(
+        !content.contains("v1 内容"),
+        "file must not contain stale content"
+    );
 
     let index = std::fs::read_to_string(service.entrypoint_path()).unwrap();
     let count = index.matches("回复风格偏好").count();
@@ -319,10 +352,30 @@ fn memory_all_four_memory_types_persist_and_recall_correctly() {
     let service = make_service(dir.path());
 
     let cases = vec![
-        (ProjectMemoryType::UserPreference, "用户偏好记录", "user_preference", "偏好关键词unique1"),
-        (ProjectMemoryType::ProjectConstraint, "项目约束记录", "project_constraint", "约束关键词unique2"),
-        (ProjectMemoryType::ReferenceInfo, "参考信息记录", "reference_info", "参考关键词unique3"),
-        (ProjectMemoryType::Feedback, "反馈记录", "feedback", "反馈关键词unique4"),
+        (
+            ProjectMemoryType::UserPreference,
+            "用户偏好记录",
+            "user_preference",
+            "偏好关键词unique1",
+        ),
+        (
+            ProjectMemoryType::ProjectConstraint,
+            "项目约束记录",
+            "project_constraint",
+            "约束关键词unique2",
+        ),
+        (
+            ProjectMemoryType::ReferenceInfo,
+            "参考信息记录",
+            "reference_info",
+            "参考关键词unique3",
+        ),
+        (
+            ProjectMemoryType::Feedback,
+            "反馈记录",
+            "feedback",
+            "反馈关键词unique4",
+        ),
     ];
 
     for (memory_type, name, _type_str, keyword) in &cases {
@@ -339,7 +392,12 @@ fn memory_all_four_memory_types_persist_and_recall_correctly() {
 
     for (memory_type, name, type_str, keyword) in &cases {
         let ctx = service.load_context(keyword).unwrap();
-        assert_eq!(ctx.recalled_entries.len(), 1, "should recall exactly one entry for '{}'", keyword);
+        assert_eq!(
+            ctx.recalled_entries.len(),
+            1,
+            "should recall exactly one entry for '{}'",
+            keyword
+        );
         assert_eq!(&ctx.recalled_entries[0].name, name);
         assert_eq!(ctx.recalled_entries[0].memory_type, *memory_type);
 
@@ -421,7 +479,9 @@ fn memory_recall_is_capped_at_five_entries_and_prioritizes_higher_scoring_ones()
 
     assert_eq!(ctx.recalled_entries.len(), 5, "recall must be capped at 5");
     assert!(
-        ctx.recalled_entries.iter().any(|e| e.name == "高分薪资记忆"),
+        ctx.recalled_entries
+            .iter()
+            .any(|e| e.name == "高分薪资记忆"),
         "highest-scoring entry must be in results"
     );
 }
@@ -442,7 +502,11 @@ fn memory_corrupt_entries_are_silently_skipped_in_recall_and_index() {
     )
     .unwrap();
     // 无 frontmatter
-    std::fs::write(entries_dir.join("no-frontmatter.md"), "没有 frontmatter 的原始内容\n").unwrap();
+    std::fs::write(
+        entries_dir.join("no-frontmatter.md"),
+        "没有 frontmatter 的原始内容\n",
+    )
+    .unwrap();
     // 缺少 type
     std::fs::write(
         entries_dir.join("missing-type.md"),

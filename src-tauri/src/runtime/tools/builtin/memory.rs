@@ -59,8 +59,7 @@ impl RuntimeTool for WriteMemoryRuntimeTool {
         let description = required_str(&input, "description")?.to_string();
         let content = required_str(&input, "content")?.to_string();
 
-        let service =
-            ProjectMemoryService::new(&self.deps.app_data_dir, &self.deps.workspace_path);
+        let service = ProjectMemoryService::new(&self.deps.app_data_dir, &self.deps.workspace_path);
         let saved = service
             .save_memory(ProjectMemoryEntryDraft {
                 memory_type,
@@ -114,8 +113,7 @@ impl RuntimeTool for SearchMemoryRuntimeTool {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         let query = required_str(&input, "query")?;
-        let service =
-            ProjectMemoryService::new(&self.deps.app_data_dir, &self.deps.workspace_path);
+        let service = ProjectMemoryService::new(&self.deps.app_data_dir, &self.deps.workspace_path);
         let ctx = service
             .load_context(query)
             .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;

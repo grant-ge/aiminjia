@@ -1,6 +1,6 @@
 //! generate_slides handler — build PPTX presentations via python-pptx.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -12,6 +12,21 @@ use super::file_load::{get_pii_unmask_map, unmask_text};
 use super::optional_str;
 use super::util::{py_escape, slugify};
 use super::FileGenResult;
+
+fn managed_python_runner(ctx: &PluginContext) -> Result<PythonRunner> {
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+    Ok(PythonRunner::with_config_from_path(
+        deps.python,
+        None,
+        ctx.workspace_path.clone(),
+        sandbox,
+    ))
+}
 
 /// Generate a PPTX presentation using python-pptx.
 pub(crate) async fn handle_generate_slides(
@@ -32,23 +47,32 @@ pub(crate) async fn handle_generate_slides(
                 source_path, e
             )
         })?;
-        let workspace_canonical = ctx.workspace_path.canonicalize().unwrap_or_else(|_| ctx.workspace_path.clone());
+        let workspace_canonical = ctx
+            .workspace_path
+            .canonicalize()
+            .unwrap_or_else(|_| ctx.workspace_path.clone());
         if !canonical.starts_with(&workspace_canonical) {
             anyhow::bail!(
                 "Source file path '{}' is outside the workspace directory. Only files within the workspace are allowed.",
                 source_path
             );
         }
-        let content = std::fs::read_to_string(&canonical).map_err(|e| {
-            anyhow::anyhow!("Failed to read source file '{}': {}.", source_path, e)
-        })?;
+        let content = std::fs::read_to_string(&canonical)
+            .map_err(|e| anyhow::anyhow!("Failed to read source file '{}': {}.", source_path, e))?;
         slides_owned = serde_json::from_str::<Vec<Value>>(&content).map_err(|e| {
             anyhow::anyhow!("Failed to parse slides from '{}': {}. The file must contain a JSON array of slide objects.", source_path, e)
         })?;
         if slides_owned.is_empty() {
-            anyhow::bail!("Source file '{}' contains an empty slides array.", source_path);
+            anyhow::bail!(
+                "Source file '{}' contains an empty slides array.",
+                source_path
+            );
         }
-        log::info!("[generate_slides] Loaded {} slides from source file: {}", slides_owned.len(), source_path);
+        log::info!(
+            "[generate_slides] Loaded {} slides from source file: {}",
+            slides_owned.len(),
+            source_path
+        );
         &slides_owned
     } else {
         // Fallback: inline slides (LLM sometimes sends as JSON string too — auto-parse).
@@ -254,7 +278,7 @@ except Exception as exc:
 "#
     );
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     // Clean up temp JSON file if Python didn't (e.g., on error before os.remove)

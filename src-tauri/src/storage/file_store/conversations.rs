@@ -180,7 +180,11 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
 /// Retrieve all archived conversations, most recent first.
 pub fn get_archived_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value>> {
     let index = read_global_index(base_dir)?;
-    let mut entries: Vec<_> = index.conversations.into_iter().filter(|e| e.is_archived).collect();
+    let mut entries: Vec<_> = index
+        .conversations
+        .into_iter()
+        .filter(|e| e.is_archived)
+        .collect();
     entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     let result = entries
         .into_iter()

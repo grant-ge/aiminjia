@@ -119,14 +119,13 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
             .iter()
             .filter_map(|value| serde_json::from_value(value.clone()).ok())
             .collect();
-        let mut mask_ctx = MaskingContext::new(MaskingLevel::from_str_or_strict(input.masking_level));
+        let mut mask_ctx =
+            MaskingContext::new(MaskingLevel::from_str_or_strict(input.masking_level));
         let masked = mask_ctx.mask_messages(&chat_messages);
-        self.seen_masked_batches.lock().unwrap().push(
-            masked
-                .into_iter()
-                .map(|message| message.content)
-                .collect(),
-        );
+        self.seen_masked_batches
+            .lock()
+            .unwrap()
+            .push(masked.into_iter().map(|message| message.content).collect());
 
         Ok(self.responses.lock().unwrap().remove(0))
     }
@@ -305,10 +304,7 @@ async fn masking_level_workspace_setting_overrides_global_setting() {
         RuntimeEventBus::new(),
         executor.clone(),
     );
-    let (mut turn, request) = make_turn(
-        "conv-mask-workspace",
-        "保留身份证110108199001011234原文",
-    );
+    let (mut turn, request) = make_turn("conv-mask-workspace", "保留身份证110108199001011234原文");
 
     driver
         .run_chat_turn(&mut turn, &request)
@@ -402,10 +398,7 @@ async fn masking_level_snapshot_is_reused_across_multi_step_turn() {
         RuntimeEventBus::new(),
         executor.clone(),
     );
-    let (mut turn, request) = make_turn(
-        "conv-mask-loop",
-        "多轮里保持身份证110108199001011234原样",
-    );
+    let (mut turn, request) = make_turn("conv-mask-loop", "多轮里保持身份证110108199001011234原样");
 
     driver
         .run_chat_turn(&mut turn, &request)

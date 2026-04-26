@@ -111,6 +111,7 @@ fn make_ctx_with_file_ops(file_ops: Arc<dyn FileOperations>) -> ToolExecutionCon
         }),
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,
+        runtime_resolver: None,
         file_ops: Some(file_ops),
         read_file_state: None,
         file_reading_limits: None,
@@ -205,6 +206,7 @@ async fn load_file_runtime_tool_execute_errors_when_file_ops_is_none() {
         }),
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,
+        runtime_resolver: None,
         file_ops: None, // deliberately absent
         read_file_state: None,
         file_reading_limits: None,

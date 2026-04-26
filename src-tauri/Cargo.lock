@@ -85,6 +85,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dirs",
+ "flate2",
  "futures",
  "libc",
  "log",
@@ -96,6 +97,8 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -110,6 +113,7 @@ dependencies = [
  "toml 0.8.2",
  "url",
  "uuid",
+ "windows-sys 0.61.2",
  "zip 2.4.2",
 ]
 

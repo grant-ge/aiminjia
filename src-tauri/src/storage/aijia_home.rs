@@ -68,6 +68,12 @@ impl AiJiaHome {
         self.root.join("site-profiles")
     }
 
+    pub fn runtimes_dir(&self) -> PathBuf {
+        dirs::cache_dir()
+            .unwrap_or_else(|| self.root.join("cache"))
+            .join("renlijia-runtimes")
+    }
+
     pub fn drafts_dir(&self) -> PathBuf {
         self.skills_dir().join("_drafts")
     }
@@ -87,6 +93,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.screenshots_dir())?;
         std::fs::create_dir_all(self.crypto_dir())?;
         std::fs::create_dir_all(self.site_profiles_dir())?;
+        std::fs::create_dir_all(self.runtimes_dir())?;
         std::fs::create_dir_all(self.default_folder())?;
         Ok(())
     }
@@ -105,8 +112,16 @@ mod tests {
         assert_eq!(home.skills_dir(), tmp.path().join("skills"));
         assert_eq!(home.mcp_config_path(), tmp.path().join("mcp_servers.json"));
         assert_eq!(home.permissions_path(), tmp.path().join("permissions.json"));
-        assert_eq!(home.agent_invocations_path(), tmp.path().join("agent_invocations.json"));
+        assert_eq!(
+            home.agent_invocations_path(),
+            tmp.path().join("agent_invocations.json")
+        );
         assert_eq!(home.crypto_dir(), tmp.path().join("crypto"));
+        assert_eq!(
+            home.runtimes_dir().file_name().and_then(|name| name.to_str()),
+            Some("renlijia-runtimes")
+        );
+        assert!(!home.runtimes_dir().starts_with(tmp.path()));
     }
 
     #[test]
@@ -124,5 +139,6 @@ mod tests {
         assert!(home.screenshots_dir().exists());
         assert!(home.crypto_dir().exists());
         assert!(home.site_profiles_dir().exists());
+        assert!(home.runtimes_dir().exists());
     }
 }

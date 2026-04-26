@@ -50,11 +50,11 @@ pub mod slides_gen;
 pub mod web_search;
 // Skill-smith — conversational skill creation (Phase 11 M3.1)
 pub mod skill_smith_create_draft;
-pub mod skill_smith_write_file;
-pub mod skill_smith_validate;
 pub mod skill_smith_dry_run;
-pub mod skill_smith_install;
 pub mod skill_smith_export;
+pub mod skill_smith_install;
+pub mod skill_smith_validate;
+pub mod skill_smith_write_file;
 
 use crate::plugin::ToolRegistry;
 use std::sync::Arc;
@@ -91,8 +91,8 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     // ];
 
     // ── RuntimeTool 注册（正确路径，走 ToolDispatcher）─────────────────────
-    use crate::runtime::tools::builtin::bash::BashTool;
     use crate::runtime::tools::builtin::ask_user_question::AskUserQuestionRuntimeTool;
+    use crate::runtime::tools::builtin::bash::BashTool;
     use crate::runtime::tools::builtin::grep::GrepContentTool;
     use crate::runtime::tools::builtin::task_tools::{
         TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,

@@ -31,8 +31,13 @@ pub(crate) async fn handle_generate_report(
     ctx: &PluginContext,
     args: &Value,
 ) -> Result<FileGenResult> {
-    let (python_binary, python_home) =
-        crate::python::runner::resolve_python_path(ctx.app_handle.as_ref());
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let python_binary = deps.python;
+    let python_home = None;
     let capability = DefaultReportCapability {
         storage: ctx.storage.clone(),
         file_manager: ctx.file_manager.clone(),

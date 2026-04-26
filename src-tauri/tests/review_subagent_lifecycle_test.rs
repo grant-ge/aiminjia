@@ -1,10 +1,14 @@
-use app_lib::runtime::agent::{AgentRuntime, ResumeChildRunRequest, SpawnChildRunRequest};
 use app_lib::runtime::agent::subagent_transcript_store::SubagentTranscriptEntryRecord;
+use app_lib::runtime::agent::{AgentRuntime, ResumeChildRunRequest, SpawnChildRunRequest};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::ids::{RunId, SessionId};
 
-async fn spawn(runtime: &AgentRuntime, parent_run_id: &str, background: bool) -> app_lib::runtime::agent::ChildRunHandle {
+async fn spawn(
+    runtime: &AgentRuntime,
+    parent_run_id: &str,
+    background: bool,
+) -> app_lib::runtime::agent::ChildRunHandle {
     runtime
         .spawn_child_run(SpawnChildRunRequest {
             parent_run_id: RunId::new(parent_run_id),
@@ -44,7 +48,10 @@ async fn spawn_child_run_creates_running_child_with_independent_ids() {
     assert!(!handle.agent_id().as_str().is_empty());
     assert!(!handle.child_run_id().as_str().is_empty());
     assert_ne!(handle.child_run_id(), &parent_run_id);
-    assert_eq!(runtime.status(handle.child_run_id()).await.unwrap(), "running");
+    assert_eq!(
+        runtime.status(handle.child_run_id()).await.unwrap(),
+        "running"
+    );
 }
 
 #[tokio::test]
@@ -54,7 +61,10 @@ async fn complete_run_marks_child_status_completed() {
 
     runtime.complete_run(handle.child_run_id()).await.unwrap();
 
-    assert_eq!(runtime.status(handle.child_run_id()).await.unwrap(), "completed");
+    assert_eq!(
+        runtime.status(handle.child_run_id()).await.unwrap(),
+        "completed"
+    );
 }
 
 #[tokio::test]
@@ -62,9 +72,15 @@ async fn cancel_run_marks_child_status_cancelled() {
     let runtime = AgentRuntime::for_test();
     let handle = spawn(&runtime, "parent-cancel", false).await;
 
-    runtime.cancel_run(handle.child_run_id().clone()).await.unwrap();
+    runtime
+        .cancel_run(handle.child_run_id().clone())
+        .await
+        .unwrap();
 
-    assert_eq!(runtime.status(handle.child_run_id()).await.unwrap(), "cancelled");
+    assert_eq!(
+        runtime.status(handle.child_run_id()).await.unwrap(),
+        "cancelled"
+    );
 }
 
 #[tokio::test]
@@ -74,14 +90,20 @@ async fn fail_run_marks_child_status_failed() {
 
     runtime.fail_run(handle.child_run_id()).await.unwrap();
 
-    assert_eq!(runtime.status(handle.child_run_id()).await.unwrap(), "failed");
+    assert_eq!(
+        runtime.status(handle.child_run_id()).await.unwrap(),
+        "failed"
+    );
 }
 
 #[tokio::test]
 async fn missing_child_run_status_returns_missing() {
     let runtime = AgentRuntime::for_test();
 
-    assert_eq!(runtime.status(&RunId::new("nonexistent")).await.unwrap(), "missing");
+    assert_eq!(
+        runtime.status(&RunId::new("nonexistent")).await.unwrap(),
+        "missing"
+    );
 }
 
 #[tokio::test]
@@ -102,7 +124,10 @@ async fn completing_background_child_run_emits_agent_idle_event() {
         .await
         .unwrap();
 
-    assert_eq!(runtime.status(handle.child_run_id()).await.unwrap(), "completed");
+    assert_eq!(
+        runtime.status(handle.child_run_id()).await.unwrap(),
+        "completed"
+    );
     assert!(bus
         .recorded()
         .iter()
@@ -114,7 +139,9 @@ fn stored_transcript_can_be_loaded_by_transcript_ref() {
     let runtime = AgentRuntime::for_test();
     let entries = transcript_entries();
 
-    runtime.store_transcript("subagent://transcript-1", &entries).unwrap();
+    runtime
+        .store_transcript("subagent://transcript-1", &entries)
+        .unwrap();
     let loaded = runtime
         .transcript_store_get("subagent://transcript-1")
         .unwrap()
@@ -128,7 +155,9 @@ async fn child_run_can_resolve_transcript_ref_then_load_transcript() {
     let runtime = AgentRuntime::for_test();
     let handle = spawn(&runtime, "parent-transcript", true).await;
     let entries = transcript_entries();
-    runtime.store_transcript("subagent://transcript-child", &entries).unwrap();
+    runtime
+        .store_transcript("subagent://transcript-child", &entries)
+        .unwrap();
 
     runtime
         .complete_background_run(
@@ -143,10 +172,19 @@ async fn child_run_can_resolve_transcript_ref_then_load_transcript() {
         .unwrap();
 
     assert_eq!(
-        runtime.get_transcript_ref(handle.child_run_id()).await.unwrap(),
+        runtime
+            .get_transcript_ref(handle.child_run_id())
+            .await
+            .unwrap(),
         Some("subagent://transcript-child".to_string())
     );
-    assert_eq!(runtime.load_transcript(handle.child_run_id()).await.unwrap(), Some(entries));
+    assert_eq!(
+        runtime
+            .load_transcript(handle.child_run_id())
+            .await
+            .unwrap(),
+        Some(entries)
+    );
 }
 
 #[tokio::test]

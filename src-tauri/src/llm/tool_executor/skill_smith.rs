@@ -108,13 +108,12 @@ pub(crate) async fn handle_skill_smith_create_draft(
         }
     }
 
-    let app = ctx
-        .app_handle
-        .as_ref()
-        .ok_or_else(|| anyhow!("skill_smith tools require AppHandle (not available in sub-agent context)"))?;
-    let draft_id =
-        crate::commands::skill_smith::create_skill_draft(app.clone()).await
-            .map_err(|e| anyhow!("create_skill_draft failed: {}", e))?;
+    let app = ctx.app_handle.as_ref().ok_or_else(|| {
+        anyhow!("skill_smith tools require AppHandle (not available in sub-agent context)")
+    })?;
+    let draft_id = crate::commands::skill_smith::create_skill_draft(app.clone())
+        .await
+        .map_err(|e| anyhow!("create_skill_draft failed: {}", e))?;
 
     bind_draft(ctx, &draft_id)?;
 
@@ -231,10 +230,7 @@ pub(crate) async fn handle_skill_smith_install(
     args: &Value,
 ) -> Result<String> {
     let draft_id = resolve_draft_id(ctx, args)?;
-    let force = args
-        .get("force")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let app = ctx
         .app_handle
@@ -300,10 +296,7 @@ pub(crate) async fn handle_skill_smith_install(
 /// Package the active draft as a `.aijia-skill` zip at `output_dir`.
 /// Unlike install, the draft is preserved. If `output_dir` is not provided,
 /// defaults to `{workspace}/exports/`.
-pub(crate) async fn handle_skill_smith_export(
-    ctx: &PluginContext,
-    args: &Value,
-) -> Result<String> {
+pub(crate) async fn handle_skill_smith_export(ctx: &PluginContext, args: &Value) -> Result<String> {
     let draft_id = resolve_draft_id(ctx, args)?;
     let app = ctx
         .app_handle
@@ -369,7 +362,10 @@ mod tests {
         let ctx = create_test_context(db);
 
         bind_draft(&ctx, "abc123def456").unwrap();
-        assert_eq!(lookup_bound_draft(&ctx).unwrap().as_deref(), Some("abc123def456"));
+        assert_eq!(
+            lookup_bound_draft(&ctx).unwrap().as_deref(),
+            Some("abc123def456")
+        );
     }
 
     #[tokio::test]

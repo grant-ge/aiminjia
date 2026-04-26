@@ -20,6 +20,10 @@ use async_trait::async_trait;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
+use crate::runtime::dependencies::{
+    RuntimeDependencyError, RuntimeDependencyResult, RuntimeResolver, WorkspaceDependencies,
+};
+
 /// Storage-related capability subset exposed to runtime tools.
 ///
 /// Contains only the fields a tool legitimately needs for file I/O and
@@ -168,6 +172,8 @@ pub struct CapabilityContext {
     /// Set to true when a ConnectorEngine is active and ready.
     /// Kept as a plain bool to avoid importing ConnectorEngine into runtime/.
     pub browser_available: bool,
+    /// Runtime dependency resolver exposed as a narrow interface for tools.
+    pub runtime_resolver: Option<Arc<dyn RuntimeResolver>>,
     /// File loading operations accessor.
     ///
     /// When present, `LoadFileRuntimeTool` uses this instead of rebuilding a
@@ -190,6 +196,10 @@ impl std::fmt::Debug for CapabilityContext {
             .field("storage", &self.storage)
             .field("workspace_id", &self.workspace_id)
             .field("browser_available", &self.browser_available)
+            .field(
+                "runtime_resolver",
+                &self.runtime_resolver.as_ref().map(|_| "<RuntimeResolver>"),
+            )
             .field(
                 "file_ops",
                 &self.file_ops.as_ref().map(|f| format!("{:?}", f)),
@@ -221,6 +231,7 @@ impl CapabilityContext {
             }),
             workspace_id: Some(workspace_id.into()),
             browser_available: false,
+            runtime_resolver: None,
             file_ops: None,
             read_file_state: None,
             file_reading_limits: None,
@@ -232,6 +243,11 @@ impl CapabilityContext {
     /// Mark this context as having an active browser connector.
     pub fn with_browser(mut self) -> Self {
         self.browser_available = true;
+        self
+    }
+
+    pub fn with_runtime_resolver(mut self, runtime_resolver: Arc<dyn RuntimeResolver>) -> Self {
+        self.runtime_resolver = Some(runtime_resolver);
         self
     }
 
@@ -258,6 +274,17 @@ impl CapabilityContext {
     /// Returns true if a browser connector capability is active.
     pub fn has_browser_capability(&self) -> bool {
         self.browser_available
+    }
+
+    pub fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
+        self.runtime_resolver
+            .as_ref()
+            .ok_or_else(|| {
+                RuntimeDependencyError::ResolverUnavailable(
+                    "CapabilityContext has no RuntimeResolver".to_string(),
+                )
+            })?
+            .workspace_dependencies()
     }
 }
 

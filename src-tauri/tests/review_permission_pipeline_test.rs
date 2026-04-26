@@ -6,8 +6,8 @@ use app_lib::runtime::store::permission_store::{
 use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::definition::ToolDefinition;
 use app_lib::runtime::tools::permission::{
-    apply_permission_mode, CapabilityPermissionPipeline, PermissionDecision,
-    PermissionDestination, PermissionMode, PermissionPipeline, StorePolicyPipeline,
+    apply_permission_mode, CapabilityPermissionPipeline, PermissionDecision, PermissionDestination,
+    PermissionMode, PermissionPipeline, StorePolicyPipeline,
 };
 use app_lib::runtime::tools::ToolExecutionContext;
 use serde_json::json;
@@ -28,7 +28,10 @@ fn ctx_with_workspace(tmp: &TempDir) -> ToolExecutionContext {
 }
 
 fn assert_allow(decision: &PermissionDecision) {
-    assert!(matches!(decision, PermissionDecision::Allow { .. }), "expected Allow, got {decision:?}");
+    assert!(
+        matches!(decision, PermissionDecision::Allow { .. }),
+        "expected Allow, got {decision:?}"
+    );
 }
 
 fn deny_message(decision: &PermissionDecision) -> &str {
@@ -53,18 +56,32 @@ fn no_capability_scope_tool_is_allowed_with_or_without_capability_context() {
 #[test]
 fn workspace_write_tool_is_denied_without_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let result = pipeline.authorize(&def("file_write", &["workspace:write"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("file_write", &["workspace:write"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     let message = deny_message(&result);
-    assert!(message.contains("workspace"), "message should mention workspace: {message}");
-    assert!(message.contains("file_write"), "message should mention tool id: {message}");
+    assert!(
+        message.contains("workspace"),
+        "message should mention workspace: {message}"
+    );
+    assert!(
+        message.contains("file_write"),
+        "message should mention tool id: {message}"
+    );
 }
 
 #[test]
 fn workspace_write_tool_is_allowed_with_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
     let tmp = TempDir::new().expect("tempdir");
-    let result = pipeline.authorize(&def("file_write", &["workspace:write"]), &json!({}), &ctx_with_workspace(&tmp));
+    let result = pipeline.authorize(
+        &def("file_write", &["workspace:write"]),
+        &json!({}),
+        &ctx_with_workspace(&tmp),
+    );
 
     assert_allow(&result);
 }
@@ -72,26 +89,47 @@ fn workspace_write_tool_is_allowed_with_workspace_capability() {
 #[test]
 fn python_exec_scope_is_denied_without_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let result = pipeline.authorize(&def("execute_python", &["python:exec"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("execute_python", &["python:exec"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     let message = deny_message(&result);
-    assert!(message.contains("workspace"), "message should mention workspace: {message}");
+    assert!(
+        message.contains("workspace"),
+        "message should mention workspace: {message}"
+    );
 }
 
 #[test]
 fn browser_scope_is_denied_without_browser_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let result = pipeline.authorize(&def("browse_page", &["browser"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("browse_page", &["browser"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     let message = deny_message(&result);
-    assert!(message.contains("browser"), "message should mention browser: {message}");
-    assert!(message.contains("browse_page"), "message should mention tool id: {message}");
+    assert!(
+        message.contains("browser"),
+        "message should mention browser: {message}"
+    );
+    assert!(
+        message.contains("browse_page"),
+        "message should mention tool id: {message}"
+    );
 }
 
 #[test]
 fn network_scope_is_allowed_without_local_capability_context() {
     let pipeline = CapabilityPermissionPipeline;
-    let result = pipeline.authorize(&def("fetch_url", &["network"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("fetch_url", &["network"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     assert_allow(&result);
 }
@@ -99,17 +137,28 @@ fn network_scope_is_allowed_without_local_capability_context() {
 #[test]
 fn unknown_scope_is_denied_by_capability_pipeline_fail_closed() {
     let pipeline = CapabilityPermissionPipeline;
-    let result = pipeline.authorize(&def("custom_tool", &["custom:unknown"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("custom_tool", &["custom:unknown"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     let message = deny_message(&result);
-    assert!(message.contains("custom:unknown"), "message should mention unknown scope: {message}");
+    assert!(
+        message.contains("custom:unknown"),
+        "message should mention unknown scope: {message}"
+    );
 }
 
 #[test]
 fn mcp_scope_without_stored_policy_becomes_ask_in_store_policy_pipeline() {
     let store = Arc::new(PermissionStore::in_memory());
     let pipeline = StorePolicyPipeline::new(store);
-    let result = pipeline.authorize(&def("mcp__demo__action", &["mcp"]), &json!({}), &ctx_no_capability());
+    let result = pipeline.authorize(
+        &def("mcp__demo__action", &["mcp"]),
+        &json!({}),
+        &ctx_no_capability(),
+    );
 
     let PermissionDecision::Ask {
         message,
@@ -117,12 +166,19 @@ fn mcp_scope_without_stored_policy_becomes_ask_in_store_policy_pipeline() {
         remember_options,
         default_destination,
         ..
-    } = result else {
+    } = result
+    else {
         panic!("mcp scope without stored policy should Ask");
     };
 
-    assert!(message.contains("mcp__demo__action"), "message should mention tool id: {message}");
-    assert!(message.contains("external server") || message.contains("MCP"), "message should mention external server/MCP: {message}");
+    assert!(
+        message.contains("mcp__demo__action"),
+        "message should mention tool id: {message}"
+    );
+    assert!(
+        message.contains("external server") || message.contains("MCP"),
+        "message should mention external server/MCP: {message}"
+    );
     assert!(suggestions.contains(&"Allow once".to_string()));
     assert!(suggestions.contains(&"Deny".to_string()));
     assert!(remember_options.contains(&PermissionDestination::Session));
@@ -179,8 +235,14 @@ fn stored_deny_in_store_policy_pipeline_denies_without_asking() {
     );
 
     let message = deny_message(&result);
-    assert!(message.contains("mcp__demo__action"), "message should mention tool id: {message}");
-    assert!(message.contains("stored policy") || message.contains("denied by"), "message should mention stored denial: {message}");
+    assert!(
+        message.contains("mcp__demo__action"),
+        "message should mention tool id: {message}"
+    );
+    assert!(
+        message.contains("stored policy") || message.contains("denied by"),
+        "message should mention stored denial: {message}"
+    );
 }
 
 #[test]
@@ -195,8 +257,14 @@ fn dont_ask_mode_transforms_ask_into_deny_without_permission_prompt() {
 
     let transformed = apply_permission_mode(ask, "mcp__demo__action", PermissionMode::DontAsk);
     let message = deny_message(&transformed);
-    assert!(message.contains("dontAsk"), "message should mention dontAsk: {message}");
-    assert!(message.contains("requires permission"), "message should mention permission: {message}");
+    assert!(
+        message.contains("dontAsk"),
+        "message should mention dontAsk: {message}"
+    );
+    assert!(
+        message.contains("requires permission"),
+        "message should mention permission: {message}"
+    );
 }
 
 #[test]
@@ -211,6 +279,12 @@ fn plan_mode_transforms_ask_into_read_only_deny() {
 
     let transformed = apply_permission_mode(ask, "file_write", PermissionMode::Plan);
     let message = deny_message(&transformed);
-    assert!(message.contains("plan"), "message should mention plan mode: {message}");
-    assert!(message.contains("read-only"), "message should mention read-only: {message}");
+    assert!(
+        message.contains("plan"),
+        "message should mention plan mode: {message}"
+    );
+    assert!(
+        message.contains("read-only"),
+        "message should mention read-only: {message}"
+    );
 }

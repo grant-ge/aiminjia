@@ -15,7 +15,8 @@ use tempfile::TempDir;
 
 fn make_ctx_with_store(store: Arc<PermissionStore>, tmp: &TempDir) -> ToolExecutionContext {
     let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws");
-    let mut ctx = ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
+    let mut ctx =
+        ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
     ctx.permission_store = Some(store);
     ctx
 }

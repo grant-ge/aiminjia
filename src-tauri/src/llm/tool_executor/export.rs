@@ -13,6 +13,21 @@ use super::require_str;
 use super::util::{indent_python, py_escape};
 use super::FileGenResult;
 
+fn managed_python_runner(ctx: &PluginContext) -> Result<PythonRunner> {
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+    Ok(PythonRunner::with_config_from_path(
+        deps.python,
+        None,
+        ctx.workspace_path.clone(),
+        sandbox,
+    ))
+}
+
 /// 9. export_data — write data to CSV, Excel, or JSON.
 ///
 /// Two input modes:
@@ -102,7 +117,7 @@ pub(crate) async fn handle_export_data(ctx: &PluginContext, args: &Value) -> Res
         code
     };
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     // Clean up temp file if Python didn't

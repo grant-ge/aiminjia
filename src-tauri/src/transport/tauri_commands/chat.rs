@@ -167,11 +167,8 @@ pub fn build_history_from_compact_boundary(
             }
             "user" => {
                 let content_obj = msg.get("content")?;
-                let content_str = build_history_message_content(
-                    "user",
-                    content_obj,
-                    has_authorized_workspace,
-                )?;
+                let content_str =
+                    build_history_message_content("user", content_obj, has_authorized_workspace)?;
                 if content_str.trim().is_empty() {
                     return None;
                 }
@@ -366,6 +363,7 @@ struct TauriChatServices {
     app: tauri::AppHandle,
     skill_registry: Arc<SkillRegistry>,
     skill_sessions: Arc<SkillSessionStore>,
+    runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
 struct TauriLegacyTurnExecutor {
@@ -427,7 +425,6 @@ async fn persist_assistant_content_json(
         }
     }
 }
-
 
 #[async_trait]
 impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
@@ -963,7 +960,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let msg_id = uuid::Uuid::new_v4().to_string();
         log::info!(
             "[persist_iteration_assistant_message] Saving assistant[toolCalls] id={} conv={}",
-            msg_id, conversation_id
+            msg_id,
+            conversation_id
         );
         let stored = crate::storage::file_store::types::StoredMessage {
             id: msg_id,
@@ -1349,8 +1347,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .unwrap_or(true),
         );
 
-        let authorized_workspace =
-            chat_runtime_impl::load_authorized_workspace(&self.services.app, request.conversation_id.as_str());
+        let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
+            &self.services.app,
+            request.conversation_id.as_str(),
+        );
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
@@ -1419,7 +1419,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
-        use crate::runtime::chat::context_builder::build_env_info;
+        use crate::runtime::chat::context_builder::{build_env_info, ManagedRuntimeEnvInfo};
 
         let workspace_path = self.services.file_mgr.workspace_path().to_path_buf();
 
@@ -1435,7 +1435,26 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .as_ref()
             .map(|(p, n)| (p.as_str(), n.as_str()));
 
-        let env_info = build_env_info(&workspace_path, authorized_ref).await;
+        let runtime_info = match self.services.runtime_resolver.as_ref() {
+            Some(resolver) => match resolver.workspace_dependencies() {
+                Ok(deps) => Some(ManagedRuntimeEnvInfo {
+                    runtime_root: infer_runtime_root(&deps.python),
+                    python_path: deps.python.clone(),
+                    node_path: deps.node.clone(),
+                    npm_path: deps.npm.clone(),
+                    npx_path: deps.npx.clone(),
+                    uv_path: deps.uv.clone(),
+                    uvx_path: deps.uvx.clone(),
+                }),
+                Err(error) => {
+                    log::warn!("[get_env_info] managed runtime unavailable: {}", error);
+                    None
+                }
+            },
+            None => None,
+        };
+
+        let env_info = build_env_info(&workspace_path, authorized_ref, runtime_info.as_ref()).await;
 
         log::info!(
             "[get_env_info] conv={} workspace={} authorized={} env_info_len={}",
@@ -1487,7 +1506,9 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
-    use crate::plugin::skill_trait::{Skill, SkillState, StepAction, ToolFilter, WorkflowDefinition};
+    use crate::plugin::skill_trait::{
+        Skill, SkillState, StepAction, ToolFilter, WorkflowDefinition,
+    };
     use crate::runtime::store::MemoryStore;
     use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
@@ -1767,7 +1788,10 @@ mod tests {
         .await
         .expect("selected skill should resolve");
 
-        assert!(explicit, "selected_skill_id should mark this as explicit selection");
+        assert!(
+            explicit,
+            "selected_skill_id should mark this as explicit selection"
+        );
         assert_eq!(ctx.skill_id, "salary-query");
         assert!(
             ctx.system_prompt.starts_with("salary:"),
@@ -1783,13 +1807,7 @@ mod tests {
         );
 
         let restored = skill_sessions
-            .resolve_turn_context(
-                &registry,
-                &all_tools,
-                "c-selected-skill",
-                "继续",
-                false,
-            )
+            .resolve_turn_context(&registry, &all_tools, "c-selected-skill", "继续", false)
             .await
             .expect("explicit skill state should persist for following turns");
 
@@ -1819,7 +1837,10 @@ mod tests {
         .await
         .expect("all-tools selected skill should resolve");
 
-        assert!(explicit, "selected_skill_id should mark this as explicit selection");
+        assert!(
+            explicit,
+            "selected_skill_id should mark this as explicit selection"
+        );
         let allowed_tools = ctx
             .allowed_tools
             .as_ref()
@@ -2094,6 +2115,24 @@ pub struct TauriChatCommandAdapter {
     services: TauriChatServices,
 }
 
+fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
+    let mut root = std::path::PathBuf::new();
+    let mut components = path.components().peekable();
+    while let Some(component) = components.next() {
+        root.push(component.as_os_str());
+        if component.as_os_str() == "versions" {
+            if let Some(version) = components.next() {
+                root.push(version.as_os_str());
+                return root;
+            }
+        }
+    }
+    path.parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+
 impl TauriChatCommandAdapter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -2112,6 +2151,9 @@ impl TauriChatCommandAdapter {
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
             .map(|facade| facade.inner().clone_memory_store());
         let skill_sessions = build_skill_session_store(skill_session_memory_store);
+        let runtime_resolver = app
+            .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
+            .map(|resolver| resolver.inner().clone());
         let assistant_write_queue = Arc::new(MessageWriteQueue::new(db.clone()));
         let services = TauriChatServices {
             db,
@@ -2125,6 +2167,7 @@ impl TauriChatCommandAdapter {
             app,
             skill_registry,
             skill_sessions,
+            runtime_resolver,
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(TauriEventAdapter::new(host));
@@ -2141,7 +2184,8 @@ impl TauriChatCommandAdapter {
         // from within a runtime") because Tauri's setup closure already runs in tokio.
         let mut runtime = SessionRuntime::with_llm_executor(
             QueryEngine::new()
-                .with_workspace_path(services.file_mgr.workspace_path().to_path_buf()),
+                .with_workspace_path(services.file_mgr.workspace_path().to_path_buf())
+                .with_runtime_resolver(services.runtime_resolver.clone()),
             bus,
             llm_executor,
         )
@@ -2256,6 +2300,7 @@ impl TauriChatCommandAdapter {
             read_file_state: None,
             cancellation: None,
             permission_mode: request.permission_mode,
+            runtime_resolver: self.services.runtime_resolver.clone(),
         };
         let runtime_dispatcher = self
             .services
@@ -2264,18 +2309,17 @@ impl TauriChatCommandAdapter {
             .await;
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
-                .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf()),
+                .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
+                .with_runtime_resolver(self.services.runtime_resolver.clone()),
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;
 
         if result.is_ok() {
             // Quick synchronous guard: only attempt title generation when needed.
-            let needs_title = conversation_service::should_auto_title(
-                &*self.services.db,
-                &conversation_id,
-            )
-            .unwrap_or(false);
+            let needs_title =
+                conversation_service::should_auto_title(&*self.services.db, &conversation_id)
+                    .unwrap_or(false);
 
             if needs_title {
                 // Load settings with the correct conversation context so per-conversation
@@ -2520,10 +2564,7 @@ impl TauriChatCommandAdapter {
         Ok(())
     }
 
-    pub async fn archive_conversation(
-        &self,
-        conversation_id: String,
-    ) -> Result<(), String> {
+    pub async fn archive_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::archive_conversation(
             self.services.db.clone() as Arc<dyn ConversationStore>,
             conversation_id,
@@ -2533,7 +2574,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_archived_conversations(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db.clone() as Arc<dyn ConversationStore>
         )
         .await
     }
@@ -2547,7 +2588,8 @@ impl TauriChatCommandAdapter {
         // 没有绑定目录的对话不注入字段，前端视为"默认文件夹"。
         for conv in &mut convs {
             if let Some(id) = conv["id"].as_str() {
-                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id) {
+                if let Some(ws) = chat_runtime_impl::load_explicit_workspace(&self.services.app, id)
+                {
                     conv["workspaceName"] = serde_json::Value::String(ws.display_name);
                 }
             }
@@ -2575,7 +2617,7 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
         fire_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         let conversation_id = conversation_service::create_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db.clone() as Arc<dyn ConversationStore>
         )
         .await
         .map_err(anyhow::Error::msg)?;
@@ -2583,8 +2625,17 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
             "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
             schedule.title, fire_at, schedule.prompt
         );
-        self.send_message(conversation_id, prompt, Vec::new(), None, None, None, None, None)
-            .await
-            .map_err(anyhow::Error::msg)
+        self.send_message(
+            conversation_id,
+            prompt,
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(anyhow::Error::msg)
     }
 }

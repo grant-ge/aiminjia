@@ -1,6 +1,6 @@
 # AIjia — 代码仓库
 
-企业 AI 工作台 Tauri 2.x 桌面应用（React/TS 前端 + Rust 后端 + 捆绑 Python 3.12 数据分析运行时）。
+企业 AI 工作台 Tauri 2.x 桌面应用（React/TS 前端 + Rust 后端 + RuntimeManager 管理的本地运行环境）。
 
 产品名：**AIjia**（元数据/文件名）/ **AI小家**（UI 面向用户）。标识符：`com.aijia.app`。
 
@@ -16,11 +16,9 @@
 │   ├── Cargo.toml             # Rust crate + version
 │   ├── tauri.conf.json        # Tauri 配置 + version
 │   ├── Cargo.lock             # 锁文件 + aijia version
-│   ├── python-runtime ->      # 软链（不入库），指向 target/<arch>/release/python-runtime/
 │   ├── src/                   # Rust 源码
 │   └── tests/                 # 集成测试
 ├── scripts/
-│   ├── setup-python.sh/.ps1
 │   ├── setup-playwright.sh/.ps1
 │   ├── ci-upload-windows.py
 │   ├── ci-upload-macos.py
@@ -37,7 +35,6 @@
 
 ```bash
 pnpm install                 # 首次或依赖变更
-bash scripts/setup-python.sh # 首次：装本机 arch 的 bundled Python
 pnpm tauri:dev               # 启动 Tauri 开发模式（前端 + 后端热重载）
 pnpm dev                     # 仅启动前端 Vite 开发服务器
 ```

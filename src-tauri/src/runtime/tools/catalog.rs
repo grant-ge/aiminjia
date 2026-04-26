@@ -703,12 +703,9 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new(
-            "TaskList",
-            "列出当前 task list 的所有任务及阻塞状态。",
-        )
-        .with_kind(ToolKind::Support)
-        .with_read_only(true),
+        ToolDefinition::new("TaskList", "列出当前 task list 的所有任务及阻塞状态。")
+            .with_kind(ToolKind::Support)
+            .with_read_only(true),
         json!({
             "type": "object",
             "properties": {},

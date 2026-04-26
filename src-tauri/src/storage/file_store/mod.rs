@@ -157,7 +157,8 @@ impl AppStorage {
                 .unwrap_or(false);
 
             if has_shards && !has_new {
-                if let Err(err) = messages::migrate_shards_to_single_file(&self.base_dir, &conv_id) {
+                if let Err(err) = messages::migrate_shards_to_single_file(&self.base_dir, &conv_id)
+                {
                     warn!("[migration] shard->single failed for {}: {}", conv_id, err);
                 }
             }
@@ -199,13 +200,11 @@ impl AppStorage {
 
     pub fn archive_conversation(&self, id: &str) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
-        conversations::archive_conversation(&self.base_dir, id)
-            .map_err(|e| anyhow::anyhow!(e))
+        conversations::archive_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
     }
 
     pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
-        conversations::get_archived_conversations(&self.base_dir)
-            .map_err(|e| anyhow::anyhow!(e))
+        conversations::get_archived_conversations(&self.base_dir).map_err(|e| anyhow::anyhow!(e))
     }
 
     pub fn get_file_paths_for_conversation(&self, conversation_id: &str) -> Result<Vec<String>> {

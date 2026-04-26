@@ -22,6 +22,7 @@ use tokio::sync::Mutex;
 
 use crate::python::runner::ExecutionResult;
 use crate::python::sandbox::SandboxConfig;
+use crate::runtime::dependencies::{ManagedRuntimeResolver, RuntimeResolver};
 use crate::runtime::ids::RunId;
 
 /// Maximum number of concurrent Python sessions.
@@ -441,18 +442,62 @@ pub struct PythonSessionManager {
     workspace_path: PathBuf,
     python_binary: PathBuf,
     python_home: Option<PathBuf>,
+    runtime_resolver: Option<ManagedRuntimeResolver>,
 }
 
 impl PythonSessionManager {
     /// Create a new session manager.
     pub fn new(workspace_path: PathBuf, app_handle: Option<&tauri::AppHandle>) -> Self {
         let (python_binary, python_home) = super::runner::resolve_python_path(app_handle);
+        Self::with_runtime(workspace_path, python_binary, python_home)
+    }
+
+    pub fn with_runtime(
+        workspace_path: PathBuf,
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+    ) -> Self {
         Self {
             sessions: std::sync::Mutex::new(HashMap::new()),
             workspace_path,
             python_binary,
             python_home,
+            runtime_resolver: None,
         }
+    }
+
+    pub fn with_runtime_resolver(
+        workspace_path: PathBuf,
+        runtime_resolver: &dyn RuntimeResolver,
+    ) -> Result<Self> {
+        let deps = runtime_resolver
+            .workspace_dependencies()
+            .context("failed to resolve managed Python session runtime")?;
+        Ok(Self::with_runtime(workspace_path, deps.python, None))
+    }
+
+    pub fn with_lazy_runtime_resolver(
+        workspace_path: PathBuf,
+        runtime_resolver: ManagedRuntimeResolver,
+    ) -> Self {
+        let (python_binary, python_home) = super::runner::resolve_python_path(None);
+        Self {
+            sessions: std::sync::Mutex::new(HashMap::new()),
+            workspace_path,
+            python_binary,
+            python_home,
+            runtime_resolver: Some(runtime_resolver),
+        }
+    }
+
+    fn resolve_runtime(&self) -> Result<(PathBuf, Option<PathBuf>)> {
+        if let Some(runtime_resolver) = &self.runtime_resolver {
+            let deps = runtime_resolver
+                .workspace_dependencies()
+                .context("failed to resolve managed Python session runtime")?;
+            return Ok((deps.python, None));
+        }
+        Ok((self.python_binary.clone(), self.python_home.clone()))
     }
 
     /// Execute code in a persistent session for the given conversation.
@@ -649,12 +694,14 @@ impl PythonSessionManager {
             }
         }
 
-        // Spawn new session
+        // Spawn new session. Managed runtime is resolved lazily so app startup is not blocked
+        // by first-run runtime download/install.
+        let (python_binary, python_home) = self.resolve_runtime()?;
         let session = PythonSession::spawn(
             conversation_id,
             &self.workspace_path,
-            &self.python_binary,
-            self.python_home.as_ref(),
+            &python_binary,
+            python_home.as_ref(),
         )
         .await?;
 
@@ -673,11 +720,12 @@ impl PythonSessionManager {
             sessions.remove(conversation_id);
         }
         // Spawn fresh
+        let (python_binary, python_home) = self.resolve_runtime()?;
         let session = PythonSession::spawn(
             conversation_id,
             &self.workspace_path,
-            &self.python_binary,
-            self.python_home.as_ref(),
+            &python_binary,
+            python_home.as_ref(),
         )
         .await?;
         let session = Arc::new(session);

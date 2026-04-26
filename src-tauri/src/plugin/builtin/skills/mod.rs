@@ -23,7 +23,5 @@ pub async fn register_builtin_skills(
         )),
         None => Arc::new(daily_assistant::DailyAssistantSkill::new(db, auth_manager)),
     };
-    registry
-        .register(daily_assistant_skill, "builtin")
-        .await;
+    registry.register(daily_assistant_skill, "builtin").await;
 }

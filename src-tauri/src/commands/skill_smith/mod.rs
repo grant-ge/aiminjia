@@ -46,7 +46,9 @@ const MAX_PATH_DEPTH: usize = 5;
 /// True iff `s` is exactly 12 lowercase hexadecimal characters.
 /// Kept as a plain loop to avoid pulling in `regex` for one pattern.
 fn is_valid_draft_id(s: &str) -> bool {
-    s.len() == 12 && s.chars().all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
+    s.len() == 12
+        && s.chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
 }
 
 fn validate_draft_id(draft_id: &str) -> Result<(), String> {
@@ -313,11 +315,7 @@ pub async fn cleanup_expired_drafts(app: AppHandle) -> Result<usize, String> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn walk_draft_dir(
-    root: &Path,
-    current: &Path,
-    out: &mut Vec<DraftFile>,
-) -> Result<(), String> {
+fn walk_draft_dir(root: &Path, current: &Path, out: &mut Vec<DraftFile>) -> Result<(), String> {
     for entry in std::fs::read_dir(current).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -614,8 +612,8 @@ name = "Test Skill"
             plugins_dir
         );
 
-        let plugin_toml = std::fs::read_to_string(plugins_dir.join("plugin.toml"))
-            .expect("plugin.toml readable");
+        let plugin_toml =
+            std::fs::read_to_string(plugins_dir.join("plugin.toml")).expect("plugin.toml readable");
         let manifest = crate::plugin::manifest::parse_plugin_manifest(&plugin_toml)
             .expect("plugin.toml should parse");
         assert_eq!(manifest.plugin.id, "skill-smith");
@@ -650,7 +648,11 @@ name = "Test Skill"
         let json = serde_json::to_string(&f).unwrap();
         assert!(json.contains("\"relativePath\""), "got: {}", json);
         assert!(json.contains("\"modifiedTs\""), "got: {}", json);
-        assert!(!json.contains("relative_path"), "found snake_case: {}", json);
+        assert!(
+            !json.contains("relative_path"),
+            "found snake_case: {}",
+            json
+        );
         assert!(!json.contains("modified_ts"), "found snake_case: {}", json);
     }
 

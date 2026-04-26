@@ -6,6 +6,9 @@
 /// 2. ToolExecutionContext can carry an optional CapabilityContext.
 /// 3. LegacyToolAdapter continues to bridge legacy ToolPlugin via from_plugin,
 ///    proving no regression.
+use app_lib::runtime::dependencies::{
+    RuntimeDependencyError, StaticRuntimeResolver, WorkspaceDependencies,
+};
 use app_lib::runtime::tools::capability::{CapabilityContext, StorageCapability};
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
@@ -65,6 +68,7 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
         storage: Some(storage_cap),
         workspace_id: Some("ws-42".to_string()),
         browser_available: false,
+        runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
         file_reading_limits: None,
@@ -89,6 +93,7 @@ fn capability_context_does_not_expose_full_plugin_context() {
         storage: None,
         workspace_id: Some("ws-1".to_string()),
         browser_available: false,
+        runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
         file_reading_limits: None,
@@ -145,6 +150,7 @@ fn capability_context_new_fields_default_to_none() {
         storage: None,
         workspace_id: None,
         browser_available: false,
+        runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
         file_reading_limits: None,
@@ -430,6 +436,7 @@ fn notification_sink_receives_message_from_tool_context() {
         storage: None,
         workspace_id: None,
         browser_available: false,
+        runtime_resolver: None,
         file_ops: None,
         read_file_state: None,
         file_reading_limits: None,
@@ -442,4 +449,49 @@ fn notification_sink_receives_message_from_tool_context() {
     }
     let msgs = sink.0.lock().unwrap();
     assert_eq!(msgs.as_slice(), &["test notification"]);
+}
+
+#[test]
+fn capability_context_exposes_runtime_dependencies() {
+    let expected = WorkspaceDependencies {
+        python: "/tmp/runtime/python".into(),
+        node: "/tmp/runtime/node".into(),
+        npm: "/tmp/runtime/npm".into(),
+        npx: "/tmp/runtime/npx".into(),
+        uv: "/tmp/runtime/uv".into(),
+        uvx: "/tmp/runtime/uvx".into(),
+        node_modules: "/tmp/runtime/node_modules".into(),
+        python_site_packages: "/tmp/runtime/site-packages".into(),
+    };
+    let resolver = Arc::new(StaticRuntimeResolver::new(
+        expected.python.clone(),
+        expected.node.clone(),
+        expected.npm.clone(),
+        expected.npx.clone(),
+        expected.uv.clone(),
+        expected.uvx.clone(),
+        expected.node_modules.clone(),
+        expected.python_site_packages.clone(),
+    ));
+
+    let ctx = CapabilityContext::with_workspace("/tmp/workspace".into(), "ws")
+        .with_runtime_resolver(resolver);
+
+    let deps = ctx
+        .workspace_dependencies()
+        .expect("resolver should provide deps");
+    assert_eq!(deps, expected);
+    assert_eq!(deps.python, std::path::PathBuf::from("/tmp/runtime/python"));
+}
+
+#[test]
+fn capability_context_without_runtime_resolver_returns_clear_error() {
+    let ctx = CapabilityContext::with_workspace("/tmp/workspace".into(), "ws");
+    let err = ctx
+        .workspace_dependencies()
+        .expect_err("missing resolver should return an error");
+    assert!(matches!(
+        err,
+        RuntimeDependencyError::ResolverUnavailable(_)
+    ));
 }

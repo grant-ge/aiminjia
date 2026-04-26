@@ -10,6 +10,21 @@ use super::optional_f64;
 use super::util::{indent_python, py_escape};
 use super::{optional_str, require_str};
 
+fn managed_python_runner(ctx: &PluginContext) -> Result<PythonRunner> {
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+    Ok(PythonRunner::with_config_from_path(
+        deps.python,
+        None,
+        ctx.workspace_path.clone(),
+        sandbox,
+    ))
+}
+
 /// 6. hypothesis_test — run a statistical hypothesis test via Python.
 pub(crate) async fn handle_hypothesis_test(ctx: &PluginContext, args: &Value) -> Result<String> {
     let test_type = require_str(args, "test_type")?;
@@ -25,7 +40,7 @@ pub(crate) async fn handle_hypothesis_test(ctx: &PluginContext, args: &Value) ->
     let python_code =
         build_hypothesis_test_python(test_type, &group_names, data_source, significance_level)?;
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     if result.exit_code != 0 {
@@ -51,7 +66,7 @@ pub(crate) async fn handle_detect_anomalies(ctx: &PluginContext, args: &Value) -
 
     let python_code = build_anomaly_detection_python(column, method, threshold, group_by)?;
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     if result.exit_code != 0 {

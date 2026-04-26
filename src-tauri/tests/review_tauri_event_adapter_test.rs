@@ -114,7 +114,10 @@ fn permission_ask_required_maps_to_permission_ask_with_full_confirmation_payload
         message: "是否允许浏览网页？".to_string(),
         suggestions: vec!["允许一次".to_string(), "总是允许".to_string()],
         mode: PermissionMode::Default,
-        remember_options: vec![PermissionDestination::Session, PermissionDestination::Workspace],
+        remember_options: vec![
+            PermissionDestination::Session,
+            PermissionDestination::Workspace,
+        ],
         default_destination: Some(PermissionDestination::Session),
     });
 
@@ -125,7 +128,10 @@ fn permission_ask_required_maps_to_permission_ask_with_full_confirmation_payload
     assert_eq!(legacy.payload["suggestions"].as_array().unwrap().len(), 2);
     assert_eq!(legacy.payload["suggestions"][0], "允许一次");
     assert_eq!(legacy.payload["suggestions"][1], "总是允许");
-    assert_eq!(legacy.payload["rememberOptions"], json!(["session", "workspace"]));
+    assert_eq!(
+        legacy.payload["rememberOptions"],
+        json!(["session", "workspace"])
+    );
     assert_eq!(legacy.payload["defaultDestination"], "session");
     assert_eq!(legacy.payload["mode"], "default");
     assert_eq!(legacy.payload["conversationId"], "conv-123");
@@ -140,7 +146,10 @@ fn permission_ask_required_dont_ask_mode_maps_mode_as_dont_ask() {
         message: "是否允许浏览网页？".to_string(),
         suggestions: vec!["允许一次".to_string(), "总是允许".to_string()],
         mode: PermissionMode::DontAsk,
-        remember_options: vec![PermissionDestination::Session, PermissionDestination::Workspace],
+        remember_options: vec![
+            PermissionDestination::Session,
+            PermissionDestination::Workspace,
+        ],
         default_destination: Some(PermissionDestination::Session),
     });
 

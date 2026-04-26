@@ -383,9 +383,9 @@ pub fn process_alive(pid: u32) -> bool {
     // On Windows, we could use OpenProcess, but for simplicity assume dead
     // if we can't verify. This is safe because the worst case is re-acquiring
     // a lock that's actually still held, which the gateway prevents anyway.
-    use std::process::Command;
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
     let mut cmd = Command::new("tasklist");
     cmd.args(["/FI", &format!("PID eq {}", pid)]);
     #[cfg(target_os = "windows")]

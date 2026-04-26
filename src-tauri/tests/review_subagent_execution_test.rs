@@ -9,7 +9,9 @@ use app_lib::runtime::agent::subagent_transcript_store::SubagentTranscriptEntryR
 use app_lib::runtime::agent::AgentRuntime;
 use app_lib::runtime::cancellation::CancellationToken;
 use app_lib::runtime::tools::capability::{CapabilityContext, FileState, FileStateCache};
-use app_lib::runtime::tools::{RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use app_lib::runtime::tools::{
+    RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -77,7 +79,11 @@ impl RuntimeTool for CaptureSubagentContextTool {
     ) -> Result<ToolResult, ToolError> {
         self.seen.lock().unwrap().push(SeenSubagentContext {
             agent_id: ctx.agent_id.as_ref().map(|id| id.as_str().to_string()),
-            is_subagent: ctx.capability.as_ref().map(|cap| cap.is_subagent).unwrap_or(false),
+            is_subagent: ctx
+                .capability
+                .as_ref()
+                .map(|cap| cap.is_subagent)
+                .unwrap_or(false),
         });
         Ok(ToolResult::new("capture_subagent_context", "ok", None))
     }
@@ -88,10 +94,10 @@ async fn subagent_tool_context_marks_is_subagent_and_child_agent_id() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let tool = CaptureSubagentContextTool { seen: seen.clone() };
     let child_agent_id = app_lib::runtime::ids::AgentId::new("child-agent-123");
-    let cap = CapabilityContext::with_workspace(PathBuf::from("/tmp"), "ws-child")
-        .with_subagent(true);
-    let mut ctx = ToolExecutionContext::for_test("conv", "run", "tc")
-        .with_capability(Arc::new(cap));
+    let cap =
+        CapabilityContext::with_workspace(PathBuf::from("/tmp"), "ws-child").with_subagent(true);
+    let mut ctx =
+        ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
     ctx.agent_id = Some(child_agent_id.clone());
 
     tool.execute(serde_json::json!({}), ctx).await.unwrap();
@@ -118,7 +124,10 @@ fn worker_runtime_source_guards_iteration_limit_cancel_and_ask_bubbling_messages
 
 #[test]
 fn result_envelope_contains_output_iterations_files_and_transcript_snapshot() {
-    let mut generated_files = vec!["reports/result.md".to_string(), "reports/result.md".to_string()];
+    let mut generated_files = vec![
+        "reports/result.md".to_string(),
+        "reports/result.md".to_string(),
+    ];
     generated_files.sort();
     generated_files.dedup();
     let envelope = SubAgentResultEnvelope {
@@ -147,7 +156,11 @@ fn result_envelope_contains_output_iterations_files_and_transcript_snapshot() {
     assert_eq!(envelope.iterations_used, 2);
     assert_eq!(envelope.generated_files, vec!["reports/result.md"]);
     assert!(envelope.transcript_snapshot.len() <= 16);
-    assert!(envelope.transcript_ref.as_deref().unwrap().starts_with("subagent://"));
+    assert!(envelope
+        .transcript_ref
+        .as_deref()
+        .unwrap()
+        .starts_with("subagent://"));
 }
 
 #[test]
@@ -174,14 +187,39 @@ fn envelope_storage_summary_roundtrips_core_fields() {
 fn stored_full_transcript_entry_count_matches_message_rounds() {
     let runtime = AgentRuntime::for_test();
     let entries = vec![
-        SubagentTranscriptEntryRecord { role: "user".into(), content: "task".into(), tool_call_id: None, tool_name: None },
-        SubagentTranscriptEntryRecord { role: "assistant".into(), content: "calling tool".into(), tool_call_id: None, tool_name: None },
-        SubagentTranscriptEntryRecord { role: "tool".into(), content: "tool result".into(), tool_call_id: Some("tc-1".into()), tool_name: Some("dummy_tool".into()) },
-        SubagentTranscriptEntryRecord { role: "assistant".into(), content: "done".into(), tool_call_id: None, tool_name: None },
+        SubagentTranscriptEntryRecord {
+            role: "user".into(),
+            content: "task".into(),
+            tool_call_id: None,
+            tool_name: None,
+        },
+        SubagentTranscriptEntryRecord {
+            role: "assistant".into(),
+            content: "calling tool".into(),
+            tool_call_id: None,
+            tool_name: None,
+        },
+        SubagentTranscriptEntryRecord {
+            role: "tool".into(),
+            content: "tool result".into(),
+            tool_call_id: Some("tc-1".into()),
+            tool_name: Some("dummy_tool".into()),
+        },
+        SubagentTranscriptEntryRecord {
+            role: "assistant".into(),
+            content: "done".into(),
+            tool_call_id: None,
+            tool_name: None,
+        },
     ];
 
-    runtime.store_transcript("subagent://child-transcript", &entries).unwrap();
-    let loaded = runtime.transcript_store_get("subagent://child-transcript").unwrap().unwrap();
+    runtime
+        .store_transcript("subagent://child-transcript", &entries)
+        .unwrap();
+    let loaded = runtime
+        .transcript_store_get("subagent://child-transcript")
+        .unwrap()
+        .unwrap();
 
     assert_eq!(loaded.len(), 4);
     assert_eq!(loaded, entries);

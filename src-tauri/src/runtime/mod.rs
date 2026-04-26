@@ -2,6 +2,7 @@ pub mod agent;
 pub mod cancellation;
 pub mod chat;
 pub mod conversation_service;
+pub mod dependencies;
 pub mod event_bus;
 pub mod events;
 pub mod hooks;

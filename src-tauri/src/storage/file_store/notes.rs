@@ -296,6 +296,9 @@ mod tests {
         let deleted = delete_memories_by_prefix(&base, "note:c1:").unwrap();
 
         assert_eq!(deleted, 1);
-        assert_eq!(get_memory(&base, "note:c1:active_skill_state").unwrap(), None);
+        assert_eq!(
+            get_memory(&base, "note:c1:active_skill_state").unwrap(),
+            None
+        );
     }
 }

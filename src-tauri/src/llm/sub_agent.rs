@@ -38,6 +38,7 @@ pub struct SubAgentRuntimeDeps {
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
+    pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -75,6 +76,7 @@ impl SubAgentRuntimeDeps {
             read_file_state,
             cancellation,
             permission_mode: PermissionMode::Default,
+            runtime_resolver: self.runtime_resolver.clone(),
         }
     }
 }

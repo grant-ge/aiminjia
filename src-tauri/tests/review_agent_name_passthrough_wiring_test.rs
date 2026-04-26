@@ -3,7 +3,9 @@ fn review_commands_send_message_accepts_agent_name() {
     let source = include_str!("../src/commands/chat.rs");
     assert!(
         source.contains("agent_name: Option<String>")
-            && source.contains(".send_message(conversation_id, content, file_ids, permission_mode, agent_name)"),
+            && source.contains(
+                ".send_message(conversation_id, content, file_ids, permission_mode, agent_name)"
+            ),
         "commands/chat.rs send_message must accept agent_name and forward it to adapter"
     );
 }
