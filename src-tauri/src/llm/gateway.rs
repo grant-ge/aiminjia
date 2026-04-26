@@ -122,6 +122,17 @@ fn rand_jitter(max_ms: u64) -> u64 {
     nanos % max_ms
 }
 
+fn request_message_log_preview(message: &ChatMessage) -> String {
+    if message.role == "system" {
+        format!(
+            "[system prompt redacted; chars={}]",
+            message.content.chars().count()
+        )
+    } else {
+        message.content.chars().take(120).collect()
+    }
+}
+
 /// The central LLM gateway.
 ///
 /// Owns a reference to the database (for future audit logging) and tracks
@@ -302,7 +313,7 @@ impl LlmGateway {
             request.temperature,
         );
         for (i, m) in request.messages.iter().enumerate() {
-            let content_preview: String = m.content.chars().take(120).collect();
+            let content_preview = request_message_log_preview(m);
             let has_tc = m.tool_calls.as_ref().map_or(0, |v| v.len());
             let tc_id = m.tool_call_id.as_deref().unwrap_or("-");
             log::debug!(
@@ -745,6 +756,28 @@ mod tests {
             "invalid JSON in response"
         )));
         assert!(!is_retryable_error(&anyhow::anyhow!("unknown error")));
+    }
+
+    #[test]
+    fn request_message_log_preview_redacts_system_content() {
+        let message = ChatMessage::text("system", "SECRET_SYSTEM_PROMPT_CONTENT");
+
+        let preview = request_message_log_preview(&message);
+
+        assert!(!preview.contains("SECRET_SYSTEM_PROMPT_CONTENT"));
+        assert!(preview.contains("redacted"));
+        assert!(preview.contains("chars="));
+    }
+
+    #[test]
+    fn request_message_log_preview_keeps_user_content_preview() {
+        let content = format!("{}{}", "a".repeat(120), "SECRET_AFTER_LIMIT");
+        let message = ChatMessage::text("user", &content);
+
+        let preview = request_message_log_preview(&message);
+
+        assert_eq!(preview, "a".repeat(120));
+        assert!(!preview.contains("SECRET_AFTER_LIMIT"));
     }
 
     #[test]
