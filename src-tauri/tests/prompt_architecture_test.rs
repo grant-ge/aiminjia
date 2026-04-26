@@ -3,13 +3,15 @@ use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext};
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, LazyLock, Mutex,
 };
 
 use app_lib::runtime::chat::prompt::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionCache, PromptSectionId,
     PromptSectionSpec,
 };
+
+static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[test]
 fn prompt_assembly_keeps_static_blocks_before_dynamic_blocks() {
@@ -87,6 +89,7 @@ fn volatile_section_spec_requires_reason() {
 
 #[test]
 fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
+    let _guard = PROMPT_TEST_LOCK.lock().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let bundled = tmp.path().join("bundled");
     let user = tmp.path().join("user");
@@ -113,4 +116,47 @@ fn prompt_assembler_places_base_before_dynamic_daily_prompt() {
     assert!(blocks
         .iter()
         .any(|block| block.cache_policy == PromptCachePolicy::SessionDynamic));
+}
+
+#[test]
+fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exist() {
+    let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let bundled = tmp.path().join("bundled");
+    let user = tmp.path().join("user");
+    std::fs::create_dir_all(bundled.join("prompts")).unwrap();
+    std::fs::create_dir_all(&user).unwrap();
+    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
+    std::fs::write(
+        bundled.join("prompts/daily.md"),
+        "daily intro\n记忆管理（白名单制）\n- old memory hint\n- another old hint\n\n后续章节\nkeep this section",
+    )
+    .unwrap();
+    std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
+    prompts::init_prompts(&bundled, &user);
+
+    let persona = app_lib::storage::file_store::persona::Persona {
+        id: "persona".to_string(),
+        version: 1,
+        builtin: false,
+        name: "Persona".to_string(),
+        icon: "P".to_string(),
+        description: "desc".to_string(),
+        name_en: String::new(),
+        description_en: String::new(),
+        identity: "persona identity".to_string(),
+        expertise: vec![],
+        memory_hints: vec!["new memory hint".to_string()],
+        linked_categories: vec![],
+        created_at: "2026-01-01".to_string(),
+        updated_at: "2026-01-01".to_string(),
+    };
+
+    let parts = prompts::build_system_prompt_parts(PromptMode::Daily, Some(&persona), None);
+
+    assert!(parts.dynamic_section.contains("daily intro"));
+    assert!(parts.dynamic_section.contains("new memory hint"));
+    assert!(!parts.dynamic_section.contains("old memory hint"));
+    assert!(parts.dynamic_section.contains("后续章节"));
+    assert!(parts.dynamic_section.contains("keep this section"));
 }

@@ -47,23 +47,23 @@ pub struct PromptAssembler;
 
 impl PromptAssembler {
     pub fn build_system_prompt(&self, ctx: PromptBuildContext<'_>) -> PromptAssembly {
-        let base_raw = prompts::get_prompt_fragment("base");
+        let fragments = prompts::get_prompt_fragment_snapshot();
         let base = match ctx.product_name {
             Some(name) if !name.is_empty() && name != "AI小家" => {
-                base_raw.replace("AI小家", name)
+                fragments.base.replace("AI小家", name)
             }
-            _ => base_raw,
+            _ => fragments.base,
         };
 
         let mut blocks = vec![
             PromptBlock::static_block(PromptSectionId::new("base"), base),
             PromptBlock::static_block(
                 PromptSectionId::new("tool_preference"),
-                prompts::tool_preference_section(),
+                fragments.tool_preference,
             ),
             PromptBlock::static_block(
                 PromptSectionId::new("memory_mechanics"),
-                prompts::memory_mechanics_section(),
+                fragments.memory_mechanics,
             ),
         ];
 
@@ -79,7 +79,7 @@ impl PromptAssembler {
 
         match ctx.mode {
             PromptMode::Daily => {
-                let daily = prompts::get_prompt_fragment("daily");
+                let daily = fragments.daily;
                 if !daily.trim().is_empty() {
                     let has_persona_memory =
                         ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
@@ -97,7 +97,7 @@ impl PromptAssembler {
                 }
             }
             PromptMode::BrowserAgent => {
-                let browser = prompts::get_prompt_fragment("browser_agent");
+                let browser = fragments.browser_agent;
                 if !browser.trim().is_empty() {
                     blocks.push(PromptBlock::dynamic_block(
                         PromptSectionId::new("browser_agent"),

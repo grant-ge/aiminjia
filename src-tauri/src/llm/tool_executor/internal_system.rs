@@ -141,6 +141,20 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
     }
 }
 
+fn build_browser_agent_system_prompt() -> String {
+    let parts = crate::llm::prompts::build_system_prompt_parts(
+        crate::llm::prompts::PromptMode::BrowserAgent,
+        None,
+        None,
+    );
+
+    if parts.dynamic_section.is_empty() {
+        parts.static_section
+    } else {
+        format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
+    }
+}
+
 async fn launch_browse_data_with_runtime_deps(
     ctx: &RequestScopedRuntimeDeps,
     request: BrowseDataLaunchRequest,
@@ -166,20 +180,20 @@ async fn launch_browse_data_with_runtime_deps(
 
     info!("[CONNECTOR] browse_data: task='{}', url={:?}", task, url);
 
-    // Load browser_agent prompt
-    let loaded_prompt = crate::llm::prompts::get_browser_agent_prompt();
+    // Load the BrowserAgent system prompt through the shared prompt assembler.
+    let assembled_prompt = build_browser_agent_system_prompt();
     info!(
         "[CONNECTOR] browser_agent prompt: {} chars, starts_with='{}'",
-        loaded_prompt.len(),
-        loaded_prompt.chars().take(60).collect::<String>()
+        assembled_prompt.len(),
+        assembled_prompt.chars().take(60).collect::<String>()
     );
-    let system_prompt = if loaded_prompt.len() > 50 {
-        loaded_prompt
+    let system_prompt = if assembled_prompt.len() > 50 {
+        assembled_prompt
     } else {
         // Fallback: inline prompt (in case file loading fails)
         warn!(
             "[CONNECTOR] browser_agent prompt NOT loaded (got {} chars), using inline fallback",
-            loaded_prompt.len()
+            assembled_prompt.len()
         );
         r#"你是数据提取专家。从内部业务系统中提取用户需要的数据。
 
@@ -1448,5 +1462,37 @@ pub(crate) async fn handle_browse_and_extract(ctx: &PluginContext, args: &Value)
         }
 
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::*;
+    use crate::llm::prompts::{self, PromptMode};
+
+    #[test]
+    fn browser_agent_system_prompt_uses_browser_mode_assembly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        std::fs::create_dir_all(bundled.join("prompts")).unwrap();
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
+        std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+        std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
+        prompts::init_prompts(&bundled, &user);
+
+        let prompt = build_browser_agent_system_prompt();
+
+        assert!(prompt.contains("AI小家 base"));
+        assert!(prompt.contains("工具选择偏好"));
+        assert!(prompt.contains("记忆管理"));
+        assert!(prompt.contains("browser prompt"));
+        assert!(!prompt.contains("daily prompt"));
+        let parts = prompts::build_system_prompt_parts(PromptMode::BrowserAgent, None, None);
+        assert_eq!(
+            prompt,
+            format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
+        );
     }
 }

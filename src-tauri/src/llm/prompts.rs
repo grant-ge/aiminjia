@@ -84,6 +84,16 @@ pub struct SystemPromptParts {
     pub dynamic_section: String,
 }
 
+/// Raw prompt fragments captured under one PromptStore read lock.
+#[derive(Debug, Clone)]
+pub struct PromptFragmentSnapshot {
+    pub base: String,
+    pub daily: String,
+    pub browser_agent: String,
+    pub tool_preference: String,
+    pub memory_mechanics: String,
+}
+
 /// Source from which a prompt was loaded (for logging).
 #[derive(Debug, Clone, Copy)]
 enum PromptSource {
@@ -242,6 +252,18 @@ pub fn get_prompt_fragment(name: &str) -> String {
     guard.get(name).to_string()
 }
 
+/// Get all raw fragments needed for system prompt assembly in a single snapshot.
+pub fn get_prompt_fragment_snapshot() -> PromptFragmentSnapshot {
+    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+    PromptFragmentSnapshot {
+        base: guard.get("base").to_string(),
+        daily: guard.get("daily").to_string(),
+        browser_agent: guard.get("browser_agent").to_string(),
+        tool_preference: TOOL_PREFERENCE_SECTION.to_string(),
+        memory_mechanics: MEMORY_MECHANICS_SECTION.to_string(),
+    }
+}
+
 /// Get the static tool preference guidance section.
 pub fn tool_preference_section() -> &'static str {
     TOOL_PREFERENCE_SECTION
@@ -252,10 +274,14 @@ pub fn memory_mechanics_section() -> &'static str {
     MEMORY_MECHANICS_SECTION
 }
 
-/// Get the browser agent prompt (for SubAgent).
+/// Get the raw browser agent prompt fragment.
+pub fn get_browser_agent_prompt_fragment() -> String {
+    get_prompt_fragment("browser_agent")
+}
+
+/// Get the raw browser agent prompt fragment (legacy accessor).
 pub fn get_browser_agent_prompt() -> String {
-    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
-    guard.get("browser_agent").to_string()
+    get_browser_agent_prompt_fragment()
 }
 
 /// 构建分层 system prompt（section 化版本）。
