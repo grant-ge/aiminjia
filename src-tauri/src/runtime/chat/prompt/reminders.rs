@@ -19,8 +19,12 @@ impl ReminderBuilder {
         if body.trim().is_empty() {
             return None;
         }
-        Some(Self::system_reminder_user_message(format!(
-            "# {title}\n\n{body}"
-        )))
+        Some(serde_json::json!({
+            "role": "user",
+            "isMeta": true,
+            "content": format!(
+                "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# {title}\n{body}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
+            ),
+        }))
     }
 }

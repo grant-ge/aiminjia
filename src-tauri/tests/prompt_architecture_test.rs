@@ -165,9 +165,28 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
 fn reminder_builder_outputs_system_reminder_user_message() {
     let message = ReminderBuilder::date_message("2026年04月26日", "2026-04-26");
 
+    assert_eq!(
+        message,
+        serde_json::json!({
+            "role": "user",
+            "content": "<system-reminder>\n今天是 2026年04月26日（2026-04-26）。\n</system-reminder>",
+        })
+    );
+}
+
+#[test]
+fn reminder_builder_context_message_preserves_legacy_meta_contract() {
+    let message = ReminderBuilder::context_message("renlijiaMd", "- file.md: 摘要").unwrap();
+
     assert_eq!(message["role"], "user");
-    let content = message["content"].as_str().unwrap();
-    assert!(content.starts_with("<system-reminder>"));
-    assert!(content.contains("今天是 2026年04月26日（2026-04-26）。"));
-    assert!(content.ends_with("</system-reminder>"));
+    assert_eq!(message["isMeta"], true);
+    assert_eq!(
+        message["content"],
+        "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# renlijiaMd\n- file.md: 摘要\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
+    );
+}
+
+#[test]
+fn reminder_builder_context_message_omits_blank_body() {
+    assert!(ReminderBuilder::context_message("renlijiaMd", "  \n\t").is_none());
 }
