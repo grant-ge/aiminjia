@@ -81,10 +81,19 @@ impl PromptAssembler {
             PromptMode::Daily => {
                 let daily = prompts::get_prompt_fragment("daily");
                 if !daily.trim().is_empty() {
-                    blocks.push(PromptBlock::dynamic_block(
-                        PromptSectionId::new("daily"),
-                        daily,
-                    ));
+                    let has_persona_memory =
+                        ctx.persona.is_some_and(|p| !p.memory_hints.is_empty());
+                    let daily = if has_persona_memory {
+                        strip_memory_section(&daily)
+                    } else {
+                        daily
+                    };
+                    if !daily.trim().is_empty() {
+                        blocks.push(PromptBlock::dynamic_block(
+                            PromptSectionId::new("daily"),
+                            daily,
+                        ));
+                    }
                 }
             }
             PromptMode::BrowserAgent => {
@@ -120,4 +129,28 @@ fn render_persona_section(persona: &crate::storage::file_store::persona::Persona
         parts.push(format!("【记忆管理（白名单制）】\n{hints}"));
     }
     parts.join("\n\n")
+}
+
+fn strip_memory_section(prompt: &str) -> String {
+    let mut result = Vec::new();
+    let mut skip = false;
+
+    for line in prompt.lines() {
+        if line.contains("记忆管理") && line.contains("白名单") {
+            skip = true;
+            continue;
+        }
+
+        if skip {
+            if !line.trim().is_empty() && !line.trim().starts_with("- ") {
+                skip = false;
+            } else {
+                continue;
+            }
+        }
+
+        result.push(line);
+    }
+
+    result.join("\n")
 }

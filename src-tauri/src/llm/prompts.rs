@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, RwLock};
 
+use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, PromptCachePolicy};
+
 /// Minimal hardcoded fallback for `base` — used only when both
 /// override and bundled files are missing.
 const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
@@ -270,72 +272,31 @@ pub fn build_system_prompt_parts(
     persona: Option<&crate::storage::file_store::persona::Persona>,
     product_name: Option<&str>,
 ) -> SystemPromptParts {
-    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+    let assembly = PromptAssembler::default().build_system_prompt(PromptBuildContext {
+        mode,
+        persona,
+        product_name,
+    });
 
-    // ── static_section: base.md + 品牌替换 + 工具偏好 ───────────────
-    let base_raw = guard.get("base");
-    let base = match product_name {
-        Some(name) if !name.is_empty() && name != "AI小家" => base_raw.replace("AI小家", name),
-        _ => base_raw.to_string(),
-    };
-    let static_section = format!(
-        "{}{}{}",
-        base, TOOL_PREFERENCE_SECTION, MEMORY_MECHANICS_SECTION
-    );
+    let mut static_parts = Vec::new();
+    let mut dynamic_parts = Vec::new();
 
-    // ── dynamic_section: persona + mode prompt ───────────────────────
-    let mut dynamic_parts: Vec<String> = Vec::new();
+    for block in assembly.blocks() {
+        if block.text.trim().is_empty() {
+            continue;
+        }
 
-    // Daily 和 BrowserAgent 模式注入 persona
-    if matches!(mode, PromptMode::Daily | PromptMode::BrowserAgent) {
-        if let Some(p) = persona {
-            if !p.identity.is_empty() {
-                dynamic_parts.push(format!("【角色设定】{}", p.identity));
-            }
-            if !p.expertise.is_empty() {
-                dynamic_parts.push(format!("【专业领域】{}", p.expertise.join("、")));
-            }
-            if !p.memory_hints.is_empty() {
-                let hints = p
-                    .memory_hints
-                    .iter()
-                    .map(|h| format!("- {}", h))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                dynamic_parts.push(format!("【记忆管理（白名单制）】\n{}", hints));
+        match block.cache_policy {
+            PromptCachePolicy::StaticPrefix => static_parts.push(block.text.clone()),
+            PromptCachePolicy::SessionDynamic | PromptCachePolicy::Volatile => {
+                dynamic_parts.push(block.text.clone())
             }
         }
     }
-
-    // Mode-specific prompt
-    match mode {
-        PromptMode::Daily => {
-            let daily = guard.get("daily");
-            if !daily.is_empty() {
-                let has_persona_memory = persona.map_or(false, |p| !p.memory_hints.is_empty());
-                let final_daily = if has_persona_memory {
-                    strip_memory_section(daily)
-                } else {
-                    daily.to_string()
-                };
-                if !final_daily.trim().is_empty() {
-                    dynamic_parts.push(final_daily);
-                }
-            }
-        }
-        PromptMode::BrowserAgent => {
-            let browser = guard.get("browser_agent");
-            if !browser.is_empty() {
-                dynamic_parts.push(browser.to_string());
-            }
-        }
-    }
-
-    let dynamic_section = dynamic_parts.join("\n\n");
 
     SystemPromptParts {
-        static_section,
-        dynamic_section,
+        static_section: static_parts.join("\n\n"),
+        dynamic_section: dynamic_parts.join("\n\n"),
     }
 }
 
@@ -356,34 +317,6 @@ pub fn get_system_prompt(
     } else {
         format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
     }
-}
-
-/// Strip the "记忆管理" section from a mode prompt (daily.md).
-/// Removes everything from "记忆管理" header to the end of the memory list.
-fn strip_memory_section(prompt: &str) -> String {
-    let mut result = Vec::new();
-    let mut skip = false;
-
-    for line in prompt.lines() {
-        // Start skipping when we hit the memory management header
-        if line.contains("记忆管理") && line.contains("白名单") {
-            skip = true;
-            continue;
-        }
-
-        if skip {
-            // Stop skipping when we hit a non-list, non-blank line
-            if !line.trim().is_empty() && !line.trim().starts_with("- ") {
-                skip = false;
-            } else {
-                continue;
-            }
-        }
-
-        result.push(line);
-    }
-
-    result.join("\n")
 }
 
 #[cfg(test)]
