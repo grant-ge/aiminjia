@@ -446,6 +446,16 @@ sequenceDiagram
 
 所以模型配置、prompt 组装和会话历史是解耦的。
 
+### 4. Prompt 架构对标边界
+
+`claude-code-best` 的 prompt 组装是 structured system blocks / reminders / tool schema 分层：稳定系统前缀、会话动态段、易变化上下文、自动注入的 reminder，以及 provider 侧 tool schema 各自有清晰边界。lotus 对标的是这种内部结构化 assembly，而不是照搬某个 provider 的 wire format。
+
+lotus 当前 provider 主链路是 OpenAI Chat。生产渲染仍只 flatten 为 `messages[0] = { role: "system", content: flattened_prompt }`，不会输出 Anthropic top-level `system` blocks，也不会引入 Anthropic `cache_control` 作为 lotus 主线参数。
+
+prompt caching / cache break 当前仅作为诊断与未来优化边界：`PromptCachePolicy::StaticPrefix` 标注稳定前缀，`PromptCachePolicy::Volatile` 标注 cache-breaking section 并记录 reason；这些标注不等同于 provider 参数。
+
+runtime enforcement 仍由 tool permission、文件 sandbox、MCP 可见性、cancel、timeout 等运行时机制执行。Prompt 只解释模型可见能力与上下文，不承担权限或安全边界。
+
 ---
 
 ## Task Runtime：后台任务是如何被一等化的
@@ -733,4 +743,3 @@ flowchart LR
 - `/Users/a20250311/github/claude-code-best/docs/conversation/multi-turn.mdx`
 - `/Users/a20250311/github/claude-code-best/docs/agent/sub-agents.mdx`
 - `/Users/a20250311/github/claude-code-best/docs/tools/task-management.mdx`
-

@@ -5,7 +5,9 @@
 //! 2. Bundled default: `{resource_dir}/prompts/{name}.md`
 //! 3. Hardcoded fallback (base only)
 //!
-//! The public API (`get_system_prompt`) remains unchanged.
+//! The public API (`get_system_prompt`) remains unchanged. This module is a raw
+//! prompt store plus compatibility shim; new production assembly lives under
+//! `runtime::chat::prompt::PromptAssembler`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -289,13 +291,16 @@ pub fn get_browser_agent_prompt() -> String {
     get_browser_agent_prompt_fragment()
 }
 
+/// Compatibility shim for old callers.
+/// New production code must use `runtime::chat::prompt::PromptAssembler`.
+///
 /// 构建分层 system prompt（section 化版本）。
 ///
 /// - `static_section` = base.md（品牌替换后）+ TOOL_PREFERENCE_SECTION
 /// - `dynamic_section` = persona 段 + mode-specific prompt（Analysis 时无 daily.md）
 ///
 /// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
-/// build_system_prompt_parts 是 system prompt 的唯一组装入口；
+/// build_system_prompt_parts 是旧接口的 system prompt 组装入口；
 /// 其他调用方若需要完整字符串，应通过 `get_system_prompt` 这个兼容 shim
 /// 间接调用，而不是自行拼接 base / daily / browser_agent 片段。
 pub fn build_system_prompt_parts(
@@ -331,6 +336,9 @@ pub fn build_system_prompt_parts(
     }
 }
 
+/// Compatibility shim for old callers.
+/// New production code must use `runtime::chat::prompt::PromptAssembler`.
+///
 /// Compose the full system prompt (backward-compatible shim).
 ///
 /// 调用 `build_system_prompt_parts` 后拼接 static + dynamic。
