@@ -5,6 +5,7 @@ pub mod history;
 pub mod metrics;
 pub mod post_process;
 pub mod preprocess;
+pub mod prompt;
 pub mod safeguard;
 pub mod skill_session;
 pub mod tool_result_collector;
