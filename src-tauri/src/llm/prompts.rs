@@ -9,9 +9,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::sync::{LazyLock, RwLock};
 
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, PromptCachePolicy};
+
+#[cfg(test)]
+pub(crate) static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Minimal hardcoded fallback for `base` — used only when both
 /// override and bundled files are missing.
@@ -349,9 +354,6 @@ pub fn get_system_prompt(
 mod tests {
     use super::*;
     use std::fs;
-    use std::sync::{LazyLock, Mutex};
-
-    static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     /// Helper: create a temp prompt directory with given files.
     fn setup_prompts(dir: &Path, files: &[(&str, &str)]) {

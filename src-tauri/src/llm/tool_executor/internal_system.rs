@@ -141,6 +141,28 @@ impl BrowseDataLauncher for DefaultBrowseDataLauncher {
     }
 }
 
+const BROWSER_AGENT_INLINE_FALLBACK: &str = r#"你是数据提取专家。从内部业务系统中提取用户需要的数据。
+
+## 严格规则（必须遵守）
+
+1. **提取表格数据必须用 `extract_table_data()`** — 禁止用 page_execute_js 写 JS 自行提取表格
+2. **翻页必须用 `page_execute_js` 点击翻页按钮** — 不要用 URL 翻页
+3. **每翻一页后必须再调 `extract_table_data()`** — 数据会自动追加到同一文件
+4. 一次只提取一个数据表
+5. ACCESS DENIED → 立即停止并报告
+
+## 固定流程
+
+步骤 1: browse_and_extract(url) — 打开目标页面
+步骤 2: extract_table_data() — 提取当前页表格数据（返回分页信息）
+步骤 3: 如果有下一页：page_execute_js("点击下一页") → extract_table_data() → 循环
+步骤 4: 没有下一页时停止，报告文件路径、总行数、列名
+
+## 禁止事项
+- 禁止用 page_execute_js 提取表格数据
+- 禁止用 page_execute_js 遍历 DOM 获取行数据
+- 禁止用 browse_navigate 翻页"#;
+
 fn build_browser_agent_system_prompt() -> String {
     let parts = crate::llm::prompts::build_system_prompt_parts(
         crate::llm::prompts::PromptMode::BrowserAgent,
@@ -148,10 +170,10 @@ fn build_browser_agent_system_prompt() -> String {
         None,
     );
 
-    if parts.dynamic_section.is_empty() {
-        parts.static_section
-    } else {
+    if parts.dynamic_section.trim().len() > 50 {
         format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
+    } else {
+        BROWSER_AGENT_INLINE_FALLBACK.to_string()
     }
 }
 
@@ -181,43 +203,12 @@ async fn launch_browse_data_with_runtime_deps(
     info!("[CONNECTOR] browse_data: task='{}', url={:?}", task, url);
 
     // Load the BrowserAgent system prompt through the shared prompt assembler.
-    let assembled_prompt = build_browser_agent_system_prompt();
+    let system_prompt = build_browser_agent_system_prompt();
     info!(
         "[CONNECTOR] browser_agent prompt: {} chars, starts_with='{}'",
-        assembled_prompt.len(),
-        assembled_prompt.chars().take(60).collect::<String>()
+        system_prompt.len(),
+        system_prompt.chars().take(60).collect::<String>()
     );
-    let system_prompt = if assembled_prompt.len() > 50 {
-        assembled_prompt
-    } else {
-        // Fallback: inline prompt (in case file loading fails)
-        warn!(
-            "[CONNECTOR] browser_agent prompt NOT loaded (got {} chars), using inline fallback",
-            assembled_prompt.len()
-        );
-        r#"你是数据提取专家。从内部业务系统中提取用户需要的数据。
-
-## 严格规则（必须遵守）
-
-1. **提取表格数据必须用 `extract_table_data()`** — 禁止用 page_execute_js 写 JS 自行提取表格
-2. **翻页必须用 `page_execute_js` 点击翻页按钮** — 不要用 URL 翻页
-3. **每翻一页后必须再调 `extract_table_data()`** — 数据会自动追加到同一文件
-4. 一次只提取一个数据表
-5. ACCESS DENIED → 立即停止并报告
-
-## 固定流程
-
-步骤 1: browse_and_extract(url) — 打开目标页面
-步骤 2: extract_table_data() — 提取当前页表格数据（返回分页信息）
-步骤 3: 如果有下一页：page_execute_js("点击下一页") → extract_table_data() → 循环
-步骤 4: 没有下一页时停止，报告文件路径、总行数、列名
-
-## 禁止事项
-- 禁止用 page_execute_js 提取表格数据
-- 禁止用 page_execute_js 遍历 DOM 获取行数据
-- 禁止用 browse_navigate 翻页"#
-            .to_string()
-    };
 
     // Build dynamic context: site map from connector engine
     let mut dynamic_context = String::new();
@@ -1471,7 +1462,32 @@ mod prompt_tests {
     use crate::llm::prompts::{self, PromptMode};
 
     #[test]
+    fn browser_agent_system_prompt_falls_back_when_browser_fragment_missing() {
+        let _guard = prompts::PROMPT_TEST_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled");
+        let user = tmp.path().join("user");
+        std::fs::create_dir_all(bundled.join("prompts")).unwrap();
+        std::fs::create_dir_all(&user).unwrap();
+        std::fs::write(
+            bundled.join("prompts/base.md"),
+            "AI小家 base with static context",
+        )
+        .unwrap();
+        std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+        prompts::init_prompts(&bundled, &user);
+
+        let prompt = build_browser_agent_system_prompt();
+
+        assert!(prompt.contains("你是数据提取专家"));
+        assert!(prompt.contains("extract_table_data"));
+        assert!(!prompt.contains("AI小家 base with static context"));
+        assert!(!prompt.contains("daily prompt"));
+    }
+
+    #[test]
     fn browser_agent_system_prompt_uses_browser_mode_assembly() {
+        let _guard = prompts::PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bundled = tmp.path().join("bundled");
         let user = tmp.path().join("user");
@@ -1479,7 +1495,11 @@ mod prompt_tests {
         std::fs::create_dir_all(&user).unwrap();
         std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
         std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
-        std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
+        std::fs::write(
+            bundled.join("prompts/browser_agent.md"),
+            "browser prompt with enough detailed extraction rules to avoid inline fallback",
+        )
+        .unwrap();
         prompts::init_prompts(&bundled, &user);
 
         let prompt = build_browser_agent_system_prompt();
@@ -1487,7 +1507,7 @@ mod prompt_tests {
         assert!(prompt.contains("AI小家 base"));
         assert!(prompt.contains("工具选择偏好"));
         assert!(prompt.contains("记忆管理"));
-        assert!(prompt.contains("browser prompt"));
+        assert!(prompt.contains("browser prompt with enough detailed extraction rules"));
         assert!(!prompt.contains("daily prompt"));
         let parts = prompts::build_system_prompt_parts(PromptMode::BrowserAgent, None, None);
         assert_eq!(
