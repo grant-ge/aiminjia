@@ -21,28 +21,29 @@ fn make_test_turn(conversation_id: &str) -> TurnState {
 }
 
 #[tokio::test]
-async fn ac1_load_project_renlijia_md_from_workspace() {
+async fn ac1_load_project_agent_md_from_workspace() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
     std::fs::write(
-        workspace.join("RENLIJIA.md"),
+        workspace.join("AGENT.md"),
         "# Project\nproject instructions",
     )
-    .expect("write claude md");
+    .expect("write agent md");
 
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;
 
     let project_file = files
         .iter()
-        .find(|f| f.path == workspace.join("RENLIJIA.md"));
-    assert!(project_file.is_some(), "should find workspace RENLIJIA.md");
+        .find(|f| f.path == workspace.join("AGENT.md"));
+    assert!(project_file.is_some(), "should find workspace AGENT.md");
     assert!(project_file
         .expect("project file")
         .content
         .contains("project instructions"));
 }
+
 
 #[tokio::test]
 async fn ac1_load_order_root_before_workspace() {
@@ -50,8 +51,8 @@ async fn ac1_load_order_root_before_workspace() {
     let parent = tmp.path().join("parent");
     let child = parent.join("child");
     std::fs::create_dir_all(&child).expect("create child");
-    std::fs::write(parent.join("RENLIJIA.md"), "parent instructions").expect("write parent");
-    std::fs::write(child.join("RENLIJIA.md"), "child instructions").expect("write child");
+    std::fs::write(parent.join("AGENT.md"), "parent instructions").expect("write parent");
+    std::fs::write(child.join("AGENT.md"), "child instructions").expect("write child");
 
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&child).await;
@@ -69,14 +70,14 @@ async fn ac1_load_order_root_before_workspace() {
 }
 
 #[tokio::test]
-async fn ac1_load_dot_aijia_and_local_renlijia_md() {
+async fn ac1_load_dot_aijia_and_local_agent_md() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     let dot_claude = workspace.join(".aijia");
     std::fs::create_dir_all(&dot_claude).expect("create .aijia");
-    std::fs::write(dot_claude.join("RENLIJIA.md"), "dot-claude instructions")
+    std::fs::write(dot_claude.join("AGENT.md"), "dot-claude instructions")
         .expect("write dot claude");
-    std::fs::write(workspace.join("RENLIJIA.local.md"), "local override")
+    std::fs::write(workspace.join("AGENT.local.md"), "local override")
         .expect("write local claude");
 
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
@@ -92,7 +93,7 @@ async fn ac1_load_dot_aijia_and_local_renlijia_md() {
 async fn ac2_mtime_cache_invalidate_on_change() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().to_path_buf();
-    let file_path = workspace.join("RENLIJIA.md");
+    let file_path = workspace.join("AGENT.md");
     std::fs::write(&file_path, "version 1").expect("write v1");
 
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
@@ -192,7 +193,7 @@ async fn ac3_driver_inserts_separate_renlijia_md_context_message_after_system_re
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
-    let renlijia_path = workspace.join("RENLIJIA.md");
+    let renlijia_path = workspace.join("AGENT.md");
     let renlijia_content = "project instructions";
     let executor = Arc::new(RenlijiaMdContextExecutor::new(
         workspace.clone(),

@@ -265,7 +265,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(TurnConfigOverrides::default())
     }
 
-    /// 加载 RENLIJIA.md user-context 文件。
+    /// 加载 AGENT.md user-context 文件。
     async fn load_renlijia_md(
         &self,
         _workspace_path: &Path,
