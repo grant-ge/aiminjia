@@ -107,15 +107,16 @@ impl SkillSessionStore {
                 .get(state.skill_id.as_str())
                 .await
                 .unwrap_or_else(|| default_skill.clone());
-        } else if let Some(next_skill_id) = registry
-            .detect_activation(user_message, has_files, default_skill.id())
-            .await
-        {
-            if let Some(next_skill) = registry.get(next_skill_id.as_str()).await {
-                state = initial_state_for_skill(next_skill.as_ref(), has_files);
-                skill = next_skill;
-            }
         }
+        // LLM-based routing: 不做关键词匹配，把 skill 目录注入到 system prompt，
+        // 让 LLM 通过 switch_skill 工具自行决定是否切换。
+
+        // 只在 default skill 时注入 skill 目录
+        let skill_directory = if skill.id() == default_skill.id() {
+            build_skill_directory_prompt(registry, default_skill.id()).await
+        } else {
+            String::new()
+        };
 
         state = initialize_state_for_turn(skill.as_ref(), state, has_files);
         let allowed_tools = ensure_switch_skill_tool(resolve_allowed_tools(
@@ -126,9 +127,18 @@ impl SkillSessionStore {
 
         self.persist_state(conversation_id, &state)?;
 
+        let system_prompt = {
+            let base = skill.system_prompt(&state);
+            if skill_directory.is_empty() {
+                base
+            } else {
+                format!("{}\n\n{}", base, skill_directory)
+            }
+        };
+
         Ok(SkillTurnContext {
             skill_id: skill.id().to_string(),
-            system_prompt: skill.system_prompt(&state),
+            system_prompt,
             allowed_tools,
             state,
         })
@@ -182,6 +192,31 @@ impl SkillSessionStore {
 
         Ok(())
     }
+}
+
+async fn build_skill_directory_prompt(registry: &SkillRegistry, default_skill_id: &str) -> String {
+    let skills = registry.list().await;
+    let non_default: Vec<_> = skills
+        .iter()
+        .filter(|s| s.id != default_skill_id)
+        .collect();
+
+    if non_default.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = vec![
+        "## 可用专项技能".to_string(),
+        "如果用户需求与以下某个专项技能匹配，请调用 switch_skill 工具切换到该技能：".to_string(),
+        String::new(),
+    ];
+    for skill in &non_default {
+        lines.push(format!("- `{}`: {}", skill.id, skill.description));
+    }
+    lines.push(String::new());
+    lines.push("如果没有匹配的专项技能，直接用通用能力回答即可。".to_string());
+
+    lines.join("\n")
 }
 
 fn skill_state_memory_key(conversation_id: &str) -> String {
@@ -391,7 +426,16 @@ mod tests {
             .expect("default context");
 
         assert_eq!(context.skill_id, "daily-assistant");
-        assert_eq!(context.system_prompt, "daily:none");
+        // After LLM-based routing, default skill system_prompt includes the skill directory.
+        assert!(
+            context.system_prompt.starts_with("daily:none"),
+            "system_prompt should start with base prompt, got: {}",
+            context.system_prompt
+        );
+        assert!(
+            context.system_prompt.contains("comp-analysis"),
+            "system_prompt should list available skills in directory"
+        );
         assert_eq!(
             context.allowed_tools,
             Some(HashSet::from([
@@ -402,7 +446,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn activates_matching_skill_and_initializes_first_step() {
+    async fn keyword_routing_removed_stays_on_default_skill() {
+        // After removing keyword-based routing, messages that used to trigger
+        // keyword activation now stay on the default skill. The LLM decides
+        // routing via switch_skill tool call instead.
         let registry = registry_with_test_skills().await;
         let store = SkillSessionStore::new();
 
@@ -421,16 +468,16 @@ mod tests {
             .await
             .expect("skill context");
 
-        assert_eq!(context.skill_id, "comp-analysis");
-        assert_eq!(context.state.current_step.as_deref(), Some("step0"));
-        assert!(context.state.has_files);
-        assert_eq!(context.system_prompt, "skill:step0");
-        assert_eq!(
-            context.allowed_tools,
-            Some(HashSet::from([
-                "search_files".to_string(),
-                "switch_skill".to_string()
-            ]))
+        // No keyword activation: stays on daily-assistant, system_prompt includes skill directory.
+        assert_eq!(context.skill_id, "daily-assistant");
+        assert!(
+            context.system_prompt.starts_with("daily:none"),
+            "should use default skill prompt, got: {}",
+            context.system_prompt
+        );
+        assert!(
+            context.system_prompt.contains("comp-analysis"),
+            "system_prompt should include skill directory"
         );
     }
 
@@ -442,12 +489,14 @@ mod tests {
             "bash".to_string(),
             "search_files".to_string(),
             "read_workspace_file".to_string(),
+            "switch_skill".to_string(),
         ];
 
+        // Use explicit switch_skill to activate comp-analysis (LLM-based routing)
         let activated = store
-            .resolve_turn_context(&registry, &all_tools, "conv-progress", "请分析一下", false)
+            .switch_skill(&registry, &all_tools, "conv-progress", "comp-analysis", false)
             .await
-            .expect("activate");
+            .expect("activate via explicit switch");
         assert_eq!(activated.state.current_step.as_deref(), Some("step0"));
 
         let advanced = store
