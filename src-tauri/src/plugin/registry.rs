@@ -974,36 +974,6 @@ impl SkillRegistry {
         );
     }
 
-    /// Detect which Skill should activate for a message.
-    ///
-    /// Returns the ID of the highest-priority matching Skill, or None
-    /// if the current Skill should remain active.
-    pub async fn detect_activation(
-        &self,
-        message: &str,
-        has_files: bool,
-        current_skill_id: &str,
-    ) -> Option<String> {
-        let skills = self.skills.read().await;
-        let mut best: Option<(u32, String)> = None;
-
-        for rs in skills.values() {
-            if rs
-                .skill
-                .should_activate(message, has_files, current_skill_id)
-            {
-                let priority = rs.skill.priority();
-                let id = rs.skill.id().to_string();
-                match &best {
-                    Some((bp, _)) if priority <= *bp => {}
-                    _ => best = Some((priority, id)),
-                }
-            }
-        }
-
-        best.map(|(_, id)| id)
-    }
-
     /// Get a Skill by ID.
     pub async fn get(&self, id: &str) -> Option<Arc<dyn Skill>> {
         let skills = self.skills.read().await;

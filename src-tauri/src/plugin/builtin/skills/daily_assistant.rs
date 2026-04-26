@@ -62,12 +62,6 @@ impl Skill for DailyAssistantSkill {
         "Daily work assistance"
     }
 
-    fn should_activate(&self, _message: &str, _has_files: bool, _current_skill: &str) -> bool {
-        // Default skill — never self-activates.
-        // Active when no other skill matches, or after another skill finishes.
-        false
-    }
-
     fn system_prompt(&self, _state: &SkillState) -> String {
         let persona = self.db.get_active_persona().ok();
         // Use futures::executor::block_on instead of tauri::async_runtime::block_on to avoid

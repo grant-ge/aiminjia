@@ -195,9 +195,6 @@ pub trait Skill: Send + Sync + 'static {
 
     // ── Activation ──
 
-    /// Should this Skill activate for the given message?
-    fn should_activate(&self, message: &str, has_files: bool, current_skill: &str) -> bool;
-
     /// Priority when multiple Skills match (higher wins).
     fn priority(&self) -> u32 {
         0

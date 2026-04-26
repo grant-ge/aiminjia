@@ -1645,12 +1645,6 @@ mod tests {
             self.id
         }
 
-        fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
-            self.trigger
-                .map(|trigger| current_skill == "daily-assistant" && message.contains(trigger))
-                .unwrap_or(false)
-        }
-
         fn system_prompt(&self, state: &SkillState) -> String {
             format!(
                 "{}:{}",
@@ -1800,38 +1794,6 @@ mod tests {
             .expect("explicit skill state should persist for following turns");
 
         assert_eq!(restored.skill_id, "salary-query");
-    }
-
-    #[tokio::test]
-    async fn missing_selected_skill_id_keeps_activation_detection() {
-        let registry = registry_with_test_skills().await;
-        let skill_sessions = SkillSessionStore::new();
-        let all_tools = vec![
-            "bash".to_string(),
-            "search_files".to_string(),
-            "read_workspace_file".to_string(),
-            "switch_skill".to_string(),
-        ];
-        let request = ChatTurnRequest::new("c-auto-skill", "请分析这个问题", Vec::new());
-
-        let (ctx, explicit) = resolve_skill_turn_context_for_request(
-            &skill_sessions,
-            &registry,
-            &all_tools,
-            &request,
-        )
-        .await
-        .expect("activation detection should resolve");
-
-        assert!(!explicit, "missing selected_skill_id should use automatic detection");
-        assert_eq!(ctx.skill_id, "comp-analysis");
-        assert!(
-            ctx.allowed_tools
-                .as_ref()
-                .map(|tools| tools.contains("switch_skill"))
-                .unwrap_or(false),
-            "automatic skill turn should keep switch_skill available"
-        );
     }
 
     #[tokio::test]

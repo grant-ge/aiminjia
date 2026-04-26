@@ -19,7 +19,6 @@ pub struct DeclarativeSkill {
     name: String,
     description: String,
     priority_val: u32,
-    keywords: Vec<String>,
     requires_files: bool,
     model_pref: Option<ModelPreference>,
     max_iter: usize,
@@ -58,9 +57,7 @@ struct StepToolConfig {
 impl DeclarativeSkill {
     /// Load a declarative Skill from a plugin directory.
     pub fn load(manifest: &PluginManifest, plugin_dir: &Path) -> Result<Self, String> {
-        let trigger = manifest.trigger.as_ref();
-        let keywords = trigger.map(|t| t.keywords.clone()).unwrap_or_default();
-        let requires_files = trigger.map(|t| t.requires_files).unwrap_or(false);
+        let requires_files = manifest.trigger.as_ref().map(|t| t.requires_files).unwrap_or(false);
 
         let priority_val = manifest.plugin.priority.unwrap_or(0);
         let description = manifest
@@ -207,7 +204,6 @@ impl DeclarativeSkill {
             name: manifest.plugin.name.clone(),
             description,
             priority_val,
-            keywords,
             requires_files,
             model_pref,
             max_iter,
@@ -324,36 +320,6 @@ impl Skill for DeclarativeSkill {
 
     fn priority(&self) -> u32 {
         self.priority_val
-    }
-
-    fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
-        if current_skill == self.id {
-            return false;
-        }
-        let lower = message.to_lowercase();
-        let keyword_match = self
-            .keywords
-            .iter()
-            .any(|kw| lower.contains(&kw.to_lowercase()));
-
-        if !keyword_match {
-            return false;
-        }
-
-        // Versioned workflows like `comp-analysis-v2` should not steal the
-        // generic trigger phrase from the base workflow unless the user
-        // explicitly asks for the versioned path.
-        if self.id.ends_with("-v2") {
-            return ["v2", "版本2", "2.0"]
-                .iter()
-                .any(|marker| lower.contains(marker));
-        }
-
-        // Only primary keywords trigger activation (explicit analysis requests).
-        // Secondary file_keywords path removed: when users upload files with
-        // casual mentions of salary/compensation, daily mode should parse first,
-        // show a summary, and let the user decide whether to start full analysis.
-        true
     }
 
     fn system_prompt(&self, state: &SkillState) -> String {
@@ -669,12 +635,6 @@ mod tests {
             .expect("step5 should have tool whitelist");
         assert!(allowed5.contains(&"generate_report".to_string()));
         assert!(allowed5.contains(&"export_data".to_string()));
-
-        // Keyword activation
-        assert!(skill.should_activate("请进行薪酬分析v2", true, "daily-assistant"));
-        assert!(skill.should_activate("请进行薪酬分析v2", true, "other-skill"));
-        assert!(!skill.should_activate("请进行薪酬分析v2", true, "comp-analysis-v2"));
-        assert!(!skill.should_activate("请进行薪酬分析", true, "daily-assistant"));
     }
 
     #[test]

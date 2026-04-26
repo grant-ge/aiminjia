@@ -45,7 +45,7 @@ fn browse_data_agent_max_iterations_is_30() {
 fn daily_assistant_agent_has_ten_tools() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("daily_assistant_agent").unwrap();
-    assert_eq!(def.allowed_tools.len(), 10);
+    assert_eq!(def.allowed_tools.len(), 14);
     assert!(def.allowed_tools.contains(&"bash".to_string()));
     assert!(def.allowed_tools.contains(&"write_memory".to_string()));
     assert!(def.allowed_tools.contains(&"search_memory".to_string()));

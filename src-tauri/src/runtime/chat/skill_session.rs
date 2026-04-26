@@ -340,12 +340,6 @@ mod tests {
             self.id
         }
 
-        fn should_activate(&self, message: &str, _has_files: bool, current_skill: &str) -> bool {
-            self.trigger
-                .map(|trigger| current_skill == "daily-assistant" && message.contains(trigger))
-                .unwrap_or(false)
-        }
-
         fn system_prompt(&self, state: &SkillState) -> String {
             format!(
                 "{}:{}",
