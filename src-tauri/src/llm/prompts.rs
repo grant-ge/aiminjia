@@ -234,6 +234,22 @@ pub fn get_base_prompt() -> String {
     guard.get("base").to_string()
 }
 
+/// Get any raw prompt fragment by name.
+pub fn get_prompt_fragment(name: &str) -> String {
+    let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
+    guard.get(name).to_string()
+}
+
+/// Get the static tool preference guidance section.
+pub fn tool_preference_section() -> &'static str {
+    TOOL_PREFERENCE_SECTION
+}
+
+/// Get the static memory mechanics guidance section.
+pub fn memory_mechanics_section() -> &'static str {
+    MEMORY_MECHANICS_SECTION
+}
+
 /// Get the browser agent prompt (for SubAgent).
 pub fn get_browser_agent_prompt() -> String {
     let guard = PROMPT_STORE.read().expect("PromptStore read lock poisoned");
