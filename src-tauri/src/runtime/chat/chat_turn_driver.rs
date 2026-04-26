@@ -209,6 +209,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
+    async fn build_prompt_snapshot(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
+        Ok(None)
+    }
+
     /// 构建发给 LLM 的当前用户消息内容。
     ///
     /// 允许生产 executor 将上传附件提示、workspace 提示等附加到用户消息，
@@ -951,12 +958,6 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Build the system prompt via the executor (reads DB/persona/auth).
-        let system_prompt = executor
-            .build_system_prompt(request.conversation_id.as_str())
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
         // Build the tool definitions via the executor.
         let tool_defs = executor
             .get_tool_defs()
@@ -971,25 +972,37 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        let prompt_snapshot = match executor
+            .build_prompt_snapshot(request.conversation_id.as_str())
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?
+        {
+            Some(snapshot) => snapshot,
+            None => {
+                let system_prompt = executor
+                    .build_system_prompt(request.conversation_id.as_str())
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                single_dynamic_prompt_snapshot("legacy_system_prompt", system_prompt)
+            }
+        };
+        let system_prompt = prompt_snapshot.compat_system_prompt();
         let effective_system_prompt = overrides
             .system_prompt
             .clone()
             .unwrap_or_else(|| system_prompt.clone());
-        let prompt_snapshot = crate::runtime::chat::prompt::TurnPromptSnapshot::new(
-            crate::runtime::chat::prompt::PromptAssembly::new(vec![
-                crate::runtime::chat::prompt::PromptBlock::dynamic_block(
-                    crate::runtime::chat::prompt::PromptSectionId::new(
-                        "legacy_executor_system_prompt",
-                    ),
-                    effective_system_prompt.clone(),
-                ),
-            ]),
-            Vec::new(),
-        );
+        let effective_prompt_snapshot = if overrides.system_prompt.is_some() {
+            single_dynamic_prompt_snapshot(
+                "override_system_prompt",
+                effective_system_prompt.clone(),
+            )
+        } else {
+            prompt_snapshot
+        };
 
         let mut config = TurnConfig {
             system_prompt: effective_system_prompt,
-            prompt_snapshot: Some(prompt_snapshot),
+            prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(30),
@@ -1696,10 +1709,29 @@ fn apply_skill_runtime_patch(
     patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
 ) {
     config.system_prompt = patch.system_prompt;
+    config.prompt_snapshot = Some(single_dynamic_prompt_snapshot(
+        "skill_runtime_patch",
+        config.system_prompt.clone(),
+    ));
     config.tool_defs = patch.tool_defs;
     config.allowed_tools = patch.allowed_tools.map(|names| names.into_iter().collect());
     config.max_iterations = patch.max_iterations;
     config.token_budget = patch.token_budget;
+}
+
+fn single_dynamic_prompt_snapshot(
+    section_id: &str,
+    text: impl Into<String>,
+) -> crate::runtime::chat::prompt::TurnPromptSnapshot {
+    crate::runtime::chat::prompt::TurnPromptSnapshot::new(
+        crate::runtime::chat::prompt::PromptAssembly::new(vec![
+            crate::runtime::chat::prompt::PromptBlock::dynamic_block(
+                crate::runtime::chat::prompt::PromptSectionId::new(section_id),
+                text,
+            ),
+        ]),
+        Vec::new(),
+    )
 }
 
 fn stable_allowed_tools_vec(allowed_tools: &Option<HashSet<String>>) -> Option<Vec<String>> {
@@ -2048,6 +2080,116 @@ mod tests {
         async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
             Ok(std::env::temp_dir())
         }
+    }
+
+    struct SnapshotPromptExecutor {
+        legacy_calls: AtomicUsize,
+        seen_system_prompts: Mutex<Vec<String>>,
+    }
+
+    impl SnapshotPromptExecutor {
+        fn new() -> Self {
+            Self {
+                legacy_calls: AtomicUsize::new(0),
+                seen_system_prompts: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl RuntimeLlmExecutor for SnapshotPromptExecutor {
+        async fn run_llm_step(
+            &self,
+            input: &LlmStepInput<'_>,
+            _bus: &RuntimeEventBus,
+            _cancel: &CancellationToken,
+        ) -> Result<LlmStepResult, TurnError> {
+            self.seen_system_prompts
+                .lock()
+                .unwrap()
+                .push(input.system_prompt.to_string());
+            Ok(LlmStepResult::ContentComplete {
+                content: "snapshot done".to_string(),
+                tokens_in: 0,
+                tokens_out: 0,
+                stop_reason: Some("end_turn".to_string()),
+            })
+        }
+
+        async fn persist_assistant_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _tool_calls: &[serde_json::Value],
+            _generated_file_ids: &[String],
+            _file_metas: &[serde_json::Value],
+        ) -> Result<String, TurnError> {
+            Ok("assistant-msg".to_string())
+        }
+
+        async fn persist_user_message(
+            &self,
+            _conversation_id: &str,
+            _content: &str,
+            _file_ids: &[String],
+            _client_message_id: Option<&str>,
+            _selected_skill_id: Option<&str>,
+            _selected_skill_label: Option<&str>,
+        ) -> Result<String, TurnError> {
+            Ok("user-msg".to_string())
+        }
+
+        async fn build_prompt_snapshot(
+            &self,
+            _conversation_id: &str,
+        ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
+            Ok(Some(crate::runtime::chat::prompt::TurnPromptSnapshot::new(
+                crate::runtime::chat::prompt::PromptAssembly::new(vec![
+                    crate::runtime::chat::prompt::PromptBlock::static_block(
+                        crate::runtime::chat::prompt::PromptSectionId::new("snapshot_static"),
+                        "snapshot static",
+                    ),
+                    crate::runtime::chat::prompt::PromptBlock::dynamic_block(
+                        crate::runtime::chat::prompt::PromptSectionId::new("snapshot_dynamic"),
+                        "snapshot dynamic",
+                    ),
+                ]),
+                Vec::new(),
+            )))
+        }
+
+        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+            self.legacy_calls.fetch_add(1, Ordering::SeqCst);
+            Ok("legacy prompt should not be used".to_string())
+        }
+
+        async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
+            Ok(std::env::temp_dir())
+        }
+    }
+
+    #[tokio::test]
+    async fn driver_prefers_prompt_snapshot_over_legacy_system_prompt() {
+        let executor = Arc::new(SnapshotPromptExecutor::new());
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-snapshot".to_string()),
+            RunId::new("run-driver-snapshot"),
+            "use snapshot".to_string(),
+        );
+        let request = ChatTurnRequest::new("conv-driver-snapshot", "use snapshot", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with prompt snapshot");
+
+        let expected_snapshot_prompt = "snapshot static\n\nsnapshot dynamic".to_string();
+        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+        assert_eq!(prompts, vec![expected_snapshot_prompt]);
+        assert_eq!(executor.legacy_calls.load(Ordering::SeqCst), 0);
     }
 
     struct SwitchingTool;

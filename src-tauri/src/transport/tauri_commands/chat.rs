@@ -19,6 +19,7 @@ use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::{SkillRegistry, ToolRegistry};
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
+use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
     LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, SkillSessionStore,
     TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
@@ -1238,6 +1239,38 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         );
 
         Ok(prompt)
+    }
+
+    async fn build_prompt_snapshot(
+        &self,
+        _conversation_id: &str,
+    ) -> Result<Option<TurnPromptSnapshot>, TurnError> {
+        let persona = self.services.db.get_active_persona().ok();
+
+        let product_name: Option<String> = self
+            .services
+            .auth_manager
+            .get_auth_info()
+            .await
+            .tenant
+            .and_then(|t| t.product_name.filter(|n| !n.is_empty()));
+
+        let assembly = PromptAssembler::default().build_system_prompt(PromptBuildContext {
+            mode: prompts::PromptMode::Daily,
+            persona: persona.as_ref(),
+            product_name: product_name.as_deref(),
+        });
+        log::info!(
+            "[build_prompt_snapshot] mode=daily len={} persona={} product_name={}",
+            assembly.flatten().len(),
+            persona
+                .as_ref()
+                .map(|p| p.identity.as_str())
+                .unwrap_or("(none)"),
+            product_name.as_deref().unwrap_or("(none)"),
+        );
+
+        Ok(Some(TurnPromptSnapshot::new(assembly, Vec::new())))
     }
 
     async fn build_user_message_content(

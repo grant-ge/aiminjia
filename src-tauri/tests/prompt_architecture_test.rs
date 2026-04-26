@@ -162,6 +162,35 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
 }
 
 #[test]
+fn prompt_assembler_matches_legacy_daily_prompt_parts() {
+    let _guard = PROMPT_TEST_LOCK.lock().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let bundled = tmp.path().join("bundled");
+    let user = tmp.path().join("user");
+    std::fs::create_dir_all(bundled.join("prompts")).unwrap();
+    std::fs::create_dir_all(&user).unwrap();
+    std::fs::write(bundled.join("prompts/base.md"), "AI小家 base").unwrap();
+    std::fs::write(bundled.join("prompts/daily.md"), "daily prompt").unwrap();
+    std::fs::write(bundled.join("prompts/browser_agent.md"), "browser prompt").unwrap();
+    prompts::init_prompts(&bundled, &user);
+
+    let assembler = PromptAssembler::default();
+    let assembly = assembler.build_system_prompt(PromptBuildContext {
+        mode: PromptMode::Daily,
+        persona: None,
+        product_name: Some("Lotus"),
+    });
+    let parts = prompts::build_system_prompt_parts(PromptMode::Daily, None, Some("Lotus"));
+    let legacy_prompt = if parts.dynamic_section.is_empty() {
+        parts.static_section
+    } else {
+        format!("{}\n\n{}", parts.static_section, parts.dynamic_section)
+    };
+
+    assert_eq!(assembly.flatten(), legacy_prompt);
+}
+
+#[test]
 fn reminder_builder_outputs_system_reminder_user_message() {
     let message = ReminderBuilder::date_message("2026年04月26日", "2026-04-26");
 
