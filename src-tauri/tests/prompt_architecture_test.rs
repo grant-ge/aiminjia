@@ -8,7 +8,7 @@ use std::sync::{
 
 use app_lib::runtime::chat::prompt::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionCache, PromptSectionId,
-    PromptSectionSpec,
+    PromptSectionSpec, TurnPromptSnapshot,
 };
 
 static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -189,4 +189,16 @@ fn reminder_builder_context_message_preserves_legacy_meta_contract() {
 #[test]
 fn reminder_builder_context_message_omits_blank_body() {
     assert!(ReminderBuilder::context_message("renlijiaMd", "  \n\t").is_none());
+}
+
+#[test]
+fn turn_prompt_snapshot_exposes_flattened_compat_prompt() {
+    let assembly = PromptAssembly::new(vec![
+        PromptBlock::static_block(PromptSectionId::new("base"), "base"),
+        PromptBlock::dynamic_block(PromptSectionId::new("daily"), "daily"),
+    ]);
+    let snapshot = TurnPromptSnapshot::new(assembly, vec![]);
+
+    assert_eq!(snapshot.compat_system_prompt(), "base\n\ndaily");
+    assert_eq!(snapshot.system_view().blocks.len(), 2);
 }

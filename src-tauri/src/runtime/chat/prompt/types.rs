@@ -103,3 +103,34 @@ impl PromptAssembly {
         self.to_system_view().flatten()
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnPromptSnapshot {
+    assembly: PromptAssembly,
+    initial_user_reminders: Vec<serde_json::Value>,
+}
+
+impl TurnPromptSnapshot {
+    pub fn new(assembly: PromptAssembly, initial_user_reminders: Vec<serde_json::Value>) -> Self {
+        Self {
+            assembly,
+            initial_user_reminders,
+        }
+    }
+
+    pub fn assembly(&self) -> &PromptAssembly {
+        &self.assembly
+    }
+
+    pub fn system_view(&self) -> PromptSystemView {
+        self.assembly.to_system_view()
+    }
+
+    pub fn compat_system_prompt(&self) -> String {
+        self.assembly.flatten()
+    }
+
+    pub fn initial_user_reminders(&self) -> &[serde_json::Value] {
+        &self.initial_user_reminders
+    }
+}

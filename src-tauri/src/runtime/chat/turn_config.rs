@@ -54,6 +54,7 @@ impl Default for ResolvedLlmSettings {
 #[derive(Debug, Clone)]
 pub struct TurnConfig {
     pub system_prompt: String,
+    pub prompt_snapshot: Option<crate::runtime::chat::prompt::TurnPromptSnapshot>,
     pub tool_defs: Vec<JsonValue>,
     pub allowed_tools: Option<HashSet<String>>,
     pub max_iterations: usize,

@@ -8,5 +8,5 @@ pub use reminders::ReminderBuilder;
 pub use sections::{PromptAssembler, PromptBuildContext, PromptSectionSpec};
 pub use types::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId, PromptSystemView,
-    SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    SYSTEM_PROMPT_DYNAMIC_BOUNDARY, TurnPromptSnapshot,
 };

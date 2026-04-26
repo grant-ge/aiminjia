@@ -971,8 +971,25 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+        let effective_system_prompt = overrides
+            .system_prompt
+            .clone()
+            .unwrap_or_else(|| system_prompt.clone());
+        let prompt_snapshot = crate::runtime::chat::prompt::TurnPromptSnapshot::new(
+            crate::runtime::chat::prompt::PromptAssembly::new(vec![
+                crate::runtime::chat::prompt::PromptBlock::dynamic_block(
+                    crate::runtime::chat::prompt::PromptSectionId::new(
+                        "legacy_executor_system_prompt",
+                    ),
+                    effective_system_prompt.clone(),
+                ),
+            ]),
+            Vec::new(),
+        );
+
         let mut config = TurnConfig {
-            system_prompt: overrides.system_prompt.unwrap_or(system_prompt),
+            system_prompt: effective_system_prompt,
+            prompt_snapshot: Some(prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(30),
