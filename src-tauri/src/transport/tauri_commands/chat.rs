@@ -449,7 +449,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         // --- Convert JsonValue messages to ChatMessage ---
         let gateway_messages =
             deserialize_chat_messages_for_gateway(&input.messages, input.conversation_id);
-        let mut chat_messages: Vec<ChatMessage> = gateway_messages.messages;
+        let chat_messages: Vec<ChatMessage> = gateway_messages.messages;
         if gateway_messages.dropped_count > 0 {
             log::error!(
                 "[run_llm_step] conv={} DROPPED {} messages during deserialization — context may be incomplete",
@@ -457,23 +457,8 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 gateway_messages.dropped_count
             );
         }
-        if let Some(value) = input.openai_system_message.clone() {
-            match serde_json::from_value::<ChatMessage>(value) {
-                Ok(system_chat_message) => chat_messages.insert(0, system_chat_message),
-                Err(error) => {
-                    log::warn!(
-                        "[run_llm_step] Failed to deserialize OpenAI system message for conv={}: {}. Falling back to legacy system_prompt.",
-                        input.conversation_id,
-                        error
-                    );
-                    if !input.system_prompt.trim().is_empty() {
-                        chat_messages.insert(0, ChatMessage::text("system", input.system_prompt));
-                    }
-                }
-            }
-        } else if !input.system_prompt.trim().is_empty() {
-            chat_messages.insert(0, ChatMessage::text("system", input.system_prompt));
-        }
+        let system_prompt_for_gateway =
+            openai_system_prompt_content(input.openai_system_message.clone(), input.system_prompt);
 
         // --- Resolve masking level (always Strict; field kept for forward compat) ---
         let masking_level = match input.masking_level.to_lowercase().as_str() {
@@ -533,7 +518,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                     &settings,
                     chat_messages.clone(),
                     masking_level.clone(),
-                    None,
+                    system_prompt_for_gateway.as_deref(),
                     dynamic_ctx_opt,
                     effective_tools.clone(),
                     input.token_budget as u32,
@@ -2086,6 +2071,29 @@ fn build_gateway_settings(settings: &ResolvedLlmSettings) -> AppSettings {
     }
 }
 
+fn openai_system_prompt_content(
+    value: Option<serde_json::Value>,
+    fallback: &str,
+) -> Option<String> {
+    value
+        .and_then(|value| serde_json::from_value::<crate::llm::streaming::ChatMessage>(value).ok())
+        .and_then(|message| {
+            let content = message.content.trim();
+            if message.role == "system" && !content.is_empty() {
+                Some(message.content)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            if fallback.trim().is_empty() {
+                None
+            } else {
+                Some(fallback.to_string())
+            }
+        })
+}
+
 /// Check if an LLM / stream error string is transient and worth retrying.
 fn is_retryable_stream_error_str(error: &str) -> bool {
     let lower = error.to_lowercase();
@@ -2101,6 +2109,33 @@ fn is_retryable_stream_error_str(error: &str) -> bool {
         || lower.contains("network")
         || lower.contains("429")
         || lower.contains("rate limit")
+}
+
+#[cfg(test)]
+mod openai_system_prompt_tests {
+    use super::*;
+    use crate::llm::masking::{MaskingContext, MaskingLevel};
+    use crate::llm::streaming::ChatMessage;
+
+    #[test]
+    fn openai_system_prompt_stays_out_of_masking_path() {
+        let rendered_system = serde_json::json!({
+            "role": "system",
+            "content": "华为公司 instructions remain provider-visible",
+        });
+        let chat_messages = vec![ChatMessage::text("user", "请分析华为公司")];
+        let system_prompt = openai_system_prompt_content(Some(rendered_system), "legacy system")
+            .expect("rendered system prompt content");
+
+        let mut mask_ctx = MaskingContext::new(MaskingLevel::Strict);
+        let masked = mask_ctx.mask_messages(&chat_messages);
+
+        assert_eq!(chat_messages.len(), 1);
+        assert!(chat_messages.iter().all(|message| message.role != "system"));
+        assert!(system_prompt.contains("华为公司"));
+        assert!(masked[0].content.contains("[COMPANY_1]"));
+        assert!(!masked[0].content.contains("华为公司"));
+    }
 }
 
 /// Classify an LLM error into a user-friendly Chinese message.

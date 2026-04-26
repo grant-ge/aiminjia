@@ -37,10 +37,9 @@ fn renderer_does_not_emit_anthropic_private_fields() {
     assert!(object.get("cache_control").is_none());
     assert!(object.get("type").is_none());
     assert!(object.get("blocks").is_none());
-    assert_eq!(
-        object.keys().cloned().collect::<Vec<_>>(),
-        vec!["content", "role"]
-    );
+    assert_eq!(object.len(), 2);
+    assert!(object.contains_key("role"));
+    assert!(object.contains_key("content"));
 }
 
 #[test]
