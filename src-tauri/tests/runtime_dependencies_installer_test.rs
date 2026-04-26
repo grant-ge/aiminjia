@@ -271,7 +271,7 @@ fn install_manifest_contains_relative_runtime_paths_and_metadata() {
     .expect("parse install manifest");
 
     assert_eq!(manifest["bundleVersion"], "2026.05.19");
-    assert_eq!(manifest["platform"], std::env::consts::OS.to_string() + "/" + std::env::consts::ARCH);
+    assert_eq!(manifest["platform"], app_lib::runtime::dependencies::RuntimePlatform::current().unwrap().manifest_key());
     assert_eq!(manifest["paths"]["node"], "node/bin/node");
     assert_eq!(manifest["paths"]["npm"], "node/bin/npm");
     assert_eq!(manifest["paths"]["npx"], "node/bin/npx");
@@ -628,6 +628,75 @@ fn rejects_zip_artifact_with_path_traversal_entry() {
 
     assert!(error.to_string().contains("unsafe archive entry path"));
     assert!(!paths.current_dir().exists());
+}
+
+
+
+fn write_windows_runtime_zip(path: &Path) {
+    let file = fs::File::create(path).expect("create windows runtime zip");
+    let mut zip = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default();
+    for entry in [
+        "python/python.exe",
+        "node/node.exe",
+        "node/npm.cmd",
+        "node/npx.cmd",
+        "uv/uv.exe",
+        "uv/uvx.exe",
+    ] {
+        zip.start_file(entry, options).expect("start zip file");
+        std::io::Write::write_all(
+            &mut zip,
+            format!("@echo off\r\necho {entry} windows-artifact\r\n").as_bytes(),
+        )
+        .expect("write zip executable");
+    }
+    zip.add_directory("node/node_modules/", SimpleFileOptions::default())
+        .expect("add node_modules dir");
+    zip.add_directory("python/Lib/site-packages/", SimpleFileOptions::default())
+        .expect("add site-packages dir");
+    zip.finish().expect("finish zip");
+}
+
+#[test]
+fn installs_windows_zip_artifact_with_platform_layout_without_cross_platform_smoke() {
+    let tempdir = tempdir().expect("tempdir");
+    let paths = RuntimePaths::new(
+        tempdir.path().join("cache-root"),
+        "renlijia-primary-runtime",
+    )
+    .expect("valid paths");
+    let artifact = tempdir.path().join("runtime-win32-x64.zip");
+    write_windows_runtime_zip(&artifact);
+
+    let result = RuntimeInstaller::new_for_platform(
+        paths.clone(),
+        app_lib::runtime::dependencies::RuntimePlatform::WindowsX64,
+    )
+    .install_from_local_archive(RuntimeInstallPlan::already_local("2026.04.26-runtime.1"), &artifact)
+    .expect("installer should accept windows layout");
+
+    assert_eq!(
+        fs::read_to_string(paths.current_dir()).expect("current pointer"),
+        "versions/2026.04.26-runtime.1"
+    );
+    assert!(result.install_dir.join("python/python.exe").is_file());
+    assert!(result.install_dir.join("node/npm.cmd").is_file());
+    assert!(result.install_dir.join("uv/uvx.exe").is_file());
+    assert!(result.install_dir.join("python/Lib/site-packages").is_dir());
+
+    let manifest: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(result.install_dir.join("install.json")).expect("read install manifest"),
+    )
+    .expect("parse install manifest");
+    assert_eq!(manifest["platform"], "win32-x64");
+    assert_eq!(manifest["paths"]["node"], "node/node.exe");
+    assert_eq!(manifest["paths"]["npm"], "node/npm.cmd");
+    assert_eq!(manifest["paths"]["npx"], "node/npx.cmd");
+    assert_eq!(manifest["paths"]["python"], "python/python.exe");
+    assert_eq!(manifest["paths"]["uv"], "uv/uv.exe");
+    assert_eq!(manifest["paths"]["uvx"], "uv/uvx.exe");
+    assert_eq!(manifest["paths"]["pythonSitePackages"], "python/Lib/site-packages");
 }
 
 fn sha256_hex(path: &Path) -> String {

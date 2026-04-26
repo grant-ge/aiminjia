@@ -126,3 +126,26 @@ fn static_runtime_resolver_rejects_relative_python_site_packages_path() {
         other => panic!("expected NonAbsolutePath for python_site_packages, got {other:?}"),
     }
 }
+
+#[test]
+fn workspace_dependencies_support_windows_runtime_layout() {
+    let install_dir = PathBuf::from("/tmp/renlijia-runtimes/renlijia-primary-runtime/versions/2026.04.26-runtime.1");
+
+    let dependencies = app_lib::runtime::dependencies::WorkspaceDependencies::from_install_dir_for_platform(
+        &install_dir,
+        app_lib::runtime::dependencies::RuntimePlatform::WindowsX64,
+    )
+    .expect("windows dependencies should resolve");
+
+    assert_eq!(dependencies.python, install_dir.join("python/python.exe"));
+    assert_eq!(dependencies.node, install_dir.join("node/node.exe"));
+    assert_eq!(dependencies.npm, install_dir.join("node/npm.cmd"));
+    assert_eq!(dependencies.npx, install_dir.join("node/npx.cmd"));
+    assert_eq!(dependencies.uv, install_dir.join("uv/uv.exe"));
+    assert_eq!(dependencies.uvx, install_dir.join("uv/uvx.exe"));
+    assert_eq!(dependencies.node_modules, install_dir.join("node/node_modules"));
+    assert_eq!(
+        dependencies.python_site_packages,
+        install_dir.join("python/Lib/site-packages")
+    );
+}

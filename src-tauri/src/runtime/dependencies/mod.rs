@@ -5,6 +5,7 @@ mod config;
 mod downloader;
 mod health;
 mod installer;
+mod layout;
 mod manager;
 mod manifest;
 mod manifest_client;
@@ -29,6 +30,7 @@ pub use health::{RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport, 
 pub use installer::{
     RuntimeCleanupResult, RuntimeInstallError, RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller,
 };
+pub use layout::RuntimeLayout;
 pub use manager::{ManagedRuntimeManager, RuntimeManager, RuntimeManagerError};
 pub use manifest::{RuntimeArtifact, RuntimeManifest, RuntimeManifestError, RuntimeSpec};
 pub use manifest_client::{RuntimeDownloadPlan, RuntimeManifestSource};

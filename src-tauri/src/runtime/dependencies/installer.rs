@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use super::{
-    validate_archive_entry_path, verify_sha256, RuntimeHealthChecker, RuntimePaths,
-    RuntimeToolProbe, WorkspaceDependencies,
+    validate_archive_entry_path, verify_sha256, RuntimeHealthChecker, RuntimeLayout, RuntimePaths,
+    RuntimePlatform, RuntimePlatformError, RuntimeToolProbe, WorkspaceDependencies,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,11 +67,43 @@ impl std::error::Error for RuntimeInstallError {}
 #[derive(Debug, Clone)]
 pub struct RuntimeInstaller {
     paths: RuntimePaths,
+    platform_override: Option<RuntimePlatform>,
 }
 
 impl RuntimeInstaller {
     pub fn new(paths: RuntimePaths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            platform_override: None,
+        }
+    }
+
+    pub fn new_for_platform(paths: RuntimePaths, platform: RuntimePlatform) -> Self {
+        Self {
+            paths,
+            platform_override: Some(platform),
+        }
+    }
+
+    fn current_layout(&self) -> Result<RuntimeLayout, RuntimeInstallError> {
+        match self.platform_override {
+            Some(platform) => Ok(RuntimeLayout::for_platform(platform)),
+            None => RuntimeLayout::current().map_err(runtime_platform_error),
+        }
+    }
+
+    fn should_smoke_test_runtime_payload(&self) -> bool {
+        let Ok(current) = RuntimePlatform::current() else {
+            return false;
+        };
+        let target = self.platform_override.unwrap_or(current);
+        matches!(
+            (target, current),
+            (RuntimePlatform::DarwinArm64, RuntimePlatform::DarwinArm64)
+                | (RuntimePlatform::DarwinX64, RuntimePlatform::DarwinX64)
+                | (RuntimePlatform::LinuxX64, RuntimePlatform::LinuxX64)
+                | (RuntimePlatform::WindowsX64, RuntimePlatform::WindowsX64)
+        )
     }
 
     pub fn ensure(
@@ -142,7 +174,9 @@ impl RuntimeInstaller {
         self.write_install_manifest(&staging_dir, &bundle_version)?;
         self.create_dev_payload(&staging_dir).map_err(io_error)?;
         self.validate_runtime_payload(&staging_dir)?;
-        self.smoke_test_runtime_payload(&staging_dir)?;
+        if self.should_smoke_test_runtime_payload() {
+            self.smoke_test_runtime_payload(&staging_dir)?;
+        }
 
         let replaced_backup = self.replace_staging_with_version_dir(&staging_dir, &version_dir)?;
         if let Err(error) = self.write_current_pointer(&current_path, &bundle_version) {
@@ -304,9 +338,11 @@ impl RuntimeInstaller {
             let _ = fs::remove_dir_all(&staging_dir);
             return Err(error);
         }
-        if let Err(error) = self.smoke_test_runtime_payload(&staging_dir) {
-            let _ = fs::remove_dir_all(&staging_dir);
-            return Err(error);
+        if self.should_smoke_test_runtime_payload() {
+            if let Err(error) = self.smoke_test_runtime_payload(&staging_dir) {
+                let _ = fs::remove_dir_all(&staging_dir);
+                return Err(error);
+            }
         }
 
         let replaced_backup = self.replace_staging_with_version_dir(&staging_dir, &version_dir)?;
@@ -550,9 +586,10 @@ impl RuntimeInstaller {
     ) -> Result<(), RuntimeInstallError> {
         let install_manifest_path = install_dir.join("install.json");
         self.assert_within_bundle_root(&install_manifest_path)?;
+        let layout = self.current_layout()?;
         let bytes = serde_json::to_vec_pretty(&json!({
             "bundleVersion": bundle_version,
-            "platform": format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
+            "platform": layout.platform().manifest_key(),
             "source": {
                 "kind": "managed-runtime",
             },
@@ -561,36 +598,36 @@ impl RuntimeInstaller {
                     "version": "unknown",
                     "path": "node",
                     "binPaths": {
-                        "node": "node/bin/node",
-                        "npm": "node/bin/npm",
-                        "npx": "node/bin/npx"
+                        "node": layout.node(),
+                        "npm": layout.npm(),
+                        "npx": layout.npx()
                     }
                 },
                 "python": {
                     "version": "unknown",
                     "path": "python",
                     "binPaths": {
-                        "python": "python/bin/python3"
+                        "python": layout.python()
                     }
                 },
                 "uv": {
                     "version": "unknown",
                     "path": "uv",
                     "binPaths": {
-                        "uv": "uv/bin/uv",
-                        "uvx": "uv/bin/uvx"
+                        "uv": layout.uv(),
+                        "uvx": layout.uvx()
                     }
                 }
             },
             "paths": {
-                "node": "node/bin/node",
-                "npm": "node/bin/npm",
-                "npx": "node/bin/npx",
-                "python": "python/bin/python3",
-                "uv": "uv/bin/uv",
-                "uvx": "uv/bin/uvx",
-                "nodeModules": "node/node_modules",
-                "pythonSitePackages": "python/lib/site-packages"
+                "node": layout.node(),
+                "npm": layout.npm(),
+                "npx": layout.npx(),
+                "python": layout.python(),
+                "uv": layout.uv(),
+                "uvx": layout.uvx(),
+                "nodeModules": layout.node_modules(),
+                "pythonSitePackages": layout.python_site_packages()
             }
         }))
         .map_err(|error| RuntimeInstallError::Io(error.to_string()))?;
@@ -598,14 +635,9 @@ impl RuntimeInstaller {
     }
 
     fn create_dev_payload(&self, install_dir: &Path) -> std::io::Result<()> {
-        for path in [
-            install_dir.join("python/bin/python3"),
-            install_dir.join("node/bin/node"),
-            install_dir.join("node/bin/npm"),
-            install_dir.join("node/bin/npx"),
-            install_dir.join("uv/bin/uv"),
-            install_dir.join("uv/bin/uvx"),
-        ] {
+        let layout = self.current_layout().map_err(std::io::Error::other)?;
+        for relative in layout.executable_paths() {
+            let path = install_dir.join(relative);
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -616,27 +648,32 @@ impl RuntimeInstaller {
                     .unwrap_or("runtime");
                 fs::write(
                     &path,
-                    format!("#!/usr/bin/env sh\necho {tool_name} managed-runtime-stub\n"),
+                    format!("#!/usr/bin/env sh
+echo {tool_name} managed-runtime-stub
+"),
                 )?;
                 make_executable(&path)?;
             }
         }
-        fs::create_dir_all(install_dir.join("node/node_modules"))?;
-        fs::create_dir_all(install_dir.join("python/lib/site-packages"))?;
+        for relative in layout.directory_paths() {
+            fs::create_dir_all(install_dir.join(relative))?;
+        }
         Ok(())
     }
 
     fn validate_runtime_payload(&self, install_dir: &Path) -> Result<(), RuntimeInstallError> {
-        for relative in [
-            "python/bin/python3",
-            "node/bin/node",
-            "node/bin/npm",
-            "node/bin/npx",
-            "uv/bin/uv",
-            "uv/bin/uvx",
-        ] {
+        let layout = self.current_layout()?;
+        for relative in layout.executable_paths() {
             let path = install_dir.join(relative);
             if !path.is_file() {
+                return Err(RuntimeInstallError::MissingPayload(
+                    path.display().to_string(),
+                ));
+            }
+        }
+        for relative in layout.directory_paths() {
+            let path = install_dir.join(relative);
+            if !path.is_dir() {
                 return Err(RuntimeInstallError::MissingPayload(
                     path.display().to_string(),
                 ));
@@ -702,6 +739,10 @@ impl RuntimeInstaller {
             Err(RuntimeInstallError::InvalidPath(path.display().to_string()))
         }
     }
+}
+
+fn runtime_platform_error(error: RuntimePlatformError) -> RuntimeInstallError {
+    RuntimeInstallError::Io(error.to_string())
 }
 
 fn io_error(error: std::io::Error) -> RuntimeInstallError {

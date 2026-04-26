@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::types::{RuntimeDependencyError, RuntimeDependencyResult, WorkspaceDependencies};
+use super::{RuntimeLayout, RuntimePlatform, RuntimePlatformError};
 
 pub trait RuntimeResolver: Send + Sync {
     fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies>;
@@ -63,25 +64,15 @@ impl RuntimeResolver for InstalledRuntimeResolver {
 
 impl WorkspaceDependencies {
     pub fn from_install_dir(install_dir: &Path) -> RuntimeDependencyResult<Self> {
-        let python = install_dir.join("python/bin/python3");
-        let node = install_dir.join("node/bin/node");
-        let npm = install_dir.join("node/bin/npm");
-        let npx = install_dir.join("node/bin/npx");
-        let uv = install_dir.join("uv/bin/uv");
-        let uvx = install_dir.join("uv/bin/uvx");
-        let node_modules = install_dir.join("node/node_modules");
-        let python_site_packages = install_dir.join("python/lib/site-packages");
+        let platform = RuntimePlatform::current().map_err(runtime_platform_error)?;
+        Self::from_install_dir_for_platform(install_dir, platform)
+    }
 
-        let dependencies = Self {
-            python,
-            node,
-            npm,
-            npx,
-            uv,
-            uvx,
-            node_modules,
-            python_site_packages,
-        };
+    pub fn from_install_dir_for_platform(
+        install_dir: &Path,
+        platform: RuntimePlatform,
+    ) -> RuntimeDependencyResult<Self> {
+        let dependencies = RuntimeLayout::for_platform(platform).workspace_dependencies(install_dir);
         validate_dependencies(&dependencies)?;
         Ok(dependencies)
     }
@@ -149,11 +140,7 @@ fn validate_installed_dependencies(
     validate_existing("uvx", &dependencies.uvx)?;
     validate_existing_dir("node_modules", &dependencies.node_modules)?;
     validate_existing_dir("python_site_packages", &dependencies.python_site_packages)?;
-    let install_manifest = dependencies
-        .python
-        .parent()
-        .and_then(|bin| bin.parent())
-        .and_then(|python| python.parent())
+    let install_manifest = infer_install_dir_from_python_path(&dependencies.python)
         .map(|install_dir| install_dir.join("install.json"))
         .ok_or_else(|| {
             RuntimeDependencyError::ResolverUnavailable(
@@ -162,6 +149,24 @@ fn validate_installed_dependencies(
         })?;
     validate_existing("install_json", &install_manifest)?;
     Ok(())
+}
+
+fn infer_install_dir_from_python_path(python_path: &Path) -> Option<PathBuf> {
+    for platform in [
+        RuntimePlatform::DarwinArm64,
+        RuntimePlatform::DarwinX64,
+        RuntimePlatform::LinuxX64,
+        RuntimePlatform::WindowsX64,
+    ] {
+        if let Some(install_dir) = RuntimeLayout::for_platform(platform).install_dir_from_python_path(python_path) {
+            return Some(install_dir);
+        }
+    }
+    None
+}
+
+fn runtime_platform_error(error: RuntimePlatformError) -> RuntimeDependencyError {
+    RuntimeDependencyError::ResolverUnavailable(error.to_string())
 }
 
 fn validate_existing(field: &'static str, path: &PathBuf) -> RuntimeDependencyResult<()> {
