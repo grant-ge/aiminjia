@@ -35,6 +35,7 @@ pub struct WorkerTurnRequest {
     pub messages: Vec<ChatMessage>,
     pub tool_defs: Vec<ToolDefinition>,
     pub system_prompt: String,
+    pub openai_system_message: Option<ChatMessage>,
     pub dynamic_context: Option<String>,
     pub max_iterations: usize,
 }
@@ -108,6 +109,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             messages: vec![ChatMessage::text("user", &config.task)],
             tool_defs,
             system_prompt: config.system_prompt.clone(),
+            openai_system_message: Some(ChatMessage::text("system", config.system_prompt.clone())),
             dynamic_context: (!config.dynamic_context.is_empty())
                 .then(|| config.dynamic_context.clone()),
             max_iterations: config.max_iterations,
@@ -245,7 +247,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     self.settings,
                     request.messages.clone(),
                     MaskingLevel::Relaxed,
-                    Some(request.system_prompt.as_str()),
+                    worker_system_prompt_for_gateway(&request),
                     request.dynamic_context.as_deref(),
                     Some(request.tool_defs.clone()),
                     4096,
@@ -727,12 +729,25 @@ fn context_modifier_to_message(value: &serde_json::Value) -> Option<ChatMessage>
     Some(ChatMessage::text(role, content))
 }
 
+fn worker_system_prompt_for_gateway(request: &WorkerTurnRequest) -> Option<&str> {
+    request
+        .openai_system_message
+        .as_ref()
+        .filter(|message| message.role == "system" && !message.content.trim().is_empty())
+        .map(|message| message.content.as_str())
+        .or_else(|| {
+            (!request.system_prompt.trim().is_empty()).then_some(request.system_prompt.as_str())
+        })
+}
+
 fn apply_skill_runtime_patch(
     request: &mut WorkerTurnRequest,
     allowed_tools: &mut Vec<String>,
     patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
 ) {
     request.system_prompt = patch.system_prompt;
+    request.openai_system_message =
+        Some(ChatMessage::text("system", request.system_prompt.clone()));
     request.tool_defs = patch
         .tool_defs
         .into_iter()
@@ -876,6 +891,50 @@ mod tests {
     }
 
     #[test]
+    fn worker_system_prompt_for_gateway_prefers_openai_system_message_without_mutating_messages() {
+        let request = WorkerTurnRequest {
+            subagent_conversation_id: "sub-conv".to_string(),
+            messages: vec![ChatMessage::text("user", "task")],
+            tool_defs: Vec::new(),
+            system_prompt: "fallback prompt".to_string(),
+            openai_system_message: Some(ChatMessage::text("system", "openai prompt")),
+            dynamic_context: None,
+            max_iterations: 1,
+        };
+
+        assert_eq!(
+            worker_system_prompt_for_gateway(&request),
+            Some("openai prompt")
+        );
+        assert!(request
+            .messages
+            .iter()
+            .all(|message| message.role != "system"));
+    }
+
+    #[test]
+    fn worker_system_prompt_for_gateway_falls_back_to_legacy_system_prompt() {
+        let request = WorkerTurnRequest {
+            subagent_conversation_id: "sub-conv".to_string(),
+            messages: vec![ChatMessage::text("user", "task")],
+            tool_defs: Vec::new(),
+            system_prompt: "fallback prompt".to_string(),
+            openai_system_message: None,
+            dynamic_context: None,
+            max_iterations: 1,
+        };
+
+        assert_eq!(
+            worker_system_prompt_for_gateway(&request),
+            Some("fallback prompt")
+        );
+        assert!(request
+            .messages
+            .iter()
+            .all(|message| message.role != "system"));
+    }
+
+    #[test]
     fn apply_skill_runtime_patch_updates_worker_request_and_allowed_tools() {
         let mut request = WorkerTurnRequest {
             subagent_conversation_id: "sub-conv".to_string(),
@@ -886,6 +945,7 @@ mod tests {
                 parameters: json!({"type": "object"}),
             }],
             system_prompt: "old prompt".to_string(),
+            openai_system_message: Some(ChatMessage::text("system", "old prompt")),
             dynamic_context: None,
             max_iterations: 3,
         };
@@ -909,6 +969,9 @@ mod tests {
         apply_skill_runtime_patch(&mut request, &mut allowed_tools, patch);
 
         assert_eq!(request.system_prompt, "new prompt");
+        let openai_system_message = request.openai_system_message.as_ref().unwrap();
+        assert_eq!(openai_system_message.role, "system");
+        assert_eq!(openai_system_message.content, "new prompt");
         assert_eq!(request.max_iterations, 8);
         assert_eq!(request.tool_defs.len(), 1);
         assert_eq!(request.tool_defs[0].name, "switch_skill");
