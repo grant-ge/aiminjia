@@ -1,5 +1,6 @@
 use app_lib::llm::prompts::{self, PromptMode};
 use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, ReminderBuilder};
+use app_lib::runtime::chat::context_builder::build_iteration_context;
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -230,4 +231,24 @@ fn turn_prompt_snapshot_exposes_flattened_compat_prompt() {
 
     assert_eq!(snapshot.compat_system_prompt(), "base\n\ndaily");
     assert_eq!(snapshot.system_view().blocks.len(), 2);
+}
+
+#[test]
+fn iteration_context_contains_only_runtime_delta_sections() {
+    let result = build_iteration_context(
+        "",
+        "",
+        "\n\n[当前环境]\n工作目录: /tmp/project",
+        "",
+        "",
+        Some("computed result"),
+        None,
+        None,
+    );
+
+    assert!(result.starts_with("[动态上下文 — 请勿回复此消息]"));
+    assert!(result.contains("[当前环境]"));
+    assert!(result.contains("[precompute_result]"));
+    assert!(!result.contains("【工具选择偏好】"));
+    assert!(!result.contains("【记忆管理】"));
 }

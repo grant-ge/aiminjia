@@ -1218,7 +1218,7 @@ impl RuntimeChatTurnDriver {
                 }
             }
 
-            let dynamic_context = build_iteration_context(
+            let iteration_delta_context = build_iteration_context(
                 &core_memory_str,
                 &project_memory_prompt,
                 &env_info,
@@ -1248,7 +1248,7 @@ impl RuntimeChatTurnDriver {
                     .prompt_snapshot
                     .as_ref()
                     .and_then(|snapshot| snapshot.openai_system_message()),
-                dynamic_context: &dynamic_context,
+                dynamic_context: &iteration_delta_context,
                 // Pass a clone of the current messages slice so executor cannot
                 // mutate driver state.
                 messages: state.messages.clone(),

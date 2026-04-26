@@ -1,4 +1,4 @@
-/// Build the dynamic context injected into the system prompt on each iteration.
+/// Build the per-iteration user/dynamic context carrying runtime deltas.
 ///
 /// This is kept separate from the static system prompt so that KV-cache prefix stability is
 /// preserved: only the dynamic user message changes, not the system message.
