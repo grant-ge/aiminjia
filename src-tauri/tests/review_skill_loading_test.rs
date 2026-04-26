@@ -119,7 +119,7 @@ async fn switch_skill_returns_skill_runtime_patch_and_launching_result_once_per_
 
     let tool_registry = Arc::new(ToolRegistry::new());
     let sessions = Arc::new(SkillSessionStore::new());
-    let tool = SwitchSkillRuntimeTool::new(registry, sessions, tool_registry);
+    let tool = SwitchSkillRuntimeTool::new(registry, sessions, tool_registry).await;
 
     let result = tool
         .execute(

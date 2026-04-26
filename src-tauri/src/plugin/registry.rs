@@ -466,7 +466,10 @@ impl ToolRegistry {
         // Step 2: Try request-level factory (session-scoped deps built from PluginContext)
         // TRANSITIONAL: BrowserDeps carry conversation_id / run_id which
         // cannot be stored in the global singleton registry.
-        let runtime_tool = runtime_tool.or_else(|| Self::try_build_request_scoped_tool(name, ctx));
+        let runtime_tool = match runtime_tool {
+            Some(t) => Some(t),
+            None => Self::try_build_request_scoped_tool(name, ctx).await,
+        };
 
         if let Some(tool) = runtime_tool {
             // Build CapabilityContext from PluginContext fields
@@ -722,7 +725,7 @@ impl ToolRegistry {
             if runtime_tools.contains_key(*tool_name) {
                 continue;
             }
-            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &request_scoped) {
+            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &request_scoped).await {
                 dispatcher.register(tool);
             }
         }
@@ -739,7 +742,7 @@ impl ToolRegistry {
     ///
     /// Returns `None` for unknown tool names (falls through to legacy path).
     /// For browser tools, also returns `None` when `connector_engine` is absent.
-    fn try_build_request_scoped_tool(
+    async fn try_build_request_scoped_tool(
         name: &str,
         ctx: &RequestScopedRuntimeDeps,
     ) -> Option<Arc<dyn crate::runtime::tools::RuntimeTool>> {
@@ -920,7 +923,7 @@ impl ToolRegistry {
                         skill_registry,
                         skill_sessions,
                         ctx.tool_registry.clone().unwrap_or_else(|| Arc::new(ToolRegistry::new())),
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                    ).await) as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 ),
                 _ => None,
             },
