@@ -448,11 +448,11 @@ sequenceDiagram
 
 ### 4. Prompt 架构对标边界
 
-`claude-code-best` 的 prompt 组装是 structured system blocks / reminders / tool schema 分层：稳定系统前缀、会话动态段、易变化上下文、自动注入的 reminder，以及 provider 侧 tool schema 各自有清晰边界。lotus 对标的是这种内部结构化 assembly，而不是照搬某个 provider 的 wire format。
+`claude-code-best` 的 prompt 组装是 structured system blocks / reminders / tool schema 分层：稳定系统前缀、会话动态段、易变化上下文、自动注入的 reminder，以及 provider 侧 tool schema 各自有清晰边界。lotus 对标的是这种内部结构化 assembly，而不是照搬某个 provider 的 wire format。lotus 侧的细化边界以 `docs/prompt-architecture.md` 为准，避免此概览文档重复漂移。
 
-lotus 当前 provider 主链路是 OpenAI Chat。生产渲染仍只 flatten 为 `messages[0] = { role: "system", content: flattened_prompt }`，不会输出 Anthropic top-level `system` blocks，也不会引入 Anthropic `cache_control` 作为 lotus 主线参数。
+lotus 当前目标主链路是 OpenAI-compatible Chat：prompt assembly flatten 后进入 OpenAI system message，再由 gateway 与 dynamic context、reminders、regular messages 组合。`PromptAssembler` / `PromptAssembly` 不产生 provider-specific Anthropic `cache_control`；若仓库保留 Claude provider，它属于 provider adapter 的 wire-format 兼容层，可能做 provider-specific adaptation，但不是 prompt assembly 的主架构边界。
 
-prompt caching / cache break 当前仅作为诊断与未来优化边界：`PromptCachePolicy::StaticPrefix` 标注稳定前缀，`PromptCachePolicy::Volatile` 标注 cache-breaking section 并记录 reason；这些标注不等同于 provider 参数。
+prompt caching / cache break 当前仅作为诊断与未来优化边界：`PromptCachePolicy::StaticPrefix` 标注稳定前缀，`PromptCachePolicy::Volatile` 标注 cache-breaking section 并记录 reason；这些标注不等同于 provider 参数，也不表示当前 volatile iteration context 已进入 static system prompt assembly。
 
 runtime enforcement 仍由 tool permission、文件 sandbox、MCP 可见性、cancel、timeout 等运行时机制执行。Prompt 只解释模型可见能力与上下文，不承担权限或安全边界。
 
