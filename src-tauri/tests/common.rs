@@ -117,3 +117,47 @@ pub fn make_assistant(id: &str, text: &str) -> StoredMessage {
         rev: None,
     }
 }
+
+/// A minimal in-process Skill stub for testing.
+struct MockSkill {
+    id: String,
+    description: String,
+}
+
+impl app_lib::plugin::Skill for MockSkill {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn display_name(&self) -> &str {
+        &self.id
+    }
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn should_activate(&self, _message: &str, _has_files: bool, _current_skill: &str) -> bool {
+        false
+    }
+    fn system_prompt(&self, _state: &app_lib::plugin::skill_trait::SkillState) -> String {
+        String::new()
+    }
+    fn tool_filter(
+        &self,
+        _state: &app_lib::plugin::skill_trait::SkillState,
+    ) -> app_lib::plugin::skill_trait::ToolFilter {
+        app_lib::plugin::skill_trait::ToolFilter::All
+    }
+}
+
+/// Register a lightweight mock skill into the given registry (for tests).
+#[allow(dead_code)]
+pub async fn register_mock_skill(
+    registry: &std::sync::Arc<app_lib::plugin::SkillRegistry>,
+    id: &str,
+    description: &str,
+) {
+    let skill = std::sync::Arc::new(MockSkill {
+        id: id.to_string(),
+        description: description.to_string(),
+    });
+    registry.register(skill, "test").await;
+}

@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::plugin::SkillRegistry;
-use crate::runtime::tools::catalog::TOOL_CATALOG;
+use crate::runtime::tools::catalog::{CatalogEntry, TOOL_CATALOG};
 use crate::runtime::tools::context::ToolExecutionContext;
-use crate::runtime::tools::definition::ToolDefinition;
+use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 use crate::transport::tauri_commands::chat::chat_runtime_impl;
@@ -34,9 +34,73 @@ impl SwitchSkillRuntimeTool {
 #[async_trait]
 impl RuntimeTool for SwitchSkillRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("switch_skill")
-            .unwrap_or_else(|| ToolDefinition::new("switch_skill", "Switch skill"))
+        // Read skill IDs from the registry synchronously.
+        // `block_in_place` lets us block inside tokio's multi-thread runtime;
+        // outside tokio (unit tests / non-async callers) we fall back to a
+        // plain synchronous executor.
+        let skill_ids: Vec<String> = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            tokio::task::block_in_place(|| {
+                handle.block_on(async {
+                    self.skill_registry
+                        .list()
+                        .await
+                        .into_iter()
+                        .map(|s| s.id)
+                        .filter(|id| id != self.skill_registry.default_skill_id())
+                        .collect()
+                })
+            })
+        } else {
+            futures::executor::block_on(async {
+                self.skill_registry
+                    .list()
+                    .await
+                    .into_iter()
+                    .map(|s| s.id)
+                    .filter(|id| id != self.skill_registry.default_skill_id())
+                    .collect()
+            })
+        };
+
+        let ids_str = skill_ids.join(", ");
+        let description = if skill_ids.is_empty() {
+            "切换当前会话 skill，并让下一轮 turn 使用新的 prompt / 工具面。".to_string()
+        } else {
+            format!(
+                "切换当前会话 skill，并让下一轮 turn 使用新的 prompt / 工具面。\
+                可用的 skill_id：{}。只能填写列表中的 ID，不能填写其他值。",
+                ids_str
+            )
+        };
+
+        let skill_id_schema = if skill_ids.is_empty() {
+            json!({
+                "type": "string",
+                "description": "目标 skill id"
+            })
+        } else {
+            json!({
+                "type": "string",
+                "description": format!("目标 skill id，必须是以下之一：{}", ids_str),
+                "enum": skill_ids
+            })
+        };
+
+        let schema = json!({
+            "type": "object",
+            "required": ["skill_id"],
+            "properties": {
+                "skill_id": skill_id_schema
+            }
+        });
+
+        // Update the global TOOL_CATALOG with the runtime-resolved schema so
+        // that build_visible_tool_defs() sends the correct enum to the LLM.
+        let catalog_def = ToolDefinition::new("switch_skill", &description)
+            .with_kind(ToolKind::Support);
+        TOOL_CATALOG.register_entry(CatalogEntry::new(catalog_def.clone(), schema));
+
+        catalog_def
     }
 
     async fn execute(
