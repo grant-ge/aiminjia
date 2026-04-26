@@ -1001,15 +1001,10 @@ impl RuntimeChatTurnDriver {
         // ── Step 2: Initialize iteration state ───────────────────────────────
         // messages 顺序：[system-reminder, renlijia-md-meta?, ...history, current-user-content]
         let now = chrono::Local::now();
-        let today = now.format("%Y年%m月%d日");
-        let today_iso = now.format("%Y-%m-%d");
-        let system_reminder_message = serde_json::json!({
-            "role": "user",
-            "content": format!(
-                "<system-reminder>\n今天是 {}（{}）。\n</system-reminder>",
-                today, today_iso
-            ),
-        });
+        let today = now.format("%Y年%m月%d日").to_string();
+        let today_iso = now.format("%Y-%m-%d").to_string();
+        let system_reminder_message =
+            crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
         let renlijia_md_files = executor
             .load_renlijia_md(&config.workspace_path)
             .await

@@ -1,8 +1,10 @@
 pub mod cache;
+pub mod reminders;
 pub mod sections;
 pub mod types;
 
 pub use cache::PromptSectionCache;
+pub use reminders::ReminderBuilder;
 pub use sections::{PromptAssembler, PromptBuildContext, PromptSectionSpec};
 pub use types::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId, PromptSystemView,

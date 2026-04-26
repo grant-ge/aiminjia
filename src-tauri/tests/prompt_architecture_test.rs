@@ -1,5 +1,5 @@
 use app_lib::llm::prompts::{self, PromptMode};
-use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext};
+use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, ReminderBuilder};
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -159,4 +159,15 @@ fn prompt_assembler_strips_daily_memory_whitelist_when_persona_memory_hints_exis
     assert!(!parts.dynamic_section.contains("old memory hint"));
     assert!(parts.dynamic_section.contains("后续章节"));
     assert!(parts.dynamic_section.contains("keep this section"));
+}
+
+#[test]
+fn reminder_builder_outputs_system_reminder_user_message() {
+    let message = ReminderBuilder::date_message("2026年04月26日", "2026-04-26");
+
+    assert_eq!(message["role"], "user");
+    let content = message["content"].as_str().unwrap();
+    assert!(content.starts_with("<system-reminder>"));
+    assert!(content.contains("今天是 2026年04月26日（2026-04-26）。"));
+    assert!(content.ends_with("</system-reminder>"));
 }
