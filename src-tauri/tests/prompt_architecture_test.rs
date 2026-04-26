@@ -1,6 +1,6 @@
 use app_lib::llm::prompts::{self, PromptMode};
-use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, ReminderBuilder};
 use app_lib::runtime::chat::context_builder::build_iteration_context;
+use app_lib::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, ReminderBuilder};
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -8,8 +8,8 @@ use std::sync::{
 };
 
 use app_lib::runtime::chat::prompt::{
-    PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionCache, PromptSectionId,
-    PromptSectionSpec, TurnPromptSnapshot,
+    PromptAssembly, PromptBlock, PromptCachePolicy, PromptDiagnostics, PromptSectionCache,
+    PromptSectionId, PromptSectionSpec, TurnPromptSnapshot,
 };
 
 static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -86,6 +86,22 @@ fn volatile_section_spec_requires_reason() {
         spec.cache_break_reason.as_deref(),
         Some("MCP servers connect and disconnect between turns")
     );
+}
+
+#[test]
+fn prompt_diagnostics_reports_section_lengths_and_cache_policy() {
+    let assembly = PromptAssembly::new(vec![
+        PromptBlock::static_block(PromptSectionId::new("base"), "abc"),
+        PromptBlock::dynamic_block(PromptSectionId::new("daily"), "defg"),
+    ]);
+
+    let report = PromptDiagnostics::from_assembly(&assembly);
+    assert_eq!(report.total_chars, 7);
+    assert_eq!(report.sections.len(), 2);
+    assert_eq!(report.sections[0].section_id, "base");
+    assert_eq!(report.sections[0].chars, 3);
+    assert_eq!(report.sections[0].cache_policy, "static_prefix");
+    assert_eq!(report.sections[1].cache_break_reason, None);
 }
 
 #[test]

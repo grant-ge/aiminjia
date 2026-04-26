@@ -1015,6 +1015,20 @@ impl RuntimeChatTurnDriver {
             run_id: request.run_id.clone(),
             hook_registry: request.hook_registry.clone(),
         };
+        if let Some(snapshot) = &config.prompt_snapshot {
+            let diagnostics =
+                crate::runtime::chat::prompt::PromptDiagnostics::from_assembly(snapshot.assembly());
+            record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.prompt.loaded",
+                turn.session_id(),
+                turn.run_id(),
+                Some(true),
+                None,
+                serde_json::to_value(diagnostics).ok(),
+            );
+        }
+
         record_turn_diagnostic(
             &config.workspace_path,
             "turn.config.loaded",
