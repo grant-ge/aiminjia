@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+
 use app_lib::runtime::chat::prompt::{
     PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionCache, PromptSectionId,
     PromptSectionSpec,
@@ -38,6 +43,29 @@ fn prompt_section_cache_reuses_session_dynamic_sections() {
     cache.clear();
     let third = cache.get_or_insert(section_id, || "env-v3".to_string());
     assert_eq!(third, "env-v3");
+}
+
+#[test]
+fn prompt_section_cache_does_not_compute_cache_hits() {
+    let cache = PromptSectionCache::new();
+    let section_id = PromptSectionId::new("env_info_simple");
+    let compute_count = Arc::new(AtomicUsize::new(0));
+
+    let first_count = Arc::clone(&compute_count);
+    let first = cache.get_or_insert(section_id.clone(), || {
+        first_count.fetch_add(1, Ordering::SeqCst);
+        "env-v1".to_string()
+    });
+
+    let second_count = Arc::clone(&compute_count);
+    let second = cache.get_or_insert(section_id, || {
+        second_count.fetch_add(1, Ordering::SeqCst);
+        "env-v2".to_string()
+    });
+
+    assert_eq!(first, "env-v1");
+    assert_eq!(second, "env-v1");
+    assert_eq!(compute_count.load(Ordering::SeqCst), 1);
 }
 
 #[test]
