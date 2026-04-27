@@ -173,3 +173,40 @@ fn task_frontend_records_are_loaded_from_file_task_v2_store() {
     assert_eq!(tasks[0].active_form.as_deref(), Some("Fixing task monitor"));
     assert_eq!(tasks[0].owner.as_deref(), Some("agent-a"));
 }
+
+#[test]
+fn task_frontend_records_fall_back_to_legacy_root_tasks() {
+    let legacy_root = TempDir::new().unwrap();
+    let user_root = legacy_root.path().join("users").join("t_28__u_54");
+    std::fs::create_dir_all(&user_root).unwrap();
+
+    let store = FileTaskV2Store::new(legacy_root.path().to_path_buf());
+    let session_id = SessionId::new("sess-legacy-task-ui");
+    store
+        .create(
+            session_id.as_str(),
+            &TaskRecord {
+                id: "1".to_string(),
+                subject: "Restore legacy root task".to_string(),
+                description: "Read task files created before user-scoped storage".to_string(),
+                active_form: Some("Restoring task".to_string()),
+                owner: None,
+                status: TaskStatus::Pending,
+                blocks: vec![],
+                blocked_by: vec![],
+                metadata: None,
+                session_id: session_id.clone(),
+                parent_run_id: RunId::new("run-legacy-task-ui"),
+                owner_agent_id: None,
+            },
+        )
+        .unwrap();
+
+    let tasks =
+        TaskRecordFrontend::list_from_task_v2_store(&user_root, session_id.as_str()).unwrap();
+
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].task_id, "1");
+    assert_eq!(tasks[0].subject, "Restore legacy root task");
+    assert_eq!(tasks[0].run_id, "run-legacy-task-ui");
+}

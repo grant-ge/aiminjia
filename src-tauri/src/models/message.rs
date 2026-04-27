@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
@@ -174,14 +176,49 @@ impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend 
 
 impl TaskRecordFrontend {
     pub fn list_from_task_v2_store(
-        aijia_home: &std::path::Path,
+        aijia_home: &Path,
         conversation_id: &str,
     ) -> anyhow::Result<Vec<Self>> {
-        let store = crate::runtime::task::FileTaskV2Store::new(aijia_home.to_path_buf());
-        store
-            .list(conversation_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
+        let records = list_task_records_with_legacy_root_fallback(aijia_home, conversation_id)?;
+        Ok(records.into_iter().map(Into::into).collect())
     }
+}
+
+fn list_task_records_with_legacy_root_fallback(
+    aijia_home: &Path,
+    conversation_id: &str,
+) -> anyhow::Result<Vec<crate::runtime::task::task_models::TaskRecord>> {
+    let primary_store = crate::runtime::task::FileTaskV2Store::new(aijia_home.to_path_buf());
+    let primary = primary_store.list(conversation_id)?;
+
+    let Some(legacy_root) = legacy_aijia_root_for_user_scoped_base(aijia_home) else {
+        return Ok(primary);
+    };
+
+    let legacy_store = crate::runtime::task::FileTaskV2Store::new(legacy_root);
+    let legacy = legacy_store.list(conversation_id)?;
+    if legacy.is_empty() {
+        return Ok(primary);
+    }
+    if primary.is_empty() {
+        return Ok(legacy);
+    }
+
+    let mut by_id = std::collections::HashMap::new();
+    for task in legacy.into_iter().chain(primary) {
+        by_id.insert(task.id.clone(), task);
+    }
+    let mut merged = by_id.into_values().collect::<Vec<_>>();
+    merged.sort_by_key(|task| task.id.parse::<u64>().unwrap_or(u64::MAX));
+    Ok(merged)
+}
+
+fn legacy_aijia_root_for_user_scoped_base(base: &Path) -> Option<PathBuf> {
+    let users_dir = base.parent()?;
+    if users_dir.file_name()?.to_str()? != "users" {
+        return None;
+    }
+    users_dir.parent().map(Path::to_path_buf)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

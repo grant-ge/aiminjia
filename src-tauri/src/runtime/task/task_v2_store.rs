@@ -1,7 +1,7 @@
 //! File-backed Task V2 store.
 //!
 //! Mirrors claude-code-best src/tasks.ts:
-//! - task files live under ~/.renlijia/tasks/<taskListId>/<id>.json
+//! - task files live under <aijia_home>/tasks/<taskListId>/<id>.json
 //! - .highwatermark tracks max assigned id
 //! - writes use temp file + rename to avoid partial writes
 

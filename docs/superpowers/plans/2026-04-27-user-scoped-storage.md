@@ -289,6 +289,10 @@ pub fn user_subagent_transcripts_dir(&self, scope: &UserScope) -> PathBuf {
     self.user_dir(scope).join("subagent_transcripts")
 }
 
+pub fn user_tasks_dir(&self, scope: &UserScope) -> PathBuf {
+    self.user_dir(scope).join("tasks")
+}
+
 pub fn user_skills_dir(&self, scope: &UserScope) -> PathBuf {
     self.user_dir(scope).join("skills")
 }
@@ -339,6 +343,7 @@ pub fn ensure_user_dirs(&self, scope: &UserScope) -> std::io::Result<()> {
     std::fs::create_dir_all(ud.join("schedules"))?;
     std::fs::create_dir_all(ud.join("skills"))?;
     std::fs::create_dir_all(ud.join("subagent_transcripts"))?;
+    std::fs::create_dir_all(ud.join("tasks"))?;
     std::fs::create_dir_all(ud.join("playwright-profile"))?;
     std::fs::create_dir_all(ud.join("api-data"))?;
     std::fs::create_dir_all(ud.join("screenshots"))?;
@@ -437,6 +442,7 @@ impl UserScopedPaths {
     pub fn skills_dir(&self) -> PathBuf { self.base.join("skills") }
     pub fn agent_invocations_path(&self) -> PathBuf { self.base.join("agent_invocations.json") }
     pub fn subagent_transcripts_dir(&self) -> PathBuf { self.base.join("subagent_transcripts") }
+    pub fn tasks_dir(&self) -> PathBuf { self.base.join("tasks") }
     pub fn project_memories_dir(&self) -> PathBuf { self.base.join("project_memories") }
     pub fn playwright_profile_dir(&self) -> PathBuf { self.base.join("playwright-profile") }
     pub fn api_data_dir(&self) -> PathBuf { self.base.join("api-data") }
@@ -1025,6 +1031,7 @@ const LEGACY_ITEMS: &[(&str, &str)] = &[
     ("permissions.json",        "permissions.json"),
     ("agent_invocations.json",  "agent_invocations.json"),
     ("subagent_transcripts",    "subagent_transcripts"),
+    ("tasks",                   "tasks"),
     ("schedules",               "schedules"),
     ("project_memories",        "project_memories"),
     ("playwright-profile",      "playwright-profile"),

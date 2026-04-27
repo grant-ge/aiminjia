@@ -269,6 +269,7 @@ global 下只放启动前必须可访问、或可跨用户安全复用的数据�
       api-data/                   # 从 legacy api-data/ 迁入
       screenshots/                # 从 legacy screenshots/ 迁入
       site-profiles/              # 从 legacy site-profiles/ 迁入
+      tasks/                       # 从 legacy tasks/ 迁入；过渡期读取需兼容 root/tasks
       downloads/
       logs/
 ```
@@ -294,6 +295,7 @@ global 下只放启动前必须可访问、或可跨用户安全复用的数据�
 | MCP 配置 | `mcp_servers.json` | `users/{scope}/mcp_servers.json` | |
 | agent 记录 | `agent_invocations.json` | `users/{scope}/agent_invocations.json` | |
 | subagent transcript | `subagent_transcripts/` | `users/{scope}/subagent_transcripts/` | |
+| Task V2 待办 | `tasks/{taskListId}` | `users/{scope}/tasks/{taskListId}` | 过渡期读取必须 fallback 到 root `tasks/`，避免迁移前待办丢失 |
 | project memory | root 下 | `users/{scope}/project_memories/` | |
 | Playwright profile | `playwright-profile/` | `users/{scope}/playwright-profile/` | cookie/session 必须隔离 |
 | screenshots 等 | root 下 | `users/{scope}/...` | |
@@ -435,6 +437,7 @@ setup()
 - **MCP**：user config 改为 `users/{scope}/mcp_servers.json`
 - **skills**：内置 skills 保留 global；用户安装 / 企业定制 skills 改为 `users/{scope}/skills/`
 - **agent/subagent**：invocation store 和 transcript dir 改为 user-scoped
+- **Task V2 待办**：新写入应绑定 user scope；读取在迁移窗口内同时查 user-scoped `tasks/` 与 legacy root `tasks/`
 - **project memory**：移到 `users/{scope}/project_memories/`
 - **browser**：Playwright profile、api-data、screenshots、site-profiles 移到 user-scoped
 - **logs/audit**：含用户内容的日志移到 user-scoped；纯启动诊断留 global
