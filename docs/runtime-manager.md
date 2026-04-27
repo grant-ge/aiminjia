@@ -300,7 +300,7 @@ Runtime Manager 的定位是 Lotus / Renlijia 的本机执行基础设施，不�
 
 仁励家不自己实现 Node/Python 的上游包管理器，也不在用户机器上临时运行安装脚本去拼装环境。发布侧提前产出一个完整 runtime artifact，应用侧只负责可信下载、校验、解压、smoke test 和版本切换。
 
-生产默认内置 Renlijia 受控 manifest：`https://datamind-pzc.oss-cn-hangzhou.aliyuncs.com/runtimes/runtime-manifest.json`。`RENLIJIA_RUNTIME_MANIFEST_URL` 只作为企业镜像、离线部署或开发测试的覆盖入口，不是普通用户必须配置的环境变量。manifest 指向 `renlijia-primary-runtime` 的平台 artifact，artifact 内已经包含：
+生产默认内置 Renlijia 受控 manifest：`https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/runtimes/runtime-manifest.json`。`RENLIJIA_RUNTIME_MANIFEST_URL` 只作为企业镜像、离线部署或开发测试的覆盖入口，不是普通用户必须配置的环境变量。manifest 指向 `renlijia-primary-runtime` 的平台 artifact，artifact 内已经包含：
 
 - `node/bin/node`、`node/bin/npm`、`node/bin/npx`
 - `python/bin/python3`

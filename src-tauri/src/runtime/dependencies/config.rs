@@ -1,5 +1,5 @@
 pub const DEFAULT_RUNTIME_MANIFEST_URL: &str =
-    "https://datamind-pzc.oss-cn-hangzhou.aliyuncs.com/runtimes/runtime-manifest.json";
+    "https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/runtimes/runtime-manifest.json";
 
 pub fn configured_runtime_manifest_url() -> String {
     std::env::var("RENLIJIA_RUNTIME_MANIFEST_URL")

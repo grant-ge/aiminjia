@@ -78,7 +78,7 @@ cat > "$out_dir/${artifact}.manifest-fragment.json" <<JSON
   "runtime": "primary",
   "platform": "$platform",
   "artifact": {
-    "url": "https://datamind-pzc.oss-cn-hangzhou.aliyuncs.com/runtimes/$artifact",
+    "url": "https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/runtimes/$artifact",
     "sha256": "$sha256",
     "sizeBytes": $size_bytes,
     "archiveFormat": "$archive_format"

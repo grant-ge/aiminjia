@@ -12,7 +12,7 @@ fn uses_built_in_oss_manifest_url_when_env_override_is_missing() {
     );
     assert_eq!(
         DEFAULT_RUNTIME_MANIFEST_URL,
-        "https://datamind-pzc.oss-cn-hangzhou.aliyuncs.com/runtimes/runtime-manifest.json"
+        "https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/runtimes/runtime-manifest.json"
     );
 }
 
