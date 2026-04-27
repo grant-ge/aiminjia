@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager};
 use super::{draft_dir, validation::validate_draft_dir};
 use crate::commands::skill_management::{copy_dir_recursive, pack_skill_to_dir};
 use crate::plugin::manifest::read_manifest_from_skill_dir;
+use crate::storage::UserScopedPathResolver;
 
 /// Staging suffix used for atomic installs. Collisions (unlikely —
 /// this is user-local and short-lived) get cleaned up on next commit.
@@ -95,9 +96,12 @@ async fn commit_impl(app: &AppHandle, draft_id: &str, force: bool) -> Result<Com
         return Err(format!("校验未通过，无法提交: {}", report.summary));
     }
 
-    // 2. Resolve ~/.renlijia/skills target parent
-    let aijia_home = app.state::<std::sync::Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
+    // 2. Resolve user-scoped skills target parent
+    let cus = app.state::<std::sync::Arc<crate::storage::CurrentUserStorage>>();
+    let custom_dir = cus
+        .require_paths()
+        .map_err(|e| e.to_string())?
+        .skills_dir();
 
     // 3. Do the actual commit (pure FS work — testable)
     let result = commit_draft_to(&draft, &custom_dir, force)?;

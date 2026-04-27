@@ -33,6 +33,7 @@ use std::time::UNIX_EPOCH;
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
+use crate::storage::UserScopedPathResolver;
 
 const DRAFT_EXPIRY_DAYS: u64 = 7;
 const MAX_DRAFT_FILE_SIZE: u64 = 1_000_000; // 1MB per file
@@ -128,8 +129,12 @@ fn validate_relative_path(rel: &str) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 fn drafts_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let aijia_home = app.state::<std::sync::Arc<crate::storage::AiJiaHome>>();
-    let root = aijia_home.drafts_dir();
+    let cus = app.state::<std::sync::Arc<crate::storage::CurrentUserStorage>>();
+    let root = cus
+        .require_paths()
+        .map_err(|e| e.to_string())?
+        .skills_dir()
+        .join("_drafts");
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     Ok(root)
 }

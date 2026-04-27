@@ -19,6 +19,7 @@ use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
 use tauri::Manager;
+use storage::UserScopedPathResolver;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +38,9 @@ pub fn run() {
             aijia_home
                 .ensure_dirs()
                 .expect("Failed to create ~/.renlijia dirs");
+            aijia_home
+                .ensure_global_dirs()
+                .expect("Failed to create global dirs");
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -95,32 +99,17 @@ pub fn run() {
                 .unwrap_or_else(|_| aijia_home.root().to_path_buf());
             llm::prompts::init_prompts(&resource_dir, aijia_home.root());
 
-            // Initialize file-based storage
-            let db = Arc::new(
+            // Initialize fallback root storage; user-scoped storage replaces it after auth restore.
+            let root_db = Arc::new(
                 storage::file_store::AppStorage::new(aijia_home.root())
                     .expect("Failed to initialize file storage"),
             );
 
-            // Initialize file manager
-            let workspace_path = db
-                .get_setting("workspacePath")
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            let fm_path = if workspace_path.is_empty() {
-                // Default workspace: ~/.renlijia
-                let default_ws = aijia_home.root().to_path_buf();
-                std::fs::create_dir_all(&default_ws).ok();
-                default_ws
-            } else {
-                let p = std::path::PathBuf::from(&workspace_path);
-                std::fs::create_dir_all(&p).ok();
-                p
-            };
-            let file_mgr = Arc::new(storage::file_manager::FileManager::new(fm_path.clone()));
+            // Initialize file manager with root as default; will be updated after user scope activates.
+            let file_mgr = Arc::new(storage::file_manager::FileManager::new(aijia_home.root()));
 
-            // Configure logging — write to workspace/logs/ for both debug and release
-            let logs_dir = fm_path.join("logs");
+            // Configure logging — write to root logs/ initially (before user scope is known)
+            let logs_dir = aijia_home.root().join("logs");
             std::fs::create_dir_all(&logs_dir).ok();
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -141,7 +130,7 @@ pub fn run() {
             cleanup_old_logs(&logs_dir, 7);
 
             // Cleanup stale temp files from previous sessions (code_*.py)
-            cleanup_temp_dir(&fm_path.join("temp"));
+            cleanup_temp_dir(&aijia_home.root().join("temp"));
 
             // Initialize secure storage for API key encryption
             let secure_storage: Option<Arc<storage::crypto::SecureStorage>> =
@@ -162,8 +151,78 @@ pub fn run() {
             // Initialize runtime orchestration state
             let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
             let task_store = Arc::new(runtime::store::InMemoryTaskStore::new());
-            let agent_store_path = aijia_home.agent_invocations_path();
-            let subagent_transcript_store_dir = aijia_home.subagent_transcripts_dir();
+
+            // Initialize cloud auth manager
+            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
+            if let Err(e) = storage::migration_user_scope::bootstrap_cloud_auth_if_needed(
+                aijia_home.root(),
+                &aijia_home.global_dir(),
+            ) {
+                log::warn!("[setup] cloud_auth bootstrap warning: {}", e);
+            }
+            let auth_manager = Arc::new(auth::AuthManager::new(
+                global_store.clone(),
+                secure_storage.clone(),
+            ));
+            // Restore persisted auth state
+            tauri::async_runtime::block_on(auth_manager.restore());
+
+            let current_user_storage = Arc::new(storage::CurrentUserStorage::new(aijia_home.clone()));
+            let user_scope: Option<storage::UserScope> = {
+                let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
+                if info.logged_in {
+                    info.user
+                        .as_ref()
+                        .zip(info.tenant.as_ref())
+                        .map(|(u, t)| storage::UserScope::new(t.id, u.id))
+                } else {
+                    None
+                }
+            };
+            if let Some(ref scope) = user_scope {
+                let user_dir = aijia_home.user_dir(scope);
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_to_user_scope_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                    &scope.key(),
+                    &aijia_home.global_state_path(),
+                ) {
+                    log::warn!("[setup] user-scope migration warning: {}", e);
+                }
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_config_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                    &aijia_home.global_dir(),
+                ) {
+                    log::warn!("[setup] config split warning: {}", e);
+                }
+                current_user_storage
+                    .activate_scope(scope.clone())
+                    .expect("Failed to activate user storage");
+
+                // Update FileManager with user-scoped workspacePath
+                let workspace_path = current_user_storage
+                    .get()
+                    .and_then(|db| db.get_setting("workspacePath").ok().flatten())
+                    .unwrap_or_default();
+                if !workspace_path.is_empty() {
+                    let p = std::path::PathBuf::from(&workspace_path);
+                    std::fs::create_dir_all(&p).ok();
+                    file_mgr.update_workspace_path(&p);
+                } else {
+                    file_mgr.update_workspace_path(aijia_home.root());
+                }
+            }
+
+            let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
+                .resolve_paths()
+                .map(|paths| (paths.agent_invocations_path(), paths.subagent_transcripts_dir()))
+                .unwrap_or_else(|| {
+                    (
+                        aijia_home.agent_invocations_path(),
+                        aijia_home.subagent_transcripts_dir(),
+                    )
+                });
             let agent_runtime = Arc::new(
                 runtime::agent::AgentRuntime::from_storage(
                     agent_store_path,
@@ -177,10 +236,7 @@ pub fn run() {
                 }),
             );
 
-            // Initialize cloud auth manager
-            let auth_manager = Arc::new(auth::AuthManager::new(db.clone(), secure_storage.clone()));
-            // Restore persisted auth state
-            tauri::async_runtime::block_on(auth_manager.restore());
+            let db = current_user_storage.get().unwrap_or_else(|| root_db.clone());
 
             // Initialize LLM gateway (with auth_manager for cloud session_key injection)
             let gateway = Arc::new(
@@ -220,15 +276,22 @@ pub fn run() {
                         .join(".aijia")
                         .join("permissions.json"),
                 ),
-                Some(aijia_home.permissions_path()),
+                current_user_storage
+                    .resolve_paths()
+                    .map(|paths| paths.permissions_path())
+                    .or_else(|| Some(aijia_home.permissions_path())),
             ));
             tauri::async_runtime::block_on(
                 tool_registry.set_permission_store(permission_store.clone()),
             );
             let mcp_server_manager =
                 Arc::new(runtime::mcp::McpServerManager::new(tool_registry.clone()));
+            let mcp_config_path = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.mcp_config_path())
+                .unwrap_or_else(|| aijia_home.mcp_config_path());
             let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
-                aijia_home.mcp_config_path(),
+                mcp_config_path,
             ));
 
             let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
@@ -285,24 +348,26 @@ pub fn run() {
                         &plugins_dir,
                         &tool_registry,
                         &skill_registry,
-                        file_mgr.workspace_path(),
+                        &file_mgr.workspace_path(),
                         "builtin",
                     )
                     .await;
                 }
 
                 // Scan user-installed custom plugins
-                let skills_dir = aijia_home.skills_dir();
-                if skills_dir.is_dir() {
-                    log::info!("Scanning custom skills from: {:?}", skills_dir);
-                    scan_external_plugins(
-                        &skills_dir,
-                        &tool_registry,
-                        &skill_registry,
-                        file_mgr.workspace_path(),
-                        "custom",
-                    )
-                    .await;
+                if let Some(paths) = current_user_storage.resolve_paths() {
+                    let skills_dir = paths.skills_dir();
+                    if skills_dir.is_dir() {
+                        log::info!("Scanning custom skills from: {:?}", skills_dir);
+                        scan_external_plugins(
+                            &skills_dir,
+                            &tool_registry,
+                            &skill_registry,
+                            &file_mgr.workspace_path(),
+                            "custom",
+                        )
+                        .await;
+                    }
                 }
             });
 
@@ -353,7 +418,7 @@ pub fn run() {
             // Initialize Python session manager for persistent REPL sessions
             let session_mgr = Arc::new(
                 python::session::PythonSessionManager::with_lazy_runtime_resolver(
-                    fm_path.clone(),
+                    file_mgr.workspace_path(),
                     runtime_resolver.clone(),
                 ),
             );
@@ -392,6 +457,8 @@ pub fn run() {
             app.manage(run_registry);
             app.manage(task_store);
             app.manage(secure_storage);
+            app.manage(global_store);
+            app.manage(current_user_storage.clone());
             app.manage(auth_manager);
             app.manage(connector_engine);
             app.manage(tool_registry);
@@ -404,7 +471,7 @@ pub fn run() {
             app.manage(chat_adapter);
 
             runtime::schedule_runner::spawn_schedule_runner(
-                aijia_home.clone(),
+                current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
                     .inner()
                     .clone(),
@@ -690,6 +757,7 @@ include_app_base: false
         let storage = Arc::new(
             crate::storage::file_store::AppStorage::new(tmp.path()).expect("test storage"),
         );
+        let global_store = Arc::new(crate::storage::GlobalConfigStore::new(tmp.path().join("global")));
         let tool_registry = ToolRegistry::new();
         let skill_registry = SkillRegistry::new("daily-assistant");
         skill_registry
@@ -697,7 +765,7 @@ include_app_base: false
                 Arc::new(
                     crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
                         storage.clone(),
-                        Arc::new(crate::auth::AuthManager::new(storage.clone(), None)),
+                        Arc::new(crate::auth::AuthManager::new(global_store, None)),
                     ),
                 ),
                 "builtin",

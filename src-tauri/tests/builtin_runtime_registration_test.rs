@@ -732,7 +732,10 @@ async fn switch_skill_routes_through_request_scoped_runtime_factory() {
         .register(
             Arc::new(DailyAssistantSkill::new(
                 ctx.storage.clone(),
-                Arc::new(app_lib::auth::AuthManager::new(ctx.storage.clone(), None)),
+                Arc::new(app_lib::auth::AuthManager::new(
+                    Arc::new(app_lib::storage::GlobalConfigStore::new(tmp.path().join("global"))),
+                    None,
+                )),
             )),
             "test",
         )

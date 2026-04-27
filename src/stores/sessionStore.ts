@@ -15,6 +15,7 @@ export interface SessionState {
   updateMessage: (id: string, updates: Partial<Message>) => void
   upsertMessage: (message: Message) => void
   removeMessage: (id: string) => void
+  resetAll: () => void
 }
 
 interface SessionSliceBridge {
@@ -100,5 +101,7 @@ export function createSessionSlice<T extends SessionState & SessionSliceBridge>(
       }),
     removeMessage: (id) =>
       apply((state) => ({ messages: state.messages.filter((m) => m.id !== id) } as Partial<T>)),
+    resetAll: () =>
+      apply({ conversations: [], activeConversationId: null, messages: [] } as Partial<T>),
   }
 }

@@ -140,7 +140,7 @@ pub fn migrate_message_shards_to_single_file_if_needed(new_dir: &Path) -> std::i
     Ok(())
 }
 
-fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -158,7 +158,7 @@ fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn read_state_json(path: &Path) -> std::io::Result<Value> {
+pub(crate) fn read_state_json(path: &Path) -> std::io::Result<Value> {
     if !path.exists() {
         return Ok(json!({ "migrations": {} }));
     }
@@ -170,10 +170,12 @@ fn read_state_json(path: &Path) -> std::io::Result<Value> {
     Ok(value)
 }
 
-fn write_state_json(path: &Path, state: &Value) -> std::io::Result<()> {
+pub(crate) fn write_state_json(path: &Path, state: &Value) -> std::io::Result<()> {
     let text = serde_json::to_string_pretty(state)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    std::fs::write(path, text)
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &text)?;
+    std::fs::rename(&tmp, path)
 }
 
 #[cfg(test)]
