@@ -14,14 +14,11 @@ name = "描述统计与分布"
 prompt = "prompts/step1.md"
 precompute = "scripts/step1.py"
 tools_only = ["execute_python", "export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
 max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
-
-[steps.tools_on_feedback]
-tools = ["execute_python", "export_data"]
-max_iterations = 15
 
 [[steps]]
 id = "step2"
@@ -29,14 +26,11 @@ name = "交叉分析与洞察"
 prompt = "prompts/step2.md"
 precompute = "scripts/step2.py"
 tools_only = ["execute_python", "export_data"]
+tools_on_feedback = ["execute_python", "export_data"]
 max_iterations = 5
 max_iterations_feedback = 15
 token_budget = 8192
 advance_on = "confirm"
-
-[steps.tools_on_feedback]
-tools = ["execute_python", "export_data"]
-max_iterations = 15
 
 [[steps]]
 id = "step3"

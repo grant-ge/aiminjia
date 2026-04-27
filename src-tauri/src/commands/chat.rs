@@ -2165,6 +2165,12 @@ async fn agent_loop(
     //
     // Precompute degradation: if precompute was expected but failed, expand allowed
     // tools to include the feedback set so the LLM can do the work itself.
+    // Baseline tools always allowed in every analysis step.
+    // These are fundamental utilities that the LLM needs for error recovery and context tracking.
+    let baseline_tools: std::collections::HashSet<String> = [
+        "load_file", "save_analysis_note", "update_progress", "execute_python",
+    ].iter().map(|s| s.to_string()).collect();
+
     let allowed_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
         if (config.precompute.is_some() && precompute_context.is_none()) || config.is_feedback {
             // Precompute failed OR user is providing feedback on a completed step — use feedback mode tools
@@ -2173,11 +2179,19 @@ async fn agent_loop(
                 config.step, precompute_context.is_none(), config.is_feedback, conversation_id
             );
             config.feedback_config.as_ref().map(|fc| {
-                fc.tools.iter().cloned().collect::<std::collections::HashSet<_>>()
-            }).or_else(|| config.allowed_tool_names.clone())
+                let mut tools: std::collections::HashSet<_> = fc.tools.iter().cloned().collect();
+                tools.extend(baseline_tools.iter().cloned());
+                tools
+            }).or_else(|| config.allowed_tool_names.clone().map(|mut s| {
+                s.extend(baseline_tools.iter().cloned());
+                s
+            }))
         } else {
-            // Normal: use skill-provided allowed list
-            config.allowed_tool_names.clone()
+            // Normal: use skill-provided allowed list + baseline tools
+            config.allowed_tool_names.clone().map(|mut s| {
+                s.extend(baseline_tools.iter().cloned());
+                s
+            })
         }
     } else {
         // Daily mode: block analysis-only tools at runtime

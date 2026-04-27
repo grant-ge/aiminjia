@@ -22,7 +22,7 @@ if _fairness:
 _precompute = {
     'diagnosis': result,
 }
-_cache_result('comp_step4', _precompute)
+_cache_result('step4', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step4_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 

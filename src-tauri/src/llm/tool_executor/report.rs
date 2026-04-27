@@ -69,6 +69,20 @@ pub(crate) async fn handle_generate_report(ctx: &PluginContext, args: &Value) ->
         if inline_sections.is_empty() {
             return Err(anyhow::anyhow!("'sections' array is empty. At least one section is required."));
         }
+        // Reject inline sections that are too large — SSE streaming corrupts them.
+        let inline_json = serde_json::to_string(&inline_sections).unwrap_or_default();
+        if inline_json.len() > 2048 {
+            return Err(anyhow::anyhow!(
+                "Inline sections too large ({} bytes). Large sections get corrupted during SSE streaming.\n\
+                 You MUST use the two-step pattern instead:\n\
+                 Step 1: call execute_python with:\n\
+                   path = _save_sections([...sections...], filename='report.json')\n\
+                 Step 2: call generate_report(source='report.json', format='...', title='...')\n\
+                 \n\
+                 Do NOT pass sections inline — use the source parameter with a file path.",
+                inline_json.len()
+            ));
+        }
         sections_value = inline_sections;
         &sections_value
     };

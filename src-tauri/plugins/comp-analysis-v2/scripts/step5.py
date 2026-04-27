@@ -30,7 +30,7 @@ _precompute = {
 }
 if _benchmarks.get('salary_percentiles'):
     _precompute['market_data'] = _benchmarks['salary_percentiles']
-_cache_result('comp_step5', _precompute)
+_cache_result('step5', _precompute)
 with open(os.path.join(_ANALYSIS_DIR, 'step5_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
 

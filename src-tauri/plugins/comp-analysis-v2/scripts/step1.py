@@ -49,6 +49,10 @@ _precompute = {
 
 with open(os.path.join(_ANALYSIS_DIR, 'step1_precompute.json'), 'w') as f:
     _json_mod.dump(_precompute, f, ensure_ascii=False, default=str)
+
+# Cache col_map for cross-step reference (step4 reads via _load_cached('step1'))
+_cache_result('step1', {'col_map': col_map_result})
+
 print(_json_mod.dumps(_precompute, ensure_ascii=False, default=str, indent=2))
 
 # Auto-export intermediate data
