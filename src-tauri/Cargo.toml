@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.4.16"
+version = "0.5.0"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
