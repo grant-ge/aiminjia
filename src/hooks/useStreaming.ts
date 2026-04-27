@@ -313,7 +313,7 @@ export function useStreaming() {
       // When we receive a persisted assistant message, clear the streaming
       // state IN THE SAME callback so React batches both updates into one
       // render. This prevents the visual "flash" where StreamingBubble
-      // unmounts (streaming:done) before the persisted MessageItem appears.
+      // unmounts (streaming:done) before the persisted assistant bubble appears.
       if (message.role === 'assistant') {
         const streamState = store.streamStates[message.conversationId]
         if (streamState?.isStreaming) {
