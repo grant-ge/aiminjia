@@ -25,8 +25,11 @@ pub mod extract_table_data;
 pub mod extract_with_pagination;
 pub mod frame_inspect;
 pub mod frame_click;
+// DingTalk AI Table integration (Phase 13)
+pub mod dingtalk;
 // Skill-smith — conversational skill creation (Phase 11 M3.1)
 pub mod skill_smith_create_draft;
+pub mod skill_smith_read_file;
 pub mod skill_smith_write_file;
 pub mod skill_smith_validate;
 pub mod skill_smith_dry_run;
@@ -64,8 +67,33 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         Arc::new(extract_with_pagination::ExtractWithPaginationTool),
         Arc::new(frame_inspect::FrameInspectTool),
         Arc::new(frame_click::FrameClickTool),
+        // DingTalk integration (Phase 13) — 18 tools across 5 product domains
+        // AI Table (6)
+        Arc::new(dingtalk::DingtalkListBasesTool),
+        Arc::new(dingtalk::DingtalkSchemaTool),
+        Arc::new(dingtalk::DingtalkQueryRecordsTool),
+        Arc::new(dingtalk::DingtalkCreateRecordTool),
+        Arc::new(dingtalk::DingtalkUpdateRecordTool),
+        Arc::new(dingtalk::DingtalkDeleteRecordTool),
+        // Contacts (3)
+        Arc::new(dingtalk::DingtalkSearchContactsTool),
+        Arc::new(dingtalk::DingtalkGetUserTool),
+        Arc::new(dingtalk::DingtalkGetDepartmentTool),
+        // Chat (3)
+        Arc::new(dingtalk::DingtalkListGroupsTool),
+        Arc::new(dingtalk::DingtalkSendMessageTool),
+        Arc::new(dingtalk::DingtalkSearchChatTool),
+        // Calendar (3)
+        Arc::new(dingtalk::DingtalkListEventsTool),
+        Arc::new(dingtalk::DingtalkCreateEventTool),
+        Arc::new(dingtalk::DingtalkFreeBusyTool),
+        // Todo (3)
+        Arc::new(dingtalk::DingtalkListTodosTool),
+        Arc::new(dingtalk::DingtalkCreateTodoTool),
+        Arc::new(dingtalk::DingtalkCompleteTodoTool),
         // Skill-smith (Phase 11 M3.1)
         Arc::new(skill_smith_create_draft::SkillSmithCreateDraftTool),
+        Arc::new(skill_smith_read_file::SkillSmithReadFileTool),
         Arc::new(skill_smith_write_file::SkillSmithWriteFileTool),
         Arc::new(skill_smith_validate::SkillSmithValidateTool),
         Arc::new(skill_smith_dry_run::SkillSmithDryRunTool),

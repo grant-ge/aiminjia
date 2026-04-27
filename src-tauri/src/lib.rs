@@ -129,6 +129,25 @@ pub fn run() {
                 connector_engine.set_playwright_browser(playwright_browser.clone()).await;
             });
 
+            // Initialize DingTalk bridge (dws CLI sidecar)
+            let dingtalk_bridge = Arc::new(
+                connector::dingtalk::DingtalkBridge::new(app.handle().clone())
+            );
+            // Restore DingTalk auth status from dws persisted token (non-blocking)
+            {
+                let dt = dingtalk_bridge.clone();
+                tauri::async_runtime::spawn(async move {
+                    match dt.refresh_status().await {
+                        Ok(info) if info.connected => {
+                            log::info!("DingTalk: restored session — {} @ {}",
+                                info.user_name.as_deref().unwrap_or("?"),
+                                info.corp_name.as_deref().unwrap_or("?"));
+                        }
+                        _ => log::info!("DingTalk: no active session"),
+                    }
+                });
+            }
+
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
@@ -207,6 +226,7 @@ pub fn run() {
             app.manage(secure_storage);
             app.manage(auth_manager);
             app.manage(connector_engine);
+            app.manage(dingtalk_bridge);
             app.manage(tool_registry);
             app.manage(skill_registry);
             app.manage(session_mgr);
@@ -273,6 +293,11 @@ pub fn run() {
             commands::persona::get_active_persona,
             commands::persona::export_personas,
             commands::persona::import_personas,
+            // DingTalk commands
+            commands::dingtalk::dingtalk_login,
+            commands::dingtalk::dingtalk_logout,
+            commands::dingtalk::dingtalk_status,
+            commands::dingtalk::dingtalk_refresh_status,
             // Auth commands
             commands::auth::cloud_login,
             commands::auth::cloud_logout,

@@ -196,6 +196,7 @@ mv src-tauri/python-runtime src-tauri/target/x86_64-apple-darwin/release/python-
 - OSS：阿里云 `lotus-releases` bucket，前缀 `aijia/`，CDN `https://lotus.renlijia.com`
 - Homebrew：`grant-ge/homebrew-tap` 下 `Casks/aijia.rb`，`on_arm` / `on_intel` 分架构 URL
 - GitHub Secrets（4 个，都已就位）：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
+- 钉钉 AI 表格集成：内置 [dws CLI](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) 作为短命令 sidecar（非长驻进程），6 个 dingtalk_* Tool 注册到 ToolRegistry。Token 由 dws 自身管理（PBKDF2 + AES-256-GCM），AIjia 只维护连接状态。写操作需用户确认。二进制查找：bundled `resources/dws` → dev `resources/dws` → 系统 PATH。Setup: `bash scripts/setup-dws.sh`
 
 ## 数据存储位置
 

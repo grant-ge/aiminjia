@@ -28,6 +28,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { LoginSection } from '@/components/settings/LoginSection'
 import { PersonaTab } from '@/components/settings/PersonaTab'
 import { SkillsTab } from '@/components/settings/SkillsTab'
+import { DingtalkSection } from '@/components/settings/DingtalkSection'
 import type { AppLanguage } from '@/i18n'
 import { resolveResource } from '@tauri-apps/api/path'
 import { readTextFile } from '@tauri-apps/plugin-fs'
@@ -37,7 +38,7 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills'
+type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills' | 'dingtalk'
 
 const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
   { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
@@ -316,6 +317,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onClick={() => setMainTab('skills')}
         >
           {t('settings.tabs.skills')}
+        </TabButton>
+        <TabButton
+          active={mainTab === 'dingtalk'}
+          onClick={() => setMainTab('dingtalk')}
+        >
+          {t('settings.tabs.dingtalk')}
         </TabButton>
       </div>
 
@@ -787,6 +794,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
       {mainTab === 'skills' && (
         <SkillsTab onRequestClose={onClose} />
+      )}
+
+      {mainTab === 'dingtalk' && (
+        <DingtalkSection />
       )}
 
     </Modal>

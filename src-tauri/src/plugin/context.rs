@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::auth::AuthManager;
 use crate::connector::ConnectorEngine;
+use crate::connector::dingtalk::DingtalkBridge;
 use crate::llm::gateway::LlmGateway;
 use crate::models::settings::AppSettings;
 use crate::storage::file_store::AppStorage;
@@ -28,6 +29,7 @@ pub struct PluginContext {
     pub session_manager: Arc<PythonSessionManager>,
     pub auth_manager: Option<Arc<AuthManager>>,
     pub connector_engine: Option<Arc<ConnectorEngine>>,
+    pub dingtalk_bridge: Option<Arc<DingtalkBridge>>,
     pub use_cloud: bool,
     pub model: String,
     /// LLM gateway for sub-agent execution (delegation tools).

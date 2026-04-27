@@ -16,6 +16,7 @@ mod progress;
 mod slides;
 mod memory;
 mod internal_system;
+mod dingtalk;
 pub(crate) mod skill_smith;
 
 use anyhow::{anyhow, Result};
@@ -63,6 +64,29 @@ pub(crate) use internal_system::handle_extract_table_data;
 pub(crate) use internal_system::handle_extract_with_pagination;
 pub(crate) use internal_system::handle_frame_inspect;
 pub(crate) use internal_system::handle_frame_click;
+// DingTalk — AI Table (6)
+pub(crate) use dingtalk::handle_dingtalk_list_bases;
+pub(crate) use dingtalk::handle_dingtalk_schema;
+pub(crate) use dingtalk::handle_dingtalk_query_records;
+pub(crate) use dingtalk::handle_dingtalk_create_record;
+pub(crate) use dingtalk::handle_dingtalk_update_record;
+pub(crate) use dingtalk::handle_dingtalk_delete_record;
+// DingTalk — Contacts (3)
+pub(crate) use dingtalk::handle_dingtalk_search_contacts;
+pub(crate) use dingtalk::handle_dingtalk_get_user;
+pub(crate) use dingtalk::handle_dingtalk_get_department;
+// DingTalk — Chat (3)
+pub(crate) use dingtalk::handle_dingtalk_list_groups;
+pub(crate) use dingtalk::handle_dingtalk_send_message;
+pub(crate) use dingtalk::handle_dingtalk_search_chat;
+// DingTalk — Calendar (3)
+pub(crate) use dingtalk::handle_dingtalk_list_events;
+pub(crate) use dingtalk::handle_dingtalk_create_event;
+pub(crate) use dingtalk::handle_dingtalk_free_busy;
+// DingTalk — Todo (3)
+pub(crate) use dingtalk::handle_dingtalk_list_todos;
+pub(crate) use dingtalk::handle_dingtalk_create_todo;
+pub(crate) use dingtalk::handle_dingtalk_complete_todo;
 pub(crate) use util::py_escape;
 
 // ─────────────────────────────────────────────────
@@ -129,6 +153,7 @@ pub(crate) mod tests {
             session_manager: Arc::new(crate::python::session::PythonSessionManager::new(workspace, None)),
             auth_manager: None,
             connector_engine: None,
+            dingtalk_bridge: None,
             use_cloud: false,
             model: "test-model".to_string(),
             gateway: None,
