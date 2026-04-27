@@ -23,11 +23,11 @@
   --border: #e5e5e5;
   --input: #e5e5e5;
 
-  --sidebar: #F4F0E6;
-  --sidebar-accent: #E1DAC6;
+  --sidebar: #f7f7f7;
+  --sidebar-accent: #ebebeb;
   --sidebar-accent-foreground: #18181b;
   --sidebar-foreground: #0a0a0a;
-  --sidebar-border: #E1DAC6;
+  --sidebar-border: #ebebeb;
   --sidebar-ring: #71717a;
 
   --brand-primary-subtle: #FBF3DC;
@@ -72,7 +72,7 @@
   --color-bg-base: #F2F1EE;
   --color-bg-main: var(--background);
   --color-bg-sidebar: var(--sidebar);
-  --color-bg-sidebar-hover: #EBEAE6;
+  --color-bg-sidebar-hover: #e4e4e4;
   --color-bg-card: var(--card);
   --color-bg-card-hover: var(--muted);
   --color-bg-elevated: var(--card);
@@ -133,6 +133,42 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
   --shadow-card: var(--shadow-md);
+
+  /* ────────────── Table ────────────── */
+  /* Font family is intentionally not declared — tables inherit from parent */
+  --table-font-size: 14px;
+  --table-line-height: 1.5;
+
+  --table-bg: var(--color-bg-card);
+  --table-radius: 8px;
+  --table-border: var(--color-border);
+  --table-divider: var(--color-border-subtle);
+
+  --table-header-bg: var(--color-bg-base);
+  --table-header-fg: var(--color-text-secondary);
+  --table-header-weight: 600;
+  --table-header-pad-y: 8px;
+  --table-header-pad-x: 12px;
+
+  --table-cell-fg: var(--color-text-primary);
+  --table-cell-pad-y: 8px;
+  --table-cell-pad-x: 12px;
+  --table-row-zebra: color-mix(in srgb, var(--color-bg-base) 40%, transparent);
+  --table-row-hover: color-mix(in srgb, var(--color-bg-base) 60%, transparent);
+
+  /* Cell tones — map spec names to existing semantic palette */
+  --table-tone-neutral-bg: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
+  --table-tone-neutral-fg: var(--color-text-primary);
+  --table-tone-success-bg: var(--color-semantic-green-bg);
+  --table-tone-success-fg: var(--color-semantic-green);
+  --table-tone-warning-bg: var(--color-semantic-orange-bg);
+  --table-tone-warning-fg: var(--color-semantic-orange);
+  --table-tone-danger-bg:  var(--color-semantic-red-bg);
+  --table-tone-danger-fg:  var(--color-semantic-red);
+  --table-tone-info-bg:    var(--color-semantic-blue-bg);
+  --table-tone-info-fg:    var(--color-semantic-blue);
+  --table-tone-accent-bg:  var(--color-accent-subtle);
+  --table-tone-accent-fg:  var(--color-accent);
 }
 
 @theme inline {
@@ -224,6 +260,47 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+/* ===== Assistant Markdown ===== */
+.assistant-markdown {
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.assistant-markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.assistant-markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.assistant-markdown p,
+.assistant-markdown li,
+.assistant-markdown blockquote,
+.assistant-markdown table {
+  letter-spacing: 0;
+}
+
+.assistant-markdown strong {
+  color: var(--color-text-primary);
+  font-weight: 650;
+}
+
+.assistant-markdown a,
+.assistant-markdown [data-file-link] {
+  text-underline-offset: 3px;
+}
+
+.assistant-markdown pre,
+.assistant-markdown code {
+  letter-spacing: 0;
+}
+
+.assistant-markdown table {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
 /* ===== Animations ===== */
 @keyframes fadeUp {
   from {
@@ -244,6 +321,17 @@ button:not(:disabled) {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+@keyframes typingIndicatorBreath {
+  0%, 100% {
+    opacity: 0.48;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
 }
 
 @keyframes modalIn {
