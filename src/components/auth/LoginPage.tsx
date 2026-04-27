@@ -68,10 +68,11 @@ export function LoginPage() {
         </div>
         <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
-            <Label>账号</Label>
+            <Label htmlFor="username-prefix">账号</Label>
             <div className="flex items-center gap-1.5">
               <Input
                 id="username-prefix"
+                aria-label="账号"
                 placeholder="用户名"
                 value={usernamePrefix}
                 onChange={(e) => setUsernamePrefix(e.target.value)}
@@ -80,6 +81,7 @@ export function LoginPage() {
               <span className="shrink-0 text-sm font-medium text-muted-foreground">@</span>
               <Input
                 id="username-suffix"
+                aria-label="企业编号"
                 placeholder="企业编号"
                 value={usernameSuffix}
                 onChange={(e) => setUsernameSuffix(e.target.value)}

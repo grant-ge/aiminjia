@@ -70,4 +70,43 @@ describe('markdownToHtml', () => {
     expect(html).toContain('正常文本含')
     expect(html).toContain('标签')
   })
+
+  it('renders blockquotes with neutral assistant styling', () => {
+    const html = markdownToHtml('> 引用内容')
+
+    expect(html).toContain('border-left:3px solid var(--color-border-secondary)')
+    expect(html).toContain('background:var(--color-bg-neutral-subtle)')
+    expect(html).not.toContain('var(--color-accent)')
+    expect(html).not.toContain('var(--color-accent-subtle)')
+  })
+
+  it('renders main assistant body text with primary text color', () => {
+    const html = markdownToHtml('你好，我在。\n你想聊点什么？')
+
+    expect(html).toContain('color:var(--color-text-primary)')
+    expect(html).not.toContain('<p style="margin:6px 0;color:var(--color-text-secondary)')
+  })
+
+  it('renders aligned markdown tables without duplicate style attributes', () => {
+    const md = `| 类型 | 数量 | 备注 |
+|---|---:|---|
+| tool steps | 11 | 含 success / error / running |`
+    const html = markdownToHtml(md)
+
+    expect(html).toContain('<table style="width:max-content;min-width:100%')
+    expect(html).toContain('<th style="text-align:right;')
+    expect(html).toContain('<td style="text-align:right;')
+    expect(html).not.toContain('style="text-align:right" style=')
+  })
+
+  it('renders wide markdown tables with horizontal overflow instead of forcing width 100 percent', () => {
+    const md = `| 环节 | 字段A | 字段B | 字段C | 字段D | 字段E | 字段F | 字段G | 字段H | 字段I |
+|---|---|---|---|---|---|---|---|---|---|
+| transcript | 33 条消息 | user 9 | assistant 13 | tool 11 | latest turn running | long output 33 行 | markdown table | rich tables | subagent |`
+    const html = markdownToHtml(md)
+
+    expect(html).toContain('overflow-x:auto')
+    expect(html).toContain('width:max-content;min-width:100%')
+    expect(html).not.toContain('<table style="width:100%;border-collapse:collapse')
+  })
 })

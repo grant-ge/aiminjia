@@ -145,19 +145,18 @@ function renderTable(lines: string[]): string {
   const alignments = isTableSeparator(lines[1]) ? parseAlignments(lines[1]) : []
   const bodyStart = isTableSeparator(lines[1]) ? 2 : 1
 
-  const alignStyle = (i: number) => {
+  const alignCss = (i: number) => {
     const a = alignments[i]
-    if (!a || a === 'left') return ''
-    return ` style="text-align:${a}"`
+    return `text-align:${a || 'left'};`
   }
 
   let html =
-    '<div style="overflow-x:auto;margin:12px 0"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;line-height:1.5">'
+    '<div style="overflow-x:auto;margin:12px 0"><table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:0.85rem;line-height:1.5;table-layout:auto">'
 
   // Header
   html += '<thead><tr>'
   for (let i = 0; i < headerCells.length; i++) {
-    html += `<th${alignStyle(i)} style="padding:8px 12px;border-bottom:2px solid var(--color-border);text-align:${alignments[i] || 'left'};font-weight:600;color:var(--color-text-primary);background:var(--color-bg-base);white-space:nowrap">${inlineFmt(headerCells[i])}</th>`
+    html += `<th style="${alignCss(i)}padding:8px 12px;border-bottom:2px solid var(--color-border);font-weight:600;color:var(--color-text-primary);background:var(--color-bg-base);white-space:nowrap">${inlineFmt(headerCells[i])}</th>`
   }
   html += '</tr></thead>'
 
@@ -166,11 +165,11 @@ function renderTable(lines: string[]): string {
   for (let r = bodyStart; r < lines.length; r++) {
     const cells = parseTableRow(lines[r])
     const isEven = (r - bodyStart) % 2 === 0
-    const rowBg = isEven ? '' : ' background:var(--color-bg-base)'
+    const rowBg = isEven ? '' : 'background:var(--color-bg-base);'
     html += '<tr>'
     for (let i = 0; i < Math.max(cells.length, headerCells.length); i++) {
       const cell = cells[i] || ''
-      html += `<td${alignStyle(i)} style="padding:7px 12px;border-bottom:1px solid var(--color-border-subtle);color:var(--color-text-secondary);${rowBg}">${inlineFmt(cell)}</td>`
+      html += `<td style="${alignCss(i)}padding:7px 12px;border-bottom:1px solid var(--color-border-subtle);color:var(--color-text-primary);vertical-align:top;${rowBg}">${inlineFmt(cell)}</td>`
     }
     html += '</tr>'
   }
@@ -296,7 +295,7 @@ function _markdownToHtmlImpl(md: string): string {
         i++
       }
       output.push(
-        `<blockquote style="margin:10px 0;padding:8px 14px;border-left:3px solid var(--color-accent);background:var(--color-accent-subtle);border-radius:0 6px 6px 0;color:var(--color-text-secondary);font-size:0.88rem">${quoteLines.map(inlineFmt).join('<br/>')}</blockquote>`,
+        `<blockquote style="margin:10px 0;padding:8px 14px;border-left:3px solid var(--color-border-secondary);background:var(--color-bg-neutral-subtle);border-radius:0 6px 6px 0;color:var(--color-text-secondary);font-size:0.88rem">${quoteLines.map(inlineFmt).join('<br/>')}</blockquote>`,
       )
       continue
     }
@@ -333,7 +332,7 @@ function _markdownToHtmlImpl(md: string): string {
         }
       }
       output.push(
-        `<ul style="margin:8px 0;padding-left:20px;list-style:disc">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ul>`,
+        `<ul style="margin:8px 0;padding-left:20px;list-style:disc">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-primary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ul>`,
       )
       continue
     }
@@ -359,7 +358,7 @@ function _markdownToHtmlImpl(md: string): string {
         }
       }
       output.push(
-        `<ol style="margin:8px 0;padding-left:20px;list-style:decimal">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ol>`,
+        `<ol style="margin:8px 0;padding-left:20px;list-style:decimal">${items.map((item) => `<li style="margin:3px 0;color:var(--color-text-primary);font-size:0.88rem;line-height:1.65">${inlineFmt(item.text)}${item.extras}</li>`).join('')}</ol>`,
       )
       continue
     }
@@ -383,14 +382,14 @@ function _markdownToHtmlImpl(md: string): string {
     }
     if (paraLines.length > 0) {
       output.push(
-        `<p style="margin:6px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.7">${paraLines.map(inlineFmt).join('<br/>')}</p>`,
+        `<p style="margin:6px 0;color:var(--color-text-primary);font-size:0.88rem;line-height:1.7">${paraLines.map(inlineFmt).join('<br/>')}</p>`,
       )
     } else {
       // Safety: if a line was not collected by any handler (e.g. "#tag" without
       // space doesn't match heading regex, but paragraph excludes "#" prefix),
       // render it as a standalone paragraph and advance to prevent infinite loop.
       output.push(
-        `<p style="margin:6px 0;color:var(--color-text-secondary);font-size:0.88rem;line-height:1.7">${inlineFmt(lines[i])}</p>`,
+        `<p style="margin:6px 0;color:var(--color-text-primary);font-size:0.88rem;line-height:1.7">${inlineFmt(lines[i])}</p>`,
       )
       i++
     }

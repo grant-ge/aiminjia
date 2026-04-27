@@ -10,7 +10,9 @@ import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
 import { useSkillComposer } from '@/hooks/useSkillComposer'
+import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
 import { useChatStore } from '@/stores/chatStore'
+import { emitAuthorizedWorkspaceChanged, useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
 import { useUiStore } from '@/stores/uiStore'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
@@ -87,9 +89,11 @@ export function ChatBottomArea() {
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const selectedSkillCommand = useChatStore((s) => activeConversationId ? s.selectedSkillCommands[activeConversationId] ?? null : null)
+  const { workspace: authorizedWorkspace } = useAuthorizedWorkspace(activeConversationId)
   const clearSelectedSkillCommand = useChatStore((s) => s.clearSelectedSkillCommand)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFiles } = useFileUpload()
+  const { isAuthorizingDirectory, selectAndAuthorizeDirectory } = useWorkspaceAuthorization()
   const openSettings = useUiStore((s) => s.openSettings)
   const {
     showSkillPopover,
@@ -149,6 +153,8 @@ export function ChatBottomArea() {
     })
 
     setIsSending(true)
+    const submittedInput = overrideText ?? input
+    setInput('')
     const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
       id: f.id,
       fileName: f.fileName,
@@ -156,26 +162,22 @@ export function ChatBottomArea() {
       fileSize: f.fileSize,
     }))
 
-    const IPC_TIMEOUT_MS = 15_000
     try {
-      const sent = await Promise.race([
-        sendUserMessage(
-          trimmed || t('inputBar.analyzeFile'),
-          fileInfos.length > 0 ? fileInfos : undefined,
-          undefined,
-          selectedSkillCommand?.id ?? undefined,
-        ),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS),
-        ),
-      ])
+      const sent = await sendUserMessage(
+        trimmed || t('inputBar.analyzeFile'),
+        fileInfos.length > 0 ? fileInfos : undefined,
+        undefined,
+        selectedSkillCommand?.id ?? undefined,
+      )
       if (sent) {
-        setInput('')
         setPendingFiles([])
         clearSelectedSkillCommand(activeConversationId)
+      } else {
+        setInput((current) => current === '' ? submittedInput : current)
       }
     } catch (err) {
-      console.error('[ChatBottomArea] sendUserMessage failed or timed out:', err)
+      console.error('[ChatBottomArea] sendUserMessage failed:', err)
+      setInput((current) => current === '' ? submittedInput : current)
     } finally {
       setIsSending(false)
     }
@@ -197,9 +199,44 @@ export function ChatBottomArea() {
     }
   }, [pendingFiles, selectAndUploadFiles])
 
+  const handleConnectLocalDirectory = useCallback(async () => {
+    setShowAttachmentMenu(false)
+    const authorized = await selectAndAuthorizeDirectory()
+    if (authorized) {
+      const sessionId = useChatStore.getState().activeConversationId
+      if (sessionId) emitAuthorizedWorkspaceChanged(sessionId)
+    }
+  }, [selectAndAuthorizeDirectory])
+
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
-  const attachmentBusy = isUploading
+  const attachmentBusy = isUploading || isAuthorizingDirectory
+  const workspaceStatus = authorizedWorkspace ? (
+    <div
+      className="mb-3 flex items-start justify-between gap-3 rounded-2xl border px-4 py-3"
+      style={{
+        borderColor: 'var(--color-border-secondary)',
+        background: 'linear-gradient(135deg, var(--color-bg-secondary), var(--color-bg-input))',
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{
+            background: 'var(--color-semantic-green-subtle, rgba(22, 163, 74, 0.12))',
+            color: 'var(--color-semantic-green)',
+          }}>
+            workspace on
+          </span>
+          <span className="truncate text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+            {`已连接本地目录：${authorizedWorkspace.displayName}`}
+          </span>
+        </div>
+        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          AI 当前可直接读取该目录，无需先上传文件
+        </p>
+      </div>
+    </div>
+  ) : null
 
   return (
     <div
@@ -249,6 +286,21 @@ export function ChatBottomArea() {
                   继续使用复制上传模式
                 </span>
               </button>
+              <button
+                type="button"
+                className="mt-1 flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--color-text-primary)',
+                }}
+                onClick={() => void handleConnectLocalDirectory()}
+              >
+                <span className="text-sm font-medium">连接本地目录（不复制）</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  让 AI 直接读取本地目录，不复制进工作区
+                </span>
+              </button>
             </div>
           ) : null}
 
@@ -265,6 +317,7 @@ export function ChatBottomArea() {
             isStreaming={isStreaming}
             onStop={stopCurrentStream}
             onOpenAttachment={attachmentBusy ? undefined : () => setShowAttachmentMenu((prev) => !prev)}
+            topSlot={workspaceStatus}
             pendingFilesSlot={pendingFiles.length > 0 ? (
               <PendingFiles
                 pendingFiles={pendingFiles}
