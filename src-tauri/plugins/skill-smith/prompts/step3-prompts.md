@@ -4,7 +4,7 @@
 
 ## 执行流程
 
-1. 读取之前生成的 workflow.toml（通过 step2 的 save_analysis_note 了解步骤内容）
+1. 调用 `skill_smith_read_file(relative_path="workflow.toml")` 读取工作流定义，了解每个步骤的 ID、名称和工具列表
 2. 为每个步骤生成 `prompts/stepN.md` 文件
 3. 可选：生成 `prompts/base.md` 作为角色定位（如果 plugin.toml 里 include_app_base=true 则不需要）
 4. 每个文件调用 `skill_smith_write_file(relative_path="prompts/stepN.md", content=<内容>)`
@@ -68,6 +68,16 @@
 - 如有问题，只修复有问题的文件
 
 向用户展示："所有步骤的提示词已生成完毕，请说「继续」进入校验环节。" 不需要展示 prompt 原文。
+
+## 如果用户要求修改
+
+用户可能说"第 1 步的提示词要更详细"、"加上XX注意事项"等。处理方式：
+1. 调用 `skill_smith_read_file(relative_path="prompts/stepN.md")` 读取对应的 prompt 文件
+2. 仅修改用户要求的部分，保持整体结构不变
+3. 调用 `skill_smith_write_file` 写回修改后的内容
+4. 调用 `skill_smith_validate()` 确认所有文件仍然合法
+
+不需要重新生成所有 prompt 文件，只改用户指定的那个。
 
 ⚠️ 每个 prompt 文件不得少于 50 字节。
 ⚠️ workflow.toml 中引用的每个 prompt 路径都必须有对应文件。

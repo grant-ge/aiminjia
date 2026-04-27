@@ -126,6 +126,41 @@ pub(crate) async fn handle_skill_smith_create_draft(
     .to_string())
 }
 
+/// Read a file from the draft so the LLM can reference previously generated
+/// content (e.g. plugin.toml when designing workflow, workflow.toml when
+/// writing prompts).
+///
+/// Required args: `relative_path`. `draft_id` optional (falls back to
+/// session binding).
+pub(crate) async fn handle_skill_smith_read_file(
+    ctx: &PluginContext,
+    args: &Value,
+) -> Result<String> {
+    let draft_id = resolve_draft_id(ctx, args)?;
+    let relative_path = require_str(args, "relative_path")?;
+
+    let app = ctx
+        .app_handle
+        .as_ref()
+        .ok_or_else(|| anyhow!("skill_smith tools require AppHandle"))?;
+
+    let content = crate::commands::skill_smith::read_skill_draft_file(
+        app.clone(),
+        draft_id.clone(),
+        relative_path.to_string(),
+    )
+    .await
+    .map_err(|e| anyhow!("read_skill_draft_file failed: {}", e))?;
+
+    Ok(json!({
+        "status": "ok",
+        "draft_id": draft_id,
+        "relative_path": relative_path,
+        "content": content,
+    })
+    .to_string())
+}
+
 /// Write a file inside the draft (generic; LLM provides raw content as a
 /// string — for TOML files LLM must produce valid syntax; the follow-up
 /// validate call will report errors).
@@ -466,6 +501,29 @@ mod tests {
         bind_draft(&ctx, "").unwrap();
 
         assert!(lookup_bound_draft(&ctx).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn read_file_without_app_handle_errors() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+        bind_draft(&ctx, "any-draft-id").unwrap();
+
+        let err = handle_skill_smith_read_file(&ctx, &json!({"relative_path": "plugin.toml"}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("AppHandle"));
+    }
+
+    #[tokio::test]
+    async fn read_file_errors_when_no_draft() {
+        let (db, _dir) = create_test_db();
+        let ctx = create_test_context(db);
+
+        let err = handle_skill_smith_read_file(&ctx, &json!({"relative_path": "plugin.toml"}))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("No draft_id provided"));
     }
 
     #[tokio::test]

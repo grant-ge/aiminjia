@@ -160,6 +160,7 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
                     color: 'var(--color-accent)',
                     background: 'transparent',
                   }}
+                  title={t('skillSmith.banner.resumeHint')}
                   onClick={() => handleResume(d.draftId)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--color-bg-hover)'
