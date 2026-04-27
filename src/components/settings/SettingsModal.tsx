@@ -5,23 +5,17 @@ import { useState } from 'react'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { useUiStore, type SettingsModalKey } from '@/stores/uiStore'
+import { useUiStore } from '@/stores/uiStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsContentTop } from './SettingsContentTop'
 import { SettingsMenu, SETTINGS_MENU_ITEMS } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
-import { AccountPanel } from './panels/AccountPanel'
+import { GeneralPanel } from './panels/GeneralPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
 import { PlaceholderPanel } from './panels/PlaceholderPanel'
 import { UsagePanel } from './panels/UsagePanel'
-
-const PANEL_HEIGHT: Partial<Record<SettingsModalKey, number>> = {
-  account: 680,
-  about: 760,
-  usage: 760,
-}
 
 export function SettingsModal() {
   const settingsModal = useUiStore((s) => s.settingsModal)
@@ -53,7 +47,7 @@ export function SettingsModal() {
     <SettingsShell
       open
       onClose={closeSettings}
-      height={PANEL_HEIGHT[settingsModal] || 720}
+      height={720}
       menu={
         <SettingsMenu
           activeKey={settingsModal}
@@ -61,11 +55,11 @@ export function SettingsModal() {
         />
       }
       content={
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <SettingsContentTop title={activeLabel} onClose={closeSettings} />
           <SettingsContentBody>
             {settingsModal === 'account' ? (
-              <AccountPanel
+              <GeneralPanel
                 user={{
                   name: user?.name ?? user?.username ?? '未登录',
                   tenantName: tenant?.name ?? '',
