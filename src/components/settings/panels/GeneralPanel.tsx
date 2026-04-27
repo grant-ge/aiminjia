@@ -1,6 +1,7 @@
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import type { AppLanguage } from '@/i18n'
+// TODO: 语言切换暂未实现
+// import type { AppLanguage } from '@/i18n'
 import { Button } from '@/components/ui/button'
 
 const ACCENT_PRESETS = [
@@ -22,7 +23,8 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   const accentColor = useBrandingStore((s) => s.accentColor)
   const applyBranding = useBrandingStore((s) => s.applyBranding)
   const appLanguage = useSettingsStore((s) => s.appLanguage)
-  const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
+  // TODO: 语言切换暂未实现
+  // const setAppLanguage = useSettingsStore((s) => s.setAppLanguage)
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,8 +34,8 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
           {user.avatarUrl ? (
             <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
           ) : (
-            <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-primary-foreground">
-              {user.name.charAt(0).toUpperCase()}
+            <span className="flex h-full w-full items-center justify-center text-lg font-semibold text-white">
+              {(user.name.charAt(0) || '?').toUpperCase()}
             </span>
           )}
         </div>
@@ -50,17 +52,20 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
       <div className="flex flex-col gap-2">
         <div className="text-sm font-semibold text-foreground">通用</div>
         <div className="divide-y divide-border rounded-[14px] border border-border bg-card">
-          {/* 语言 */}
-          <div className="flex items-center justify-between px-4 py-3.5">
+          {/* 语言（禁用） */}
+          <div className="flex items-center justify-between px-4 py-3.5 opacity-50">
             <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-foreground">语言</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-foreground">语言</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">即将支持</span>
+              </div>
               <span className="text-xs text-muted-foreground">选择应用界面显示的语言</span>
             </div>
             <select
               aria-label="语言"
               value={appLanguage ?? 'zh-CN'}
-              onChange={(e) => setAppLanguage(e.target.value as AppLanguage)}
-              className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+              disabled
+              className="cursor-not-allowed rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none"
             >
               <option value="zh-CN">跟随系统（简体中文）</option>
               <option value="en-US">English</option>
@@ -77,6 +82,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               <span className="text-xs text-muted-foreground">系统启动时自动运行</span>
             </div>
             <button
+              type="button"
               role="switch"
               aria-checked={false}
               aria-label="开机自启动"
@@ -97,6 +103,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
               <span className="text-xs text-muted-foreground">任务处理期间阻止电脑因空闲自动进入休眠</span>
             </div>
             <button
+              type="button"
               role="switch"
               aria-checked={false}
               aria-label="任务运行时阻止自动休眠"

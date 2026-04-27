@@ -27,11 +27,11 @@ describe('GeneralPanel', () => {
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
 
-  it('renders 通用 section with language selector', () => {
+  it('renders 通用 section with disabled language selector', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
     expect(screen.getByText('通用')).toBeInTheDocument()
     expect(screen.getByText('语言')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: '语言' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '语言' })).toBeDisabled()
   })
 
   it('renders disabled autostart and prevent-sleep toggles', () => {
@@ -48,7 +48,7 @@ describe('GeneralPanel', () => {
     expect(screen.getByText('外观')).toBeInTheDocument()
     expect(screen.getByText('强调色')).toBeInTheDocument()
     const swatches = screen.getAllByRole('radio')
-    expect(swatches.length).toBeGreaterThanOrEqual(5)
+    expect(swatches).toHaveLength(7)
   })
 
   it('selecting an accent color swatch calls applyBranding with new color', () => {
@@ -60,11 +60,13 @@ describe('GeneralPanel', () => {
     expect(applyBranding).toHaveBeenCalledWith({ accentColor: '#4f46e5' })
   })
 
-  it('changing language select calls setAppLanguage', () => {
+  it('language select is disabled and does not call setAppLanguage', () => {
     const setAppLanguage = vi.fn()
     useSettingsStore.setState({ setAppLanguage } as never)
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    fireEvent.change(screen.getByRole('combobox', { name: '语言' }), { target: { value: 'en-US' } })
-    expect(setAppLanguage).toHaveBeenCalledWith('en-US')
+    const select = screen.getByRole('combobox', { name: '语言' })
+    expect(select).toBeDisabled()
+    fireEvent.change(select, { target: { value: 'en-US' } })
+    expect(setAppLanguage).not.toHaveBeenCalled()
   })
 })
