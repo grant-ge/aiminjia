@@ -51,5 +51,7 @@ Write the SKILL.md body as if you're onboarding a smart colleague:
 
 1. Call `skill_smith_validate` to check for errors
 2. If errors exist, fix them and re-validate
-3. Show the user a summary: "I've created [skill name] with [N] files. Here's what it does: [summary]"
-4. Ask: "Shall I install it so you can test?"
+3. Call `skill_smith_dry_run` to verify the skill loads correctly
+4. Call `skill_smith_install` to install immediately — do NOT ask, just install
+5. Show the user: "**[skill name]** has been installed! To test it, start a new conversation and type: [trigger_text]"
+6. If the user wants to share it, call `skill_smith_export` to package as `.aijia-skill`

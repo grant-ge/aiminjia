@@ -3,6 +3,7 @@
  * Shows only skills linked to the active persona (or all if none linked).
  * Persona switching is handled in Sidebar.
  */
+import type { SkillInfo } from '@/lib/tauri'
 import { usePluginStore } from '@/stores/pluginStore'
 import { usePersonaStore } from '@/stores/personaStore'
 import { useProductName } from '@/hooks/useProductName'
@@ -22,9 +23,12 @@ export function WelcomeScreen() {
   const linkedCategories = activePersona?.linkedCategories ?? []
   const hasLinked = linkedCategories.length > 0
 
-  // Filter skills: only linked categories, exclude daily-assistant, must have icon
-  const displaySkills = skills.filter((s) => {
-    if (s.id === 'daily-assistant' || !s.icon) return false
+  // Split skills: custom (user-created) always visible, builtin filtered by persona
+  const customSkills = skills.filter((s) =>
+    s.source === 'custom' && s.id !== 'daily-assistant'
+  )
+  const builtinSkills = skills.filter((s) => {
+    if (s.id === 'daily-assistant' || !s.icon || s.source === 'custom') return false
     if (!hasLinked) return true
     return linkedCategories.includes(s.category || 'general')
   })
@@ -122,37 +126,57 @@ export function WelcomeScreen() {
         </button>
       </div>
 
-      {/* Flat skill grid */}
-      {displaySkills.length > 0 && (
+      {/* Custom skills section (user-created, always visible) */}
+      {customSkills.length > 0 && (
         <div className="mt-4 w-full max-w-[640px] px-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span
+              className="text-xs font-medium"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {t('welcome.mySkills')}
+            </span>
+            <button
+              type="button"
+              className="text-xs cursor-pointer"
+              style={{ color: 'var(--color-accent)' }}
+              onClick={() => handleSkillClick(t('welcome.createSkillTrigger'))}
+            >
+              + {t('welcome.createSkill')}
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2.5">
-            {displaySkills.map((skill) => (
-              <button
+            {customSkills.map((skill) => (
+              <SkillCard
                 key={skill.id}
-                type="button"
-                className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
-                style={{
-                  background: 'var(--color-bg-elevated)',
-                  border: '1px solid var(--color-border-subtle)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-accent)'
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
-                  e.currentTarget.style.boxShadow = 'none'
-                }}
+                skill={skill}
                 onClick={() => handleSkillClick(skill.triggerText)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Built-in skill grid */}
+      {builtinSkills.length > 0 && (
+        <div className="mt-4 w-full max-w-[640px] px-4">
+          {customSkills.length > 0 && (
+            <div className="mb-2">
+              <span
+                className="text-xs font-medium"
+                style={{ color: 'var(--color-text-muted)' }}
               >
-                <span className="text-xl leading-none">{skill.icon}</span>
-                <span
-                  className="text-xs font-medium leading-tight"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  {t(`skills.${skill.id}`, skill.displayName)}
-                </span>
-              </button>
+                {t('welcome.builtinSkills')}
+              </span>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2.5">
+            {builtinSkills.map((skill) => (
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                onClick={() => handleSkillClick(skill.triggerText)}
+              />
             ))}
           </div>
         </div>
@@ -165,5 +189,37 @@ export function WelcomeScreen() {
         {t('welcome.askAnything')}
       </p>
     </div>
+  )
+}
+
+/** Reusable skill card button */
+function SkillCard({ skill, onClick }: { skill: SkillInfo; onClick: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <button
+      type="button"
+      className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+      style={{
+        background: 'var(--color-bg-elevated)',
+        border: '1px solid var(--color-border-subtle)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-accent)'
+        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+      onClick={onClick}
+    >
+      <span className="text-xl leading-none">{skill.icon || '\u{1F527}'}</span>
+      <span
+        className="text-xs font-medium leading-tight"
+        style={{ color: 'var(--color-text-primary)' }}
+      >
+        {t(`skills.${skill.id}`, skill.displayName)}
+      </span>
+    </button>
   )
 }

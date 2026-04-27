@@ -106,7 +106,11 @@
     "generalMode": "通用模式",
     "generalModeDesc": "直接对话，不使用专业技能",
     "askAnything": "也可以直接问我任何工作相关问题",
-    "hello": "你好"
+    "hello": "你好",
+    "mySkills": "我的技能",
+    "builtinSkills": "专业技能",
+    "createSkill": "创建技能",
+    "createSkillTrigger": "帮我创建一个技能"
   },
 
   "skillSmith": {

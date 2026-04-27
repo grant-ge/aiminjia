@@ -106,7 +106,11 @@
     "generalMode": "General Mode",
     "generalModeDesc": "Chat directly without specialized skills",
     "askAnything": "Or ask me any work-related question",
-    "hello": "Hello"
+    "hello": "Hello",
+    "mySkills": "My Skills",
+    "builtinSkills": "Built-in Skills",
+    "createSkill": "Create Skill",
+    "createSkillTrigger": "Help me create a skill"
   },
 
   "skillSmith": {
