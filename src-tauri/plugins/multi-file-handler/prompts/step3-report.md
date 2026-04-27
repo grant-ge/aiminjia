@@ -73,11 +73,11 @@ Section 3：整体结论
 生成完后给用户一句话：
 
 ```
-## ✅ 多文件处理完成
+## 多文件处理完成
 
 已生成交付物：
-- 📄 multi_file_compare_report.html（完整报告）
-- 📊 diff_details.xlsx（差异明细，3 sheets）
+- multi_file_compare_report.html（完整报告）
+- diff_details.xlsx（差异明细，3 sheets）
 
 如果想看特定维度的深度分析，告诉我维度名字我单独做一份。
 ```

@@ -101,7 +101,7 @@ pub fn transform_message_json_for_frontend(mut message: serde_json::Value) -> se
 
 pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    db.create_conversation(&id, "New Conversation")
+    db.create_conversation(&id, "新对话")
         .map_err(|e| e.to_string())?;
     Ok(id)
 }
@@ -229,7 +229,7 @@ pub fn should_auto_title(
         .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    if title != "New Conversation" {
+    if title != "新对话" {
         return Ok(false);
     }
 
@@ -275,7 +275,7 @@ async fn generate_and_set_title_inner(
         .find(|c| c["id"].as_str() == Some(conversation_id.as_str()))
         .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
-    if current_title != "New Conversation" {
+    if current_title != "新对话" {
         return Ok(None);
     }
 
@@ -490,7 +490,7 @@ mod title_tests {
     #[test]
     fn should_auto_title_returns_false_when_no_assistant_message() {
         let store = StoreWithMessages::new(
-            "New Conversation",
+            "新对话",
             "conv1",
             vec![serde_json::json!({"role": "user", "content": {"text": "hello"}})],
         );
@@ -500,7 +500,7 @@ mod title_tests {
     #[test]
     fn should_auto_title_returns_true_when_conditions_met() {
         let store = StoreWithMessages::new(
-            "New Conversation",
+            "新对话",
             "conv1",
             vec![
                 serde_json::json!({"role": "user",      "content": {"text": "hello"}}),
