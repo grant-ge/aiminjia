@@ -90,6 +90,12 @@ jobs:
         shell: pwsh
         run: .\scripts\setup-playwright.ps1
 
+      - name: Download changelog.json from production
+        shell: bash
+        run: |
+          curl -fsSL "https://lotus.renlijia.com/changelog.json" -o src-tauri/changelog.json \
+            || echo '{"versions":[]}' > src-tauri/changelog.json
+
       - name: Build Tauri app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
