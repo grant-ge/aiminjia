@@ -2,12 +2,10 @@
  * StreamingBubble — shows the AI response as it streams in,
  * with a typing indicator when waiting for the first token.
  */
-import { Avatar } from '@/components/common/Avatar'
 import { useChatStore } from '@/stores/chatStore'
-import { useProductName } from '@/hooks/useProductName'
-import { TypingIndicator } from './TypingIndicator'
+import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { TaskStatusList } from './TaskStatusList'
-import { markdownToHtml } from '@/lib/markdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
 import { useTranslation } from 'react-i18next'
 
@@ -37,7 +35,6 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
       ? (s.streamStates[activeId]?.toolExecutions ?? s.toolExecutions)
       : (s.toolExecutions ?? EMPTY_TOOL_EXECUTIONS)
   })
-  const productName = useProductName()
   const tasks = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? (s.taskStates[activeId] ?? EMPTY_TASK_STATES) : EMPTY_TASK_STATES
@@ -64,24 +61,9 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
 
   return (
     <div className="mb-7 animate-[fadeUp_0.3s_ease]">
-      {/* Header: avatar + name */}
-      <div className="mb-2 flex items-center gap-2">
-        <Avatar variant="ai" />
-        <span
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          {productName}
-        </span>
-      </div>
-
-      {/* Body — offset by avatar width */}
-      <div className="pl-9">
+      <div>
         {cleanContent ? (
-          <div
-            className="text-md leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: markdownToHtml(cleanContent) }}
-          />
+          <AssistantMarkdown text={cleanContent} />
         ) : null}
         {activeTool ? (
           <div
@@ -94,9 +76,11 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             <span>{statusText}</span>
           </div>
         ) : (
-          <div className={`flex items-center gap-2 text-sm${cleanContent ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
-            <TypingIndicator />
-            <span>{statusText}</span>
+          <div className={cleanContent ? 'mt-2' : ''}>
+            <TypingIndicator variant={agentPhase === 'observe' ? 'organize' : 'default'} />
+            {statusText && cleanContent ? (
+              <span className="sr-only">{statusText}</span>
+            ) : null}
           </div>
         )}
         {errorTools.length > 0 && (

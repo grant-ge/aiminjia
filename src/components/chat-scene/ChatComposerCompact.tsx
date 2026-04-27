@@ -2,8 +2,8 @@
  * @designSource design.pen#uq6ga ChatComposerCompact
  * @sizing r-18 border 1 bg card padding [16,18,14,18] gap 12
  */
-import { useRef, type KeyboardEvent, type ReactNode, type RefObject, type CompositionEventHandler } from 'react'
-import { ArrowUp, Blocks, Folder, Mic, Plus, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { type KeyboardEvent, type ReactNode, type RefObject, type CompositionEventHandler, type ClipboardEventHandler, useRef } from 'react'
+import { ArrowUp, Blocks, Folder, Plus, Sparkles, X } from 'lucide-react'
 
 import type { ComposerSkillCommand } from '@/stores/chatStore'
 
@@ -16,8 +16,8 @@ interface ChatComposerCompactProps {
   onOpenSkill?: () => void
   onPickProject?: () => void
   projectLabel?: string
-  modelLabel?: string
-  permissionLabel?: string
+  // TODO: modelLabel、showModelButton — 模型选择暂未实现
+  // TODO: permissionLabel、onPermissionClick — 权限按钮暂未实现
   showProjectButton?: boolean
   tips?: ReactNode
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
@@ -31,7 +31,7 @@ interface ChatComposerCompactProps {
   textareaRef?: RefObject<HTMLTextAreaElement | null>
   onCompositionStart?: CompositionEventHandler<HTMLTextAreaElement>
   onCompositionEnd?: CompositionEventHandler<HTMLTextAreaElement>
-  onPermissionClick?: () => void
+  onPaste?: ClipboardEventHandler<HTMLTextAreaElement>
 }
 
 export function ChatComposerCompact({
@@ -43,8 +43,6 @@ export function ChatComposerCompact({
   onOpenSkill,
   onPickProject,
   projectLabel = 'Desktop',
-  modelLabel = '标准',
-  permissionLabel = '完全访问权限',
   showProjectButton = true,
   tips,
   onKeyDown,
@@ -58,7 +56,7 @@ export function ChatComposerCompact({
   textareaRef,
   onCompositionStart,
   onCompositionEnd,
-  onPermissionClick,
+  onPaste,
 }: ChatComposerCompactProps) {
   const internalRef = useRef<HTMLTextAreaElement>(null)
   const ref = textareaRef ?? internalRef
@@ -118,6 +116,7 @@ export function ChatComposerCompact({
           onKeyDown={handleKeyDown}
           onCompositionStart={onCompositionStart}
           onCompositionEnd={onCompositionEnd}
+          onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
           className="w-full resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
@@ -147,14 +146,11 @@ export function ChatComposerCompact({
               <Blocks className="h-3.5 w-3.5" />
               <span>{skillCommand ? '技能已加载' : '技能'}</span>
             </button>
-            <button
-              type="button"
-              onClick={onPermissionClick}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
-            >
+            {/* TODO: 权限按钮暂未实现
+            <button type="button" aria-label="权限" className="...">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{permissionLabel}</span>
             </button>
+            */}
             {showProjectButton ? (
               <button
                 type="button"
@@ -167,19 +163,16 @@ export function ChatComposerCompact({
             ) : null}
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <span>{modelLabel}</span>
+            {/* TODO: 模型选择暂未实现
+            <button type="button" aria-label="打开模型设置" className="...">
+              <ChevronDown className="h-3.5 w-3.5" />
             </button>
-            <button
-              type="button"
-              aria-label="语音输入"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
-            >
+            */}
+            {/* TODO: 语音输入暂未实现
+            <button type="button" aria-label="语音输入" className="...">
               <Mic className="h-4 w-4" />
             </button>
+            */}
             <button
               type="button"
               aria-label={isStreaming ? '停止' : '发送'}

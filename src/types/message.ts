@@ -101,9 +101,12 @@ export const MESSAGE_CONTENT_RENDER_ORDER: (keyof MessageContent)[] = [
 export interface FileAttachment {
   id: string
   fileName: string
+  filePath?: string
+  kind?: 'file' | 'folder' | 'image'
   fileSize: number
-  fileType: 'excel' | 'word' | 'pdf' | 'csv' | 'json'
+  fileType: 'excel' | 'word' | 'pdf' | 'csv' | 'json' | 'folder' | 'image'
   status: 'uploading' | 'uploaded' | 'parsing' | 'parsed' | 'error'
+  mimeType?: string
   errorMessage?: string
 }
 

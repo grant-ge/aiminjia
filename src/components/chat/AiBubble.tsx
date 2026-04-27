@@ -22,7 +22,6 @@ import type {
   SubAgentEnvelopeContent,
 } from '@/types/message'
 import { MESSAGE_CONTENT_RENDER_ORDER } from '@/types/message'
-import { Avatar } from '@/components/common/Avatar'
 import {
   RichCodeBlock,
   RichDataTable,
@@ -39,29 +38,24 @@ import {
   GeneratedFileCard,
   SubAgentResultCard,
 } from '@/components/rich-content'
-import { TypingIndicator } from './TypingIndicator'
+import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { useChatStore } from '@/stores/chatStore'
 import { openGeneratedFile, revealFileInFolder } from '@/lib/tauri'
 import { useCallback } from 'react'
-import { markdownToHtml } from '@/lib/markdown'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useProductName } from '@/hooks/useProductName'
 import { useTranslation } from 'react-i18next'
 
 interface AiBubbleProps {
   message: Message
   isStreaming?: boolean
-  /** When true, hides the Avatar + product name header row and removes
-   *  the pl-9 body offset. Used by MessageList turn-based rendering. */
-  hideHeader?: boolean
   onUserResponse?: (text: string) => void
 }
 
-export function AiBubble({ message, isStreaming, hideHeader, onUserResponse }: AiBubbleProps) {
+export function AiBubble({ message, isStreaming, onUserResponse }: AiBubbleProps) {
   const { t } = useTranslation()
   const { content } = message
   const conversationId = useChatStore((s) => s.activeConversationId)
-  const productName = useProductName()
 
   // Skip rendering if no meaningful content (prevents blank bubbles from
   // historical empty messages or tool-call-only iterations)
@@ -119,22 +113,8 @@ export function AiBubble({ message, isStreaming, hideHeader, onUserResponse }: A
   if (!hasContent && !isStreaming) return null
 
   return (
-    <div className={`animate-[fadeUp_0.3s_ease] ${hideHeader ? '' : 'mb-7'}`}>
-      {/* Header: avatar + name */}
-      {!hideHeader && (
-        <div className="mb-2 flex items-center gap-2">
-          <Avatar variant="ai" />
-          <span
-            className="text-sm font-semibold"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
-            {productName}
-          </span>
-        </div>
-      )}
-
-      {/* Body — offset by avatar width */}
-      <div className={`group relative ${hideHeader ? '' : 'pl-9'}`}>
+    <div className="animate-[fadeUp_0.3s_ease]">
+      <div className="group relative">
 {MESSAGE_CONTENT_RENDER_ORDER.map((field) => {
           const value = content[field]
           if (value === undefined || value === null) return null
@@ -151,7 +131,7 @@ export function AiBubble({ message, isStreaming, hideHeader, onUserResponse }: A
           )
         })}
 
-        {isStreaming && <TypingIndicator />}
+        {isStreaming && <TypingIndicator variant="default" />}
       </div>
     </div>
   )
@@ -179,7 +159,7 @@ function ContentRenderer({
   const { t } = useTranslation()
   switch (field) {
     case 'text':
-      return <TextRenderer text={value as string} />
+      return <AssistantMarkdown text={value as string} />
 
     case 'progress':
       return <ProgressSteps progress={value as ProgressState} />
@@ -306,15 +286,4 @@ function ContentRenderer({
     default:
       return null
   }
-}
-
-/** Renders text content with full markdown support (tables, headings, lists, code). */
-function TextRenderer({ text }: { text: string }) {
-  if (!text.trim()) return null
-  return (
-    <div
-      className="text-md leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: markdownToHtml(text) }}
-    />
-  )
 }

@@ -40,16 +40,15 @@ describe('ChatComposerCompact', () => {
         onChange={() => {}}
         onSubmit={() => {}}
         projectLabel="Desktop"
-        modelLabel="标准"
-        permissionLabel="完全访问权限"
         showProjectButton={false}
         tips={<div>Enter 发送</div>}
       />,
     )
 
     expect(screen.queryByText('Desktop')).not.toBeInTheDocument()
-    expect(screen.getByText('标准')).toBeInTheDocument()
-    expect(screen.getByText('完全访问权限')).toBeInTheDocument()
+    // 模型选择、权限、语音输入暂未实现，按钮已注释
+    expect(screen.queryByRole('button', { name: '打开模型设置' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '语音输入' })).not.toBeInTheDocument()
     expect(screen.getByText('Enter 发送')).toBeInTheDocument()
   })
 
@@ -114,6 +113,15 @@ describe('ChatComposerCompact', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '移除技能 创建自己的技能' }))
     expect(onClearSkillCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a fixed-size model popover with inner scroll box', () => {
+    render(
+      <ChatComposerCompact value="" onChange={() => {}} onSubmit={() => {}} />,
+    )
+
+    // 模型选择暂未实现，按钮已注释
+    expect(screen.queryByRole('button', { name: '打开模型设置' })).not.toBeInTheDocument()
   })
 
   it('uses zero gap on the left action group', () => {

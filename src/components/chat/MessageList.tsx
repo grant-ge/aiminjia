@@ -28,7 +28,7 @@ export function MessageList() {
   >({})
 
   return (
-    <div className="flex flex-col gap-5 px-10 py-6">
+    <div className="flex flex-col gap-5 px-6 py-3">
       {turns.map((t, i) => {
         const e = expansion[i] ?? { expanded: true, stepIndex: null }
         return (
@@ -59,7 +59,7 @@ export function MessageList() {
               />
             ) : null}
             {t.aiSegments.map((s) => (
-              <AiBubble key={s.id} message={s.message} hideHeader onUserResponse={sendUserMessage} />
+              <AiBubble key={s.id} message={s.message} onUserResponse={sendUserMessage} />
             ))}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard

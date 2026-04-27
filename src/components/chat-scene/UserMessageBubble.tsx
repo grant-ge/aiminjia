@@ -1,6 +1,6 @@
 /**
  * @designSource design.pen#1JNrw bubble/adaptive-max-80
- * @sizing r-16 padding [12,16] bg primary fg primary-foreground; align right; max-w 80%
+ * @sizing r-16 padding [8,12] bg primary fg primary-foreground; align right; max-w 80%
  */
 import type { SkillCommandBreadcrumb } from '@/types/message'
 
@@ -18,7 +18,7 @@ export function UserMessageBubble({ text, commandText, skillCommand }: UserMessa
     <div className="flex w-full justify-end">
       <div
         data-testid="user-bubble"
-        className="max-w-[80%] rounded-2xl bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground"
+        className="max-w-[80%] rounded-2xl bg-primary px-3 py-2 text-sm leading-relaxed text-primary-foreground"
       >
         {tokenLabel ? (
           <span

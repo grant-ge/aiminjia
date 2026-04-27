@@ -26,10 +26,6 @@ vi.mock('@/stores/notificationStore', () => ({
   },
 }))
 
-vi.mock('@/hooks/useProductName', () => ({
-  useProductName: () => 'AIjia',
-}))
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (
@@ -99,5 +95,11 @@ describe('AiBubble — subagentEnvelope integration', () => {
     expect(
       screen.getByText('Subagent finished the task successfully.'),
     ).toBeInTheDocument()
+  })
+
+  it('does not render the old avatar-offset layout for history messages', () => {
+    const { container } = render(<AiBubble message={envelopeMessage} />)
+
+    expect(container.querySelector('.pl-9')).toBeNull()
   })
 })

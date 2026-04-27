@@ -23,6 +23,13 @@ describe('UserMessageBubble', () => {
     expect(bubble?.className).toMatch(/max-w-\[80%\]/)
   })
 
+  it('bubble uses compact 12px horizontal and 8px vertical padding', () => {
+    const { container } = render(<UserMessageBubble text="X" />)
+    const bubble = container.querySelector('[data-testid="user-bubble"]')
+    expect(bubble?.className).toMatch(/px-3/)
+    expect(bubble?.className).toMatch(/py-2/)
+  })
+
   it('renders selected skill as a visible token inside the user bubble', () => {
     const { container } = render(
       <UserMessageBubble
