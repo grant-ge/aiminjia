@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { cloudLogin, cloudLogout, getCloudAuth, getCloudModels, type CloudAuthInfo, type CloudModel } from '@/lib/tauri'
+import { useChatStore } from '@/stores/chatStore'
 import type { Route } from '@/stores/uiStore'
 
 interface AuthState {
@@ -83,6 +84,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   async login(username, password) {
     set({ isAuthPending: true })
+    useChatStore.getState().resetAll()
+    useChatStore.getState().resetStreaming()
+    useChatStore.setState({ selectedSkillCommands: {} })
     try {
       const info = await cloudLogin(username.trim(), password)
       const models = info.models.length > 0 ? info.models : await getCloudModels()
@@ -97,6 +101,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isAuthPending: true })
     try {
       await cloudLogout()
+      useChatStore.getState().resetAll()
+      useChatStore.getState().resetStreaming()
+      useChatStore.setState({ selectedSkillCommands: {} })
       set({ ...EMPTY_AUTH_STATE, redirectFrom: null, isAuthPending: false })
     } catch (error) {
       set({ isAuthPending: false })

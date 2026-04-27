@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
+use crate::storage::UserScopedPathResolver;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -45,6 +46,15 @@ fn list_custom_skills_in_dir(custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, 
     Ok(skills)
 }
 
+
+fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let cus = app.state::<Arc<crate::storage::CurrentUserStorage>>();
+    Ok(cus
+        .require_paths()
+        .map_err(|e| e.to_string())?
+        .skills_dir())
+}
+
 fn install_custom_skill_to_dir(custom_dir: &Path, source: &Path) -> Result<String, String> {
     if !source.is_dir() {
         return Err("Source path is not a directory".to_string());
@@ -80,8 +90,7 @@ fn load_skill_for_reload(
 /// List all installed custom skills.
 #[tauri::command]
 pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
+    let custom_dir = user_skills_dir(&app)?;
     list_custom_skills_in_dir(&custom_dir)
 }
 
@@ -89,8 +98,7 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
 #[tauri::command]
 pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
     let source = PathBuf::from(&source_path);
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
+    let custom_dir = user_skills_dir(&app)?;
     let message = install_custom_skill_to_dir(&custom_dir, &source)?;
     let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&source)
         .map_err(|e| format!("Failed to read skill manifest: {}", e))?;
@@ -108,8 +116,7 @@ pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result
 /// Uninstall a custom skill by ID.
 #[tauri::command]
 pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<String, String> {
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let skill_dir = aijia_home.skills_dir().join(&skill_id);
+    let skill_dir = user_skills_dir(&app)?.join(&skill_id);
 
     if !skill_dir.exists() {
         return Err(format!("Custom skill '{}' not found", skill_id));
@@ -618,8 +625,7 @@ pub async fn install_marketplace_skill(
         .map_err(|e| format!("Download error: {}", e))?;
 
     // Step 3: Extract to ~/.renlijia/skills/{plugin_id}/
-    let aijia_home = app.state::<Arc<crate::storage::AiJiaHome>>();
-    let custom_dir = aijia_home.skills_dir();
+    let custom_dir = user_skills_dir(&app)?;
     std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
 
     let dest = custom_dir.join(&plugin_id);

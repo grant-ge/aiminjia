@@ -58,7 +58,7 @@ pub async fn send_message(
     // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
     let diagnostic_conversation_id = conversation_id.clone();
     record_command_event(
-        file_mgr.workspace_path(),
+        &file_mgr.workspace_path(),
         "backend.command.started",
         Some(&conversation_id),
         None,
@@ -78,14 +78,14 @@ pub async fn send_message(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             Some(&diagnostic_conversation_id),
             Some(true),
             Some("chat.send_message"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             Some(&diagnostic_conversation_id),
             Some(false),
@@ -102,7 +102,7 @@ pub async fn stop_streaming(
 ) -> Result<(), String> {
     let diagnostic_conversation_id = conversation_id.clone();
     record_command_event(
-        file_mgr.workspace_path(),
+        &file_mgr.workspace_path(),
         "backend.command.started",
         Some(&conversation_id),
         None,
@@ -111,14 +111,14 @@ pub async fn stop_streaming(
     let result = adapter.stop_streaming(conversation_id).await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             Some(&diagnostic_conversation_id),
             Some(true),
             Some("chat.stop_streaming"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             Some(&diagnostic_conversation_id),
             Some(false),
@@ -142,14 +142,14 @@ pub async fn approve_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.approve_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -173,14 +173,14 @@ pub async fn deny_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.deny_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -202,14 +202,14 @@ pub async fn cancel_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.cancel_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -229,14 +229,14 @@ pub async fn submit_user_interaction(
     let result = adapter.submit_user_interaction(interaction_id, value).await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.submit_user_interaction"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -258,14 +258,14 @@ pub async fn cancel_user_interaction(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.cancel_user_interaction"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),

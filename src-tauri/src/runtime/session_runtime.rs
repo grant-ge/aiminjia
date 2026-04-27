@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -39,6 +40,7 @@ pub struct SessionRuntime {
     pending_permission_store: Arc<PendingPermissionRequestStore>,
     pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
     permission_store: Option<Arc<PermissionStore>>,
+    default_folder: Option<PathBuf>,
 }
 
 impl SessionRuntime {
@@ -54,6 +56,7 @@ impl SessionRuntime {
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            default_folder: None,
         }
     }
 
@@ -78,6 +81,7 @@ impl SessionRuntime {
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            default_folder: None,
         }
     }
 
@@ -107,6 +111,11 @@ impl SessionRuntime {
 
     pub fn with_permission_store(mut self, permission_store: Arc<PermissionStore>) -> Self {
         self.permission_store = Some(permission_store);
+        self
+    }
+
+    pub fn with_default_folder(mut self, default_folder: PathBuf) -> Self {
+        self.default_folder = Some(default_folder);
         self
     }
 
@@ -282,8 +291,15 @@ impl SessionRuntime {
                 display_name: aw.display_name,
             })
             .or_else(|| {
-                let default_path =
-                    crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+                let default_path = self
+                    .default_folder
+                    .clone()
+                    .unwrap_or_else(|| {
+                        log::warn!("[session_runtime] default_folder not injected, using hardcoded fallback");
+                        dirs::home_dir()
+                            .map(|h| h.join(".renlijia").join("defaultFolder"))
+                            .expect("Cannot determine home directory")
+                    });
                 if let Err(err) = std::fs::create_dir_all(&default_path) {
                     log::warn!(
                         "[session_runtime] failed to create defaultFolder for session {}: {}",
@@ -407,7 +423,6 @@ mod tests {
     };
     use async_trait::async_trait;
     use serde_json::Value;
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;

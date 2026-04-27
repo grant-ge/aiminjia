@@ -97,8 +97,16 @@ pub(crate) fn load_authorized_workspace(
         return explicit;
     }
 
-    // 未绑定工作目录时，fallback 到 ~/.renlijia/defaultFolder/。
-    let default_path = crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+    // 未绑定工作目录时，fallback 到 managed AiJiaHome 的 defaultFolder。
+    let default_path = app
+        .try_state::<Arc<crate::storage::AiJiaHome>>()
+        .map(|home| home.default_folder())
+        .unwrap_or_else(|| {
+            log::warn!("[workspace-auth] AiJiaHome not in managed state, using hardcoded fallback");
+            dirs::home_dir()
+                .map(|h| h.join(".renlijia").join("defaultFolder"))
+                .expect("Cannot determine home directory")
+        });
     if let Err(e) = std::fs::create_dir_all(&default_path) {
         log::warn!("[workspace-auth] failed to create defaultFolder: {}", e);
         return None;

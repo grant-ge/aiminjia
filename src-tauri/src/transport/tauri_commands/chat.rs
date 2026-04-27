@@ -2275,6 +2275,9 @@ impl TauriChatCommandAdapter {
         )
         .with_skill_sessions(services.skill_sessions.clone())
         .with_permission_store(permission_store);
+        if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
+            runtime = runtime.with_default_folder(home.default_folder());
+        }
         if let Some(facade) = services
             .app
             .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()

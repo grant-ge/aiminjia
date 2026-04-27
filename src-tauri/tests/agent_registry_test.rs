@@ -95,7 +95,8 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
     let def = registry.get("daily_assistant_agent").unwrap();
     let workspace = TempDir::new().expect("TempDir::new failed");
     let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
-    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(workspace.path().join("global")));
+    let auth_manager = Arc::new(AuthManager::new(global_store, None));
     let skill = DailyAssistantSkill::new_with_registry(&registry, storage, auth_manager);
     let filter = skill.tool_filter(&SkillState::new("daily-assistant"));
     match filter {
@@ -113,7 +114,8 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
 fn daily_assistant_token_budget_defaults_to_8192() {
     let workspace = TempDir::new().expect("TempDir::new failed");
     let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
-    let auth_manager = Arc::new(AuthManager::new(storage.clone(), None));
+    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(workspace.path().join("global")));
+    let auth_manager = Arc::new(AuthManager::new(global_store, None));
     let skill = DailyAssistantSkill::new(storage, auth_manager);
 
     assert_eq!(

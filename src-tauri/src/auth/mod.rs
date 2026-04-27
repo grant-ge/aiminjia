@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::storage::crypto::SecureStorage;
-use crate::storage::file_store::AppStorage;
+use crate::storage::GlobalConfigStore;
 
 use client::AuthClient;
 use state::{CloudAuth, CloudAuthInfo, CloudModelInfo};
@@ -28,17 +28,17 @@ const AUTH_STORAGE_KEY: &str = "cloud_auth";
 pub struct AuthManager {
     client: AuthClient,
     state: RwLock<Option<CloudAuth>>,
-    storage: Arc<AppStorage>,
+    global_store: Arc<GlobalConfigStore>,
     secure_storage: Option<Arc<SecureStorage>>,
 }
 
 impl AuthManager {
     /// Create a new AuthManager and restore persisted auth state (if any).
-    pub fn new(storage: Arc<AppStorage>, secure_storage: Option<Arc<SecureStorage>>) -> Self {
+    pub fn new(global_store: Arc<GlobalConfigStore>, secure_storage: Option<Arc<SecureStorage>>) -> Self {
         let mgr = Self {
             client: AuthClient::new(),
             state: RwLock::new(None),
-            storage,
+            global_store,
             secure_storage,
         };
         mgr
@@ -451,13 +451,13 @@ impl AuthManager {
             json
         };
 
-        if let Err(e) = self.storage.set_setting(AUTH_STORAGE_KEY, &value) {
+        if let Err(e) = self.global_store.set_setting(AUTH_STORAGE_KEY, &value) {
             log::error!("Failed to persist cloud auth: {}", e);
         }
     }
 
     fn load_persisted_auth(&self) -> Result<Option<CloudAuth>> {
-        let raw = match self.storage.get_setting(AUTH_STORAGE_KEY)? {
+        let raw = match self.global_store.get_setting(AUTH_STORAGE_KEY)? {
             Some(v) if !v.is_empty() => v,
             _ => return Ok(None),
         };
@@ -481,7 +481,7 @@ impl AuthManager {
     }
 
     fn clear_persisted_auth(&self) {
-        if let Err(e) = self.storage.delete_setting(AUTH_STORAGE_KEY) {
+        if let Err(e) = self.global_store.delete_setting(AUTH_STORAGE_KEY) {
             log::warn!("Failed to clear persisted cloud auth: {}", e);
         }
     }
