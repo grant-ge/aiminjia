@@ -22,9 +22,22 @@ import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
+const sampleAttachments = [
+  {
+    id: '/tmp/report.csv',
+    fileName: 'report.csv',
+    filePath: '/tmp/report.csv',
+    kind: 'file' as const,
+    fileSize: 0,
+    fileType: 'csv' as const,
+    mimeType: 'text/csv',
+  },
+]
+
 describe('useChat skill launch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    tauriMock.isAgentBusy.mockResolvedValue([])
     useChatStore.setState({
       conversations: [],
       activeConversationId: null,
@@ -69,19 +82,31 @@ describe('useChat skill launch', () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
-      await result.current.sendUserMessage('帮我分析薪酬', undefined, undefined, 'salary-query')
+      await result.current.sendUserMessage('帮我分析薪酬', sampleAttachments, undefined, 'salary-query')
     })
 
     expect(tauriMock.sendMessage).toHaveBeenCalledWith(
       'conv-skill',
       '帮我分析薪酬',
-      undefined,
+      sampleAttachments,
       undefined,
       expect.any(String),
       'salary-query',
       'salary-query',
     )
     expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('帮我分析薪酬')
+    expect(useChatStore.getState().messages.at(-1)?.content.files).toEqual([
+      {
+        id: '/tmp/report.csv',
+        fileName: 'report.csv',
+        filePath: '/tmp/report.csv',
+        kind: 'file',
+        fileSize: 0,
+        fileType: 'csv',
+        mimeType: 'text/csv',
+        status: 'uploaded',
+      },
+    ])
     expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBe('/salary-query 帮我分析薪酬')
     expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toEqual({
       id: 'salary-query',
@@ -136,6 +161,48 @@ describe('useChat skill launch', () => {
     expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('/not-a-skill hello')
     expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBeUndefined()
     expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toBeUndefined()
+  })
+
+  it('sendUserMessage 发送前会清理后端不存在的本地 busy 残留', async () => {
+    tauriMock.isAgentBusy.mockResolvedValueOnce([])
+    useChatStore.setState({
+      activeConversationId: 'conv-skill',
+      busyConversations: new Set(['conv-skill']),
+    })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      const sent = await result.current.sendUserMessage('继续')
+      expect(sent).toBe(true)
+    })
+
+    expect(tauriMock.isAgentBusy).toHaveBeenCalled()
+    expect(tauriMock.sendMessage).toHaveBeenCalledWith(
+      'conv-skill',
+      '继续',
+      undefined,
+      undefined,
+      expect.any(String),
+      undefined,
+      undefined,
+    )
+  })
+
+  it('sendUserMessage 复核后端仍 busy 时继续阻止发送', async () => {
+    tauriMock.isAgentBusy.mockResolvedValueOnce(['conv-skill'])
+    useChatStore.setState({
+      activeConversationId: 'conv-skill',
+      busyConversations: new Set(['conv-skill']),
+    })
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      const sent = await result.current.sendUserMessage('继续')
+      expect(sent).toBe(false)
+    })
+
+    expect(tauriMock.isAgentBusy).toHaveBeenCalled()
+    expect(tauriMock.sendMessage).not.toHaveBeenCalled()
   })
 
 })

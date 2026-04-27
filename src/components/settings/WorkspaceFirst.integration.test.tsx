@@ -45,6 +45,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }))
 
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
@@ -66,15 +67,13 @@ describe('Workspace-First frontend integration', () => {
     })
   })
 
-  it('propagates settings authorization into the chat input visibility state', async () => {
+  it('keeps settings authorization flow working without requiring composer status copy', async () => {
     render(
         <>
           <WorkspaceAuthPanel sessionId="conv-workspace" />
           <ChatBottomArea />
         </>,
     )
-
-    expect(screen.queryByText(/已连接本地目录：/)).not.toBeInTheDocument()
 
     fireEvent.click(await screen.findByRole('button', { name: '选择工作目录' }))
 
@@ -86,13 +85,9 @@ describe('Workspace-First frontend integration', () => {
     })
 
     expect(await screen.findByText('reports')).toBeInTheDocument()
-    expect(
-      await screen.findByText('已连接本地目录：reports'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('AI 当前可直接读取该目录，无需先上传文件'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('workspace on')).toBeInTheDocument()
+    expect(screen.queryByText(/已连接本地目录：/)).not.toBeInTheDocument()
+    expect(screen.queryByText('AI 当前可直接读取该目录，无需先上传文件')).not.toBeInTheDocument()
+    expect(screen.queryByText(/workspace on/i)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '撤销授权' }))
 
@@ -103,11 +98,11 @@ describe('Workspace-First frontend integration', () => {
     })
 
     await waitFor(() => {
-      expect(screen.queryByText(/已连接本地目录：/)).not.toBeInTheDocument()
+      expect(screen.queryByText('reports')).not.toBeInTheDocument()
     })
   })
 
-  it('lets the paperclip entry connect a local directory without copying files into workspace', async () => {
+  it('does not expose a composer connect-directory action anymore', async () => {
     useChatStore.setState({
       activeConversationId: null,
       conversations: [],
@@ -116,22 +111,8 @@ describe('Workspace-First frontend integration', () => {
 
     render(<ChatBottomArea />)
 
-    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
-    fireEvent.click(await screen.findByText('连接本地目录（不复制）'))
-
-    await waitFor(() => {
-      expect(tauriMock.createConversation).toHaveBeenCalled()
-      expect(tauriMock.pickLocalDirectory).toHaveBeenCalledWith({
-        defaultPath: undefined,
-        title: '连接本地目录',
-      })
-      expect(tauriMock.authorizeLocalDirectory).toHaveBeenCalledWith(
-        '/tmp/reports',
-        'conv-new',
-      )
-    })
-
-    expect(useChatStore.getState().activeConversationId).toBe('conv-new')
-    expect(await screen.findByText('已连接本地目录：reports')).toBeInTheDocument()
+    expect(screen.queryByText('连接本地目录（不复制）')).not.toBeInTheDocument()
+    expect(tauriMock.pickLocalDirectory).not.toHaveBeenCalled()
+    expect(tauriMock.authorizeLocalDirectory).not.toHaveBeenCalled()
   })
 })

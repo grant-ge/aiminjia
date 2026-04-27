@@ -114,6 +114,27 @@ export interface ToolCompletedPayload {
   summary?: string
 }
 
+export interface ChatAttachmentPayload {
+  id: string
+  fileName: string
+  filePath: string
+  kind: 'file' | 'folder' | 'image'
+  fileSize: number
+  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json' | 'folder' | 'image'
+  mimeType?: string
+}
+
+export interface SavedClipboardAttachmentPayload {
+  fileName: string
+  path: string
+  fileSize: number
+  mimeType: string
+}
+
+export function readClipboardFilePaths(): Promise<string[]> {
+  return invoke<string[]>('read_clipboard_file_paths')
+}
+
 export interface FileGeneratedPayload {
   conversationId: string
   fileId: string
@@ -242,12 +263,12 @@ export interface AgentInfo {
  *
  * @param conversationId - Target conversation ID
  * @param content - The user's message text
- * @param fileIds - Optional list of uploaded file IDs to attach
+ * @param attachments - Optional list of structured attachments to attach
  */
 export function sendMessage(
   conversationId: string,
   content: string,
-  fileIds?: string[],
+  attachments?: ChatAttachmentPayload[],
   agentName?: string | null,
   clientMessageId?: string,
   selectedSkillId?: string | null,
@@ -256,11 +277,23 @@ export function sendMessage(
   return invoke<void>('send_message', {
     conversationId,
     content,
-    fileIds: fileIds ?? [],
+    attachments: attachments ?? [],
     agentName: agentName ?? null,
     clientMessageId: clientMessageId ?? null,
     selectedSkillId: selectedSkillId ?? null,
     selectedSkillLabel: selectedSkillLabel ?? null,
+  })
+}
+
+export function saveClipboardImageAttachment(
+  conversationId: string,
+  bytes: number[],
+  mimeType: string,
+): Promise<SavedClipboardAttachmentPayload> {
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_attachment', {
+    conversationId,
+    bytes,
+    mimeType,
   })
 }
 

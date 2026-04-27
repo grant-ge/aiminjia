@@ -446,6 +446,8 @@ pub fn run() {
             chat::is_agent_busy,
             // File commands
             file::upload_file,
+            file::read_clipboard_file_paths,
+            file::save_clipboard_image_attachment,
             file::open_generated_file,
             file::reveal_file_in_folder,
             file::preview_file,

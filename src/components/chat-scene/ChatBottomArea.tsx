@@ -1,19 +1,19 @@
 /**
  * @designSource design.pen#Cbtm1 ChatBottomArea
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
-import { useFileUpload, type UploadedFile } from '@/hooks/useFileUpload'
+import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useSkillComposer } from '@/hooks/useSkillComposer'
-import { useWorkspaceAuthorization } from '@/hooks/useWorkspaceAuthorization'
+import { readClipboardFilePaths } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
-import { emitAuthorizedWorkspaceChanged, useAuthorizedWorkspace } from '@/hooks/useAuthorizedWorkspace'
-import { useUiStore } from '@/stores/uiStore'
+// TODO: useUiStore 待权限按钮功能上线后恢复
+// import { useUiStore } from '@/stores/uiStore'
 
 const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
@@ -21,13 +21,15 @@ const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: strin
   word: { label: 'DOC', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
   pdf: { label: 'PDF', bg: 'var(--color-filetype-red-bg)', color: 'var(--color-semantic-red)' },
   json: { label: 'JSON', bg: 'var(--color-filetype-accent-bg)', color: 'var(--color-accent)' },
+  image: { label: 'IMG', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
+  folder: { label: 'DIR', bg: 'var(--color-primary-subtle)', color: 'var(--color-text-primary)' },
 }
 
 function PendingFiles({
   pendingFiles,
   onRemove,
 }: {
-  pendingFiles: UploadedFile[]
+  pendingFiles: PendingAttachment[]
   onRemove: (id: string) => void
 }) {
   return (
@@ -66,6 +68,33 @@ function PendingFiles({
   )
 }
 
+function extractAbsolutePaths(text: string): string[] {
+  return text
+    .split(/[\n\r]+/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('/'))
+}
+
+async function appendResolvedPastedPaths(
+  paths: string[],
+  resolvePastedPaths: (paths: string[]) => Promise<PendingAttachment[]>,
+  setPendingFiles: React.Dispatch<React.SetStateAction<PendingAttachment[]>>,
+) {
+  const resolved = await resolvePastedPaths(paths)
+  if (resolved.length === 0) return
+
+  setPendingFiles((prev) => {
+    const seen = new Set(prev.map((file) => file.id))
+    const next = resolved.filter((file) => !seen.has(file.id))
+    return next.length > 0 ? [...prev, ...next] : prev
+  })
+}
+
+async function readClipboardImageBytes(file: File): Promise<Uint8Array> {
+  const buffer = await file.arrayBuffer()
+  return new Uint8Array(buffer)
+}
+
 function BottomTips() {
   return (
     <>
@@ -81,20 +110,17 @@ function BottomTips() {
 export function ChatBottomArea() {
   const { t } = useTranslation()
   const [input, setInput] = useState('')
-  const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([])
   const [isSending, setIsSending] = useState(false)
-  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false)
   const isComposingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const selectedSkillCommand = useChatStore((s) => activeConversationId ? s.selectedSkillCommands[activeConversationId] ?? null : null)
-  const { workspace: authorizedWorkspace } = useAuthorizedWorkspace(activeConversationId)
   const clearSelectedSkillCommand = useChatStore((s) => s.clearSelectedSkillCommand)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isUploading, selectAndUploadFiles } = useFileUpload()
-  const { isAuthorizingDirectory, selectAndAuthorizeDirectory } = useWorkspaceAuthorization()
-  const openSettings = useUiStore((s) => s.openSettings)
+  const { isPickingAttachments, pickAttachments, resolvePastedPaths, saveClipboardImage } = useChatAttachments()
+  // TODO: openSettings 待权限按钮功能上线后恢复使用
+  // const openSettings = useUiStore((s) => s.openSettings)
   const {
     showSkillPopover,
     setShowSkillPopover,
@@ -126,16 +152,6 @@ export function ChatBottomArea() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`
   }, [input])
 
-  useEffect(() => {
-    if (!showAttachmentMenu) return
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!attachmentMenuRef.current?.contains(event.target as Node)) {
-        setShowAttachmentMenu(false)
-      }
-    }
-    window.addEventListener('mousedown', handlePointerDown)
-    return () => window.removeEventListener('mousedown', handlePointerDown)
-  }, [showAttachmentMenu])
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const trimmed = (overrideText ?? input).trim()
@@ -155,12 +171,15 @@ export function ChatBottomArea() {
     setIsSending(true)
     const submittedInput = overrideText ?? input
     setInput('')
-    const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
-      id: f.id,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      fileSize: f.fileSize,
-    }))
+      const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
+        id: f.id,
+        fileName: f.fileName,
+        filePath: f.path,
+        kind: f.kind,
+        fileType: f.fileType,
+        fileSize: f.fileSize,
+        mimeType: f.mimeType,
+      }))
 
     try {
       const sent = await sendUserMessage(
@@ -191,52 +210,54 @@ export function ChatBottomArea() {
     }
   }, [handleSend, slashOpen])
 
-  const handleUploadFileClick = useCallback(async () => {
-    setShowAttachmentMenu(false)
-    const results = await selectAndUploadFiles(pendingFiles)
+  const handlePickAttachments = useCallback(async () => {
+    const results = await pickAttachments()
     if (results.length > 0) {
-      setPendingFiles((prev) => [...prev, ...results])
+      setPendingFiles((prev) => {
+        const seen = new Set(prev.map((file) => file.id))
+        const deduped = results.filter((file) => !seen.has(file.id))
+        return deduped.length > 0 ? [...prev, ...deduped] : prev
+      })
     }
-  }, [pendingFiles, selectAndUploadFiles])
+  }, [pickAttachments])
 
-  const handleConnectLocalDirectory = useCallback(async () => {
-    setShowAttachmentMenu(false)
-    const authorized = await selectAndAuthorizeDirectory()
-    if (authorized) {
-      const sessionId = useChatStore.getState().activeConversationId
-      if (sessionId) emitAuthorizedWorkspaceChanged(sessionId)
+  const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(event.clipboardData?.items ?? [])
+    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    if (imageItem && activeConversationId) {
+      const imageFile = imageItem.getAsFile()
+      if (imageFile) {
+        event.preventDefault()
+        void (async () => {
+          const bytes = await readClipboardImageBytes(imageFile)
+          const pending = await saveClipboardImage(activeConversationId, bytes, imageFile.type || 'image/png')
+          setPendingFiles((prev) => {
+            if (prev.some((file) => file.id === pending.id)) return prev
+            return [...prev, pending]
+          })
+        })()
+      }
+      return
     }
-  }, [selectAndAuthorizeDirectory])
+
+    const text = event.clipboardData?.getData('text/plain') ?? ''
+    const paths = extractAbsolutePaths(text)
+    if (paths.length > 0) {
+      event.preventDefault()
+      void appendResolvedPastedPaths(paths, resolvePastedPaths, setPendingFiles)
+      return
+    }
+
+    void (async () => {
+      const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
+      if (nativePaths.length === 0) return
+      void appendResolvedPastedPaths(nativePaths, resolvePastedPaths, setPendingFiles)
+    })()
+  }, [activeConversationId, resolvePastedPaths, saveClipboardImage])
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
-  const attachmentBusy = isUploading || isAuthorizingDirectory
-  const workspaceStatus = authorizedWorkspace ? (
-    <div
-      className="mb-3 flex items-start justify-between gap-3 rounded-2xl border px-4 py-3"
-      style={{
-        borderColor: 'var(--color-border-secondary)',
-        background: 'linear-gradient(135deg, var(--color-bg-secondary), var(--color-bg-input))',
-      }}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{
-            background: 'var(--color-semantic-green-subtle, rgba(22, 163, 74, 0.12))',
-            color: 'var(--color-semantic-green)',
-          }}>
-            workspace on
-          </span>
-          <span className="truncate text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-            {`已连接本地目录：${authorizedWorkspace.displayName}`}
-          </span>
-        </div>
-        <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          AI 当前可直接读取该目录，无需先上传文件
-        </p>
-      </div>
-    </div>
-  ) : null
+  const attachmentBusy = isPickingAttachments
 
   return (
     <div
@@ -261,49 +282,7 @@ export function ChatBottomArea() {
           />
         ) : null}
 
-        <div className="relative" ref={attachmentMenuRef}>
-          {showAttachmentMenu ? (
-            <div
-              className="absolute bottom-[calc(100%+8px)] left-0 z-20 min-w-[220px] rounded-xl border p-2 shadow-lg"
-              style={{
-                borderColor: 'var(--color-border-secondary)',
-                background: 'var(--color-bg-input)',
-                boxShadow: 'var(--shadow-card)',
-              }}
-            >
-              <button
-                type="button"
-                className="flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--color-text-primary)',
-                }}
-                onClick={() => void handleUploadFileClick()}
-              >
-                <span className="text-sm font-medium">{t('inputBar.uploadFile')}</span>
-                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  继续使用复制上传模式
-                </span>
-              </button>
-              <button
-                type="button"
-                className="mt-1 flex w-full flex-col items-start rounded-lg px-3 py-2 text-left transition-colors"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--color-text-primary)',
-                }}
-                onClick={() => void handleConnectLocalDirectory()}
-              >
-                <span className="text-sm font-medium">连接本地目录（不复制）</span>
-                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  让 AI 直接读取本地目录，不复制进工作区
-                </span>
-              </button>
-            </div>
-          ) : null}
-
+        <div className="relative">
           <ChatComposerCompact
             value={input}
             onChange={handleInputChange}
@@ -311,13 +290,10 @@ export function ChatBottomArea() {
             submitDisabled={isSendDisabled}
             placeholder={pendingFiles.length > 0 ? t('inputBar.placeholderWithFile') : t('inputBar.placeholder')}
             onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
-            permissionLabel="完全访问权限"
             showProjectButton={false}
-            onPermissionClick={() => openSettings('permissions')}
             isStreaming={isStreaming}
             onStop={stopCurrentStream}
-            onOpenAttachment={attachmentBusy ? undefined : () => setShowAttachmentMenu((prev) => !prev)}
-            topSlot={workspaceStatus}
+            onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
             pendingFilesSlot={pendingFiles.length > 0 ? (
               <PendingFiles
                 pendingFiles={pendingFiles}
@@ -332,6 +308,7 @@ export function ChatBottomArea() {
             onCompositionEnd={() => {
               setTimeout(() => { isComposingRef.current = false }, 50)
             }}
+            onPaste={handlePaste}
             tips={<BottomTips />}
           />
         </div>

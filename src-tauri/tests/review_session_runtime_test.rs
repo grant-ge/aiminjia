@@ -11,6 +11,7 @@ use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
 use app_lib::runtime::ids::SessionId;
 use app_lib::runtime::query_engine::QueryEngine;
+use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::session_runtime::{ChatTurnRequest, SessionRuntime};
 use app_lib::runtime::tools::{
     RuntimeTool, ToolDefinition, ToolError, ToolExecutionContext, ToolResult,
@@ -106,7 +107,7 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
-        _file_ids: &[String],
+        _attachments: &[ChatAttachmentRef],
         _client_message_id: Option<&str>,
         _selected_skill_id: Option<&str>,
         _selected_skill_label: Option<&str>,

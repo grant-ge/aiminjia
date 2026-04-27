@@ -130,9 +130,12 @@ fn user_history_with_uploaded_files_preserves_file_hints() {
         "text": "请继续分析这个表格",
         "files": [
             {
-                "id": "file-1",
-                "originalName": "sales.csv",
-                "fileType": "text/csv"
+                "id": "attachment-1",
+                "fileName": "sales.csv",
+                "filePath": "/tmp/sales.csv",
+                "kind": "file",
+                "fileType": "csv",
+                "mimeType": "text/csv"
             }
         ]
     });
@@ -140,9 +143,9 @@ fn user_history_with_uploaded_files_preserves_file_hints() {
     let history =
         build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
     assert_eq!(history.len(), 1);
-    assert!(history[0].content.contains("[已上传文件]"));
-    assert!(history[0].content.contains("file-1"));
-    assert!(history[0].content.contains("load_file(file_id)"));
+    assert!(history[0].content.contains("[当前消息附件]"));
+    assert!(history[0].content.contains("/tmp/sales.csv"));
+    assert!(history[0].content.contains("显式提供的本地路径"));
 }
 
 #[test]
@@ -152,9 +155,12 @@ fn user_history_with_authorized_workspace_uses_workspace_hint() {
         "text": "请继续分析这个表格",
         "files": [
             {
-                "id": "file-1",
-                "originalName": "sales.csv",
-                "fileType": "text/csv"
+                "id": "attachment-1",
+                "fileName": "sales.csv",
+                "filePath": "/tmp/sales.csv",
+                "kind": "file",
+                "fileType": "csv",
+                "mimeType": "text/csv"
             }
         ]
     });
@@ -226,9 +232,12 @@ fn load_history_via_runtime_history_preserves_authorized_workspace_file_hints() 
         "text": "请继续分析这个表格",
         "files": [
             {
-                "id": "file-1",
-                "originalName": "sales.csv",
-                "fileType": "text/csv"
+                "id": "attachment-1",
+                "fileName": "sales.csv",
+                "filePath": "/tmp/sales.csv",
+                "kind": "file",
+                "fileType": "csv",
+                "mimeType": "text/csv"
             }
         ]
     });
@@ -242,6 +251,31 @@ fn load_history_via_runtime_history_preserves_authorized_workspace_file_hints() 
     let content = history[0]["content"].as_str().unwrap_or("");
     assert!(content.contains("list_directory"));
     assert!(content.contains("read_workspace_file"));
+}
+
+#[test]
+fn user_history_with_file_path_round_trips_attachment_path() {
+    let mut user = common::make_user("1", "请分析这个截图");
+    user.content = serde_json::json!({
+        "text": "请分析这个截图",
+        "files": [
+            {
+                "id": "attachment-image-1",
+                "fileName": "clipboard-1.png",
+                "filePath": "/tmp/clipboard-1.png",
+                "kind": "image",
+                "fileType": "image",
+                "fileSize": 12,
+                "mimeType": "image/png"
+            }
+        ]
+    });
+
+    let history =
+        build_chat_history(&[user], None, &HistoryConfig::default()).expect("build history");
+    assert_eq!(history.len(), 1);
+    assert!(history[0].content.contains("/tmp/clipboard-1.png"));
+    assert!(history[0].content.contains("clipboard-1.png"));
 }
 
 #[test]

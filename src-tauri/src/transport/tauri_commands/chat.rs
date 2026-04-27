@@ -49,6 +49,49 @@ const MAX_STREAM_RETRIES: u32 = 2;
 /// Delay before retrying a failed stream (seconds).
 const STREAM_RETRY_DELAY_SECS: u64 = 2;
 
+fn attachment_refs_from_json_array(
+    files: &[serde_json::Value],
+) -> Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> {
+    files
+        .iter()
+        .map(|file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+            id: file
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            file_name: file
+                .get("fileName")
+                .or_else(|| file.get("originalName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            file_path: file
+                .get("filePath")
+                .or_else(|| file.get("path"))
+                .or_else(|| file.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            kind: file
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("file")
+                .to_string(),
+            file_size: file.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0),
+            file_type: file
+                .get("fileType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            mime_type: file
+                .get("mimeType")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string),
+        })
+        .collect()
+}
+
 fn build_history_message_content(
     role: &str,
     content_value: &serde_json::Value,
@@ -58,9 +101,10 @@ fn build_history_message_content(
         if role == "user" {
             if let Some(files) = content_value.get("files").and_then(|v| v.as_array()) {
                 if !files.is_empty() {
+                    let attachments = attachment_refs_from_json_array(files);
                     return Some(chat_runtime_impl::build_llm_content(
                         text,
-                        files,
+                        &attachments,
                         has_authorized_workspace,
                     ));
                 }
@@ -281,7 +325,7 @@ async fn resolve_skill_turn_context_for_request(
     all_tool_names: &[String],
     request: &ChatTurnRequest,
 ) -> Result<(crate::runtime::chat::skill_session::SkillTurnContext, bool), TurnError> {
-    let has_files = !request.file_ids.is_empty();
+    let has_files = !request.attachments.is_empty();
     let selected_skill_id = request
         .selected_skill_id
         .as_deref()
@@ -915,7 +959,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
         content: &str,
-        file_ids: &[String],
+        attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
         _client_message_id: Option<&str>,
         selected_skill_id: Option<&str>,
         selected_skill_label: Option<&str>,
@@ -924,7 +968,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
             content,
-            file_ids,
+            attachments,
             selected_skill_id,
             selected_skill_label,
         )
@@ -1279,26 +1323,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
         content: &str,
-        file_ids: &[String],
+        attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
     ) -> Result<String, TurnError> {
-        let file_attachments = if file_ids.is_empty() {
-            Vec::new()
-        } else {
-            self.services
-                .db
-                .get_uploaded_files_by_ids(file_ids)
-                .map_err(|e| {
-                    TurnError::PersistenceError(format!(
-                        "Failed to load uploaded file metadata: {}",
-                        e
-                    ))
-                })?
-        };
         let authorized_workspace =
             chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
         Ok(chat_runtime_impl::build_llm_content(
             content,
-            &file_attachments,
+            attachments,
             authorized_workspace.is_some(),
         ))
     }
@@ -1893,9 +1924,12 @@ mod tests {
             "text": "请继续分析这个表格",
             "files": [
                 {
-                    "id": "file-1",
-                    "originalName": "sales.csv",
-                    "fileType": "text/csv"
+                    "id": "attachment-1",
+                    "fileName": "sales.csv",
+                    "filePath": "/tmp/sales.csv",
+                    "kind": "file",
+                    "fileType": "csv",
+                    "mimeType": "text/csv"
                 }
             ]
         });
@@ -1903,9 +1937,9 @@ mod tests {
         let llm_content =
             build_history_message_content("user", &content, false).expect("history content");
 
-        assert!(llm_content.contains("[已上传文件]"));
-        assert!(llm_content.contains("file-1"));
-        assert!(llm_content.contains("load_file(file_id)"));
+        assert!(llm_content.contains("[当前消息附件]"));
+        assert!(llm_content.contains("/tmp/sales.csv"));
+        assert!(llm_content.contains("显式提供的本地路径"));
     }
 
     #[test]
@@ -2321,7 +2355,7 @@ impl TauriChatCommandAdapter {
         &self,
         conversation_id: String,
         content: String,
-        file_ids: Vec<String>,
+        attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
@@ -2337,7 +2371,7 @@ impl TauriChatCommandAdapter {
             selected_skill_label,
             content.len()
         );
-        let mut request = ChatTurnRequest::new(conversation_id.clone(), content, file_ids);
+        let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
         request.selected_skill_id = selected_skill_id;
@@ -2398,6 +2432,7 @@ impl TauriChatCommandAdapter {
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;
+        self.services.gateway.clear_task(&conversation_id);
 
         if result.is_ok() {
             // Quick synchronous guard: only attempt title generation when needed.

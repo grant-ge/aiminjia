@@ -47,7 +47,7 @@ pub async fn send_message(
     file_mgr: State<'_, Arc<FileManager>>,
     conversation_id: String,
     content: String,
-    file_ids: Vec<String>,
+    attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
     client_message_id: Option<String>,
@@ -55,7 +55,7 @@ pub async fn send_message(
     selected_skill_label: Option<String>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
-    // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
+    // .send_message(conversation_id, content, attachments, permission_mode, agent_name)
     let diagnostic_conversation_id = conversation_id.clone();
     record_command_event(
         file_mgr.workspace_path(),
@@ -68,7 +68,7 @@ pub async fn send_message(
         .send_message(
             conversation_id,
             content,
-            file_ids,
+            attachments,
             permission_mode,
             agent_name,
             client_message_id,

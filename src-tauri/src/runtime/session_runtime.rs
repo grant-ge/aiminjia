@@ -483,7 +483,7 @@ mod tests {
             &self,
             _conversation_id: &str,
             _content: &str,
-            _file_ids: &[String],
+            _attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
             _client_message_id: Option<&str>,
             _selected_skill_id: Option<&str>,
             _selected_skill_label: Option<&str>,
