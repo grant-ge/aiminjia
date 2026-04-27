@@ -468,8 +468,12 @@ fn summarize_draft(path: &Path, draft_id: &str) -> Result<DraftSummary, String> 
         })
         .unwrap_or(false);
 
+    let has_skill_md = path.join("SKILL.md").is_file();
+
     let stage = if !has_plugin {
         "intent"
+    } else if has_skill_md {
+        "ready" // SKILL.md format: plugin.toml + SKILL.md = ready for install
     } else if !has_workflow {
         "manifest"
     } else if !has_prompts {

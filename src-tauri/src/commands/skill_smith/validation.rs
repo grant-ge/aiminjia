@@ -186,16 +186,29 @@ pub async fn validate_skill_draft(
 
 /// Sync validation against an on-disk draft directory.
 /// Split out from the Tauri command for unit testing without an AppHandle.
+///
+/// Autodetects format:
+/// - Has SKILL.md but no workflow.toml → SKILL.md format (simplified)
+/// - Otherwise → legacy workflow.toml format
 pub(crate) fn validate_draft_dir(dir: &Path) -> ValidationReport {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
-    validate_plugin_manifest(dir, &mut errors);
-    let workflow = validate_workflow_manifest(dir, &mut errors);
+    let has_skill_md = dir.join("SKILL.md").is_file();
+    let has_workflow = dir.join("workflow.toml").is_file();
 
-    // Cross-file check: every workflow step's prompt file must exist and be non-empty.
-    if let Some(wf) = workflow {
-        validate_prompt_files(dir, &wf, &mut errors, &mut warnings);
+    if has_skill_md && !has_workflow {
+        // SKILL.md format: relaxed validation (no workflow, no trigger keywords required)
+        validate_plugin_manifest_for_skill_md(dir, &mut errors, &mut warnings);
+        validate_skill_md_file(dir, &mut errors, &mut warnings);
+        validate_references_dir(dir, &mut warnings);
+    } else {
+        // Legacy workflow.toml format
+        validate_plugin_manifest(dir, &mut errors);
+        let workflow = validate_workflow_manifest(dir, &mut errors);
+        if let Some(wf) = workflow {
+            validate_prompt_files(dir, &wf, &mut errors, &mut warnings);
+        }
     }
 
     let valid = errors.is_empty();
@@ -206,6 +219,173 @@ pub(crate) fn validate_draft_dir(dir: &Path) -> ValidationReport {
         errors,
         warnings,
         summary,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SKILL.md format validation
+// ---------------------------------------------------------------------------
+
+/// Validate plugin.toml for SKILL.md format — [trigger] section is optional.
+fn validate_plugin_manifest_for_skill_md(dir: &Path, errors: &mut Vec<ValidationError>, warnings: &mut Vec<ValidationError>) {
+    let path = dir.join("plugin.toml");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(),
+            path: String::new(),
+            rule: "exists".into(),
+            actual: "missing".into(),
+            message: "plugin.toml is required".into(),
+            fix_hint: Some("Create plugin.toml with [plugin] section containing id, name, type".into()),
+        });
+        return;
+    };
+
+    let Ok(manifest) = toml::from_str::<PluginManifest>(&content) else {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(),
+            path: String::new(),
+            rule: "toml_syntax".into(),
+            actual: "parse error".into(),
+            message: "plugin.toml has invalid TOML syntax".into(),
+            fix_hint: Some("Check TOML syntax — quotes, brackets, commas".into()),
+        });
+        return;
+    };
+
+    // [plugin] section required with id, name, type
+    let Some(plugin) = &manifest.plugin else {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(), path: "plugin".into(),
+            rule: "required".into(), actual: "missing".into(),
+            message: "[plugin] section is required".into(),
+            fix_hint: Some("Add [plugin] section with id, name, type fields".into()),
+        });
+        return;
+    };
+
+    // Validate id
+    if let Some(id) = &plugin.id {
+        if id.len() < PLUGIN_ID_MIN || id.len() > PLUGIN_ID_MAX {
+            errors.push(ValidationError {
+                file: "plugin.toml".into(), path: "plugin.id".into(),
+                rule: format!("length: {}-{}", PLUGIN_ID_MIN, PLUGIN_ID_MAX),
+                actual: format!("{} chars", id.len()),
+                message: format!("plugin.id must be {}-{} characters", PLUGIN_ID_MIN, PLUGIN_ID_MAX),
+                fix_hint: None,
+            });
+        }
+        if RESERVED_PLUGIN_IDS.contains(&id.as_str()) {
+            errors.push(ValidationError {
+                file: "plugin.toml".into(), path: "plugin.id".into(),
+                rule: "not_reserved".into(), actual: id.clone(),
+                message: format!("'{}' is a reserved built-in skill ID", id),
+                fix_hint: Some(format!("Choose a different ID (not one of: {})", RESERVED_PLUGIN_IDS.join(", "))),
+            });
+        }
+    } else {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(), path: "plugin.id".into(),
+            rule: "required".into(), actual: "missing".into(),
+            message: "plugin.id is required".into(), fix_hint: None,
+        });
+    }
+
+    if plugin.name.as_ref().map(|n| n.is_empty()).unwrap_or(true) {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(), path: "plugin.name".into(),
+            rule: "required".into(), actual: "missing".into(),
+            message: "plugin.name is required".into(), fix_hint: None,
+        });
+    }
+
+    if plugin.kind.as_deref() != Some("skill") {
+        errors.push(ValidationError {
+            file: "plugin.toml".into(), path: "plugin.type".into(),
+            rule: "enum: skill".into(),
+            actual: plugin.kind.clone().unwrap_or_else(|| "missing".into()),
+            message: "plugin.type must be \"skill\"".into(), fix_hint: None,
+        });
+    }
+
+    // [display] category check (optional but validate if present)
+    if let Some(display) = &manifest.display {
+        if let Some(cat) = &display.category {
+            if !VALID_CATEGORIES.contains(&cat.as_str()) {
+                warnings.push(ValidationError {
+                    file: "plugin.toml".into(), path: "display.category".into(),
+                    rule: format!("enum: {}", VALID_CATEGORIES.join("/")),
+                    actual: cat.clone(),
+                    message: format!("Unknown category '{}'. Valid: {}", cat, VALID_CATEGORIES.join(", ")),
+                    fix_hint: None,
+                });
+            }
+        }
+    }
+
+    // [trigger] section is OPTIONAL for SKILL.md format
+    // (activation via display.trigger_text only)
+}
+
+/// Validate SKILL.md file: exists, has frontmatter, body is non-empty.
+fn validate_skill_md_file(dir: &Path, errors: &mut Vec<ValidationError>, warnings: &mut Vec<ValidationError>) {
+    let path = dir.join("SKILL.md");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        errors.push(ValidationError {
+            file: "SKILL.md".into(), path: String::new(),
+            rule: "exists".into(), actual: "missing".into(),
+            message: "SKILL.md is required for simplified skill format".into(),
+            fix_hint: Some("Create SKILL.md with YAML frontmatter (---) and Markdown body".into()),
+        });
+        return;
+    };
+
+    // Parse frontmatter
+    match crate::plugin::declarative_skill::parse_skill_md(&content) {
+        Ok(config) => {
+            if config.body.len() < PROMPT_MIN_BYTES {
+                warnings.push(ValidationError {
+                    file: "SKILL.md".into(), path: "body".into(),
+                    rule: format!("min_bytes: {}", PROMPT_MIN_BYTES),
+                    actual: format!("{} bytes", config.body.len()),
+                    message: "SKILL.md body is very short — add more detailed instructions".into(),
+                    fix_hint: None,
+                });
+            }
+        }
+        Err(e) => {
+            errors.push(ValidationError {
+                file: "SKILL.md".into(), path: "frontmatter".into(),
+                rule: "yaml_frontmatter".into(), actual: e.clone(),
+                message: format!("Failed to parse SKILL.md: {}", e),
+                fix_hint: Some("SKILL.md must start with --- YAML frontmatter --- followed by Markdown body".into()),
+            });
+        }
+    }
+}
+
+/// Check references/ directory: JSON files must be valid.
+fn validate_references_dir(dir: &Path, warnings: &mut Vec<ValidationError>) {
+    let refs_dir = dir.join("references");
+    if !refs_dir.is_dir() { return; }
+
+    if let Ok(entries) = std::fs::read_dir(&refs_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if serde_json::from_str::<serde_json::Value>(&content).is_err() {
+                        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        warnings.push(ValidationError {
+                            file: format!("references/{}", fname), path: String::new(),
+                            rule: "json_syntax".into(), actual: "parse error".into(),
+                            message: format!("references/{} is not valid JSON", fname),
+                            fix_hint: Some("Fix JSON syntax errors".into()),
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 

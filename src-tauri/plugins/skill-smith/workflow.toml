@@ -1,16 +1,14 @@
-# Skill-Smith 工作流（6 步）
+# Skill-Smith 工作流（4 步）
 #
-# Step 0: 意图采集 + 创建 draft
-# Step 1: 生成 plugin.toml
-# Step 2: 生成 workflow.toml
-# Step 3: 生成 prompts/*.md
-# Step 4: Dry-run 校验
-# Step 5: 交付（安装 / 导出）
+# Step 0: 理解需求 — 澄清场景、输入输出、领域知识
+# Step 1: 生成技能 — 一次性生成 plugin.toml + SKILL.md + 可选 scripts/references
+# Step 2: 安装测试 — dry-run 校验 + 安装/导出
+# Step 3: 迭代优化 — 根据用户反馈修改并重新安装
 
 [[steps]]
 id = "step0"
-name = "意图采集"
-prompt = "prompts/step0-intent.md"
+name = "理解需求"
+prompt = "prompts/step0-understand.md"
 tools_only = ["skill_smith_create_draft", "save_analysis_note"]
 max_iterations = 5
 token_budget = 8192
@@ -18,45 +16,27 @@ advance_on = "confirm"
 
 [[steps]]
 id = "step1"
-name = "生成 plugin.toml"
-prompt = "prompts/step1-plugin-manifest.md"
-tools_only = ["skill_smith_read_file", "skill_smith_write_file", "skill_smith_validate", "save_analysis_note"]
-max_iterations = 8
-token_budget = 8192
-advance_on = "confirm"
-
-[[steps]]
-id = "step2"
-name = "生成 workflow.toml"
-prompt = "prompts/step2-workflow.md"
-tools_only = ["skill_smith_read_file", "skill_smith_write_file", "save_analysis_note"]
-max_iterations = 8
-token_budget = 8192
-advance_on = "confirm"
-
-[[steps]]
-id = "step3"
-name = "生成 prompts"
-prompt = "prompts/step3-prompts.md"
+name = "生成技能"
+prompt = "prompts/step1-generate.md"
 tools_only = ["skill_smith_read_file", "skill_smith_write_file", "skill_smith_validate", "save_analysis_note"]
 max_iterations = 15
 token_budget = 8192
 advance_on = "confirm"
 
 [[steps]]
-id = "step4"
-name = "Dry-run 校验"
-prompt = "prompts/step4-dryrun.md"
-tools_only = ["skill_smith_read_file", "skill_smith_dry_run", "skill_smith_write_file", "skill_smith_validate", "save_analysis_note"]
+id = "step2"
+name = "安装测试"
+prompt = "prompts/step2-install.md"
+tools_only = ["skill_smith_read_file", "skill_smith_dry_run", "skill_smith_install", "skill_smith_export", "save_analysis_note"]
 max_iterations = 10
 token_budget = 8192
 advance_on = "confirm"
 
 [[steps]]
-id = "step5"
-name = "交付"
-prompt = "prompts/step5-deliver.md"
-tools_only = ["skill_smith_install", "skill_smith_export", "save_analysis_note"]
-max_iterations = 5
+id = "step3"
+name = "迭代优化"
+prompt = "prompts/step3-iterate.md"
+tools_only = ["skill_smith_read_file", "skill_smith_write_file", "skill_smith_validate", "skill_smith_dry_run", "skill_smith_install", "save_analysis_note"]
+max_iterations = 15
 token_budget = 8192
 advance_on = "confirm"

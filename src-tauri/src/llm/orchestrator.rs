@@ -63,6 +63,10 @@ pub struct StepConfig {
     /// Whether this config was built for a feedback re-entry (WaitForUser).
     /// When true, feedback tools should be used even if precompute succeeded.
     pub is_feedback: bool,
+    /// Tool names that require user confirmation before execution (SKILL.md `confirm_before`).
+    /// None = no confirmation required. Some(set) = block tool if preceding assistant message
+    /// doesn't describe the operation.
+    pub confirm_before_tools: Option<std::collections::HashSet<String>>,
 }
 
 /// Status of the current analysis step.
@@ -241,6 +245,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
         precompute: None,
         feedback_config: None,
         is_feedback: false,
+        confirm_before_tools: None,
     }
 }
 

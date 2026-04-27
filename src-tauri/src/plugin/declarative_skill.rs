@@ -10,6 +10,78 @@ use std::path::Path;
 use super::manifest::{PluginManifest, WorkflowManifest};
 use super::skill_trait::*;
 
+/// Parsed SKILL.md configuration (simplified format without workflow.toml).
+#[derive(Debug, Clone)]
+pub(crate) struct SkillMdConfig {
+    /// Markdown body (everything after YAML frontmatter).
+    pub(crate) body: String,
+    /// Tool names from frontmatter `tools:` (additive to daily defaults).
+    pub(crate) tools: Vec<String>,
+    /// Tool names that require user confirmation before execution.
+    pub(crate) confirm_before: Vec<String>,
+}
+
+/// Parse a SKILL.md file: extract YAML frontmatter and Markdown body.
+///
+/// Frontmatter format:
+/// ```
+/// ---
+/// name: my-skill
+/// description: Does something useful
+/// tools: [load_file, execute_python, export_data]
+/// confirm_before: [export_data]
+/// ---
+/// # Skill instructions here...
+/// ```
+pub(crate) fn parse_skill_md(raw: &str) -> Result<SkillMdConfig, String> {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with("---") {
+        return Err("SKILL.md must start with YAML frontmatter (---)".into());
+    }
+
+    // Find closing ---
+    let after_first = &trimmed[3..];
+    let close_pos = after_first.find("\n---")
+        .ok_or("SKILL.md: missing closing --- for frontmatter")?;
+
+    let frontmatter = &after_first[..close_pos];
+    let body = after_first[close_pos + 4..].trim().to_string();
+
+    if body.is_empty() {
+        return Err("SKILL.md body is empty (no instructions after frontmatter)".into());
+    }
+
+    // Parse frontmatter line by line (avoid adding serde_yaml dependency)
+    let mut tools = Vec::new();
+    let mut confirm_before = Vec::new();
+
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        // Parse: tools: [load_file, execute_python, export_data]
+        if let Some(val) = line.strip_prefix("tools:") {
+            tools = parse_string_array(val);
+        }
+        // Parse: confirm_before: [export_data, dingtalk_create_record]
+        if let Some(val) = line.strip_prefix("confirm_before:") {
+            confirm_before = parse_string_array(val);
+        }
+    }
+
+    Ok(SkillMdConfig { body, tools, confirm_before })
+}
+
+/// Parse a YAML-style inline array: `[a, b, c]` or `[a,b,c]` → Vec<String>.
+fn parse_string_array(val: &str) -> Vec<String> {
+    let val = val.trim();
+    let inner = val.strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(val);
+    inner.split(',')
+        .map(|s| s.trim().trim_matches(|c| c == '\'' || c == '"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// A Skill loaded from TOML + Markdown files.
 pub struct DeclarativeSkill {
     id: String,
@@ -35,6 +107,8 @@ pub struct DeclarativeSkill {
     step_configs: HashMap<String, StepToolConfig>,
     extract_base: String,
     extract_steps: HashMap<String, String>,
+    /// SKILL.md config (simplified format, no workflow.toml).
+    skill_md: Option<SkillMdConfig>,
     /// Plugin directory path — needed to load precompute scripts at runtime.
     plugin_dir: std::path::PathBuf,
     /// Display metadata for UI skill cards.
@@ -276,6 +350,20 @@ impl DeclarativeSkill {
             (None, HashMap::new(), HashMap::new(), HashMap::new())
         };
 
+        // Check for SKILL.md (simplified format without workflow.toml)
+        let skill_md = if workflow.is_none() {
+            let skill_md_path = plugin_dir.join("SKILL.md");
+            if skill_md_path.exists() {
+                let raw = std::fs::read_to_string(&skill_md_path)
+                    .map_err(|e| format!("Failed to read SKILL.md: {}", e))?;
+                Some(parse_skill_md(&raw)?)
+            } else {
+                None
+            }
+        } else {
+            None // workflow.toml takes precedence
+        };
+
         Ok(Self {
             id: manifest.plugin.id.clone(),
             name: manifest.plugin.name.clone(),
@@ -293,6 +381,7 @@ impl DeclarativeSkill {
             step_prompt_branches,
             workflow,
             step_configs,
+            skill_md,
             extract_base,
             extract_steps,
             plugin_dir: plugin_dir.to_path_buf(),
@@ -479,10 +568,21 @@ impl Skill for DeclarativeSkill {
             parts.push(self.base_prompt.clone());
         }
 
-        if let Some(step) = state.current_step.as_deref() {
-            // Prefer the runtime-resolved dynamic prompt when the agent
-            // loop populated it (Phase 12 multi-file-handler). Falls back
-            // to the static per-step prompt for all other skills.
+        // SKILL.md mode: inject SKILL.md body + confirm_before instruction
+        if let Some(ref smd) = self.skill_md {
+            parts.push(smd.body.clone());
+
+            if !smd.confirm_before.is_empty() {
+                parts.push(format!(
+                    "## Confirmation Required\n\
+                     Before calling any of the following tools, you MUST first describe the operation \
+                     in a text message and wait for the user to explicitly confirm:\n- {}\n\
+                     Only call these tools AFTER the user confirms. Never call them silently.",
+                    smd.confirm_before.join("\n- ")
+                ));
+            }
+        } else if let Some(step) = state.current_step.as_deref() {
+            // Workflow mode: step-specific prompts (existing behavior)
             let step_prompt = state.resolved_step_prompt.as_ref()
                 .filter(|p| !p.is_empty())
                 .or_else(|| self.step_prompts.get(step).filter(|p| !p.is_empty()));
@@ -490,14 +590,12 @@ impl Skill for DeclarativeSkill {
                 parts.push(sp.clone());
             }
 
-            // Guide user to upload files when requires_files skill enters step0 without files
             if self.requires_files && step == "step0" && !state.has_files {
                 parts.push(
                     "⚠️ 用户尚未上传文件。请先友好地引导用户上传相关数据文件，说明需要什么类型的文件（如 Excel/CSV 工资表、预算表等）。不要尝试调用 load_file，等用户上传文件后再进行数据加载。".to_string()
                 );
             }
 
-            // Inject tool restriction instruction from workflow.toml tools_only
             if let Some(config) = self.step_configs.get(step) {
                 if let Some(tools) = &config.tools_only {
                     parts.push(format!(
@@ -643,10 +741,14 @@ impl Skill for DeclarativeSkill {
             return StepAction::Abort;
         }
 
+        // SKILL.md mode: no step transitions, always wait for user
+        if self.skill_md.is_some() {
+            return StepAction::WaitForUser;
+        }
+
         let current = match state.current_step.as_deref() {
             Some(s) => s.to_string(),
             None => {
-                // No current step — advance to the initial step (matches old CompAnalysisSkill behavior)
                 let initial = self.workflow.as_ref()
                     .map(|wf| wf.initial_step.clone())
                     .unwrap_or_else(|| "step0".to_string());
@@ -686,6 +788,16 @@ impl Skill for DeclarativeSkill {
                 }
             }
         }
+    }
+
+    fn has_skill_md(&self) -> bool {
+        self.skill_md.is_some()
+    }
+
+    fn confirm_before_tools(&self) -> Option<Vec<String>> {
+        self.skill_md.as_ref()
+            .filter(|smd| !smd.confirm_before.is_empty())
+            .map(|smd| smd.confirm_before.clone())
     }
 }
 
@@ -1059,13 +1171,196 @@ compare = "prompts/step2-compare.md"
     #[test]
     fn system_prompt_uses_resolved_over_static() {
         let (_tmp, skill) = build_dynamic_routing_skill();
-        // step2 has prompt_router — normally static prompt is empty. Set
-        // resolved_step_prompt manually and confirm system_prompt includes it.
         let mut state = SkillState::new("routing-test-skill");
         state.current_step = Some("step2".into());
         state.resolved_step_prompt = Some("RESOLVED DYNAMIC CONTENT".into());
 
         let sp = skill.system_prompt(&state);
         assert!(sp.contains("RESOLVED DYNAMIC CONTENT"), "got: {}", sp);
+    }
+
+    // ─── SKILL.md format tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_skill_md_valid() {
+        let raw = r#"---
+name: test-skill
+description: A test skill
+tools: [load_file, execute_python, export_data]
+confirm_before: [export_data]
+---
+
+# Test Skill
+
+## Workflow
+1. Load file
+2. Process data
+3. Export results
+"#;
+        let config = parse_skill_md(raw).unwrap();
+        assert_eq!(config.tools, vec!["load_file", "execute_python", "export_data"]);
+        assert_eq!(config.confirm_before, vec!["export_data"]);
+        assert!(config.body.contains("# Test Skill"));
+        assert!(config.body.contains("Load file"));
+    }
+
+    #[test]
+    fn test_parse_skill_md_no_frontmatter() {
+        let raw = "# Just a markdown file\nNo frontmatter here.";
+        assert!(parse_skill_md(raw).is_err());
+    }
+
+    #[test]
+    fn test_parse_skill_md_empty_body() {
+        let raw = "---\nname: empty\ndescription: empty\n---\n";
+        assert!(parse_skill_md(raw).is_err());
+    }
+
+    #[test]
+    fn test_parse_skill_md_no_tools() {
+        let raw = "---\nname: simple\ndescription: A simple skill\n---\n\n# Instructions\nDo something.";
+        let config = parse_skill_md(raw).unwrap();
+        assert!(config.tools.is_empty());
+        assert!(config.confirm_before.is_empty());
+        assert!(config.body.contains("# Instructions"));
+    }
+
+    #[test]
+    fn test_parse_string_array_formats() {
+        assert_eq!(parse_string_array("[a, b, c]"), vec!["a", "b", "c"]);
+        assert_eq!(parse_string_array("[a,b,c]"), vec!["a", "b", "c"]);
+        assert_eq!(parse_string_array("['a', 'b']"), vec!["a", "b"]);
+        assert_eq!(parse_string_array("[\"x\", \"y\"]"), vec!["x", "y"]);
+        assert_eq!(parse_string_array("[]"), Vec::<String>::new());
+    }
+
+    fn build_skill_md_skill() -> (tempfile::TempDir, DeclarativeSkill) {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"[plugin]
+id = "test-skill-md"
+name = "Test SKILL.md Skill"
+type = "skill"
+
+[display]
+trigger_text = "test skill md"
+category = "general"
+icon = "🧪"
+short_description = "A test skill using SKILL.md format"
+"#,
+        ).unwrap();
+
+        std::fs::write(
+            dir.join("SKILL.md"),
+            r#"---
+name: test-skill-md
+description: A test skill for SKILL.md format
+tools: [load_file, execute_python, export_data]
+confirm_before: [export_data]
+---
+
+# Test SKILL.md Skill
+
+## Workflow
+1. Load the uploaded file
+2. Analyze data with Python
+3. Export results (ask user to confirm first)
+"#,
+        ).unwrap();
+
+        let manifest = parse_plugin_manifest(
+            &std::fs::read_to_string(dir.join("plugin.toml")).unwrap()
+        ).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, dir).unwrap();
+        (tmp, skill)
+    }
+
+    #[test]
+    fn test_load_skill_md_format() {
+        let (_tmp, skill) = build_skill_md_skill();
+        assert_eq!(skill.id(), "test-skill-md");
+        assert!(skill.has_skill_md(), "should detect SKILL.md");
+        assert!(skill.workflow().is_none(), "should have no workflow");
+    }
+
+    #[test]
+    fn test_skill_md_system_prompt_includes_body() {
+        let (_tmp, skill) = build_skill_md_skill();
+        let state = SkillState::new("test-skill-md");
+        let sp = skill.system_prompt(&state);
+        assert!(sp.contains("# Test SKILL.md Skill"), "body should be in prompt");
+        assert!(sp.contains("Confirmation Required"), "confirm_before should be in prompt");
+        assert!(sp.contains("export_data"), "confirm_before tool names should appear");
+    }
+
+    #[test]
+    fn test_skill_md_on_step_complete_returns_wait() {
+        let (_tmp, skill) = build_skill_md_skill();
+        let mut state = SkillState::new("test-skill-md");
+        let action = skill.on_step_complete(&mut state, "继续");
+        assert!(matches!(action, StepAction::WaitForUser), "SKILL.md should always WaitForUser");
+    }
+
+    #[test]
+    fn test_skill_md_on_step_complete_abort_still_works() {
+        let (_tmp, skill) = build_skill_md_skill();
+        let mut state = SkillState::new("test-skill-md");
+        let action = skill.on_step_complete(&mut state, "取消");
+        assert!(matches!(action, StepAction::Abort), "abort should still work in SKILL.md mode");
+    }
+
+    #[test]
+    fn test_skill_md_confirm_before_tools() {
+        let (_tmp, skill) = build_skill_md_skill();
+        let tools = skill.confirm_before_tools().expect("should have confirm_before");
+        assert_eq!(tools, vec!["export_data"]);
+    }
+
+    #[test]
+    fn test_workflow_format_still_loads() {
+        // Regression: ensure workflow.toml skills still load correctly
+        let (_tmp, skill) = build_dynamic_routing_skill();
+        assert!(!skill.has_skill_md(), "workflow skill should not be SKILL.md");
+        assert!(skill.workflow().is_some(), "workflow skill should have workflow");
+    }
+
+    #[test]
+    fn test_workflow_takes_precedence_over_skill_md() {
+        // If both workflow.toml and SKILL.md exist, workflow.toml wins
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        std::fs::write(dir.join("plugin.toml"), r#"[plugin]
+id = "both-formats"
+name = "Both"
+type = "skill"
+[trigger]
+keywords = ["both", "test", "xxx"]
+[display]
+category = "general"
+icon = "🔀"
+"#).unwrap();
+
+        std::fs::create_dir_all(dir.join("prompts")).unwrap();
+        std::fs::write(dir.join("prompts/step0.md"), "Step 0 prompt content for testing.").unwrap();
+
+        std::fs::write(dir.join("workflow.toml"), r#"
+[[steps]]
+id = "step0"
+name = "only step"
+prompt = "prompts/step0.md"
+"#).unwrap();
+
+        std::fs::write(dir.join("SKILL.md"), "---\nname: both\ndescription: both\n---\n\n# Body").unwrap();
+
+        let manifest = parse_plugin_manifest(
+            &std::fs::read_to_string(dir.join("plugin.toml")).unwrap()
+        ).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, dir).unwrap();
+        assert!(!skill.has_skill_md(), "workflow.toml should take precedence");
+        assert!(skill.workflow().is_some());
     }
 }

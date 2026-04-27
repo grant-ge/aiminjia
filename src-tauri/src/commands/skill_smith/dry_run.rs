@@ -77,21 +77,30 @@ pub async fn dry_run_skill_draft(
 }
 
 /// Sync entrypoint for unit tests (no AppHandle needed).
+///
+/// Autodetects format: SKILL.md (simplified) vs workflow.toml (legacy).
 pub(crate) fn dry_run_draft_dir(dir: &Path) -> DryRunReport {
+    let has_skill_md = dir.join("SKILL.md").is_file();
+    let has_workflow = dir.join("workflow.toml").is_file();
+
     let mut checks = Vec::with_capacity(6);
 
+    // Check 1: schema validation (works for both formats via autodetection)
     checks.push(check_schema(dir));
 
-    // Parse workflow up-front so later checks can query it. If parsing fails,
-    // the schema check above will have flagged it — subsequent checks fall
-    // back gracefully.
-    let workflow_steps = read_workflow_prompts(dir);
-
-    checks.push(check_prompts_reference(dir, workflow_steps.as_ref()));
-    checks.push(check_prompts_content(dir, workflow_steps.as_ref()));
-    checks.push(check_python_scripts(dir));
-    checks.push(check_knowledge(dir));
-    checks.push(check_loadable(dir));
+    if has_skill_md && !has_workflow {
+        // SKILL.md format: fewer checks needed
+        checks.push(check_python_scripts(dir));
+        checks.push(check_loadable(dir));
+    } else {
+        // Legacy workflow.toml format: full 6-check suite
+        let workflow_steps = read_workflow_prompts(dir);
+        checks.push(check_prompts_reference(dir, workflow_steps.as_ref()));
+        checks.push(check_prompts_content(dir, workflow_steps.as_ref()));
+        checks.push(check_python_scripts(dir));
+        checks.push(check_knowledge(dir));
+        checks.push(check_loadable(dir));
+    }
 
     let pass = !checks.iter().any(|c| c.status == CheckStatus::Fail);
     let summary = build_summary(pass, &checks);

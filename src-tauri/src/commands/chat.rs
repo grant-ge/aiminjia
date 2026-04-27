@@ -488,6 +488,7 @@ async fn build_config_from_skill(
         precompute,
         feedback_config,
         is_feedback: false,
+        confirm_before_tools: skill.confirm_before_tools().map(|v| v.into_iter().collect()),
     }
 }
 
@@ -942,9 +943,10 @@ pub async fn send_message(
                                         );
                                         let step = match stage.as_str() {
                                             "intent" => 1u32,
-                                            "manifest" => 2,
-                                            "workflow" => 3,
-                                            "prompts" => 4,
+                                            "ready" => 2,    // SKILL.md format: ready for install
+                                            "manifest" => 2, // legacy: needs workflow
+                                            "workflow" => 3, // legacy: needs prompts
+                                            "prompts" => 4,  // legacy: ready for dry-run
                                             _ => 0,
                                         };
                                         (step, Some(draft_id))
@@ -997,9 +999,30 @@ pub async fn send_message(
                         state.has_files = has_files;
                         Some(build_config_from_skill(&*skill, &state, &tool_registry, &db, &conversation_id).await)
                     }
+                    Some(skill) if skill.has_skill_md() => {
+                        // SKILL.md skill detected → activate in guided daily mode
+                        // (single pseudo-step, no step transitions, AI follows SKILL.md instructions)
+                        log::info!(
+                            "SKILL.md skill '{}' detected for conversation {}, activating guided mode",
+                            skill_id, conversation_id
+                        );
+
+                        if let Err(e) = db.set_conversation_mode(&conversation_id, "confirming") {
+                            log::error!("Failed to set mode to 'confirming': {}", e);
+                        }
+                        let skill_key = format!("note:{}:active_skill", conversation_id);
+                        if let Err(e) = db.set_memory(&skill_key, &skill_id, Some("system")) {
+                            log::error!("Failed to store active skill ID: {}", e);
+                        }
+
+                        let mut state = SkillState::new(&skill_id);
+                        state.has_files = has_files;
+                        // No current_step for SKILL.md skills — system_prompt() uses skill_md.body
+                        Some(build_config_from_skill(&*skill, &state, &tool_registry, &db, &conversation_id).await)
+                    }
                     _ => {
-                        // No workflow → stay in daily mode
-                        log::debug!("Skill detected but no workflow, staying in daily mode");
+                        // No workflow and no SKILL.md → stay in daily mode
+                        log::debug!("Skill detected but no workflow or SKILL.md, staying in daily mode");
                         None
                     }
                 }
@@ -2170,6 +2193,10 @@ async fn agent_loop(
         Some(daily_allowed)
     };
 
+    // Extract confirm_before tools from StepConfig (SKILL.md format)
+    let confirm_before: Option<std::collections::HashSet<String>> =
+        current_step_config.as_ref().and_then(|c| c.confirm_before_tools.clone());
+
     // Precompute degradation / feedback mode: adjust max_iterations
     if let Some(ref config) = current_step_config {
         if config.precompute.is_some() && precompute_context.is_none() {
@@ -2830,6 +2857,31 @@ async fn agent_loop(
                     );
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, blocked_msg));
                     continue;
+                }
+            }
+
+            // confirm_before guard: block tools that need user confirmation unless
+            // the preceding assistant text describes the operation.
+            if let Some(ref cb) = confirm_before {
+                if cb.contains(&tc.name) {
+                    // Check if the assistant message in this iteration contains descriptive text
+                    // (at least 20 chars indicates the LLM described the operation before calling the tool)
+                    let last_assistant_text = messages.last()
+                        .and_then(|m| if m.role == "assistant" { Some(m.content.as_str()) } else { None })
+                        .unwrap_or("");
+                    if last_assistant_text.len() < 20 {
+                        log::warn!(
+                            "[AGENT] Blocked tool '{}' — requires user confirmation (SKILL.md confirm_before)",
+                            tc.name
+                        );
+                        let msg = format!(
+                            "Error: Tool '{}' requires user confirmation. Before calling this tool, \
+                             you must first describe the operation in detail and wait for the user to confirm.",
+                            tc.name
+                        );
+                        messages.push(ChatMessage::tool_result(&tc.id, &tc.name, msg));
+                        continue;
+                    }
                 }
             }
 

@@ -286,6 +286,19 @@ pub trait Skill: Send + Sync + 'static {
     fn feedback_config(&self, _state: &SkillState) -> Option<FeedbackConfig> {
         None
     }
+
+    /// Whether this skill uses SKILL.md format (no workflow.toml).
+    /// SKILL.md skills run in guided daily mode with enhanced system prompt.
+    fn has_skill_md(&self) -> bool {
+        false
+    }
+
+    /// Tool names that require user confirmation text before execution.
+    /// The agent loop will block these tools unless the preceding assistant
+    /// message contains an operation description for the user to review.
+    fn confirm_before_tools(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 // ── Shared keyword detection ──
