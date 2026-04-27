@@ -64,6 +64,7 @@
 - `branding` store 清掉 `theme`/`accent`/`base` 相关运行时字段；
 - 所有 CSS 变量值在运行时**由租户接口下发单版**（即现有 branding 接口只下发一套 Light + Neutral + Default），不再有切换逻辑。
 - Tailwind / CSS 层移除暗色 class 与 `.dark` 样式分支（可保留文件结构，但样式分支不再维护）。
+- 这里的 **Neutral** 只表示中性色轴（背景、正文、边框、muted 等），不表示品牌主色使用 shadcn 默认黑色；`--primary` / `--ring` / `--sidebar-primary` 必须继续使用品牌金 `#DBAA22`。
 
 ### 3.2 Token 映射表
 
