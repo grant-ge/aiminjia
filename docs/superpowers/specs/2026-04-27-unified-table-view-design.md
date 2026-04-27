@@ -22,22 +22,28 @@ src/
 │   │   ├── __tests__/mapDataTable.test.ts
 │   │   └── index.ts                   # 导出 TableView + 类型
 │   ├── chat-scene/
-│   │   └── AssistantMarkdown.tsx      # 改：调 react-markdown，table override → TableView
+│   │   ├── AssistantMarkdown.tsx      # 改：react-markdown + remark-gfm
+│   │   └── markdown/                  # 新增，markdown 渲染 override 集中地
+│   │       ├── markdownComponents.tsx # components map（code / a / table override）
+│   │       ├── MarkdownCodeBlock.tsx  # 代码块（复制按钮，React onClick）
+│   │       └── __tests__/AssistantMarkdown.test.tsx
 │   ├── chat/
 │   │   └── AiBubble.tsx               # 改：RichDataTable → TableView
+│   ├── layout/
+│   │   └── ChatArea.tsx               # 改：移除 data-copy-code / data-file-link 事件委托
 │   └── rich-content/
 │       ├── RichDataTable.tsx          # 删除
 │       └── index.ts                   # 移除 RichDataTable 导出
 ├── lib/
-│   ├── markdown.ts                    # 重写：改为 react-markdown + remark-gfm 桥接
-│   └── markdown.test.ts               # 改：保留普通 markdown 行为测试，新增表格集成测试
+│   ├── markdown.ts                    # 删除
+│   └── markdown.test.ts               # 删除
 └── styles/
     └── globals.css                    # 新增 --table-* 设计 token
 ```
 
 关键点：
 - `data-table/` 不放在 `rich-content/` 下；markdown 也用它，语义上不与"富内容"绑死
-- `markdown.ts` 由"返回 HTML 字符串"改为"返回 React Element 树"；所有调用 `markdownToHtml` 的地方需要切换到新 API
+- `markdown.ts` 整体删除：所有 markdown 解析交给 `react-markdown + remark-gfm`，HTML 标签靠 react-markdown 默认 `skipHtml` 行为忽略；代码块复制 / 文件链接以 react-markdown override 重写
 - 设计 token 落在 `globals.css`，TableView 内部仅用 className，不写行内 style
 - `RichDataTable` 当前只有 `AiBubble.tsx` 一个调用者，迁移面积可控
 
@@ -359,7 +365,11 @@ pnpm exec vitest run \
 
 ## 6. 迁移注意事项
 
-- `markdown.ts` 输出由 HTML 字符串 → React Element：所有 `dangerouslySetInnerHTML={{ __html: markdownToHtml(...) }}` 调用点需切换到新 API（输出 ReactNode）。实施期需先盘点调用点
-- `RichDataTable` 删除前确认无其他被忽略的调用方（grep 全仓再次核对）
-- `globals.css` 引用的 `--color-accent-success` 等变量名需先核对项目当前实际命名，必要时调整 token 引用
-- 引入 `react-markdown` 与 `remark-gfm` 依赖（package.json），在 plan 阶段确认版本与现有生态兼容
+- **`markdown.ts` 整体删除**。所有 markdown 解析交给 `react-markdown + remark-gfm`；HTML 标签靠 react-markdown 默认 `skipHtml` 行为忽略（不再保留 `stripLlmHtml`）；`markdown.ts` 当前承担的非解析能力按以下方案重落：
+  - 代码块复制按钮：用 react-markdown 的 `code` override，复制由 React `onClick` 触发，**移除** `ChatArea.tsx` 中 `data-copy-code` 事件委托
+  - `file://` 链接：用 `a` override，仅识别标准 markdown 链接 `[name](file:///...)`
+  - **裸文件名点击能力放弃**（如 `report.xlsx` 不再可点击）：相关行为由 ReportCards / GeneratedFileCard 等组件兜底；同时**移除** `ChatArea.tsx` 中 `data-file-link` 事件委托
+  - 行内代码、heading、list、blockquote、hr 全部走 react-markdown 默认渲染 + 必要的 className
+- `RichDataTable` 删除前确认无其他被忽略的调用方（grep 全仓再次核对）；`rich-content/index.ts` 同步移除导出
+- `globals.css` 引用的颜色变量名需先核对项目当前实际命名（如 `--color-semantic-green` 已存在，但 `--color-accent-success` / `--color-accent-info` 等名称项目内尚未定义，token 引用需对齐到现有 `--color-semantic-*` 体系）
+- 引入 `react-markdown` 与 `remark-gfm` 依赖，在 plan 阶段确认版本与 React 19 兼容
