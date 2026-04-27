@@ -108,33 +108,23 @@ impl SkillSessionStore {
                 .await
                 .unwrap_or_else(|| default_skill.clone());
         }
-        // LLM-based routing: 不做关键词匹配，把 skill 目录注入到 system prompt，
-        // 让 LLM 通过 switch_skill 工具自行决定是否切换。
-
-        // 只在 default skill 时注入 skill 目录
-        let skill_directory = if skill.id() == default_skill.id() {
-            build_skill_directory_prompt(registry, default_skill.id()).await
-        } else {
-            String::new()
-        };
+        // LLM-based routing now uses dynamic context + stateless load_skill.
+        // Keep switch_skill workflow compatibility, but do not inject its
+        // directory prompt into the default system prompt.
 
         state = initialize_state_for_turn(skill.as_ref(), state, has_files);
-        let allowed_tools = ensure_switch_skill_tool(resolve_allowed_tools(
+        let mut allowed_tools = resolve_allowed_tools(
             all_tool_names,
             skill.tool_filter(&state),
             skill.allowed_tool_names(&state),
-        ));
+        );
+        if skill.id() != default_skill.id() {
+            allowed_tools = ensure_switch_skill_tool(allowed_tools);
+        }
 
         self.persist_state(conversation_id, &state)?;
 
-        let system_prompt = {
-            let base = skill.system_prompt(&state);
-            if skill_directory.is_empty() {
-                base
-            } else {
-                format!("{}\n\n{}", base, skill_directory)
-            }
-        };
+        let system_prompt = skill.system_prompt(&state);
 
         Ok(SkillTurnContext {
             skill_id: skill.id().to_string(),
@@ -194,12 +184,10 @@ impl SkillSessionStore {
     }
 }
 
+#[allow(dead_code)]
 async fn build_skill_directory_prompt(registry: &SkillRegistry, default_skill_id: &str) -> String {
     let skills = registry.list().await;
-    let non_default: Vec<_> = skills
-        .iter()
-        .filter(|s| s.id != default_skill_id)
-        .collect();
+    let non_default: Vec<_> = skills.iter().filter(|s| s.id != default_skill_id).collect();
 
     if non_default.is_empty() {
         return String::new();
@@ -320,6 +308,7 @@ mod tests {
 
     struct TestSkill {
         id: &'static str,
+        #[allow(dead_code)]
         trigger: Option<&'static str>,
         prompt_prefix: &'static str,
         default_tools: Vec<String>,
@@ -420,22 +409,26 @@ mod tests {
             .expect("default context");
 
         assert_eq!(context.skill_id, "daily-assistant");
-        // After LLM-based routing, default skill system_prompt includes the skill directory.
         assert!(
             context.system_prompt.starts_with("daily:none"),
             "system_prompt should start with base prompt, got: {}",
             context.system_prompt
         );
         assert!(
-            context.system_prompt.contains("comp-analysis"),
-            "system_prompt should list available skills in directory"
+            !context.system_prompt.contains("comp-analysis"),
+            "default system_prompt should not include the skill directory"
         );
         assert_eq!(
             context.allowed_tools,
-            Some(HashSet::from([
-                "bash".to_string(),
-                "switch_skill".to_string()
-            ]))
+            Some(HashSet::from(["bash".to_string()]))
+        );
+        assert!(
+            !context
+                .allowed_tools
+                .as_ref()
+                .expect("daily default tools should be restricted")
+                .contains("switch_skill"),
+            "default daily turns must not expose transition-only switch_skill"
         );
     }
 
@@ -443,7 +436,7 @@ mod tests {
     async fn keyword_routing_removed_stays_on_default_skill() {
         // After removing keyword-based routing, messages that used to trigger
         // keyword activation now stay on the default skill. The LLM decides
-        // routing via switch_skill tool call instead.
+        // routing via the dynamic catalog + load_skill instead.
         let registry = registry_with_test_skills().await;
         let store = SkillSessionStore::new();
 
@@ -462,7 +455,6 @@ mod tests {
             .await
             .expect("skill context");
 
-        // No keyword activation: stays on daily-assistant, system_prompt includes skill directory.
         assert_eq!(context.skill_id, "daily-assistant");
         assert!(
             context.system_prompt.starts_with("daily:none"),
@@ -470,8 +462,8 @@ mod tests {
             context.system_prompt
         );
         assert!(
-            context.system_prompt.contains("comp-analysis"),
-            "system_prompt should include skill directory"
+            !context.system_prompt.contains("comp-analysis"),
+            "default system_prompt should not include the skill directory"
         );
     }
 
@@ -488,7 +480,13 @@ mod tests {
 
         // Use explicit switch_skill to activate comp-analysis (LLM-based routing)
         let activated = store
-            .switch_skill(&registry, &all_tools, "conv-progress", "comp-analysis", false)
+            .switch_skill(
+                &registry,
+                &all_tools,
+                "conv-progress",
+                "comp-analysis",
+                false,
+            )
             .await
             .expect("activate via explicit switch");
         assert_eq!(activated.state.current_step.as_deref(), Some("step0"));

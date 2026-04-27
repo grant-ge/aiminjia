@@ -19,6 +19,7 @@ fn review_context_builder_remains_dynamic_only() {
         None,
         None,
         None,
+        "",
     );
 
     assert!(

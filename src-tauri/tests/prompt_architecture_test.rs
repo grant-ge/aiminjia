@@ -260,6 +260,7 @@ fn iteration_context_contains_only_runtime_delta_sections() {
         Some("computed result"),
         None,
         None,
+        "",
     );
 
     assert!(result.starts_with("[动态上下文 — 请勿回复此消息]"));

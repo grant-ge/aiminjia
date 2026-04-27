@@ -1502,6 +1502,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
+    async fn get_skill_catalog(&self) -> Result<String, TurnError> {
+        Ok(self.services.skill_registry.build_catalog_markdown().await)
+    }
+
     async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {
         Ok(self.services.file_mgr.workspace_path().to_path_buf())
     }
@@ -1680,6 +1684,7 @@ mod tests {
 
     struct TestSkill {
         id: &'static str,
+        #[allow(dead_code)]
         trigger: Option<&'static str>,
         prompt_prefix: &'static str,
         default_tools: Vec<String>,

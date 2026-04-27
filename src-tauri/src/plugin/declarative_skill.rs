@@ -57,7 +57,11 @@ struct StepToolConfig {
 impl DeclarativeSkill {
     /// Load a declarative Skill from a plugin directory.
     pub fn load(manifest: &PluginManifest, plugin_dir: &Path) -> Result<Self, String> {
-        let requires_files = manifest.trigger.as_ref().map(|t| t.requires_files).unwrap_or(false);
+        let requires_files = manifest
+            .trigger
+            .as_ref()
+            .map(|t| t.requires_files)
+            .unwrap_or(false);
 
         let priority_val = manifest.plugin.priority.unwrap_or(0);
         let description = manifest
@@ -374,6 +378,10 @@ impl Skill for DeclarativeSkill {
         parts.join("\n\n")
     }
 
+    fn body_prompt(&self) -> String {
+        self.base_prompt.clone()
+    }
+
     fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
         // Always expose all tool schemas to the LLM for KV cache prefix stability.
         // Runtime enforcement is handled by allowed_tool_names() + runtime guard.
@@ -663,6 +671,22 @@ Use this skill body as the prompt.
         assert!(prompt.contains("# Salary Query"));
         assert!(prompt.contains("Use this skill body as the prompt."));
         assert!(!prompt.contains("name: salary-query"));
+    }
+
+    #[test]
+    fn body_prompt_returns_base_prompt_content() {
+        let plugin_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins/comp-analysis-v2");
+        if !plugin_dir.exists() {
+            return;
+        }
+        let content = std::fs::read_to_string(plugin_dir.join("plugin.toml")).unwrap();
+        let manifest = crate::plugin::manifest::parse_plugin_manifest(&content).unwrap();
+        let skill = DeclarativeSkill::load(&manifest, &plugin_dir).unwrap();
+
+        let body = skill.body_prompt();
+
+        assert!(!body.is_empty(), "comp-analysis-v2 should have a base.md");
     }
 
     /// Verify max_iterations per step.

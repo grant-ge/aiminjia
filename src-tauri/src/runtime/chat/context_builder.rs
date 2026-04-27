@@ -15,6 +15,7 @@ pub fn build_iteration_context(
     precompute_result: Option<&str>,
     connector_context: Option<&str>,
     analysis_ctx_prompt: Option<&str>,
+    skill_catalog: &str,
 ) -> String {
     let mut ctx = String::from("[动态上下文 — 请勿回复此消息]\n");
 
@@ -79,6 +80,12 @@ pub fn build_iteration_context(
         if !ctx_prompt.is_empty() {
             ctx.push_str(ctx_prompt);
         }
+    }
+
+    // 9. Skill catalog — dynamic LLM-driven skill discovery.
+    if !skill_catalog.is_empty() {
+        ctx.push_str("\n\n");
+        ctx.push_str(skill_catalog);
     }
 
     ctx
@@ -193,13 +200,13 @@ mod tests {
 
     #[test]
     fn test_empty_inputs_yields_only_header() {
-        let result = build_iteration_context("", "", "", "", "", None, None, None);
+        let result = build_iteration_context("", "", "", "", "", None, None, None, "");
         assert_eq!(result, EMPTY_HEADER);
     }
 
     #[test]
     fn test_core_memory_block() {
-        let result = build_iteration_context("mem content", "", "", "", "", None, None, None);
+        let result = build_iteration_context("mem content", "", "", "", "", None, None, None, "");
         assert!(result.contains("\n[核心记忆]\n"));
         assert!(result.contains("mem content"));
         assert!(result.contains("\n[核心记忆]\nmem content\n"));
@@ -207,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_project_memory_block() {
-        let result = build_iteration_context("", "memory index", "", "", "", None, None, None);
+        let result = build_iteration_context("", "memory index", "", "", "", None, None, None, "");
         assert!(result.contains("\n[项目记忆]\n"));
         assert!(result.contains("memory index"));
         assert!(result.contains("\n[项目记忆]\nmemory index\n"));
@@ -215,7 +222,8 @@ mod tests {
 
     #[test]
     fn test_precompute_result_block() {
-        let result = build_iteration_context("", "", "", "", "", Some("computed data"), None, None);
+        let result =
+            build_iteration_context("", "", "", "", "", Some("computed data"), None, None, "");
         assert!(result.contains("[precompute_result]\n"));
         assert!(result.contains("computed data"));
         assert!(result.contains("[/precompute_result]"));
@@ -224,10 +232,24 @@ mod tests {
     #[test]
     fn test_connector_context_block() {
         let result =
-            build_iteration_context("", "", "", "", "", None, Some("connector info"), None);
+            build_iteration_context("", "", "", "", "", None, Some("connector info"), None, "");
         assert!(result.contains("[内部系统浏览]\n"));
         assert!(result.contains("connector info"));
         assert!(result.contains("[/内部系统浏览]"));
+    }
+
+    #[test]
+    fn test_skill_catalog_block() {
+        let catalog = "## 可用专项技能\n- `biz-writing` — 商务写作";
+        let result = build_iteration_context("", "", "", "", "", None, None, None, catalog);
+        assert!(result.contains("可用专项技能"));
+        assert!(result.contains("biz-writing"));
+    }
+
+    #[test]
+    fn test_empty_skill_catalog_not_injected() {
+        let result = build_iteration_context("", "", "", "", "", None, None, None, "");
+        assert!(!result.contains("可用专项技能"));
     }
 
     #[test]
@@ -241,6 +263,7 @@ mod tests {
             Some("PRECOMPUTE"),
             Some("CONNECTOR"),
             Some("ANALYSIS"),
+            "## 可用专项技能\n- `biz-writing` — 商务写作",
         );
 
         let core_pos = result.find("CORE").expect("CORE missing");
@@ -251,6 +274,7 @@ mod tests {
         let pre_pos = result.find("PRECOMPUTE").expect("PRECOMPUTE missing");
         let conn_pos = result.find("CONNECTOR").expect("CONNECTOR missing");
         let ana_pos = result.find("ANALYSIS").expect("ANALYSIS missing");
+        let skill_pos = result.find("biz-writing").expect("skill catalog missing");
 
         assert!(core_pos < mem_pos);
         assert!(mem_pos < ws_pos);
@@ -259,6 +283,7 @@ mod tests {
         assert!(notes_pos < pre_pos);
         assert!(pre_pos < conn_pos);
         assert!(conn_pos < ana_pos);
+        assert!(ana_pos < skill_pos);
     }
 
     #[tokio::test]

@@ -6,8 +6,10 @@
 use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
 use app_lib::plugin::SkillRegistry;
 use app_lib::runtime::chat::SkillSessionStore;
+use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::runtime::tools::ToolExecutionContext;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -57,6 +59,46 @@ fn build_test_plugin_ctx(
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
         runtime_resolver: None,
+    }
+}
+
+struct BodySkill {
+    id: String,
+    body: String,
+}
+
+impl BodySkill {
+    fn new(id: &str, body: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            body: body.to_string(),
+        }
+    }
+}
+
+impl Skill for BodySkill {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn display_name(&self) -> &str {
+        &self.id
+    }
+
+    fn description(&self) -> &str {
+        &self.id
+    }
+
+    fn system_prompt(&self, _state: &SkillState) -> String {
+        String::new()
+    }
+
+    fn body_prompt(&self) -> String {
+        self.body.clone()
+    }
+
+    fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
+        ToolFilter::All
     }
 }
 
@@ -733,7 +775,9 @@ async fn switch_skill_routes_through_request_scoped_runtime_factory() {
             Arc::new(DailyAssistantSkill::new(
                 ctx.storage.clone(),
                 Arc::new(app_lib::auth::AuthManager::new(
-                    Arc::new(app_lib::storage::GlobalConfigStore::new(tmp.path().join("global"))),
+                    Arc::new(app_lib::storage::GlobalConfigStore::new(
+                        tmp.path().join("global"),
+                    )),
                     None,
                 )),
             )),
@@ -764,5 +808,72 @@ async fn switch_skill_routes_through_request_scoped_runtime_factory() {
         !message.contains("Unknown tool"),
         "switch_skill must not fall through to unknown tool: {}",
         message
+    );
+}
+
+#[tokio::test]
+async fn load_skill_routes_through_request_scoped_runtime_factory() {
+    let registry = Arc::new(ToolRegistry::new());
+    register_builtin_tools(registry.as_ref()).await;
+
+    let schemas = registry.get_all_schemas().await;
+    assert!(
+        schemas.iter().any(|schema| schema.name == "load_skill"),
+        "load_skill schema must be visible to the LLM"
+    );
+    let daily_filter = ToolFilter::Only(
+        DAILY_ALLOWED_TOOLS
+            .iter()
+            .map(|tool| tool.to_string())
+            .collect(),
+    );
+    let daily_schemas = registry.get_schemas_filtered(&daily_filter).await;
+    assert!(
+        daily_schemas
+            .iter()
+            .any(|schema| schema.name == "load_skill"),
+        "load_skill schema must remain visible after daily tool filtering"
+    );
+
+    let tmp = TempDir::new().unwrap();
+    let mut ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
+    let skill_registry = Arc::new(SkillRegistry::new("daily-assistant"));
+    skill_registry
+        .register(
+            Arc::new(BodySkill::new("daily-assistant", "default body")),
+            "test",
+        )
+        .await;
+    skill_registry
+        .register(
+            Arc::new(BodySkill::new(
+                "biz-writing",
+                "Follow the biz writing checklist.",
+            )),
+            "test",
+        )
+        .await;
+    ctx.skill_registry = Some(skill_registry);
+    ctx.tool_registry = Some(registry.clone());
+
+    let output = registry
+        .execute(
+            "load_skill",
+            &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
+            serde_json::json!({"skill_id": "biz-writing"}),
+            app_lib::runtime::cancellation::CancellationToken::new(),
+        )
+        .await
+        .expect("load_skill should route through request-scoped runtime factory");
+
+    assert!(!output.is_error);
+    assert!(output.content.contains("Follow the biz writing checklist."));
+    assert!(
+        output
+            .data
+            .as_ref()
+            .and_then(|data| data.get("skill_control"))
+            .is_none(),
+        "load_skill must not emit SkillRuntimePatch data"
     );
 }

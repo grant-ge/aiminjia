@@ -205,6 +205,11 @@ pub trait Skill: Send + Sync + 'static {
     /// System prompt for this Skill (may vary by step).
     fn system_prompt(&self, state: &SkillState) -> String;
 
+    /// Full prompt body for stateless injection via load_skill.
+    fn body_prompt(&self) -> String {
+        String::new()
+    }
+
     /// Resolve a runtime-dynamic step prompt (Phase 12 multi-file-handler
     /// routing). Returns `Some(prompt_text)` when the current step has a
     /// `prompt_router` configured and the matching branch prompt should be

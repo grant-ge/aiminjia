@@ -257,6 +257,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(String::new())
     }
 
+    /// 返回当前 turn 可见的 skill catalog。
+    ///
+    /// 默认返回空字符串，生产 executor 从 SkillRegistry 构建。
+    async fn get_skill_catalog(&self) -> Result<String, TurnError> {
+        Ok(String::new())
+    }
+
     /// 加载 turn 对应的 workspace 路径。
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(PathBuf::new())
@@ -1179,6 +1186,10 @@ impl RuntimeChatTurnDriver {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
                 String::new()
             });
+        let skill_catalog = executor.get_skill_catalog().await.unwrap_or_else(|e| {
+            log::warn!("[run_chat_turn_s4] get_skill_catalog failed: {}", e);
+            String::new()
+        });
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
@@ -1240,6 +1251,7 @@ impl RuntimeChatTurnDriver {
                 precompute_result.as_deref(),
                 None,
                 None,
+                &skill_catalog,
             );
 
             // Build the read-only executor input.
@@ -2102,6 +2114,8 @@ mod tests {
     struct SnapshotPromptExecutor {
         legacy_calls: AtomicUsize,
         seen_system_prompts: Mutex<Vec<String>>,
+        seen_dynamic_contexts: Mutex<Vec<String>>,
+        skill_catalog: Option<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -2109,6 +2123,17 @@ mod tests {
             Self {
                 legacy_calls: AtomicUsize::new(0),
                 seen_system_prompts: Mutex::new(Vec::new()),
+                seen_dynamic_contexts: Mutex::new(Vec::new()),
+                skill_catalog: None,
+            }
+        }
+
+        fn with_skill_catalog(skill_catalog: impl Into<String>) -> Self {
+            Self {
+                legacy_calls: AtomicUsize::new(0),
+                seen_system_prompts: Mutex::new(Vec::new()),
+                seen_dynamic_contexts: Mutex::new(Vec::new()),
+                skill_catalog: Some(skill_catalog.into()),
             }
         }
     }
@@ -2125,6 +2150,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(input.system_prompt.to_string());
+            self.seen_dynamic_contexts
+                .lock()
+                .unwrap()
+                .push(input.dynamic_context.to_string());
             Ok(LlmStepResult::ContentComplete {
                 content: "snapshot done".to_string(),
                 tokens_in: 0,
@@ -2183,6 +2212,10 @@ mod tests {
         async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
             Ok(std::env::temp_dir())
         }
+
+        async fn get_skill_catalog(&self) -> Result<String, TurnError> {
+            Ok(self.skill_catalog.clone().unwrap_or_default())
+        }
     }
 
     #[tokio::test]
@@ -2207,6 +2240,32 @@ mod tests {
         let prompts = executor.seen_system_prompts.lock().unwrap().clone();
         assert_eq!(prompts, vec![expected_snapshot_prompt]);
         assert_eq!(executor.legacy_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn driver_injects_skill_catalog_into_dynamic_context() {
+        let executor = Arc::new(SnapshotPromptExecutor::with_skill_catalog(
+            "## 可用专项技能\n- `biz-writing` — 商务写作",
+        ));
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id("conv-driver-skill-catalog".to_string()),
+            RunId::new("run-driver-skill-catalog"),
+            "write an email".to_string(),
+        );
+        let request = ChatTurnRequest::new("conv-driver-skill-catalog", "write an email", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with skill catalog");
+
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("可用专项技能"));
+        assert!(dynamic_contexts[0].contains("biz-writing"));
     }
 
     struct SwitchingTool;

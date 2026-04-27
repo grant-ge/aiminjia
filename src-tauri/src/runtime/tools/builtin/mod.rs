@@ -10,6 +10,7 @@ pub mod chart;
 pub mod chart_capability;
 pub mod file;
 pub mod grep;
+pub mod load_skill;
 pub mod memory;
 pub mod network;
 pub mod python;

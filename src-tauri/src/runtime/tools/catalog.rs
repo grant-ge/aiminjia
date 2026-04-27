@@ -567,6 +567,27 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
+            "load_skill",
+            "加载一个专项技能的详细指令到当前对话。无副作用：不改变系统提示、不限制工具、不持久化。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true)
+        .with_max_result_size_chars(16_000)
+        .with_preserve_tool_use_results(true),
+        json!({
+            "type": "object",
+            "required": ["skill_id"],
+            "properties": {
+                "skill_id": {
+                    "type": "string",
+                    "description": "技能 ID，必须来自动态上下文中的可用专项技能目录"
+                }
+            }
+        }),
+    ));
+
     // ── Support tools ─────────────────────────────────────────────
     for (id, desc) in &[
         ("plan_update", "更新任务计划状态"),
@@ -772,10 +793,11 @@ fn build_default_catalog() -> ToolCatalog {
 /// （browse_data、generate_report、generate_chart、export_data）。
 /// 不包含 browse_and_extract / generate_slides 等纯分析流程专属的 Composite 工具。
 ///
-/// 对齐 claude-code-best 原子工具模型：只包含有 register_runtime 注册的 RuntimeTool。
+/// 对齐 claude-code-best 原子工具模型：主要包含 register_runtime 工具；
+/// `load_skill` 是例外，它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
 ///
 /// 以下工具已移除（无 register_runtime 注册，或 ToolPlugin 路径已关闭）：
-///   - web_search, browse_navigate, read_page_content（request-scoped，未全局注册）
+///   - web_search, browse_navigate, read_page_content（request-scoped，非 daily 默认工具）
 ///   - load_file, execute_python（request-scoped，未全局注册）
 ///   - browse_data, generate_report, generate_chart（request-scoped，未全局注册）
 ///   - export_data, plan_update, progress_update, save_analysis_note（ToolPlugin 已关闭）
@@ -792,6 +814,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "grep_content",
     "write_memory",
     "search_memory",
+    "load_skill",
     "AskUserQuestion",
     "TaskCreate",
     "TaskUpdate",

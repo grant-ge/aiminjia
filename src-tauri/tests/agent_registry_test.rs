@@ -3,6 +3,7 @@ use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
 use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
 use app_lib::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
 use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::storage::file_store::AppStorage;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -48,13 +49,17 @@ fn browse_data_agent_max_iterations_is_30() {
 }
 
 #[test]
-fn daily_assistant_agent_has_ten_tools() {
+fn daily_assistant_agent_tools_match_runtime_allowed_tools() {
     let registry = AgentRegistry::with_builtins();
     let def = registry.get("daily_assistant_agent").unwrap();
-    assert_eq!(def.allowed_tools.len(), 14);
-    assert!(def.allowed_tools.contains(&"bash".to_string()));
-    assert!(def.allowed_tools.contains(&"write_memory".to_string()));
-    assert!(def.allowed_tools.contains(&"search_memory".to_string()));
+    assert_eq!(def.allowed_tools.len(), DAILY_ALLOWED_TOOLS.len());
+    for tool in DAILY_ALLOWED_TOOLS {
+        assert!(
+            def.allowed_tools.contains(&tool.to_string()),
+            "daily_assistant_agent must contain tool: {}",
+            tool
+        );
+    }
 }
 
 #[test]
@@ -95,7 +100,9 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
     let def = registry.get("daily_assistant_agent").unwrap();
     let workspace = TempDir::new().expect("TempDir::new failed");
     let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
-    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(workspace.path().join("global")));
+    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(
+        workspace.path().join("global"),
+    ));
     let auth_manager = Arc::new(AuthManager::new(global_store, None));
     let skill = DailyAssistantSkill::new_with_registry(&registry, storage, auth_manager);
     let filter = skill.tool_filter(&SkillState::new("daily-assistant"));
@@ -114,7 +121,9 @@ fn daily_assistant_tool_filter_matches_registry_definition() {
 fn daily_assistant_token_budget_defaults_to_8192() {
     let workspace = TempDir::new().expect("TempDir::new failed");
     let storage = Arc::new(AppStorage::new(workspace.path()).expect("AppStorage::new failed"));
-    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(workspace.path().join("global")));
+    let global_store = Arc::new(app_lib::storage::GlobalConfigStore::new(
+        workspace.path().join("global"),
+    ));
     let auth_manager = Arc::new(AuthManager::new(global_store, None));
     let skill = DailyAssistantSkill::new(storage, auth_manager);
 
