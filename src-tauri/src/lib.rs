@@ -107,12 +107,20 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
-            // Set window title from persisted branding (before WebView renders)
+            // Window setup: custom titlebar on all platforms
             {
-                // Title bar is rendered by HTML TitleBar component (titleBarStyle: Overlay)
-                // Set native window title to empty to avoid duplicate text
                 if let Some(win) = app.get_webview_window("main") {
+                    // Title bar is rendered by HTML TitleBar component
                     let _ = win.set_title(" ");
+
+                    // Windows: disable native decorations to avoid double titlebar.
+                    // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
+                    // keeps the traffic light buttons overlaid on content.
+                    #[cfg(target_os = "windows")]
+                    {
+                        use tauri::WebviewWindowExt as _;
+                        let _ = win.set_decorations(false);
+                    }
                 }
             }
 

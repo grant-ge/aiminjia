@@ -5,12 +5,36 @@ import { useProductName } from '@/hooks/useProductName'
 import { useTranslation } from 'react-i18next'
 import { isDarkColor } from '@/lib/themeUtils'
 
+const isWindows = navigator.userAgent.includes('Windows')
+
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1) {
     e.detail === 2
       ? getCurrentWindow().toggleMaximize()
       : getCurrentWindow().startDragging()
   }
+}
+
+/** Windows custom window control buttons (minimize / maximize / close). */
+function WindowControls({ color }: { color: string }) {
+  const win = getCurrentWindow()
+  const btnClass = 'flex h-7 w-11 items-center justify-center transition-colors'
+  return (
+    <div className="flex shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+      <button className={btnClass} style={{ color }} onClick={() => win.minimize()}
+        aria-label="Minimize">
+        <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
+      </button>
+      <button className={btnClass} style={{ color }} onClick={() => win.toggleMaximize()}
+        aria-label="Maximize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
+      </button>
+      <button className={`${btnClass} hover:bg-red-600 hover:text-white`} style={{ color }}
+        onClick={() => win.close()} aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M1.7.3.3 1.7 3.6 5 .3 8.3l1.4 1.4L5 6.4l3.3 3.3 1.4-1.4L6.4 5l3.3-3.3L8.3.3 5 3.6 1.7.3z"/></svg>
+      </button>
+    </div>
+  )
 }
 
 export function TitleBar() {
@@ -28,8 +52,8 @@ export function TitleBar() {
       style={{ background: bg }}
       onMouseDown={handleDragStart}
     >
-      {/* Space for red/yellow/green traffic light buttons — no mousedown handler so OS receives clicks */}
-      <div className="w-[78px] shrink-0" onMouseDown={(e) => e.stopPropagation()} />
+      {/* macOS: space for traffic light buttons. Windows: no left spacer needed. */}
+      {!isWindows && <div className="w-[78px] shrink-0" onMouseDown={(e) => e.stopPropagation()} />}
       {/* Centered title */}
       <span
         className="flex-1 text-center text-xs font-medium select-none pointer-events-none"
@@ -37,7 +61,8 @@ export function TitleBar() {
       >
         {productName} — {t('welcome.defaultSubtitle')}
       </span>
-      <div className="w-[78px] shrink-0" />
+      {/* macOS: right spacer for symmetry. Windows: custom window controls. */}
+      {isWindows ? <WindowControls color={textColor} /> : <div className="w-[78px] shrink-0" />}
     </div>
   )
 }
