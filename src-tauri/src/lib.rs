@@ -118,7 +118,6 @@ pub fn run() {
                     // keeps the traffic light buttons overlaid on content.
                     #[cfg(target_os = "windows")]
                     {
-                        use tauri::WebviewWindowExt as _;
                         let _ = win.set_decorations(false);
                     }
                 }
