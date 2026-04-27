@@ -7,11 +7,19 @@ import { isDarkColor } from '@/lib/themeUtils'
 
 const isWindows = navigator.userAgent.includes('Windows')
 
+/**
+ * Double-click to maximize; single-click to start drag.
+ * Belt-and-suspenders: data-tauri-drag-region handles native drag (incl. touch/pen),
+ * this handler adds double-click-to-maximize which data-tauri-drag-region doesn't support.
+ */
 function handleDragStart(e: React.MouseEvent) {
-  if (e.buttons === 1) {
-    e.detail === 2
-      ? getCurrentWindow().toggleMaximize()
-      : getCurrentWindow().startDragging()
+  if (e.buttons === 1 && e.detail === 2) {
+    getCurrentWindow().toggleMaximize()
+  }
+  // Single-click drag is handled natively by data-tauri-drag-region.
+  // Fallback for environments where the attribute isn't honored:
+  if (e.buttons === 1 && e.detail === 1) {
+    getCurrentWindow().startDragging()
   }
 }
 
@@ -20,7 +28,7 @@ function WindowControls({ color }: { color: string }) {
   const win = getCurrentWindow()
   const btnClass = 'flex h-7 w-11 items-center justify-center transition-colors'
   return (
-    <div className="flex shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="flex shrink-0">
       <button className={btnClass} style={{ color }} onClick={() => win.minimize()}
         aria-label="Minimize">
         <svg width="10" height="1" viewBox="0 0 10 1"><rect fill="currentColor" width="10" height="1"/></svg>
@@ -48,14 +56,16 @@ export function TitleBar() {
 
   return (
     <div
+      data-tauri-drag-region
       className="flex h-7 w-full shrink-0 items-center"
       style={{ background: bg }}
       onMouseDown={handleDragStart}
     >
-      {/* macOS: space for traffic light buttons. Windows: no left spacer needed. */}
-      {!isWindows && <div className="w-[78px] shrink-0" onMouseDown={(e) => e.stopPropagation()} />}
-      {/* Centered title */}
+      {/* macOS: space for traffic light buttons (no drag here so OS receives clicks). */}
+      {!isWindows && <div className="w-[78px] shrink-0" />}
+      {/* Centered title — pointer-events-none so drag passes through */}
       <span
+        data-tauri-drag-region
         className="flex-1 text-center text-xs font-medium select-none pointer-events-none"
         style={{ color: textColor }}
       >
