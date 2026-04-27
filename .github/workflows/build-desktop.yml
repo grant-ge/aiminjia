@@ -108,6 +108,8 @@ jobs:
       - name: Setup dws CLI (Windows)
         if: steps.dws-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .\scripts\setup-dws.ps1
 
       - name: Download changelog.json from production

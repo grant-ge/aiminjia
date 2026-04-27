@@ -18,19 +18,16 @@ if ((Test-Path $BinPath) -and ($env:DWS_FORCE_REINSTALL -ne "1")) {
     exit 0
 }
 
-# Resolve version (env DWS_VERSION or latest from GitHub redirect)
+# Resolve version (env DWS_VERSION or latest via GitHub API)
 $Version = $env:DWS_VERSION
 if (-not $Version -or $Version -eq "latest") {
-    $resp = Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest" -MaximumRedirection 0 -ErrorAction SilentlyContinue
-    if ($resp.Headers.Location) {
-        $Version = ($resp.Headers.Location -split '/tag/')[-1].Trim()
-    }
-    if (-not $Version) {
-        # Fallback to API
-        $api = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-        $Version = $api.tag_name
-    }
+    $headers = @{ "User-Agent" = "aijia-setup" }
+    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+    $api = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $headers
+    $Version = $api.tag_name
 }
+if (-not $Version) { throw "Failed to resolve dws version" }
+Write-Host "Resolved dws version: $Version"
 
 Write-Host "Downloading dws $Version (windows/amd64)..."
 
