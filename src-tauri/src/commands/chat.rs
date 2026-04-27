@@ -445,8 +445,12 @@ async fn build_config_from_skill(
     // Runtime enforcement is handled by allowed_tool_names.
     let tool_defs = tool_registry.get_schemas_filtered(&ToolFilter::All).await;
 
-    // Build runtime guard set from skill's allowed_tool_names()
+    // Build runtime guard set from skill's allowed_tool_names() (soft recommendation)
     let allowed_tool_names = skill.allowed_tool_names(state)
+        .map(|names| names.into_iter().collect::<std::collections::HashSet<_>>());
+
+    // Build hard-block set from skill's excluded_tool_names()
+    let excluded_tool_names = skill.excluded_tool_names(state)
         .map(|names| names.into_iter().collect::<std::collections::HashSet<_>>());
 
     // Build step display names from the workflow definition
@@ -485,6 +489,7 @@ async fn build_config_from_skill(
         token_budget,
         step_display_names,
         allowed_tool_names,
+        excluded_tool_names,
         precompute,
         feedback_config,
         is_feedback: false,
@@ -2165,46 +2170,51 @@ async fn agent_loop(
     //
     // Precompute degradation: if precompute was expected but failed, expand allowed
     // tools to include the feedback set so the LLM can do the work itself.
-    // Baseline tools always allowed in every analysis step.
-    // These are fundamental utilities that the LLM needs for error recovery and context tracking.
-    let baseline_tools: std::collections::HashSet<String> = [
-        "load_file", "save_analysis_note", "update_progress", "execute_python",
-    ].iter().map(|s| s.to_string()).collect();
-
-    let allowed_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
+    // Phase B: Soft tool guidance + hard exclusion.
+    //
+    // `recommended_tools` = tools_only from workflow.toml — soft guidance, logged but not blocked.
+    // `excluded_tools`    = tools_exclude from workflow.toml — hard block, tool call rejected.
+    //
+    // In daily mode, analysis-only tools are excluded.
+    let recommended_tools: Option<std::collections::HashSet<String>> = if let Some(ref config) = current_step_config {
         if (config.precompute.is_some() && precompute_context.is_none()) || config.is_feedback {
-            // Precompute failed OR user is providing feedback on a completed step — use feedback mode tools
+            // Precompute failed OR feedback mode — expand to feedback tools
             log::warn!(
                 "[PRECOMPUTE] Degrading step {} to feedback mode (precompute_failed={}, is_feedback={}) conv={}",
                 config.step, precompute_context.is_none(), config.is_feedback, conversation_id
             );
             config.feedback_config.as_ref().map(|fc| {
-                let mut tools: std::collections::HashSet<_> = fc.tools.iter().cloned().collect();
-                tools.extend(baseline_tools.iter().cloned());
-                tools
-            }).or_else(|| config.allowed_tool_names.clone().map(|mut s| {
-                s.extend(baseline_tools.iter().cloned());
-                s
-            }))
+                fc.tools.iter().cloned().collect::<std::collections::HashSet<_>>()
+            }).or_else(|| config.allowed_tool_names.clone())
         } else {
-            // Normal: use skill-provided allowed list + baseline tools
-            config.allowed_tool_names.clone().map(|mut s| {
-                s.extend(baseline_tools.iter().cloned());
-                s
-            })
+            config.allowed_tool_names.clone()
         }
     } else {
-        // Daily mode: block analysis-only tools at runtime
-        let daily_blocked: std::collections::HashSet<String> = [
+        None
+    };
+
+    let excluded_tools: std::collections::HashSet<String> = if let Some(ref config) = current_step_config {
+        // Analysis mode: use tools_exclude from workflow.toml
+        config.excluded_tool_names.clone().unwrap_or_default()
+    } else {
+        // Daily mode: block analysis-only tools
+        [
             "hypothesis_test", "detect_anomalies", "save_analysis_note", "update_progress", "update_plan",
-        ].iter().map(|s| s.to_string()).collect();
+        ].iter().map(|s| s.to_string()).collect()
+    };
+
+    // Legacy compatibility: build allowed_tools for code that still references it
+    let allowed_tools: Option<std::collections::HashSet<String>> = if current_step_config.is_none() {
+        // Daily mode: compute allowed as inverse of excluded
         let daily_allowed: std::collections::HashSet<String> = tool_defs_override.as_ref()
             .map(|defs| defs.iter()
                 .map(|td| td.name.clone())
-                .filter(|name| !daily_blocked.contains(name))
+                .filter(|name| !excluded_tools.contains(name))
                 .collect())
             .unwrap_or_default();
         Some(daily_allowed)
+    } else {
+        None // Analysis mode: no allowed-set enforcement (use excluded_tools instead)
     };
 
     // Extract confirm_before tools from StepConfig (SKILL.md format)
@@ -2280,7 +2290,24 @@ async fn agent_loop(
     let mut stream_retry_count: u32 = 0;
     let mut stream_needs_retry: bool = false;
 
-    for iteration in 0..max_iterations {
+    // Phase C: Smart iteration budget.
+    // productive_iterations = iterations where at least one tool executed successfully.
+    // wasted_iterations = iterations where all tools were blocked/errored/empty.
+    // The loop uses an absolute ceiling (3x base or 30, whichever is smaller)
+    // but safeguards trigger based on productive_iterations.
+    let mut productive_iterations: usize = 0;
+    let mut wasted_iterations: usize = 0;
+    let absolute_max = (max_iterations * 3).min(30);
+
+    for iteration in 0..absolute_max {
+        // Check if we've used up our productive budget
+        if productive_iterations >= max_iterations {
+            log::info!(
+                "[AGENT] Productive budget exhausted: {}/{} productive, {} wasted (conv={})",
+                productive_iterations, max_iterations, wasted_iterations, conversation_id
+            );
+            break;
+        }
         iteration_count = iteration + 1;
         phase.next_iteration(iteration);
         phase.think();
@@ -2847,17 +2874,43 @@ async fn agent_loop(
                 }),
             );
 
-            // Execution-time tool filter: block tools not in the current step's allowed set.
+            // Execution-time tool filter (Phase B: soft guidance + hard exclusion).
+            //
+            // 1. Hard block: tools in excluded_tools are rejected.
+            // 2. Soft guidance: tools not in recommended_tools are allowed but logged.
+            // 3. Daily mode: uses allowed_tools (legacy, inverse of excluded).
+            if excluded_tools.contains(&tc.name) {
+                log::warn!(
+                    "[AGENT] Blocked tool '{}' — in excluded set for current step (conversation={})",
+                    tc.name, conversation_id
+                );
+                let blocked_msg = format!(
+                    "Error: Tool '{}' is not available in the current analysis step.",
+                    tc.name
+                );
+                let _ = app.emit(
+                    "tool:completed",
+                    serde_json::json!({
+                        "conversationId": conversation_id,
+                        "toolName": tc.name,
+                        "toolId": tc.id,
+                        "success": false,
+                        "summary": &blocked_msg,
+                    }),
+                );
+                messages.push(ChatMessage::tool_result(&tc.id, &tc.name, blocked_msg));
+                continue;
+            }
             if let Some(ref allowed) = allowed_tools {
+                // Daily mode: hard block non-allowed tools
                 if !allowed.contains(&tc.name) {
                     log::warn!(
-                        "[AGENT] Blocked tool '{}' — not in allowed set for current step (conversation={})",
+                        "[AGENT] Blocked tool '{}' — not in allowed set for daily mode (conversation={})",
                         tc.name, conversation_id
                     );
                     let blocked_msg = format!(
-                        "Error: Tool '{}' is not available in the current analysis step. Available tools: {}",
-                        tc.name,
-                        allowed.iter().cloned().collect::<Vec<_>>().join(", ")
+                        "Error: Tool '{}' is not available in the current mode.",
+                        tc.name
                     );
                     let _ = app.emit(
                         "tool:completed",
@@ -2871,6 +2924,15 @@ async fn agent_loop(
                     );
                     messages.push(ChatMessage::tool_result(&tc.id, &tc.name, blocked_msg));
                     continue;
+                }
+            }
+            // Soft guidance: log non-recommended tool usage (no block)
+            if let Some(ref recommended) = recommended_tools {
+                if !recommended.contains(&tc.name) {
+                    log::info!(
+                        "[AGENT] Non-recommended tool '{}' used in step (conversation={})",
+                        tc.name, conversation_id
+                    );
                 }
             }
 
@@ -3152,14 +3214,21 @@ async fn agent_loop(
         }
 
         // M1: Tool execution quality — per-iteration summary
+        // Phase C: track productive vs wasted iterations
+        if tool_success_count > 0 {
+            productive_iterations += 1;
+        } else {
+            wasted_iterations += 1;
+        }
         {
             let blocked = tool_calls.len() - tool_result_count;
             log::info!(
-                "[METRICS:tool] conv={} step={:?} iter={} | total={} success={} error={} blocked={} | names={:?} | total_elapsed_ms={}",
+                "[METRICS:tool] conv={} step={:?} iter={} | total={} success={} error={} blocked={} | productive={}/{} wasted={} | names={:?} | total_elapsed_ms={}",
                 conversation_id,
                 current_step_config.as_ref().map(|c| c.step),
                 iteration_count,
                 tool_calls.len(), tool_success_count, tool_error_count, blocked,
+                productive_iterations, max_iterations, wasted_iterations,
                 tool_names, tool_total_elapsed.as_millis(),
             );
             crate::telemetry::record("tool", &workspace_path, &[
@@ -3192,20 +3261,22 @@ async fn agent_loop(
             ));
         }
 
-        // Analysis mode safeguard: when approaching iteration limit, escalate
+        // Analysis mode safeguard: when approaching productive iteration limit, escalate
         // through three phases to ensure the LLM saves notes and produces text.
         //   Phase 1 (once): inject save prompt
         //   Phase 2 (once): inject text-only prompt + arm force_no_tools
         //   Phase 3 (auto): empty tool_defs in next stream_message call
         // Only applies to steps with max_iterations >= 8 (to avoid triggering on short steps like Step 0)
-        if is_analysis && max_iterations >= 8 && iteration >= max_iterations.saturating_sub(6) {
+        // Phase C: uses productive_iterations for budget tracking
+        let productive_remaining = max_iterations.saturating_sub(productive_iterations);
+        if is_analysis && max_iterations >= 8 && productive_remaining <= 6 {
             let has_saved_note = messages.iter().any(|m| {
                 m.role == "tool" && m.name.as_deref() == Some("save_analysis_note")
             });
-            let remaining = max_iterations.saturating_sub(iteration + 1);
             log::info!(
-                "[AGENT] Safeguard check: iter={}/{} remaining={} has_saved_note={} has_text={} phase1={} force_no_tools={} (conv={})",
-                iteration + 1, max_iterations, remaining, has_saved_note, !full_content.is_empty(),
+                "[AGENT] Safeguard check: productive={}/{} remaining={} wasted={} has_saved_note={} has_text={} phase1={} force_no_tools={} (conv={})",
+                productive_iterations, max_iterations, productive_remaining, wasted_iterations,
+                has_saved_note, !full_content.is_empty(),
                 safeguard_phase1_injected, force_no_tools, conversation_id
             );
 
@@ -3213,8 +3284,8 @@ async fn agent_loop(
                 // Phase 1 (inject once): save notes + summarize
                 safeguard_phase1_injected = true;
                 log::warn!(
-                    "[AGENT] Safeguard Phase 1: {}/{} iters, no save_analysis_note → injecting save prompt (conv={})",
-                    iteration + 1, max_iterations, conversation_id
+                    "[AGENT] Safeguard Phase 1: {}/{} productive iters, no save_analysis_note → injecting save prompt (conv={})",
+                    productive_iterations, max_iterations, conversation_id
                 );
                 messages.push(ChatMessage::text(
                     "user",
@@ -3223,14 +3294,12 @@ async fn agent_loop(
                      2. 用文字向用户总结本步骤的分析结果\n\
                      不要再调用 execute_python，直接保存和总结。",
                 ));
-            } else if full_content.is_empty() && remaining <= 3 && !force_no_tools {
+            } else if full_content.is_empty() && productive_remaining <= 3 && !force_no_tools {
                 // Phase 2 (inject once + arm hard cutoff): no text output approaching limit
-                // Use remaining <= 3 (not 4) to give LLM at least 1 extra iteration
-                // after Phase 1 to call save_analysis_note before we force text output.
                 force_no_tools = true;
                 log::warn!(
-                    "[AGENT] Safeguard Phase 2: no text output at iter {}/{}, arming force_no_tools for next iteration (conv={})",
-                    iteration + 1, max_iterations, conversation_id
+                    "[AGENT] Safeguard Phase 2: no text output at productive iter {}/{}, arming force_no_tools (conv={})",
+                    productive_iterations, max_iterations, conversation_id
                 );
                 messages.push(ChatMessage::text(
                     "user",

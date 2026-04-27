@@ -49,10 +49,13 @@ pub struct StepConfig {
     /// Display names for all workflow steps, used by analysis_notes_context.
     /// Each entry is (step_number, display_name).
     pub step_display_names: Vec<(u32, String)>,
-    /// Tool names allowed for runtime execution guard.
-    /// None = all tools in tool_defs are allowed.
-    /// Some(set) = only tools in the set can execute; others are blocked.
+    /// Recommended tool names for the current step (soft guidance).
+    /// Injected into dynamic context as hints. Non-recommended tools still execute
+    /// but are logged as non-recommended.
     pub allowed_tool_names: Option<std::collections::HashSet<String>>,
+    /// Tool names explicitly blocked for this step (hard block).
+    /// Only tools in this set are rejected at runtime.
+    pub excluded_tool_names: Option<std::collections::HashSet<String>>,
     /// Pre-computation Python code to execute before the LLM agent loop.
     /// When set, Rust executes this deterministically and injects the result
     /// into the LLM prompt as context (display mode).
@@ -242,6 +245,7 @@ pub fn build_step_config(step: u32) -> StepConfig {
             (5, "行动方案".to_string()),
         ],
         allowed_tool_names: None, // Legacy builder: no runtime guard (schema-level filtering)
+        excluded_tool_names: None,
         precompute: None,
         feedback_config: None,
         is_feedback: false,

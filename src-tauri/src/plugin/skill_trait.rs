@@ -270,6 +270,12 @@ pub trait Skill: Send + Sync + 'static {
         None // default: no restriction
     }
 
+    /// Returns tool names explicitly blocked for the current step (hard block).
+    /// Tools in this list are rejected at runtime with an error message.
+    fn excluded_tool_names(&self, _state: &SkillState) -> Option<Vec<String>> {
+        None // default: no tools blocked
+    }
+
     /// Called when the Skill is deactivated.
     fn on_deactivate(&self, _state: &SkillState) {}
 

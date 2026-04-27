@@ -625,10 +625,17 @@ impl Skill for DeclarativeSkill {
     }
 
     fn allowed_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
-        // Read tools_only from workflow.toml step config for runtime guard
+        // Read tools_only from workflow.toml — now used as soft recommendation, not hard block
         state.current_step.as_deref()
             .and_then(|step| self.step_configs.get(step))
             .and_then(|config| config.tools_only.clone())
+    }
+
+    fn excluded_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
+        // Read tools_exclude from workflow.toml — hard block
+        state.current_step.as_deref()
+            .and_then(|step| self.step_configs.get(step))
+            .and_then(|config| config.tools_exclude.clone())
     }
 
     fn model_preference(&self, _state: &SkillState) -> Option<ModelPreference> {
