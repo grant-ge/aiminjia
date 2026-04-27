@@ -2217,7 +2217,6 @@ fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-
 impl TauriChatCommandAdapter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(

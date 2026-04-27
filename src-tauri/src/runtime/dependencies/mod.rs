@@ -28,7 +28,8 @@ pub use downloader::{
 };
 pub use health::{RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport, RuntimeToolProbe};
 pub use installer::{
-    RuntimeCleanupResult, RuntimeInstallError, RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller,
+    RuntimeCleanupResult, RuntimeInstallError, RuntimeInstallPlan, RuntimeInstallResult,
+    RuntimeInstaller,
 };
 pub use layout::RuntimeLayout;
 pub use manager::{ManagedRuntimeManager, RuntimeManager, RuntimeManagerError};

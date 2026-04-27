@@ -34,16 +34,13 @@ async fn ac1_load_project_agent_md_from_workspace() {
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    let project_file = files
-        .iter()
-        .find(|f| f.path == workspace.join("AGENT.md"));
+    let project_file = files.iter().find(|f| f.path == workspace.join("AGENT.md"));
     assert!(project_file.is_some(), "should find workspace AGENT.md");
     assert!(project_file
         .expect("project file")
         .content
         .contains("project instructions"));
 }
-
 
 #[tokio::test]
 async fn ac1_load_order_root_before_workspace() {
@@ -77,8 +74,7 @@ async fn ac1_load_dot_aijia_and_local_agent_md() {
     std::fs::create_dir_all(&dot_claude).expect("create .aijia");
     std::fs::write(dot_claude.join("AGENT.md"), "dot-claude instructions")
         .expect("write dot claude");
-    std::fs::write(workspace.join("AGENT.local.md"), "local override")
-        .expect("write local claude");
+    std::fs::write(workspace.join("AGENT.local.md"), "local override").expect("write local claude");
 
     let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
     let files = loader.load(&workspace).await;

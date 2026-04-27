@@ -108,6 +108,38 @@ pub fn reconcile_legacy_conversations_if_needed(
     Ok(())
 }
 
+/// 一次性把旧 messages.N.jsonl 合并进 messages.jsonl，并通过 state.json 打标。
+pub fn migrate_message_shards_to_single_file_if_needed(new_dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(new_dir)?;
+    let state_path = new_dir.join("state.json");
+    let mut state = read_state_json(&state_path)?;
+    if state
+        .get("migrations")
+        .and_then(|m| m.get("messageShardsToSingleFile"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Ok(());
+    }
+
+    let conversations_dir = new_dir.join("conversations");
+    if conversations_dir.exists() {
+        for entry in std::fs::read_dir(&conversations_dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let conv_id = entry.file_name().to_string_lossy().to_string();
+            crate::storage::file_store::messages::migrate_shards_to_single_file(new_dir, &conv_id)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        }
+    }
+
+    state["migrations"]["messageShardsToSingleFile"] = json!(true);
+    write_state_json(&state_path, &state)?;
+    Ok(())
+}
+
 fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -236,15 +268,73 @@ mod tests {
         reconcile_legacy_conversations_if_needed(old.path(), new.path()).unwrap();
 
         assert!(new.path().join("conversations/legacy-1/conv.json").exists());
-        assert!(new.path().join("conversations/legacy-1/messages.1.jsonl").exists());
-        let state: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(new.path().join("state.json")).unwrap(),
-        )
-        .unwrap();
+        assert!(new
+            .path()
+            .join("conversations/legacy-1/messages.1.jsonl")
+            .exists());
+        let state: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(new.path().join("state.json")).unwrap())
+                .unwrap();
         assert_eq!(state["migrations"]["legacyConversations"], true);
 
         std::fs::create_dir_all(new.path().join("conversations/existing")).unwrap();
         reconcile_legacy_conversations_if_needed(old.path(), new.path()).unwrap();
         assert!(!new.path().join("conversations/existing/conv.json").exists());
+    }
+
+    #[test]
+    fn test_migrates_message_shards_to_single_file_once_with_state_json() {
+        let new = TempDir::new().unwrap();
+        let conv = new.path().join("conversations/c1");
+        std::fs::create_dir_all(&conv).unwrap();
+        std::fs::write(
+            conv.join("conv.json"),
+            r#"{"id":"c1","title":"C1","createdAt":"2026-04-01T00:00:00Z","updatedAt":"2026-04-01T00:00:00Z","isArchived":false}"#,
+        )
+        .unwrap();
+        let m1 = serde_json::json!({
+            "seq": 1,
+            "_rev": 1,
+            "id": "m1",
+            "conversationId": "c1",
+            "role": "user",
+            "content": {"text": "hi"},
+            "createdAt": "2026-04-01T00:00:00Z"
+        });
+        std::fs::write(
+            conv.join("messages.1.jsonl"),
+            format!("{}\t✓\n", serde_json::to_string(&m1).unwrap()),
+        )
+        .unwrap();
+        std::fs::write(conv.join("_current"), "1:2").unwrap();
+
+        migrate_message_shards_to_single_file_if_needed(new.path()).unwrap();
+
+        assert!(conv.join("messages.jsonl").exists());
+        assert!(!conv.join("messages.1.jsonl").exists());
+        let state: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(new.path().join("state.json")).unwrap())
+                .unwrap();
+        assert_eq!(state["migrations"]["messageShardsToSingleFile"], true);
+
+        let m2 = serde_json::json!({
+            "seq": 2,
+            "_rev": 1,
+            "id": "m2",
+            "conversationId": "c1",
+            "role": "user",
+            "content": {"text": "skip"},
+            "createdAt": "2026-04-01T00:00:01Z"
+        });
+        std::fs::write(
+            conv.join("messages.1.jsonl"),
+            format!("{}\t✓\n", serde_json::to_string(&m2).unwrap()),
+        )
+        .unwrap();
+        migrate_message_shards_to_single_file_if_needed(new.path()).unwrap();
+
+        let jsonl = std::fs::read_to_string(conv.join("messages.jsonl")).unwrap();
+        assert!(jsonl.contains("m1"));
+        assert!(!jsonl.contains("m2"));
     }
 }

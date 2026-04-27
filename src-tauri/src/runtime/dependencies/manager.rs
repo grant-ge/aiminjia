@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use super::{
     InstalledRuntimeResolver, RuntimeArtifactFetchError, RuntimeArtifactFetcher,
-    RuntimeDependencyResult, RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport,
-    RuntimeInstallError, RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller,
-    RuntimeDownloadCancellation, RuntimeDownloadOptions, RuntimeManifestSource, RuntimePaths, RuntimePlatform,
-    RuntimeResolver, RuntimeToolProbe, WorkspaceDependencies,
+    RuntimeDependencyResult, RuntimeDownloadCancellation, RuntimeDownloadOptions,
+    RuntimeHealthChecker, RuntimeHealthError, RuntimeHealthReport, RuntimeInstallError,
+    RuntimeInstallPlan, RuntimeInstallResult, RuntimeInstaller, RuntimeManifestSource,
+    RuntimePaths, RuntimePlatform, RuntimeResolver, RuntimeToolProbe, WorkspaceDependencies,
 };
 
 pub type ManagedRuntimeManager = Arc<RuntimeManager>;
@@ -89,7 +89,6 @@ impl From<RuntimeArtifactFetchError> for RuntimeManagerError {
     }
 }
 
-
 impl RuntimeResolver for RuntimeManager {
     fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
         match self.resolver.workspace_dependencies() {
@@ -127,7 +126,6 @@ impl RuntimeManager {
         self
     }
 
-
     pub fn with_manifest_source(
         mut self,
         source: RuntimeManifestSource,
@@ -145,7 +143,6 @@ impl RuntimeManager {
     pub fn has_manifest_source(&self) -> bool {
         self.manifest_install.is_some()
     }
-
 
     pub fn begin_operation(
         &self,
@@ -228,7 +225,6 @@ impl RuntimeManager {
             .map_err(RuntimeManagerError::from)
     }
 
-
     pub async fn ensure_managed(&self) -> Result<RuntimeInstallResult, RuntimeManagerError> {
         let config = self
             .manifest_install
@@ -244,8 +240,6 @@ impl RuntimeManager {
             .ok_or(RuntimeManagerError::ManifestNotConfigured)?;
         self.install_from_configured_manifest(config).await
     }
-
-
 
     pub async fn ensure_managed_with_download_options(
         &self,
@@ -281,11 +275,9 @@ impl RuntimeManager {
                 &config.runtime_name,
                 config.platform,
             ),
-            RuntimeManifestSource::Url(url) => tauri::async_runtime::block_on(self.install_from_manifest_url(
-                url,
-                &config.runtime_name,
-                config.platform,
-            )),
+            RuntimeManifestSource::Url(url) => tauri::async_runtime::block_on(
+                self.install_from_manifest_url(url, &config.runtime_name, config.platform),
+            ),
         }
     }
 
@@ -305,7 +297,6 @@ impl RuntimeManager {
             }
         }
     }
-
 
     async fn install_from_configured_manifest_with_options(
         &self,
@@ -391,7 +382,6 @@ impl RuntimeManager {
             )
             .map_err(RuntimeManagerError::from)
     }
-
 
     pub fn cleanup_old_versions(
         &self,

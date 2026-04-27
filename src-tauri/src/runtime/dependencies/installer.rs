@@ -207,7 +207,6 @@ impl RuntimeInstaller {
         })
     }
 
-
     pub fn cleanup_old_versions(
         &self,
         keep_versions: usize,
@@ -274,7 +273,11 @@ impl RuntimeInstaller {
         let Some(version) = pointer.strip_prefix("versions/") else {
             return Ok(None);
         };
-        if version.contains('/') || version.contains('\\') || version.contains("..") || version.is_empty() {
+        if version.contains('/')
+            || version.contains('\\')
+            || version.contains("..")
+            || version.is_empty()
+        {
             return Ok(None);
         }
         Ok(Some(version.to_string()))
@@ -375,12 +378,7 @@ impl RuntimeInstaller {
         Ok(self.paths.staging_dir().join(version_name))
     }
 
-
-    fn extract_archive(
-        &self,
-        archive_path: &Path,
-        dest: &Path,
-    ) -> Result<(), RuntimeInstallError> {
+    fn extract_archive(&self, archive_path: &Path, dest: &Path) -> Result<(), RuntimeInstallError> {
         let file_name = archive_path
             .file_name()
             .and_then(|name| name.to_str())
@@ -437,7 +435,9 @@ impl RuntimeInstaller {
             if let Some(parent) = out_path.parent() {
                 fs::create_dir_all(parent).map_err(io_error)?;
             }
-            entry.unpack(&out_path).map_err(|error| RuntimeInstallError::Io(error.to_string()))?;
+            entry
+                .unpack(&out_path)
+                .map_err(|error| RuntimeInstallError::Io(error.to_string()))?;
         }
 
         Ok(())
@@ -648,9 +648,11 @@ impl RuntimeInstaller {
                     .unwrap_or("runtime");
                 fs::write(
                     &path,
-                    format!("#!/usr/bin/env sh
+                    format!(
+                        "#!/usr/bin/env sh
 echo {tool_name} managed-runtime-stub
-"),
+"
+                    ),
                 )?;
                 make_executable(&path)?;
             }

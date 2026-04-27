@@ -1,12 +1,12 @@
 use serde::Serialize;
 use tauri::{Emitter, State};
 
+use crate::runtime::dependencies::WorkspaceDependencies;
 use crate::runtime::dependencies::{
     ManagedRuntimeManager, RuntimeDownloadOptions, RuntimeDownloadProgress,
     RuntimeDownloadProgressSink,
 };
 use std::sync::Arc;
-use crate::runtime::dependencies::WorkspaceDependencies;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +26,6 @@ pub struct RuntimeHealthPayload {
     pub uv: Option<RuntimeToolHealthPayload>,
     pub uvx: Option<RuntimeToolHealthPayload>,
 }
-
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -82,7 +81,14 @@ pub async fn runtime_ensure(
         .await;
     manager.finish_operation(&operation_id);
     result.map_err(|err| {
-        emit_runtime_operation(&app, &operation_id, "ensure", "manifest", "failed", Some(err.to_string()));
+        emit_runtime_operation(
+            &app,
+            &operation_id,
+            "ensure",
+            "manifest",
+            "failed",
+            Some(err.to_string()),
+        );
         err.to_string()
     })?;
     let health = runtime_health_from_manager(manager.inner()).map_err(|err| err.to_string())?;
@@ -99,7 +105,14 @@ pub async fn runtime_reinstall(
     let cancellation = manager
         .begin_operation(operation_id.clone())
         .map_err(|err| err.to_string())?;
-    emit_runtime_operation(&app, &operation_id, "reinstall", "manifest", "started", None);
+    emit_runtime_operation(
+        &app,
+        &operation_id,
+        "reinstall",
+        "manifest",
+        "started",
+        None,
+    );
     let result = manager
         .reinstall_managed_with_download_options(RuntimeDownloadOptions {
             cancellation,
@@ -113,14 +126,27 @@ pub async fn runtime_reinstall(
         .await;
     manager.finish_operation(&operation_id);
     result.map_err(|err| {
-        emit_runtime_operation(&app, &operation_id, "reinstall", "manifest", "failed", Some(err.to_string()));
+        emit_runtime_operation(
+            &app,
+            &operation_id,
+            "reinstall",
+            "manifest",
+            "failed",
+            Some(err.to_string()),
+        );
         err.to_string()
     })?;
     let health = runtime_health_from_manager(manager.inner()).map_err(|err| err.to_string())?;
-    emit_runtime_operation(&app, &operation_id, "reinstall", "health", "completed", None);
+    emit_runtime_operation(
+        &app,
+        &operation_id,
+        "reinstall",
+        "health",
+        "completed",
+        None,
+    );
     Ok(health)
 }
-
 
 #[tauri::command]
 pub async fn runtime_cleanup_old_versions(
@@ -168,7 +194,6 @@ fn emit_runtime_operation(
     };
     let _ = app.emit("runtime:operation-progress", payload);
 }
-
 
 #[derive(Clone)]
 struct TauriRuntimeProgressSink {

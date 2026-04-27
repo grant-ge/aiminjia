@@ -18,6 +18,14 @@ fn setup_storage() -> (AppStorage, TempDir) {
     (storage, dir)
 }
 
+fn setup_raw_base() -> (std::path::PathBuf, TempDir) {
+    let dir = TempDir::new().expect("create temp dir");
+    let base = dir.path().to_path_buf();
+    app_lib::storage::file_store::conversations::create_conversation(&base, "c1", "Test")
+        .expect("create conversation");
+    (base, dir)
+}
+
 fn shard_path(
     base_dir: &std::path::Path,
     conversation_id: &str,
@@ -100,21 +108,25 @@ fn old_v1_message_deserializes_without_new_fields() {
 
 #[test]
 fn legacy_shard_records_still_persist_seq_and_rev_for_dedup() {
-    let (storage, _dir) = setup_storage();
+    let (base, _dir) = setup_raw_base();
 
-    storage
-        .insert_message("m1", "c1", "user", r#"{"text":"original"}"#)
-        .expect("insert original");
-    storage
-        .update_message_content("m1", "c1", r#"{"text":"updated"}"#)
-        .expect("update original");
+    app_lib::storage::file_store::messages::insert_message(
+        &base,
+        "m1",
+        "c1",
+        "user",
+        r#"{"text":"original"}"#,
+    )
+    .expect("insert original");
+    app_lib::storage::file_store::messages::update_message_content(
+        &base,
+        "m1",
+        "c1",
+        r#"{"text":"updated"}"#,
+    )
+    .expect("update original");
 
-    let messages = storage.get_messages("c1").expect("read deduped messages");
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0]["content"]["text"], "updated");
-
-    let shard_raw =
-        fs::read_to_string(shard_path(storage.base_dir(), "c1", 1)).expect("read shard");
+    let shard_raw = fs::read_to_string(shard_path(&base, "c1", 1)).expect("read shard");
     for line in shard_raw.lines() {
         let json_str = line
             .split_once('\t')
@@ -159,6 +171,8 @@ fn missing_seq_records_do_not_collapse_into_one_dedup_bucket() {
         ),
     )
     .expect("write shard");
+
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("migrate shard");
 
     let messages = storage.get_messages("c1").expect("read messages");
     assert_eq!(
@@ -218,6 +232,8 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
     )
     .expect("write top-level shard");
 
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("migrate shard");
+
     let messages = storage.get_messages("c1").expect("read messages");
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["toolCalls"][0]["id"], "tc-top");
@@ -248,6 +264,8 @@ fn repeated_updates_on_missing_seq_records_still_keep_latest_content() {
     .expect("write shard");
     fs::write(conv_dir.join("_current"), "2:1").expect("force later updates into shard 2");
 
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("migrate shard");
+
     storage
         .update_message_content("m1", "c1", r#"{"text":"updated once"}"#)
         .expect("first update");
@@ -277,6 +295,24 @@ fn insert_and_get_single_file() {
 }
 
 #[test]
+fn app_storage_insert_message_facade_writes_single_file_only() {
+    let (storage, _dir) = setup_storage();
+
+    storage
+        .insert_message("m1", "c1", "user", r#"{"text":"hello"}"#)
+        .expect("insert through legacy facade");
+
+    let conv_dir = storage.base_dir().join("conversations").join("c1");
+    assert!(conv_dir.join("messages.jsonl").exists());
+    assert!(!conv_dir.join("messages.1.jsonl").exists());
+    assert!(!conv_dir.join("_current").exists());
+
+    let messages = storage.get_messages("c1").expect("read messages");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["content"]["text"], "hello");
+}
+
+#[test]
 fn app_storage_get_messages_reads_single_file_transcript() {
     let (storage, _dir) = setup_storage();
 
@@ -292,6 +328,118 @@ fn app_storage_get_messages_reads_single_file_transcript() {
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["content"]["text"], "hello");
     assert_eq!(messages[1]["content"]["text"], "hi");
+}
+
+#[test]
+fn migrate_shards_merges_legacy_shards_into_existing_single_file() {
+    let (storage, _dir) = setup_storage();
+    let conv_dir = storage.base_dir().join("conversations").join("c1");
+
+    let legacy_user = serde_json::json!({
+        "seq": 1,
+        "_rev": 1,
+        "id": "legacy-user",
+        "conversationId": "c1",
+        "role": "user",
+        "content": {"text": "你有哪些技能可以使用呢？"},
+        "createdAt": "2026-04-26T06:59:18.370259+00:00"
+    });
+    fs::write(
+        conv_dir.join("messages.1.jsonl"),
+        format!("{}\t✓\n", serde_json::to_string(&legacy_user).unwrap()),
+    )
+    .expect("write legacy shard");
+    fs::write(conv_dir.join("_current"), "1:2").expect("write shard cursor");
+
+    let mut v2_tool = common::make_tool_result("tool-1", "tc-1", "switch_skill", "Switched");
+    v2_tool.created_at = "2026-04-26T06:59:18.970640+00:00".into();
+    v2_tool.sequence = Some(2);
+    insert_message_v2(storage.base_dir(), &v2_tool).expect("insert v2 tool message");
+
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("merge mixed transcript");
+
+    let messages = storage.get_messages("c1").expect("read merged messages");
+
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["id"], "legacy-user");
+    assert_eq!(messages[0]["content"]["text"], "你有哪些技能可以使用呢？");
+    assert_eq!(messages[1]["id"], "tool-1");
+    assert_eq!(messages[1]["toolResult"]["name"], "switch_skill");
+}
+
+#[test]
+fn get_recent_messages_reads_single_file_after_shard_merge_migration() {
+    let (storage, _dir) = setup_storage();
+    let conv_dir = storage.base_dir().join("conversations").join("c1");
+
+    let legacy_user = serde_json::json!({
+        "seq": 1,
+        "_rev": 1,
+        "id": "legacy-user",
+        "conversationId": "c1",
+        "role": "user",
+        "content": {"text": "old question"},
+        "createdAt": "2026-04-26T06:59:18.000000+00:00"
+    });
+    fs::write(
+        conv_dir.join("messages.1.jsonl"),
+        format!("{}\t✓\n", serde_json::to_string(&legacy_user).unwrap()),
+    )
+    .expect("write legacy shard");
+    fs::write(conv_dir.join("_current"), "1:2").expect("write shard cursor");
+
+    let mut v2_tool = common::make_tool_result("tool-1", "tc-1", "switch_skill", "Switched");
+    v2_tool.created_at = "2026-04-26T06:59:19.000000+00:00".into();
+    insert_message_v2(storage.base_dir(), &v2_tool).expect("insert v2 tool message");
+
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("merge mixed transcript");
+
+    let messages = storage
+        .get_recent_messages("c1", 10)
+        .expect("read recent messages");
+
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["id"], "legacy-user");
+    assert_eq!(messages[1]["id"], "tool-1");
+}
+
+#[test]
+fn update_message_content_updates_migrated_legacy_record_in_single_file() {
+    let (storage, _dir) = setup_storage();
+    let conv_dir = storage.base_dir().join("conversations").join("c1");
+
+    let legacy_user = serde_json::json!({
+        "seq": 1,
+        "_rev": 1,
+        "id": "legacy-user",
+        "conversationId": "c1",
+        "role": "user",
+        "content": {"text": "old text"},
+        "createdAt": "2026-04-26T06:59:18.000000+00:00"
+    });
+    fs::write(
+        conv_dir.join("messages.1.jsonl"),
+        format!("{}\t✓\n", serde_json::to_string(&legacy_user).unwrap()),
+    )
+    .expect("write legacy shard");
+    fs::write(conv_dir.join("_current"), "1:2").expect("write shard cursor");
+
+    let mut v2_tool = common::make_tool_result("tool-1", "tc-1", "switch_skill", "Switched");
+    v2_tool.created_at = "2026-04-26T06:59:19.000000+00:00".into();
+    insert_message_v2(storage.base_dir(), &v2_tool).expect("insert v2 tool message");
+
+    migrate_shards_to_single_file(storage.base_dir(), "c1").expect("merge mixed transcript");
+
+    storage
+        .update_message_content("legacy-user", "c1", r#"{"text":"updated text"}"#)
+        .expect("update legacy message through mixed store");
+
+    let messages = storage.get_messages("c1").expect("read merged messages");
+    let updated = messages
+        .iter()
+        .find(|m| m["id"] == "legacy-user")
+        .expect("legacy message present");
+    assert_eq!(updated["content"]["text"], "updated text");
 }
 
 #[test]

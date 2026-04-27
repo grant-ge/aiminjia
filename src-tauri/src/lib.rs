@@ -45,7 +45,15 @@ pub fn run() {
                 &app_data_dir,
                 aijia_home.root(),
             ) {
-                log::warn!("[setup] legacy conversation migration warning (non-fatal): {}", e);
+                log::warn!(
+                    "[setup] legacy conversation migration warning (non-fatal): {}",
+                    e
+                );
+            }
+            if let Err(e) = storage::migration::migrate_message_shards_to_single_file_if_needed(
+                aijia_home.root(),
+            ) {
+                log::warn!("[setup] message shard migration warning (non-fatal): {}", e);
             }
             app.manage(aijia_home.clone());
             let runtime_paths = runtime::dependencies::RuntimePaths::new(

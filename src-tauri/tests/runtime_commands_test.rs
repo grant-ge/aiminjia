@@ -72,7 +72,6 @@ fn runtime_command_dependencies_can_be_installed_before_health_reads_current() {
     );
 }
 
-
 #[test]
 fn runtime_cleanup_payload_serializes_removed_and_kept_versions() {
     let payload = app_lib::transport::tauri_commands::runtime::RuntimeCleanupPayload {

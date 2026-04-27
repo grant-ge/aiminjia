@@ -23,54 +23,54 @@ impl RuntimeLayout {
     pub fn python(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "python/python.exe",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "python/bin/python3"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "python/bin/python3",
         }
     }
 
     pub fn node(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "node/node.exe",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "node/bin/node"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "node/bin/node",
         }
     }
 
     pub fn npm(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "node/npm.cmd",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "node/bin/npm"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "node/bin/npm",
         }
     }
 
     pub fn npx(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "node/npx.cmd",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "node/bin/npx"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "node/bin/npx",
         }
     }
 
     pub fn uv(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "uv/uv.exe",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "uv/bin/uv"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "uv/bin/uv",
         }
     }
 
     pub fn uvx(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "uv/uvx.exe",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "uv/bin/uvx"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "uv/bin/uvx",
         }
     }
 
@@ -81,14 +81,21 @@ impl RuntimeLayout {
     pub fn python_site_packages(self) -> &'static str {
         match self.platform {
             RuntimePlatform::WindowsX64 => "python/Lib/site-packages",
-            RuntimePlatform::DarwinArm64 | RuntimePlatform::DarwinX64 | RuntimePlatform::LinuxX64 => {
-                "python/lib/site-packages"
-            }
+            RuntimePlatform::DarwinArm64
+            | RuntimePlatform::DarwinX64
+            | RuntimePlatform::LinuxX64 => "python/lib/site-packages",
         }
     }
 
     pub fn executable_paths(self) -> [&'static str; 6] {
-        [self.python(), self.node(), self.npm(), self.npx(), self.uv(), self.uvx()]
+        [
+            self.python(),
+            self.node(),
+            self.npm(),
+            self.npx(),
+            self.uv(),
+            self.uvx(),
+        ]
     }
 
     pub fn directory_paths(self) -> [&'static str; 2] {

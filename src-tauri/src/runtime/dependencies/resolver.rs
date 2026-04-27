@@ -72,7 +72,8 @@ impl WorkspaceDependencies {
         install_dir: &Path,
         platform: RuntimePlatform,
     ) -> RuntimeDependencyResult<Self> {
-        let dependencies = RuntimeLayout::for_platform(platform).workspace_dependencies(install_dir);
+        let dependencies =
+            RuntimeLayout::for_platform(platform).workspace_dependencies(install_dir);
         validate_dependencies(&dependencies)?;
         Ok(dependencies)
     }
@@ -158,7 +159,9 @@ fn infer_install_dir_from_python_path(python_path: &Path) -> Option<PathBuf> {
         RuntimePlatform::LinuxX64,
         RuntimePlatform::WindowsX64,
     ] {
-        if let Some(install_dir) = RuntimeLayout::for_platform(platform).install_dir_from_python_path(python_path) {
+        if let Some(install_dir) =
+            RuntimeLayout::for_platform(platform).install_dir_from_python_path(python_path)
+        {
             return Some(install_dir);
         }
     }

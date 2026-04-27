@@ -203,10 +203,6 @@ fn overwrites_existing_current_pointer_when_installing_new_version() {
     assert!(!paths.bundle_root().join("current.tmp").exists());
 }
 
-
-
-
-
 #[test]
 fn cleanup_old_versions_removes_non_current_versions_and_keeps_current() {
     let tempdir = tempdir().expect("tempdir");
@@ -216,10 +212,16 @@ fn cleanup_old_versions_removes_non_current_versions_and_keeps_current() {
     )
     .expect("valid paths");
     let installer = RuntimeInstaller::new(paths.clone());
-    installer.ensure(RuntimeInstallPlan::already_local("2026.05.19")).expect("install old");
-    installer.ensure(RuntimeInstallPlan::already_local("2026.05.20")).expect("install current");
+    installer
+        .ensure(RuntimeInstallPlan::already_local("2026.05.19"))
+        .expect("install old");
+    installer
+        .ensure(RuntimeInstallPlan::already_local("2026.05.20"))
+        .expect("install current");
 
-    let result = installer.cleanup_old_versions(1).expect("cleanup old versions");
+    let result = installer
+        .cleanup_old_versions(1)
+        .expect("cleanup old versions");
 
     assert_eq!(result.removed_versions, vec!["2026.05.19"]);
     assert!(result.kept_versions.contains(&"2026.05.20".to_string()));
@@ -240,10 +242,16 @@ fn cleanup_old_versions_never_deletes_current_even_when_current_is_oldest() {
     )
     .expect("valid paths");
     let installer = RuntimeInstaller::new(paths.clone());
-    installer.ensure(RuntimeInstallPlan::already_local("2026.05.20")).expect("install newer");
-    installer.ensure(RuntimeInstallPlan::already_local("2026.05.19")).expect("install older current");
+    installer
+        .ensure(RuntimeInstallPlan::already_local("2026.05.20"))
+        .expect("install newer");
+    installer
+        .ensure(RuntimeInstallPlan::already_local("2026.05.19"))
+        .expect("install older current");
 
-    let result = installer.cleanup_old_versions(0).expect("cleanup old versions");
+    let result = installer
+        .cleanup_old_versions(0)
+        .expect("cleanup old versions");
 
     assert!(!result.removed_versions.contains(&"2026.05.19".to_string()));
     assert!(paths.version_dir("2026.05.19").unwrap().exists());
@@ -266,12 +274,18 @@ fn install_manifest_contains_relative_runtime_paths_and_metadata() {
         .ensure(RuntimeInstallPlan::already_local("2026.05.19"))
         .expect("install runtime");
     let manifest: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(result.install_dir.join("install.json")).expect("read install manifest"),
+        &fs::read_to_string(result.install_dir.join("install.json"))
+            .expect("read install manifest"),
     )
     .expect("parse install manifest");
 
     assert_eq!(manifest["bundleVersion"], "2026.05.19");
-    assert_eq!(manifest["platform"], app_lib::runtime::dependencies::RuntimePlatform::current().unwrap().manifest_key());
+    assert_eq!(
+        manifest["platform"],
+        app_lib::runtime::dependencies::RuntimePlatform::current()
+            .unwrap()
+            .manifest_key()
+    );
     assert_eq!(manifest["paths"]["node"], "node/bin/node");
     assert_eq!(manifest["paths"]["npm"], "node/bin/npm");
     assert_eq!(manifest["paths"]["npx"], "node/bin/npx");
@@ -279,7 +293,10 @@ fn install_manifest_contains_relative_runtime_paths_and_metadata() {
     assert_eq!(manifest["paths"]["uv"], "uv/bin/uv");
     assert_eq!(manifest["paths"]["uvx"], "uv/bin/uvx");
     assert_eq!(manifest["paths"]["nodeModules"], "node/node_modules");
-    assert_eq!(manifest["paths"]["pythonSitePackages"], "python/lib/site-packages");
+    assert_eq!(
+        manifest["paths"]["pythonSitePackages"],
+        "python/lib/site-packages"
+    );
     assert_eq!(manifest["runtimes"]["node"]["path"], "node");
     assert_eq!(manifest["runtimes"]["python"]["path"], "python");
     assert_eq!(manifest["runtimes"]["uv"]["path"], "uv");
@@ -377,8 +394,6 @@ fn write_runtime_zip(path: &Path) {
     zip.finish().expect("finish zip");
 }
 
-
-
 fn write_runtime_tar_gz(path: &Path) {
     let file = fs::File::create(path).expect("create runtime tar.gz");
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
@@ -396,7 +411,8 @@ fn write_runtime_tar_gz(path: &Path) {
         header.set_size(script.len() as u64);
         header.set_mode(0o755);
         header.set_cksum();
-        tar.append_data(&mut header, entry, script.as_bytes()).expect("append executable");
+        tar.append_data(&mut header, entry, script.as_bytes())
+            .expect("append executable");
     }
     for dir in ["node/node_modules", "python/lib/site-packages"] {
         let mut header = tar::Header::new_gnu();
@@ -404,11 +420,11 @@ fn write_runtime_tar_gz(path: &Path) {
         header.set_size(0);
         header.set_mode(0o755);
         header.set_cksum();
-        tar.append_data(&mut header, dir, std::io::empty()).expect("append dir");
+        tar.append_data(&mut header, dir, std::io::empty())
+            .expect("append dir");
     }
     tar.finish().expect("finish tar");
 }
-
 
 fn write_runtime_tar_gz_with_symlinked_bins(path: &Path) {
     let file = fs::File::create(path).expect("create runtime tar.gz");
@@ -525,7 +541,6 @@ fn rejects_invalid_tar_gz_artifact_before_switching_current() {
     assert!(!paths.current_dir().exists());
 }
 
-
 #[test]
 fn installs_from_verified_zip_artifact_and_updates_current_pointer() {
     let tempdir = tempdir().expect("tempdir");
@@ -547,8 +562,6 @@ fn installs_from_verified_zip_artifact_and_updates_current_pointer() {
     assert!(result.install_dir.join("node/bin/node").is_file());
     assert!(result.install_dir.join("python/lib/site-packages").is_dir());
 }
-
-
 
 fn write_runtime_zip_with_failing_tool(path: &Path, failing_entry: &str) {
     let file = fs::File::create(path).expect("create runtime zip");
@@ -595,13 +608,18 @@ fn rejects_zip_artifact_when_staging_smoke_test_fails_before_switching_current()
         .install_from_local_archive(RuntimeInstallPlan::reinstall("2026.05.11"), &artifact)
         .expect_err("smoke test failure should fail installation");
 
-    assert!(error.to_string().contains("runtime install smoke test failed"));
+    assert!(error
+        .to_string()
+        .contains("runtime install smoke test failed"));
     assert_eq!(
         fs::read_to_string(paths.current_dir()).expect("current pointer"),
         "versions/2026.05.10"
     );
     assert!(
-        !paths.version_dir("2026.05.11").expect("version dir").exists(),
+        !paths
+            .version_dir("2026.05.11")
+            .expect("version dir")
+            .exists(),
         "failed staging payload must not be promoted into versions"
     );
 }
@@ -629,8 +647,6 @@ fn rejects_zip_artifact_with_path_traversal_entry() {
     assert!(error.to_string().contains("unsafe archive entry path"));
     assert!(!paths.current_dir().exists());
 }
-
-
 
 fn write_windows_runtime_zip(path: &Path) {
     let file = fs::File::create(path).expect("create windows runtime zip");
@@ -673,7 +689,10 @@ fn installs_windows_zip_artifact_with_platform_layout_without_cross_platform_smo
         paths.clone(),
         app_lib::runtime::dependencies::RuntimePlatform::WindowsX64,
     )
-    .install_from_local_archive(RuntimeInstallPlan::already_local("2026.04.26-runtime.1"), &artifact)
+    .install_from_local_archive(
+        RuntimeInstallPlan::already_local("2026.04.26-runtime.1"),
+        &artifact,
+    )
     .expect("installer should accept windows layout");
 
     assert_eq!(
@@ -686,7 +705,8 @@ fn installs_windows_zip_artifact_with_platform_layout_without_cross_platform_smo
     assert!(result.install_dir.join("python/Lib/site-packages").is_dir());
 
     let manifest: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(result.install_dir.join("install.json")).expect("read install manifest"),
+        &fs::read_to_string(result.install_dir.join("install.json"))
+            .expect("read install manifest"),
     )
     .expect("parse install manifest");
     assert_eq!(manifest["platform"], "win32-x64");
@@ -696,7 +716,10 @@ fn installs_windows_zip_artifact_with_platform_layout_without_cross_platform_smo
     assert_eq!(manifest["paths"]["python"], "python/python.exe");
     assert_eq!(manifest["paths"]["uv"], "uv/uv.exe");
     assert_eq!(manifest["paths"]["uvx"], "uv/uvx.exe");
-    assert_eq!(manifest["paths"]["pythonSitePackages"], "python/Lib/site-packages");
+    assert_eq!(
+        manifest["paths"]["pythonSitePackages"],
+        "python/Lib/site-packages"
+    );
 }
 
 fn sha256_hex(path: &Path) -> String {

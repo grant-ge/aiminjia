@@ -156,6 +156,8 @@ impl AppStorage {
                 })
                 .unwrap_or(false);
 
+            // Startup state migration handles mixed messages.jsonl + legacy shards.
+            // This older per-storage migration only covers shard-only conversations.
             if has_shards && !has_new {
                 if let Err(err) = messages::migrate_shards_to_single_file(&self.base_dir, &conv_id)
                 {
@@ -226,7 +228,23 @@ impl AppStorage {
         content_json: &str,
     ) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
-        messages::insert_message(&self.base_dir, id, conversation_id, role, content_json)?;
+        let content: serde_json::Value = serde_json::from_str(content_json)?;
+        let msg = types::StoredMessage {
+            seq: None,
+            rev: None,
+            id: id.to_string(),
+            conversation_id: conversation_id.to_string(),
+            role: role.to_string(),
+            content,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: Some(2),
+            sequence: None,
+        };
+        messages::insert_message_v2(&self.base_dir, &msg)?;
         Ok(())
     }
 

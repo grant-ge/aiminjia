@@ -177,7 +177,6 @@ fn rejects_untrusted_artifact_urls() {
     }
 }
 
-
 #[test]
 fn rejects_file_artifact_url_for_production_manifest_source() {
     let json = r#"{
@@ -237,13 +236,24 @@ fn parses_production_manifest_fields_for_channel_provider_size_and_rollback() {
     "#;
 
     let manifest = RuntimeManifest::from_json(json).expect("production manifest should parse");
-    let artifact = manifest.artifact("primary", RuntimePlatform::DarwinArm64).unwrap();
+    let artifact = manifest
+        .artifact("primary", RuntimePlatform::DarwinArm64)
+        .unwrap();
 
     assert_eq!(manifest.channel.as_deref(), Some("stable"));
     assert_eq!(manifest.minimum_app_version.as_deref(), Some("0.4.16"));
-    assert_eq!(manifest.default_provider.as_deref(), Some("renlijia-bundle"));
-    assert_eq!(manifest.rollback.as_ref().unwrap().bundle_version, "2026.05.19");
-    assert_eq!(manifest.mirrors, vec!["https://mirror.example.com/runtimes/"]);
+    assert_eq!(
+        manifest.default_provider.as_deref(),
+        Some("renlijia-bundle")
+    );
+    assert_eq!(
+        manifest.rollback.as_ref().unwrap().bundle_version,
+        "2026.05.19"
+    );
+    assert_eq!(
+        manifest.mirrors,
+        vec!["https://mirror.example.com/runtimes/"]
+    );
     assert_eq!(artifact.size_bytes, Some(123456));
     assert_eq!(artifact.archive_format.as_deref(), Some("zip"));
 }
@@ -262,6 +272,8 @@ fn rejects_invalid_manifest_size_and_archive_format() {
     }"#;
     assert!(RuntimeManifest::from_json(invalid_size).is_err());
 
-    let invalid_format = invalid_size.replace("\"zip\"", "\"rar\"").replace("\"sizeBytes\": 0", "\"sizeBytes\": 1");
+    let invalid_format = invalid_size
+        .replace("\"zip\"", "\"rar\"")
+        .replace("\"sizeBytes\": 0", "\"sizeBytes\": 1");
     assert!(RuntimeManifest::from_json(&invalid_format).is_err());
 }

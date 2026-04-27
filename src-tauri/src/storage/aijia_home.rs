@@ -118,7 +118,9 @@ mod tests {
         );
         assert_eq!(home.crypto_dir(), tmp.path().join("crypto"));
         assert_eq!(
-            home.runtimes_dir().file_name().and_then(|name| name.to_str()),
+            home.runtimes_dir()
+                .file_name()
+                .and_then(|name| name.to_str()),
             Some("renlijia-runtimes")
         );
         assert!(!home.runtimes_dir().starts_with(tmp.path()));

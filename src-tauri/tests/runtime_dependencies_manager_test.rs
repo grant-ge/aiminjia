@@ -111,7 +111,6 @@ fn sha256_hex(path: &std::path::Path) -> String {
     )
 }
 
-
 #[test]
 fn manager_ensure_uses_configured_file_manifest_source_instead_of_dev_stub() {
     let tempdir = tempdir().expect("tempdir");
@@ -147,19 +146,29 @@ fn manager_ensure_uses_configured_file_manifest_source_instead_of_dev_stub() {
         ),
     )
     .expect("write manifest");
-    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
-        .with_manifest_source(RuntimeManifestSource::File(manifest), "primary", RuntimePlatform::DarwinArm64);
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version").with_manifest_source(
+        RuntimeManifestSource::File(manifest),
+        "primary",
+        RuntimePlatform::DarwinArm64,
+    );
 
-    let result = manager.ensure().expect("ensure should install from manifest");
+    let result = manager
+        .ensure()
+        .expect("ensure should install from manifest");
 
     assert_eq!(result.bundle_version, "2026.05.14");
     assert_eq!(
         std::fs::read_to_string(paths.current_dir()).expect("current pointer"),
         "versions/2026.05.14"
     );
-    let node = paths.version_dir("2026.05.14").unwrap().join("node/bin/node");
+    let node = paths
+        .version_dir("2026.05.14")
+        .unwrap()
+        .join("node/bin/node");
     assert!(node.is_file());
-    assert!(!std::fs::read_to_string(node).expect("node script").contains("managed-runtime-stub"));
+    assert!(!std::fs::read_to_string(node)
+        .expect("node script")
+        .contains("managed-runtime-stub"));
 }
 
 #[tokio::test]
@@ -197,20 +206,30 @@ async fn manager_reinstall_uses_configured_file_manifest_source() {
         ),
     )
     .expect("write manifest");
-    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
-        .with_manifest_source(RuntimeManifestSource::File(manifest), "primary", RuntimePlatform::DarwinArm64);
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version").with_manifest_source(
+        RuntimeManifestSource::File(manifest),
+        "primary",
+        RuntimePlatform::DarwinArm64,
+    );
 
     manager.ensure().expect("initial install from manifest");
-    std::fs::remove_file(paths.version_dir("2026.05.15").unwrap().join("node/bin/node"))
-        .expect("corrupt installed runtime");
+    std::fs::remove_file(
+        paths
+            .version_dir("2026.05.15")
+            .unwrap()
+            .join("node/bin/node"),
+    )
+    .expect("corrupt installed runtime");
     assert!(manager.dependencies().is_err());
 
-    manager.reinstall().expect("reinstall should repair from manifest artifact");
+    manager
+        .reinstall()
+        .expect("reinstall should repair from manifest artifact");
 
-    manager.dependencies().expect("manifest reinstall should repair dependencies");
+    manager
+        .dependencies()
+        .expect("manifest reinstall should repair dependencies");
 }
-
-
 
 #[test]
 fn manager_runtime_resolver_ensures_from_manifest_before_returning_dependencies() {
@@ -247,13 +266,22 @@ fn manager_runtime_resolver_ensures_from_manifest_before_returning_dependencies(
         ),
     )
     .expect("write manifest");
-    let manager = RuntimeManager::new(paths.clone(), "placeholder-version")
-        .with_manifest_source(RuntimeManifestSource::File(manifest), "primary", RuntimePlatform::DarwinArm64);
+    let manager = RuntimeManager::new(paths.clone(), "placeholder-version").with_manifest_source(
+        RuntimeManifestSource::File(manifest),
+        "primary",
+        RuntimePlatform::DarwinArm64,
+    );
 
     let deps = RuntimeResolver::workspace_dependencies(&manager)
         .expect("resolver should ensure configured manifest before returning dependencies");
 
-    assert_eq!(deps.node, paths.version_dir("2026.05.16").unwrap().join("node/bin/node"));
+    assert_eq!(
+        deps.node,
+        paths
+            .version_dir("2026.05.16")
+            .unwrap()
+            .join("node/bin/node")
+    );
     assert_eq!(
         std::fs::read_to_string(paths.current_dir()).expect("current pointer"),
         "versions/2026.05.16"

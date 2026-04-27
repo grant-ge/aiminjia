@@ -9,7 +9,7 @@
 //! but a higher `_rev` is appended. On read, only the highest `_rev` per `seq`
 //! is kept.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -191,31 +191,8 @@ pub fn get_messages(
     base_dir: &Path,
     conversation_id: &str,
 ) -> StorageResult<Vec<serde_json::Value>> {
-    let single_file = messages_path(base_dir, conversation_id);
-    if single_file.exists() {
-        let messages = get_messages_v2(base_dir, conversation_id)?;
-        return Ok(messages.into_iter().map(message_to_json).collect());
-    }
-
-    let meta = read_shard_meta(base_dir, conversation_id);
-    let mut all_msgs: Vec<StoredMessage> = Vec::new();
-
-    // Read all shards from 1 to current
-    for shard_num in 1..=meta.shard {
-        let path = shard_path(base_dir, conversation_id, shard_num);
-        match read_jsonl::<StoredMessage>(&path) {
-            Ok(records) => all_msgs.extend(records),
-            Err(e) => {
-                warn!(
-                    "Failed to read shard {} for {}: {}",
-                    shard_num, conversation_id, e
-                );
-            }
-        }
-    }
-
-    let deduped = dedup_messages(all_msgs);
-    Ok(deduped.into_iter().map(message_to_json).collect())
+    let messages = get_messages_v2(base_dir, conversation_id)?;
+    Ok(messages.into_iter().map(message_to_json).collect())
 }
 
 /// Read all single-file messages using id-based last-writer-wins semantics.
@@ -253,35 +230,8 @@ pub fn get_recent_messages(
     conversation_id: &str,
     limit: u32,
 ) -> StorageResult<Vec<serde_json::Value>> {
-    let single_file = messages_path(base_dir, conversation_id);
-    if single_file.exists() {
-        let recent = get_recent_messages_v2(base_dir, conversation_id, limit as usize)?;
-        return Ok(recent.into_iter().map(message_to_json).collect());
-    }
-
-    let meta = read_shard_meta(base_dir, conversation_id);
-    let limit = limit as usize;
-    let mut all_msgs: Vec<StoredMessage> = Vec::new();
-
-    // Read shards in reverse order until we have enough unique seqs
-    for shard_num in (1..=meta.shard).rev() {
-        let path = shard_path(base_dir, conversation_id, shard_num);
-        match read_jsonl::<StoredMessage>(&path) {
-            Ok(records) => all_msgs.extend(records),
-            Err(_) => continue,
-        }
-
-        // Count unique seqs to check if we have enough (avoid full dedup)
-        let unique_message_keys: HashSet<String> = all_msgs.iter().map(message_dedup_key).collect();
-        if unique_message_keys.len() >= limit {
-            break;
-        }
-    }
-
-    let mut deduped = dedup_messages(all_msgs);
-    // Take only the last `limit` messages
-    let start = deduped.len().saturating_sub(limit);
-    let recent: Vec<serde_json::Value> = deduped.drain(start..).map(message_to_json).collect();
+    let recent = get_recent_messages_v2(base_dir, conversation_id, limit as usize)?;
+    let recent: Vec<serde_json::Value> = recent.into_iter().map(message_to_json).collect();
 
     Ok(recent)
 }
@@ -354,6 +304,22 @@ pub fn update_message_content(
     conversation_id: &str,
     content_json: &str,
 ) -> StorageResult<()> {
+    let single_file = messages_path(base_dir, conversation_id);
+    if single_file.exists() {
+        let Some(mut original) = get_messages_v2(base_dir, conversation_id)?
+            .into_iter()
+            .find(|m| m.id == id)
+        else {
+            return Err(StorageError::not_found(format!(
+                "Message not found: {}",
+                id
+            )));
+        };
+        original.content = serde_json::from_str(content_json).unwrap_or(serde_json::json!({}));
+        append_jsonl(&single_file, &original)?;
+        return Ok(());
+    }
+
     let meta = read_shard_meta(base_dir, conversation_id);
     let mut all_records: Vec<StoredMessage> = Vec::new();
 

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::{
-    RuntimeDownloadOptions, RuntimeDownloader, RuntimeManifest, RuntimeManifestSource, RuntimePlatform,
+    RuntimeDownloadOptions, RuntimeDownloader, RuntimeManifest, RuntimeManifestSource,
+    RuntimePlatform,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,8 +184,12 @@ impl RuntimeArtifactFetcher {
         let archive_path = if artifact.url.starts_with("file://") {
             self.copy_file_artifact_to_downloads(&artifact.url, downloads_dir)?
         } else if is_trusted_https_url(&artifact.url) {
-            self.fetch_https_artifact_to_downloads_with_options(&artifact.url, downloads_dir, options)
-                .await?
+            self.fetch_https_artifact_to_downloads_with_options(
+                &artifact.url,
+                downloads_dir,
+                options,
+            )
+            .await?
         } else {
             return Err(RuntimeArtifactFetchError::UntrustedUrl(
                 artifact.url.clone(),

@@ -24,7 +24,11 @@ impl RenlijiaMdLoader {
         let mut seen = HashSet::new();
 
         if let Some(home) = Self::home_dir() {
-            self.try_add_file(&home.join(".renlijia").join("AGENT.md"), &mut seen, &mut result);
+            self.try_add_file(
+                &home.join(".renlijia").join("AGENT.md"),
+                &mut seen,
+                &mut result,
+            );
         }
 
         if workspace_path.as_os_str().is_empty() {

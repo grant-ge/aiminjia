@@ -395,5 +395,4 @@ mod tests {
         assert!(result.contains("只有用户明确要求系统环境时"));
         assert!(!result.contains("仁励家 Runtime"));
     }
-
 }

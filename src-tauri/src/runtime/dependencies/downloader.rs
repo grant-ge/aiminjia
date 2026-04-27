@@ -126,11 +126,21 @@ impl RuntimeDownloader {
                 return Err(RuntimeDownloadError::Cancelled);
             }
             match self
-                .download_once(url, destination, &part_path, &meta_path, attempt, max_attempts, &options)
+                .download_once(
+                    url,
+                    destination,
+                    &part_path,
+                    &meta_path,
+                    attempt,
+                    max_attempts,
+                    &options,
+                )
                 .await
             {
                 Ok(path) => return Ok(path),
-                Err(RuntimeDownloadError::Cancelled) => return Err(RuntimeDownloadError::Cancelled),
+                Err(RuntimeDownloadError::Cancelled) => {
+                    return Err(RuntimeDownloadError::Cancelled)
+                }
                 Err(RuntimeDownloadError::InvalidStatus(status)) if status < 500 => {
                     return Err(RuntimeDownloadError::InvalidStatus(status));
                 }

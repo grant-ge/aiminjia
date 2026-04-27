@@ -174,7 +174,10 @@ impl std::fmt::Display for RuntimeManifestError {
             Self::InvalidArtifactSize { name, size_bytes } => {
                 write!(f, "invalid artifact size for runtime {name}: {size_bytes}")
             }
-            Self::UnsupportedArchiveFormat { name, archive_format } => write!(
+            Self::UnsupportedArchiveFormat {
+                name,
+                archive_format,
+            } => write!(
                 f,
                 "unsupported archive format for runtime {name}: {archive_format}"
             ),
