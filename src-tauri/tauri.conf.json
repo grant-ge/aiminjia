@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
@@ -55,7 +55,8 @@
       "playwright-runtime": "playwright-runtime",
       "prompts": "prompts",
       "plugins": "plugins",
-      "changelog.json": "changelog.json"
+      "changelog.json": "changelog.json",
+      "resources/dws*": ""
     }
   }
 }

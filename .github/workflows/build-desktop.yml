@@ -90,6 +90,26 @@ jobs:
         shell: pwsh
         run: .\scripts\setup-playwright.ps1
 
+      - name: Cache dws CLI
+        id: dws-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/dws
+            src-tauri/resources/dws.exe
+          key: dws-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/setup-dws.sh', 'scripts/setup-dws.ps1') }}
+
+      - name: Setup dws CLI (macOS/Linux)
+        if: steps.dws-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        env:
+          DWS_NONINTERACTIVE: "1"
+        run: bash scripts/setup-dws.sh
+
+      - name: Setup dws CLI (Windows)
+        if: steps.dws-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\setup-dws.ps1
+
       - name: Download changelog.json from production
         shell: bash
         run: |

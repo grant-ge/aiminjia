@@ -17,6 +17,10 @@ mkdir -p "$RESOURCES_DIR"
 if [ -f "$RESOURCES_DIR/dws" ]; then
     EXISTING_VERSION=$("$RESOURCES_DIR/dws" --version 2>/dev/null || echo "unknown")
     echo "dws already installed: $EXISTING_VERSION"
+    if [ "${CI:-}" = "true" ] || [ "${DWS_NONINTERACTIVE:-}" = "1" ]; then
+        echo "Non-interactive mode, skipping reinstall."
+        exit 0
+    fi
     read -p "Reinstall? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
