@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 
 const tauriMock = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  stopStreaming: vi.fn(),
+  stopStreaming: vi.fn().mockResolvedValue(undefined),
   getMessages: vi.fn(),
   getTasks: vi.fn(),
   createConversation: vi.fn().mockResolvedValue('conv-skill'),
@@ -136,6 +136,31 @@ describe('useChat skill launch', () => {
     expect(useChatStore.getState().messages.at(-1)?.content.text).toBe('/not-a-skill hello')
     expect(useChatStore.getState().messages.at(-1)?.content.commandText).toBeUndefined()
     expect(useChatStore.getState().messages.at(-1)?.content.skillCommand).toBeUndefined()
+  })
+
+  it('stopCurrentStream keeps conversation busy until backend terminal event clears it', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-skill',
+      busyConversations: new Set(['conv-skill']),
+      streamStates: {
+        'conv-skill': {
+          isStreaming: true,
+          streamingContent: 'partial',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'partial',
+    })
+    const { result } = renderHook(() => useChat())
+
+    act(() => {
+      result.current.stopCurrentStream()
+    })
+
+    expect(tauriMock.stopStreaming).toHaveBeenCalledWith('conv-skill')
+    expect(useChatStore.getState().isStreaming).toBe(false)
+    expect(useChatStore.getState().busyConversations.has('conv-skill')).toBe(true)
   })
 
 })

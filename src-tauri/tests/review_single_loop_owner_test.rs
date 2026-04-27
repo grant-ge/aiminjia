@@ -41,3 +41,25 @@ fn review_chat_transport_no_longer_reexports_legacy_chat_support() {
         );
     }
 }
+
+#[test]
+fn review_send_message_clears_gateway_task_after_runtime_turn_before_title_generation() {
+    let source = include_str!("../src/transport/tauri_commands/chat.rs");
+    let run_call = source
+        .find("runtime.run_chat_request(request).await")
+        .expect("send_message should run the runtime chat request");
+    let title_guard = source
+        .find("if result.is_ok()")
+        .expect("send_message should keep title generation behind result.is_ok()");
+    let reserve_call = source
+        .find(".set_busy_for_run(&conversation_id, run_id.clone())")
+        .expect("send_message must reserve the gateway run before the turn starts");
+    let cleanup_call = source
+        .find(".clear_task_for_run(&conversation_id, &run_id)")
+        .expect("send_message must clear only the gateway run it owns after the turn exits");
+
+    assert!(
+        reserve_call < run_call && run_call < cleanup_call && cleanup_call < title_guard,
+        "gateway active run must be reserved before run_chat_request and cleared by run_id before post-turn work"
+    );
+}

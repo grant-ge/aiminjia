@@ -149,15 +149,12 @@ impl SessionRuntime {
         query_engine.run(turn, &self.event_bus).await
     }
 
-    pub async fn run_chat_request(
-        &self,
-        mut request: ChatTurnRequest,
-    ) -> std::result::Result<(), String> {
+    pub async fn run_chat_request(&self, request: ChatTurnRequest) -> std::result::Result<(), String> {
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
-        // Generate the single authoritative RunId for this turn here and propagate
-        // it into the request so legacy_send_message_impl uses the same identity.
-        let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
-        request.run_id = run_id.clone();
+        // `ChatTurnRequest::new` creates the authoritative RunId for the turn.
+        // Transport code may reserve per-run resources before entering runtime,
+        // so do not replace it here.
+        let run_id = request.run_id.clone();
 
         // Emit RunStarted before handing off to the driver.
         let run_started = RuntimeEvent::new(

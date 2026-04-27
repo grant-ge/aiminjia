@@ -401,7 +401,6 @@ export function useChat() {
     if (convId) {
       recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
-      store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
         console.error('[useChat] stopStreaming IPC failed:', err)
       })

@@ -9,7 +9,7 @@ use app_lib::runtime::chat::turn_config::{
 use app_lib::runtime::chat::{ChatTurnOutcome, RuntimeLlmExecutor};
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::events::RuntimeEventKind;
-use app_lib::runtime::ids::SessionId;
+use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::session_runtime::{ChatTurnRequest, SessionRuntime};
 use app_lib::runtime::tools::{
@@ -252,6 +252,29 @@ async fn all_events_in_one_turn_share_the_same_run_id() {
         events.first().unwrap().run_id,
         events.last().unwrap().run_id
     );
+}
+
+
+#[tokio::test]
+async fn run_chat_request_uses_request_run_id_as_authoritative_identity() {
+    let executor = Arc::new(SessionTestExecutor::new(vec![
+        LlmStepResult::ContentComplete {
+            content: "OK".to_string(),
+            tokens_in: 1,
+            tokens_out: 1,
+            stop_reason: Some("end_turn".to_string()),
+        },
+    ]));
+    let runtime = runtime(executor, false);
+    let mut request = ChatTurnRequest::new("conv-session-explicit-run", "hi", vec![]);
+    request.run_id = RunId::new("run-explicit-owner");
+
+    runtime.run_chat_request(request).await.unwrap();
+
+    let events = runtime.recorded_events();
+    assert!(events
+        .iter()
+        .all(|event| event.run_id.as_str() == "run-explicit-owner"));
 }
 
 #[tokio::test]

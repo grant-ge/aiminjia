@@ -42,8 +42,17 @@ impl RuntimeRunRegistry {
 
     pub fn reserve(&self, session_id: &str, run_id: RunId) -> Result<(), String> {
         let mut active_runs = self.active_runs();
-        if active_runs.contains_key(session_id) {
-            return Err("This conversation is already processing.".to_string());
+        if let Some(existing) = active_runs.get(session_id) {
+            if !*existing.cancel.borrow() {
+                return Err("This conversation is already processing.".to_string());
+            }
+            log::info!(
+                "RuntimeRunRegistry replacing cancelled stale run: session_id={}, old_run_id={}, new_run_id={}",
+                session_id,
+                existing.run_id.as_str(),
+                run_id.as_str()
+            );
+            active_runs.remove(session_id);
         }
         if active_runs.len() >= MAX_CONCURRENT_AGENTS {
             return Err(format!(
@@ -101,6 +110,19 @@ impl RuntimeRunRegistry {
 
     pub fn clear(&self, session_id: &str) -> Option<RunId> {
         self.active_runs().remove(session_id).map(|run| run.run_id)
+    }
+
+    pub fn clear_for_run(&self, session_id: &str, run_id: &RunId) -> Option<RunId> {
+        let mut active_runs = self.active_runs();
+        let should_clear = active_runs
+            .get(session_id)
+            .map(|run| &run.run_id == run_id)
+            .unwrap_or(false);
+        if should_clear {
+            active_runs.remove(session_id).map(|run| run.run_id)
+        } else {
+            None
+        }
     }
 
     pub fn is_busy(&self) -> bool {

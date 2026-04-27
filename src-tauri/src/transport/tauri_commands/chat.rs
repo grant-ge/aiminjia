@@ -2348,6 +2348,10 @@ impl TauriChatCommandAdapter {
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
+        let run_id = request.run_id.clone();
+        self.services
+            .gateway
+            .set_busy_for_run(&conversation_id, run_id.clone())?;
 
         let session_id = request.conversation_id.clone();
         let connector_engine = self
@@ -2366,7 +2370,7 @@ impl TauriChatCommandAdapter {
             workspace_path: self.services.file_mgr.workspace_path().to_path_buf(),
             conversation_id: session_id.as_str().to_string(),
             session_id: session_id.clone(),
-            run_id: None,
+            run_id: Some(run_id.clone()),
             agent_id: None,
             tavily_api_key: None,
             bocha_api_key: None,
@@ -2401,6 +2405,12 @@ impl TauriChatCommandAdapter {
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;
+        // Release the stream-cancel bridge for this turn before any post-turn work
+        // can start, otherwise a stopped turn leaves a stale cancelled slot behind.
+        self.services
+            .gateway
+            .clear_task_for_run(&conversation_id, &run_id);
+        self.services.session_mgr.destroy_run(&run_id).await;
 
         if result.is_ok() {
             // Quick synchronous guard: only attempt title generation when needed.

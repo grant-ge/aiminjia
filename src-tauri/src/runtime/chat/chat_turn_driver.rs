@@ -79,10 +79,9 @@ pub struct ChatTurnRequest {
     pub file_ids: Vec<String>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
-    /// The run_id assigned by `SessionRuntime` for this turn.
-    /// Callers should use `ChatTurnRequest::new` for ad-hoc creation (generates a
-    /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
-    /// with the single authoritative id generated for this turn.
+    /// The authoritative run_id for this turn.
+    /// `ChatTurnRequest::new` generates a fresh id; transport code may reserve
+    /// resources with it before handing the request to `SessionRuntime`.
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
