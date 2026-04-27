@@ -98,7 +98,7 @@ function AppShell() {
   return (
     <div className="flex h-screen w-screen bg-sidebar text-foreground">
       <AppSidebar />
-      <main className="min-w-0 flex-1 overflow-hidden rounded-bl-xl rounded-tl-xl">
+      <main className="min-w-0 flex-1 overflow-hidden rounded-bl-xl rounded-tl-xl border-l border-border">
         <RouteSwitch />
       </main>
       <SettingsModal />
