@@ -353,6 +353,8 @@ export function useStreaming() {
         toolCallId: toolId,
         payload: { toolName, purpose },
       })
+      const HIDDEN_TOOLS = ['switch_skill']
+      if (HIDDEN_TOOLS.includes(toolName)) return
       useChatStore.getState().addConversationToolExecution(conversationId, {
         toolName,
         toolId,
@@ -379,6 +381,7 @@ export function useStreaming() {
       if (message.conversationId === store.activeConversationId) {
         store.upsertMessage(message)
       }
+      const HIDDEN_TOOLS = ['switch_skill']
       if (message.toolResult) {
         if (message.toolResult.name === 'TaskCreate' && !message.toolResult.isError) {
           const task = extractTaskCreateState(message)
@@ -386,6 +389,7 @@ export function useStreaming() {
             store.upsertConversationTaskState(message.conversationId, task)
           }
         }
+        if (HIDDEN_TOOLS.includes(message.toolResult.name)) return
         store.updateConversationToolExecution(
           message.conversationId,
           message.toolResult.toolCallId,

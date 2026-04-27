@@ -149,6 +149,15 @@ fn normalize_tool_call(value: &serde_json::Value) -> Option<ToolCall> {
 }
 
 fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
+    // Legacy messages (pre-schemaVersion) have toolCallId=None on tool messages.
+    // Skip filtering entirely for such conversations to keep them visible.
+    let has_legacy_tool_messages = messages
+        .iter()
+        .any(|m| m.role == "tool" && m.tool_call_id.is_none());
+    if has_legacy_tool_messages {
+        return messages;
+    }
+
     let responded_ids: HashSet<String> = messages
         .iter()
         .filter(|message| message.role == "tool")
