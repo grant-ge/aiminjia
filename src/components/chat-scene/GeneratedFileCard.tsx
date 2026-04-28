@@ -19,14 +19,17 @@ interface GeneratedFileCardProps {
   appName: string
   fileIcon?: ReactNode
   appIcon?: ReactNode
-  primaryAction: GeneratedFilePrimaryAction
-  canPreview: boolean
+  primaryAction?: GeneratedFilePrimaryAction
+  canPreview?: boolean
   canOpenExternal?: boolean
   canReveal?: boolean
-  onPreview: () => void
-  onOpenExternal: () => void
-  onReveal: () => void
+  onOpen?: () => void
+  onPreview?: () => void
+  onOpenExternal?: () => void
+  onReveal?: () => void
 }
+
+const noop = () => {}
 
 export function GeneratedFileCard({
   title,
@@ -34,14 +37,18 @@ export function GeneratedFileCard({
   appName,
   fileIcon,
   appIcon,
-  primaryAction,
-  canPreview,
-  canOpenExternal,
-  canReveal,
+  primaryAction = 'open',
+  canPreview = false,
+  canOpenExternal = true,
+  canReveal = true,
+  onOpen,
   onPreview,
   onOpenExternal,
   onReveal,
 }: GeneratedFileCardProps) {
+  const previewAction = onPreview ?? noop
+  const openExternalAction = onOpenExternal ?? onOpen ?? noop
+  const revealAction = onReveal ?? noop
   const isPreviewPrimary = primaryAction === 'preview'
   const primaryLabel = isPreviewPrimary ? 'Preview' : 'Open'
   const isPrimaryDisabled = isPreviewPrimary ? !canPreview : canOpenExternal === false
@@ -49,10 +56,10 @@ export function GeneratedFileCard({
   const handlePrimaryAction = () => {
     if (isPrimaryDisabled) return
     if (isPreviewPrimary) {
-      onPreview()
+      previewAction()
       return
     }
-    onOpenExternal()
+    openExternalAction()
   }
 
   return (
@@ -89,15 +96,15 @@ export function GeneratedFileCard({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
-            <DropdownMenuItem disabled={!canPreview} onSelect={onPreview}>
+            <DropdownMenuItem disabled={!canPreview} onSelect={previewAction}>
               <Eye className="h-4 w-4" />
               <span>{canPreview ? 'Preview inside' : 'Preview unavailable'}</span>
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={canOpenExternal === false} onSelect={onOpenExternal}>
+            <DropdownMenuItem disabled={canOpenExternal === false} onSelect={openExternalAction}>
               <ExternalLink className="h-4 w-4" />
               <span>Open with default app</span>
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={canReveal === false} onSelect={onReveal}>
+            <DropdownMenuItem disabled={canReveal === false} onSelect={revealAction}>
               <FolderOpen className="h-4 w-4" />
               <span>Show in folder</span>
             </DropdownMenuItem>

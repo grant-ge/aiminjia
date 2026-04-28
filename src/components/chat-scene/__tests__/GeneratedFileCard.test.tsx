@@ -47,6 +47,23 @@ describe('GeneratedFileCard', () => {
     expect(screen.getByRole('button', { name: 'More actions for 绩效分析总结 · Q2' })).toBeInTheDocument()
   })
 
+  it('keeps legacy onOpen as the default open primary action', () => {
+    const onOpen = vi.fn()
+
+    render(
+      <GeneratedFileCard
+        title="绩效分析总结 · Q2"
+        sub="Report · XLSX"
+        appName="Microsoft Excel"
+        onOpen={onOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open 绩效分析总结 · Q2' }))
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
   it('fires onPreview from preview primary action without opening externally', () => {
     const { onPreview, onOpenExternal } = renderCard({ primaryAction: 'preview' })
 
