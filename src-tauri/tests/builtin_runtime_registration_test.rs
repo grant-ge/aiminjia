@@ -7,8 +7,10 @@ use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
 use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
 use app_lib::plugin::SkillRegistry;
+use app_lib::runtime::dependencies::StaticRuntimeResolver;
 use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::runtime::tools::ToolExecutionContext;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -55,7 +57,16 @@ fn build_test_plugin_ctx(
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-        runtime_resolver: None,
+        runtime_resolver: Some(Arc::new(StaticRuntimeResolver::new(
+            PathBuf::from("/tmp/renlijia-managed-python/bin/python3"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/node"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/npm"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/npx"),
+            PathBuf::from("/tmp/renlijia-managed-uv/bin/uv"),
+            PathBuf::from("/tmp/renlijia-managed-uv/bin/uvx"),
+            PathBuf::from("/tmp/renlijia-managed-node/node_modules"),
+            PathBuf::from("/tmp/renlijia-managed-python/site-packages"),
+        ))),
     }
 }
 
