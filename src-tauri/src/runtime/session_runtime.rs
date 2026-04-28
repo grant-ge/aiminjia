@@ -497,8 +497,6 @@ mod tests {
             _content: &str,
             _file_ids: &[String],
             _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("user-msg".to_string())
         }

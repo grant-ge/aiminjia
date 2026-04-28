@@ -40,12 +40,7 @@ use crate::runtime::store::{
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
-pub fn build_user_content_json(
-    content: &str,
-    file_ids: &[String],
-    selected_skill_id: Option<&str>,
-    selected_skill_label: Option<&str>,
-) -> serde_json::Value {
+pub fn build_user_content_json(content: &str, file_ids: &[String]) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
     if !file_ids.is_empty() {
         value["files"] = serde_json::Value::Array(
@@ -54,18 +49,6 @@ pub fn build_user_content_json(
                 .map(|id| serde_json::json!({ "id": id }))
                 .collect(),
         );
-    }
-    if let Some(skill_id) = selected_skill_id.map(str::trim).filter(|id| !id.is_empty()) {
-        let command = format!("/{skill_id}");
-        value["commandText"] = serde_json::json!(format!("{} {}", command, content).trim());
-        value["skillCommand"] = serde_json::json!({
-            "id": skill_id,
-            "label": selected_skill_label
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .unwrap_or(skill_id),
-            "command": command,
-        });
     }
     value
 }
@@ -85,8 +68,6 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
-    pub selected_skill_id: Option<String>,
-    pub selected_skill_label: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -104,8 +85,6 @@ impl ChatTurnRequest {
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
             client_message_id: None,
-            selected_skill_id: None,
-            selected_skill_label: None,
         }
     }
 }
@@ -165,8 +144,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _content: &str,
         _file_ids: &[String],
         _client_message_id: Option<&str>,
-        _selected_skill_id: Option<&str>,
-        _selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
@@ -1127,8 +1104,6 @@ impl RuntimeChatTurnDriver {
                 &request.content,
                 &request.file_ids,
                 request.client_message_id.as_deref(),
-                request.selected_skill_id.as_deref(),
-                request.selected_skill_label.as_deref(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -1148,12 +1123,7 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json(
-            &request.content,
-            &request.file_ids,
-            request.selected_skill_id.as_deref(),
-            request.selected_skill_label.as_deref(),
-        );
+        let pending_user_content = build_user_content_json(&request.content, &request.file_ids);
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id.clone(),
@@ -1828,40 +1798,6 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
-        assert_eq!(request.selected_skill_id, None);
-        assert_eq!(request.selected_skill_label, None);
-    }
-
-    #[test]
-    fn build_user_content_json_includes_selected_skill_metadata() {
-        let content =
-            build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
-
-        assert_eq!(
-            content.get("text").and_then(|value| value.as_str()),
-            Some("用这个技能吧")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("id"))
-                .and_then(|value| value.as_str()),
-            Some("salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("command"))
-                .and_then(|value| value.as_str()),
-            Some("/salary-query")
-        );
-        assert_eq!(
-            content
-                .get("skillCommand")
-                .and_then(|value| value.get("label"))
-                .and_then(|value| value.as_str()),
-            Some("薪资查询")
-        );
     }
 
     #[tokio::test]
@@ -2068,8 +2004,6 @@ mod tests {
             _content: &str,
             _file_ids: &[String],
             _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
         }
@@ -2158,8 +2092,6 @@ mod tests {
             _content: &str,
             _file_ids: &[String],
             _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
         }
