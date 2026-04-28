@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::json;
 
-use super::migration::{copy_dir, read_state_json, write_state_json};
+use super::migration::{copy_dir, read_state_json, update_state_json};
 
 const LEGACY_ITEMS: &[(&str, &str)] = &[
     ("index.json", "index.json"),
@@ -60,7 +60,7 @@ pub fn migrate_legacy_to_user_scope_if_needed(
         return Ok(());
     }
 
-    let mut state = read_state_json(global_state_path)?;
+    let state = read_state_json(global_state_path)?;
     let claimed_by = state
         .get("migrations")
         .and_then(|m| m.get("legacyRootClaim"))
@@ -124,11 +124,12 @@ pub fn migrate_legacy_to_user_scope_if_needed(
         }
     }
 
-    state["migrations"]["legacyRootClaim"] = json!({
-        "claimedBy": scope_key,
-        "claimedAt": chrono::Utc::now().to_rfc3339(),
-    });
-    write_state_json(global_state_path, &state)
+    update_state_json(global_state_path, |state| {
+        state["migrations"]["legacyRootClaim"] = json!({
+            "claimedBy": scope_key,
+            "claimedAt": chrono::Utc::now().to_rfc3339(),
+        });
+    })
 }
 
 pub fn migrate_legacy_config_if_needed(

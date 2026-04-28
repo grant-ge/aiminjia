@@ -1,6 +1,19 @@
 use std::path::Path;
+use std::sync::Mutex;
 
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
+
+static GLOBAL_STATE_WRITE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+pub(crate) fn with_state_json_write_lock<T>(
+    operation: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    let _guard = GLOBAL_STATE_WRITE_LOCK
+        .lock()
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))?;
+    operation()
+}
 
 /// 启动时一次性迁移：把旧 app_data_dir 的数据复制到 ~/.renlijia/。
 /// 完成后写 .migrated 标记，下次启动直接跳过。
@@ -74,7 +87,7 @@ pub fn reconcile_legacy_conversations_if_needed(
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(new_dir)?;
     let state_path = new_dir.join("state.json");
-    let mut state = read_state_json(&state_path)?;
+    let state = read_state_json(&state_path)?;
     if state
         .get("migrations")
         .and_then(|m| m.get("legacyConversations"))
@@ -103,8 +116,9 @@ pub fn reconcile_legacy_conversations_if_needed(
         }
     }
 
-    state["migrations"]["legacyConversations"] = json!(true);
-    write_state_json(&state_path, &state)?;
+    update_state_json(&state_path, |state| {
+        state["migrations"]["legacyConversations"] = json!(true);
+    })?;
     Ok(())
 }
 
@@ -112,7 +126,7 @@ pub fn reconcile_legacy_conversations_if_needed(
 pub fn migrate_message_shards_to_single_file_if_needed(new_dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(new_dir)?;
     let state_path = new_dir.join("state.json");
-    let mut state = read_state_json(&state_path)?;
+    let state = read_state_json(&state_path)?;
     if state
         .get("migrations")
         .and_then(|m| m.get("messageShardsToSingleFile"))
@@ -135,8 +149,9 @@ pub fn migrate_message_shards_to_single_file_if_needed(new_dir: &Path) -> std::i
         }
     }
 
-    state["migrations"]["messageShardsToSingleFile"] = json!(true);
-    write_state_json(&state_path, &state)?;
+    update_state_json(&state_path, |state| {
+        state["migrations"]["messageShardsToSingleFile"] = json!(true);
+    })?;
     Ok(())
 }
 
@@ -170,7 +185,18 @@ pub(crate) fn read_state_json(path: &Path) -> std::io::Result<Value> {
     Ok(value)
 }
 
-pub(crate) fn write_state_json(path: &Path, state: &Value) -> std::io::Result<()> {
+pub(crate) fn update_state_json(
+    path: &Path,
+    update: impl FnOnce(&mut Value),
+) -> std::io::Result<()> {
+    with_state_json_write_lock(|| {
+        let mut state = read_state_json(path)?;
+        update(&mut state);
+        write_state_json_unlocked(path, &state)
+    })
+}
+
+pub(crate) fn write_state_json_unlocked(path: &Path, state: &Value) -> std::io::Result<()> {
     let text = serde_json::to_string_pretty(state)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     let tmp = path.with_extension("json.tmp");

@@ -288,6 +288,13 @@ pub fn run() {
                 ),
             ));
             app.manage(disk_skill_registry.clone());
+            plugin::skill::global_sync::spawn_global_skill_sync(
+                plugin::skill::global_sync::GlobalSkillSyncConfig::for_home(
+                    aijia_home.root(),
+                    skill_roots.clone(),
+                ),
+                disk_skill_registry.clone(),
+            );
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
                 Some(
