@@ -6,7 +6,7 @@ import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 
 import {
-  getGeneratedFilePrimaryAction,
+  isFileActionEnabled,
   isPreviewableFileType,
 } from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
@@ -67,6 +67,8 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
   const title = anyF.title || anyF.fileName || '未命名文件'
   const fileType = anyF.fileType
   const actions = anyF.actions ?? []
+  const canPreview = isPreviewableFileType(fileType, anyF.fileName ?? title)
+    && isFileActionEnabled(actions, 'preview')
   return {
     id: anyF.id,
     title,
@@ -74,8 +76,8 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
     appName: anyF.appName || 'Open',
     fileType,
     actions,
-    canPreview: isPreviewableFileType(fileType, title),
-    primaryAction: getGeneratedFilePrimaryAction({ fileType, title }),
+    canPreview,
+    primaryAction: canPreview ? 'preview' : 'open',
   }
 }
 

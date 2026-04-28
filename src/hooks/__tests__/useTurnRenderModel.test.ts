@@ -203,4 +203,73 @@ describe('buildTurnsFromMessages', () => {
     )
   })
 
+  it('respects explicit disabled preview action when choosing generated file primary action', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-3',
+            fileName: 'report.md',
+            filePath: '/tmp/report.md',
+            fileType: 'markdown',
+            fileSize: 128,
+            category: 'report',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Report',
+            actions: [
+              { type: 'preview', label: 'Preview', enabled: false },
+              { type: 'open', label: 'Open', enabled: true },
+            ],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        canPreview: false,
+        primaryAction: 'open',
+      }),
+    )
+  })
+
+  it('keeps generated file display title while using fileName as preview fallback', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-4',
+            title: 'Readable Report',
+            fileName: 'report.md',
+            filePath: '/tmp/report.md',
+            fileSize: 128,
+            category: 'report',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Report',
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        title: 'Readable Report',
+        canPreview: true,
+        primaryAction: 'preview',
+      }),
+    )
+  })
+
 })
