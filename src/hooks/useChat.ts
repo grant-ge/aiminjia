@@ -423,9 +423,11 @@ export function useChat() {
     }
   }, [loadConversations])
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const createConversationFromSkill = useCallback(async (_skillId: string) => {
+  const createConversationFromSkill = useCallback(async (skillId: string) => {
     const conversationId = await createNewConversation()
+    if (skillId === 'skill-smith') {
+      useUiStore.getState().setPrefillText('/create-skill ')
+    }
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
     return conversationId
   }, [createNewConversation])
