@@ -216,15 +216,55 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     if !path.is_file() {
         let skill_md = dir.join("SKILL.md");
         if skill_md.is_file() {
-            // TODO(Phase B Task 8): restore SKILL.md frontmatter validation
-            errors.push(ValidationError {
-                file: "SKILL.md".into(),
-                path: "(root)".into(),
-                rule: "frontmatter".into(),
-                actual: "unimplemented".into(),
-                message: "SKILL.md manifest validation removed in Phase B Task 5; restored in Task 8".into(),
-                fix_hint: None,
-            });
+            // Validate SKILL.md: check readable, has frontmatter delimiters, has name: and description:
+            match std::fs::read_to_string(&skill_md) {
+                Err(e) => {
+                    errors.push(ValidationError {
+                        file: "SKILL.md".into(),
+                        path: "(file)".into(),
+                        rule: "readable".into(),
+                        actual: "unreadable".into(),
+                        message: format!("读取 SKILL.md 失败 (failed to read SKILL.md): {}", e),
+                        fix_hint: Some("检查 SKILL.md 文件权限并重试".into()),
+                    });
+                }
+                Ok(content) => {
+                    // Check frontmatter delimiters: first two lines containing "---"
+                    let mut dashes = content.lines().filter(|l| l.trim() == "---").take(2);
+                    if dashes.next().is_none() || dashes.next().is_none() {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "(frontmatter)".into(),
+                            rule: "frontmatter".into(),
+                            actual: "no --- delimiters".into(),
+                            message: "SKILL.md 缺少 YAML frontmatter 边界 (missing --- delimiters)".into(),
+                            fix_hint: Some("SKILL.md 应以 --- 开头，并在 frontmatter 后以 --- 结尾".into()),
+                        });
+                    }
+                    let has_name = content.lines().any(|l| l.trim_start().starts_with("name:"));
+                    if !has_name {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "name".into(),
+                            rule: "exists".into(),
+                            actual: "missing".into(),
+                            message: "SKILL.md frontmatter 缺少 name: 字段".into(),
+                            fix_hint: Some("在 frontmatter 中添加 name: 技能名称".into()),
+                        });
+                    }
+                    let has_desc = content.lines().any(|l| l.trim_start().starts_with("description:"));
+                    if !has_desc {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "description".into(),
+                            rule: "exists".into(),
+                            actual: "missing".into(),
+                            message: "SKILL.md frontmatter 缺少 description: 字段".into(),
+                            fix_hint: Some("在 frontmatter 中添加 description: 技能描述".into()),
+                        });
+                    }
+                }
+            }
         } else {
             errors.push(ValidationError {
                 file: "plugin.toml".into(),

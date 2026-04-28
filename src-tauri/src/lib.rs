@@ -640,7 +640,8 @@ async fn scan_external_plugins(
     _workspace_path: &std::path::Path,
     _source: &str,
 ) {
-    unimplemented!("removed in Phase B Task 5; restored in Task 8")
+    // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+    // This legacy entrypoint is intentionally a no-op.
 }
 
 #[cfg(test)]

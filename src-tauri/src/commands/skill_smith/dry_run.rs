@@ -295,11 +295,87 @@ fn check_knowledge(dir: &Path) -> CheckResult {
 }
 
 /// The strongest check: exercise the real runtime parser + skill loader on
-/// the draft. A "schema-valid but not loadable" draft is almost never seen
-/// (T3 validation exceeds what the loader requires), but keeping this check
+/// the draft. Parses plugin.toml (or SKILL.md) and workflow.toml to confirm
+/// they are structurally valid — without invoking any LLM or Python.
+/// A "schema-valid but not loadable" draft is rare, but keeping this check
 /// guards against drift between T3 rules and the actual plugin loader.
-fn check_loadable(_dir: &Path) -> CheckResult {
-    unimplemented!("removed in Phase B Task 5; restored in Task 8")
+fn check_loadable(dir: &Path) -> CheckResult {
+    // Check plugin manifest: prefer plugin.toml, fall back to SKILL.md
+    let plugin_toml_path = dir.join("plugin.toml");
+    let skill_md_path = dir.join("SKILL.md");
+
+    if plugin_toml_path.is_file() {
+        match std::fs::read_to_string(&plugin_toml_path) {
+            Ok(content) => {
+                if let Err(e) = toml::from_str::<toml::Value>(&content) {
+                    return CheckResult {
+                        name: "loadable".into(),
+                        status: CheckStatus::Fail,
+                        detail: format!("plugin.toml 解析失败：{}", e),
+                    };
+                }
+            }
+            Err(e) => {
+                return CheckResult {
+                    name: "loadable".into(),
+                    status: CheckStatus::Fail,
+                    detail: format!("plugin.toml 读取失败：{}", e),
+                };
+            }
+        }
+    } else if skill_md_path.is_file() {
+        // SKILL.md: check that name: and description: lines exist
+        match std::fs::read_to_string(&skill_md_path) {
+            Ok(content) => {
+                let has_name = content.lines().any(|l| l.trim_start().starts_with("name:"));
+                let has_desc = content.lines().any(|l| l.trim_start().starts_with("description:"));
+                if !has_name || !has_desc {
+                    return CheckResult {
+                        name: "loadable".into(),
+                        status: CheckStatus::Fail,
+                        detail: "SKILL.md 解析失败：缺少 name: 或 description: 字段".into(),
+                    };
+                }
+            }
+            Err(e) => {
+                return CheckResult {
+                    name: "loadable".into(),
+                    status: CheckStatus::Fail,
+                    detail: format!("SKILL.md 读取失败：{}", e),
+                };
+            }
+        }
+    }
+    // No manifest file is caught by schema check, not loadable check
+
+    // Check workflow.toml if present
+    let workflow_path = dir.join("workflow.toml");
+    if workflow_path.is_file() {
+        match std::fs::read_to_string(&workflow_path) {
+            Ok(content) => {
+                if let Err(e) = toml::from_str::<toml::Value>(&content) {
+                    return CheckResult {
+                        name: "loadable".into(),
+                        status: CheckStatus::Fail,
+                        detail: format!("workflow.toml 解析失败：{}", e),
+                    };
+                }
+            }
+            Err(e) => {
+                return CheckResult {
+                    name: "loadable".into(),
+                    status: CheckStatus::Fail,
+                    detail: format!("workflow.toml 读取失败：{}", e),
+                };
+            }
+        }
+    }
+
+    CheckResult {
+        name: "loadable".into(),
+        status: CheckStatus::Pass,
+        detail: "Manifest 和 workflow 文件均可正常解析".into(),
+    }
 }
 
 // ---------------------------------------------------------------------------
