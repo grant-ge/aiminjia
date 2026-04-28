@@ -3,7 +3,6 @@ import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
 import { ChatArea } from '@/components/layout/ChatArea'
-import { ExportMenu } from '@/components/rich-content/ExportMenu'
 import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
@@ -18,10 +17,8 @@ interface ChatPageProps {
 export function ChatPage({ conversationId }: ChatPageProps) {
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
-  const streamStates = useChatStore((s) => s.streamStates)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const pushNotification = useNotificationStore((s) => s.push)
-  const isStreaming = streamStates[conversationId]?.isStreaming ?? false
   const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
@@ -54,16 +51,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      {title ? (
-        <ChatTopBar
-          title={title}
-          trailing={
-            !isStreaming ? (
-              <ExportMenu conversationId={conversationId} />
-            ) : undefined
-          }
-        />
-      ) : null}
+      {title ? <ChatTopBar title={title} /> : null}
       <div className="relative flex flex-1 overflow-hidden">
         <div data-testid="chat-layout-column" className="relative flex flex-1 flex-col overflow-hidden">
           <ChatArea />
