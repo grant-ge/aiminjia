@@ -38,6 +38,7 @@ export interface RenderToolGroup {
 export interface RenderGeneratedFile {
   id: string
   title: string
+  fileName: string
   sub: string
   appName: string
   fileType?: string
@@ -67,16 +68,17 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
     fileType?: string; actions?: FileAction[];
   }
   const title = anyF.title || anyF.fileName || '未命名文件'
+  const fileName = anyF.fileName ?? title
   const fileType = anyF.fileType
   const actions = anyF.actions ?? []
-  const previewName = anyF.fileName ?? title
-  const canPreviewByType = isPreviewableFileType(fileType, previewName)
+  const canPreviewByType = isPreviewableFileType(fileType, fileName)
   const canPreview = canPreviewByType && isFileActionEnabled(actions, 'preview')
   const canOpenExternal = isFileActionEnabled(actions, 'open')
   const canReveal = isFileActionEnabled(actions, 'reveal')
   return {
     id: anyF.id,
     title,
+    fileName,
     sub: anyF.subtitle || anyF.format || '',
     appName: anyF.appName || 'Open',
     fileType,

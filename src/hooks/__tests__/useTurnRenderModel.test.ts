@@ -303,6 +303,7 @@ describe('buildTurnsFromMessages', () => {
     expect(generatedFile).toEqual(
       expect.objectContaining({
         title: 'Readable Report',
+        fileName: 'report.md',
         canPreview: true,
         primaryAction: 'preview',
       }),
