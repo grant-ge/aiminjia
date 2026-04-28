@@ -99,16 +99,16 @@ describe('ChatComposerCompact', () => {
         onChange={() => {}}
         onSubmit={() => {}}
         skillCommand={{
-          id: 'skill-smith',
+          id: 'biz-writing',
           label: '创建自己的技能',
-          command: '/skill-smith',
+          command: '/biz-writing',
         }}
         onClearSkillCommand={onClearSkillCommand}
       />,
     )
 
     expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
-    expect(screen.getByText('/skill-smith')).toBeInTheDocument()
+    expect(screen.getByText('/biz-writing')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /当前已加载技能 创建自己的技能/ })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '移除技能 创建自己的技能' }))

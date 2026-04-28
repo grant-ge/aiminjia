@@ -23,8 +23,6 @@ pub struct AnalysisContext {
     pub data_insights: Vec<String>,
     /// Column mapping result (from step 2 normalization), if available.
     pub column_mapping: Option<Value>,
-    /// Current analysis step number.
-    pub current_step: u32,
 }
 
 /// Structural profile of a single uploaded file.
@@ -85,10 +83,9 @@ impl AnalysisContext {
                 Ok(json) => match serde_json::from_str::<AnalysisContext>(&json) {
                     Ok(ctx) => {
                         info!(
-                            "[AnalysisContext] Loaded from {:?} ({} files, step {})",
+                            "[AnalysisContext] Loaded from {:?} ({} files)",
                             path,
                             ctx.files.len(),
-                            ctx.current_step
                         );
                         return ctx;
                     }
@@ -394,15 +391,12 @@ impl AnalysisContext {
         out
     }
 
-    /// Clear step-specific findings (called on step transitions).
-    pub fn advance_step(&mut self, new_step: u32) {
-        let old_step = self.current_step;
-        self.current_step = new_step;
-        // Move step_findings to data_insights (persist as one-liners)
+    /// Clear step-specific findings and move them to insights.
+    pub fn clear_step_findings(&mut self) {
         for finding in self.step_findings.drain(..) {
             let insight = format!(
-                "[step{}:{}] {}",
-                old_step, finding.category, finding.summary
+                "[step:{}] {}",
+                finding.category, finding.summary
             );
             if !self.data_insights.contains(&insight) {
                 self.data_insights.push(insight);
@@ -423,7 +417,6 @@ mod tests {
         let conv_id = "test-conv-123";
 
         let mut ctx = AnalysisContext::default();
-        ctx.current_step = 2;
         ctx.files.push(FileProfile {
             file_id: "f1".to_string(),
             original_name: "data.xlsx".to_string(),
@@ -451,7 +444,6 @@ mod tests {
         ctx.save(workspace, conv_id);
 
         let loaded = AnalysisContext::load_or_default(workspace, conv_id);
-        assert_eq!(loaded.current_step, 2);
         assert_eq!(loaded.files.len(), 1);
         assert_eq!(loaded.files[0].original_name, "data.xlsx");
         assert_eq!(loaded.files[0].row_count, 1000);
@@ -462,7 +454,6 @@ mod tests {
     fn load_default_when_no_file() {
         let tmp = TempDir::new().unwrap();
         let ctx = AnalysisContext::load_or_default(tmp.path(), "nonexistent");
-        assert_eq!(ctx.current_step, 0);
         assert!(ctx.files.is_empty());
     }
 
@@ -535,19 +526,17 @@ Done"#;
     }
 
     #[test]
-    fn advance_step_moves_findings_to_insights() {
+    fn clear_step_findings_moves_to_insights() {
         let mut ctx = AnalysisContext::default();
-        ctx.current_step = 1;
         ctx.step_findings.push(Finding {
             category: "diagnosis".to_string(),
             summary: "pay gap found".to_string(),
         });
 
-        ctx.advance_step(2);
+        ctx.clear_step_findings();
         assert!(ctx.step_findings.is_empty());
         assert_eq!(ctx.data_insights.len(), 1);
         assert!(ctx.data_insights[0].contains("pay gap found"));
-        assert_eq!(ctx.current_step, 2);
     }
 
     #[test]

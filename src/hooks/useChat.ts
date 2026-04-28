@@ -14,7 +14,6 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
-import { useSkillStore } from '@/stores/skillStore'
 import i18n from '@/i18n'
 import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
@@ -30,7 +29,7 @@ import {
   archiveConversation as tauriArchiveConversation,
   type ChatAttachmentPayload,
 } from '@/lib/tauri'
-import type { Conversation, Message, SkillCommandBreadcrumb } from '@/types/message'
+import type { Conversation, Message } from '@/types/message'
 
 /** Maximum concurrent conversations allowed (must match backend). */
 const MAX_CONCURRENT_AGENTS = 3
@@ -38,29 +37,6 @@ const MAX_CONCURRENT_AGENTS = 3
 /** Generate a unique ID without requiring the `uuid` package. */
 function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
-}
-
-function resolveManualSkillCommand(text: string): {
-  text: string
-  selectedSkillId: string
-  skillCommand: SkillCommandBreadcrumb
-} | null {
-  const match = text.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/)
-  if (!match) return null
-
-  const skillId = match[1]
-  const skill = useSkillStore.getState().getById(skillId)
-  if (!skill) return null
-
-  return {
-    text: match[2]?.trimStart() ?? '',
-    selectedSkillId: skill.id,
-    skillCommand: {
-      id: skill.id,
-      label: skill.displayName || skill.id,
-      command: `/${skill.id}`,
-    },
-  }
 }
 
 /** File info passed from chat input UI to sendUserMessage. */
@@ -240,15 +216,12 @@ export function useChat() {
   /**
    * Send a user message in the currently active conversation.
    *
-   * @param text      - The user's plain-text input.
-   * @param files     - Optional list of attached file info objects.
-   * @param agentName - Optional agent definition name for this turn.
+   * @param text  - The user's plain-text input (slash-prefixed text is sent verbatim).
+   * @param files - Optional list of attached file info objects.
    */
   const sendUserMessage = useCallback(async (
     text: string,
     files?: PendingFileInfo[],
-    agentName?: string | null,
-    selectedSkillId?: string | null,
   ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
@@ -312,9 +285,6 @@ export function useChat() {
       }
     }
 
-    const manualSkillCommand = selectedSkillId ? null : resolveManualSkillCommand(text)
-    const effectiveText = manualSkillCommand?.text ?? text
-    const effectiveSelectedSkillId = selectedSkillId ?? manualSkillCommand?.selectedSkillId
     const messageId = generateId()
     const now = new Date().toISOString()
     recordDiagnostic({
@@ -324,20 +294,6 @@ export function useChat() {
       payload: { messageLength: text.length, fileCount: files?.length ?? 0 },
     })
 
-    const selectedSkillCommand = effectiveSelectedSkillId
-      ? useChatStore.getState().selectedSkillCommands[conversationId]
-      : undefined
-    const skillCommand: SkillCommandBreadcrumb | undefined = selectedSkillCommand
-      ? {
-          id: selectedSkillCommand.id,
-          label: selectedSkillCommand.label,
-          command: selectedSkillCommand.command,
-        }
-      : manualSkillCommand?.skillCommand
-        ?? (effectiveSelectedSkillId
-          ? { id: effectiveSelectedSkillId, label: effectiveSelectedSkillId, command: `/${effectiveSelectedSkillId}` }
-          : undefined)
-    const commandText = skillCommand ? `${skillCommand.command} ${effectiveText}`.trim() : undefined
     // Build the optimistic user message
     const auth = useAuthStore.getState()
     const userMessage: Message = {
@@ -346,9 +302,7 @@ export function useChat() {
       role: 'user',
       createdAt: now,
       content: {
-        text: effectiveText,
-        commandText,
-        skillCommand,
+        text,
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
@@ -367,23 +321,13 @@ export function useChat() {
     }
 
     store = useChatStore.getState()
-    console.debug('[skill-command][optimistic-user-message]', {
-      traceId: messageId,
-      conversationId,
-      clientMessageId: messageId,
-      selectedSkillId,
-      effectiveSelectedSkillId,
-      selectedSkillCommand,
-      commandText,
-      skillCommand,
-    })
     store.addMessage(userMessage)
     store.setConversationStreaming(conversationId, true)
     store.addBusyConversation(conversationId)
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files)
-      await sendMessage(conversationId, effectiveText, files, agentName, messageId, effectiveSelectedSkillId, skillCommand?.label)
+      await sendMessage(conversationId, text, files, null, messageId, null, null)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
@@ -423,7 +367,6 @@ export function useChat() {
     if (convId) {
       recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
-      store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
         console.error('[useChat] stopStreaming IPC failed:', err)
       })
@@ -494,15 +437,9 @@ export function useChat() {
     }
   }, [loadConversations])
 
-  const createConversationFromSkill = useCallback(async (skillId: string) => {
+  const createConversationFromSkill = useCallback(async (_skillId: string) => {
     const conversationId = await createNewConversation()
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
-    const skill = useSkillStore.getState().getById(skillId)
-    useChatStore.getState().setSelectedSkillCommand(conversationId, {
-      id: skillId,
-      label: skill?.displayName || skillId,
-      command: `/${skillId}`,
-    })
     return conversationId
   }, [createNewConversation])
 

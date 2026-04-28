@@ -51,14 +51,12 @@ pub async fn send_message(
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
     client_message_id: Option<String>,
-    selected_skill_id: Option<String>,
-    selected_skill_label: Option<String>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, attachments, permission_mode, agent_name)
     let diagnostic_conversation_id = conversation_id.clone();
     record_command_event(
-        file_mgr.workspace_path(),
+        &file_mgr.workspace_path(),
         "backend.command.started",
         Some(&conversation_id),
         None,
@@ -72,20 +70,18 @@ pub async fn send_message(
             permission_mode,
             agent_name,
             client_message_id,
-            selected_skill_id,
-            selected_skill_label,
         )
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             Some(&diagnostic_conversation_id),
             Some(true),
             Some("chat.send_message"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             Some(&diagnostic_conversation_id),
             Some(false),
@@ -102,7 +98,7 @@ pub async fn stop_streaming(
 ) -> Result<(), String> {
     let diagnostic_conversation_id = conversation_id.clone();
     record_command_event(
-        file_mgr.workspace_path(),
+        &file_mgr.workspace_path(),
         "backend.command.started",
         Some(&conversation_id),
         None,
@@ -111,14 +107,14 @@ pub async fn stop_streaming(
     let result = adapter.stop_streaming(conversation_id).await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             Some(&diagnostic_conversation_id),
             Some(true),
             Some("chat.stop_streaming"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             Some(&diagnostic_conversation_id),
             Some(false),
@@ -142,14 +138,14 @@ pub async fn approve_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.approve_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -173,14 +169,14 @@ pub async fn deny_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.deny_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -202,14 +198,14 @@ pub async fn cancel_permission_request(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.cancel_permission_request"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -229,14 +225,14 @@ pub async fn submit_user_interaction(
     let result = adapter.submit_user_interaction(interaction_id, value).await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.submit_user_interaction"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -258,14 +254,14 @@ pub async fn cancel_user_interaction(
         .await;
     match &result {
         Ok(()) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.completed",
             None,
             Some(true),
             Some("chat.cancel_user_interaction"),
         ),
         Err(_) => record_command_event(
-            file_mgr.workspace_path(),
+            &file_mgr.workspace_path(),
             "backend.command.failed",
             None,
             Some(false),
@@ -510,7 +506,6 @@ pub mod testsupport {
             agent_runtime: None,
             event_bus: None,
             skill_registry: None,
-            skill_sessions: None,
             authorized_workspace,
             read_file_state: None,
             cancellation: None,
@@ -612,8 +607,8 @@ mod auto_capture_tests {
     }
 
     #[test]
-    fn does_not_skip_when_last_tool_is_analysis() {
-        // execute_python is the last tool — analysis step, should be captured
+    fn does_not_skip_when_last_tool_is_execute_python() {
+        // execute_python is the last tool — data step, should be captured
         let msgs = vec![
             user("clean data"),
             assistant("分析中"),

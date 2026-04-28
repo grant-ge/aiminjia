@@ -45,8 +45,7 @@ pub struct RequestScopedRuntimeDeps {
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
-    pub skill_sessions: Option<Arc<crate::runtime::chat::SkillSessionStore>>,
+    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
@@ -78,7 +77,6 @@ impl RequestScopedRuntimeDeps {
             agent_runtime: ctx.agent_runtime.clone(),
             event_bus: ctx.event_bus.clone(),
             skill_registry: ctx.skill_registry.clone(),
-            skill_sessions: ctx.skill_sessions.clone(),
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             cancellation: ctx.cancellation.clone(),
@@ -141,7 +139,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "generate_chart",
     "write_memory",
     "search_memory",
-    "switch_skill",
+    "load_skill",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -655,7 +653,6 @@ impl ToolRegistry {
                 agent_runtime: ctx.agent_runtime.clone(),
                 event_bus: ctx.event_bus.clone(),
                 skill_registry: ctx.skill_registry.clone(),
-                skill_sessions: ctx.skill_sessions.clone(),
                 authorized_workspace: ctx.authorized_workspace.clone(),
                 read_file_state: ctx.read_file_state.clone(),
                 cancellation: ctx.cancellation.clone(),
@@ -758,7 +755,9 @@ impl ToolRegistry {
             if runtime_tools.contains_key(*tool_name) {
                 continue;
             }
-            if let Some(tool) = Self::try_build_request_scoped_tool(tool_name, &request_scoped).await {
+            if let Some(tool) =
+                Self::try_build_request_scoped_tool(tool_name, &request_scoped).await
+            {
                 dispatcher.register(tool);
             }
         }
@@ -963,20 +962,11 @@ impl ToolRegistry {
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "switch_skill" => match (ctx.skill_registry.clone(), ctx.skill_sessions.clone()) {
-                (Some(skill_registry), Some(skill_sessions)) => {
-                    let tool = builtin::switch_skill::SwitchSkillRuntimeTool::new(
-                        skill_registry,
-                        skill_sessions,
-                        ctx.tool_registry
-                            .clone()
-                            .unwrap_or_else(|| Arc::new(ToolRegistry::new())),
-                    )
-                    .await;
-                    Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
-                }
-                _ => None,
-            },
+            "load_skill" => {
+                let registry = ctx.skill_registry.clone()?;
+                Some(Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             _ => None,
         }
     }
@@ -1040,6 +1030,45 @@ impl SkillRegistry {
         &self.default_skill_id
     }
 
+    /// Build a markdown skill catalog for stateless skill discovery.
+    ///
+    /// The default assistant is omitted; only specialist skills are listed.
+    pub async fn build_catalog_markdown(&self) -> String {
+        let skills = self.skills.read().await;
+        let mut entries: Vec<_> = skills
+            .values()
+            .filter(|rs| rs.skill.id() != self.default_skill_id)
+            .collect();
+
+        if entries.is_empty() {
+            return String::new();
+        }
+
+        entries.sort_by(|a, b| a.skill.id().cmp(b.skill.id()));
+
+        let mut md = String::from("## 可用专项技能\n\n");
+        md.push_str(
+            "当用户的需求与以下某个技能的领域匹配时，请调用 `load_skill` 工具加载详细指令。\n\n",
+        );
+        for rs in entries {
+            let skill = &rs.skill;
+            let desc = if !skill.short_description().is_empty() {
+                skill.short_description()
+            } else {
+                skill.description()
+            };
+            md.push_str(&format!(
+                "- `{}` — {} {}: {}\n",
+                skill.id(),
+                skill.icon(),
+                skill.display_name(),
+                desc
+            ));
+        }
+        md.push_str("\n如果没有匹配的技能，直接用通用能力回答。\n");
+        md
+    }
+
     /// Unregister a skill by ID.
     pub async fn unregister(&self, id: &str) {
         let mut skills = self.skills.write().await;
@@ -1067,5 +1096,129 @@ impl SkillRegistry {
                 short_description_en: rs.skill.short_description_en().to_string(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod skill_registry_tests {
+    use super::*;
+    use crate::plugin::skill_trait::{Skill, SkillState, ToolFilter};
+    use std::sync::Arc;
+
+    struct MockSkill {
+        id: String,
+        name: String,
+        desc: String,
+        short_desc: String,
+        icon_str: String,
+    }
+
+    impl MockSkill {
+        fn new(id: &str, name: &str, desc: &str) -> Self {
+            Self {
+                id: id.to_string(),
+                name: name.to_string(),
+                desc: desc.to_string(),
+                short_desc: desc.to_string(),
+                icon_str: "📋".to_string(),
+            }
+        }
+    }
+
+    impl Skill for MockSkill {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn display_name(&self) -> &str {
+            &self.name
+        }
+
+        fn description(&self) -> &str {
+            &self.desc
+        }
+
+        fn short_description(&self) -> &str {
+            &self.short_desc
+        }
+
+        fn icon(&self) -> &str {
+            &self.icon_str
+        }
+
+        fn system_prompt(&self, _: &SkillState) -> String {
+            String::new()
+        }
+
+        fn tool_filter(&self, _: &SkillState) -> ToolFilter {
+            ToolFilter::All
+        }
+    }
+
+    #[tokio::test]
+    async fn build_catalog_empty_when_no_non_default_skills() {
+        let registry = SkillRegistry::new("daily-assistant");
+        registry
+            .register(
+                Arc::new(MockSkill::new("daily-assistant", "Daily", "default")),
+                "builtin",
+            )
+            .await;
+
+        let catalog = registry.build_catalog_markdown().await;
+
+        assert!(catalog.is_empty());
+    }
+
+    #[tokio::test]
+    async fn build_catalog_excludes_default_includes_others() {
+        let registry = SkillRegistry::new("daily-assistant");
+        registry
+            .register(
+                Arc::new(MockSkill::new("daily-assistant", "Daily", "default")),
+                "builtin",
+            )
+            .await;
+        registry
+            .register(
+                Arc::new(MockSkill::new("biz-writing", "商务写作", "邮件/报告")),
+                "plugin",
+            )
+            .await;
+
+        let catalog = registry.build_catalog_markdown().await;
+
+        assert!(catalog.contains("biz-writing"));
+        assert!(catalog.contains("商务写作"));
+        assert!(!catalog.contains("daily-assistant"));
+    }
+
+    #[tokio::test]
+    async fn build_catalog_sorted_by_id() {
+        let registry = SkillRegistry::new("daily-assistant");
+        registry
+            .register(
+                Arc::new(MockSkill::new("daily-assistant", "Daily", "default")),
+                "builtin",
+            )
+            .await;
+        registry
+            .register(
+                Arc::new(MockSkill::new("zzz-skill", "ZZZ", "last")),
+                "plugin",
+            )
+            .await;
+        registry
+            .register(
+                Arc::new(MockSkill::new("aaa-skill", "AAA", "first")),
+                "plugin",
+            )
+            .await;
+
+        let catalog = registry.build_catalog_markdown().await;
+
+        let pos_aaa = catalog.find("aaa-skill").unwrap();
+        let pos_zzz = catalog.find("zzz-skill").unwrap();
+        assert!(pos_aaa < pos_zzz);
     }
 }

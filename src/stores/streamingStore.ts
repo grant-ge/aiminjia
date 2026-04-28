@@ -87,6 +87,7 @@ export interface StreamingState {
   addToolExecution: (execution: ToolExecution) => void
   updateToolExecution: (toolId: string, updates: Partial<ToolExecution>) => void
   clearToolExecutions: () => void
+  resetStreaming: () => void
 }
 
 interface StreamingSliceBridge {
@@ -409,5 +410,16 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         get().clearConversationStreamState(activeConversationId)
       }
     },
+
+    resetStreaming: () =>
+      apply({
+        busyConversations: new Set(),
+        streamStates: {},
+        taskStates: {},
+        pendingAsks: new Map(),
+        isStreaming: false,
+        streamingContent: '',
+        toolExecutions: [],
+      } as Partial<T>),
   }
 }

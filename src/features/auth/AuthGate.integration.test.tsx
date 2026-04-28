@@ -16,6 +16,27 @@ const tauriMock = vi.hoisted(() => ({
     models: [],
   }),
   getCloudModels: vi.fn().mockResolvedValue([]),
+  getSettings: vi.fn().mockResolvedValue({
+    primaryModel: 'qwen-plus',
+    primaryApiKey: '',
+    autoModelRouting: true,
+    workspacePath: '',
+    analysisThreshold: 1.65,
+    dataMaskingLevel: 'strict',
+    autoCleanupEnabled: true,
+    tempFileRetentionDays: 7,
+    keepOldVersions: 1,
+    tavilyApiKey: '',
+    bochaApiKey: '',
+    customModelEndpoint: '',
+    customModelName: '',
+    cloudModel: '',
+    cloudModelType: '',
+    useCloud: true,
+  }),
+  updateSettings: vi.fn().mockResolvedValue(undefined),
+  getConversations: vi.fn().mockResolvedValue([]),
+  isAgentBusy: vi.fn().mockResolvedValue([]),
   cloudLogout: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -34,6 +55,27 @@ describe('AuthGate', () => {
       models: [],
     })
     tauriMock.getCloudModels.mockResolvedValue([])
+    tauriMock.getSettings.mockResolvedValue({
+      primaryModel: 'qwen-plus',
+      primaryApiKey: '',
+      autoModelRouting: true,
+      workspacePath: '',
+      analysisThreshold: 1.65,
+      dataMaskingLevel: 'strict',
+      autoCleanupEnabled: true,
+      tempFileRetentionDays: 7,
+      keepOldVersions: 1,
+      tavilyApiKey: '',
+      bochaApiKey: '',
+      customModelEndpoint: '',
+      customModelName: '',
+      cloudModel: '',
+      cloudModelType: '',
+      useCloud: true,
+    })
+    tauriMock.updateSettings.mockResolvedValue(undefined)
+    tauriMock.getConversations.mockResolvedValue([])
+    tauriMock.isAgentBusy.mockResolvedValue([])
 
     useAuthStore.setState({
       isLoggedIn: false,
@@ -65,7 +107,8 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
 
-    fireEvent.change(await screen.findByLabelText('账号'), { target: { value: 'demo' } })
+    fireEvent.change(await screen.findByPlaceholderText('用户名'), { target: { value: 'demo' } })
+    fireEvent.change(await screen.findByPlaceholderText('企业编号'), { target: { value: 'test' } })
     fireEvent.change(await screen.findByLabelText('密码'), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
 
@@ -89,5 +132,53 @@ describe('AuthGate', () => {
 
     expect(useAuthStore.getState().isLoggedIn).toBe(false)
     expect(useAuthStore.getState().redirectFrom).toBeNull()
+  })
+
+  it('恢复登录时自动把过期云端模型切到最新可用模型并持久化', async () => {
+    tauriMock.getCloudAuth.mockResolvedValue({
+      loggedIn: true,
+      user: { id: 1, name: 'Test', username: 'test' },
+      tenant: { id: 2, name: 'Tenant', balance: '0' },
+      models: [],
+    })
+    tauriMock.getCloudModels.mockResolvedValue([
+      { id: 'claude-sonnet-4-5', name: 'Claude Sonnet', modelType: 'chat' },
+      { id: 'claude-ops', name: 'Claude Ops', modelType: 'chat' },
+    ])
+    tauriMock.getSettings.mockResolvedValue({
+      primaryModel: 'qwen-plus',
+      primaryApiKey: '',
+      autoModelRouting: true,
+      workspacePath: '',
+      analysisThreshold: 1.65,
+      dataMaskingLevel: 'strict',
+      autoCleanupEnabled: true,
+      tempFileRetentionDays: 7,
+      keepOldVersions: 1,
+      tavilyApiKey: '',
+      bochaApiKey: '',
+      customModelEndpoint: '',
+      customModelName: '',
+      cloudModel: 'qwen3-coder-30b-a3b-instruct',
+      cloudModelType: 'chat',
+      useCloud: true,
+    })
+
+    render(
+      <AuthGate>
+        <div>APP SHELL</div>
+      </AuthGate>,
+    )
+
+    await screen.findByText('APP SHELL')
+
+    expect(useAuthStore.getState().selectedCloudModel).toBe('claude-sonnet-4-5')
+    expect(tauriMock.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        useCloud: true,
+        cloudModel: 'claude-sonnet-4-5',
+        cloudModelType: 'chat',
+      }),
+    )
   })
 })

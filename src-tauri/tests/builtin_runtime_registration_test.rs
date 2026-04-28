@@ -3,12 +3,14 @@
 
 #![allow(deprecated)]
 
-use app_lib::plugin::builtin::skills::daily_assistant::DailyAssistantSkill;
 use app_lib::plugin::builtin::tools::register_builtin_tools;
 use app_lib::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use app_lib::plugin::skill_trait::{Skill, SkillState, ToolFilter};
 use app_lib::plugin::SkillRegistry;
-use app_lib::runtime::chat::SkillSessionStore;
+use app_lib::runtime::dependencies::StaticRuntimeResolver;
+use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
 use app_lib::runtime::tools::ToolExecutionContext;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -51,12 +53,60 @@ fn build_test_plugin_ctx(
         agent_runtime: None,
         event_bus: None,
         skill_registry: None,
-        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-        runtime_resolver: None,
+        runtime_resolver: Some(Arc::new(StaticRuntimeResolver::new(
+            PathBuf::from("/tmp/renlijia-managed-python/bin/python3"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/node"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/npm"),
+            PathBuf::from("/tmp/renlijia-managed-node/bin/npx"),
+            PathBuf::from("/tmp/renlijia-managed-uv/bin/uv"),
+            PathBuf::from("/tmp/renlijia-managed-uv/bin/uvx"),
+            PathBuf::from("/tmp/renlijia-managed-node/node_modules"),
+            PathBuf::from("/tmp/renlijia-managed-python/site-packages"),
+        ))),
+    }
+}
+
+struct BodySkill {
+    id: String,
+    body: String,
+}
+
+impl BodySkill {
+    fn new(id: &str, body: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            body: body.to_string(),
+        }
+    }
+}
+
+impl Skill for BodySkill {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn display_name(&self) -> &str {
+        &self.id
+    }
+
+    fn description(&self) -> &str {
+        &self.id
+    }
+
+    fn system_prompt(&self, _state: &SkillState) -> String {
+        String::new()
+    }
+
+    fn body_prompt(&self) -> String {
+        self.body.clone()
+    }
+
+    fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
+        ToolFilter::All
     }
 }
 
@@ -721,45 +771,68 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
 }
 
 #[tokio::test]
-async fn switch_skill_routes_through_request_scoped_runtime_factory() {
+async fn load_skill_routes_through_request_scoped_runtime_factory() {
     let registry = Arc::new(ToolRegistry::new());
     register_builtin_tools(registry.as_ref()).await;
 
+    let schemas = registry.get_all_schemas().await;
+    assert!(
+        schemas.iter().any(|schema| schema.name == "load_skill"),
+        "load_skill schema must be visible to the LLM"
+    );
+    let daily_filter = ToolFilter::Only(
+        DAILY_ALLOWED_TOOLS
+            .iter()
+            .map(|tool| tool.to_string())
+            .collect(),
+    );
+    let daily_schemas = registry.get_schemas_filtered(&daily_filter).await;
+    assert!(
+        daily_schemas
+            .iter()
+            .any(|schema| schema.name == "load_skill"),
+        "load_skill schema must remain visible after daily tool filtering"
+    );
+
     let tmp = TempDir::new().unwrap();
     let mut ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let skill_registry = Arc::new(SkillRegistry::new("daily-assistant"));
-    skill_registry
-        .register(
-            Arc::new(DailyAssistantSkill::new(
-                ctx.storage.clone(),
-                Arc::new(app_lib::auth::AuthManager::new(ctx.storage.clone(), None)),
-            )),
-            "test",
-        )
-        .await;
+
+    // Build a disk-backed SkillRegistry with a single biz-writing skill.
+    let skills_root = tmp.path().join("skills");
+    let biz_dir = skills_root.join("biz-writing");
+    std::fs::create_dir_all(&biz_dir).unwrap();
+    std::fs::write(
+        biz_dir.join("SKILL.md"),
+        "---\nname: biz-writing\ndescription: 商务写作\n---\n\nFollow the biz writing checklist.\n",
+    )
+    .unwrap();
+    let loaded = app_lib::plugin::skill::loader::load_skill_roots(&[skills_root]).unwrap();
+    let skill_registry = std::sync::Arc::new(std::sync::Mutex::new(
+        app_lib::plugin::skill::registry::SkillRegistry::from_skills(
+            loaded.into_values().collect(),
+        ),
+    ));
     ctx.skill_registry = Some(skill_registry);
-    ctx.skill_sessions = Some(Arc::new(SkillSessionStore::new()));
     ctx.tool_registry = Some(registry.clone());
 
-    let err = registry
+    let output = registry
         .execute(
-            "switch_skill",
+            "load_skill",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
-            serde_json::json!({"skill_id": "missing-skill"}),
+            serde_json::json!({"skill_id": "biz-writing"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await
-        .expect_err("switch_skill with unknown skill should still route through runtime factory");
+        .expect("load_skill should route through request-scoped runtime factory");
 
-    let message = err.to_string();
+    assert!(!output.is_error);
+    assert!(output.content.contains("Follow the biz writing checklist."));
     assert!(
-        message.contains("Unknown skill"),
-        "switch_skill should surface runtime-tool validation, got: {}",
-        message
-    );
-    assert!(
-        !message.contains("Unknown tool"),
-        "switch_skill must not fall through to unknown tool: {}",
-        message
+        output
+            .data
+            .as_ref()
+            .and_then(|data| data.get("skill_control"))
+            .is_none(),
+        "load_skill must not emit SkillRuntimePatch data"
     );
 }

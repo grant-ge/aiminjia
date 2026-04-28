@@ -521,4 +521,31 @@ describe('useStreaming integration review', () => {
       totalCostUsd: 0.003,
     })
   })
+
+  it('adds load_skill tool events to streaming bubbles', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('tool:executing')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-load-skill',
+          toolName: 'load_skill',
+          toolId: 'tool-load-skill-1',
+          purpose: 'Load salary query skill',
+          input: { skill_name: 'salary-query' },
+        },
+      })
+    })
+
+    expect(useChatStore.getState().streamStates['conv-load-skill']?.toolExecutions).toContainEqual(
+      expect.objectContaining({
+        toolName: 'load_skill',
+        toolId: 'tool-load-skill-1',
+        status: 'executing',
+        summary: 'Load salary query skill',
+      }),
+    )
+  })
 })

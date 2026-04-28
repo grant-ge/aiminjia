@@ -54,43 +54,6 @@ pub struct TotalTokenUsage {
     pub tokens_out: u64,
 }
 
-fn extract_skill_runtime_patch(
-    data: Option<&serde_json::Value>,
-) -> Option<crate::runtime::chat::tool_round_types::SkillRuntimePatch> {
-    let control = data.and_then(|value| value.get("skill_control")).or(data)?;
-
-    let skill_id = control.get("skill_id")?.as_str()?.to_string();
-    let system_prompt = control.get("system_prompt")?.as_str()?.to_string();
-    let tool_defs = control
-        .get("tool_defs")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let max_iterations = control
-        .get("max_iterations")
-        .and_then(|value| value.as_u64())? as usize;
-    let token_budget = control
-        .get("token_budget")
-        .and_then(|value| value.as_u64())? as usize;
-    let allowed_tools = control.get("allowed_tools").and_then(|value| {
-        value.as_array().map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-    });
-
-    Some(crate::runtime::chat::tool_round_types::SkillRuntimePatch {
-        skill_id,
-        system_prompt,
-        allowed_tools,
-        tool_defs,
-        max_iterations,
-        token_budget,
-    })
-}
-
 impl QueryEngine {
     pub fn new() -> Self {
         Self::default()
@@ -521,8 +484,6 @@ impl QueryEngine {
                 ))
                 .await?;
 
-                let skill_runtime_patch = extract_skill_runtime_patch(tool_result.data.as_ref());
-
                 Ok(RuntimeToolCallOutcome::Completed {
                     tool_call_id: call.tool_call_id,
                     tool_name: call.tool_name,
@@ -534,7 +495,6 @@ impl QueryEngine {
                     degradation_notice: tool_result.degradation_notice,
                     max_result_size_chars,
                     context_modifier_message,
-                    skill_runtime_patch,
                 })
             }
             Ok(crate::runtime::tools::ToolDispatchOutcome::AskRequired(decision)) => {
@@ -605,7 +565,6 @@ impl QueryEngine {
                     degradation_notice: None,
                     max_result_size_chars: 8_000,
                     context_modifier_message: None,
-                    skill_runtime_patch: None,
                 })
             }
         }

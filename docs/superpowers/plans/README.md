@@ -181,3 +181,17 @@ P4（基础设施收尾）← 依赖 P1-P3 的成果
 | [2026-04-10-phase-3-task-agent-plan.md](./2026-04-10-phase-3-task-agent-plan.md) | Phase 3 task/agent | ✅ 已关闭 |
 | [2026-04-10-phase-4-store-transport-plan.md](./2026-04-10-phase-4-store-transport-plan.md) | Phase 4 store/transport | ✅ 已关闭 |
 | [2026-04-12-front-end-event-integration-plan.md](./2026-04-12-front-end-event-integration-plan.md) | 前端事件联调 | ✅ 已关闭 |
+
+---
+
+## Superseded plans (2026-04-28)
+
+下列旧 skill 改造计划已被 `2026-04-28-aijia-skill-system-rewrite.md` 完全取代：
+
+- `2026-04-21-skill-system-complete-overhaul.md`
+- `2026-04-25-skill-command-claude-code-best-alignment.md`
+- `2026-04-25-skill-command-end-to-end.md`
+- `2026-04-26-llm-skill-routing.md`
+- `2026-04-27-skill-system-stateless-migration.md`
+
+新计划基于完全对齐 Claude Code SKILL.md 规范的无状态架构。

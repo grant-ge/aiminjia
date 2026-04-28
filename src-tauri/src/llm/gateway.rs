@@ -446,6 +446,16 @@ impl LlmGateway {
         }
     }
 
+    pub fn clear_task_for_run(&self, conversation_id: &str, run_id: &RunId) {
+        if self.run_registry.clear_for_run(conversation_id, run_id).is_some() {
+            log::info!(
+                "Cleared active task: conversation_id={}, run_id={}",
+                conversation_id,
+                run_id.as_str()
+            );
+        }
+    }
+
     /// Mark the gateway as busy for a given conversation.
     /// Used to reserve the agent before spawning the agent loop.
     /// Returns an error string if the conversation is already busy or max concurrency reached.

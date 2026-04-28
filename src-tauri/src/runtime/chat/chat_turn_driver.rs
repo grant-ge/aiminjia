@@ -100,10 +100,9 @@ pub struct ChatTurnRequest {
     pub attachments: Vec<ChatAttachmentRef>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
-    /// The run_id assigned by `SessionRuntime` for this turn.
-    /// Callers should use `ChatTurnRequest::new` for ad-hoc creation (generates a
-    /// fresh id) or `SessionRuntime::run_chat_request` which overwrites the id
-    /// with the single authoritative id generated for this turn.
+    /// The authoritative run_id for this turn.
+    /// `ChatTurnRequest::new` generates a fresh id; transport code may reserve
+    /// resources with it before handing the request to `SessionRuntime`.
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
@@ -160,15 +159,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         self.load_llm_settings().await
     }
 
-    /// Precompute 执行钩子。默认 no-op。
-    async fn run_precompute(
-        &self,
-        _config: &TurnConfig,
-        _state: &mut TurnIterationState,
-    ) -> Result<Option<String>, TurnError> {
-        Ok(None)
-    }
-
     /// 持久化 assistant message 到存储。纯 I/O，不含事件发射。
     async fn persist_assistant_message(
         &self,
@@ -187,8 +177,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _client_message_id: Option<&str>,
-        _selected_skill_id: Option<&str>,
-        _selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
     }
@@ -277,6 +265,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     async fn get_env_info(&self, conversation_id: &str) -> Result<String, TurnError> {
         let _ = conversation_id;
         Ok(String::new())
+    }
+
+    /// 返回当前 turn 可见的 skill catalog。
+    ///
+    /// 默认返回空字符串，生产 executor 从 SkillRegistry 构建。
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        String::new()
     }
 
     /// 加载 turn 对应的 workspace 路径。
@@ -704,7 +699,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
                 PendingPermissionResolution::Cancel { message } => {
@@ -747,7 +741,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
             };
@@ -915,7 +908,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
             };
@@ -1021,7 +1013,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot
         };
 
-        let mut config = TurnConfig {
+        let config = TurnConfig {
             system_prompt: effective_system_prompt,
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
@@ -1145,18 +1137,13 @@ impl RuntimeChatTurnDriver {
                 &request.content,
                 &request.attachments,
                 request.client_message_id.as_deref(),
-                request.selected_skill_id.as_deref(),
-                request.selected_skill_label.as_deref(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         let pending_user_msg_id = _user_msg_id;
         let pending_client_msg_id = request.client_message_id.clone();
 
-        // ── Step 3: Precompute hook (currently no-op) ────────────────────────
-        let precompute_result = executor.run_precompute(&config, &mut state).await?;
-
-        // ── Step 4: Emit StreamStarted ────────────────────────────────────────
+        // ── Step 3: Emit StreamStarted ────────────────────────────────────────
         let session_id = turn.session_id().clone();
         let run_id = turn.run_id().clone();
         self.event_bus
@@ -1201,6 +1188,7 @@ impl RuntimeChatTurnDriver {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
                 String::new()
             });
+        let skill_catalog = executor.get_skill_catalog(None).await;
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
@@ -1259,9 +1247,9 @@ impl RuntimeChatTurnDriver {
                 &env_info,
                 "",
                 "",
-                precompute_result.as_deref(),
                 None,
                 None,
+                &skill_catalog,
             );
 
             // Build the read-only executor input.
@@ -1555,9 +1543,6 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
-                    if let Some(skill_runtime_patch) = results.skill_runtime_patch {
-                        apply_skill_runtime_patch(&mut config, skill_runtime_patch);
-                    }
 
                     // Safeguard check.
                     match safeguard::check_iteration(
@@ -1743,21 +1728,6 @@ impl RuntimeChatTurnDriver {
     }
 }
 
-fn apply_skill_runtime_patch(
-    config: &mut TurnConfig,
-    patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
-) {
-    config.system_prompt = patch.system_prompt;
-    config.prompt_snapshot = Some(single_dynamic_prompt_snapshot(
-        "skill_runtime_patch",
-        config.system_prompt.clone(),
-    ));
-    config.tool_defs = patch.tool_defs;
-    config.allowed_tools = patch.allowed_tools.map(|names| names.into_iter().collect());
-    config.max_iterations = patch.max_iterations;
-    config.token_budget = patch.token_budget;
-}
-
 fn single_dynamic_prompt_snapshot(
     section_id: &str,
     text: impl Into<String>,
@@ -1793,10 +1763,6 @@ mod tests {
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
     use crate::runtime::tools::permission::{PermissionDecision, PermissionMode, PermissionReason};
-    use crate::runtime::tools::{
-        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
-        ToolExecutionContext, ToolResult,
-    };
     use async_trait::async_trait;
     use serde_json::json;
     use std::path::PathBuf;
@@ -1900,6 +1866,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn build_user_content_json_includes_selected_skill_metadata() {
         let content =
             build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
@@ -2058,108 +2025,11 @@ mod tests {
         );
     }
 
-    struct RecordingExecutor {
-        calls: AtomicUsize,
-        seen_system_prompts: Mutex<Vec<String>>,
-        seen_tool_defs: Mutex<Vec<Vec<String>>>,
-    }
-
-    impl RecordingExecutor {
-        fn new() -> Self {
-            Self {
-                calls: AtomicUsize::new(0),
-                seen_system_prompts: Mutex::new(Vec::new()),
-                seen_tool_defs: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl RuntimeLlmExecutor for RecordingExecutor {
-        async fn run_llm_step(
-            &self,
-            input: &LlmStepInput<'_>,
-            _bus: &RuntimeEventBus,
-            _cancel: &CancellationToken,
-        ) -> Result<LlmStepResult, TurnError> {
-            self.seen_system_prompts
-                .lock()
-                .unwrap()
-                .push(input.system_prompt.to_string());
-            self.seen_tool_defs.lock().unwrap().push(
-                input
-                    .tool_defs
-                    .iter()
-                    .filter_map(|value| value.get("name").and_then(|name| name.as_str()))
-                    .map(|name| name.to_string())
-                    .collect(),
-            );
-
-            match self.calls.fetch_add(1, Ordering::SeqCst) {
-                0 => Ok(LlmStepResult::ToolCalls {
-                    assistant_content: String::new(),
-                    tool_calls: vec![RuntimeToolCallRequest {
-                        tool_call_id: "tc-switch".to_string(),
-                        tool_name: "switch_skill".to_string(),
-                        args: json!({
-                            "skill_id": "comp-analysis"
-                        }),
-                        purpose: None,
-                    }],
-                    tokens_in: 0,
-                    tokens_out: 0,
-                }),
-                _ => Ok(LlmStepResult::ContentComplete {
-                    content: "done".to_string(),
-                    tokens_in: 0,
-                    tokens_out: 0,
-                    stop_reason: Some("end_turn".to_string()),
-                }),
-            }
-        }
-
-        async fn persist_assistant_message(
-            &self,
-            _conversation_id: &str,
-            _content: &str,
-            _tool_calls: &[serde_json::Value],
-            _generated_file_ids: &[String],
-            _file_metas: &[serde_json::Value],
-        ) -> Result<String, TurnError> {
-            Ok("assistant-msg".to_string())
-        }
-
-        async fn persist_user_message(
-            &self,
-            _conversation_id: &str,
-            _content: &str,
-            _attachments: &[ChatAttachmentRef],
-            _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
-        ) -> Result<String, TurnError> {
-            Ok("user-msg".to_string())
-        }
-
-        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
-            Ok("daily prompt".to_string())
-        }
-
-        async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-            Ok(vec![json!({
-                "name": "bash",
-                "description": "bash"
-            })])
-        }
-
-        async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
-            Ok(std::env::temp_dir())
-        }
-    }
-
     struct SnapshotPromptExecutor {
         legacy_calls: AtomicUsize,
         seen_system_prompts: Mutex<Vec<String>>,
+        seen_dynamic_contexts: Mutex<Vec<String>>,
+        skill_catalog: Option<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -2167,6 +2037,17 @@ mod tests {
             Self {
                 legacy_calls: AtomicUsize::new(0),
                 seen_system_prompts: Mutex::new(Vec::new()),
+                seen_dynamic_contexts: Mutex::new(Vec::new()),
+                skill_catalog: None,
+            }
+        }
+
+        fn with_skill_catalog(skill_catalog: impl Into<String>) -> Self {
+            Self {
+                legacy_calls: AtomicUsize::new(0),
+                seen_system_prompts: Mutex::new(Vec::new()),
+                seen_dynamic_contexts: Mutex::new(Vec::new()),
+                skill_catalog: Some(skill_catalog.into()),
             }
         }
     }
@@ -2183,6 +2064,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(input.system_prompt.to_string());
+            self.seen_dynamic_contexts
+                .lock()
+                .unwrap()
+                .push(input.dynamic_context.to_string());
             Ok(LlmStepResult::ContentComplete {
                 content: "snapshot done".to_string(),
                 tokens_in: 0,
@@ -2208,8 +2093,6 @@ mod tests {
             _content: &str,
             _attachments: &[ChatAttachmentRef],
             _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())
         }
@@ -2241,6 +2124,10 @@ mod tests {
         async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
             Ok(std::env::temp_dir())
         }
+
+        async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+            self.skill_catalog.clone().unwrap_or_default()
+        }
     }
 
     #[tokio::test]
@@ -2267,79 +2154,30 @@ mod tests {
         assert_eq!(executor.legacy_calls.load(Ordering::SeqCst), 0);
     }
 
-    struct SwitchingTool;
-
-    #[async_trait]
-    impl RuntimeTool for SwitchingTool {
-        fn definition(&self) -> ToolDefinition {
-            ToolDefinition::new("switch_skill", "switch skill")
-        }
-
-        async fn execute(
-            &self,
-            _input: serde_json::Value,
-            _ctx: ToolExecutionContext,
-        ) -> Result<ToolResult, ToolError> {
-            Ok(ToolResult::new(
-                "switch_skill",
-                "switched",
-                Some(json!({
-                    "skill_control": {
-                        "skill_id": "comp-analysis",
-                        "system_prompt": "comp prompt",
-                        "allowed_tools": ["execute_python", "switch_skill"],
-                        "tool_defs": [
-                            {
-                                "name": "execute_python",
-                                "description": "python"
-                            },
-                            {
-                                "name": "switch_skill",
-                                "description": "switch"
-                            }
-                        ],
-                        "max_iterations": 5,
-                        "token_budget": 7777
-                    }
-                })),
-            ))
-        }
-    }
-
     #[tokio::test]
-    async fn driver_applies_skill_runtime_patch_on_next_iteration() {
-        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
-        dispatcher.register(Arc::new(SwitchingTool));
-        let executor = Arc::new(RecordingExecutor::new());
+    async fn driver_injects_skill_catalog_into_dynamic_context() {
+        let executor = Arc::new(SnapshotPromptExecutor::with_skill_catalog(
+            "## 可用专项技能\n- `biz-writing` — 商务写作",
+        ));
         let bus = RuntimeEventBus::new();
-        let driver = RuntimeChatTurnDriver::with_llm_executor(
-            QueryEngine::with_dispatcher(dispatcher),
-            bus,
-            executor.clone(),
-        );
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
         let mut turn = TurnState::new(
-            IdentityMapping::from_legacy_conversation_id("conv-driver-switch".to_string()),
-            RunId::new("run-driver-switch"),
-            "please switch".to_string(),
+            IdentityMapping::from_legacy_conversation_id("conv-driver-skill-catalog".to_string()),
+            RunId::new("run-driver-skill-catalog"),
+            "write an email".to_string(),
         );
-        let request = ChatTurnRequest::new("conv-driver-switch", "please switch", vec![]);
+        let request = ChatTurnRequest::new("conv-driver-skill-catalog", "write an email", vec![]);
 
         driver
             .run_chat_turn(&mut turn, &request)
             .await
-            .expect("driver should apply skill runtime patch");
+            .expect("driver should run with skill catalog");
 
-        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
-        assert_eq!(prompts.len(), 2);
-        assert_eq!(prompts[0], "daily prompt");
-        assert_eq!(prompts[1], "comp prompt");
-
-        let tool_defs = executor.seen_tool_defs.lock().unwrap().clone();
-        assert_eq!(tool_defs.len(), 2);
-        assert_eq!(tool_defs[0], vec!["bash".to_string()]);
-        assert_eq!(
-            tool_defs[1],
-            vec!["execute_python".to_string(), "switch_skill".to_string()]
-        );
+        let dynamic_contexts = executor.seen_dynamic_contexts.lock().unwrap().clone();
+        assert_eq!(dynamic_contexts.len(), 1);
+        assert!(dynamic_contexts[0].contains("可用专项技能"));
+        assert!(dynamic_contexts[0].contains("biz-writing"));
     }
+
 }

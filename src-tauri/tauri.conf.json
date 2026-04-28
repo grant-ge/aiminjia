@@ -5,7 +5,7 @@
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
@@ -53,8 +53,7 @@
     ],
     "resources": {
       "playwright-runtime": "playwright-runtime",
-      "prompts": "prompts",
-      "plugins": "plugins"
+      "prompts": "prompts"
     }
   }
 }

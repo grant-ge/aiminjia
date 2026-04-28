@@ -53,15 +53,16 @@ describe('SkillCenterPage', () => {
   it('顶栏有上传技能资料和创建技能按钮', () => {
     render(<SkillCenterPage />)
     expect(screen.getByRole('button', { name: '上传技能资料' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /创建技能/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /导入技能/ })).toBeInTheDocument()
   })
 
-  it('点击创建技能会进入 skill-smith 创建流程', () => {
+  it('点击导入技能会打开上传弹层，不再进入旧创建流程', () => {
     render(<SkillCenterPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /创建技能/ }))
+    fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
 
-    expect(createConversationFromSkillMock).toHaveBeenCalledWith('skill-smith')
+    expect(createConversationFromSkillMock).not.toHaveBeenCalled()
+    expect(screen.getByText('上传技能资料')).toBeInTheDocument()
   })
 
 

@@ -208,7 +208,6 @@ async fn review_tool_completed_msg_id_matches_persisted_record() {
         degradation_notice: None,
         max_result_size_chars: 8000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let results = collect_results(outcomes);

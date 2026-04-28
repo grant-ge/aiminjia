@@ -163,7 +163,6 @@ fn collect_results_counts_success_and_error() {
             degradation_notice: None,
             max_result_size_chars: 8_000,
             context_modifier_message: None,
-            skill_runtime_patch: None,
         }),
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
             tool_call_id: "tc2".to_string(),
@@ -176,7 +175,6 @@ fn collect_results_counts_success_and_error() {
             degradation_notice: None,
             max_result_size_chars: 8_000,
             context_modifier_message: None,
-            skill_runtime_patch: None,
         }),
     ];
     let collected = collect_results(results);
@@ -198,7 +196,6 @@ fn runtime_tool_call_outcome_exposes_declared_max_result_size_chars() {
         degradation_notice: None,
         max_result_size_chars: 12_345,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     };
 
     assert_eq!(outcome.max_result_size_chars(), 12_345);
@@ -218,7 +215,6 @@ fn collect_results_truncation_message_includes_guidance() {
         degradation_notice: None,
         max_result_size_chars: 4_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);
@@ -241,7 +237,6 @@ fn collect_results_uses_per_result_limit_not_global_default() {
         degradation_notice: None,
         max_result_size_chars: 4_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);
@@ -263,7 +258,6 @@ fn collect_results_keeps_content_within_declared_limit() {
         degradation_notice: None,
         max_result_size_chars: 32_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);
@@ -1051,8 +1045,6 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         _content: &str,
         _attachments: &[ChatAttachmentRef],
         _client_message_id: Option<&str>,
-        _selected_skill_id: Option<&str>,
-        _selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())
     }
@@ -1519,7 +1511,7 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
 }
 
 #[tokio::test]
-async fn driver_s4_env_info_precedes_precompute_result_in_dynamic_context() {
+async fn driver_s4_env_info_present_in_dynamic_context() {
     let executor = Arc::new(CountingEnvInfoExecutor::ok(
         "\n\n[当前环境]\n工作目录: /tmp/test\nPlatform: darwin",
     ));
@@ -1534,10 +1526,9 @@ async fn driver_s4_env_info_precedes_precompute_result_in_dynamic_context() {
     let captured = executor.captured_dynamic_contexts.lock().unwrap();
     assert!(!captured.is_empty(), "must capture dynamic_context");
     let ctx = &captured[0];
-    let env_pos = ctx.find("[当前环境]").expect("missing env info");
-    if let Some(pre_pos) = ctx.find("[precompute_result]") {
-        assert!(env_pos < pre_pos, "env_info must precede precompute_result");
-    }
+    assert!(ctx.contains("[当前环境]"), "dynamic context must contain env info");
+    // Stateful workflow precompute pipeline removed in Phase B Task 7.
+    assert!(!ctx.contains("[precompute_result]"), "precompute_result must not appear in dynamic context");
 }
 
 #[tokio::test]
@@ -1609,3 +1600,98 @@ fn review_chat_adapter_new_has_no_block_on() {
          Move async initialization into send_message() or use spawn."
     );
 }
+
+// ── Task 17: skill catalog injection into dynamic context ─────────────────
+
+struct SkillCatalogCapturingExecutor {
+    catalog: String,
+    captured_dynamic_contexts: std::sync::Mutex<Vec<String>>,
+}
+
+impl SkillCatalogCapturingExecutor {
+    fn new(catalog: impl Into<String>) -> Self {
+        Self {
+            catalog: catalog.into(),
+            captured_dynamic_contexts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_dynamic_contexts
+            .lock()
+            .unwrap()
+            .push(input.dynamic_context.to_string());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
+        })
+    }
+
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        self.catalog.clone()
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _tool_calls: &[serde_json::Value],
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_injects_skill_catalog_into_dynamic_context() {
+    let catalog = "The following skills are available for use with the load_skill tool:\n\n- `salary-query` — 薪酬查询";
+    let executor = Arc::new(SkillCatalogCapturingExecutor::new(catalog));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-skill-catalog");
+    let request = ChatTurnRequest::new("conv-skill-catalog", "help me", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_dynamic_contexts.lock().unwrap();
+    assert!(!captured.is_empty(), "must capture dynamic_context");
+    let ctx = &captured[0];
+    assert!(
+        ctx.contains("The following skills are available for use with the load_skill tool"),
+        "dynamic context must contain skill catalog header, got: {}",
+        ctx
+    );
+    assert!(
+        ctx.contains("<system-reminder>"),
+        "skill catalog must be wrapped in <system-reminder>, got: {}",
+        ctx
+    );
+    assert!(
+        ctx.contains("</system-reminder>"),
+        "skill catalog must be closed with </system-reminder>, got: {}",
+        ctx
+    );
+    assert!(
+        !ctx.contains("switch_skill"),
+        "dynamic context must NOT contain switch_skill, got: {}",
+        ctx
+    );
+    assert!(
+        !ctx.contains("precompute_result"),
+        "dynamic context must NOT contain precompute_result, got: {}",
+        ctx
+    );
+}
+

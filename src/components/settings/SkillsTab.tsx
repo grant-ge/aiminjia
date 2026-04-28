@@ -3,20 +3,20 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
-  listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill,
+  listCustomSkills, uninstallCustomSkill, initSkillTemplate, packSkill,
   reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
 } from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
 import { message } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { uploadWithOverwriteConfirm } from '@/features/skill-center/uploadWithOverwriteConfirm'
 import { SkillMarketplace } from './SkillMarketplace'
-import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 type SubTab = 'installed' | 'marketplace'
 
 interface SkillsTabProps {
-  /** Called when the user triggers an action that should dismiss the containing modal (e.g. resuming a skill-smith draft returns control to the chat). */
   onRequestClose?: () => void
 }
 
@@ -94,11 +94,24 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
-      if (selected) {
-        const msg = await installCustomSkill(selected)
+      if (!selected || Array.isArray(selected)) return
+
+      const result = await uploadWithOverwriteConfirm((force) =>
+        useSkillStore.getState().upload(selected, force),
+      )
+      if (result === 'installed') {
         await loadSkills()
-        await message(msg, { title: 'AI小家' })
+        pushNotification({
+          level: 'success',
+          title: '技能已安装',
+          message: '',
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
       }
+      // 'cancelled' — silent
     } catch (e) {
       await message(String(e), { title: 'AI小家', kind: 'error' })
     }
@@ -184,9 +197,6 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
 
   return (
     <div>
-      {/* Skill-smith: unfinished drafts nudge (self-hides when no drafts) */}
-      <DraftResumeBanner onAfterResume={onRequestClose} />
-
       {/* Sub-tab switcher */}
       <div className="mb-4 flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--color-bg-main)' }}>
         <button

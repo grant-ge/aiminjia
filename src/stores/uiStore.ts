@@ -30,9 +30,12 @@ const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
+  prefillText: string | null
   setRoute: (route: Route) => void
   openSettings: (settingsModal: SettingsModalKey) => void
   closeSettings: () => void
+  setPrefillText: (text: string) => void
+  consumePrefillText: () => string | null
 }
 
 const ROUTE_STORAGE_KEY = 'aijia-ui-route'
@@ -76,9 +79,10 @@ function persistRoute(route: Route) {
   }
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   route: loadPersistedRoute(),
   settingsModal: null,
+  prefillText: null,
   setRoute: (route) => {
     persistRoute(route)
     set({ route })
@@ -89,4 +93,10 @@ export const useUiStore = create<UiState>((set) => ({
     set({ settingsModal: DISABLED_SETTINGS_KEYS.has(normalized) ? 'account' : normalized })
   },
   closeSettings: () => set({ settingsModal: null }),
+  setPrefillText: (text) => set({ prefillText: text }),
+  consumePrefillText: () => {
+    const text = get().prefillText
+    if (text !== null) set({ prefillText: null })
+    return text
+  },
 }))

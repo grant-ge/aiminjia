@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -30,7 +31,6 @@ pub struct SessionRuntime {
     query_engine: QueryEngine,
     session_query_engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
     session_cancel_roots: Arc<Mutex<HashMap<String, CancellationToken>>>,
-    skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
     event_bus: RuntimeEventBus,
     /// S4 executor: owns the query loop; executor is a provider streaming adapter only.
     /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`.
@@ -39,6 +39,7 @@ pub struct SessionRuntime {
     pending_permission_store: Arc<PendingPermissionRequestStore>,
     pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
     permission_store: Option<Arc<PermissionStore>>,
+    default_folder: Option<PathBuf>,
 }
 
 impl SessionRuntime {
@@ -47,13 +48,13 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
-            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: None,
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            default_folder: None,
         }
     }
 
@@ -71,13 +72,13 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
-            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: Some(executor),
             authorized_workspace_store: None,
             pending_permission_store: Arc::new(PendingPermissionRequestStore::new()),
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
+            default_folder: None,
         }
     }
 
@@ -110,6 +111,11 @@ impl SessionRuntime {
         self
     }
 
+    pub fn with_default_folder(mut self, default_folder: PathBuf) -> Self {
+        self.default_folder = Some(default_folder);
+        self
+    }
+
     /// Replace the base `QueryEngine` (and clear any cached per-session engines).
     /// Used by the transport layer to inject a per-request ToolDispatcher without
     /// calling `block_on` inside a sync constructor.
@@ -117,14 +123,6 @@ impl SessionRuntime {
         self.query_engine = query_engine;
         // Clear cached per-session engines so they inherit the new base engine.
         self.session_query_engines = Arc::new(Mutex::new(HashMap::new()));
-        self
-    }
-
-    pub fn with_skill_sessions(
-        mut self,
-        skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
-    ) -> Self {
-        self.skill_sessions = skill_sessions;
         self
     }
 
@@ -140,15 +138,12 @@ impl SessionRuntime {
         query_engine.run(turn, &self.event_bus).await
     }
 
-    pub async fn run_chat_request(
-        &self,
-        mut request: ChatTurnRequest,
-    ) -> std::result::Result<(), String> {
+    pub async fn run_chat_request(&self, request: ChatTurnRequest) -> std::result::Result<(), String> {
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
-        // Generate the single authoritative RunId for this turn here and propagate
-        // it into the request so legacy_send_message_impl uses the same identity.
-        let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
-        request.run_id = run_id.clone();
+        // `ChatTurnRequest::new` creates the authoritative RunId for the turn.
+        // Transport code may reserve per-run resources before entering runtime,
+        // so do not replace it here.
+        let run_id = request.run_id.clone();
 
         // Emit RunStarted before handing off to the driver.
         let run_started = RuntimeEvent::new(
@@ -268,7 +263,6 @@ impl SessionRuntime {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&session_key);
-        self.skill_sessions.clear_session(session_id.as_str());
     }
 
     fn query_engine_for_session(&self, session_id: &SessionId) -> QueryEngine {
@@ -282,8 +276,15 @@ impl SessionRuntime {
                 display_name: aw.display_name,
             })
             .or_else(|| {
-                let default_path =
-                    crate::storage::aijia_home::AiJiaHome::from_home().default_folder();
+                let default_path = self
+                    .default_folder
+                    .clone()
+                    .unwrap_or_else(|| {
+                        log::warn!("[session_runtime] default_folder not injected, using hardcoded fallback");
+                        dirs::home_dir()
+                            .map(|h| h.join(".renlijia").join("defaultFolder"))
+                            .expect("Cannot determine home directory")
+                    });
                 if let Err(err) = std::fs::create_dir_all(&default_path) {
                     log::warn!(
                         "[session_runtime] failed to create defaultFolder for session {}: {}",
@@ -407,7 +408,6 @@ mod tests {
     };
     use async_trait::async_trait;
     use serde_json::Value;
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -485,8 +485,6 @@ mod tests {
             _content: &str,
             _attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
             _client_message_id: Option<&str>,
-            _selected_skill_id: Option<&str>,
-            _selected_skill_label: Option<&str>,
         ) -> anyhow::Result<String, TurnError> {
             Ok("user-msg".to_string())
         }

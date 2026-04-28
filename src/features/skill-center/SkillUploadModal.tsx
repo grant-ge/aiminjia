@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useSkillStore } from '@/stores/skillStore'
+import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 
 interface SkillUploadModalProps {
   open: boolean
@@ -24,17 +25,20 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
 
     setIsUploading(true)
     try {
-      await upload(selected)
-      pushNotification({
-        level: 'success',
-        title: '技能上传成功',
-        message: '技能已安装并刷新到技能中心。',
-        actions: [],
-        dismissible: true,
-        autoHide: 4,
-        context: 'toast',
-      })
-      onOpenChange(false)
+      const result = await uploadWithOverwriteConfirm((force) => upload(selected, force))
+      if (result === 'installed') {
+        pushNotification({
+          level: 'success',
+          title: '技能上传成功',
+          message: '技能已安装并刷新到技能中心。',
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
+        onOpenChange(false)
+      }
+      // 'cancelled' — silent, modal stays open
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)

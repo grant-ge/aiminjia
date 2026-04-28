@@ -1,9 +1,31 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
+import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
-const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
+export class SkillAlreadyExistsError extends Error {
+  constructor(public readonly skillId: string) {
+    super(`ALREADY_EXISTS:${skillId}`)
+    this.name = 'SkillAlreadyExistsError'
+  }
+}
+
+const RECOMMENDED_SKILL_IDS = ['salary-benchmarking', 'biz-writing', 'contract-review', 'org-diagnosis']
+
+function normalizeSkill(skill: SkillInfo): SkillInfo {
+  return {
+    ...skill,
+    displayName: skill.displayName || skill.id,
+    displayNameEn: skill.displayNameEn || skill.displayName || skill.id,
+    description: skill.description || '',
+    icon: skill.icon || '',
+    shortDescription: skill.shortDescription || skill.description || '',
+    shortDescriptionEn: skill.shortDescriptionEn || skill.displayNameEn || skill.displayName || '',
+    triggerText: skill.triggerText || `/${skill.id}`,
+    category: skill.category || 'general',
+  }
+}
 
 interface SkillState {
   skills: SkillInfo[]
@@ -14,7 +36,7 @@ interface SkillState {
   reload: () => Promise<void>
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
-  upload: (sourcePath: string) => Promise<void>
+  upload: (sourcePath: string, force?: boolean) => Promise<void>
 }
 
 export const useSkillStore = create<SkillState>((set, get) => ({
@@ -34,7 +56,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   async reload() {
     set({ isLoading: true })
     try {
-      const skills = await listSkills()
+      const skills = (await listSkills()).map(normalizeSkill)
       set({ skills, isLoading: false })
     } catch (error) {
       set({ isLoading: false })
@@ -48,8 +70,18 @@ export const useSkillStore = create<SkillState>((set, get) => ({
     await uninstallCustomSkill(id)
     await get().reload()
   },
-  async upload(sourcePath) {
-    await installCustomSkill(sourcePath)
-    await get().reload()
+  async upload(sourcePath, force = false) {
+    try {
+      await installCustomSkill(sourcePath, force)
+      await get().reload()
+    } catch (err) {
+      const msg = String(err)
+      if (msg.includes(ALREADY_EXISTS_PREFIX)) {
+        const idx = msg.indexOf(ALREADY_EXISTS_PREFIX)
+        const skillId = msg.slice(idx + ALREADY_EXISTS_PREFIX.length).trim()
+        throw new SkillAlreadyExistsError(skillId)
+      }
+      throw err
+    }
   },
 }))

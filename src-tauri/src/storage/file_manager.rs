@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
 pub struct FileManager {
-    workspace_path: PathBuf,
+    workspace_path: std::sync::RwLock<PathBuf>,
 }
 
 #[derive(Debug, Serialize)]
@@ -22,19 +22,26 @@ pub struct FileInfo {
 impl FileManager {
     pub fn new(workspace_path: impl AsRef<Path>) -> Self {
         Self {
-            workspace_path: workspace_path.as_ref().to_path_buf(),
+            workspace_path: std::sync::RwLock::new(workspace_path.as_ref().to_path_buf()),
         }
     }
 
     /// Get the workspace root directory path.
-    pub fn workspace_path(&self) -> &Path {
-        &self.workspace_path
+    pub fn workspace_path(&self) -> PathBuf {
+        self.workspace_path.read().unwrap().clone()
+    }
+
+    /// Update workspace path (called on login when user scope config has a different workspacePath).
+    pub fn update_workspace_path(&self, new_path: impl AsRef<Path>) {
+        let mut guard = self.workspace_path.write().unwrap();
+        *guard = new_path.as_ref().to_path_buf();
     }
 
     /// Resolve a stored_path to a full path and verify it stays within the workspace.
     /// Returns an error if the resolved path escapes the workspace directory.
     fn safe_resolve(&self, stored_path: &str) -> Result<PathBuf> {
-        let joined = self.workspace_path.join(stored_path);
+        let ws = self.workspace_path();
+        let joined = ws.join(stored_path);
         // Canonicalize to resolve ../ sequences. If the file doesn't exist yet,
         // canonicalize the parent directory instead.
         let canonical = if joined.exists() {
@@ -50,10 +57,9 @@ impl FileManager {
                 joined.clone()
             }
         };
-        let workspace_canonical = self
-            .workspace_path
+        let workspace_canonical = ws
             .canonicalize()
-            .unwrap_or_else(|_| self.workspace_path.clone());
+            .unwrap_or_else(|_| ws.clone());
         if !canonical.starts_with(&workspace_canonical) {
             return Err(anyhow!(
                 "Path traversal rejected: '{}' resolves outside workspace",
@@ -89,7 +95,7 @@ impl FileManager {
         }
         .to_string();
 
-        let dest_dir = self.workspace_path.join("uploads");
+        let dest_dir = self.workspace_path().join("uploads");
         fs::create_dir_all(&dest_dir)?;
 
         // Add UUID prefix to avoid name collisions
@@ -116,7 +122,7 @@ impl FileManager {
 
     /// Write content to a file in the workspace. Returns the stored_path relative to workspace.
     pub fn write_file(&self, subdir: &str, file_name: &str, content: &[u8]) -> Result<FileInfo> {
-        let dest_dir = self.workspace_path.join(subdir);
+        let dest_dir = self.workspace_path().join(subdir);
         fs::create_dir_all(&dest_dir)?;
         let dest_path = dest_dir.join(file_name);
         fs::write(&dest_path, content)
@@ -181,14 +187,14 @@ impl FileManager {
                 // Log the rejection but return workspace root join (not the raw stored_path join)
                 // This is a defensive fallback: callers should use safe_resolve directly for security-critical paths
                 log::warn!("[FileManager::full_path] path traversal rejected for '{}', returning workspace root", stored_path);
-                self.workspace_path.clone()
+                self.workspace_path()
             }
         }
     }
 
     /// Clean up expired temp files older than `retention_days`.
     pub fn cleanup_temp_files(&self, retention_days: u32) -> Result<Vec<String>> {
-        let temp_dir = self.workspace_path.join("temp");
+        let temp_dir = self.workspace_path().join("temp");
         if !temp_dir.exists() {
             return Ok(vec![]);
         }

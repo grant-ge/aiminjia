@@ -144,6 +144,10 @@ invoke('send_message')
 - 执行入口：`python/runner.rs` — `PythonRunner`
 - 沙箱通过 `_safe_open` 限制写路径，通过 `validate_code()` 静态检查危险模式
 
+### Skill 系统（新）
+
+Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/` 和 `~/.renlijia/skills/` 下的 `SKILL.md` 格式 skill 目录。Runtime 通过 `load_skill` 工具无状态加载 SKILL.md body；不再存在 `switch_skill` / `SkillSessionStore` / workflow pipeline / `plugin.toml` / `workflow.toml` 等遗留概念。
+
 ## 前端架构（React/TypeScript）
 
 ### 关键模块
