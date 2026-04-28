@@ -1471,7 +1471,7 @@ export function cleanupExpiredDrafts(): Promise<number> {
 
 /** A structured schema error or warning from validateSkillDraft. */
 export interface DraftValidationIssue {
-  /** e.g. `"plugin.toml"` / `"prompts/step0.md"` */
+  /** e.g. `"SKILL.md"` / `"scripts/init.sh"` */
   file: string
   /** e.g. `"trigger.keywords[0]"` */
   path: string
