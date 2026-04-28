@@ -36,7 +36,7 @@ describe('useChat sendUserMessage', () => {
     })
   })
 
-  it('sends slash-prefixed text verbatim without selectedSkillId', async () => {
+  it('sends slash-prefixed text verbatim without skill id param', async () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {
@@ -51,7 +51,7 @@ describe('useChat sendUserMessage', () => {
     )
   })
 
-  it('does not pass selectedSkillId param — signature is (convId, msgId, text, fileIds)', async () => {
+  it('does not pass skill id param — signature is (convId, msgId, text, fileIds)', async () => {
     const { result } = renderHook(() => useChat())
 
     await act(async () => {

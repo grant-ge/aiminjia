@@ -89,7 +89,7 @@ describe('ChatBottomArea', () => {
     expect(screen.getByText('Shift+Enter 换行')).toBeInTheDocument()
   })
 
-  it('sends message on Enter without selectedSkillId', async () => {
+  it('sends message on Enter without skill id param', async () => {
     render(<ChatBottomArea />)
 
     fireEvent.change(screen.getByRole('textbox'), {
@@ -110,7 +110,7 @@ describe('ChatBottomArea', () => {
     expect(stopCurrentStreamMock).toHaveBeenCalled()
   })
 
-  it('sends slash-prefixed text verbatim (no selectedSkillId in IPC)', async () => {
+  it('sends slash-prefixed text verbatim (skill id not in IPC)', async () => {
     render(<ChatBottomArea />)
 
     // Type a slash command that is NOT in the skill store (unknown skill)

@@ -599,8 +599,8 @@ mod auto_capture_tests {
     }
 
     #[test]
-    fn does_not_skip_when_last_tool_is_analysis() {
-        // execute_python is the last tool — analysis step, should be captured
+    fn does_not_skip_when_last_tool_is_execute_python() {
+        // execute_python is the last tool — data step, should be captured
         let msgs = vec![
             user("clean data"),
             assistant("分析中"),

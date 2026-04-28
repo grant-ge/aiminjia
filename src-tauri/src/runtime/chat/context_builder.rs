@@ -212,7 +212,7 @@ mod tests {
         assert!(result.contains("\n[项目记忆]\nmemory index\n"));
     }
 
-    // Note: test_precompute_result_block removed in Phase B Task 7 (precompute pipeline deleted).
+    // Note: skill precompute block test removed in Phase B Task 7 (precompute pipeline deleted).
 
     #[test]
     fn test_connector_context_block() {
