@@ -17,11 +17,11 @@ impl ToolPlugin for SkillSmithWriteFileTool {
 
     fn description(&self) -> &str {
         "Write (create or overwrite) a file inside the active skill draft. \
-         Typical paths: 'plugin.toml', 'workflow.toml', 'prompts/base.md', \
-         'prompts/step0.md'. For TOML files, you must produce valid TOML \
-         syntax — the follow-up skill_smith_validate call will report errors \
-         and you can retry. File size limited to 1MB; path cannot contain \
-         '..' or leading-dot components."
+         Typical paths: 'SKILL.md', 'scripts/foo.py', 'references/notes.md', \
+         'assets/template.json'. SKILL.md must contain valid YAML frontmatter — \
+         the follow-up skill_smith_validate call will report errors and you can \
+         retry. File size limited to 1MB; path cannot contain '..' or \
+         leading-dot components."
     }
 
     fn input_schema(&self) -> Value {
@@ -34,7 +34,7 @@ impl ToolPlugin for SkillSmithWriteFileTool {
                 },
                 "relative_path": {
                     "type": "string",
-                    "description": "Path relative to draft root. e.g. 'plugin.toml', 'prompts/step0.md'. Cannot start with '/' or contain '..'. Max 5 directory levels deep."
+                    "description": "Path relative to draft root. e.g. 'SKILL.md', 'scripts/foo.py'. Cannot start with '/' or contain '..'. Max 5 directory levels deep."
                 },
                 "content": {
                     "type": "string",

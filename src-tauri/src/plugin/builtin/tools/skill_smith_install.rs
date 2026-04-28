@@ -20,8 +20,8 @@ impl ToolPlugin for SkillSmithInstallTool {
          hot-reload (skill is usable immediately, no app restart needed). \
          If a skill with the same id is already installed, returns \
          `status: \"conflict\"` without changes — ask the user whether to \
-         overwrite (re-invoke with force=true) or rename (write a new \
-         plugin.toml with a different id and retry). On success the draft \
+         overwrite (re-invoke with force=true) or rename (rename the draft \
+         directory or update the SKILL.md `name` and retry). On success the draft \
          is cleaned up."
     }
 

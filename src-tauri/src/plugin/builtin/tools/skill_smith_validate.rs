@@ -16,11 +16,11 @@ impl ToolPlugin for SkillSmithValidateTool {
     }
 
     fn description(&self) -> &str {
-        "Validate the active skill draft against the skill schema (plugin.toml + \
-         workflow.toml + referenced prompts). Returns a structured report. \
-         When errors are present, each entry includes `path`, `rule`, `actual`, \
-         `message`, and an optional `fix_hint` you can use to correct the \
-         offending field and retry. `warnings` are non-blocking. Call this \
+        "Validate the active skill draft against the SKILL.md schema (SKILL.md \
+         frontmatter + scripts/ + references/ + assets/). Returns a structured \
+         report. When errors are present, each entry includes `path`, `rule`, \
+         `actual`, `message`, and an optional `fix_hint` you can use to correct \
+         the offending field and retry. `warnings` are non-blocking. Call this \
          after every skill_smith_write_file that touches a schema-governed file."
     }
 
