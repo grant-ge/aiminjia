@@ -121,6 +121,20 @@ pub(super) fn build_request_body(
                     msg["content"] = Value::Null;
                 }
             }
+            // Pass thinking/reasoning content back for gateways that proxy
+            // to Claude (e.g. Lotus). Only assistant messages can carry
+            // thinking — adding it to other roles confuses the gateway and
+            // would be silently dropped or rejected by Anthropic.
+            if m.role == "assistant" {
+                if let Some(ref thinking) = m.thinking {
+                    msg["thinking"] = json!(thinking);
+                }
+                // Full thinking blocks with signatures — gateway echoes them
+                // back to the Anthropic upstream verbatim.
+                if let Some(ref blocks) = m.thinking_blocks {
+                    msg["_thinking_blocks"] = json!(blocks);
+                }
+            }
             // Tool result messages
             if let Some(ref tc_id) = m.tool_call_id {
                 msg["tool_call_id"] = json!(tc_id);
@@ -533,14 +547,20 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
     };
     let delta = &choice["delta"];
 
-    // Reasoning content (DeepSeek R1).
-    if st.emit_thinking {
-        if let Some(thinking) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
-            if !thinking.is_empty() {
-                st.pending_events
-                    .push(StreamEvent::ThinkingDelta { delta: thinking.to_string() });
-            }
+    // Reasoning content (DeepSeek R1 / Anthropic via gateway).
+    // Always parse regardless of emit_thinking — gateway may send reasoning_content
+    // from Anthropic thinking mode even for non-R1 providers.
+    if let Some(thinking) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
+        if !thinking.is_empty() {
+            st.pending_events
+                .push(StreamEvent::ThinkingDelta { delta: thinking.to_string() });
         }
+    }
+
+    // Full thinking block with signature (from gateway Anthropic adapter).
+    if let Some(block) = delta.get("_thinking_block") {
+        st.pending_events
+            .push(StreamEvent::ThinkingBlock { block: block.clone() });
     }
 
     // Text content delta.

@@ -2516,6 +2516,8 @@ async fn agent_loop(
 
         // Collect this iteration's content and tool calls
         let mut iter_content = String::new();
+        let mut iter_thinking = String::new();
+        let mut iter_thinking_blocks: Vec<serde_json::Value> = Vec::new();
         let mut tool_calls = Vec::new();
         let mut stop_reason = StopReason::EndTurn;
         let mut delta_count: u32 = 0;
@@ -2546,6 +2548,8 @@ async fn agent_loop(
                             stream_retry_count, MAX_STREAM_RETRIES, conversation_id
                         );
                         iter_content.clear();
+                        iter_thinking.clear();
+                        iter_thinking_blocks.clear();
                         tool_calls.clear();
                         stream_needs_retry = true;
                         break;
@@ -2628,12 +2632,17 @@ async fn agent_loop(
                                 );
                             }
                         }
-                        Some(StreamEvent::ThinkingDelta { .. }) => {
-                            // ThinkingDelta contains internal model reasoning (e.g. DeepSeek R1
-                            // <think> tokens). We intentionally drop these because:
-                            // 1. They bypass strip_thinking_markers() and prompt_guard::check_for_leak
-                            // 2. They would pollute the user-visible streamingContent in the frontend
-                            // 3. They are implementation-internal, not meant for the user
+                        Some(StreamEvent::ThinkingDelta { delta }) => {
+                            // Accumulate thinking content so it can be passed back
+                            // to the API on subsequent turns (required by Anthropic
+                            // thinking mode and some OpenAI-compat gateways).
+                            // Not emitted to the frontend — internal only.
+                            iter_thinking.push_str(&delta);
+                        }
+                        Some(StreamEvent::ThinkingBlock { block }) => {
+                            // Full thinking block with signature from gateway.
+                            // Store verbatim for passback to upstream.
+                            iter_thinking_blocks.push(block);
                         }
                         Some(StreamEvent::ToolCallStart { tool_call }) => {
                             log::info!(
@@ -2702,6 +2711,8 @@ async fn agent_loop(
                                 // Discard partial content from this failed iteration
                                 // (full_content already has prior iterations' content — safe)
                                 iter_content.clear();
+                                iter_thinking.clear();
+                                iter_thinking_blocks.clear();
                                 tool_calls.clear();
                                 // Break inner stream loop to trigger retry via `continue` in outer loop
                                 stream_needs_retry = true;
@@ -2824,9 +2835,13 @@ async fn agent_loop(
 
         // --- Tool execution phase ---
         phase.act(tool_calls.iter().map(|tc| tc.name.clone()).collect());
+        let thinking_opt = if iter_thinking.is_empty() { None } else { Some(std::mem::take(&mut iter_thinking)) };
+        let blocks_opt = if iter_thinking_blocks.is_empty() { None } else { Some(std::mem::take(&mut iter_thinking_blocks)) };
         messages.push(ChatMessage::assistant_with_tool_calls(
             iter_content,
             tool_calls.clone(),
+            thinking_opt,
+            blocks_opt,
         ));
 
         let plugin_ctx = PluginContext {
@@ -4108,6 +4123,8 @@ mod auto_capture_tests {
             tool_calls: None,
             tool_call_id: Some("tc-1".into()),
             name: Some(name.into()),
+            thinking: None,
+            thinking_blocks: None,
         }
     }
 

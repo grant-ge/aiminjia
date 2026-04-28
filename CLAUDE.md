@@ -197,6 +197,7 @@ mv src-tauri/python-runtime src-tauri/target/x86_64-apple-darwin/release/python-
 - Homebrew：`grant-ge/homebrew-tap` 下 `Casks/aijia.rb`，`on_arm` / `on_intel` 分架构 URL
 - GitHub Secrets（4 个，都已就位）：`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`
 - 钉钉 AI 表格集成：内置 [dws CLI](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) 作为短命令 sidecar（非长驻进程），6 个 dingtalk_* Tool 注册到 ToolRegistry。Token 由 dws 自身管理（PBKDF2 + AES-256-GCM），AIjia 只维护连接状态。写操作需用户确认。二进制查找：bundled `resources/dws` → dev `resources/dws` → 系统 PATH。Setup: `bash scripts/setup-dws.sh`
+- Thinking 透传：Anthropic 协议上游返回的 thinking blocks（含 signature）通过 Lotus 网关转为 `reasoning_content` + `_thinking_blocks` 传给客户端，客户端原样回传。ChatMessage 有 `thinking`（纯文本）和 `thinking_blocks`（含 signature 的完整 block）两个字段，网关优先使用 `_thinking_blocks`。详见 `docs/plans/2026-03-13-extended-thinking.md`
 
 ## 数据存储位置
 

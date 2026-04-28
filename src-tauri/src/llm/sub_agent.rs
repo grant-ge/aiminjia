@@ -180,6 +180,8 @@ pub async fn run_sub_agent(
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
             }).collect(),
+            None, // sub_agent doesn't use thinking mode
+            None,
         ));
 
         // Execute tool calls
