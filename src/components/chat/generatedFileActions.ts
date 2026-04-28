@@ -16,7 +16,24 @@ interface GeneratedFileActionSource {
   fileType?: string
 }
 
-const PREVIEWABLE_FILE_TYPES = new Set(['md', 'markdown', 'html', 'txt', 'text', 'json', 'csv'])
+const PREVIEWABLE_FILE_TYPES = new Set([
+  'md',
+  'markdown',
+  'html',
+  'txt',
+  'text',
+  'json',
+  'csv',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'bmp',
+  'svg',
+])
+
+const GENERIC_FILE_TYPES = new Set(['image', 'chart', 'report', 'data', 'analysis', 'file', 'other', 'unknown'])
 
 function normalizeFileType(fileType?: string): string | undefined {
   const normalized = fileType?.trim().toLowerCase()
@@ -31,8 +48,13 @@ function getFileExtension(fileName?: string): string | undefined {
 }
 
 export function isPreviewableFileType(fileType?: string, fileName?: string): boolean {
-  const normalizedType = normalizeFileType(fileType) ?? getFileExtension(fileName)
-  return normalizedType ? PREVIEWABLE_FILE_TYPES.has(normalizedType) : false
+  const normalizedType = normalizeFileType(fileType)
+  if (normalizedType && PREVIEWABLE_FILE_TYPES.has(normalizedType)) return true
+
+  const extension = getFileExtension(fileName)
+  if (!extension) return false
+
+  return (!normalizedType || GENERIC_FILE_TYPES.has(normalizedType)) && PREVIEWABLE_FILE_TYPES.has(extension)
 }
 
 export function getGeneratedFilePrimaryAction(file: Pick<GeneratedFileActionSource, 'fileType' | 'title' | 'fileName'>): GeneratedFilePrimaryAction {
@@ -42,6 +64,14 @@ export function getGeneratedFilePrimaryAction(file: Pick<GeneratedFileActionSour
 export function isFileActionEnabled(actions: FileAction[] | undefined, actionType: FileAction['type']): boolean {
   if (!actions?.length) return true
   return actions.find((action) => action.type === actionType)?.enabled ?? false
+}
+
+export function isPreviewActionEnabledForFile(
+  _actions: FileAction[] | undefined,
+  fileType?: string,
+  fileName?: string,
+): boolean {
+  return isPreviewableFileType(fileType, fileName)
 }
 
 export function toPreviewTarget(file: GeneratedFileActionSource & { id: string }, conversationId: string): PreviewTarget {

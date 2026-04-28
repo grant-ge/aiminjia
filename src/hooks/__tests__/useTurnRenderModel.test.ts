@@ -148,7 +148,7 @@ describe('buildTurnsFromMessages', () => {
     expect(turns[0].generatedFiles[0]).toMatchObject({
       title: 'mock-data-matrix.csv',
       sub: '12 KB · 数据',
-      appName: 'Open',
+      appName: '打开',
     })
   })
 
@@ -266,7 +266,7 @@ describe('buildTurnsFromMessages', () => {
     )
   })
 
-  it('respects explicit disabled preview and open actions on a previewable generated file', () => {
+  it('uses type-based preview even when preview action is disabled', () => {
     const msg: Message = {
       ...aiMsg('a1', 'done'),
       content: {
@@ -296,9 +296,9 @@ describe('buildTurnsFromMessages', () => {
 
     expect(generatedFile).toEqual(
       expect.objectContaining({
-        canPreview: false,
+        canPreview: true,
         canOpenExternal: false,
-        primaryAction: 'open',
+        primaryAction: 'preview',
       }),
     )
   })
@@ -333,6 +333,115 @@ describe('buildTurnsFromMessages', () => {
         canPreview: false,
         canOpenExternal: false,
         primaryAction: 'open',
+      }),
+    )
+  })
+
+  it('uses image preview when legacy actions omit the preview action', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-legacy-image',
+            fileName: 'mock-status-chart.png',
+            filePath: '/tmp/mock-status-chart.png',
+            fileType: 'png',
+            fileSize: 68,
+            category: 'chart',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Chart',
+            actions: [
+              { type: 'open', label: 'Open', enabled: true },
+              { type: 'reveal', label: 'Open Folder', enabled: true },
+            ],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        canPreview: true,
+        canOpenExternal: true,
+        primaryAction: 'preview',
+      }),
+    )
+  })
+
+  it('uses type-based preview for legacy HTML actions that omit preview', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-legacy-html',
+            fileName: 'mock-coverage-report.html',
+            filePath: '/tmp/mock-coverage-report.html',
+            fileType: 'html',
+            fileSize: 8971,
+            category: 'report',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Report',
+            actions: [
+              { type: 'open', label: 'Open', enabled: true },
+              { type: 'reveal', label: 'Open Folder', enabled: true },
+            ],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        canPreview: true,
+        primaryAction: 'preview',
+      }),
+    )
+  })
+
+  it('marks PNG generated artifacts as previewable in the app', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-image',
+            fileName: 'mock-status-chart.png',
+            filePath: '/tmp/mock-status-chart.png',
+            fileType: 'png',
+            fileSize: 68,
+            category: 'chart',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Chart',
+            actions: [{ type: 'preview', label: 'Preview', enabled: true }],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        id: 'file-image',
+        title: 'mock-status-chart.png',
+        fileType: 'png',
+        canPreview: true,
+        primaryAction: 'preview',
       }),
     )
   })

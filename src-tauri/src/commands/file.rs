@@ -1,6 +1,7 @@
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::AiJiaHome;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
@@ -47,6 +48,14 @@ pub enum FilePreview {
         #[serde(rename = "mimeType")]
         mime_type: String,
         sandbox: bool,
+    },
+    Image {
+        #[serde(rename = "fileName")]
+        file_name: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+        #[serde(rename = "dataUrl")]
+        data_url: String,
     },
     Unsupported {
         #[serde(rename = "fileName")]
@@ -160,6 +169,12 @@ fn preview_mime_type(kind: &str) -> &'static str {
         "json" => "application/json",
         "csv" => "text/csv",
         "text" => "text/plain",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
         _ => "application/octet-stream",
     }
 }
@@ -172,6 +187,12 @@ fn normalize_preview_kind(file_name: &str, file_type: &str) -> Option<&'static s
         "text" | "txt" => return Some("text"),
         "json" => return Some("json"),
         "csv" => return Some("csv"),
+        "png" => return Some("png"),
+        "jpg" | "jpeg" => return Some("jpeg"),
+        "webp" => return Some("webp"),
+        "gif" => return Some("gif"),
+        "bmp" => return Some("bmp"),
+        "svg" => return Some("svg"),
         _ => {}
     }
 
@@ -185,6 +206,12 @@ fn normalize_preview_kind(file_name: &str, file_type: &str) -> Option<&'static s
         Some("txt") => Some("text"),
         Some("json") => Some("json"),
         Some("csv") => Some("csv"),
+        Some("png") => Some("png"),
+        Some("jpg" | "jpeg") => Some("jpeg"),
+        Some("webp") => Some("webp"),
+        Some("gif") => Some("gif"),
+        Some("bmp") => Some("bmp"),
+        Some("svg") => Some("svg"),
         _ => None,
     }
 }
@@ -204,6 +231,17 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
     let Some(kind) = normalize_preview_kind(file_name, file_type) else {
         return unsupported_preview(file_name, format!("File type '{}' is not supported", file_type));
     };
+
+    if matches!(kind, "png" | "jpeg" | "webp" | "gif" | "bmp" | "svg") {
+        let file_name = file_name.to_string();
+        let mime_type = preview_mime_type(kind).to_string();
+        let data_url = format!("data:{};base64,{}", mime_type, STANDARD.encode(bytes));
+        return FilePreview::Image {
+            file_name,
+            mime_type,
+            data_url,
+        };
+    }
 
     let content = match String::from_utf8(bytes) {
         Ok(content) => content,
@@ -775,6 +813,27 @@ mod preview_tests {
         assert_eq!(json["mimeType"], "text/html");
         assert_eq!(json["content"], "<h1>Hello</h1>");
         assert_eq!(json["sandbox"], true);
+    }
+
+    #[test]
+    fn png_preview_serializes_data_url_without_utf8_decoding() {
+        let preview = preview_from_bytes("chart.png", "png", vec![0x89, b'P', b'N', b'G']);
+        let json = serde_json::to_value(preview).expect("serialize preview");
+
+        assert_eq!(json["kind"], "image");
+        assert_eq!(json["fileName"], "chart.png");
+        assert_eq!(json["mimeType"], "image/png");
+        assert_eq!(json["dataUrl"], "data:image/png;base64,iVBORw==");
+    }
+
+    #[test]
+    fn image_preview_uses_extension_when_file_type_is_missing() {
+        let preview = preview_from_bytes("chart.webp", "", vec![1, 2, 3]);
+        let json = serde_json::to_value(preview).expect("serialize preview");
+
+        assert_eq!(json["kind"], "image");
+        assert_eq!(json["mimeType"], "image/webp");
+        assert_eq!(json["dataUrl"], "data:image/webp;base64,AQID");
     }
 
     #[test]

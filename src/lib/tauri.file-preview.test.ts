@@ -26,4 +26,16 @@ describe('tauri file preview command', () => {
       conversationId: 'conv-1',
     })
   })
+
+  it('passes through image previews returned by the backend', async () => {
+    const preview: FilePreview = {
+      kind: 'image',
+      fileName: 'chart.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw==',
+    }
+    coreMock.invoke.mockResolvedValue(preview)
+
+    await expect(getFilePreview('gf-chart', 'conv-1')).resolves.toEqual(preview)
+  })
 })

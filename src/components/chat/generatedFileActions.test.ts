@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getGeneratedFilePrimaryAction,
   isFileActionEnabled,
+  isPreviewActionEnabledForFile,
   isPreviewableFileType,
   toPreviewTarget,
 } from './generatedFileActions'
@@ -17,6 +18,13 @@ describe('generatedFileActions', () => {
     ['text', 'notes.txt'],
     ['json', 'data.json'],
     ['csv', 'rows.csv'],
+    ['png', 'chart.png'],
+    ['jpg', 'photo.jpg'],
+    ['jpeg', 'photo.jpeg'],
+    ['webp', 'preview.webp'],
+    ['gif', 'animation.gif'],
+    ['bmp', 'bitmap.bmp'],
+    ['svg', 'vector.svg'],
   ])('treats %s as previewable', (fileType, fileName) => {
     expect(isPreviewableFileType(fileType, fileName)).toBe(true)
     expect(getGeneratedFilePrimaryAction({ fileType, title: fileName })).toBe('preview')
@@ -26,8 +34,6 @@ describe('generatedFileActions', () => {
     ['excel', 'book.xlsx'],
     ['xlsx', 'book.xlsx'],
     ['pdf', 'report.pdf'],
-    ['png', 'chart.png'],
-    ['jpg', 'photo.jpg'],
     ['py', 'script.py'],
     [undefined, 'unknown.bin'],
   ])('treats %s as external-open by default', (fileType, fileName) => {
@@ -37,7 +43,14 @@ describe('generatedFileActions', () => {
 
   it('falls back to the filename extension when fileType is missing', () => {
     expect(isPreviewableFileType(undefined, 'summary.md')).toBe(true)
+    expect(isPreviewableFileType(undefined, 'chart.png')).toBe(true)
     expect(isPreviewableFileType(undefined, 'summary.xlsx')).toBe(false)
+  })
+
+  it('falls back to previewable filename extension when fileType is generic metadata', () => {
+    expect(isPreviewableFileType('image', 'mock-status-chart.png')).toBe(true)
+    expect(isPreviewableFileType('chart', 'mock-status-chart.png')).toBe(true)
+    expect(getGeneratedFilePrimaryAction({ fileType: 'image', fileName: 'mock-status-chart.png' })).toBe('preview')
   })
 
   it('uses the real filename extension before the display title for primary action fallback', () => {
@@ -52,6 +65,27 @@ describe('generatedFileActions', () => {
   it('uses explicit disabled actions when actions are present', () => {
     expect(isFileActionEnabled([{ type: 'open', label: 'Open', enabled: false }], 'open')).toBe(false)
     expect(isFileActionEnabled([{ type: 'reveal', label: 'Reveal', enabled: true }], 'reveal')).toBe(true)
+  })
+
+  it('uses file type for preview when actions omit preview', () => {
+    const actions = [
+      { type: 'open', label: 'Open', enabled: true },
+      { type: 'reveal', label: 'Open Folder', enabled: true },
+    ] as const
+
+    expect(isPreviewActionEnabledForFile(actions, 'png', 'mock-status-chart.png')).toBe(true)
+    expect(isPreviewActionEnabledForFile(actions, 'html', 'mock-coverage-report.html')).toBe(true)
+    expect(isPreviewActionEnabledForFile(actions, 'markdown', 'mock-markdown-brief.md')).toBe(true)
+    expect(isPreviewActionEnabledForFile(actions, 'json', 'mock-fallback-data.json')).toBe(true)
+    expect(isPreviewActionEnabledForFile(actions, 'csv', 'mock-data-matrix.csv')).toBe(true)
+    expect(isPreviewActionEnabledForFile(actions, 'pdf', 'mock-audit-summary.pdf')).toBe(false)
+  })
+
+  it('does not let actions disable type-based preview', () => {
+    expect(isPreviewActionEnabledForFile([
+      { type: 'preview', label: 'Preview', enabled: false },
+      { type: 'open', label: 'Open', enabled: true },
+    ], 'png', 'mock-status-chart.png')).toBe(true)
   })
 
   it('creates a preview target bound to the current conversation', () => {

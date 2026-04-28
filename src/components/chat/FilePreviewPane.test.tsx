@@ -36,6 +36,21 @@ describe('FilePreviewPane', () => {
     expect(previewMock.getFilePreview).not.toHaveBeenCalled()
   })
 
+  it('renders the close action in the preview header', () => {
+    const onClosePreview = vi.fn()
+    previewMock.getFilePreview.mockReturnValue(new Promise(() => {}))
+
+    render(<FilePreviewPane target={target} onOpenExternal={() => {}} onClosePreview={onClosePreview} />)
+
+    const header = screen.getByTestId('file-preview-header')
+    const closeButton = screen.getByRole('button', { name: 'Close preview' })
+    expect(header).toContainElement(closeButton)
+
+    fireEvent.click(closeButton)
+
+    expect(onClosePreview).toHaveBeenCalledTimes(1)
+  })
+
   it('loads and renders markdown content', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'markdown',
@@ -85,6 +100,20 @@ describe('FilePreviewPane', () => {
     expect(csvPreview.tagName).toBe('PRE')
   })
 
+  it('renders image preview responses inside the app', async () => {
+    previewMock.getFilePreview.mockResolvedValue({
+      kind: 'image',
+      fileName: 'mock-status-chart.png',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw==',
+    })
+
+    render(<FilePreviewPane target={{ ...target, fileName: 'mock-status-chart.png', fileType: 'png' }} onOpenExternal={() => {}} />)
+
+    const image = await screen.findByRole('img', { name: 'mock-status-chart.png' })
+    expect(image).toHaveAttribute('src', 'data:image/png;base64,iVBORw==')
+  })
+
   it('renders html preview responses in a sandboxed iframe', async () => {
     previewMock.getFilePreview.mockResolvedValue({
       kind: 'html',
@@ -113,7 +142,7 @@ describe('FilePreviewPane', () => {
 
     expect(await screen.findByText('Preview for excel files is not supported')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open with default app' }))
+    fireEvent.click(screen.getByRole('button', { name: '用默认应用打开' }))
 
     expect(onOpenExternal).toHaveBeenCalledWith({ ...target, fileName: 'table.xlsx', fileType: 'excel' })
   })
@@ -133,10 +162,10 @@ describe('FilePreviewPane', () => {
 
     expect(await screen.findByText('not found')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByText('retried content')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open with default app' }))
+    fireEvent.click(screen.getByRole('button', { name: '用默认应用打开' }))
     expect(onOpenExternal).toHaveBeenCalledWith(target)
     expect(previewMock.getFilePreview).toHaveBeenCalledTimes(2)
   })

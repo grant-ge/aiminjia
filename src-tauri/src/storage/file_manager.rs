@@ -136,6 +136,11 @@ impl FileManager {
             "csv" => "csv",
             "json" => "json",
             "png" => "png",
+            "jpg" | "jpeg" => "jpeg",
+            "webp" => "webp",
+            "gif" => "gif",
+            "bmp" => "bmp",
+            "svg" => "svg",
             "py" => "py",
             _ => "csv",
         }
@@ -271,6 +276,25 @@ pub fn is_within_authorized_workspace(path: &std::path::Path, root: &std::path::
 
 #[cfg(test)]
 mod tests {
+    use super::FileManager;
+    use tempfile::TempDir;
+
+    #[test]
+    fn write_file_preserves_image_file_types() {
+        let tmp = TempDir::new().expect("tempdir");
+        let file_mgr = FileManager::new(tmp.path());
+
+        let jpg = file_mgr
+            .write_file("generated", "photo.jpg", &[1, 2, 3])
+            .expect("write jpg");
+        let webp = file_mgr
+            .write_file("generated", "preview.webp", &[1, 2, 3])
+            .expect("write webp");
+
+        assert_eq!(jpg.file_type, "jpeg");
+        assert_eq!(webp.file_type, "webp");
+    }
+
     #[test]
     #[cfg(unix)]
     fn test_symlink_escape_rejected() {

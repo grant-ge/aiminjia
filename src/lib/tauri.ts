@@ -557,6 +557,7 @@ export function previewFile(fileId: string, conversationId: string): Promise<str
 export type FilePreview =
   | { kind: 'markdown' | 'text' | 'json' | 'csv'; fileName: string; mimeType: string; content: string }
   | { kind: 'html'; fileName: string; mimeType: 'text/html'; content: string; sandbox: true }
+  | { kind: 'image'; fileName: string; mimeType: string; dataUrl: string }
   | { kind: 'unsupported'; fileName: string; reason: string }
 
 export function getFilePreview(fileId: string, conversationId: string): Promise<FilePreview> {

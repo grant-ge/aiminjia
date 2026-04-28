@@ -10,12 +10,11 @@ import {
   FileSpreadsheet,
   FileText,
   Image,
-  X,
 } from 'lucide-react'
 
 import { FilePreviewPane } from './FilePreviewPane'
 import {
-  isFileActionEnabled,
+  isPreviewActionEnabledForFile,
   isPreviewableFileType,
   toPreviewTarget,
   type PreviewTarget,
@@ -47,22 +46,18 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
         className="flex h-full w-[720px] shrink-0 overflow-hidden border-l border-border bg-background"
       >
         <div className="min-w-0 flex-1">
-          <FilePreviewPane target={target} onOpenExternal={onOpenExternal} />
+          <FilePreviewPane
+            target={target}
+            onOpenExternal={onOpenExternal}
+            onClosePreview={closePreview}
+          />
         </div>
         <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
-          <div className="flex items-center justify-between gap-2 px-4 py-4">
+          <div className="px-4 py-4">
             <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
-            <button
-              type="button"
-              aria-label="Close preview"
-              onClick={closePreview}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
           <TaskSection conversationId={conversationId} />
-          <ArtifactSection conversationId={conversationId} />
+          <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
           <SkillMcpSection />
         </div>
       </div>
@@ -74,11 +69,11 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
       data-testid="right-panel"
       className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background"
     >
-      <div className="px-4 py-4">
+      <div className="px-4 py-2">
         <h2 className="text-[0.9375rem] font-semibold text-foreground">任务监控</h2>
       </div>
       <TaskSection conversationId={conversationId} />
-      <ArtifactSection conversationId={conversationId} />
+      <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
       <SkillMcpSection />
     </div>
   )
@@ -171,7 +166,13 @@ function isRunningTaskStatus(status: string) {
 
 // ─── ArtifactSection ──────────────────────────────────────────────────────────
 
-function ArtifactSection({ conversationId }: { conversationId: string }) {
+function ArtifactSection({
+  conversationId,
+  onOpenExternal,
+}: {
+  conversationId: string
+  onOpenExternal?: (target: PreviewTarget) => void
+}) {
   const messages = useChatStore((s) => s.messages)
   const [open, setOpen] = useState(true)
 
@@ -216,8 +217,10 @@ function ArtifactSection({ conversationId }: { conversationId: string }) {
                   key={f.id}
                   file={f}
                   conversationId={conversationId}
-                  canPreview={isFileActionEnabled(f.actions, 'preview')}
+                  canPreview={isPreviewActionEnabledForFile(f.actions, f.fileType, f.fileName)}
+                  canOpenExternal={f.actions?.find((action) => action.type === 'open')?.enabled !== false}
                   previewable={isPreviewableFileType(f.fileType, f.fileName)}
+                  onOpenExternal={onOpenExternal}
                 />
               ))}
             </div>
@@ -232,30 +235,42 @@ function ArtifactItem({
   file,
   conversationId,
   canPreview,
+  canOpenExternal,
   previewable,
+  onOpenExternal,
 }: {
   file: GeneratedFile
   conversationId: string
   canPreview: boolean
+  canOpenExternal: boolean
   previewable: boolean
+  onOpenExternal?: (target: PreviewTarget) => void
 }) {
   const target = useGeneratedFilePreviewStore((s) => s.target)
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const active = target?.conversationId === conversationId && target.fileId === file.id
+  const canPreviewInside = canPreview && previewable
+  const canOpen = !canPreviewInside && canOpenExternal && Boolean(onOpenExternal)
+  const enabled = canPreviewInside || canOpen
+  const actionLabel = canPreviewInside ? '预览' : '打开'
 
   return (
     <button
       type="button"
-      aria-label={`Preview ${file.fileName}`}
-      disabled={!canPreview}
+      aria-label={`${actionLabel} ${file.fileName}`}
+      disabled={!enabled}
       onClick={() => {
-        if (canPreview) openPreview(toPreviewTarget(file, conversationId))
+        const previewTarget = toPreviewTarget(file, conversationId)
+        if (canPreviewInside) {
+          openPreview(previewTarget)
+          return
+        }
+        onOpenExternal?.(previewTarget)
       }}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/70',
         active && 'bg-muted',
-        !canPreview && 'cursor-not-allowed opacity-50 hover:bg-transparent',
-        canPreview && !previewable && 'opacity-70',
+        !enabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
       )}
     >
       <ArtifactFileIcon fileType={file.fileType} />

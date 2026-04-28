@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 
 import {
   isFileActionEnabled,
+  isPreviewActionEnabledForFile,
   isPreviewableFileType,
 } from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
@@ -114,7 +115,7 @@ function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): Rende
   const fileType = anyF.fileType
   const actions = anyF.actions ?? []
   const canPreviewByType = isPreviewableFileType(fileType, fileName)
-  const canPreview = canPreviewByType && isFileActionEnabled(actions, 'preview')
+  const canPreview = canPreviewByType && isPreviewActionEnabledForFile(actions, fileType, fileName)
   const canOpenExternal = isFileActionEnabled(actions, 'open')
   const canReveal = isFileActionEnabled(actions, 'reveal')
   return {
@@ -123,7 +124,7 @@ function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): Rende
     title,
     fileName,
     sub: buildGeneratedFileMeta(f, anyF.format, anyF.subtitle),
-    appName: anyF.appName || 'Open',
+    appName: anyF.appName || '打开',
     fileType,
     actions,
     canPreview,

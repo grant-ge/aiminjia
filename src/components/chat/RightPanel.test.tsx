@@ -3,8 +3,21 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./FilePreviewPane', () => ({
-  FilePreviewPane: ({ target }: { target: { fileName?: string } | null }) => (
-    <div data-testid="mock-file-preview-pane">{target?.fileName}</div>
+  FilePreviewPane: ({
+    target,
+    onClosePreview,
+  }: {
+    target: { fileName?: string } | null
+    onClosePreview?: () => void
+  }) => (
+    <div data-testid="mock-file-preview-pane">
+      <span>{target?.fileName}</span>
+      {onClosePreview && (
+        <button type="button" aria-label="Close preview" onClick={onClosePreview}>
+          Close
+        </button>
+      )}
+    </div>
   ),
 }))
 
@@ -104,7 +117,7 @@ describe('RightPanel preview workspace', () => {
 
     render(<RightPanel conversationId="conv-1" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 summary.md' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -114,7 +127,61 @@ describe('RightPanel preview workspace', () => {
     })
   })
 
-  it('allows non-previewable artifacts to open the unsupported preview fallback', () => {
+  it('previews image artifacts when legacy actions omit preview', () => {
+    const onOpenExternal = vi.fn()
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-legacy-chart',
+          fileName: 'mock-status-chart.png',
+          fileType: 'png',
+          actions: [
+            { type: 'open', label: 'Open', enabled: true },
+            { type: 'reveal', label: 'Open Folder', enabled: true },
+          ],
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" onOpenExternal={onOpenExternal} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '预览 mock-status-chart.png' }))
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-legacy-chart',
+      conversationId: 'conv-1',
+      fileName: 'mock-status-chart.png',
+      fileType: 'png',
+    })
+    expect(onOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it('switches the preview target when clicking an image artifact', () => {
+    const onOpenExternal = vi.fn()
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-chart',
+          fileName: 'mock-status-chart.png',
+          fileType: 'png',
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" onOpenExternal={onOpenExternal} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '预览 mock-status-chart.png' }))
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-chart',
+      conversationId: 'conv-1',
+      fileName: 'mock-status-chart.png',
+      fileType: 'png',
+    })
+    expect(onOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it('keeps non-previewable artifacts disabled when no default-app opener is available', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
@@ -129,20 +196,113 @@ describe('RightPanel preview workspace', () => {
     render(<RightPanel conversationId="conv-1" />)
 
     expect(screen.getByText('table.xlsx')).toBeInTheDocument()
-    const tableButton = screen.getByRole('button', { name: 'Preview table.xlsx' })
+    const tableButton = screen.getByRole('button', { name: '打开 table.xlsx' })
+    expect(tableButton).toBeDisabled()
+
+    fireEvent.click(tableButton)
+
+    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
+  })
+
+  it('opens non-previewable artifacts with the default app instead of disabling them', () => {
+    const onOpenExternal = vi.fn()
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-2',
+          fileName: 'table.xlsx',
+          fileType: 'excel',
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" onOpenExternal={onOpenExternal} />)
+
+    const tableButton = screen.getByRole('button', { name: '打开 table.xlsx' })
     expect(tableButton).toBeEnabled()
 
     fireEvent.click(tableButton)
 
-    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+    expect(onOpenExternal).toHaveBeenCalledWith({
       fileId: 'gf-2',
       conversationId: 'conv-1',
       fileName: 'table.xlsx',
       fileType: 'excel',
     })
+    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
   })
 
-  it('keeps preview-disabled markdown artifacts visible but disabled', () => {
+  it('previews previewable artifacts even when preview action is disabled', () => {
+    const onOpenExternal = vi.fn()
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-3',
+          fileName: 'locked.md',
+          fileType: 'markdown',
+          actions: [
+            { type: 'preview', label: 'Preview', enabled: false },
+            { type: 'open', label: 'Open', enabled: true },
+          ],
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" onOpenExternal={onOpenExternal} />)
+
+    const lockedButton = screen.getByRole('button', { name: '预览 locked.md' })
+    expect(lockedButton).toBeEnabled()
+
+    fireEvent.click(lockedButton)
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-3',
+      conversationId: 'conv-1',
+      fileName: 'locked.md',
+      fileType: 'markdown',
+    })
+    expect(onOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it('previews json and csv artifacts even when preview action is disabled', () => {
+    const onOpenExternal = vi.fn()
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-json',
+          fileName: 'fallback.json',
+          fileType: 'json',
+          actions: [{ type: 'preview', label: 'Preview', enabled: false }],
+        })),
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-csv',
+          fileName: 'matrix.csv',
+          fileType: 'csv',
+          actions: [{ type: 'preview', label: 'Preview', enabled: false }],
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" onOpenExternal={onOpenExternal} />)
+
+    const jsonButton = screen.getByRole('button', { name: '预览 fallback.json' })
+    const csvButton = screen.getByRole('button', { name: '预览 matrix.csv' })
+    expect(jsonButton).toBeEnabled()
+    expect(csvButton).toBeEnabled()
+
+    fireEvent.click(jsonButton)
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-json',
+      conversationId: 'conv-1',
+      fileName: 'fallback.json',
+      fileType: 'json',
+    })
+
+    expect(screen.getByRole('button', { name: '预览 matrix.csv' })).toBeEnabled()
+    expect(onOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it('keeps preview-disabled markdown artifacts previewable by type', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
@@ -158,14 +318,19 @@ describe('RightPanel preview workspace', () => {
     render(<RightPanel conversationId="conv-1" />)
 
     expect(screen.getByText('locked.md')).toBeInTheDocument()
-    const lockedButton = screen.getByRole('button', { name: 'Preview locked.md' })
-    expect(lockedButton).toBeDisabled()
+    const lockedButton = screen.getByRole('button', { name: '预览 locked.md' })
+    expect(lockedButton).toBeEnabled()
 
     fireEvent.click(lockedButton)
 
-    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-3',
+      conversationId: 'conv-1',
+      fileName: 'locked.md',
+      fileType: 'markdown',
+    })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 summary.md' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
