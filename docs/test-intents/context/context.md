@@ -168,17 +168,19 @@ let masked = mask_ctx.mask_messages(&chat_messages);
 ## Skill 系统
 
 ### skill 的唯一标识
-- skill 的 id 来自 `plugin.toml` 或 `SKILL.md` 的 `plugin.id` 字段
-- 安装后存放路径：`.renlijia/skills/<plugin_id>/`
-- 同一个 plugin_id 安装两次会覆盖，不会产生重复目录
+- skill 的 id 来自 `SKILL.md` 的 frontmatter `name` 字段，或目录名作为备选
+- 安装后存放路径：`~/.renlijia/users/{scope}/skills/<skill_id>/`（用户级，高优先级）或 `~/.renlijia/skills/<skill_id>/`（全局，低优先级）
+- 同一个 skill_id 安装两次会覆盖，不会产生重复目录
+- 用户级 skill 覆盖全局 skill（按 ID）
 
 ### skill 加载是渐进式的，分两阶段
-1. **摘要阶段**：对话开始时，把所有已安装 skill 的 name + description 注入到 LLM 上下文
-2. **完整内容阶段**：LLM 调用 skill 工具后，完整 SKILL.md 内容才被注入
+1. **摘要阶段**：对话开始时，把所有已安装 skill 的 name + description 注入到 LLM 上下文，按 1% context window 预算 + 250 字符上限截断
+2. **完整内容阶段**：LLM 调用 `load_skill` 工具后，完整 SKILL.md body 才被展开并返回给 LLM
 
 ### skill 不重复加载
 - 同一次对话里，同一个 skill 的摘要只注入一次
 - 完整内容也只加载一次
+- `load_skill` 返回展开后的 SKILL.md body，不持久化任何 active skill state
 
 ## Permission 系统
 

@@ -20,3 +20,4 @@
 
 - 2026-04-24：新增 `review_skill_loading_test.rs`，覆盖 manifest/安装目录、registry summary、switch_skill runtime patch、SkillSessionStore 同会话复用。
 - 2026-04-24：运行 `cd src-tauri && cargo test --test review_skill_loading_test -- --nocapture`，结果 4 passed。仅出现既有 dead_code warning：`FILE_GEN_TOOLS`、`is_last_tool_file_generation` 未使用。
+- 2026-04-28：rules 重写为 SKILL.md-only 架构（spec 见 docs/superpowers/specs/2026-04-28-aijia-skill-spec.md）
