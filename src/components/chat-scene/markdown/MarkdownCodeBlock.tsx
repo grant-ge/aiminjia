@@ -7,33 +7,27 @@ interface CodeProps {
   children?: React.ReactNode
 }
 
-/**
- * react-markdown `code` override.
- * Renders inline code as <code>; fenced code blocks as a card with a copy button.
- */
-export function MarkdownCodeBlock({ inline, className, children }: CodeProps) {
+function InlineCode({ children }: { children?: React.ReactNode }) {
+  return (
+    <code
+      style={{
+        background: 'var(--color-bg-base)',
+        padding: '1px 5px',
+        borderRadius: 3,
+        fontFamily: 'var(--font-mono)',
+        fontSize: '0.82em',
+        color: 'var(--color-text-primary)',
+      }}
+    >
+      {children}
+    </code>
+  )
+}
+
+function FencedCodeBlock({ className, children }: { className?: string; children?: React.ReactNode }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState<'idle' | 'ok' | 'fail'>('idle')
 
-  if (inline) {
-    return (
-      <code
-        style={{
-          background: 'var(--color-bg-base)',
-          padding: '1px 5px',
-          borderRadius: 3,
-          fontFamily: 'var(--font-mono)',
-          fontSize: '0.82em',
-          color: 'var(--color-text-primary)',
-        }}
-      >
-        {children}
-      </code>
-    )
-  }
-
-  // Fenced block: react-markdown puts <code class="language-xxx"> inside <pre>.
-  // We extract the language from className.
   const match = /language-(\w+)/.exec(className ?? '')
   const lang = match?.[1] ?? 'code'
   const codeText = String(children ?? '').replace(/\n$/, '')
@@ -115,4 +109,13 @@ export function MarkdownCodeBlock({ inline, className, children }: CodeProps) {
       </pre>
     </div>
   )
+}
+
+/**
+ * react-markdown `code` override.
+ * Renders inline code as <code>; fenced code blocks as a card with a copy button.
+ */
+export function MarkdownCodeBlock({ inline, className, children }: CodeProps) {
+  if (inline) return <InlineCode>{children}</InlineCode>
+  return <FencedCodeBlock className={className}>{children}</FencedCodeBlock>
 }
