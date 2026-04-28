@@ -44,7 +44,7 @@ export interface Conversation {
  * MessageContent supports multiple rich content types mixed together.
  *
  * Rendering order (resolved ambiguity):
- * progress → text → codeBlocks → codeResults → tables → metrics →
+ * text → codeBlocks → codeResults → tables → metrics →
  * options → anomalies → insights → rootCauses → generatedFiles →
  * reports → searchSources → execSummary → confirmations
  */
@@ -78,7 +78,6 @@ export interface MessageContent {
 
 /** The fixed rendering order for MessageContent fields */
 export const MESSAGE_CONTENT_RENDER_ORDER: (keyof MessageContent)[] = [
-  'progress',
   'text',
   'codeBlocks',
   'codeResults',

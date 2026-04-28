@@ -14,7 +14,6 @@ import type {
   InsightBlock as InsightBlockType,
   RootCauseBlock as RootCauseBlockType,
   ConfirmBlock as ConfirmBlockType,
-  ProgressState,
   SearchSource,
   ExecSummary,
   ReportCard,
@@ -30,7 +29,6 @@ import {
   InsightBlock,
   RootCauseBlock,
   ConfirmBlock,
-  ProgressSteps,
   SearchSourceBlock,
   ExecSummaryCard,
   ReportCards,
@@ -161,9 +159,6 @@ function ContentRenderer({
   switch (field) {
     case 'text':
       return <AssistantMarkdown text={value as string} />
-
-    case 'progress':
-      return <ProgressSteps progress={value as ProgressState} />
 
     case 'codeBlocks':
       return (

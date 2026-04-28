@@ -13,7 +13,6 @@ pub mod telemetry;
 pub mod transport;
 
 use commands::chat;
-use commands::export;
 use commands::file;
 use commands::settings;
 use commands::workspace;
@@ -476,8 +475,6 @@ pub fn run() {
             workspace::get_authorized_workspace,
             workspace::revoke_authorized_workspace,
             workspace::get_default_folder,
-            // Export commands
-            export::export_conversation,
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,

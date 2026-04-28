@@ -1,9 +1,6 @@
-# Python dependencies for AI小家 (conversation export feature)
+# Python dependencies for AIjia report/document utilities.
 # Install with: pip install -r requirements.txt
 
-# PDF export (lighter than Playwright, no browser binary needed)
-weasyprint>=62.0
-
-# Word (DOCX) export
+# Report/DOCX generation
 python-docx>=1.0.0
 htmldocx>=0.0.6

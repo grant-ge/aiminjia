@@ -97,6 +97,35 @@ describe('AiBubble — subagentEnvelope integration', () => {
     ).toBeInTheDocument()
   })
 
+
+  it('ignores legacy progress content without rendering the progress block', () => {
+    const { container } = render(
+      <AiBubble
+        message={{
+          id: 'msg-progress',
+          conversationId: 'conv-1',
+          role: 'assistant',
+          createdAt: '2026-04-18T00:00:00Z',
+          content: {
+            progress: {
+              title: '渲染样本全集构建完成',
+              currentStep: 3,
+              steps: [
+                { label: '收集现有样本', status: 'done' },
+                { label: '汇总到同一回合', status: 'done' },
+                { label: '保留原始渲染形态', status: 'done' },
+              ],
+            },
+          },
+        }}
+      />,
+    )
+
+    expect(screen.queryByText('渲染样本全集构建完成')).not.toBeInTheDocument()
+    expect(screen.queryByText('收集现有样本')).not.toBeInTheDocument()
+    expect(container.firstChild).toBeNull()
+  })
+
   it('does not render the old avatar-offset layout for history messages', () => {
     const { container } = render(<AiBubble message={envelopeMessage} />)
 

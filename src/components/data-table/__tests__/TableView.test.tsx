@@ -71,6 +71,14 @@ describe('TableView — basic rendering', () => {
     render(<TableView columns={cols} rows={rows} meta={{ title: 'My Table' }} />)
     expect(screen.getByText('My Table')).toBeInTheDocument()
   })
+
+  it('does not draw a divider on the final body row', () => {
+    render(<TableView columns={cols} rows={rows} />)
+    const bodyRows = document.querySelectorAll('tbody tr')
+
+    expect((bodyRows[0] as HTMLTableRowElement).style.borderBottom).toBe('1px solid var(--table-divider)')
+    expect((bodyRows[bodyRows.length - 1] as HTMLTableRowElement).style.borderBottom).toBe('')
+  })
 })
 
 describe('TableView — sort', () => {

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   CheckCircle2,
@@ -45,9 +45,13 @@ function TaskSection({ conversationId }: { conversationId: string }) {
   const hasRunning = tasks.some((t) => isRunningTaskStatus(t.status))
   const [open, setOpen] = useState(true)
 
-  useEffect(() => {
-    if (hasRunning) setOpen(true)
-  }, [hasRunning])
+  // Force-open the panel on the rising edge of hasRunning.
+  // Render-phase setState on this component is allowed; useEffect would warn.
+  const prevHasRunning = useRef(hasRunning)
+  if (hasRunning && !prevHasRunning.current && !open) {
+    setOpen(true)
+  }
+  prevHasRunning.current = hasRunning
 
   return (
     <div className="border-b border-border">

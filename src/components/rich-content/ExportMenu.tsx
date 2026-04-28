@@ -1,12 +1,11 @@
 /**
- * ExportMenu — dropdown button for multi-format conversation export.
- * Supports HTML, PDF (via Tauri IPC), PPT (pptxgenjs), and Excel (xlsx).
+ * ExportMenu — dropdown button for client-side conversation exports.
+ * Supports PPT (pptxgenjs) and Excel (xlsx).
  */
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { exportConversation, openGeneratedFile } from '@/lib/tauri'
 import { exportAsPptx } from '@/lib/pptxExport'
 import { exportAsExcel } from '@/lib/excelExport'
 import type { MessageContent } from '@/types/message'
@@ -16,7 +15,7 @@ interface ExportMenuProps {
   disabled?: boolean
 }
 
-type ExportFormat = 'pdf' | 'html' | 'pptx' | 'xlsx'
+type ExportFormat = 'pptx' | 'xlsx'
 
 interface FormatOption {
   format: ExportFormat
@@ -25,15 +24,11 @@ interface FormatOption {
 }
 
 const FORMAT_OPTIONS: FormatOption[] = [
-  { format: 'pdf', labelKey: 'topBar.exportAsPdf', icon: 'PDF' },
-  { format: 'html', labelKey: 'topBar.exportAsHtml', icon: 'HTML' },
   { format: 'pptx', labelKey: 'topBar.exportAsPptx', icon: 'PPT' },
   { format: 'xlsx', labelKey: 'topBar.exportAsXlsx', icon: 'XLS' },
 ]
 
 const ICON_COLORS: Record<string, { bg: string; fg: string }> = {
-  PDF: { bg: 'var(--color-filetype-red-bg, #FEE2E2)', fg: 'var(--color-semantic-red, #EF4444)' },
-  HTML: { bg: 'var(--color-filetype-blue-bg, #DBEAFE)', fg: 'var(--color-semantic-blue, #3B82F6)' },
   PPT: { bg: 'var(--color-filetype-orange-bg, #FED7AA)', fg: 'var(--color-semantic-orange, #F97316)' },
   XLS: { bg: 'var(--color-filetype-green-bg, #D1FAE5)', fg: 'var(--color-semantic-green, #10B981)' },
 }
@@ -66,34 +61,7 @@ export function ExportMenu({ conversationId, disabled }: ExportMenuProps) {
     setExporting(true)
 
     try {
-      if (format === 'pdf' || format === 'html') {
-        // Existing Tauri IPC export
-        const result = await exportConversation(conversationId, format)
-        if (result.wasFallback) {
-          // PDF was requested but the bundled runtime cannot produce it —
-          // surface this explicitly instead of silently delivering HTML.
-          useNotificationStore.getState().push({
-            level: 'warning',
-            title: t('topBar.exportPdfFallback'),
-            message: t('topBar.exportPdfFallbackHint', { fileName: result.fileName }),
-            actions: [],
-            dismissible: true,
-            autoHide: 10,
-            context: 'toast',
-          })
-        } else {
-          useNotificationStore.getState().push({
-            level: 'success',
-            title: t('topBar.exportSuccess'),
-            message: `${result.fileName} ${t('topBar.saved')}`,
-            actions: [],
-            dismissible: true,
-            autoHide: 5,
-            context: 'toast',
-          })
-        }
-        await openGeneratedFile(result.fileId, conversationId)
-      } else if (format === 'pptx') {
+      if (format === 'pptx') {
         // Client-side PPT generation — save via Tauri fs plugin
         const { save } = await import('@tauri-apps/plugin-dialog')
         const { writeFile } = await import('@tauri-apps/plugin-fs')
@@ -176,7 +144,7 @@ export function ExportMenu({ conversationId, disabled }: ExportMenuProps) {
           borderColor: 'var(--color-border)',
           color: 'var(--color-text-muted)',
         }}
-        title={t('topBar.exportConversation')}
+        title={t('topBar.export')}
         disabled={disabled ?? exporting}
         onClick={() => setOpen((prev) => !prev)}
         onMouseEnter={(e) => {

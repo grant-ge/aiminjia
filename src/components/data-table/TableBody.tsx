@@ -98,7 +98,7 @@ export function TableBody({ columns, rows, emptyText }: Props) {
           className="transition-colors hover:bg-[var(--table-row-hover)]"
           style={{
             background: rowIdx % 2 === 1 ? 'var(--table-row-zebra)' : undefined,
-            borderBottom: '1px solid var(--table-divider)',
+            borderBottom: rowIdx === rows.length - 1 ? undefined : '1px solid var(--table-divider)',
           }}
         >
           {columns.map((col) => {

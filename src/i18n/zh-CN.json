@@ -68,17 +68,12 @@
     "tasks": "任务"
   },
   "topBar": {
-    "exportConversation": "导出对话",
     "export": "导出",
     "exportSuccess": "导出成功",
     "saved": "已保存",
     "exportFailed": "导出失败",
-    "exportAsPdf": "导出为 PDF",
-    "exportAsHtml": "导出为 HTML",
     "exportAsPptx": "导出为 PPT",
-    "exportAsXlsx": "导出为 Excel",
-    "exportPdfFallback": "PDF 生成不可用，已导出为 HTML",
-    "exportPdfFallbackHint": "可在浏览器打开 {{fileName}}，使用浏览器的\"打印 → 另存为 PDF\"功能保存"
+    "exportAsXlsx": "导出为 Excel"
   },
   "inputBar": {
     "attachData": "添加文件或本地目录",
