@@ -75,8 +75,9 @@ pub fn build_iteration_context(
 
     // 8. Skill catalog — dynamic LLM-driven skill discovery.
     if !skill_catalog.is_empty() {
-        ctx.push_str("\n\n");
+        ctx.push_str("\n\n<system-reminder>\n");
         ctx.push_str(skill_catalog);
+        ctx.push_str("\n</system-reminder>");
     }
 
     ctx
@@ -226,8 +227,9 @@ mod tests {
     fn test_skill_catalog_block() {
         let catalog = "## 可用专项技能\n- `biz-writing` — 商务写作";
         let result = build_iteration_context("", "", "", "", "", None, None, catalog);
-        assert!(result.contains("可用专项技能"));
+        assert!(result.contains("<system-reminder>\n## 可用专项技能"));
         assert!(result.contains("biz-writing"));
+        assert!(result.contains("\n</system-reminder>"));
     }
 
     #[test]

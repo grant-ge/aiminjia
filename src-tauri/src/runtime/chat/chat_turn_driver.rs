@@ -228,8 +228,8 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 返回当前 turn 可见的 skill catalog。
     ///
     /// 默认返回空字符串，生产 executor 从 SkillRegistry 构建。
-    async fn get_skill_catalog(&self) -> Result<String, TurnError> {
-        Ok(String::new())
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        String::new()
     }
 
     /// 加载 turn 对应的 workspace 路径。
@@ -1141,10 +1141,7 @@ impl RuntimeChatTurnDriver {
                 log::warn!("[run_chat_turn_s4] get_env_info failed: {}", e);
                 String::new()
             });
-        let skill_catalog = executor.get_skill_catalog().await.unwrap_or_else(|e| {
-            log::warn!("[run_chat_turn_s4] get_skill_catalog failed: {}", e);
-            String::new()
-        });
+        let skill_catalog = executor.get_skill_catalog(None).await;
         let project_memory_ctx = executor
             .load_project_memory(&config.workspace_path, request.content.as_str())
             .await
@@ -2010,8 +2007,8 @@ mod tests {
             Ok(std::env::temp_dir())
         }
 
-        async fn get_skill_catalog(&self) -> Result<String, TurnError> {
-            Ok(self.skill_catalog.clone().unwrap_or_default())
+        async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+            self.skill_catalog.clone().unwrap_or_default()
         }
     }
 

@@ -1358,14 +1358,12 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
-    async fn get_skill_catalog(&self) -> Result<String, TurnError> {
-        let catalog = self
-            .services
+    async fn get_skill_catalog(&self, agent_id: Option<&str>) -> String {
+        self.services
             .skill_registry
             .lock()
-            .map(|mut reg| reg.catalog_delta_for_agent(None, 200_000))
-            .unwrap_or_default();
-        Ok(catalog)
+            .map(|mut reg| reg.catalog_delta_for_agent(agent_id, 200_000))
+            .unwrap_or_default()
     }
 
     async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {

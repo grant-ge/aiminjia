@@ -1590,3 +1590,98 @@ fn review_chat_adapter_new_has_no_block_on() {
          Move async initialization into send_message() or use spawn."
     );
 }
+
+// ── Task 17: skill catalog injection into dynamic context ─────────────────
+
+struct SkillCatalogCapturingExecutor {
+    catalog: String,
+    captured_dynamic_contexts: std::sync::Mutex<Vec<String>>,
+}
+
+impl SkillCatalogCapturingExecutor {
+    fn new(catalog: impl Into<String>) -> Self {
+        Self {
+            catalog: catalog.into(),
+            captured_dynamic_contexts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.captured_dynamic_contexts
+            .lock()
+            .unwrap()
+            .push(input.dynamic_context.to_string());
+        Ok(LlmStepResult::ContentComplete {
+            content: "ok".to_string(),
+            tokens_in: 0,
+            tokens_out: 0,
+            stop_reason: Some("end_turn".to_string()),
+        })
+    }
+
+    async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
+        self.catalog.clone()
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _tool_calls: &[serde_json::Value],
+        _generated_file_ids: &[String],
+        _file_metas: &[serde_json::Value],
+    ) -> Result<String, TurnError> {
+        Ok("mock-id".to_string())
+    }
+}
+
+#[tokio::test]
+async fn driver_injects_skill_catalog_into_dynamic_context() {
+    let catalog = "The following skills are available for use with the load_skill tool:\n\n- `salary-query` — 薪酬查询";
+    let executor = Arc::new(SkillCatalogCapturingExecutor::new(catalog));
+    let bus = RuntimeEventBus::new();
+    let qe = QueryEngine::default();
+    let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
+    let mut turn = make_test_turn("conv-skill-catalog");
+    let request = ChatTurnRequest::new("conv-skill-catalog", "help me", vec![]);
+
+    driver.run_chat_turn(&mut turn, &request).await.unwrap();
+
+    let captured = executor.captured_dynamic_contexts.lock().unwrap();
+    assert!(!captured.is_empty(), "must capture dynamic_context");
+    let ctx = &captured[0];
+    assert!(
+        ctx.contains("The following skills are available for use with the load_skill tool"),
+        "dynamic context must contain skill catalog header, got: {}",
+        ctx
+    );
+    assert!(
+        ctx.contains("<system-reminder>"),
+        "skill catalog must be wrapped in <system-reminder>, got: {}",
+        ctx
+    );
+    assert!(
+        ctx.contains("</system-reminder>"),
+        "skill catalog must be closed with </system-reminder>, got: {}",
+        ctx
+    );
+    assert!(
+        !ctx.contains("switch_skill"),
+        "dynamic context must NOT contain switch_skill, got: {}",
+        ctx
+    );
+    assert!(
+        !ctx.contains("precompute_result"),
+        "dynamic context must NOT contain precompute_result, got: {}",
+        ctx
+    );
+}
+
