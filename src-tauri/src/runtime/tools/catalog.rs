@@ -551,24 +551,6 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "switch_skill",
-            "切换当前会话 skill，并让下一轮 turn 使用新的 prompt / 工具面。",
-        )
-        .with_kind(ToolKind::Support),
-        json!({
-            "type": "object",
-            "required": ["skill_id"],
-            "properties": {
-                "skill_id": {
-                    "type": "string",
-                    "description": "目标 skill id，例如 comp-analysis-v2"
-                }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
             "load_skill",
             "加载一个专项技能的详细指令到当前对话。无副作用：不改变系统提示、不限制工具、不持久化。",
         )

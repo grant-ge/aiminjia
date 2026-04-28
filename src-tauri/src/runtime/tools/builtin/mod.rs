@@ -17,6 +17,5 @@ pub mod python;
 pub mod python_execution;
 pub mod report;
 pub mod report_capability;
-pub mod switch_skill;
 pub mod task_tools;
 pub mod workspace;

@@ -142,7 +142,6 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "write_memory",
     "search_memory",
     "load_skill",
-    "switch_skill",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -972,20 +971,6 @@ impl ToolRegistry {
                     Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
                 }
                 None => None,
-            },
-            "switch_skill" => match (ctx.skill_registry.clone(), ctx.skill_sessions.clone()) {
-                (Some(skill_registry), Some(skill_sessions)) => {
-                    let tool = builtin::switch_skill::SwitchSkillRuntimeTool::new(
-                        skill_registry,
-                        skill_sessions,
-                        ctx.tool_registry
-                            .clone()
-                            .unwrap_or_else(|| Arc::new(ToolRegistry::new())),
-                    )
-                    .await;
-                    Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
-                }
-                _ => None,
             },
             _ => None,
         }
