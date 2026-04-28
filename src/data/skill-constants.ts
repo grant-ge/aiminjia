@@ -1,6 +1,3 @@
-/** Skill id of the bundled skill-smith template that drives the create-skill flow. */
-export const SKILL_SMITH_ID = 'skill-smith'
-
 /** Slash command pre-filled into the chat composer when user clicks "+ 创建技能". */
 export const CREATE_SKILL_COMMAND = '/create-skill '
 

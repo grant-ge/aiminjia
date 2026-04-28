@@ -14,7 +14,6 @@ import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
-import { SKILL_SMITH_ID, CREATE_SKILL_COMMAND } from '@/data/skill-constants'
 import i18n from '@/i18n'
 import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
@@ -424,11 +423,8 @@ export function useChat() {
     }
   }, [loadConversations])
 
-  const createConversationFromSkill = useCallback(async (skillId: string) => {
+  const createConversationFromSkill = useCallback(async (_skillId: string) => {
     const conversationId = await createNewConversation()
-    if (skillId === SKILL_SMITH_ID) {
-      useUiStore.getState().setPrefillText(CREATE_SKILL_COMMAND)
-    }
     useUiStore.getState().setRoute({ kind: 'chat', conversationId })
     return conversationId
   }, [createNewConversation])
@@ -452,4 +448,3 @@ export function useChat() {
     loadConversations,
   }
 }
-
