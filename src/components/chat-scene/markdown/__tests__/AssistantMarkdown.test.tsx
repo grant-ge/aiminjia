@@ -2,7 +2,7 @@ import '@testing-library/jest-dom'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AssistantMarkdown } from '../../AssistantMarkdown'
 
 vi.mock('react-i18next', () => ({
@@ -54,7 +54,7 @@ describe('AssistantMarkdown', () => {
   })
 
 
-  it('copies markdown table content as CSV from the floating action', () => {
+  it('copies markdown table content as CSV from the floating action', async () => {
     const md = `| Name | Qty |
 |---|---|
 | apple | 1 |`
@@ -63,6 +63,7 @@ describe('AssistantMarkdown', () => {
     fireEvent.click(screen.getByTestId('markdown-table-copy-button'))
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Name,Qty\r\napple,1\r\n')
+    await waitFor(() => expect(screen.getByText('Copied')).toBeInTheDocument())
   })
 
   it('strips raw HTML tags from input (skipHtml default)', () => {
@@ -148,6 +149,20 @@ Paragraph with **bold**, *italic*, ~~deleted~~, and \`inline code\`.
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
 
     expect(css).toContain('.assistant-markdown {\n  color: var(--color-text-primary);')
+  })
+
+  it('prevents markdown tables from showing a vertical scrollbar beside the horizontal scrollbar', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
+
+    expect(css).toMatch(/\.assistant-markdown \.markdown-table-scroll \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;/s)
+  })
+
+  it('renders blockquotes as restrained quotes without card styling', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
+
+    expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-left: 3px solid/s)
+    expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*border-radius: 0;/s)
+    expect(css).toMatch(/\.assistant-markdown blockquote \{[^}]*background: transparent;/s)
   })
 
 })

@@ -442,10 +442,10 @@ button:not(:disabled) {
 }
 
 .assistant-markdown blockquote {
-  border-left: 3px solid color-mix(in srgb, var(--primary) 55%, var(--color-border));
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  padding: 0.35rem 0 0.35rem 0.85rem;
-  background: color-mix(in srgb, var(--brand-primary-subtle) 45%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--primary) 38%, var(--color-border));
+  border-radius: 0;
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  background: transparent;
   color: var(--color-text-secondary);
 }
 
@@ -565,6 +565,7 @@ button:not(:disabled) {
 
 .assistant-markdown .markdown-table-scroll {
   overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
 }

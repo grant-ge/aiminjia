@@ -33,6 +33,7 @@ export interface RenderToolGroup {
 
 export interface RenderGeneratedFile {
   id: string
+  conversationId: string
   title: string
   sub: string
   appName: string
@@ -91,13 +92,14 @@ function buildGeneratedFileMeta(f: GeneratedFile, format?: string, subtitle?: st
   return parts.join(' · ')
 }
 
-function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
+function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): RenderGeneratedFile {
   const anyF = f as unknown as {
     id: string; title?: string; fileName?: string;
     subtitle?: string; appName?: string; format?: string;
   }
   return {
     id: anyF.id,
+    conversationId,
     title: anyF.title || anyF.fileName || '未命名文件',
     sub: buildGeneratedFileMeta(f, anyF.format, anyF.subtitle),
     appName: anyF.appName || 'Open',
@@ -216,7 +218,7 @@ export function buildTurnsFromMessages(
       }
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
-          current.generatedFiles.push(normalizeGeneratedFile(f))
+          current.generatedFiles.push(normalizeGeneratedFile(f, m.conversationId))
         }
       }
       continue

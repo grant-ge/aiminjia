@@ -8,6 +8,7 @@ import { GeneratedFileCard } from '@/components/chat-scene/GeneratedFileCard'
 import { SuggestChipGroup } from '@/components/chat-scene/SuggestChipGroup'
 import { ToolGroupCard } from '@/components/chat-scene/ToolGroupCard'
 import { UserMessageBubble } from '@/components/chat-scene/UserMessageBubble'
+import { openGeneratedFile } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useTurnRenderModel } from '@/hooks/useTurnRenderModel'
 
@@ -45,7 +46,7 @@ export function MessageList() {
                 title={f.title}
                 sub={f.sub}
                 appName={f.appName}
-                onOpen={() => {}}
+                onOpen={() => void openGeneratedFile(f.id, f.conversationId)}
               />
             ))}
             {t.suggestions.length > 0 ? (
