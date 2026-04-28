@@ -1,9 +1,44 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
 use crate::storage::UserScopedPathResolver;
+use crate::plugin::skill::registry::SkillRegistry;
+
+/// Skill info returned by `list_skills` IPC — only SKILL.md-backed skills.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub icon: Option<String>,
+    pub category: Option<String>,
+}
+
+/// Pure function for testability: list all skills in the new disk-backed registry.
+pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<SkillInfo> {
+    let guard = registry.lock().unwrap();
+    guard
+        .skill_ids()
+        .into_iter()
+        .filter_map(|id| {
+            guard.get(&id).map(|skill| SkillInfo {
+                id: skill.id.clone(),
+                display_name: skill
+                    .frontmatter
+                    .metadata
+                    .label
+                    .clone()
+                    .unwrap_or_else(|| skill.frontmatter.name.clone()),
+                description: skill.frontmatter.description.clone(),
+                icon: None,
+                category: None,
+            })
+        })
+        .collect()
+}
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
