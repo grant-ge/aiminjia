@@ -30,6 +30,50 @@ impl SkillValidationError {
     }
 }
 
+/// Install-time error returned by the `install_custom_skill` command.
+/// Validation errors are flattened with `to_user_message()`; AlreadyExists is
+/// kept structured so the frontend can render an "overwrite / cancel" dialog.
+#[derive(Debug)]
+pub enum InstallSkillError {
+    Validation(SkillValidationError),
+    AlreadyExists(String),
+    Io(String),
+}
+
+impl InstallSkillError {
+    pub fn to_user_message(&self) -> String {
+        match self {
+            Self::Validation(v) => v.to_user_message(),
+            Self::AlreadyExists(id) => format!("ALREADY_EXISTS:{}", id),
+            Self::Io(detail) => format!("IO 错误：{}", detail),
+        }
+    }
+}
+
+/// Pure function: copy `source` into `<custom_dir>/<basename>`. If the target
+/// already exists and `force=false`, returns `AlreadyExists` without modifying
+/// anything. Caller is responsible for running validation first.
+pub fn install_custom_skill_to_dir_with_force(
+    source: &std::path::Path,
+    custom_dir: &std::path::Path,
+    force: bool,
+) -> Result<String, InstallSkillError> {
+    let basename = source
+        .file_name()
+        .ok_or_else(|| InstallSkillError::Io(format!("Source '{}' has no basename", source.display())))?;
+    let dest = custom_dir.join(basename);
+    if dest.exists() {
+        if !force {
+            return Err(InstallSkillError::AlreadyExists(basename.to_string_lossy().to_string()));
+        }
+        std::fs::remove_dir_all(&dest)
+            .map_err(|e| InstallSkillError::Io(format!("Failed to remove existing skill: {}", e)))?;
+    }
+    copy_dir_recursive(source, &dest)
+        .map_err(|e| InstallSkillError::Io(format!("Failed to copy skill: {}", e)))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 /// Validate that `source` is a well-formed skill directory the runtime loader
 /// will actually pick up. Mirrors the rules in `loader::load_one_root` so an
 /// upload that passes here is guaranteed to surface in `list_skills`.
@@ -164,24 +208,6 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn install_custom_skill_to_dir(source: &Path, custom_dir: &Path) -> Result<String, String> {
-    let basename = source
-        .file_name()
-        .ok_or_else(|| format!("Source path '{}' has no basename", source.display()))?;
-    let dest = custom_dir.join(basename);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| {
-            format!(
-                "Failed to remove existing skill at '{}': {}",
-                dest.display(),
-                e
-            )
-        })?;
-    }
-    copy_dir_recursive(source, &dest).map_err(|e| format!("Failed to copy skill: {}", e))?;
-    Ok(dest.to_string_lossy().to_string())
-}
-
 fn load_skill_for_reload(
     _path: &Path,
 ) -> Result<(String, Box<dyn crate::plugin::skill_trait::Skill>), String> {
@@ -195,22 +221,32 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
     list_custom_skills_in_dir(&custom_dir)
 }
 
-/// Install a skill from a directory path (copy to ~/.renlijia/skills/).
+/// Install a skill from a directory path into the current user's skills dir.
+/// `force=false`: returns error `ALREADY_EXISTS:<id>` if same-name skill exists.
+/// `force=true`: overwrites existing skill.
+/// On success: re-scans both user + global roots and refreshes in-memory registry.
 #[tauri::command]
-pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
+pub async fn install_custom_skill(
+    app: AppHandle,
+    source_path: String,
+    force: Option<bool>,
+) -> Result<String, String> {
     let source = PathBuf::from(&source_path);
     if !source.is_dir() {
         return Err(format!("Source path '{}' is not a directory", source_path));
     }
-    if !source.join("SKILL.md").is_file() {
-        return Err(format!(
-            "Source path '{}' does not contain SKILL.md",
-            source_path
-        ));
-    }
+
+    validate_skill_directory(&source)
+        .map_err(|e| e.to_user_message())?;
+
     let custom_dir = user_skills_dir(&app)?;
     std::fs::create_dir_all(&custom_dir).map_err(|e| e.to_string())?;
-    install_custom_skill_to_dir(&source, &custom_dir)
+
+    let dest = install_custom_skill_to_dir_with_force(&source, &custom_dir, force.unwrap_or(false))
+        .map_err(|e| e.to_user_message())?;
+
+    refresh_skill_registry(&app)?;
+    Ok(dest)
 }
 
 /// Uninstall a custom skill by ID.
