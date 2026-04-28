@@ -22,6 +22,7 @@ export interface Settings {
   bochaApiKey: string
   customModelEndpoint: string
   customModelName: string
+  useCloud: boolean
   cloudModel: string
   cloudModelType: string
   personaOnboardingDone?: boolean
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
+  useCloud: false,
   cloudModel: '',
   cloudModelType: '',
   personaOnboardingDone: false,

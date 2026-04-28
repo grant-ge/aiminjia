@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 
-import { cloudLogin, cloudLogout, getCloudAuth, getCloudModels, type CloudAuthInfo, type CloudModel } from '@/lib/tauri'
+import {
+  cloudLogin,
+  cloudLogout,
+  getCloudAuth,
+  getCloudModels,
+  getSettings,
+  updateSettings,
+  type CloudAuthInfo,
+  type CloudModel,
+} from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import type { Route } from '@/stores/uiStore'
 
@@ -42,6 +51,24 @@ function mapAuthState(info: CloudAuthInfo, models: CloudModel[]) {
   }
 }
 
+async function syncCloudModelSelection(models: CloudModel[]): Promise<string | null> {
+  if (models.length === 0) return null
+
+  const settings = await getSettings()
+  const currentIsAvailable = models.some((model) => model.id === settings.cloudModel)
+  if (currentIsAvailable) return settings.cloudModel
+
+  const nextModel = models[0]
+  const nextSettings = {
+    ...settings,
+    useCloud: true,
+    cloudModel: nextModel.id,
+    cloudModelType: nextModel.modelType || 'chat',
+  }
+  await updateSettings(nextSettings)
+  return nextModel.id
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   ...EMPTY_AUTH_STATE,
   redirectFrom: null,
@@ -75,7 +102,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const models = await getCloudModels()
-      set({ ...mapAuthState(info, models), isAuthPending: false })
+      const selectedCloudModel = await syncCloudModelSelection(models)
+      set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
     } catch (error) {
       set({ ...EMPTY_AUTH_STATE, isAuthPending: false })
       throw error
@@ -89,7 +117,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const info = await cloudLogin(username.trim(), password)
       const models = info.models.length > 0 ? info.models : await getCloudModels()
-      set({ ...mapAuthState(info, models), isAuthPending: false })
+      const selectedCloudModel = await syncCloudModelSelection(models)
+      set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
     } catch (error) {
       set({ isAuthPending: false })
       throw error

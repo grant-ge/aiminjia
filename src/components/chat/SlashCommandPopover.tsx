@@ -27,22 +27,27 @@ interface SlashCommandPopoverProps {
 function scoreSkill(skill: SkillInfo, filter: string): number {
   if (!filter) return 1 // everything matches when no filter
   const f = filter.toLowerCase()
+  const displayName = skill.displayName || skill.id
+  const displayNameEn = skill.displayNameEn || displayName
+  const triggerText = skill.triggerText || `/${skill.id}`
+  const category = skill.category || 'general'
+  const shortDescription = skill.shortDescription || skill.description || ''
 
   // id exact prefix: highest
   if (skill.id.toLowerCase().startsWith(f)) return 100
   // displayName starts with: very high
-  if (skill.displayName.toLowerCase().startsWith(f)) return 80
-  if (skill.displayNameEn.toLowerCase().startsWith(f)) return 75
+  if (displayName.toLowerCase().startsWith(f)) return 80
+  if (displayNameEn.toLowerCase().startsWith(f)) return 75
   // triggerText contains: medium-high
-  if (skill.triggerText.toLowerCase().includes(f)) return 60
+  if (triggerText.toLowerCase().includes(f)) return 60
   // id contains: medium
   if (skill.id.toLowerCase().includes(f)) return 50
   // displayName contains: medium
-  if (skill.displayName.toLowerCase().includes(f)) return 40
-  if (skill.displayNameEn.toLowerCase().includes(f)) return 35
+  if (displayName.toLowerCase().includes(f)) return 40
+  if (displayNameEn.toLowerCase().includes(f)) return 35
   // category/short description contain: low
-  if (skill.category.toLowerCase().includes(f)) return 20
-  if (skill.shortDescription.toLowerCase().includes(f)) return 15
+  if (category.toLowerCase().includes(f)) return 20
+  if (shortDescription.toLowerCase().includes(f)) return 15
 
   return 0
 }

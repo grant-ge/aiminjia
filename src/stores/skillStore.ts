@@ -5,6 +5,20 @@ import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } 
 
 const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
 
+function normalizeSkill(skill: SkillInfo): SkillInfo {
+  return {
+    ...skill,
+    displayName: skill.displayName || skill.id,
+    displayNameEn: skill.displayNameEn || skill.displayName || skill.id,
+    description: skill.description || '',
+    icon: skill.icon || '',
+    shortDescription: skill.shortDescription || skill.description || '',
+    shortDescriptionEn: skill.shortDescriptionEn || skill.displayNameEn || skill.displayName || '',
+    triggerText: skill.triggerText || `/${skill.id}`,
+    category: skill.category || 'general',
+  }
+}
+
 interface SkillState {
   skills: SkillInfo[]
   recommendedIds: string[]
@@ -34,7 +48,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   async reload() {
     set({ isLoading: true })
     try {
-      const skills = await listSkills()
+      const skills = (await listSkills()).map(normalizeSkill)
       set({ skills, isLoading: false })
     } catch (error) {
       set({ isLoading: false })
