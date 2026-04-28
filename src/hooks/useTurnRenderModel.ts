@@ -43,6 +43,8 @@ export interface RenderGeneratedFile {
   fileType?: string
   actions: FileAction[]
   canPreview: boolean
+  canOpenExternal: boolean
+  canReveal: boolean
   primaryAction: 'preview' | 'open'
 }
 
@@ -67,8 +69,11 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
   const title = anyF.title || anyF.fileName || '未命名文件'
   const fileType = anyF.fileType
   const actions = anyF.actions ?? []
-  const canPreview = isPreviewableFileType(fileType, anyF.fileName ?? title)
-    && isFileActionEnabled(actions, 'preview')
+  const previewName = anyF.fileName ?? title
+  const canPreviewByType = isPreviewableFileType(fileType, previewName)
+  const canPreview = canPreviewByType && isFileActionEnabled(actions, 'preview')
+  const canOpenExternal = isFileActionEnabled(actions, 'open')
+  const canReveal = isFileActionEnabled(actions, 'reveal')
   return {
     id: anyF.id,
     title,
@@ -77,6 +82,8 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
     fileType,
     actions,
     canPreview,
+    canOpenExternal,
+    canReveal,
     primaryAction: canPreview ? 'preview' : 'open',
   }
 }

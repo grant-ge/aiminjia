@@ -166,6 +166,7 @@ describe('buildTurnsFromMessages', () => {
         fileType: 'markdown',
         actions: [{ type: 'preview', label: 'Preview', enabled: true }],
         canPreview: true,
+        canOpenExternal: false,
         primaryAction: 'preview',
       }),
     )
@@ -198,12 +199,13 @@ describe('buildTurnsFromMessages', () => {
         fileType: 'xlsx',
         actions: [],
         canPreview: false,
+        canOpenExternal: true,
         primaryAction: 'open',
       }),
     )
   })
 
-  it('respects explicit disabled preview action when choosing generated file primary action', () => {
+  it('respects explicit disabled preview and open actions on a previewable generated file', () => {
     const msg: Message = {
       ...aiMsg('a1', 'done'),
       content: {
@@ -222,7 +224,7 @@ describe('buildTurnsFromMessages', () => {
             description: 'Report',
             actions: [
               { type: 'preview', label: 'Preview', enabled: false },
-              { type: 'open', label: 'Open', enabled: true },
+              { type: 'open', label: 'Open', enabled: false },
             ],
           },
         ],
@@ -234,6 +236,41 @@ describe('buildTurnsFromMessages', () => {
     expect(generatedFile).toEqual(
       expect.objectContaining({
         canPreview: false,
+        canOpenExternal: false,
+        primaryAction: 'open',
+      }),
+    )
+  })
+
+  it('marks external open unavailable for non-previewable generated files with disabled open action', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-5',
+            fileName: 'book.xlsx',
+            filePath: '/tmp/book.xlsx',
+            fileType: 'xlsx',
+            fileSize: 256,
+            category: 'workbook',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Workbook',
+            actions: [{ type: 'open', label: 'Open', enabled: false }],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        canPreview: false,
+        canOpenExternal: false,
         primaryAction: 'open',
       }),
     )
