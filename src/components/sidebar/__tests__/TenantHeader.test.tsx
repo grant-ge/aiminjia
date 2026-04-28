@@ -19,12 +19,12 @@ describe('TenantHeader', () => {
     expect(container.querySelector('[data-icon="chevrons-up-down"]')).toBeInTheDocument()
   })
 
-  it('logo box has 32x32 sizing classes', () => {
+  it('logo box has 24x24 sizing classes', () => {
     const { container } = render(
       <TenantHeader name="X" logoUrl="/app-icon.png" />,
     )
     const logoWrap = container.querySelector('[data-testid="tenant-logo"]')
-    expect(logoWrap?.className).toMatch(/h-8/)
-    expect(logoWrap?.className).toMatch(/w-8/)
+    expect(logoWrap?.className).toMatch(/h-6/)
+    expect(logoWrap?.className).toMatch(/w-6/)
   })
 })

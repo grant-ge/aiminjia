@@ -32,12 +32,21 @@ describe('ProjectAccordion', () => {
     expect(onToggle).toHaveBeenCalled()
   })
 
-  it('shows ChevronDown icon (rotates via expanded)', () => {
+  it('shows a folder icon in the header (open variant when expanded)', () => {
     const { container } = render(
       <ProjectAccordion name="X" expanded onToggle={() => {}}>
         <div />
       </ProjectAccordion>,
     )
-    expect(container.querySelector('[data-icon="chevron-down"]')).toBeInTheDocument()
+    expect(container.querySelector('.lucide-folder-open')).toBeInTheDocument()
+  })
+
+  it('shows a closed folder icon when collapsed', () => {
+    const { container } = render(
+      <ProjectAccordion name="X" expanded={false} onToggle={() => {}}>
+        <div />
+      </ProjectAccordion>,
+    )
+    expect(container.querySelector('.lucide-folder')).toBeInTheDocument()
   })
 })

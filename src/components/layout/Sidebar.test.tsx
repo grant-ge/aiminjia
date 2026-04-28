@@ -71,6 +71,6 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
 expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()
-    expect(screen.getByText('任务')).toBeInTheDocument()
+    expect(screen.getByText('项目')).toBeInTheDocument()
   })
 })

@@ -36,11 +36,12 @@ describe('HomeSuggestionPanel', () => {
     expect(onSelect).toHaveBeenCalledWith(ITEMS[1])
   })
 
-  it('uses a rounded bordered container', () => {
+  it('uses compact full-width spacing around the suggestion rows', () => {
     const { container } = render(<HomeSuggestionPanel items={ITEMS} onSelect={() => {}} />)
     const panel = container.firstElementChild
 
-    expect(panel?.className).toMatch(/rounded-\[22px\]/)
-    expect(panel?.className).toMatch(/border/)
+    expect(panel?.className).toMatch(/w-full/)
+    expect(panel?.className).toMatch(/px-4/)
+    expect(panel?.className).toMatch(/-mt-1\.5/)
   })
 })
