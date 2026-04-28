@@ -293,9 +293,10 @@ export type GeneratedFileType =
 
 export interface GeneratedFile {
   id: string
+  title?: string
   fileName: string
   filePath: string
-  fileType: GeneratedFileType
+  fileType?: GeneratedFileType
   fileSize: number
   category: 'report' | 'chart' | 'data' | 'analysis' | 'script' | 'temp' | string
   version: number
