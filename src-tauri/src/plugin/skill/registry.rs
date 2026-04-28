@@ -121,9 +121,17 @@ mod replace_all_tests {
     #[test]
     fn replace_all_resets_sent_skill_names() {
         let mut reg = SkillRegistry::from_skills(vec![skill("a")]);
-        reg.reset_sent_skill_names();
+
+        let first_delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
+        assert!(first_delta.contains("`a`"));
+
+        let second_delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
+        assert!(!second_delta.contains("`a`"));
+
         reg.replace_all(vec![skill("a"), skill("b")]);
-        let delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
-        assert!(delta.contains("a") && delta.contains("b"));
+
+        let post_replace_delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
+        assert!(post_replace_delta.contains("`a`"));
+        assert!(post_replace_delta.contains("`b`"));
     }
 }
