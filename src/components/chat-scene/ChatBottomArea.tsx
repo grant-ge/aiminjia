@@ -86,6 +86,14 @@ export function ChatBottomArea() {
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFiles } = useFileUpload()
   const openSettings = useUiStore((s) => s.openSettings)
+
+  useEffect(() => {
+    const prefill = useUiStore.getState().consumePrefillText()
+    if (prefill) {
+      setInput(prefill)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const {
     showSkillPopover,
     setShowSkillPopover,
