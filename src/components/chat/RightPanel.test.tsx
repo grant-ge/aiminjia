@@ -2,6 +2,12 @@ import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('./FilePreviewPane', () => ({
+  FilePreviewPane: ({ target }: { target: { fileName?: string } | null }) => (
+    <div data-testid="mock-file-preview-pane">{target?.fileName}</div>
+  ),
+}))
+
 import { RightPanel } from './RightPanel'
 import { useChatStore } from '@/stores/chatStore'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
