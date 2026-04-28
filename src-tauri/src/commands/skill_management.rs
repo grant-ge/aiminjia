@@ -140,6 +140,30 @@ fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(cus.require_paths().map_err(|e| e.to_string())?.skills_dir())
 }
 
+/// Re-scan both [user_skills_dir, global_skills_dir] roots and replace the
+/// in-memory `SkillRegistry` so newly installed / removed skills are visible
+/// without restarting the app. Mirrors the bootstrap logic in `lib.rs::setup`.
+pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
+    use crate::plugin::skill::loader::load_skill_roots;
+    use crate::storage::AiJiaHome;
+
+    let aijia_home = app.state::<Arc<AiJiaHome>>();
+    let global_root = aijia_home.skills_dir();
+    let user_root = user_skills_dir(app).ok();
+    let roots: Vec<PathBuf> = match user_root {
+        Some(user) => vec![user, global_root],
+        None => vec![global_root],
+    };
+
+    let loaded = load_skill_roots(&roots).map_err(|e| format!("load_skill_roots failed: {}", e))?;
+    let registry = app.state::<Arc<Mutex<SkillRegistry>>>();
+    registry
+        .lock()
+        .map_err(|e| format!("registry lock poisoned: {}", e))?
+        .replace_all(loaded.into_values().collect());
+    Ok(())
+}
+
 fn install_custom_skill_to_dir(source: &Path, custom_dir: &Path) -> Result<String, String> {
     let basename = source
         .file_name()
