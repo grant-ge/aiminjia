@@ -42,6 +42,11 @@ describe('TableView — basic rendering', () => {
     expect(screen.getByText('banana')).toBeInTheDocument()
   })
 
+  it('uses asymmetric outer spacing to account for the copy action below', () => {
+    render(<TableView columns={cols} rows={rows} />)
+    expect(screen.getByTestId('table-view')).toHaveClass('mt-5', 'mb-3')
+  })
+
   it('renders empty state when rows is empty', () => {
     render(<TableView columns={cols} rows={[]} />)
     expect(screen.getByText('No data')).toBeInTheDocument()
@@ -67,9 +72,11 @@ describe('TableView — basic rendering', () => {
     expect(screen.queryByTestId('table-toolbar')).not.toBeInTheDocument()
   })
 
-  it('renders toolbar with title', () => {
-    render(<TableView columns={cols} rows={rows} meta={{ title: 'My Table' }} />)
-    expect(screen.getByText('My Table')).toBeInTheDocument()
+  it('does not render a toolbar for table title metadata', () => {
+    render(<TableView columns={cols} rows={rows} meta={{ title: 'My Table', badge: 'Demo' }} />)
+    expect(screen.queryByTestId('table-toolbar')).not.toBeInTheDocument()
+    expect(screen.queryByText('My Table')).not.toBeInTheDocument()
+    expect(screen.queryByText('Demo')).not.toBeInTheDocument()
   })
 
   it('does not draw a divider on the final body row', () => {
@@ -159,6 +166,12 @@ describe('TableView — copy', () => {
   it('does not show copy button when enableCopy is off', () => {
     render(<TableView columns={cols} rows={rows} meta={{ title: 'X' }} />)
     expect(screen.queryByTestId('table-copy-button')).not.toBeInTheDocument()
+  })
+
+  it('renders copy as a floating action instead of a toolbar', () => {
+    render(<TableView columns={cols} rows={rows} meta={{ title: 'X' }} enableCopy />)
+    expect(screen.queryByTestId('table-toolbar')).not.toBeInTheDocument()
+    expect(screen.getByTestId('table-copy-button')).toBeInTheDocument()
   })
 
   it('copies CSV by default', async () => {

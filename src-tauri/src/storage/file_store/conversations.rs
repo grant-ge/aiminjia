@@ -200,20 +200,37 @@ pub fn get_archived_conversations(base_dir: &Path) -> StorageResult<Vec<serde_js
     Ok(result)
 }
 
+/// Set is_archived = false on conv.json and update the global index.
+pub fn restore_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    let now = Utc::now().to_rfc3339();
+    meta.is_archived = false;
+    meta.updated_at = now.clone();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.is_archived = false;
+        entry.updated_at = now;
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+
+    info!("Restored conversation: {}", id);
+    Ok(())
+}
+
 /// Delete a conversation and all associated data.
 pub fn delete_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let dir = conv_dir(base_dir, id);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)?;
+    }
+
     // Remove from global index
     let mut index = read_global_index(base_dir)?;
     index.conversations.retain(|e| e.id != id);
     atomic_write_json(&index_path(base_dir), &index)?;
-
-    // Remove directory (best-effort)
-    let dir = conv_dir(base_dir, id);
-    if dir.exists() {
-        if let Err(e) = fs::remove_dir_all(&dir) {
-            warn!("Failed to remove conversation directory {:?}: {}", dir, e);
-        }
-    }
 
     info!("Deleted conversation: {}", id);
     Ok(())
@@ -352,6 +369,42 @@ mod tests {
         delete_conversation(&base, "c1").unwrap();
         assert_eq!(get_conversations(&base).unwrap().len(), 0);
         assert!(!conv_dir(&base, "c1").exists());
+    }
+
+    #[test]
+    fn test_restore_conversation_moves_it_back_to_active_list() {
+        let (base, _dir) = setup();
+
+        create_conversation(&base, "c1", "Conv 1").unwrap();
+        archive_conversation(&base, "c1").unwrap();
+        assert_eq!(get_conversations(&base).unwrap().len(), 0);
+        assert_eq!(get_archived_conversations(&base).unwrap().len(), 1);
+
+        restore_conversation(&base, "c1").unwrap();
+
+        let active = get_conversations(&base).unwrap();
+        let archived = get_archived_conversations(&base).unwrap();
+        let meta = get_conversation(&base, "c1").unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0]["id"], "c1");
+        assert_eq!(active[0]["isArchived"], false);
+        assert!(archived.is_empty());
+        assert!(!meta.is_archived);
+    }
+
+    #[test]
+    fn test_delete_conversation_returns_error_when_directory_removal_fails() {
+        let (base, _dir) = setup();
+        create_conversation(&base, "c1", "Conv 1").unwrap();
+        let dir = conv_dir(&base, "c1");
+        fs::remove_dir_all(&dir).unwrap();
+        fs::write(&dir, "not a directory").unwrap();
+
+        let result = delete_conversation(&base, "c1");
+
+        assert!(result.is_err());
+        assert_eq!(get_conversations(&base).unwrap().len(), 1);
+        assert!(dir.exists());
     }
 
     #[test]

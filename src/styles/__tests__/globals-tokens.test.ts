@@ -17,6 +17,10 @@ function tokenValue(name: string): string | null {
 }
 
 describe('design.pen token alignment', () => {
+  it('sets the root rem baseline to 16px', () => {
+    expect(CSS).toMatch(/html\s*\{[^}]*font-size:\s*16px;/s)
+  })
+
   it.each([
     ['--background', '#fafafa'],
     ['--foreground', '#0a0a0a'],
@@ -47,5 +51,30 @@ describe('design.pen token alignment', () => {
 
   it('sets pointer cursor for enabled buttons globally', () => {
     expect(CSS).toMatch(/button:not\(\s*:disabled\s*\)\s*\{[^}]*cursor:\s*pointer;/s)
+  })
+
+  it('keeps font sizing on rem-compatible scales instead of fixed px rules', () => {
+    const cssWithoutRootBaseline = CSS.replace(/html\s*\{[^}]*\}/s, '')
+    expect(cssWithoutRootBaseline).not.toMatch(/(?<!-)font-size:\s*[0-9.]+px;/)
+  })
+})
+
+
+describe('assistant markdown typography', () => {
+  it('restores markdown heading, list, and rich text styles inside the assistant scope', () => {
+    expect(CSS).toMatch(/\.assistant-markdown h1[\s\S]*font-size:\s*1\.45em;/)
+    expect(CSS).toMatch(/\.assistant-markdown h2[\s\S]*font-size:\s*1\.28em;/)
+    expect(CSS).toMatch(/\.assistant-markdown ul\s*\{[\s\S]*list-style-type:\s*disc;/)
+    expect(CSS).toMatch(/\.assistant-markdown ol\s*\{[\s\S]*list-style-type:\s*decimal;/)
+    expect(CSS).toMatch(/\.assistant-markdown blockquote\s*\{[\s\S]*border-left:/)
+    expect(CSS).toMatch(/\.assistant-markdown :not\(pre\) > code\s*\{[\s\S]*background:\s*var\(--color-bg-code\);/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-wrap,[\s\S]*margin-top:\s*20px;[\s\S]*margin-bottom:\s*12px;/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*display:\s*inline-flex;/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*inherit;/)
+    expect(CSS).not.toMatch(/\.assistant-markdown \.markdown-table-copy\s*\{[\s\S]*font-size:\s*15px;/)
+    expect(CSS).toMatch(/\.assistant-markdown \.markdown-table-scroll > table\s*\{[\s\S]*border-collapse:\s*collapse;/)
+    expect(CSS).toMatch(new RegExp('\\.assistant-markdown \\.markdown-table-scroll th,\\s*\\.assistant-markdown \\.markdown-table-scroll td\\s*\\{[\\s\\S]*height:\\s*40px;'))
+    expect(CSS).not.toMatch(/^\.assistant-markdown table\s*\{/m)
+    expect(CSS).not.toContain(':has(')
   })
 })

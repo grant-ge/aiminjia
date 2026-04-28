@@ -2,7 +2,13 @@ import { create } from 'zustand'
 
 import type { AppLanguage } from '@/i18n'
 import i18n, { persistLanguage } from '@/i18n'
-import type { Settings, LlmProvider } from '@/types/settings'
+import {
+  applyFontScale,
+  loadPersistedFontScale,
+  normalizeFontScale,
+  persistFontScale,
+} from '@/styles/fontScale'
+import type { Settings, LlmProvider, FontScale } from '@/types/settings'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 
 interface SettingsState extends Settings {
@@ -19,15 +25,24 @@ interface SettingsState extends Settings {
   setCustomModelName: (name: string) => void
   setConfiguredProviders: (providers: LlmProvider[]) => void
   setAppLanguage: (language: AppLanguage) => void
+  setFontScale: (scale: FontScale) => void
   markLoaded: () => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   ...DEFAULT_SETTINGS,
+  fontScale: loadPersistedFontScale(),
   isLoaded: false,
   configuredProviders: [],
 
-  setSettings: (settings) => set(settings),
+  setSettings: (settings) => {
+    if (settings.fontScale) {
+      const fontScale = normalizeFontScale(settings.fontScale)
+      persistFontScale(fontScale)
+      applyFontScale(fontScale)
+    }
+    set(settings)
+  },
   setPrimaryModel: (primaryModel) => set({ primaryModel }),
   setPrimaryApiKey: (primaryApiKey) => set({ primaryApiKey }),
   setWorkspacePath: (workspacePath) => set({ workspacePath }),
@@ -41,6 +56,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     i18n.changeLanguage(appLanguage)
     persistLanguage(appLanguage)
     set({ appLanguage })
+  },
+  setFontScale: (fontScale) => {
+    const normalized = normalizeFontScale(fontScale)
+    persistFontScale(normalized)
+    applyFontScale(normalized)
+    set({ fontScale: normalized })
   },
   markLoaded: () => set({ isLoaded: true }),
 }))

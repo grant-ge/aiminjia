@@ -17,7 +17,7 @@ export function HomeSkillCenterPill({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      className="flex items-center gap-1.5 rounded-full bg-secondary px-4 py-2.5 text-[0.8125rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
       <span>{label}</span>
       <ArrowRight className="h-3.5 w-3.5" />

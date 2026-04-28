@@ -58,11 +58,12 @@ export function ChatArea() {
   return (
     <div
       ref={scrollContainerRef}
-      className="flex-1 overflow-y-auto"
+      data-testid="chat-scroll-region"
+      className="flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]"
       style={{ background: 'var(--color-bg-main)' }}
       onScroll={handleScroll}
     >
-      <div className="mx-auto max-w-[1032px] pt-6 pb-40">
+      <div className="mx-auto w-full max-w-[736px] pt-6 pb-8">
         <MessageList />
       </div>
     </div>

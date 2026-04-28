@@ -77,73 +77,78 @@ export function TableView({
 
   return (
     <div
-      className={className ? `overflow-hidden ${className}` : 'overflow-hidden'}
-      style={{
-        background: 'var(--table-bg)',
-        border: '1px solid var(--table-border)',
-        borderRadius: 'var(--table-radius)',
-        fontSize: 'var(--table-font-size)',
-        lineHeight: 'var(--table-line-height)',
-      }}
+      className={className ? `mt-5 mb-3 ${className}` : 'mt-5 mb-3'}
       data-testid="table-view"
     >
-      <TableToolbar
-        meta={meta}
-        enableCopy={enableCopy}
-        columns={columns}
-        // Copy exports the full sorted dataset, not the truncated visible slice.
-        rows={sorted}
-      />
-
       <div
-        className="overflow-auto"
-        style={maxHeight !== undefined ? { maxHeight } : undefined}
+        className="overflow-hidden"
+        style={{
+          background: 'var(--table-bg)',
+          border: '1px solid var(--table-border)',
+          borderRadius: 'var(--table-radius)',
+          fontSize: 'var(--table-font-size)',
+          lineHeight: 'var(--table-line-height)',
+        }}
       >
-        <table
-          className="w-full"
-          style={{ borderCollapse: 'collapse', tableLayout: 'auto' }}
+        <div
+          className="overflow-auto"
+          style={maxHeight !== undefined ? { maxHeight } : undefined}
         >
-          <TableHeader
-            columns={columns}
-            enableSort={enableSort}
-            sortState={sortState}
-            onToggleSort={toggleSort}
-            sticky={stickyHeader && maxHeight !== undefined}
-          />
-          <TableBody
-            columns={columns}
-            rows={visibleRows}
-            emptyText={t('dataTable.empty', 'No data')}
-          />
-        </table>
+          <table
+            className="w-full"
+            style={{ borderCollapse: 'collapse', tableLayout: 'auto' }}
+          >
+            <TableHeader
+              columns={columns}
+              enableSort={enableSort}
+              sortState={sortState}
+              onToggleSort={toggleSort}
+              sticky={stickyHeader && maxHeight !== undefined}
+            />
+            <TableBody
+              columns={columns}
+              rows={visibleRows}
+              emptyText={t('dataTable.empty', 'No data')}
+            />
+          </table>
+        </div>
+
+        {showFooter && (
+          <div
+            className="flex items-center justify-between border-t px-3 py-2 text-xs"
+            style={{
+              background: 'var(--table-header-bg)',
+              borderColor: 'var(--table-divider)',
+              color: 'var(--color-text-secondary)',
+            }}
+            data-testid="table-footer"
+          >
+            <span>{footerText}</span>
+            {truncateRows !== undefined && sorted.length > truncateRows && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="text-xs underline-offset-2 hover:underline"
+                style={{ color: 'var(--color-accent)' }}
+                data-testid="table-expand-toggle"
+              >
+                {expanded
+                  ? t('dataTable.collapse', 'Collapse')
+                  : t('dataTable.expandAll', 'Expand all')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {showFooter && (
-        <div
-          className="flex items-center justify-between border-t px-3 py-2 text-xs"
-          style={{
-            background: 'var(--table-header-bg)',
-            borderColor: 'var(--table-divider)',
-            color: 'var(--color-text-secondary)',
-          }}
-          data-testid="table-footer"
-        >
-          <span>{footerText}</span>
-          {truncateRows !== undefined && sorted.length > truncateRows && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="text-xs underline-offset-2 hover:underline"
-              style={{ color: 'var(--color-accent)' }}
-              data-testid="table-expand-toggle"
-            >
-              {expanded
-                ? t('dataTable.collapse', 'Collapse')
-                : t('dataTable.expandAll', 'Expand all')}
-            </button>
-          )}
-        </div>
-      )}
+      <div className="mt-1.5 flex justify-start">
+        <TableToolbar
+          enableCopy={enableCopy}
+          columns={columns}
+          // Copy exports the full sorted dataset, not the truncated visible slice.
+          rows={sorted}
+        />
+      </div>
     </div>
   )
 }

@@ -96,11 +96,11 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
     >
       <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
+          <div className="flex items-center gap-2 text-[0.9375rem] font-semibold text-foreground">
             <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
             <span>选择模型</span>
           </div>
-          <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
             固定弹层宽高，列表在卡片内部滚动，避免页面和弹层一起跳动。
           </p>
         </div>
@@ -138,10 +138,10 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-[15px] font-semibold" style={{ color: option.tone.text }}>
+                    <div className="text-[0.9375rem] font-semibold" style={{ color: option.tone.text }}>
                       {LLM_PROVIDER_LABELS[option.value]}
                     </div>
-                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
+                    <div className="mt-1 inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-medium" style={{ background: 'rgba(255,255,255,0.74)', color: option.tone.muted }}>
                       {option.badge}
                     </div>
                   </div>
@@ -156,10 +156,10 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                     <Check className="h-3.5 w-3.5" />
                   </span>
                 </div>
-                <p className="mt-4 line-clamp-2 text-[12px] leading-5" style={{ color: option.tone.muted }}>
+                <p className="mt-4 line-clamp-2 text-xs leading-5" style={{ color: option.tone.muted }}>
                   {PROVIDER_CAPABILITIES[option.value].modelsDesc}
                 </p>
-                <div className="mt-auto text-[11px] font-medium" style={{ color: option.tone.text }}>
+                <div className="mt-auto text-[0.6875rem] font-medium" style={{ color: option.tone.text }}>
                   {PROVIDER_CAPABILITIES[option.value].hasReasoning ? '支持推理模型' : '标准模型入口'}
                 </div>
               </button>
@@ -168,7 +168,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
+      <div className="flex shrink-0 items-center justify-between border-t border-border px-5 py-3 text-xs text-muted-foreground">
         <span>当前模型：{LLM_PROVIDER_LABELS[value]}</span>
         <span>列表滚动已限制在卡片区内部</span>
       </div>

@@ -11,7 +11,7 @@ describe('AssistantMarkdown', () => {
     expect(screen.getByText('重点')).toBeInTheDocument()
     expect(container.querySelector('strong')).toBeInTheDocument()
     expect(container.firstElementChild?.className).toContain('assistant-markdown')
-    expect(container.firstElementChild?.className).toContain('text-[15px]')
+    expect(container.firstElementChild?.className).toContain('text-sm')
     expect(container.firstElementChild?.className).toContain('leading-7')
   })
 

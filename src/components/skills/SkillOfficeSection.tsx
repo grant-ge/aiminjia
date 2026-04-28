@@ -11,7 +11,7 @@ interface SkillOfficeSectionProps extends PropsWithChildren {
 export function SkillOfficeSection({ categoryBar, children }: SkillOfficeSectionProps) {
   return (
     <section className="flex flex-col gap-3.5">
-      <h2 className="text-[15px] font-semibold text-foreground">全部技能</h2>
+      <h2 className="text-[0.9375rem] font-semibold text-foreground">全部技能</h2>
       {categoryBar}
       <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
         {children}

@@ -36,6 +36,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
+
+applyFontScale(loadPersistedFontScale())
 
 function RouteSwitch() {
   const route = useUiStore((state) => state.route)

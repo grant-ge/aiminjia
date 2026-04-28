@@ -47,8 +47,23 @@ describe('GeneralPanel', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
     expect(screen.getByText('外观')).toBeInTheDocument()
     expect(screen.getByText('强调色')).toBeInTheDocument()
-    const swatches = screen.getAllByRole('radio')
+    const swatches = screen.getByRole('radiogroup', { name: '强调色' }).querySelectorAll('[role="radio"]')
     expect(swatches).toHaveLength(7)
+  })
+
+  it('renders font size options and applies the selected scale', () => {
+    const setFontScale = vi.fn()
+    useSettingsStore.setState({ fontScale: 'medium', setFontScale } as never)
+
+    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
+
+    expect(screen.getByText('字体大小')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '小' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('radio', { name: '中' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '大' })).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.click(screen.getByRole('radio', { name: '大' }))
+    expect(setFontScale).toHaveBeenCalledWith('large')
   })
 
   it('selecting an accent color swatch calls applyBranding with new color', () => {

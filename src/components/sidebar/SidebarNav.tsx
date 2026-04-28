@@ -19,7 +19,7 @@ const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon }> = [
 
 export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
   return (
-    <nav className="flex flex-col gap-0.5 my-4">
+    <nav className="flex flex-col gap-0.5 mt-3 mb-4">
       {NAV.map(({ key, label, icon: Icon }) => {
         const active = key === activeKey
         return (

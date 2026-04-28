@@ -19,6 +19,14 @@ export type SettingsModalKey =
 
 export type SettingsModalState = null | SettingsModalKey
 
+const DISABLED_SETTINGS_KEYS = new Set<SettingsModalKey>([
+  'usage',
+  'permissions',
+  'mcp',
+  'sso',
+  'shortcuts',
+])
+
 interface UiState {
   route: Route
   settingsModal: SettingsModalState
@@ -78,7 +86,7 @@ export const useUiStore = create<UiState>((set) => ({
   openSettings: (key) => {
     const normalized: SettingsModalKey =
       (key as string) === 'general' ? 'permissions' : (key as SettingsModalKey)
-    set({ settingsModal: normalized })
+    set({ settingsModal: DISABLED_SETTINGS_KEYS.has(normalized) ? 'account' : normalized })
   },
   closeSettings: () => set({ settingsModal: null }),
 }))

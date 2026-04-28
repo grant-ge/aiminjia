@@ -53,6 +53,15 @@ describe('settingsStore — setters', () => {
     expect(useSettingsStore.getState().autoModelRouting).toBe(false)
   })
 
+  it('sets font scale and applies the root font size immediately', () => {
+    useSettingsStore.getState().setFontScale('large')
+    expect(useSettingsStore.getState().fontScale).toBe('large')
+    expect(document.documentElement.style.fontSize).toBe('18px')
+
+    useSettingsStore.getState().setFontScale('small')
+    expect(document.documentElement.style.fontSize).toBe('14px')
+  })
+
   it('sets Tavily API key', () => {
     useSettingsStore.getState().setTavilyApiKey('tvly-xxx')
     expect(useSettingsStore.getState().tavilyApiKey).toBe('tvly-xxx')

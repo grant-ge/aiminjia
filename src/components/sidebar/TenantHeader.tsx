@@ -19,7 +19,7 @@ export function TenantHeader({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-2 rounded-md p-2 text-left transition-colors hover:bg-sidebar-accent/50"
+      className="flex w-full items-center justify-between gap-2 rounded-md p-2 text-left transition-colors"
     >
       <div className="flex min-w-0 items-center gap-1.5">
         <div
@@ -36,10 +36,10 @@ export function TenantHeader({
           {name}
         </div>
       </div>
-      <ChevronsUpDown
+      {/* <ChevronsUpDown
         data-icon="chevrons-up-down"
         className="h-4 w-4 shrink-0 text-muted-foreground"
-      />
+      /> */}
     </button>
   )
 }

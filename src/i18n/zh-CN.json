@@ -67,14 +67,6 @@
     "schedules": "定时任务",
     "tasks": "任务"
   },
-  "topBar": {
-    "export": "导出",
-    "exportSuccess": "导出成功",
-    "saved": "已保存",
-    "exportFailed": "导出失败",
-    "exportAsPptx": "导出为 PPT",
-    "exportAsXlsx": "导出为 Excel"
-  },
   "inputBar": {
     "attachData": "添加文件或本地目录",
     "uploadFile": "上传文件（Excel/Word/PDF）",

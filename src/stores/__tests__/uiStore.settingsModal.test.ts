@@ -7,11 +7,19 @@ describe('uiStore.settingsModal', () => {
     useUiStore.getState().closeSettings()
   })
 
-  it('accepts all 7 plan-C keys', () => {
-    const keys = ['account', 'usage', 'permissions', 'mcp', 'sso', 'shortcuts', 'about'] as const
+  it('opens only implemented settings keys', () => {
+    const keys = ['account', 'archived', 'about'] as const
     for (const k of keys) {
       useUiStore.getState().openSettings(k)
       expect(useUiStore.getState().settingsModal).toBe(k)
+    }
+  })
+
+  it('falls back to account for unimplemented settings keys', () => {
+    const keys = ['usage', 'permissions', 'mcp', 'sso', 'shortcuts'] as const
+    for (const k of keys) {
+      useUiStore.getState().openSettings(k)
+      expect(useUiStore.getState().settingsModal).toBe('account')
     }
   })
 })

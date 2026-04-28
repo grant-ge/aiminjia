@@ -67,14 +67,6 @@
     "schedules": "Schedules",
     "tasks": "Tasks"
   },
-  "topBar": {
-    "export": "Export",
-    "exportSuccess": "Export successful",
-    "saved": "saved",
-    "exportFailed": "Export failed",
-    "exportAsPptx": "Export as PPT",
-    "exportAsXlsx": "Export as Excel"
-  },
   "inputBar": {
     "attachData": "Add file or local directory",
     "uploadFile": "Upload file (Excel/Word/PDF)",

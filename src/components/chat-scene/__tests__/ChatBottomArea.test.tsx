@@ -113,6 +113,20 @@ describe('ChatBottomArea', () => {
     })
   })
 
+  it('keeps the composer absolutely pinned inside a normal footer slot', () => {
+    render(<ChatBottomArea />)
+
+    const footer = screen.getByTestId('chat-bottom-area')
+    expect(footer).toHaveClass('relative')
+    expect(footer).toHaveClass('h-[148px]')
+    expect(footer).toHaveClass('shrink-0')
+    expect(footer.firstElementChild).toHaveClass('absolute')
+    expect(footer.firstElementChild).toHaveClass('bottom-0')
+    expect(footer.firstElementChild).toHaveClass('[scrollbar-gutter:stable_both-edges]')
+    expect(footer.firstElementChild?.firstElementChild).toHaveClass('w-full')
+    expect(footer.firstElementChild?.firstElementChild).toHaveClass('max-w-[736px]')
+  })
+
   it('hides project button but keeps tips', () => {
     render(<ChatBottomArea />)
 
@@ -159,7 +173,7 @@ describe('ChatBottomArea', () => {
         fileSize: 21,
         source: 'paste',
       },
-    ])
+    ] as Awaited<ReturnType<typeof resolvePastedPathsMock>>)
 
     render(<ChatBottomArea />)
 
@@ -187,7 +201,7 @@ describe('ChatBottomArea', () => {
   })
 
   it('resolves pasted paths with real path metadata instead of guessing from file names', async () => {
-    resolvePastedPathsMock.mockResolvedValueOnce([
+    resolvePastedPathsMock.mockResolvedValueOnce(([
       {
         id: '/tmp/README',
         fileName: 'README',
@@ -206,7 +220,7 @@ describe('ChatBottomArea', () => {
         fileSize: 0,
         source: 'paste',
       },
-    ])
+    ] as Awaited<ReturnType<typeof resolvePastedPathsMock>>))
 
     render(<ChatBottomArea />)
 

@@ -141,8 +141,8 @@ export function SkillCenterPage() {
       topBar={
         <header data-tauri-drag-region className="flex h-14 items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
-            <span className="text-[18px] font-bold text-foreground">技能中心</span>
-            <span className="rounded-full bg-secondary px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
+            <span className="text-lg font-bold text-foreground">技能中心</span>
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
               {skills.length} 个技能
             </span>
           </div>
@@ -152,7 +152,7 @@ export function SkillCenterPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
                 placeholder="搜索技能名称或场景"
               />
             </div>

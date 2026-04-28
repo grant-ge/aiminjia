@@ -34,7 +34,7 @@ export function TableHeader({ columns, enableSort, sortState, onToggleSort, stic
                 <span
                   aria-hidden
                   style={{
-                    fontSize: '10px',
+                    fontSize: '0.625rem',
                     opacity: isActive ? 1 : 0.4,
                   }}
                 >

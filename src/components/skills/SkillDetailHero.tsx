@@ -21,7 +21,7 @@ export function SkillDetailHero({ iconNode, title, subtitle, actionBar }: SkillD
         {iconNode}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="text-[28px] font-bold leading-tight text-foreground">{title}</div>
+        <div className="text-[1.75rem] font-bold leading-tight text-foreground">{title}</div>
         <div className="text-sm text-muted-foreground">{subtitle}</div>
       </div>
       <div className="shrink-0">{actionBar}</div>

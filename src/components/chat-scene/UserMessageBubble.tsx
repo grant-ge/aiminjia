@@ -23,10 +23,10 @@ export function UserMessageBubble({ text, commandText, skillCommand }: UserMessa
         {tokenLabel ? (
           <span
             data-testid="user-skill-token"
-            className="mr-2 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-lg bg-white/24 px-2 py-1 text-[12px] font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
+            className="mr-2 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-lg bg-white/24 px-2 py-1 text-xs font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
             title={command}
           >
-            <span aria-hidden="true" className="text-[13px] leading-none">✦</span>
+            <span aria-hidden="true" className="text-[0.8125rem] leading-none">✦</span>
             <span>{tokenLabel}</span>
           </span>
         ) : null}

@@ -479,6 +479,10 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+export function restoreConversation(conversationId: string): Promise<void> {
+  return invoke<void>('restore_conversation', { conversationId })
+}
+
 export function getArchivedConversations(): Promise<Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>> {
   return invoke('get_archived_conversations')
 }
@@ -549,6 +553,7 @@ export function previewFile(fileId: string, conversationId: string): Promise<str
     conversationId,
   })
 }
+
 
 /**
  * Delete a generated or uploaded file from the workspace.

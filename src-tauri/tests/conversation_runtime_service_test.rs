@@ -109,3 +109,50 @@ async fn delete_conversation_clears_persisted_active_skill_state() {
         None
     );
 }
+
+#[tokio::test]
+async fn delete_conversation_returns_error_when_associated_file_delete_fails() {
+    let dir = TempDir::new().unwrap();
+    let db = Arc::new(AppStorage::new(dir.path()).unwrap());
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+
+    let file_mgr = Arc::new(FileManager::new(&workspace));
+    let run_registry = Arc::new(RuntimeRunRegistry::new());
+    let gateway = Arc::new(LlmGateway::new_with_registry(db.clone(), run_registry));
+    let session_mgr = Arc::new(app_lib::python::session::PythonSessionManager::new(
+        workspace.clone(),
+        None,
+    ));
+
+    let conversation_id = conversation_service::create_conversation(db.clone())
+        .await
+        .unwrap();
+    std::fs::create_dir_all(workspace.join("uploads/bad-dir")).unwrap();
+    db.insert_uploaded_file(
+        "file-1",
+        &conversation_id,
+        "bad-dir",
+        "uploads/bad-dir",
+        "folder",
+        0,
+        None,
+    )
+    .unwrap();
+
+    let result = conversation_service::delete_conversation(
+        db.clone(),
+        gateway,
+        file_mgr,
+        session_mgr,
+        conversation_id.clone(),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(conversation_service::get_conversations(db)
+        .await
+        .unwrap()
+        .iter()
+        .any(|item| item.get("id").and_then(|v| v.as_str()) == Some(conversation_id.as_str())));
+}

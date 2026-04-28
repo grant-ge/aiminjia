@@ -21,8 +21,8 @@ export function SkillCategoryBar({ items, activeKey, onSelect }: SkillCategoryBa
             onClick={() => onSelect(it.key)}
             className={
               active
-                ? 'rounded-full bg-brand-primary-subtle px-3.5 py-2 text-[13px] font-semibold text-primary'
-                : 'rounded-full px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/60'
+                ? 'rounded-full bg-brand-primary-subtle px-3.5 py-2 text-[0.8125rem] font-semibold text-primary'
+                : 'rounded-full px-3.5 py-2 text-[0.8125rem] font-medium text-muted-foreground transition-colors hover:bg-muted/60'
             }
           >
             {it.label}

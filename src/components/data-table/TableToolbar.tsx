@@ -1,16 +1,16 @@
 import { useState, useCallback, useEffect } from 'react'
+import { Copy } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { TableColumn, TableRow, TableMeta } from './tableSchema'
+import type { TableColumn, TableRow } from './tableSchema'
 import { toCsv, toTsv } from './tableUtils'
 
 interface Props {
-  meta?: TableMeta
   enableCopy?: boolean
   columns: TableColumn[]
   rows: TableRow[]
 }
 
-export function TableToolbar({ meta, enableCopy, columns, rows }: Props) {
+export function TableToolbar({ enableCopy, columns, rows }: Props) {
   const { t } = useTranslation()
   const [shiftHeld, setShiftHeld] = useState(false)
   const [copied, setCopied] = useState<'idle' | 'ok' | 'fail'>('idle')
@@ -43,66 +43,35 @@ export function TableToolbar({ meta, enableCopy, columns, rows }: Props) {
     [columns, rows],
   )
 
-  if (!meta?.title && !meta?.badge && !enableCopy) return null
+  if (!enableCopy) return null
 
   const tooltip = shiftHeld
     ? t('dataTable.copyTsv', 'Copy as TSV')
     : t('dataTable.copyCsv', 'Copy as CSV (hold Shift for TSV)')
+  const toneClass =
+    copied === 'ok'
+      ? 'text-[var(--color-semantic-green)]'
+      : copied === 'fail'
+        ? 'text-[var(--color-semantic-red)]'
+        : 'text-[var(--color-text-muted)] hover:text-[var(--primary)]'
 
   return (
-    <div
-      className="flex items-center justify-between border-b px-3 py-2"
-      style={{
-        background: 'var(--table-header-bg)',
-        borderColor: 'var(--table-divider)',
-        fontSize: 'var(--table-font-size)',
-      }}
-      data-testid="table-toolbar"
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={tooltip}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.9375rem] transition-colors ${toneClass}`}
+      style={{ background: 'transparent' }}
+      data-testid="table-copy-button"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        {meta?.title && (
-          <span
-            className="truncate font-semibold"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
-            {meta.title}
-          </span>
-        )}
-        {meta?.badge && (
-          <span
-            className="inline-block rounded-full px-2 py-0.5 text-xs font-medium"
-            style={{
-              background: 'var(--table-tone-neutral-bg)',
-              color: 'var(--table-tone-neutral-fg)',
-            }}
-          >
-            {meta.badge}
-          </span>
-        )}
-      </div>
-      {enableCopy && (
-        <button
-          type="button"
-          onClick={handleCopy}
-          title={tooltip}
-          className="text-xs transition-colors"
-          style={{
-            color:
-              copied === 'ok'
-                ? 'var(--color-semantic-green)'
-                : copied === 'fail'
-                  ? 'var(--color-semantic-red)'
-                  : 'var(--color-text-muted)',
-          }}
-          data-testid="table-copy-button"
-        >
-          {copied === 'ok'
-            ? t('common.copied', 'Copied')
-            : copied === 'fail'
-              ? t('common.copyFailed', 'Copy failed')
-              : t('common.copy', 'Copy')}
-        </button>
-      )}
-    </div>
+      <Copy size={15} strokeWidth={2} aria-hidden="true" />
+      <span>
+        {copied === 'ok'
+          ? t('common.copied', 'Copied')
+          : copied === 'fail'
+            ? t('common.copyFailed', 'Copy failed')
+            : t('common.copy', 'Copy')}
+      </span>
+    </button>
   )
 }

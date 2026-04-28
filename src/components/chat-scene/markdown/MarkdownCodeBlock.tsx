@@ -7,6 +7,16 @@ interface CodeProps {
   children?: React.ReactNode
 }
 
+function textFromNode(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textFromNode).join('')
+  if (typeof node === 'object' && 'props' in node) {
+    return textFromNode((node as React.ReactElement<{ children?: React.ReactNode }>).props.children)
+  }
+  return ''
+}
+
 function InlineCode({ children }: { children?: React.ReactNode }) {
   return (
     <code
@@ -30,7 +40,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
 
   const match = /language-(\w+)/.exec(className ?? '')
   const lang = match?.[1] ?? 'code'
-  const codeText = String(children ?? '').replace(/\n$/, '')
+  const codeText = textFromNode(children).replace(/\n$/, '')
 
   const handleCopy = useCallback(() => {
     navigator.clipboard
@@ -59,7 +69,9 @@ function FencedCodeBlock({ className, children }: { className?: string; children
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 12px',
+          height: 32,
+          boxSizing: 'border-box',
+          padding: '0 12px',
           background: 'var(--color-bg-base)',
           fontSize: '0.75rem',
           color: 'var(--color-text-muted)',
@@ -105,7 +117,7 @@ function FencedCodeBlock({ className, children }: { className?: string; children
           color: 'var(--color-text-primary)',
         }}
       >
-        <code>{codeText}</code>
+        <code className={className}>{children}</code>
       </pre>
     </div>
   )
@@ -116,6 +128,8 @@ function FencedCodeBlock({ className, children }: { className?: string; children
  * Renders inline code as <code>; fenced code blocks as a card with a copy button.
  */
 export function MarkdownCodeBlock({ inline, className, children }: CodeProps) {
-  if (inline) return <InlineCode>{children}</InlineCode>
+  const rawCodeText = textFromNode(children)
+  const isFenced = inline === false || Boolean(className) || rawCodeText.includes('\n')
+  if (!isFenced) return <InlineCode>{children}</InlineCode>
   return <FencedCodeBlock className={className}>{children}</FencedCodeBlock>
 }

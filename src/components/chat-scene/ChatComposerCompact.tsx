@@ -81,7 +81,7 @@ export function ChatComposerCompact({
         {skillCommand ? (
           <div className="mb-2 flex items-center gap-2">
             <div
-              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[13px] font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
+              className="group inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[0.8125rem] font-semibold shadow-[0_8px_24px_rgba(212,168,67,0.12)]"
               style={{
                 borderColor: 'var(--color-accent-border)',
                 background: 'var(--color-accent-subtle)',
@@ -92,7 +92,7 @@ export function ChatComposerCompact({
                 <Sparkles className="h-3.5 w-3.5" />
               </span>
               <span className="truncate">{skillCommand.label}</span>
-              <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[11px] font-medium" style={{ color: 'var(--color-accent-600)' }}>
+              <span className="rounded-md bg-white/70 px-1.5 py-0.5 text-[0.6875rem] font-medium" style={{ color: 'var(--color-accent-600)' }}>
                 {skillCommand.command}
               </span>
               {onClearSkillCommand ? (
@@ -119,7 +119,7 @@ export function ChatComposerCompact({
           onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
-          className="w-full resize-none bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+          className="w-full resize-none bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
           style={{ minHeight: '40px' }}
         />
         <div className="flex items-center justify-between">
@@ -138,8 +138,8 @@ export function ChatComposerCompact({
               aria-label={skillCommand ? `打开技能选择，当前已加载技能 ${skillCommand.label}` : '打开技能选择'}
               aria-pressed={Boolean(skillCommand)}
               className={skillCommand
-                ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold transition-colors hover:bg-[var(--color-accent-muted)]'
-                : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted'
+                ? 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] font-semibold transition-colors hover:bg-[var(--color-accent-muted)]'
+                : 'flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] text-muted-foreground transition-colors hover:bg-muted'
               }
               style={skillCommand ? { background: 'var(--color-accent-subtle)', color: 'var(--color-accent-700)' } : undefined}
             >
@@ -155,7 +155,7 @@ export function ChatComposerCompact({
               <button
                 type="button"
                 onClick={onPickProject}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.8125rem] text-muted-foreground transition-colors hover:bg-muted"
               >
                 <Folder className="h-3.5 w-3.5" />
                 <span>{projectLabel}</span>
@@ -201,7 +201,7 @@ export function ChatComposerCompact({
         </div>
       </div>
       {tips ? (
-        <div data-testid="composer-tips" className="flex items-center justify-between gap-3 px-3 text-[11px] text-muted-foreground">
+        <div data-testid="composer-tips" className="flex items-center justify-between gap-3 px-3 text-[0.6875rem] text-muted-foreground">
           {tips}
         </div>
       ) : null}

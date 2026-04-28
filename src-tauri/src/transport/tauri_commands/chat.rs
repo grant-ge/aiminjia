@@ -2691,6 +2691,14 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    pub async fn restore_conversation(&self, conversation_id: String) -> Result<(), String> {
+        conversation_service::restore_conversation(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+            conversation_id,
+        )
+        .await
+    }
+
     pub async fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_archived_conversations(
             self.services.db.clone() as Arc<dyn ConversationStore>

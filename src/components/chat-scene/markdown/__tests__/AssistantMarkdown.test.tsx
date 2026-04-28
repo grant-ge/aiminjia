@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom'
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { AssistantMarkdown } from '../../AssistantMarkdown'
 
 vi.mock('react-i18next', () => ({
@@ -24,21 +26,43 @@ vi.mock('@/stores/notificationStore', () => ({
 }))
 
 describe('AssistantMarkdown', () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
+  })
+
   it('renders nothing for empty input', () => {
     const { container } = render(<AssistantMarkdown text="   " />)
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders a GFM table via TableView', () => {
+  it('renders a GFM table as native markdown table markup', () => {
     const md = `| Name | Qty |
 |---|---|
 | apple | 1 |
 | banana | 2 |`
-    render(<AssistantMarkdown text={md} />)
-    expect(screen.getByTestId('table-view')).toBeInTheDocument()
+    const { container } = render(<AssistantMarkdown text={md} />)
+    expect(screen.queryByTestId('table-view')).not.toBeInTheDocument()
+    expect(container.querySelector('.markdown-table-wrap')).toBeInTheDocument()
+    expect(container.querySelector('.markdown-table-scroll')).toBeInTheDocument()
+    expect(container.querySelector('table')).toBeInTheDocument()
+    expect(screen.getByTestId('markdown-table-copy-button')).toBeInTheDocument()
     expect(screen.getByText('Name')).toBeInTheDocument()
     expect(screen.getByText('apple')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
+  })
+
+
+  it('copies markdown table content as CSV from the floating action', () => {
+    const md = `| Name | Qty |
+|---|---|
+| apple | 1 |`
+    render(<AssistantMarkdown text={md} />)
+
+    fireEvent.click(screen.getByTestId('markdown-table-copy-button'))
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Name,Qty\r\napple,1\r\n')
   })
 
   it('strips raw HTML tags from input (skipHtml default)', () => {
@@ -49,10 +73,13 @@ describe('AssistantMarkdown', () => {
   })
 
   it('renders fenced code blocks with a copy button', () => {
-    render(<AssistantMarkdown text={'```js\nconst x = 1\n```'} />)
+    const { container } = render(<AssistantMarkdown text={'```js\nconst x = 1\n```'} />)
     expect(screen.getByText('js')).toBeInTheDocument()
     expect(screen.getByText('Copy')).toBeInTheDocument()
-    expect(screen.getByText('const x = 1')).toBeInTheDocument()
+    expect(container.querySelector('code')?.textContent?.trim()).toBe('const x = 1')
+    expect(container.querySelector('code.hljs.language-js')).toBeInTheDocument()
+    expect(container.querySelector('.hljs-keyword')).toHaveTextContent('const')
+    expect(container.querySelector('pre > div')).not.toBeInTheDocument()
   })
 
   it('renders inline code', () => {
@@ -73,11 +100,54 @@ describe('AssistantMarkdown', () => {
     expect(link.href).toBe('https://example.com/')
   })
 
-  it('renders empty GFM table (header only) as TableView with empty state', () => {
+  it('renders empty GFM table header without the structured TableView empty state', () => {
     const md = `| A | B |
 |---|---|`
-    render(<AssistantMarkdown text={md} />)
-    expect(screen.getByTestId('table-view')).toBeInTheDocument()
-    expect(screen.getByText('No data')).toBeInTheDocument()
+    const { container } = render(<AssistantMarkdown text={md} />)
+    expect(screen.queryByTestId('table-view')).not.toBeInTheDocument()
+    expect(container.querySelector('table')).toBeInTheDocument()
+    expect(screen.getByText('A')).toBeInTheDocument()
+    expect(screen.queryByText('No data')).not.toBeInTheDocument()
   })
+
+  it('renders common markdown document structure tags for scoped typography', () => {
+    const md = `# Main title
+
+## Section title
+
+### Subsection
+
+Paragraph with **bold**, *italic*, ~~deleted~~, and \`inline code\`.
+
+- First bullet
+  - Nested bullet
+- Second bullet
+
+1. First step
+2. Second step
+
+> Quoted note
+
+---`
+
+    const { container } = render(<AssistantMarkdown text={md} />)
+
+    expect(container.querySelector('.assistant-markdown')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Main title' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Section title' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Subsection' })).toBeInTheDocument()
+    expect(container.querySelector('ul')).toBeInTheDocument()
+    expect(container.querySelector('ol')).toBeInTheDocument()
+    expect(container.querySelector('blockquote')).toHaveTextContent('Quoted note')
+    expect(container.querySelector('hr')).toBeInTheDocument()
+    expect(container.querySelector('del')).toHaveTextContent('deleted')
+    expect(container.querySelector('code')).toHaveTextContent('inline code')
+  })
+
+  it('keeps normal markdown body text on foreground instead of primary accent', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8')
+
+    expect(css).toContain('.assistant-markdown {\n  color: var(--color-text-primary);')
+  })
+
 })

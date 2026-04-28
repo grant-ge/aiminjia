@@ -1,21 +1,19 @@
 /**
  * @designSource design.pen#S3D6p / 1MCFZ / az6ZY
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { message, ask } from '@tauri-apps/plugin-dialog'
 
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
-import { SettingsContentTop } from './SettingsContentTop'
-import { SettingsMenu, SETTINGS_MENU_ITEMS } from './SettingsMenu'
+import { SettingsMenu } from './SettingsMenu'
 import { SettingsShell } from './SettingsShell'
 import { AboutPanel } from './panels/AboutPanel'
 import { GeneralPanel } from './panels/GeneralPanel'
 import { ArchivedPanel } from './panels/ArchivedPanel'
-import { PlaceholderPanel } from './panels/PlaceholderPanel'
-import { UsagePanel } from './panels/UsagePanel'
 
 export function SettingsModal() {
   const settingsModal = useUiStore((s) => s.settingsModal)
@@ -25,12 +23,29 @@ export function SettingsModal() {
   const tenant = useAuthStore((s) => s.tenant)
   const logout = useAuthStore((s) => s.logout)
   const productName = useBrandingStore((s) => s.productName)
+  const logoUrl = useBrandingStore((s) => s.logoUrl)
   const [pendingLogout, setPendingLogout] = useState(false)
+  const [appVersion, setAppVersion] = useState('读取中')
+
+  useEffect(() => {
+    if (settingsModal !== 'about') return
+
+    let cancelled = false
+    import('@tauri-apps/api/app')
+      .then(({ getVersion }) => getVersion())
+      .then((version) => {
+        if (!cancelled) setAppVersion(version)
+      })
+      .catch(() => {
+        if (!cancelled) setAppVersion('未知')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [settingsModal])
 
   if (!settingsModal) return null
-
-  const activeLabel =
-    SETTINGS_MENU_ITEMS.find((m) => m.key === settingsModal)?.label || '设置'
 
   const onLogout = async () => {
     if (pendingLogout) return
@@ -41,6 +56,72 @@ export function SettingsModal() {
     } finally {
       setPendingLogout(false)
     }
+  }
+
+  const openExternalLink = async (url: string) => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell')
+      await open(url)
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    }
+  }
+
+  const onCheckUpdate = async () => {
+    try {
+      const [{ check }, { getVersion }, { relaunch }] = await Promise.all([
+        import('@tauri-apps/plugin-updater'),
+        import('@tauri-apps/api/app'),
+        import('@tauri-apps/plugin-process'),
+      ])
+      const update = await check()
+      if (!update) {
+        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+        return
+      }
+
+      const currentVersion = await getVersion()
+      if (update.version === currentVersion) {
+        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+        return
+      }
+
+      const confirmed = await ask(update.body ?? `发现新版本 v${update.version}，是否立即更新？`, {
+        title: `发现新版本 v${update.version}`,
+        kind: 'info',
+        okLabel: '立即更新',
+        cancelLabel: '稍后再说',
+      })
+      if (!confirmed) return
+
+      await update.downloadAndInstall()
+      await relaunch()
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    }
+  }
+
+  const onUploadLogs = async () => {
+    try {
+      const { openLogsDirectory } = await import('@/lib/tauri')
+      await openLogsDirectory()
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    }
+  }
+
+  const onResetData = async () => {
+    const confirmed = await ask('将清除本地缓存并恢复默认设置，是否继续？', {
+      title: productName,
+      kind: 'warning',
+      okLabel: '重置',
+      cancelLabel: '取消',
+    })
+    if (!confirmed) return
+
+    localStorage.clear()
+    useBrandingStore.getState().reset()
+    await message('本地缓存已清除，部分设置会在重启后恢复默认。', { title: productName, kind: 'info' })
   }
 
   return (
@@ -56,7 +137,6 @@ export function SettingsModal() {
       }
       content={
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <SettingsContentTop title={activeLabel} onClose={closeSettings} />
           <SettingsContentBody>
             {settingsModal === 'account' ? (
               <GeneralPanel
@@ -71,36 +151,20 @@ export function SettingsModal() {
             {settingsModal === 'about' ? (
               <AboutPanel
                 appName={productName}
-                version="0.9.30"
-                tenantName="仁励家网络科技(杭州)有限公司"
-                helpLinks={[
-                  { label: '使用手册', onClick: () => {} },
-                  { label: '反馈问题', onClick: () => {} },
-                ]}
-                devInfo={[
-                  { label: '架构', value: 'Tauri 2.x · React' },
-                  { label: '更新通道', value: '稳定版' },
-                ]}
+                version={appVersion}
+                copyright="仁励家网络科技(杭州)有限公司 版权所有"
+                logoUrl={logoUrl}
+                onCheckUpdate={() => void onCheckUpdate()}
+                onUploadLogs={() => void onUploadLogs()}
+                onResetData={() => void onResetData()}
+                links={{
+                  customerService: () => void openExternalLink('https://www.renlijia.com/support'),
+                  productSuggestion: () => void openExternalLink('https://www.renlijia.com/feedback'),
+                  privacyPolicy: () => void openExternalLink('https://www.renlijia.com/privacy'),
+                  terms: () => void openExternalLink('https://www.renlijia.com/terms'),
+                }}
               />
             ) : null}
-            {settingsModal === 'usage' ? (
-              <UsagePanel
-                planName="标准版"
-                planRenewLabel="按企业账号自动续期"
-                quota={[
-                  { label: '会话次数', used: 142, total: 500 },
-                  { label: '模型调用 tokens', used: 234000, total: 1000000 },
-                ]}
-                detail={[
-                  { label: '本月会话', value: '142 次' },
-                  { label: '本月技能调用', value: '38 次' },
-                ]}
-              />
-            ) : null}
-            {settingsModal === 'permissions' ? <PlaceholderPanel title="系统权限" /> : null}
-            {settingsModal === 'mcp' ? <PlaceholderPanel title="MCP 服务" /> : null}
-            {settingsModal === 'sso' ? <PlaceholderPanel title="SSO 集成" /> : null}
-            {settingsModal === 'shortcuts' ? <PlaceholderPanel title="快捷键" /> : null}
             {settingsModal === 'archived' ? <ArchivedPanel /> : null}
           </SettingsContentBody>
         </div>

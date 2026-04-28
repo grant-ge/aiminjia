@@ -152,7 +152,7 @@ pub async fn delete_conversation(
         .map_err(|e| e.to_string())?;
 
     let mut deleted = 0usize;
-    let mut failed = 0usize;
+    let mut failures = Vec::new();
     for path in &file_paths {
         let full_path = file_mgr.full_path(path);
         match std::fs::remove_file(&full_path) {
@@ -160,7 +160,7 @@ pub async fn delete_conversation(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 log::warn!("Failed to delete file {:?}: {}", full_path, e);
-                failed += 1;
+                failures.push(format!("{}: {}", full_path.display(), e));
             }
         }
     }
@@ -169,9 +169,15 @@ pub async fn delete_conversation(
             "Conversation {} file cleanup: {} deleted, {} failed, {} already gone",
             conversation_id,
             deleted,
-            failed,
-            file_paths.len() - deleted - failed
+            failures.len(),
+            file_paths.len() - deleted - failures.len()
         );
+    }
+    if !failures.is_empty() {
+        return Err(format!(
+            "failed to delete associated files: {}",
+            failures.join("; ")
+        ));
     }
 
     let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
@@ -370,6 +376,14 @@ pub async fn archive_conversation(
         .map_err(|e| e.to_string())
 }
 
+pub async fn restore_conversation(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+) -> Result<(), String> {
+    db.restore_conversation(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
 pub async fn get_archived_conversations(
     db: Arc<dyn ConversationStore>,
 ) -> Result<Vec<serde_json::Value>, String> {
@@ -453,6 +467,9 @@ mod title_tests {
         }
         fn archive_conversation(&self, id: &str) -> anyhow::Result<()> {
             self.inner.archive_conversation(id)
+        }
+        fn restore_conversation(&self, id: &str) -> anyhow::Result<()> {
+            self.inner.restore_conversation(id)
         }
         fn get_archived_conversations(&self) -> anyhow::Result<Vec<serde_json::Value>> {
             self.inner.get_archived_conversations()

@@ -50,7 +50,7 @@ export function ConversationRow({
         <button
           type="button"
           onClick={onClick}
-          className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-[13px]"
+          className="group flex flex-1 min-w-0 items-center py-1.5 pr-2 text-left text-[0.8125rem]"
         >
           {loading ? (
             <Loader2

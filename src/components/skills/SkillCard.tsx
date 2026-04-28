@@ -30,10 +30,10 @@ export function SkillCard({ title, meta, desc, iconNode, iconBg = 'bg-brand-prim
         </div>
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-sm font-semibold text-foreground">{title}</span>
-          <span className="text-[12px] font-medium text-brand-secondary">{meta}</span>
+          <span className="text-xs font-medium text-brand-secondary">{meta}</span>
         </div>
       </div>
-      <p className="mt-2.5 line-clamp-2 text-[12px] text-muted-foreground">{desc}</p>
+      <p className="mt-2.5 line-clamp-2 text-xs text-muted-foreground">{desc}</p>
     </div>
   )
 }

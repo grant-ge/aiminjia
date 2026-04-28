@@ -205,6 +205,11 @@ impl AppStorage {
         conversations::archive_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
     }
 
+    pub fn restore_conversation(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::restore_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
+    }
+
     pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         conversations::get_archived_conversations(&self.base_dir).map_err(|e| anyhow::anyhow!(e))
     }
@@ -1135,6 +1140,10 @@ impl crate::runtime::store::ConversationStore for FileConversationStore {
         self.storage.archive_conversation(id)
     }
 
+    fn restore_conversation(&self, id: &str) -> Result<()> {
+        self.storage.restore_conversation(id)
+    }
+
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         self.storage.get_archived_conversations()
     }
@@ -1205,6 +1214,10 @@ impl crate::runtime::store::ConversationStore for AppStorage {
 
     fn archive_conversation(&self, id: &str) -> Result<()> {
         self.archive_conversation(id)
+    }
+
+    fn restore_conversation(&self, id: &str) -> Result<()> {
+        self.restore_conversation(id)
     }
 
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {

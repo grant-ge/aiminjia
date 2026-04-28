@@ -21,16 +21,16 @@ describe('deriveSkin', () => {
     expect(result['--sidebar-primary']).toBe('#DBAA22')
   })
 
-  it('chooses white foreground for dark accent colors', () => {
+  it('uses white foreground for dark accent colors', () => {
     const result = deriveSkin('#000000')
     expect(result['--primary-foreground']).toBe('#FFFFFF')
     expect(result['--sidebar-primary-foreground']).toBe('#FFFFFF')
   })
 
-  it('chooses near-black foreground for light accent colors', () => {
+  it('also uses white foreground for light accent colors', () => {
     const result = deriveSkin('#FFFFFF')
-    expect(result['--primary-foreground']).toBe('#1A1A1A')
-    expect(result['--sidebar-primary-foreground']).toBe('#1A1A1A')
+    expect(result['--primary-foreground']).toBe('#FFFFFF')
+    expect(result['--sidebar-primary-foreground']).toBe('#FFFFFF')
   })
 
   it('falls back to default accent color when input is invalid', () => {

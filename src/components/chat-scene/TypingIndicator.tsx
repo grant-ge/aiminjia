@@ -26,7 +26,7 @@ export function TypingIndicator({ variant }: TypingIndicatorProps) {
         strokeWidth={1.75}
         style={{ animation: 'typingIndicatorBreath 1.2s ease-in-out infinite' }}
       />
-      <span className="text-[12px] leading-none">{label}</span>
+      <span className="text-xs leading-none">{label}</span>
     </div>
   )
 }

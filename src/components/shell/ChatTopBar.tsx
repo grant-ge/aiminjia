@@ -11,7 +11,7 @@ interface ChatTopBarProps {
   onShare?: () => void
   onMore?: () => void
   onToggleSidebar?: () => void
-  /** extra node rendered at the right edge (e.g. ExportMenu) */
+  /** extra node rendered at the right edge */
   trailing?: ReactNode
 }
 
@@ -26,13 +26,13 @@ export function ChatTopBar({
   return (
     <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-background px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="truncate text-[15px] font-semibold text-foreground">
+        <div className="truncate text-[0.9375rem] font-semibold text-foreground">
           {title}
         </div>
         {workspace ? (
           <>
-            <span className="text-[13px] text-muted-foreground">/</span>
-            <span className="truncate text-[13px] text-muted-foreground">
+            <span className="text-[0.8125rem] text-muted-foreground">/</span>
+            <span className="truncate text-[0.8125rem] text-muted-foreground">
               {workspace}
             </span>
           </>

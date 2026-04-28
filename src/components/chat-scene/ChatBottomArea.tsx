@@ -260,59 +260,64 @@ export function ChatBottomArea() {
   const attachmentBusy = isPickingAttachments
 
   return (
-    <div
-      className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5"
-      style={{ background: 'linear-gradient(transparent, var(--color-bg-main) 30%)' }}
+    <footer
+      data-testid="chat-bottom-area"
+      className="relative h-[148px] shrink-0"
+      style={{ background: 'var(--color-bg-main)' }}
     >
+      <div
+        className="absolute right-0 bottom-0 left-0 px-6 pt-4 pb-5 [scrollbar-gutter:stable_both-edges]"
+        style={{ background: 'linear-gradient(transparent, var(--color-bg-main) 30%)' }}
+      >
+        <div className="relative mx-auto w-full max-w-[736px]">
+          <div className="absolute bottom-full left-10 z-30 mb-3">
+            <SkillPopover
+              open={showSkillPopover}
+              onPick={handleSkillPick}
+              onClose={() => setShowSkillPopover(false)}
+            />
+          </div>
 
-      <div className="relative mx-auto max-w-[1032px]">
-        <div className="absolute bottom-full left-10 z-30 mb-3">
-          <SkillPopover
-            open={showSkillPopover}
-            onPick={handleSkillPick}
-            onClose={() => setShowSkillPopover(false)}
-          />
-        </div>
+          {slashOpen && slashMatch ? (
+            <SlashCommandPopover
+              filterText={slashMatch.filter}
+              onSelect={handleSlashSelect}
+              onClose={handleSlashClose}
+            />
+          ) : null}
 
-        {slashOpen && slashMatch ? (
-          <SlashCommandPopover
-            filterText={slashMatch.filter}
-            onSelect={handleSlashSelect}
-            onClose={handleSlashClose}
-          />
-        ) : null}
-
-        <div className="relative">
-          <ChatComposerCompact
-            value={input}
-            onChange={handleInputChange}
-            onSubmit={(value) => void handleSend(value)}
-            submitDisabled={isSendDisabled}
-            placeholder={pendingFiles.length > 0 ? t('inputBar.placeholderWithFile') : t('inputBar.placeholder')}
-            onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
-            showProjectButton={false}
-            isStreaming={isStreaming}
-            onStop={stopCurrentStream}
-            onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
-            pendingFilesSlot={pendingFiles.length > 0 ? (
-              <PendingFiles
-                pendingFiles={pendingFiles}
-                onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
-              />
-            ) : null}
-            skillCommand={selectedSkillCommand}
-            onClearSkillCommand={() => clearSelectedSkillCommand(activeConversationId)}
-            textareaRef={textareaRef}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => { isComposingRef.current = true }}
-            onCompositionEnd={() => {
-              setTimeout(() => { isComposingRef.current = false }, 50)
-            }}
-            onPaste={handlePaste}
-            tips={<BottomTips />}
-          />
+          <div className="relative">
+            <ChatComposerCompact
+              value={input}
+              onChange={handleInputChange}
+              onSubmit={(value) => void handleSend(value)}
+              submitDisabled={isSendDisabled}
+              placeholder={pendingFiles.length > 0 ? t('inputBar.placeholderWithFile') : t('inputBar.placeholder')}
+              onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
+              showProjectButton={false}
+              isStreaming={isStreaming}
+              onStop={stopCurrentStream}
+              onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
+              pendingFilesSlot={pendingFiles.length > 0 ? (
+                <PendingFiles
+                  pendingFiles={pendingFiles}
+                  onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
+                />
+              ) : null}
+              skillCommand={selectedSkillCommand}
+              onClearSkillCommand={() => clearSelectedSkillCommand(activeConversationId)}
+              textareaRef={textareaRef}
+              onKeyDown={handleKeyDown}
+              onCompositionStart={() => { isComposingRef.current = true }}
+              onCompositionEnd={() => {
+                setTimeout(() => { isComposingRef.current = false }, 50)
+              }}
+              onPaste={handlePaste}
+              tips={<BottomTips />}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </footer>
   )
 }

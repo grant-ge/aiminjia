@@ -27,14 +27,14 @@ export function HomeSuggestionPanel({
                 : 'flex w-full items-start gap-3.5 border-b border-border/80 py-3 text-left transition-colors hover:text-primary'
             }
           >
-            <span className="shrink-0 text-[14px] font-semibold leading-6 text-foreground">
+            <span className="shrink-0 text-sm font-semibold leading-6 text-foreground">
               {item.title}
             </span>
             <span
               aria-hidden="true"
               className="mt-0.5 h-5 w-px shrink-0 bg-border"
             />
-            <span className="text-[13px] leading-6 text-muted-foreground">
+            <span className="text-[0.8125rem] leading-6 text-muted-foreground">
               {item.desc}
             </span>
           </button>

@@ -128,4 +128,29 @@ describe('SubAgentTranscriptViewer', () => {
     expect(screen.getAllByText('assistant')).toHaveLength(2)
     expect(screen.getByText('tool')).toBeInTheDocument()
   })
+
+  it('renders transcript content directly in content variant', async () => {
+    mockGetSubagentTranscript.mockResolvedValue(ENTRIES)
+
+    render(<SubAgentTranscriptViewer transcriptRef="subagent://run-inline" variant="content" />)
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Running analysis...')).toBeInTheDocument()
+    })
+    expect(mockGetSubagentTranscript).toHaveBeenCalledWith('subagent://run-inline')
+  })
+
+  it('does not auto-retry content variant after a load failure', async () => {
+    mockGetSubagentTranscript.mockRejectedValue(new Error('transcript not found'))
+
+    render(<SubAgentTranscriptViewer transcriptRef="subagent://run-inline-bad" variant="content" />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+    })
+    await new Promise((resolve) => window.setTimeout(resolve, 10))
+    expect(mockGetSubagentTranscript).toHaveBeenCalledTimes(1)
+  })
+
 })
