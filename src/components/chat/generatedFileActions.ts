@@ -36,7 +36,7 @@ export function isPreviewableFileType(fileType?: string, fileName?: string): boo
 }
 
 export function getGeneratedFilePrimaryAction(file: Pick<GeneratedFileActionSource, 'fileType' | 'title' | 'fileName'>): GeneratedFilePrimaryAction {
-  return isPreviewableFileType(file.fileType, file.title ?? file.fileName) ? 'preview' : 'open'
+  return isPreviewableFileType(file.fileType, file.fileName ?? file.title) ? 'preview' : 'open'
 }
 
 export function isFileActionEnabled(actions: FileAction[] | undefined, actionType: FileAction['type']): boolean {
@@ -48,7 +48,7 @@ export function toPreviewTarget(file: GeneratedFileActionSource & { id: string }
   return {
     fileId: file.id,
     conversationId,
-    fileName: file.title ?? file.fileName ?? '未命名文件',
+    fileName: file.fileName ?? file.title ?? '未命名文件',
     fileType: file.fileType,
   }
 }

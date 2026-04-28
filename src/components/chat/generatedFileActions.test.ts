@@ -40,6 +40,10 @@ describe('generatedFileActions', () => {
     expect(isPreviewableFileType(undefined, 'summary.xlsx')).toBe(false)
   })
 
+  it('uses the real filename extension before the display title for primary action fallback', () => {
+    expect(getGeneratedFilePrimaryAction({ title: 'Readable Report', fileName: 'report.md' })).toBe('preview')
+  })
+
   it('treats missing actions as enabled for backward compatibility', () => {
     expect(isFileActionEnabled(undefined, 'open')).toBe(true)
     expect(isFileActionEnabled([], 'open')).toBe(true)
@@ -56,6 +60,17 @@ describe('generatedFileActions', () => {
       conversationId,
       fileName: 'report.md',
       fileType: 'markdown',
+    })
+  })
+
+  it('uses the real filename before the display title for preview targets', () => {
+    expect(
+      toPreviewTarget({ id: 'file-1', title: 'Readable Report', fileName: 'report.md', fileType: undefined }, conversationId),
+    ).toEqual({
+      fileId: 'file-1',
+      conversationId,
+      fileName: 'report.md',
+      fileType: undefined,
     })
   })
 })
