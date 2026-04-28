@@ -1501,7 +1501,7 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
 }
 
 #[tokio::test]
-async fn driver_s4_env_info_precedes_precompute_result_in_dynamic_context() {
+async fn driver_s4_env_info_present_in_dynamic_context() {
     let executor = Arc::new(CountingEnvInfoExecutor::ok(
         "\n\n[当前环境]\n工作目录: /tmp/test\nPlatform: darwin",
     ));
@@ -1516,10 +1516,9 @@ async fn driver_s4_env_info_precedes_precompute_result_in_dynamic_context() {
     let captured = executor.captured_dynamic_contexts.lock().unwrap();
     assert!(!captured.is_empty(), "must capture dynamic_context");
     let ctx = &captured[0];
-    let env_pos = ctx.find("[当前环境]").expect("missing env info");
-    if let Some(pre_pos) = ctx.find("[precompute_result]") {
-        assert!(env_pos < pre_pos, "env_info must precede precompute_result");
-    }
+    assert!(ctx.contains("[当前环境]"), "dynamic context must contain env info");
+    // Stateful workflow precompute pipeline removed in Phase B Task 7.
+    assert!(!ctx.contains("[precompute_result]"), "precompute_result must not appear in dynamic context");
 }
 
 #[tokio::test]

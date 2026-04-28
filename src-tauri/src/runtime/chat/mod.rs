@@ -1,3 +1,4 @@
+pub mod base_prompt;
 pub mod chat_turn_driver;
 pub mod compaction;
 pub mod context_builder;

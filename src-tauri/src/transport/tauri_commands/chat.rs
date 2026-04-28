@@ -812,21 +812,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         })
     }
 
-    async fn run_precompute(
-        &self,
-        _config: &TurnConfig,
-        _state: &mut TurnIterationState,
-    ) -> Result<Option<String>, TurnError> {
-        // TODO(S4-T12/future): full precompute requires StepConfig.precompute, which is not yet
-        // carried by TurnConfig.
-        // When S4-T13 wires the driver loop, TurnConfig should be extended with:
-        //   pub step_config: Option<StepConfig>,
-        // at which point this body can be extracted from chat_runtime_impl.rs Block 6 (L1795-L2034).
-        // Until then, falling back to no-precompute is safe (the agent can do the
-        // computation itself in the tool loop).
-        Ok(None)
-    }
-
     async fn persist_user_message(
         &self,
         conversation_id: &str,
@@ -1283,7 +1268,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .collect();
 
         Ok(TurnConfigOverrides {
-            system_prompt: Some(String::new()),
+            system_prompt: Some(crate::runtime::chat::base_prompt::DAILY_BASE_PROMPT.to_string()),
             tool_defs: Some(json_defs),
             allowed_tools: Some(allowed_tools),
             max_iterations: Some(30),

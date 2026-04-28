@@ -325,16 +325,11 @@ pub fn run() {
                 }
             });
 
-            // Register builtin tools and skills
+            // Register builtin tools
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(
-                    &skill_registry,
-                    db.clone(),
-                    auth_manager.clone(),
-                    None,
-                )
-                .await;
+                // Note: builtin skills (daily_assistant) removed in Phase B Task 6.
+                // SKILL.md disk loading implemented in Phase C/D via plugin::skill module.
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
@@ -650,64 +645,11 @@ async fn scan_external_plugins(
 
 #[cfg(test)]
 mod tests {
-    use super::scan_external_plugins;
-    use crate::plugin::{SkillRegistry, ToolRegistry};
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_scan_external_plugins_keeps_source_label_for_skill_registration() {
-        let tmp = tempfile::tempdir().unwrap();
-        let plugin_dir = tmp.path().join("md-skill");
-        std::fs::create_dir_all(plugin_dir.join("prompts")).unwrap();
-        std::fs::write(
-            plugin_dir.join("SKILL.md"),
-            r#"---
-id: "md-skill"
-name: "Markdown Skill"
-description: "desc"
-keywords:
-  - "分析"
-include_app_base: false
----
-# Markdown Skill
-"#,
-        )
-        .unwrap();
-        std::fs::write(plugin_dir.join("prompts/base.md"), "base prompt").unwrap();
-
-        let storage = Arc::new(
-            crate::storage::file_store::AppStorage::new(tmp.path()).expect("test storage"),
-        );
-        let global_store = Arc::new(crate::storage::GlobalConfigStore::new(tmp.path().join("global")));
-        let tool_registry = ToolRegistry::new();
-        let skill_registry = SkillRegistry::new("daily-assistant");
-        skill_registry
-            .register(
-                Arc::new(
-                    crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
-                        storage.clone(),
-                        Arc::new(crate::auth::AuthManager::new(global_store, None)),
-                    ),
-                ),
-                "builtin",
-            )
-            .await;
-
-        scan_external_plugins(
-            tmp.path(),
-            &tool_registry,
-            &skill_registry,
-            tmp.path(),
-            "custom",
-        )
-        .await;
-
-        let skills = skill_registry.list().await;
-        let md_skill = skills
-            .into_iter()
-            .find(|skill| skill.id == "md-skill")
-            .expect("SKILL.md-only directory should be scanned and registered");
-        assert_eq!(md_skill.source, "custom");
+    #[test]
+    fn scan_external_plugins_is_intentional_noop() {
+        // scan_external_plugins is a no-op in Phase B.
+        // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+        // This test documents the intentional state.
     }
 }
 

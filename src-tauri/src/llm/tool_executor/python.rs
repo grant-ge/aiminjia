@@ -9,7 +9,6 @@ use log::{error, info, warn};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::sandbox::SandboxConfig;
 use crate::runtime::ids::RunId;
@@ -213,49 +212,11 @@ pub(crate) async fn handle_execute_python_core(
         final_code = format!("{}\n{}", workspace_root_preamble, final_code);
     }
 
-    // In analysis mode:
-    // 1. Inject three-layer snapshot system + _df_raw + _CURRENT_STEP
-    // 2. Inject pre-written analysis utility functions
-    // 3. Append DataFrame auto-save epilogue (working + step snapshots)
-    let step_state = orchestrator::get_step_state(params.storage, params.conversation_id);
-    let is_analysis = step_state.is_some();
-    if is_analysis {
-        let current_step = step_state.map(|s| s.step).unwrap_or(0);
-        let analysis_preamble = super::file_load::build_analysis_preamble(
-            params.conversation_id,
-            current_step,
-            params.workspace_path,
-        );
-        info!("[TOOL:execute_python] Injecting analysis preamble ({} bytes, step={}) for conversation {}",
-            analysis_preamble.len(), current_step, params.conversation_id);
-        final_code = format!("{}{}", analysis_preamble, final_code);
-
-        // Epilogue: save working snapshot + step snapshot
-        let epilogue = build_analysis_epilogue(params.conversation_id);
-        info!(
-            "[TOOL:execute_python] Appending DataFrame auto-save epilogue (analysis mode, step={})",
-            current_step
-        );
-        final_code.push_str(&epilogue);
-    }
-
-    let result = if is_analysis {
-        // Analysis mode: use persistent session (warm process, no cold-start overhead).
-        // The session reuses a long-running Python REPL, eliminating process spawn,
-        // pandas/numpy import, and _analysis_utils.py compilation on every call.
-        let timeout = Duration::from_secs(default_execute_python_timeout_secs());
-        let run_id = params.requested_run_id.ok_or_else(|| {
-            anyhow::anyhow!("analysis mode requires run_id for execute_python persistent session")
-        })?;
-        python
-            .execute_for_run(run_id, &final_code, timeout, &sandbox)
-            .await?
-    } else {
-        // Daily mode: use one-shot PythonRunner (no persistent state needed)
-        python
-            .execute_oneshot(params.workspace_path, &final_code, &sandbox)
-            .await?
-    };
+    // Daily mode: use one-shot PythonRunner (no persistent state needed).
+    // Stateful workflow precompute pipeline removed in Phase B Task 7.
+    let result = python
+        .execute_oneshot(params.workspace_path, &final_code, &sandbox)
+        .await?;
 
     info!(
         "[TOOL:execute_python] exit_code={} time={}ms stdout_len={} stderr_len={}",

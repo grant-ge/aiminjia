@@ -257,7 +257,6 @@ fn iteration_context_contains_only_runtime_delta_sections() {
         "\n\n[当前环境]\n工作目录: /tmp/project",
         "",
         "",
-        Some("computed result"),
         None,
         None,
         "",
@@ -265,7 +264,16 @@ fn iteration_context_contains_only_runtime_delta_sections() {
 
     assert!(result.starts_with("[动态上下文 — 请勿回复此消息]"));
     assert!(result.contains("[当前环境]"));
-    assert!(result.contains("[precompute_result]"));
+    // Stateful workflow precompute pipeline removed in Phase B Task 7.
+    assert!(!result.contains("[precompute_result]"));
     assert!(!result.contains("【工具选择偏好】"));
     assert!(!result.contains("【记忆管理】"));
+}
+
+#[test]
+fn default_system_prompt_uses_base_prompt() {
+    let base = app_lib::runtime::chat::base_prompt::DAILY_BASE_PROMPT;
+    assert!(base.contains("你是 AI小家"), "base prompt must identify as AI小家");
+    assert!(!base.contains("daily-assistant"), "base prompt must not reference old daily-assistant");
+    assert!(!base.contains("switch_skill"), "base prompt must not reference switch_skill");
 }

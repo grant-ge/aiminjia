@@ -117,15 +117,6 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         self.load_llm_settings().await
     }
 
-    /// Precompute 执行钩子。默认 no-op。
-    async fn run_precompute(
-        &self,
-        _config: &TurnConfig,
-        _state: &mut TurnIterationState,
-    ) -> Result<Option<String>, TurnError> {
-        Ok(None)
-    }
-
     /// 持久化 assistant message 到存储。纯 I/O，不含事件发射。
     async fn persist_assistant_message(
         &self,
@@ -1110,10 +1101,7 @@ impl RuntimeChatTurnDriver {
         let pending_user_msg_id = _user_msg_id;
         let pending_client_msg_id = request.client_message_id.clone();
 
-        // ── Step 3: Precompute hook (currently no-op) ────────────────────────
-        let precompute_result = executor.run_precompute(&config, &mut state).await?;
-
-        // ── Step 4: Emit StreamStarted ────────────────────────────────────────
+        // ── Step 3: Emit StreamStarted ────────────────────────────────────────
         let session_id = turn.session_id().clone();
         let run_id = turn.run_id().clone();
         self.event_bus
@@ -1215,7 +1203,6 @@ impl RuntimeChatTurnDriver {
                 &env_info,
                 "",
                 "",
-                precompute_result.as_deref(),
                 None,
                 None,
                 &skill_catalog,

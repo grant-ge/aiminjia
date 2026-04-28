@@ -11,7 +11,6 @@ use log::{info, warn};
 use serde_json::{json, Value};
 
 use crate::llm::masking::{MaskingContext, MaskingLevel};
-use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
@@ -795,34 +794,8 @@ pub(crate) async fn handle_load_file_core(
     ctx.storage
         .set_memory(&loaded_key, &loaded_info.to_string(), Some("load_file"))?;
 
-    // When user explicitly loads a (new) file during analysis, clear ALL pkl snapshots
-    // (_original, _step_df, _step{N}_df, _step_dfs) so fresh data takes priority.
-    if orchestrator::get_step_state(ctx.storage, ctx.conversation_id).is_some() {
-        let snap_dir = ctx
-            .workspace_path
-            .join("analysis")
-            .join(ctx.conversation_id);
-        if snap_dir.exists() {
-            for entry in std::fs::read_dir(&snap_dir).into_iter().flatten() {
-                if let Ok(e) = entry {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".pkl") || name.ends_with(".pkl.tmp") {
-                        if let Err(err) = std::fs::remove_file(e.path()) {
-                            warn!(
-                                "[TOOL:load_file] Failed to remove snapshot {}: {}",
-                                name, err
-                            );
-                        } else {
-                            info!(
-                                "[TOOL:load_file] Cleared snapshot {} (new file loaded)",
-                                name
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Note: stateful workflow precompute snapshot cleanup removed in Phase B Task 7.
+    // Snapshot pkl files no longer need special handling.
 
     info!(
         "[TOOL:load_file] Stored loaded file mapping: {} -> {} ({}{})",
