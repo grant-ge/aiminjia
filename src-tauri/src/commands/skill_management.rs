@@ -15,7 +15,6 @@ pub enum SkillValidationError {
     MissingSkillMd,
     ParseFailed(String),
     InvalidName(String),
-    EmptyDescription,
 }
 
 impl SkillValidationError {
@@ -24,10 +23,9 @@ impl SkillValidationError {
             Self::MissingSkillMd => "目录中缺少 SKILL.md".to_string(),
             Self::ParseFailed(detail) => format!("SKILL.md 解析失败：{}", detail),
             Self::InvalidName(name) => format!(
-                "SKILL.md 中 name='{}' 不合法（必须以小写字母或数字开头，仅允许 a-z 0-9 - _，长度 ≤ 64）",
+                "目录名 '{}' 不合法（必须以小写字母或数字开头，仅允许 a-z 0-9 - _，长度 ≤ 64）",
                 name
             ),
-            Self::EmptyDescription => "SKILL.md 中 description 不能为空".to_string(),
         }
     }
 }
@@ -36,6 +34,15 @@ impl SkillValidationError {
 /// will actually pick up. Mirrors the rules in `loader::load_one_root` so an
 /// upload that passes here is guaranteed to surface in `list_skills`.
 pub fn validate_skill_directory(source: &std::path::Path) -> Result<(), SkillValidationError> {
+    // Check directory basename matches is_valid_skill_id — same rule as loader.rs:52
+    let basename = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if basename.starts_with('_') || basename.starts_with('.') || !is_valid_skill_id(basename) {
+        return Err(SkillValidationError::InvalidName(basename.to_string()));
+    }
+
     let skill_md = source.join("SKILL.md");
     if !skill_md.is_file() {
         return Err(SkillValidationError::MissingSkillMd);
@@ -43,30 +50,9 @@ pub fn validate_skill_directory(source: &std::path::Path) -> Result<(), SkillVal
     let content = std::fs::read_to_string(&skill_md)
         .map_err(|e| SkillValidationError::ParseFailed(e.to_string()))?;
 
-    // Extract and parse YAML frontmatter manually so we can distinguish
-    // ParseFailed (malformed YAML) from semantic errors (InvalidName, EmptyDescription).
-    let input = content.strip_prefix('\u{feff}').unwrap_or(&content);
-    let rest = input.strip_prefix("---\n").ok_or_else(|| {
-        SkillValidationError::ParseFailed("SKILL.md missing YAML frontmatter".to_string())
-    })?;
-    let end = rest.find("\n---").ok_or_else(|| {
-        SkillValidationError::ParseFailed("SKILL.md frontmatter is not closed with ---".to_string())
-    })?;
-    let yaml = &rest[..end];
+    crate::plugin::skill::frontmatter::parse_skill_md(&content)
+        .map_err(|e| SkillValidationError::ParseFailed(e.to_string()))?;
 
-    let frontmatter: crate::plugin::skill::types::SkillFrontmatter = serde_yaml::from_str(yaml)
-        .map_err(|e| {
-            SkillValidationError::ParseFailed(format!(
-                "Failed to parse SKILL.md YAML frontmatter: {e}"
-            ))
-        })?;
-
-    if !is_valid_skill_id(&frontmatter.name) {
-        return Err(SkillValidationError::InvalidName(frontmatter.name));
-    }
-    if frontmatter.description.trim().is_empty() {
-        return Err(SkillValidationError::EmptyDescription);
-    }
     Ok(())
 }
 
