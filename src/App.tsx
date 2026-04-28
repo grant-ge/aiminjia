@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AuthGate } from '@/components/auth/AuthGate'
+import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
 import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
@@ -105,6 +106,7 @@ function AppShell() {
         <RouteSwitch />
       </main>
       <SettingsModal />
+      <ConfirmDialogHost />
       <ToastContainer />
       <PermissionAskDialog
         open={activeAsk !== null}

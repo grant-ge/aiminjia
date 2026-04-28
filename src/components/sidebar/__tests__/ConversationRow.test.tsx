@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ConversationRow } from '../ConversationRow'
@@ -32,5 +32,28 @@ describe('ConversationRow', () => {
     render(<ConversationRow id="c4" title="X" onClick={onClick} />)
     screen.getByRole('button', { name: 'X' }).click()
     expect(onClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('invokes configured dropdown actions', () => {
+    const onArchive = vi.fn()
+    const onRename = vi.fn()
+    render(
+      <ConversationRow
+        id="c5"
+        title="X"
+        active
+        onClick={() => {}}
+        onArchive={onArchive}
+        onRename={onRename}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '聊天更多操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档聊天' }))
+    fireEvent.pointerDown(screen.getByRole('button', { name: '聊天更多操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名聊天' }))
+
+    expect(onArchive).toHaveBeenCalledTimes(1)
+    expect(onRename).toHaveBeenCalledTimes(1)
   })
 })

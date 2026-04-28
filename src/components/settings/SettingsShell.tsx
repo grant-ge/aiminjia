@@ -40,7 +40,7 @@ export function SettingsShell({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <div
         data-testid="settings-overlay"
-        className="absolute inset-0 bg-black/30"
+        className="absolute inset-0 bg-gray-950/35"
         onClick={onClose}
       />
       <div

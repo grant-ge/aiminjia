@@ -76,7 +76,7 @@ function renderWithFile(file: GeneratedFile, activeConversationId: string | null
 }
 
 function openActionsMenu() {
-  fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for Summary' }))
+  fireEvent.pointerDown(screen.getByRole('button', { name: '更多操作：Summary' }))
 }
 
 beforeEach(() => {
@@ -90,7 +90,7 @@ describe('MessageList generated file actions', () => {
   it('uses the generated file owner conversation for preview/open/reveal when active conversation differs', async () => {
     renderWithFile(generatedFile(), 'conv-2')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -100,11 +100,11 @@ describe('MessageList generated file actions', () => {
     })
 
     openActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Open with default app' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '用默认应用打开' }))
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
 
     openActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
   })
 
@@ -125,7 +125,7 @@ describe('MessageList generated file actions', () => {
   it('opens previewable file in the generated file preview store from primary action', () => {
     renderWithFile(generatedFile())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -149,7 +149,7 @@ describe('MessageList generated file actions', () => {
       }),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
     expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
@@ -159,7 +159,7 @@ describe('MessageList generated file actions', () => {
     renderWithFile(generatedFile())
 
     openActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
   })
@@ -168,7 +168,7 @@ describe('MessageList generated file actions', () => {
     openGeneratedFileMock.mockRejectedValueOnce(new Error('boom'))
     renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => {
       expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
@@ -181,7 +181,7 @@ describe('MessageList generated file actions', () => {
   it('previews using file owner conversation even when active conversation is missing', () => {
     renderWithFile(generatedFile(), null)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 Summary' }))
 
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
       fileId: 'gf-1',
@@ -197,7 +197,7 @@ describe('MessageList generated file actions', () => {
   it('opens using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }), null)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Summary' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 Summary' }))
 
     await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
     expect(useNotificationStore.getState().notifications).toEqual([])
@@ -207,7 +207,7 @@ describe('MessageList generated file actions', () => {
     renderWithFile(generatedFile(), null)
 
     openActionsMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
     expect(useNotificationStore.getState().notifications).toEqual([])

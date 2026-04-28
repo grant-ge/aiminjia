@@ -20,6 +20,14 @@ describe('SettingsShell', () => {
     expect(screen.queryByText('m')).toBeNull()
   })
 
+  it('uses the shared soft gray overlay', () => {
+    render(
+      <SettingsShell open menu={<div>m</div>} content={<div>c</div>} onClose={() => {}} />,
+    )
+
+    expect(screen.getByTestId('settings-overlay')).toHaveClass('bg-gray-950/35')
+  })
+
   it('clicking the overlay invokes onClose', () => {
     const onClose = vi.fn()
     render(

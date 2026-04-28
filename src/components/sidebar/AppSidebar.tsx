@@ -8,11 +8,7 @@ import { useChat } from '@/hooks/useChat'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore, type Route } from '@/stores/uiStore'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -127,21 +123,14 @@ export function AppSidebar() {
       </DialogContent>
     </Dialog>
 
-    {/* 归档确认弹窗 */}
-    <AlertDialog open={!!archivingId} onOpenChange={(open) => !open && setArchivingId(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>归档此聊天？</AlertDialogTitle>
-          <AlertDialogDescription>
-            归档后聊天将从列表中隐藏，可在设置的归档记录中查看和恢复。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction onClick={() => void handleArchiveConfirm()}>归档</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={!!archivingId}
+      title="归档此聊天？"
+      description="归档后聊天将从列表中隐藏，可在设置的归档记录中查看和恢复。"
+      confirmLabel="归档"
+      onOpenChange={(open) => !open && setArchivingId(null)}
+      onConfirm={() => void handleArchiveConfirm()}
+    />
   </>
   )
 }

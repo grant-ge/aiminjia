@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { ask } from '@tauri-apps/plugin-dialog'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { getVersion } from '@tauri-apps/api/app'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
@@ -35,15 +35,12 @@ export function useUpdater() {
         // User already snoozed this version (persisted across restarts)
         if (getSnoozedVersion() === update.version) return
 
-        const yes = await ask(
-          `${update.body ?? i18n.t('updater.updateAvailableDesc')}`,
-          {
-            title: i18n.t('updater.newVersionFound', { version: update.version }),
-            kind: 'info',
-            okLabel: i18n.t('updater.updateNow'),
-            cancelLabel: i18n.t('updater.updateLater'),
-          }
-        )
+        const yes = await requestConfirm({
+          title: i18n.t('updater.newVersionFound', { version: update.version }),
+          description: `${update.body ?? i18n.t('updater.updateAvailableDesc')}`,
+          confirmLabel: i18n.t('updater.updateNow'),
+          cancelLabel: i18n.t('updater.updateLater'),
+        })
         if (!yes || cancelled) {
           setSnoozedVersion(update.version)
           console.info('User snoozed update to', update.version)

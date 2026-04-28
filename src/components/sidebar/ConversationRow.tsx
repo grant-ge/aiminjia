@@ -5,12 +5,7 @@
 import { Archive, Copy, Ellipsis, Loader2, Pencil, Pin } from "lucide-react";
 import { useState } from "react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AppDropdown, type AppDropdownItem } from "@/components/common/AppDropdown";
 
 interface ConversationRowProps {
   id: string;
@@ -35,6 +30,32 @@ export function ConversationRow({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const showMore = hovered || menuOpen || active;
+  const menuItems: AppDropdownItem[] = [
+    {
+      id: 'pin',
+      label: '置顶聊天',
+      icon: <Pin className="h-3.5 w-3.5 shrink-0" />,
+      disabled: true,
+    },
+    {
+      id: 'archive',
+      label: '归档聊天',
+      icon: <Archive className="h-3.5 w-3.5 shrink-0" />,
+      onSelect: () => onArchive?.(),
+    },
+    {
+      id: 'rename',
+      label: '重命名聊天',
+      icon: <Pencil className="h-3.5 w-3.5 shrink-0" />,
+      onSelect: () => onRename?.(),
+    },
+    {
+      id: 'copy-id',
+      label: '复制会话 ID',
+      icon: <Copy className="h-3.5 w-3.5 shrink-0" />,
+      onSelect: () => void navigator.clipboard.writeText(id),
+    },
+  ];
 
   const wrapperCls = active
     ? "flex items-center rounded-md pl-[32px] pr-2 bg-sidebar-accent text-sidebar-foreground"
@@ -62,8 +83,12 @@ export function ConversationRow({
         </button>
 
         <div className={showMore ? "block shrink-0" : "hidden"}>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
+          <AppDropdown
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            ariaLabel="聊天更多操作"
+            contentClassName="w-40"
+            trigger={
               <button
                 type="button"
                 onClick={(e) => e.stopPropagation()}
@@ -71,41 +96,9 @@ export function ConversationRow({
               >
                 <Ellipsis className="h-3.5 w-3.5" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-40 border-sidebar-border bg-sidebar p-1 text-sidebar-foreground [&_[data-highlighted]]:bg-sidebar-accent [&_[data-highlighted]]:text-sidebar-foreground"
-            >
-              <DropdownMenuItem
-                className="gap-2 px-3 py-1.5 text-sm opacity-40 cursor-not-allowed"
-                disabled
-              >
-                <Pin className="h-3.5 w-3.5 shrink-0" />
-                置顶聊天
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 px-3 py-1.5 text-sm"
-                onClick={() => onArchive?.()}
-              >
-                <Archive className="h-3.5 w-3.5 shrink-0" />
-                归档聊天
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 px-3 py-1.5 text-sm"
-                onClick={() => onRename?.()}
-              >
-                <Pencil className="h-3.5 w-3.5 shrink-0" />
-                重命名聊天
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2 px-3 py-1.5 text-sm"
-                onClick={() => void navigator.clipboard.writeText(id)}
-              >
-                <Copy className="h-3.5 w-3.5 shrink-0" />
-                复制会话 ID
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+            items={menuItems}
+          />
         </div>
       </div>
     </div>

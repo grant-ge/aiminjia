@@ -90,7 +90,7 @@ export function MessageList() {
   }
 
   return (
-    <div className="flex flex-col gap-5 px-6 py-3">
+    <div className="flex flex-col gap-5 px-2 py-3">
       {turns.map((t, i) => {
         const e = expansion[i] ?? { expanded: true, stepIndex: null }
         return (
@@ -128,7 +128,7 @@ export function MessageList() {
                 key={f.id}
                 title={f.title}
                 sub={f.sub}
-                appName={f.primaryAction === 'preview' ? 'Preview' : f.appName}
+                appName={f.primaryAction === 'preview' ? '预览' : f.appName}
                 primaryAction={f.primaryAction}
                 canPreview={f.canPreview}
                 canOpenExternal={f.canOpenExternal}

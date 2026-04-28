@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ask } from '@tauri-apps/plugin-dialog'
-
 import { Button } from '@/components/common/Button'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
   addMcpServer,
   connectMcpServer,
@@ -156,9 +155,11 @@ export function McpTab() {
   }
 
   const handleDelete = async (name: string) => {
-    const confirmed = await ask(t('settings.mcp.confirmDelete', { name }), {
-      title: 'AI小家',
-      kind: 'warning',
+    const confirmed = await requestConfirm({
+      title: '删除 MCP 服务器？',
+      description: t('settings.mcp.confirmDelete', { name }),
+      confirmLabel: '确认删除',
+      variant: 'destructive',
     })
     if (!confirmed) return
 

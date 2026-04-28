@@ -2,8 +2,9 @@
  * @designSource design.pen#S3D6p / 1MCFZ / az6ZY
  */
 import { useEffect, useState } from 'react'
-import { message, ask } from '@tauri-apps/plugin-dialog'
+import { message } from '@tauri-apps/plugin-dialog'
 
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -86,10 +87,10 @@ export function SettingsModal() {
         return
       }
 
-      const confirmed = await ask(update.body ?? `发现新版本 v${update.version}，是否立即更新？`, {
+      const confirmed = await requestConfirm({
         title: `发现新版本 v${update.version}`,
-        kind: 'info',
-        okLabel: '立即更新',
+        description: update.body ?? `发现新版本 v${update.version}，是否立即更新？`,
+        confirmLabel: '立即更新',
         cancelLabel: '稍后再说',
       })
       if (!confirmed) return
@@ -111,11 +112,11 @@ export function SettingsModal() {
   }
 
   const onResetData = async () => {
-    const confirmed = await ask('将清除本地缓存并恢复默认设置，是否继续？', {
+    const confirmed = await requestConfirm({
       title: productName,
-      kind: 'warning',
-      okLabel: '重置',
-      cancelLabel: '取消',
+      description: '将清除本地缓存并恢复默认设置，是否继续？',
+      confirmLabel: '重置',
+      variant: 'destructive',
     })
     if (!confirmed) return
 

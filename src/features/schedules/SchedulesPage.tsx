@@ -6,6 +6,7 @@ import { ScheduleListCard } from '@/components/schedules/ScheduleListCard'
 import { ScheduleTableHeader } from '@/components/schedules/ScheduleTableHeader'
 import { ScheduleTaskRow } from '@/components/schedules/ScheduleTaskRow'
 import { ScheduleTemplateCard } from '@/components/schedules/ScheduleTemplateCard'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { createSchedule, deleteSchedule, listSchedules, type ScheduleRecord } from '@/lib/tauri'
@@ -37,6 +38,7 @@ export function SchedulesPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyTemplate, setBusyTemplate] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setError(null)
@@ -79,6 +81,7 @@ export function SchedulesPage() {
   }
 
   async function handleDelete(id: string) {
+    setPendingDeleteId(null)
     setDeletingId(id)
     setError(null)
     try {
@@ -143,10 +146,19 @@ export function SchedulesPage() {
             key={schedule.id}
             schedule={schedule}
             deleting={deletingId === schedule.id}
-            onDelete={handleDelete}
+            onDelete={setPendingDeleteId}
           />
         ))}
       </ScheduleListCard>
+      <ConfirmDialog
+        open={!!pendingDeleteId}
+        title="删除此定时任务？"
+        description="删除后该定时任务将停止执行，且无法从任务列表中恢复。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+        onConfirm={() => pendingDeleteId && void handleDelete(pendingDeleteId)}
+      />
     </PageSectionShell>
   )
 }

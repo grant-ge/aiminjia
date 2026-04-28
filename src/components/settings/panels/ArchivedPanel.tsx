@@ -8,16 +8,7 @@ import {
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import type { Conversation } from '@/types/message'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 
 interface ArchivedConversation {
@@ -175,29 +166,19 @@ export function ArchivedPanel() {
           </div>
         </div>
       ))}
-      <AlertDialog open={!!pendingAction} onOpenChange={(open) => !open && setPendingAction(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingAction?.kind === 'restore' ? '恢复此聊天？' : '彻底删除此聊天？'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingAction?.kind === 'restore'
-                ? '恢复后聊天会重新出现在左侧聊天列表中。'
-                : '此操作会永久删除聊天、消息和关联文件，无法撤销。'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className={pendingAction?.kind === 'delete' ? 'bg-destructive text-destructive-foreground hover:brightness-110' : undefined}
-              onClick={confirmPendingAction}
-            >
-              {pendingAction?.kind === 'restore' ? '确认恢复' : '确认删除'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!pendingAction}
+        title={pendingAction?.kind === 'restore' ? '恢复此聊天？' : '彻底删除此聊天？'}
+        description={
+          pendingAction?.kind === 'restore'
+            ? '恢复后聊天会重新出现在左侧聊天列表中。'
+            : '此操作会永久删除聊天、消息和关联文件，无法撤销。'
+        }
+        confirmLabel={pendingAction?.kind === 'restore' ? '确认恢复' : '确认删除'}
+        variant={pendingAction?.kind === 'delete' ? 'destructive' : 'default'}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        onConfirm={confirmPendingAction}
+      />
     </div>
   )
 }

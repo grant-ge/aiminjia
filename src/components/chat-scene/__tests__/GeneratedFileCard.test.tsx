@@ -34,7 +34,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof GeneratedFileCard
 }
 
 function openMenu() {
-  fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions for 绩效分析总结 · Q2' }))
+  fireEvent.pointerDown(screen.getByRole('button', { name: '更多操作：绩效分析总结 · Q2' }))
 }
 
 describe('GeneratedFileCard', () => {
@@ -49,8 +49,8 @@ describe('GeneratedFileCard', () => {
     expect(icon.querySelector('path')).toBeInTheDocument()
     expect(icon.parentElement).not.toHaveClass('overflow-hidden')
     expect(icon.closest('[data-testid="generated-file-card"]')).toHaveClass('h-16')
-    expect(screen.getByRole('button', { name: 'Preview 绩效分析总结 · Q2' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'More actions for 绩效分析总结 · Q2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '预览 绩效分析总结 · Q2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '更多操作：绩效分析总结 · Q2' })).toBeInTheDocument()
   })
 
   it('keeps legacy onOpen as the default open action and disables missing reveal action', () => {
@@ -65,13 +65,13 @@ describe('GeneratedFileCard', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open 绩效分析总结 · Q2' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 绩效分析总结 · Q2' }))
     openMenu()
-    const openItem = screen.getByRole('menuitem', { name: 'Open with default app' })
+    const openItem = screen.getByRole('menuitem', { name: '用默认应用打开' })
     expect(openItem).not.toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(openItem)
     openMenu()
-    const revealItem = screen.getByRole('menuitem', { name: 'Show in folder' })
+    const revealItem = screen.getByRole('menuitem', { name: '在文件夹中显示' })
     expect(revealItem).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(revealItem)
 
@@ -81,7 +81,7 @@ describe('GeneratedFileCard', () => {
   it('fires onPreview from preview primary action without opening externally', () => {
     const { onPreview, onOpenExternal } = renderCard({ primaryAction: 'preview' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview 绩效分析总结 · Q2' }))
+    fireEvent.click(screen.getByRole('button', { name: '预览 绩效分析总结 · Q2' }))
 
     expect(onPreview).toHaveBeenCalledTimes(1)
     expect(onOpenExternal).not.toHaveBeenCalled()
@@ -90,7 +90,7 @@ describe('GeneratedFileCard', () => {
   it('fires onOpenExternal from open primary action without previewing', () => {
     const { onPreview, onOpenExternal } = renderCard({ primaryAction: 'open' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open 绩效分析总结 · Q2' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开 绩效分析总结 · Q2' }))
 
     expect(onOpenExternal).toHaveBeenCalledTimes(1)
     expect(onPreview).not.toHaveBeenCalled()
@@ -100,22 +100,30 @@ describe('GeneratedFileCard', () => {
     const { onPreview, onOpenExternal, onReveal } = renderCard()
 
     openMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Preview inside' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在侧边栏预览' }))
     openMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Open with default app' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '用默认应用打开' }))
     openMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示' }))
 
     expect(onPreview).toHaveBeenCalledTimes(1)
     expect(onOpenExternal).toHaveBeenCalledTimes(1)
     expect(onReveal).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the shared light dropdown styling for preview block actions', () => {
+    renderCard()
+
+    openMenu()
+
+    expect(screen.getByRole('menu')).toHaveClass('bg-[#fbfbfa]')
+  })
+
   it('disables preview menu item and labels it unavailable when preview cannot run', () => {
     const { onPreview } = renderCard({ canPreview: false })
 
     openMenu()
-    const item = screen.getByRole('menuitem', { name: 'Preview unavailable' })
+    const item = screen.getByRole('menuitem', { name: '暂不支持预览' })
     expect(item).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(item)
 
@@ -124,7 +132,7 @@ describe('GeneratedFileCard', () => {
 
   it('disables open primary action when opening externally cannot run', () => {
     const { onOpenExternal } = renderCard({ primaryAction: 'open', canOpenExternal: false })
-    const button = screen.getByRole('button', { name: 'Open 绩效分析总结 · Q2' })
+    const button = screen.getByRole('button', { name: '打开 绩效分析总结 · Q2' })
 
     expect(button).toBeDisabled()
     fireEvent.click(button)
@@ -136,7 +144,7 @@ describe('GeneratedFileCard', () => {
     const { onReveal } = renderCard({ canReveal: false })
 
     openMenu()
-    const item = screen.getByRole('menuitem', { name: 'Show in folder' })
+    const item = screen.getByRole('menuitem', { name: '在文件夹中显示' })
     expect(item).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(item)
 

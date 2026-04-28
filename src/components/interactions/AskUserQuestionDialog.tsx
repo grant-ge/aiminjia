@@ -66,7 +66,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/35 px-4 backdrop-blur-sm">
       <div className="w-full max-w-xl rounded-2xl border border-border bg-background p-6 shadow-2xl">
         <div className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">AI needs your input</div>

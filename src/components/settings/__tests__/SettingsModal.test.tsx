@@ -36,7 +36,7 @@ describe('SettingsModal', () => {
     useUiStore.getState().openSettings('account')
     render(<SettingsModal />)
     fireEvent.click(screen.getByRole('button', { name: '关于 AI 小家' }))
-    expect(screen.getByText(/版本 0\.9\.30/)).toBeInTheDocument()
+    expect(screen.getByText('检查更新')).toBeInTheDocument()
   })
 
   it('does not switch to disabled settings', () => {

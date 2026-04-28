@@ -15,9 +15,9 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ask } from '@tauri-apps/plugin-dialog'
 import { listSkillDrafts, discardSkillDraft } from '@/lib/tauri'
 import type { DraftSummary } from '@/lib/tauri'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { useChat } from '@/hooks/useChat'
 import { useNotificationStore } from '@/stores/notificationStore'
 
@@ -84,9 +84,11 @@ export function DraftResumeBanner({ onAfterResume }: DraftResumeBannerProps = {}
       // user staring at an unresponsive button.
       try {
         console.log('[DraftResumeBanner] discard clicked', draft.draftId)
-        const confirmed = await ask(t('skillSmith.banner.discardConfirm', { name }), {
+        const confirmed = await requestConfirm({
           title: t('skillSmith.banner.discardTitle'),
-          kind: 'warning',
+          description: t('skillSmith.banner.discardConfirm', { name }),
+          confirmLabel: t('skillSmith.banner.discard'),
+          variant: 'destructive',
         })
         console.log('[DraftResumeBanner] ask resolved', { confirmed })
         if (!confirmed) return

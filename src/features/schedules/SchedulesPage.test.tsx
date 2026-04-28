@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -80,4 +81,38 @@ describe('SchedulesPage', () => {
     })
     expect((await screen.findAllByText('门店巡检')).length).toBeGreaterThan(1)
   })
+  it('asks for confirmation before deleting a schedule', async () => {
+    invokeMock
+      .mockResolvedValueOnce([
+        {
+          id: 'sched-1',
+          title: '日报汇总',
+          prompt: '汇总昨日数据',
+          cron: '0 9 * * *',
+          humanSchedule: '每天 09:00',
+          status: 'enabled',
+          nextRunAt: null,
+          timezone: 'Asia/Shanghai',
+          createdAt: '2026-04-25T00:00:00Z',
+          updatedAt: '2026-04-25T00:00:00Z',
+        },
+      ])
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce([])
+
+    render(<SchedulesPage />)
+
+    await screen.findByText('日报汇总')
+    fireEvent.click(screen.getByRole('button', { name: '删除 日报汇总' }))
+
+    expect(screen.getByText('删除此定时任务？')).toBeInTheDocument()
+    expect(invokeMock).not.toHaveBeenCalledWith('delete_schedule', { id: 'sched-1' })
+
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('delete_schedule', { id: 'sched-1' })
+    })
+  })
+
 })

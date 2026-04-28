@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
   listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill,
   reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
 } from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
-import { message, ask } from '@tauri-apps/plugin-dialog'
+import { message } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 import { SkillMarketplace } from './SkillMarketplace'
@@ -104,7 +105,12 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
   }
 
   const handleUninstall = async (id: string, name: string) => {
-    const confirmed = await ask(t('settings.skills.confirmUninstall', { name }), { title: 'AI小家', kind: 'warning' })
+    const confirmed = await requestConfirm({
+      title: t('settings.skills.uninstall'),
+      description: t('settings.skills.confirmUninstall', { name }),
+      confirmLabel: t('settings.skills.uninstall'),
+      variant: 'destructive',
+    })
     if (!confirmed) return
     try {
       await uninstallCustomSkill(id)
