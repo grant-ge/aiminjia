@@ -1372,8 +1372,11 @@ export function listCustomSkills(): Promise<CustomSkillInfo[]> {
 }
 
 /** Install a custom skill from a local directory. */
-export function installCustomSkill(sourcePath: string): Promise<string> {
-  return invoke<string>('install_custom_skill', { sourcePath })
+export async function installCustomSkill(
+  sourcePath: string,
+  force: boolean = false,
+): Promise<string> {
+  return invoke<string>('install_custom_skill', { sourcePath, force })
 }
 
 /** Uninstall a custom skill by ID. */

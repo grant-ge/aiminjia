@@ -33,6 +33,6 @@ describe('skill tauri ipc wrappers', () => {
 
     await installCustomSkill('/tmp/skill')
 
-    expect(invokeMock).toHaveBeenCalledWith('install_custom_skill', { sourcePath: '/tmp/skill' })
+    expect(invokeMock).toHaveBeenCalledWith('install_custom_skill', { sourcePath: '/tmp/skill', force: false })
   })
 })
