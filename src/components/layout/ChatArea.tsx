@@ -4,9 +4,6 @@
  */
 import { useCallback, useEffect, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
-import { openFileByName } from '@/lib/tauri'
-import { useNotificationStore } from '@/stores/notificationStore'
-import i18n from '@/i18n'
 import { MessageList } from '@/components/chat/MessageList'
 
 /** Scroll a container to the very bottom using scrollTop (avoids scrollIntoView rendering issues). */
@@ -57,64 +54,6 @@ export function ChatArea() {
       scrollToBottom(scrollContainerRef.current, true)
     }
   }, [isStreaming])
-
-  // Copy-to-clipboard event delegation for markdown code blocks.
-  // Inline onclick is blocked by Tauri CSP, so we use data-copy-code
-  // attributes with base64-encoded content.
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
-
-    const handleClick = (e: MouseEvent) => {
-      // Handle copy-to-clipboard for markdown code blocks
-      const copyTarget = (e.target as HTMLElement).closest('[data-copy-code]') as HTMLElement | null
-      if (copyTarget) {
-        const encoded = copyTarget.getAttribute('data-copy-code')
-        if (!encoded) return
-        try {
-          const code = atob(encoded)
-          navigator.clipboard.writeText(code).then(() => {
-            const prev = copyTarget.textContent
-            copyTarget.textContent = i18n.t('common.copied')
-            setTimeout(() => { copyTarget.textContent = prev }, 2000)
-          }).catch(() => {
-            const prev = copyTarget.textContent
-            copyTarget.textContent = i18n.t('common.copyFailed')
-            setTimeout(() => { copyTarget.textContent = prev }, 2000)
-          })
-        } catch {
-          // ignore decode errors
-        }
-        return
-      }
-
-      // Handle file link clicks — open file by name in workspace
-      const fileTarget = (e.target as HTMLElement).closest('[data-file-link]') as HTMLElement | null
-      if (fileTarget) {
-        const fileName = fileTarget.getAttribute('data-file-link')
-        if (!fileName) return
-        openFileByName(fileName).catch((err) => {
-          console.warn('[ChatArea] File not found:', fileName, err)
-          fileTarget.style.color = 'var(--color-semantic-red)'
-          setTimeout(() => {
-            fileTarget.style.color = 'var(--color-primary)'
-          }, 2000)
-          useNotificationStore.getState().push({
-            level: 'error',
-            title: i18n.t('chatArea.fileNotFound'),
-            message: i18n.t('chatArea.cannotOpenFile', { fileName }),
-            actions: [],
-            dismissible: true,
-            autoHide: 5,
-            context: 'toast',
-          })
-        })
-      }
-    }
-
-    container.addEventListener('click', handleClick)
-    return () => container.removeEventListener('click', handleClick)
-  }, [])
 
   return (
     <div

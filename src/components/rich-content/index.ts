@@ -1,5 +1,4 @@
 export { RichCodeBlock } from './RichCodeBlock'
-export { RichDataTable } from './RichDataTable'
 export { MetricCards } from './MetricCards'
 export { OptionCards } from './OptionCards'
 export { AnomalyList } from './AnomalyList'
