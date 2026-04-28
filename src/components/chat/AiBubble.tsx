@@ -24,7 +24,6 @@ import type {
 import { MESSAGE_CONTENT_RENDER_ORDER } from '@/types/message'
 import {
   RichCodeBlock,
-  RichDataTable,
   MetricCards,
   OptionCards,
   AnomalyList,
@@ -38,6 +37,8 @@ import {
   GeneratedFileCard,
   SubAgentResultCard,
 } from '@/components/rich-content'
+import { TableView } from '@/components/data-table'
+import { mapDataTableColumns, mapDataTableRows, toTableMeta } from '@/components/data-table/mapDataTable'
 import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { useChatStore } from '@/stores/chatStore'
@@ -185,7 +186,15 @@ function ContentRenderer({
       return (
         <>
           {(value as DataTable[]).map((table) => (
-            <RichDataTable key={table.id} table={table} />
+            <div key={table.id} className="my-3">
+              <TableView
+                columns={mapDataTableColumns(table.columns)}
+                rows={mapDataTableRows(table.rows)}
+                meta={toTableMeta(table)}
+                enableCopy
+                truncateRows={50}
+              />
+            </div>
           ))}
         </>
       )
