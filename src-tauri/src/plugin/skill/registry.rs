@@ -28,6 +28,16 @@ impl SkillRegistry {
         self.skills.insert(skill.id.clone(), skill);
     }
 
+    /// Wholesale replace all skills (used after a successful install / uninstall).
+    /// Also clears per-agent sent_skill_names so the catalog re-emits all entries.
+    pub fn replace_all(&mut self, skills: Vec<DiskSkill>) {
+        self.skills.clear();
+        for skill in skills {
+            self.skills.insert(skill.id.clone(), skill);
+        }
+        self.sent_skill_names.clear();
+    }
+
     pub fn get(&self, id: &str) -> Option<&DiskSkill> {
         self.skills.get(id)
     }
@@ -63,5 +73,57 @@ impl SkillRegistry {
 
     pub fn remember_invoked(&mut self, agent_id: Option<&str>, skill_id: &str, body: String) {
         self.invoked.remember(agent_id, skill_id, body);
+    }
+}
+
+#[cfg(test)]
+mod replace_all_tests {
+    use super::*;
+    use crate::plugin::skill::types::{DiskSkill, SkillFrontmatter, SkillMetadata, SkillSource};
+    use std::path::PathBuf;
+
+    fn skill(id: &str) -> DiskSkill {
+        DiskSkill {
+            id: id.to_string(),
+            root: PathBuf::from("/tmp"),
+            frontmatter: SkillFrontmatter {
+                name: id.to_string(),
+                description: "desc".to_string(),
+                when_to_use: None,
+                allowed_tools: vec![],
+                argument_hint: None,
+                arguments: vec![],
+                model: None,
+                effort: None,
+                context: None,
+                agent: None,
+                user_invocable: true,
+                disable_model_invocation: false,
+                version: None,
+                paths: vec![],
+                hooks: Default::default(),
+                shell: None,
+                metadata: SkillMetadata::default(),
+            },
+            body: String::new(),
+            source: SkillSource::User,
+        }
+    }
+
+    #[test]
+    fn replace_all_drops_old_skills_and_inserts_new() {
+        let mut reg = SkillRegistry::from_skills(vec![skill("old-a"), skill("old-b")]);
+        reg.replace_all(vec![skill("new-x"), skill("new-y")]);
+        let ids = reg.skill_ids();
+        assert_eq!(ids, vec!["new-x".to_string(), "new-y".to_string()]);
+    }
+
+    #[test]
+    fn replace_all_resets_sent_skill_names() {
+        let mut reg = SkillRegistry::from_skills(vec![skill("a")]);
+        reg.reset_sent_skill_names();
+        reg.replace_all(vec![skill("a"), skill("b")]);
+        let delta = reg.catalog_delta_for_agent(Some("agent-1"), 100_000);
+        assert!(delta.contains("a") && delta.contains("b"));
     }
 }
