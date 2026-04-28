@@ -53,8 +53,7 @@
     ],
     "resources": {
       "playwright-runtime": "playwright-runtime",
-      "prompts": "prompts",
-      "plugins": "plugins"
+      "prompts": "prompts"
     }
   }
 }

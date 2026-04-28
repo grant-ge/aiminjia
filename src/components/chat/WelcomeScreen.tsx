@@ -6,7 +6,6 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
-import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 export function WelcomeScreen() {
   const { t } = useTranslation()
@@ -54,8 +53,6 @@ export function WelcomeScreen() {
         {subtitle}
       </p>
 
-      {/* Skill-smith: unfinished drafts nudge (self-hides when no drafts) */}
-      <DraftResumeBanner />
 
       {/* General mode entry */}
       <div className="w-full max-w-[640px] px-4">

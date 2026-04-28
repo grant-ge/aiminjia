@@ -22,7 +22,6 @@ mod progress;
 mod python;
 mod report;
 mod search;
-pub(crate) mod skill_smith;
 mod slides;
 mod stats;
 mod util;

@@ -266,41 +266,6 @@ pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<
     ))
 }
 
-/// Scaffold workflow.toml template written by `init_skill_template`.
-///
-/// Exposed as `pub const` so the audit test can reference the live template
-/// directly — no manual copy-paste to keep in sync.
-pub const SCAFFOLD_WORKFLOW_TOML: &str = r#"[[steps]]
-id = "step0"
-name = "信息采集"
-prompt = "prompts/step0.md"
-precompute = "scripts/step0.py"
-tools_only = ["save_analysis_note"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "any"
-
-[[steps]]
-id = "step1"
-name = "分析处理"
-prompt = "prompts/step1.md"
-tools_only = ["execute_python", "export_data"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "confirm"
-tools_on_feedback = ["execute_python", "export_data"]
-max_iterations_feedback = 3
-
-[[steps]]
-id = "step2"
-name = "报告生成"
-prompt = "prompts/step2.md"
-tools_only = ["generate_report", "export_data"]
-max_iterations = 5
-token_budget = 8192
-advance_on = "confirm"
-"#;
-
 /// Create a new skill template directory with scaffolding files.
 #[tauri::command]
 pub async fn init_skill_template(
@@ -641,8 +606,6 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::skill_trait::Skill;
-
     #[test]
     fn init_skill_template_writes_skill_md_and_subdirs() {
         let tmp = tempfile::tempdir().unwrap();
@@ -662,8 +625,6 @@ mod tests {
         assert!(skill_dir.join("scripts").is_dir());
         assert!(skill_dir.join("references").is_dir());
         assert!(skill_dir.join("assets").is_dir());
-        // No plugin.toml in new SKILL.md-only format
-        assert!(!skill_dir.join("plugin.toml").exists());
         // SKILL.md contains name: and description: lines
         let content = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
         assert!(content.contains("name:"));

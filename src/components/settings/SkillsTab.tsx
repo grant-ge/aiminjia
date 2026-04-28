@@ -12,12 +12,10 @@ import { useAuthStore } from '@/stores/authStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { uploadWithOverwriteConfirm } from '@/features/skill-center/uploadWithOverwriteConfirm'
 import { SkillMarketplace } from './SkillMarketplace'
-import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 type SubTab = 'installed' | 'marketplace'
 
 interface SkillsTabProps {
-  /** Called when the user triggers an action that should dismiss the containing modal (e.g. resuming a skill-smith draft returns control to the chat). */
   onRequestClose?: () => void
 }
 
@@ -193,9 +191,6 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
 
   return (
     <div>
-      {/* Skill-smith: unfinished drafts nudge (self-hides when no drafts) */}
-      <DraftResumeBanner onAfterResume={onRequestClose} />
-
       {/* Sub-tab switcher */}
       <div className="mb-4 flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--color-bg-main)' }}>
         <button

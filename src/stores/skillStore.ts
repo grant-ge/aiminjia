@@ -11,7 +11,7 @@ export class SkillAlreadyExistsError extends Error {
   }
 }
 
-const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
+const RECOMMENDED_SKILL_IDS = ['salary-benchmarking', 'biz-writing', 'contract-review', 'org-diagnosis']
 
 function normalizeSkill(skill: SkillInfo): SkillInfo {
   return {
