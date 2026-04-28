@@ -10,7 +10,7 @@ describe('ChatArea', () => {
     HTMLElement.prototype.scrollTo = vi.fn()
   })
 
-  it('uses a flex scroll region and centers messages at 736px max width', () => {
+  it('uses a flex scroll region and matches the composer horizontal gutter', () => {
     useChatStore.setState({ messages: [], isStreaming: false })
 
     render(<ChatArea />)
@@ -22,7 +22,10 @@ describe('ChatArea', () => {
     expect(scrollRegion).not.toHaveClass('absolute')
     expect(scrollRegion).not.toHaveStyle({ bottom: '144px' })
 
-    expect(scrollRegion.firstElementChild).toHaveClass('w-full')
-    expect(scrollRegion.firstElementChild).toHaveClass('max-w-[736px]')
+    const gutter = scrollRegion.firstElementChild
+    expect(gutter).toHaveClass('px-6')
+    expect(gutter).toHaveClass('[scrollbar-gutter:stable_both-edges]')
+    expect(gutter?.firstElementChild).toHaveClass('w-full')
+    expect(gutter?.firstElementChild).toHaveClass('max-w-[736px]')
   })
 })

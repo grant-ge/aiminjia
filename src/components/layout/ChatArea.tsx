@@ -63,8 +63,10 @@ export function ChatArea() {
       style={{ background: 'var(--color-bg-main)' }}
       onScroll={handleScroll}
     >
-      <div className="mx-auto w-full max-w-[736px] pt-6 pb-8">
-        <MessageList />
+      <div className="px-6 pt-6 pb-8 [scrollbar-gutter:stable_both-edges]">
+        <div className="mx-auto w-full max-w-[736px]">
+          <MessageList />
+        </div>
       </div>
     </div>
   )
