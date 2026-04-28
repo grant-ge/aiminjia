@@ -15,6 +15,14 @@ use crate::runtime::tools::definition::{ToolDefinition, ToolKind};
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::RuntimeTool;
 
+/// Format the result of a forked skill execution.
+pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
+    format!(
+        "Skill \"{}\" completed (forked execution).\n\nResult:\n{}",
+        skill_name, result_text
+    )
+}
+
 pub struct LoadSkillRuntimeTool {
     skill_registry: Arc<Mutex<SkillRegistry>>,
 }
@@ -35,14 +43,6 @@ impl LoadSkillRuntimeTool {
         } else {
             ids.join(", ")
         }
-    }
-
-    /// Format the result of a forked skill execution.
-    pub fn format_fork_result(skill_name: &str, result_text: &str) -> String {
-        format!(
-            "Skill \"{}\" completed (forked execution).\n\nResult:\n{}",
-            skill_name, result_text
-        )
     }
 }
 
@@ -110,17 +110,18 @@ impl RuntimeTool for LoadSkillRuntimeTool {
         // Check for fork mode (placeholder — full sub-agent wiring in follow-up)
         if skill.frontmatter.context.as_deref() == Some("fork") {
             // TODO: wire to AgentRuntime in follow-up
-            let content = Self::format_fork_result(
+            let placeholder = format_fork_result(
                 &skill.frontmatter.name,
-                "fork 模式将在后续接入 sub-agent 调度时启用",
+                "fork mode: subagent dispatch will be wired in a follow-up task. Returning a placeholder body so the call doesn't fail.",
             );
             return Ok(ToolResult::new(
                 "load_skill",
-                content,
+                placeholder,
                 Some(json!({
                     "skill_id": skill_id,
                     "display_name": skill.frontmatter.metadata.label.clone()
                         .unwrap_or_else(|| skill.frontmatter.name.clone()),
+                    "context": "fork",
                 })),
             ));
         }
