@@ -45,19 +45,22 @@ export function GeneratedFileCard({
   onReveal,
 }: GeneratedFileCardProps) {
   const openExternalAction = onOpenExternal ?? onOpen
-  const previewEnabled = canPreview && Boolean(onPreview)
-  const openEnabled = canOpenExternal !== false && Boolean(openExternalAction)
-  const revealEnabled = canReveal !== false && Boolean(onReveal)
+  const previewAction = canPreview ? onPreview : undefined
+  const enabledOpenExternalAction = canOpenExternal !== false ? openExternalAction : undefined
+  const revealAction = canReveal !== false ? onReveal : undefined
+  const previewEnabled = Boolean(previewAction)
+  const openEnabled = Boolean(enabledOpenExternalAction)
+  const revealEnabled = Boolean(revealAction)
   const isPreviewPrimary = primaryAction === 'preview'
   const primaryLabel = isPreviewPrimary ? 'Preview' : 'Open'
   const isPrimaryDisabled = isPreviewPrimary ? !previewEnabled : !openEnabled
 
   const handlePrimaryAction = () => {
     if (isPreviewPrimary) {
-      if (previewEnabled) onPreview()
+      previewAction?.()
       return
     }
-    if (openEnabled) openExternalAction?.()
+    enabledOpenExternalAction?.()
   }
 
   return (
@@ -97,7 +100,7 @@ export function GeneratedFileCard({
             <DropdownMenuItem
               disabled={!previewEnabled}
               onSelect={() => {
-                if (previewEnabled) onPreview()
+                previewAction?.()
               }}
             >
               <Eye className="h-4 w-4" />
@@ -106,7 +109,7 @@ export function GeneratedFileCard({
             <DropdownMenuItem
               disabled={!openEnabled}
               onSelect={() => {
-                if (openEnabled) openExternalAction?.()
+                enabledOpenExternalAction?.()
               }}
             >
               <ExternalLink className="h-4 w-4" />
@@ -115,7 +118,7 @@ export function GeneratedFileCard({
             <DropdownMenuItem
               disabled={!revealEnabled}
               onSelect={() => {
-                if (revealEnabled) onReveal()
+                revealAction?.()
               }}
             >
               <FolderOpen className="h-4 w-4" />
