@@ -86,7 +86,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isAuthPending: true })
     useChatStore.getState().resetAll()
     useChatStore.getState().resetStreaming()
-    useChatStore.setState({ selectedSkillCommands: {} })
     try {
       const info = await cloudLogin(username.trim(), password)
       const models = info.models.length > 0 ? info.models : await getCloudModels()
@@ -103,7 +102,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       await cloudLogout()
       useChatStore.getState().resetAll()
       useChatStore.getState().resetStreaming()
-      useChatStore.setState({ selectedSkillCommands: {} })
       set({ ...EMPTY_AUTH_STATE, redirectFrom: null, isAuthPending: false })
     } catch (error) {
       set({ isAuthPending: false })
