@@ -114,8 +114,6 @@ export function ChatBottomArea() {
   const isComposingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const selectedSkillCommand = useChatStore((s) => activeConversationId ? s.selectedSkillCommands[activeConversationId] ?? null : null)
-  const clearSelectedSkillCommand = useChatStore((s) => s.clearSelectedSkillCommand)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments, resolvePastedPaths, saveClipboardImage } = useChatAttachments()
   // TODO: openSettings 待权限按钮功能上线后恢复使用
@@ -168,8 +166,6 @@ export function ChatBottomArea() {
     console.debug('[skill-command][composer-submit]', {
       traceId: activeConversationId,
       conversationId: activeConversationId,
-      selectedSkillId: selectedSkillCommand?.id ?? null,
-      selectedSkillCommand,
       hasOverrideText: overrideText !== undefined,
       textLength: trimmed.length,
       pendingFileCount: pendingFiles.length,
@@ -192,12 +188,9 @@ export function ChatBottomArea() {
       const sent = await sendUserMessage(
         trimmed || t('inputBar.analyzeFile'),
         fileInfos.length > 0 ? fileInfos : undefined,
-        undefined,
-        selectedSkillCommand?.id ?? undefined,
       )
       if (sent) {
         setPendingFiles([])
-        clearSelectedSkillCommand(activeConversationId)
       } else {
         setInput((current) => current === '' ? submittedInput : current)
       }
@@ -207,7 +200,7 @@ export function ChatBottomArea() {
     } finally {
       setIsSending(false)
     }
-  }, [activeConversationId, clearSelectedSkillCommand, input, isSending, isStreaming, pendingFiles, selectedSkillCommand, sendUserMessage, t])
+  }, [activeConversationId, input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) return
@@ -311,8 +304,6 @@ export function ChatBottomArea() {
                   onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
                 />
               ) : null}
-              skillCommand={selectedSkillCommand}
-              onClearSkillCommand={() => clearSelectedSkillCommand(activeConversationId)}
               textareaRef={textareaRef}
               onKeyDown={handleKeyDown}
               onCompositionStart={() => { isComposingRef.current = true }}
