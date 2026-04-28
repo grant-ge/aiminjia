@@ -550,6 +550,15 @@ export function previewFile(fileId: string, conversationId: string): Promise<str
   })
 }
 
+export type FilePreview =
+  | { kind: 'markdown' | 'text' | 'json' | 'csv'; fileName: string; mimeType: string; content: string }
+  | { kind: 'html'; fileName: string; mimeType: 'text/html'; content: string; sandbox: true }
+  | { kind: 'unsupported'; fileName: string; reason: string }
+
+export function getFilePreview(fileId: string, conversationId: string): Promise<FilePreview> {
+  return invoke<FilePreview>('get_file_preview', { fileId, conversationId })
+}
+
 /**
  * Delete a generated or uploaded file from the workspace.
  *
