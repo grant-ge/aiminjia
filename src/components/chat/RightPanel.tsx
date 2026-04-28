@@ -53,7 +53,7 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
           />
         </div>
         <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
-          <div className="px-4 py-4">
+          <div className="px-4 py-2">
             <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
           </div>
           <TaskSection conversationId={conversationId} />
