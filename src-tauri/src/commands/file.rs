@@ -45,6 +45,7 @@ pub enum FilePreview {
         content: String,
         #[serde(rename = "mimeType")]
         mime_type: String,
+        sandbox: bool,
     },
     Unsupported {
         #[serde(rename = "fileName")]
@@ -220,6 +221,7 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
             file_name,
             content,
             mime_type,
+            sandbox: true,
         },
         "json" => FilePreview::Json {
             file_name,
@@ -742,6 +744,18 @@ mod preview_tests {
             }
             other => panic!("expected markdown preview, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn html_preview_serializes_sandbox_flag() {
+        let preview = preview_from_bytes("page.html", "html", b"<h1>Hello</h1>".to_vec());
+        let json = serde_json::to_value(preview).expect("serialize preview");
+
+        assert_eq!(json["kind"], "html");
+        assert_eq!(json["fileName"], "page.html");
+        assert_eq!(json["mimeType"], "text/html");
+        assert_eq!(json["content"], "<h1>Hello</h1>");
+        assert_eq!(json["sandbox"], true);
     }
 
     #[test]
