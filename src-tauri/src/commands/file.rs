@@ -166,10 +166,10 @@ fn normalize_preview_kind(file_name: &str, file_type: &str) -> Option<&'static s
     let lower_type = file_type.to_ascii_lowercase();
     match lower_type.as_str() {
         "markdown" | "md" => return Some("markdown"),
-        "html" | "htm" => return Some("html"),
-        "text" | "txt" | "log" | "py" | "rs" | "js" | "ts" | "css" => return Some("text"),
-        "json" | "jsonl" => return Some("json"),
-        "csv" | "tsv" => return Some("csv"),
+        "html" => return Some("html"),
+        "text" | "txt" => return Some("text"),
+        "json" => return Some("json"),
+        "csv" => return Some("csv"),
         _ => {}
     }
 
@@ -179,10 +179,10 @@ fn normalize_preview_kind(file_name: &str, file_type: &str) -> Option<&'static s
         .map(|v| v.to_ascii_lowercase());
     match ext.as_deref() {
         Some("md" | "markdown") => Some("markdown"),
-        Some("html" | "htm") => Some("html"),
-        Some("txt" | "log") => Some("text"),
-        Some("json" | "jsonl") => Some("json"),
-        Some("csv" | "tsv") => Some("csv"),
+        Some("html") => Some("html"),
+        Some("txt") => Some("text"),
+        Some("json") => Some("json"),
+        Some("csv") => Some("csv"),
         _ => None,
     }
 }
@@ -237,6 +237,27 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
             mime_type,
         },
     }
+}
+
+fn preview_from_record(file_mgr: &FileManager, record: ResolvedFileRecord) -> FilePreview {
+    preview_from_record_with_reader(file_mgr, record, |path| std::fs::read(path))
+}
+
+fn preview_from_record_with_reader(
+    file_mgr: &FileManager,
+    record: ResolvedFileRecord,
+    read_file: impl FnOnce(&Path) -> std::io::Result<Vec<u8>>,
+) -> FilePreview {
+    let full_path = match file_mgr.resolve_existing_file(&record.stored_path) {
+        Ok(path) => path,
+        Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
+    };
+    let bytes = match read_file(&full_path) {
+        Ok(bytes) => bytes,
+        Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
+    };
+
+    preview_from_bytes(&record.file_name, &record.file_type, bytes)
 }
 
 /// Maximum upload file size: 200 MB
@@ -504,16 +525,7 @@ pub async fn get_file_preview(
         ));
     }
 
-    let full_path = file_mgr
-        .resolve_existing_file(&record.stored_path)
-        .map_err(|e| e.to_string())?;
-    let bytes = std::fs::read(&full_path).map_err(|e| e.to_string())?;
-
-    Ok(preview_from_bytes(
-        &record.file_name,
-        &record.file_type,
-        bytes,
-    ))
+    Ok(preview_from_record(&file_mgr, record))
 }
 
 /// Preview a file (returns preview content as string).
@@ -748,6 +760,21 @@ mod preview_tests {
     }
 
     #[test]
+    fn python_file_type_is_not_previewable_text() {
+        let preview = preview_from_bytes("script.py", "py", b"print('secret')".to_vec());
+
+        match preview {
+            FilePreview::Unsupported { reason, .. } => {
+                assert!(
+                    reason.contains("not supported"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("expected unsupported preview, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn oversized_file_returns_reason() {
         let preview = preview_from_bytes(
             "large.txt",
@@ -772,6 +799,95 @@ mod preview_tests {
                 assert!(
                     reason.contains("valid UTF-8"),
                     "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("expected unsupported preview, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unavailable_file_preview_uses_controlled_reason_without_leaking_path() {
+        let tmp = TempDir::new().expect("tempdir");
+        let file_mgr = FileManager::new(tmp.path());
+        let stored_path = "generated/private/missing.md";
+        let record = ResolvedFileRecord {
+            file_name: "missing.md".to_string(),
+            stored_path: stored_path.to_string(),
+            file_type: "markdown".to_string(),
+            file_size: 10,
+        };
+
+        let preview = preview_from_record(&file_mgr, record);
+
+        match preview {
+            FilePreview::Unsupported { reason, .. } => {
+                assert_eq!(reason, "File is unavailable");
+                assert!(!reason.contains(stored_path), "reason leaked stored path");
+                assert!(
+                    !reason.contains(&tmp.path().display().to_string()),
+                    "reason leaked absolute path"
+                );
+            }
+            other => panic!("expected unsupported preview, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn traversal_preview_error_uses_controlled_reason_without_leaking_path() {
+        let tmp = TempDir::new().expect("tempdir");
+        let file_mgr = FileManager::new(tmp.path());
+        let stored_path = "../outside.md";
+        let record = ResolvedFileRecord {
+            file_name: "outside.md".to_string(),
+            stored_path: stored_path.to_string(),
+            file_type: "markdown".to_string(),
+            file_size: 10,
+        };
+
+        let preview = preview_from_record(&file_mgr, record);
+
+        match preview {
+            FilePreview::Unsupported { reason, .. } => {
+                assert_eq!(reason, "File is unavailable");
+                assert!(!reason.contains(stored_path), "reason leaked stored path");
+                assert!(
+                    !reason.contains(&tmp.path().display().to_string()),
+                    "reason leaked absolute path"
+                );
+            }
+            other => panic!("expected unsupported preview, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_error_preview_uses_controlled_reason_without_leaking_path() {
+        let tmp = TempDir::new().expect("tempdir");
+        let stored_path = "generated/private/secret.md";
+        let full_path = tmp.path().join(stored_path);
+        std::fs::create_dir_all(full_path.parent().expect("parent")).expect("create parent");
+        std::fs::write(&full_path, "# secret").expect("write file");
+        let file_mgr = FileManager::new(tmp.path());
+        let record = ResolvedFileRecord {
+            file_name: "secret.md".to_string(),
+            stored_path: stored_path.to_string(),
+            file_type: "markdown".to_string(),
+            file_size: 8,
+        };
+
+        let preview = preview_from_record_with_reader(&file_mgr, record, |path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("cannot read {}", path.display()),
+            ))
+        });
+
+        match preview {
+            FilePreview::Unsupported { reason, .. } => {
+                assert_eq!(reason, "File is unavailable");
+                assert!(!reason.contains(stored_path), "reason leaked stored path");
+                assert!(
+                    !reason.contains(&tmp.path().display().to_string()),
+                    "reason leaked absolute path"
                 );
             }
             other => panic!("expected unsupported preview, got {:?}", other),
