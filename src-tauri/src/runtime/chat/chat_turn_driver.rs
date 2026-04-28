@@ -689,7 +689,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
                 PendingPermissionResolution::Cancel { message } => {
@@ -732,7 +731,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
             };
@@ -900,7 +898,6 @@ impl RuntimeChatTurnDriver {
                         degradation_notice: None,
                         max_result_size_chars: 8_000,
                         context_modifier_message: None,
-                        skill_runtime_patch: None,
                     })
                 }
             };
@@ -1006,7 +1003,7 @@ impl RuntimeChatTurnDriver {
             prompt_snapshot
         };
 
-        let mut config = TurnConfig {
+        let config = TurnConfig {
             system_prompt: effective_system_prompt,
             prompt_snapshot: Some(effective_prompt_snapshot),
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
@@ -1545,9 +1542,6 @@ impl RuntimeChatTurnDriver {
                     state
                         .generated_file_ids
                         .extend(results.new_generated_file_ids);
-                    if let Some(skill_runtime_patch) = results.skill_runtime_patch {
-                        apply_skill_runtime_patch(&mut config, skill_runtime_patch);
-                    }
 
                     // Safeguard check.
                     match safeguard::check_iteration(
@@ -1731,21 +1725,6 @@ impl RuntimeChatTurnDriver {
 
         Ok(())
     }
-}
-
-fn apply_skill_runtime_patch(
-    config: &mut TurnConfig,
-    patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
-) {
-    config.system_prompt = patch.system_prompt;
-    config.prompt_snapshot = Some(single_dynamic_prompt_snapshot(
-        "skill_runtime_patch",
-        config.system_prompt.clone(),
-    ));
-    config.tool_defs = patch.tool_defs;
-    config.allowed_tools = patch.allowed_tools.map(|names| names.into_iter().collect());
-    config.max_iterations = patch.max_iterations;
-    config.token_budget = patch.token_budget;
 }
 
 fn single_dynamic_prompt_snapshot(
@@ -2268,79 +2247,4 @@ mod tests {
         assert!(dynamic_contexts[0].contains("biz-writing"));
     }
 
-    struct SwitchingTool;
-
-    #[async_trait]
-    impl RuntimeTool for SwitchingTool {
-        fn definition(&self) -> ToolDefinition {
-            ToolDefinition::new("switch_skill", "switch skill")
-        }
-
-        async fn execute(
-            &self,
-            _input: serde_json::Value,
-            _ctx: ToolExecutionContext,
-        ) -> Result<ToolResult, ToolError> {
-            Ok(ToolResult::new(
-                "switch_skill",
-                "switched",
-                Some(json!({
-                    "skill_control": {
-                        "skill_id": "comp-analysis",
-                        "system_prompt": "comp prompt",
-                        "allowed_tools": ["execute_python", "switch_skill"],
-                        "tool_defs": [
-                            {
-                                "name": "execute_python",
-                                "description": "python"
-                            },
-                            {
-                                "name": "switch_skill",
-                                "description": "switch"
-                            }
-                        ],
-                        "max_iterations": 5,
-                        "token_budget": 7777
-                    }
-                })),
-            ))
-        }
-    }
-
-    #[tokio::test]
-    async fn driver_applies_skill_runtime_patch_on_next_iteration() {
-        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
-        dispatcher.register(Arc::new(SwitchingTool));
-        let executor = Arc::new(RecordingExecutor::new());
-        let bus = RuntimeEventBus::new();
-        let driver = RuntimeChatTurnDriver::with_llm_executor(
-            QueryEngine::with_dispatcher(dispatcher),
-            bus,
-            executor.clone(),
-        );
-        let mut turn = TurnState::new(
-            IdentityMapping::from_legacy_conversation_id("conv-driver-switch".to_string()),
-            RunId::new("run-driver-switch"),
-            "please switch".to_string(),
-        );
-        let request = ChatTurnRequest::new("conv-driver-switch", "please switch", vec![]);
-
-        driver
-            .run_chat_turn(&mut turn, &request)
-            .await
-            .expect("driver should apply skill runtime patch");
-
-        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
-        assert_eq!(prompts.len(), 2);
-        assert_eq!(prompts[0], "daily prompt");
-        assert_eq!(prompts[1], "comp prompt");
-
-        let tool_defs = executor.seen_tool_defs.lock().unwrap().clone();
-        assert_eq!(tool_defs.len(), 2);
-        assert_eq!(tool_defs[0], vec!["bash".to_string()]);
-        assert_eq!(
-            tool_defs[1],
-            vec!["execute_python".to_string(), "switch_skill".to_string()]
-        );
-    }
 }

@@ -203,7 +203,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
         let query_engine =
             self.build_query_engine(dispatcher, child_read_file_state, child_run_id.clone());
         let tool_event_bus = RuntimeEventBus::new();
-        let mut allowed_tools = config.allowed_tools.clone();
+        let allowed_tools = config.allowed_tools.clone();
 
         let mut turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id(self.runtime_deps.conversation_id.clone()),
@@ -395,7 +395,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
                         file_meta,
                         context_modifier_message,
                         max_result_size_chars,
-                        skill_runtime_patch,
                         ..
                     }) => {
                         let content_for_message =
@@ -427,13 +426,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_name,
                             content_for_message,
                         ));
-                        if let Some(skill_runtime_patch) = skill_runtime_patch {
-                            apply_skill_runtime_patch(
-                                &mut request,
-                                &mut allowed_tools,
-                                skill_runtime_patch,
-                            );
-                        }
                         if let Some(modifier) = context_modifier_message
                             .as_ref()
                             .and_then(context_modifier_to_message)
@@ -740,28 +732,6 @@ fn worker_system_prompt_for_gateway(request: &WorkerTurnRequest) -> Option<&str>
         })
 }
 
-fn apply_skill_runtime_patch(
-    request: &mut WorkerTurnRequest,
-    allowed_tools: &mut Vec<String>,
-    patch: crate::runtime::chat::tool_round_types::SkillRuntimePatch,
-) {
-    request.system_prompt = patch.system_prompt;
-    request.openai_system_message =
-        Some(ChatMessage::text("system", request.system_prompt.clone()));
-    request.tool_defs = patch
-        .tool_defs
-        .into_iter()
-        .filter_map(|value| serde_json::from_value(value).ok())
-        .collect();
-    request.max_iterations = patch.max_iterations;
-    if let Some(next_allowed_tools) = patch.allowed_tools {
-        let mut names = next_allowed_tools;
-        names.sort();
-        names.dedup();
-        *allowed_tools = names;
-    }
-}
-
 fn annotate_subagent_ask_decision(
     tool_name: &str,
     tool_call_id: &str,
@@ -865,7 +835,6 @@ fn safe_truncate(content: &str, max_bytes: usize) -> &str {
 mod tests {
     use super::*;
     use crate::llm::streaming::ToolDefinition;
-    use crate::runtime::chat::tool_round_types::SkillRuntimePatch;
     use crate::runtime::tools::permission::PermissionMode;
     use serde_json::json;
 
@@ -932,52 +901,5 @@ mod tests {
             .messages
             .iter()
             .all(|message| message.role != "system"));
-    }
-
-    #[test]
-    fn apply_skill_runtime_patch_updates_worker_request_and_allowed_tools() {
-        let mut request = WorkerTurnRequest {
-            subagent_conversation_id: "sub-conv".to_string(),
-            messages: Vec::new(),
-            tool_defs: vec![ToolDefinition {
-                name: "old_tool".to_string(),
-                description: "old".to_string(),
-                parameters: json!({"type": "object"}),
-            }],
-            system_prompt: "old prompt".to_string(),
-            openai_system_message: Some(ChatMessage::text("system", "old prompt")),
-            dynamic_context: None,
-            max_iterations: 3,
-        };
-        let mut allowed_tools = vec!["old_tool".to_string()];
-        let patch = SkillRuntimePatch {
-            skill_id: "analysis".to_string(),
-            system_prompt: "new prompt".to_string(),
-            allowed_tools: Some(vec![
-                "switch_skill".to_string(),
-                "execute_python".to_string(),
-            ]),
-            tool_defs: vec![json!({
-                "name": "switch_skill",
-                "description": "Switch skill",
-                "parameters": {"type": "object", "properties": {}}
-            })],
-            max_iterations: 8,
-            token_budget: 2048,
-        };
-
-        apply_skill_runtime_patch(&mut request, &mut allowed_tools, patch);
-
-        assert_eq!(request.system_prompt, "new prompt");
-        let openai_system_message = request.openai_system_message.as_ref().unwrap();
-        assert_eq!(openai_system_message.role, "system");
-        assert_eq!(openai_system_message.content, "new prompt");
-        assert_eq!(request.max_iterations, 8);
-        assert_eq!(request.tool_defs.len(), 1);
-        assert_eq!(request.tool_defs[0].name, "switch_skill");
-        assert_eq!(
-            allowed_tools,
-            vec!["execute_python".to_string(), "switch_skill".to_string()]
-        );
     }
 }

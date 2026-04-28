@@ -163,7 +163,6 @@ fn collect_results_counts_success_and_error() {
             degradation_notice: None,
             max_result_size_chars: 8_000,
             context_modifier_message: None,
-            skill_runtime_patch: None,
         }),
         ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
             tool_call_id: "tc2".to_string(),
@@ -176,7 +175,6 @@ fn collect_results_counts_success_and_error() {
             degradation_notice: None,
             max_result_size_chars: 8_000,
             context_modifier_message: None,
-            skill_runtime_patch: None,
         }),
     ];
     let collected = collect_results(results);
@@ -198,7 +196,6 @@ fn runtime_tool_call_outcome_exposes_declared_max_result_size_chars() {
         degradation_notice: None,
         max_result_size_chars: 12_345,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     };
 
     assert_eq!(outcome.max_result_size_chars(), 12_345);
@@ -218,7 +215,6 @@ fn collect_results_truncation_message_includes_guidance() {
         degradation_notice: None,
         max_result_size_chars: 4_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);
@@ -241,7 +237,6 @@ fn collect_results_uses_per_result_limit_not_global_default() {
         degradation_notice: None,
         max_result_size_chars: 4_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);
@@ -263,7 +258,6 @@ fn collect_results_keeps_content_within_declared_limit() {
         degradation_notice: None,
         max_result_size_chars: 32_000,
         context_modifier_message: None,
-        skill_runtime_patch: None,
     })];
 
     let out = collect_results(results);

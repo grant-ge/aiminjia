@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use app_lib::plugin::declarative_skill::DeclarativeSkill;
 use app_lib::plugin::manifest::read_manifest_from_skill_dir;
-use app_lib::plugin::{SkillRegistry, ToolRegistry};
+use app_lib::plugin::SkillRegistry;
 use app_lib::runtime::chat::SkillSessionStore;
-use app_lib::runtime::tools::builtin::switch_skill::SwitchSkillRuntimeTool;
-use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
-use serde_json::json;
 use tempfile::TempDir;
 
 fn write_skill_dir(root: &std::path::Path, id: &str, body: &str) -> std::path::PathBuf {
@@ -116,39 +113,6 @@ async fn skill_registry_listing_exposes_summary_without_full_skill_body() {
     let summary = serde_json::to_string(&listed).unwrap();
     assert!(!summary.contains("FULL SECRET SKILL BODY"));
     assert!(!summary.contains("BASE PROMPT CONTENT"));
-}
-
-#[tokio::test]
-async fn switch_skill_returns_skill_runtime_patch_and_launching_result_once_per_call() {
-    let tmp = TempDir::new().unwrap();
-    let source = write_skill_dir(tmp.path(), "payroll-skill", "FULL SKILL BODY");
-    let manifest = read_manifest_from_skill_dir(&source).unwrap();
-    let skill = DeclarativeSkill::load(&manifest, &source).unwrap();
-    let registry = Arc::new(SkillRegistry::new("payroll-skill"));
-    registry.register(Arc::new(skill), "custom").await;
-
-    let tool_registry = Arc::new(ToolRegistry::new());
-    let sessions = Arc::new(SkillSessionStore::new());
-    let tool = SwitchSkillRuntimeTool::new(registry, sessions, tool_registry).await;
-
-    let result = tool
-        .execute(
-            json!({ "skill_id": "payroll-skill" }),
-            ToolExecutionContext::for_test("conv-skill-loading", "run", "tc"),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(result.tool_name, "switch_skill");
-    assert!(result.content.contains("Switched to skill 'payroll-skill'"));
-    let data = result
-        .data
-        .expect("switch_skill should return runtime patch data");
-    assert_eq!(data["skill_control"]["skill_id"], "payroll-skill");
-    assert!(data["skill_control"]["system_prompt"]
-        .as_str()
-        .unwrap()
-        .contains("BASE PROMPT CONTENT"));
 }
 
 #[tokio::test]

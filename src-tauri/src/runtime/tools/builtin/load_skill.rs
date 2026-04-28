@@ -1,8 +1,7 @@
 //! Stateless skill instruction loading.
 //!
 //! `load_skill` returns a skill's prompt body as a tool result. It does not
-//! mutate session state, change the system prompt, restrict tools, or emit a
-//! SkillRuntimePatch.
+//! mutate session state, change the system prompt, or restrict tools.
 
 use anyhow::Result;
 use async_trait::async_trait;
