@@ -45,7 +45,7 @@ pub struct RequestScopedRuntimeDeps {
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
+    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
@@ -962,13 +962,11 @@ impl ToolRegistry {
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "load_skill" => match ctx.skill_registry.clone() {
-                Some(skill_registry) => {
-                    let tool = builtin::load_skill::LoadSkillRuntimeTool::new(skill_registry).await;
-                    Some(Arc::new(tool) as Arc<dyn crate::runtime::tools::RuntimeTool>)
-                }
-                None => None,
-            },
+            "load_skill" => {
+                let registry = ctx.skill_registry.clone()?;
+                Some(Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             _ => None,
         }
     }

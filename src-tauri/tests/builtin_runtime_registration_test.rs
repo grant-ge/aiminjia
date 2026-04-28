@@ -785,22 +785,22 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
 
     let tmp = TempDir::new().unwrap();
     let mut ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
-    let skill_registry = Arc::new(SkillRegistry::new("daily-assistant"));
-    skill_registry
-        .register(
-            Arc::new(BodySkill::new("daily-assistant", "default body")),
-            "test",
-        )
-        .await;
-    skill_registry
-        .register(
-            Arc::new(BodySkill::new(
-                "biz-writing",
-                "Follow the biz writing checklist.",
-            )),
-            "test",
-        )
-        .await;
+
+    // Build a disk-backed SkillRegistry with a single biz-writing skill.
+    let skills_root = tmp.path().join("skills");
+    let biz_dir = skills_root.join("biz-writing");
+    std::fs::create_dir_all(&biz_dir).unwrap();
+    std::fs::write(
+        biz_dir.join("SKILL.md"),
+        "---\nname: biz-writing\ndescription: 商务写作\n---\n\nFollow the biz writing checklist.\n",
+    )
+    .unwrap();
+    let loaded = app_lib::plugin::skill::loader::load_skill_roots(&[skills_root]).unwrap();
+    let skill_registry = std::sync::Arc::new(std::sync::Mutex::new(
+        app_lib::plugin::skill::registry::SkillRegistry::from_skills(
+            loaded.into_values().collect(),
+        ),
+    ));
     ctx.skill_registry = Some(skill_registry);
     ctx.tool_registry = Some(registry.clone());
 

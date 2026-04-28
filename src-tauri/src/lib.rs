@@ -268,6 +268,26 @@ pub fn run() {
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
+            // Load SKILL.md-based skills from user and global roots
+            let global_skills_dir = aijia_home.skills_dir();
+            let user_skills_dir = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.skills_dir());
+            let skill_roots: Vec<std::path::PathBuf> = match user_skills_dir {
+                Some(user) => vec![user, global_skills_dir],
+                None => vec![global_skills_dir],
+            };
+            let loaded_skills = plugin::skill::loader::load_skill_roots(&skill_roots)
+                .unwrap_or_else(|e| {
+                    log::warn!("[setup] Failed to load skills from roots: {}", e);
+                    Default::default()
+                });
+            let disk_skill_registry = Arc::new(std::sync::Mutex::new(
+                plugin::skill::registry::SkillRegistry::from_skills(
+                    loaded_skills.into_values().collect(),
+                ),
+            ));
+            app.manage(disk_skill_registry.clone());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
                 Some(
@@ -425,7 +445,7 @@ pub fn run() {
                     file_mgr.clone(),
                     secure_storage.clone(),
                     tool_registry.clone(),
-                    skill_registry.clone(),
+                    disk_skill_registry.clone(),
                     session_mgr.clone(),
                     auth_manager.clone(),
                     permission_store.clone(),

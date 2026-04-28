@@ -102,7 +102,7 @@ pub struct PluginContext {
     /// Event bus for emitting runtime events (e.g. AgentIdle on background completion).
     pub event_bus: Option<RuntimeEventBus>,
     /// Skill registry for request-scoped skill switch runtime tools.
-    pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
+    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     /// Transitional bridge for request-scoped runtime executions that still

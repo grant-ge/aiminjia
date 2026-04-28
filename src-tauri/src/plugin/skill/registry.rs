@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use super::catalog_prompt::format_skill_catalog_with_budget;
+use super::invoked::InvokedSkillStore;
 use super::types::DiskSkill;
 
 #[derive(Default)]
 pub struct SkillRegistry {
     skills: HashMap<String, DiskSkill>,
     sent_skill_names: HashMap<String, HashSet<String>>,
+    invoked: InvokedSkillStore,
 }
 
 impl SkillRegistry {
@@ -57,5 +59,9 @@ impl SkillRegistry {
 
     pub fn reset_sent_skill_names(&mut self) {
         self.sent_skill_names.clear();
+    }
+
+    pub fn remember_invoked(&mut self, agent_id: Option<&str>, skill_id: &str, body: String) {
+        self.invoked.remember(agent_id, skill_id, body);
     }
 }

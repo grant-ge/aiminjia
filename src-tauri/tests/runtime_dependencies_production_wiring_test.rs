@@ -116,6 +116,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         read_file_state: parent.read_file_state.clone(),
         app_handle: parent.app_handle.clone(),
         runtime_resolver: parent.runtime_resolver.clone(),
+        skill_registry: None,
     };
 
     let child = subagent_deps.request_scoped_tool_deps(RunId::new("child-run"), None, None, None);

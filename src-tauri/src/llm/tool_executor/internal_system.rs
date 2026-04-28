@@ -401,6 +401,7 @@ async fn launch_browse_data_with_runtime_deps(
             connector_engine: ctx.connector_engine.clone(),
             agent_runtime: ctx.agent_runtime.clone(),
             event_bus: ctx.event_bus.clone(),
+            skill_registry: ctx.skill_registry.clone(),
             authorized_workspace: ctx.authorized_workspace.clone(),
             read_file_state: ctx.read_file_state.clone(),
             app_handle: ctx.app_handle.clone(),

@@ -279,7 +279,7 @@ struct TauriChatServices {
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
-    skill_registry: Arc<SkillRegistry>,
+    skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
@@ -1359,7 +1359,13 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn get_skill_catalog(&self) -> Result<String, TurnError> {
-        Ok(self.services.skill_registry.build_catalog_markdown().await)
+        let catalog = self
+            .services
+            .skill_registry
+            .lock()
+            .map(|mut reg| reg.catalog_delta_for_agent(None, 200_000))
+            .unwrap_or_default();
+        Ok(catalog)
     }
 
     async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {
@@ -1839,7 +1845,7 @@ impl TauriChatCommandAdapter {
         file_mgr: Arc<FileManager>,
         crypto: Option<Arc<SecureStorage>>,
         tool_registry: Arc<ToolRegistry>,
-        skill_registry: Arc<SkillRegistry>,
+        skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
         session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
