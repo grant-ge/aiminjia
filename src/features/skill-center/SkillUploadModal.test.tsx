@@ -43,7 +43,7 @@ describe('SkillUploadModal', () => {
     render(<SkillUploadModal open onOpenChange={onOpenChange} />)
     fireEvent.click(screen.getByRole('button', { name: '选择技能目录' }))
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith('/tmp/custom-skill'))
+    await waitFor(() => expect(upload).toHaveBeenCalledWith('/tmp/custom-skill', false))
     expect(onOpenChange).toHaveBeenCalledWith(false)
 
     const notification = useNotificationStore.getState().notifications.at(-1)
@@ -61,7 +61,7 @@ describe('SkillUploadModal', () => {
     render(<SkillUploadModal open onOpenChange={onOpenChange} />)
     fireEvent.click(screen.getByRole('button', { name: '选择技能目录' }))
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith('/tmp/broken-skill'))
+    await waitFor(() => expect(upload).toHaveBeenCalledWith('/tmp/broken-skill', false))
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
     const notification = useNotificationStore.getState().notifications.at(-1)
     expect(notification?.level).toBe('error')

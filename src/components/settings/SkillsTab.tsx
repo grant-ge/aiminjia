@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
 import {
-  listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill,
+  listCustomSkills, uninstallCustomSkill, initSkillTemplate, packSkill,
   reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
 } from '@/lib/tauri'
 import type { CustomSkillInfo } from '@/lib/tauri'
 import { message, ask } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { uploadWithOverwriteConfirm } from '@/features/skill-center/uploadWithOverwriteConfirm'
 import { SkillMarketplace } from './SkillMarketplace'
 import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
@@ -94,28 +96,23 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
       if (!selected || Array.isArray(selected)) return
-      const sourcePath = selected
 
-      const tryInstall = async (force: boolean): Promise<void> => {
-        try {
-          const msg = await installCustomSkill(sourcePath, force)
-          await loadSkills()
-          await message(msg, { title: 'AI小家' })
-        } catch (e) {
-          const errMsg = String(e)
-          const prefix = 'ALREADY_EXISTS:'
-          const idx = errMsg.indexOf(prefix)
-          if (idx >= 0) {
-            const skillId = errMsg.slice(idx + prefix.length).trim()
-            const confirmed = await ask(`技能 "${skillId}" 已存在，是否覆盖？`, { title: 'AI小家', kind: 'warning' })
-            if (confirmed) await tryInstall(true)
-            return
-          }
-          await message(errMsg, { title: 'AI小家', kind: 'error' })
-        }
+      const result = await uploadWithOverwriteConfirm((force) =>
+        useSkillStore.getState().upload(selected, force),
+      )
+      if (result === 'installed') {
+        await loadSkills()
+        pushNotification({
+          level: 'success',
+          title: '技能已安装',
+          message: '',
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
       }
-
-      await tryInstall(false)
+      // 'cancelled' — silent
     } catch (e) {
       await message(String(e), { title: 'AI小家', kind: 'error' })
     }

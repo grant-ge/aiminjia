@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { SkillCategoryId } from '@/data/skill-categories'
+import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
 export class SkillAlreadyExistsError extends Error {
@@ -75,10 +76,9 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       await get().reload()
     } catch (err) {
       const msg = String(err)
-      const prefix = 'ALREADY_EXISTS:'
-      if (msg.includes(prefix)) {
-        const idx = msg.indexOf(prefix)
-        const skillId = msg.slice(idx + prefix.length).trim()
+      if (msg.includes(ALREADY_EXISTS_PREFIX)) {
+        const idx = msg.indexOf(ALREADY_EXISTS_PREFIX)
+        const skillId = msg.slice(idx + ALREADY_EXISTS_PREFIX.length).trim()
         throw new SkillAlreadyExistsError(skillId)
       }
       throw err

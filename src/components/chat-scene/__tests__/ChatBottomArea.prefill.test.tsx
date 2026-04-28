@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { useUiStore } from '@/stores/uiStore'
 import { useChatStore } from '@/stores/chatStore'
+import { CREATE_SKILL_COMMAND } from '@/data/skill-constants'
 
 // Mock tauri events and hooks
 vi.mock('@tauri-apps/api/event', () => ({
@@ -58,10 +59,10 @@ describe('ChatBottomArea prefill consumption', () => {
   })
 
   it('input is prefilled and store is cleared when prefillText is set', () => {
-    useUiStore.setState({ prefillText: '/create-skill ' })
+    useUiStore.setState({ prefillText: CREATE_SKILL_COMMAND })
     render(<ChatBottomArea />)
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('/create-skill ')
+    expect(textarea.value).toBe(CREATE_SKILL_COMMAND)
     expect(useUiStore.getState().prefillText).toBeNull()
   })
 })

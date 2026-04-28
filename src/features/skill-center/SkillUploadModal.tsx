@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { open, ask } from '@tauri-apps/plugin-dialog'
+import { open } from '@tauri-apps/plugin-dialog'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useSkillStore, SkillAlreadyExistsError } from '@/stores/skillStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { uploadWithOverwriteConfirm } from './uploadWithOverwriteConfirm'
 
 interface SkillUploadModalProps {
   open: boolean
@@ -24,50 +25,21 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
 
     setIsUploading(true)
     try {
-      await upload(selected)
-      pushNotification({
-        level: 'success',
-        title: '技能上传成功',
-        message: '技能已安装并刷新到技能中心。',
-        actions: [],
-        dismissible: true,
-        autoHide: 4,
-        context: 'toast',
-      })
-      onOpenChange(false)
-    } catch (err) {
-      if (err instanceof SkillAlreadyExistsError) {
-        setIsUploading(false)
-        const confirmed = await ask(`技能 "${err.skillId}" 已存在，是否覆盖？`, { title: 'AI小家', kind: 'warning' })
-        if (!confirmed) return
-        setIsUploading(true)
-        try {
-          await upload(selected, true)
-          pushNotification({
-            level: 'success',
-            title: '技能上传成功',
-            message: '技能已安装并刷新到技能中心。',
-            actions: [],
-            dismissible: true,
-            autoHide: 4,
-            context: 'toast',
-          })
-          onOpenChange(false)
-        } catch (overwriteErr) {
-          const message = overwriteErr instanceof Error ? overwriteErr.message : String(overwriteErr)
-          setError(message)
-          pushNotification({
-            level: 'error',
-            title: '技能上传失败',
-            message,
-            actions: [],
-            dismissible: true,
-            autoHide: 6,
-            context: 'toast',
-          })
-        }
-        return
+      const result = await uploadWithOverwriteConfirm((force) => upload(selected, force))
+      if (result === 'installed') {
+        pushNotification({
+          level: 'success',
+          title: '技能上传成功',
+          message: '技能已安装并刷新到技能中心。',
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
+        onOpenChange(false)
       }
+      // 'cancelled' — silent, modal stays open
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
       pushNotification({

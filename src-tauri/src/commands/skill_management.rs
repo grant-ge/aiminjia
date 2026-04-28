@@ -185,8 +185,9 @@ fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Re-scan both [user_skills_dir, global_skills_dir] roots and replace the
-/// in-memory `SkillRegistry` so newly installed / removed skills are visible
-/// without restarting the app. Mirrors the bootstrap logic in `lib.rs::setup`.
+/// in-memory `SkillRegistry`. Both roots are always scanned because user-root
+/// skills shadow same-id global skills; a single-root scan would mis-resurrect
+/// or hide skills after uninstall.
 pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
     use crate::plugin::skill::loader::load_skill_roots;
     use crate::storage::AiJiaHome;

@@ -11,6 +11,7 @@ const tauriMock = vi.hoisted(() => ({
 vi.mock('@/lib/tauri', () => tauriMock)
 
 import { useSkillStore, SkillAlreadyExistsError } from '@/stores/skillStore'
+import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 
 describe('skillStore', () => {
   beforeEach(() => {
@@ -38,7 +39,7 @@ describe('skillStore', () => {
   })
 
   it('upload 将重复技能错误转换为结构化错误', async () => {
-    tauriMock.installCustomSkill.mockRejectedValueOnce('ALREADY_EXISTS:dup-skill')
+    tauriMock.installCustomSkill.mockRejectedValueOnce(`${ALREADY_EXISTS_PREFIX}dup-skill`)
 
     await expect(useSkillStore.getState().upload('/tmp/dup-skill')).rejects.toMatchObject({
       name: 'SkillAlreadyExistsError',
@@ -47,7 +48,7 @@ describe('skillStore', () => {
   })
 
   it('upload 将 Tauri 包装的重复技能错误转换为结构化错误', async () => {
-    tauriMock.installCustomSkill.mockRejectedValueOnce('Error invoking command: ALREADY_EXISTS:wrapped-dup-skill')
+    tauriMock.installCustomSkill.mockRejectedValueOnce(`Error invoking command: ${ALREADY_EXISTS_PREFIX}wrapped-dup-skill`)
 
     await expect(useSkillStore.getState().upload('/tmp/wrapped-dup-skill')).rejects.toMatchObject({
       name: 'SkillAlreadyExistsError',
