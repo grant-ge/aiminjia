@@ -193,8 +193,8 @@ function ArtifactItem({ file }: { file: GeneratedFile }) {
   )
 }
 
-function ArtifactFileIcon({ fileType }: { fileType: string }) {
-  switch (fileType) {
+function ArtifactFileIcon({ fileType }: { fileType?: string }) {
+  switch (fileType?.toLowerCase()) {
     case 'excel':
     case 'csv':
       return <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-green-600" />

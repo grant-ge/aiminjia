@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildTurnsFromMessages } from '../useTurnRenderModel'
-import type { AssistantToolCall, Message, ToolResultContent } from '@/types/message'
+import type { AssistantToolCall, GeneratedFile, Message, ToolResultContent } from '@/types/message'
 import type { ToolExecution } from '@/stores/streamingStore'
 
 function userMsg(id: string, text: string): Message {
@@ -184,7 +184,7 @@ describe('buildTurnsFromMessages', () => {
       isLatest: true,
       createdAt: '2026-04-28T00:00:00Z',
       description: 'Workbook',
-    } satisfies Omit<Message['content']['generatedFiles'], never>[number]
+    } satisfies GeneratedFile
     const msg: Message = {
       ...aiMsg('a1', 'done'),
       content: { text: 'done', generatedFiles: [oldFile] },

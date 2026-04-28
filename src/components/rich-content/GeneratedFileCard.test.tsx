@@ -46,4 +46,11 @@ describe('GeneratedFileCard inline preview', () => {
       'file:///tmp/diagram.webp',
     )
   })
+
+  it('renders safely when fileType is missing', () => {
+    render(<GeneratedFileCard file={{ ...baseFile, fileType: undefined, fileName: 'report.md', filePath: '/tmp/report.md' }} />)
+
+    expect(screen.getByText('report.md')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /预览图/ })).toBeNull()
+  })
 })

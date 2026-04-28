@@ -36,10 +36,11 @@ function formatFileSize(bytes: number): string {
 }
 
 export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
-  const icon = FILE_TYPE_ICON[file.fileType] ?? FILE_TYPE_ICON.json
+  const fileType = file.fileType?.toLowerCase() ?? 'file'
+  const icon = FILE_TYPE_ICON[fileType] ?? FILE_TYPE_ICON.json
   const fileExtension = file.fileName.split('.').pop()?.toLowerCase() ?? ''
   const isImageFile =
-    IMAGE_FILE_TYPES.has(file.fileType.toLowerCase()) || IMAGE_FILE_TYPES.has(fileExtension)
+    IMAGE_FILE_TYPES.has(fileType) || IMAGE_FILE_TYPES.has(fileExtension)
   const previewSrc = `file://${encodeURI(file.filePath)}`
 
   return (
