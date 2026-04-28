@@ -5,9 +5,13 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 
+import {
+  getGeneratedFilePrimaryAction,
+  isPreviewableFileType,
+} from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
 import type { ToolExecution } from '@/stores/streamingStore'
-import type { GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
+import type { FileAction, GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
 
 export interface RenderAiSegment {
   id: string
@@ -36,6 +40,10 @@ export interface RenderGeneratedFile {
   title: string
   sub: string
   appName: string
+  fileType?: string
+  actions: FileAction[]
+  canPreview: boolean
+  primaryAction: 'preview' | 'open'
 }
 
 export interface RenderTurn {
@@ -54,12 +62,20 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
   const anyF = f as unknown as {
     id: string; title?: string; fileName?: string;
     subtitle?: string; appName?: string; format?: string;
+    fileType?: string; actions?: FileAction[];
   }
+  const title = anyF.title || anyF.fileName || '未命名文件'
+  const fileType = anyF.fileType
+  const actions = anyF.actions ?? []
   return {
     id: anyF.id,
-    title: anyF.title || anyF.fileName || '未命名文件',
+    title,
     sub: anyF.subtitle || anyF.format || '',
     appName: anyF.appName || 'Open',
+    fileType,
+    actions,
+    canPreview: isPreviewableFileType(fileType, title),
+    primaryAction: getGeneratedFilePrimaryAction({ fileType, title }),
   }
 }
 

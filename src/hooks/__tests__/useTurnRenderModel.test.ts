@@ -133,4 +133,74 @@ describe('buildTurnsFromMessages', () => {
     })
   })
 
+
+  it('preserves generated file action metadata for file card interactions', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        text: 'done',
+        generatedFiles: [
+          {
+            id: 'file-1',
+            fileName: 'report.md',
+            filePath: '/tmp/report.md',
+            fileType: 'markdown',
+            fileSize: 128,
+            category: 'report',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'Report',
+            actions: [{ type: 'preview', label: 'Preview', enabled: true }],
+          },
+        ],
+      },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        id: 'file-1',
+        title: 'report.md',
+        fileType: 'markdown',
+        actions: [{ type: 'preview', label: 'Preview', enabled: true }],
+        canPreview: true,
+        primaryAction: 'preview',
+      }),
+    )
+  })
+
+  it('uses safe defaults for old generated file records without actions', () => {
+    const oldFile = {
+      id: 'file-2',
+      fileName: 'book.xlsx',
+      filePath: '/tmp/book.xlsx',
+      fileType: 'xlsx',
+      fileSize: 256,
+      category: 'legacy-output',
+      version: 1,
+      isLatest: true,
+      createdAt: '2026-04-28T00:00:00Z',
+      description: 'Workbook',
+    } satisfies Omit<Message['content']['generatedFiles'], never>[number]
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: { text: 'done', generatedFiles: [oldFile] },
+    }
+
+    const generatedFile = buildTurnsFromMessages([userMsg('u1', 'go'), msg], [])[0].generatedFiles[0]
+
+    expect(generatedFile).toEqual(
+      expect.objectContaining({
+        id: 'file-2',
+        title: 'book.xlsx',
+        fileType: 'xlsx',
+        actions: [],
+        canPreview: false,
+        primaryAction: 'open',
+      }),
+    )
+  })
+
 })
