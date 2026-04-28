@@ -3,6 +3,7 @@
  * Based on visual-prototype-zh.html .rcard + file management patterns.
  */
 import type { GeneratedFile } from '@/types/message'
+import { isFileActionEnabled } from '@/components/chat/generatedFileActions'
 import { Button } from '@/components/common/Button'
 
 interface GeneratedFileCardProps {
@@ -42,6 +43,9 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
   const isImageFile =
     IMAGE_FILE_TYPES.has(fileType) || IMAGE_FILE_TYPES.has(fileExtension)
   const previewSrc = `file://${encodeURI(file.filePath)}`
+  const canOpen = isFileActionEnabled(file.actions, 'open')
+  const canReveal = isFileActionEnabled(file.actions, 'reveal')
+  const disabledActionClass = 'disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
     <div
@@ -107,14 +111,18 @@ export function GeneratedFileCard({ file, onAction }: GeneratedFileCardProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onAction?.(file.id, 'open')}
+            className={disabledActionClass}
+            disabled={!canOpen}
+            onClick={() => canOpen && onAction?.(file.id, 'open')}
           >
             Open
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onAction?.(file.id, 'reveal')}
+            className={disabledActionClass}
+            disabled={!canReveal}
+            onClick={() => canReveal && onAction?.(file.id, 'reveal')}
           >
             Open Folder
           </Button>

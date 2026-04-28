@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { GeneratedFile } from '@/types/message'
 import { GeneratedFileCard } from './GeneratedFileCard'
@@ -52,5 +52,43 @@ describe('GeneratedFileCard inline preview', () => {
 
     expect(screen.getByText('report.md')).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /预览图/ })).toBeNull()
+  })
+
+  it('disables built-in open actions when file actions explicitly disable them', () => {
+    const onAction = vi.fn()
+
+    render(
+      <GeneratedFileCard
+        file={{
+          ...baseFile,
+          actions: [
+            { type: 'open', label: 'Open', enabled: false },
+            { type: 'reveal', label: 'Open Folder', enabled: false },
+          ],
+        }}
+        onAction={onAction}
+      />,
+    )
+
+    const openButton = screen.getByRole('button', { name: 'Open' })
+    const revealButton = screen.getByRole('button', { name: 'Open Folder' })
+    expect(openButton).toBeDisabled()
+    expect(revealButton).toBeDisabled()
+
+    fireEvent.click(openButton)
+    fireEvent.click(revealButton)
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('keeps built-in open actions enabled when file actions are missing', () => {
+    const onAction = vi.fn()
+    const { actions: _actions, ...fileWithoutActions } = baseFile
+
+    render(<GeneratedFileCard file={fileWithoutActions} onAction={onAction} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Folder' }))
+    expect(onAction).toHaveBeenNthCalledWith(1, 'f-1', 'open')
+    expect(onAction).toHaveBeenNthCalledWith(2, 'f-1', 'reveal')
   })
 })
