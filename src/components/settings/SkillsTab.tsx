@@ -93,11 +93,29 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
-      if (selected) {
-        const msg = await installCustomSkill(selected)
-        await loadSkills()
-        await message(msg, { title: 'AI小家' })
+      if (!selected || Array.isArray(selected)) return
+      const sourcePath = selected
+
+      const tryInstall = async (force: boolean): Promise<void> => {
+        try {
+          const msg = await installCustomSkill(sourcePath, force)
+          await loadSkills()
+          await message(msg, { title: 'AI小家' })
+        } catch (e) {
+          const errMsg = String(e)
+          const prefix = 'ALREADY_EXISTS:'
+          const idx = errMsg.indexOf(prefix)
+          if (idx >= 0) {
+            const skillId = errMsg.slice(idx + prefix.length).trim()
+            const confirmed = await ask(`技能 "${skillId}" 已存在，是否覆盖？`, { title: 'AI小家', kind: 'warning' })
+            if (confirmed) await tryInstall(true)
+            return
+          }
+          await message(errMsg, { title: 'AI小家', kind: 'error' })
+        }
       }
+
+      await tryInstall(false)
     } catch (e) {
       await message(String(e), { title: 'AI小家', kind: 'error' })
     }

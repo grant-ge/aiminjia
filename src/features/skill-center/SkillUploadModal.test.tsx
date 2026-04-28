@@ -3,18 +3,21 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const openMock = vi.hoisted(() => vi.fn())
+const askMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: openMock,
+  ask: askMock,
 }))
 
 import { SkillUploadModal } from './SkillUploadModal'
-import { useSkillStore } from '@/stores/skillStore'
+import { useSkillStore, SkillAlreadyExistsError } from '@/stores/skillStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 
 describe('SkillUploadModal', () => {
   beforeEach(() => {
     openMock.mockReset()
+    askMock.mockReset()
     useSkillStore.setState({
       skills: [],
       recommendedIds: [],
@@ -64,5 +67,39 @@ describe('SkillUploadModal', () => {
     expect(notification?.level).toBe('error')
     expect(notification?.title).toBe('技能上传失败')
     expect(notification?.message).toContain('manifest missing')
+  })
+
+  it('重复技能时弹出确认对话框，用户确认后覆盖安装并关闭弹窗', async () => {
+    const onOpenChange = vi.fn()
+    const upload = vi.fn()
+      .mockRejectedValueOnce(new SkillAlreadyExistsError('dup-skill'))
+      .mockResolvedValueOnce(undefined)
+    openMock.mockResolvedValue('/tmp/dup-skill')
+    askMock.mockResolvedValue(true)
+    useSkillStore.setState({ upload })
+
+    render(<SkillUploadModal open onOpenChange={onOpenChange} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择技能目录' }))
+
+    await waitFor(() => expect(askMock).toHaveBeenCalledWith('技能 "dup-skill" 已存在，是否覆盖？', { title: 'AI小家', kind: 'warning' }))
+    await waitFor(() => expect(upload).toHaveBeenCalledWith('/tmp/dup-skill', true))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    const notification = useNotificationStore.getState().notifications.at(-1)
+    expect(notification?.level).toBe('success')
+  })
+
+  it('重复技能时弹出确认对话框，用户取消后不提示错误也不关闭弹窗', async () => {
+    const onOpenChange = vi.fn()
+    const upload = vi.fn().mockRejectedValueOnce(new SkillAlreadyExistsError('dup-skill'))
+    openMock.mockResolvedValue('/tmp/dup-skill')
+    askMock.mockResolvedValue(false)
+    useSkillStore.setState({ upload })
+
+    render(<SkillUploadModal open onOpenChange={onOpenChange} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择技能目录' }))
+
+    await waitFor(() => expect(askMock).toHaveBeenCalled())
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(useNotificationStore.getState().notifications).toHaveLength(0)
   })
 })

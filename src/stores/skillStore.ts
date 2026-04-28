@@ -3,6 +3,13 @@ import { create } from 'zustand'
 import type { SkillCategoryId } from '@/data/skill-categories'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
+export class SkillAlreadyExistsError extends Error {
+  constructor(public readonly skillId: string) {
+    super(`ALREADY_EXISTS:${skillId}`)
+    this.name = 'SkillAlreadyExistsError'
+  }
+}
+
 const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
 
 function normalizeSkill(skill: SkillInfo): SkillInfo {
@@ -28,7 +35,7 @@ interface SkillState {
   reload: () => Promise<void>
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
-  upload: (sourcePath: string) => Promise<void>
+  upload: (sourcePath: string, force?: boolean) => Promise<void>
 }
 
 export const useSkillStore = create<SkillState>((set, get) => ({
@@ -62,8 +69,19 @@ export const useSkillStore = create<SkillState>((set, get) => ({
     await uninstallCustomSkill(id)
     await get().reload()
   },
-  async upload(sourcePath) {
-    await installCustomSkill(sourcePath)
-    await get().reload()
+  async upload(sourcePath, force = false) {
+    try {
+      await installCustomSkill(sourcePath, force)
+      await get().reload()
+    } catch (err) {
+      const msg = String(err)
+      const prefix = 'ALREADY_EXISTS:'
+      if (msg.includes(prefix)) {
+        const idx = msg.indexOf(prefix)
+        const skillId = msg.slice(idx + prefix.length).trim()
+        throw new SkillAlreadyExistsError(skillId)
+      }
+      throw err
+    }
   },
 }))
