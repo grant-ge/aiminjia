@@ -28,7 +28,7 @@ export function ToolGroupStepRow({ step, expanded, onToggle }: ToolGroupStepRowP
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-[13px] hover:bg-muted/50"
+      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-[0.8125rem] hover:bg-muted/50"
     >
       <div className="flex min-w-0 items-center gap-2">
         <StatusIcon
@@ -41,10 +41,10 @@ export function ToolGroupStepRow({ step, expanded, onToggle }: ToolGroupStepRowP
           }
           style={step.status === 'done' ? { color: '#16A34A' } : undefined}
         />
-        <span className="truncate font-mono text-[12.5px] text-foreground">{step.name}</span>
+        <span className="truncate font-mono text-[0.78125rem] text-foreground">{step.name}</span>
       </div>
       <div className="flex items-center gap-2 text-muted-foreground">
-        <span className="text-[12px]">{seconds}</span>
+        <span className="text-xs">{seconds}</span>
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
       </div>
     </button>

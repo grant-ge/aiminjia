@@ -7,7 +7,7 @@ import { Blocks, Clock3, SquarePen, type LucideIcon } from 'lucide-react'
 export type SidebarNavKey = 'home' | 'skill-center' | 'schedules'
 
 interface SidebarNavProps {
-  activeKey?: SidebarNavKey
+  activeKey?: SidebarNavKey | null
   onSelect?: (key: SidebarNavKey) => void
 }
 
@@ -17,9 +17,9 @@ const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon }> = [
   { key: 'schedules', label: '定时任务', icon: Clock3 },
 ]
 
-export function SidebarNav({ activeKey = 'home', onSelect = () => {} }: SidebarNavProps) {
+export function SidebarNav({ activeKey = null, onSelect = () => {} }: SidebarNavProps) {
   return (
-    <nav className="flex flex-col gap-0.5 my-4">
+    <nav className="flex flex-col gap-0.5 mt-3 mb-4">
       {NAV.map(({ key, label, icon: Icon }) => {
         const active = key === activeKey
         return (

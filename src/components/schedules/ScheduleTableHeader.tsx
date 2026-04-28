@@ -9,7 +9,7 @@ interface ScheduleTableHeaderProps {
 export function ScheduleTableHeader({ columns }: ScheduleTableHeaderProps) {
   return (
     <div
-      className="grid items-center gap-3 px-5 py-2.5 text-[13px] font-medium text-muted-foreground"
+      className="grid items-center gap-3 px-5 py-2.5 text-[0.8125rem] font-medium text-muted-foreground"
       style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
     >
       {columns.map((c) => (

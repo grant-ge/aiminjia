@@ -114,6 +114,27 @@ export interface ToolCompletedPayload {
   summary?: string
 }
 
+export interface ChatAttachmentPayload {
+  id: string
+  fileName: string
+  filePath: string
+  kind: 'file' | 'folder' | 'image'
+  fileSize: number
+  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json' | 'folder' | 'image'
+  mimeType?: string
+}
+
+export interface SavedClipboardAttachmentPayload {
+  fileName: string
+  path: string
+  fileSize: number
+  mimeType: string
+}
+
+export function readClipboardFilePaths(): Promise<string[]> {
+  return invoke<string[]>('read_clipboard_file_paths')
+}
+
 export interface FileGeneratedPayload {
   conversationId: string
   fileId: string
@@ -241,21 +262,38 @@ export interface AgentInfo {
  * Send a user message to a conversation and trigger the AI response pipeline.
  *
  * @param conversationId - Target conversation ID
- * @param clientMessageId - Client-generated message ID for dedup
  * @param content - The user's message text
- * @param fileIds - List of uploaded file IDs to attach
+ * @param attachments - Optional list of structured attachments to attach
  */
-export async function sendMessage(
+export function sendMessage(
   conversationId: string,
-  clientMessageId: string,
   content: string,
-  fileIds: string[],
+  attachments?: ChatAttachmentPayload[],
+  agentName?: string | null,
+  clientMessageId?: string,
+  selectedSkillId?: string | null,
+  selectedSkillLabel?: string | null,
 ): Promise<void> {
-  return invoke('send_message', {
+  return invoke<void>('send_message', {
     conversationId,
-    clientMessageId,
     content,
-    fileIds,
+    attachments: attachments ?? [],
+    agentName: agentName ?? null,
+    clientMessageId: clientMessageId ?? null,
+    selectedSkillId: selectedSkillId ?? null,
+    selectedSkillLabel: selectedSkillLabel ?? null,
+  })
+}
+
+export function saveClipboardImageAttachment(
+  conversationId: string,
+  bytes: number[],
+  mimeType: string,
+): Promise<SavedClipboardAttachmentPayload> {
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_attachment', {
+    conversationId,
+    bytes,
+    mimeType,
   })
 }
 
@@ -441,6 +479,10 @@ export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
 }
 
+export function restoreConversation(conversationId: string): Promise<void> {
+  return invoke<void>('restore_conversation', { conversationId })
+}
+
 export function getArchivedConversations(): Promise<Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>> {
   return invoke('get_archived_conversations')
 }
@@ -452,38 +494,6 @@ export function getArchivedConversations(): Promise<Array<{ id: string; title: s
  */
 export function isAgentBusy(): Promise<string[]> {
   return invoke<string[]>('is_agent_busy')
-}
-
-/**
- * Export a conversation to PDF or HTML format.
- *
- * @param conversationId - The conversation to export
- * @param format - Export format: 'pdf' or 'html'
- * @returns File info for the generated export
- */
-export interface ExportConversationResult {
-  fileId: string
-  fileName: string
-  storedPath: string
-  fileSize: number
-  /** Format the user asked for (e.g. "pdf"). */
-  requestedFormat: string
-  /** Format actually produced (may differ from requested on fallback). */
-  actualFormat: string
-  /** True when the requested format could not be generated and a fallback was produced. */
-  wasFallback: boolean
-  /** Human-readable explanation of why the fallback happened. */
-  fallbackMessage?: string | null
-}
-
-export function exportConversation(
-  conversationId: string,
-  format: 'pdf' | 'html',
-): Promise<ExportConversationResult> {
-  return invoke<ExportConversationResult>('export_conversation', {
-    conversationId,
-    format,
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +553,7 @@ export function previewFile(fileId: string, conversationId: string): Promise<str
     conversationId,
   })
 }
+
 
 /**
  * Delete a generated or uploaded file from the workspace.

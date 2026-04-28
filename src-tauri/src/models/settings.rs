@@ -63,6 +63,13 @@ pub struct AppSettings {
     /// Budget tokens used when thinking_type == enabled.
     #[serde(default = "default_thinking_budget_tokens")]
     pub thinking_budget_tokens: u32,
+    /// UI font scale: small | medium | large.
+    #[serde(default = "default_font_scale")]
+    pub font_scale: String,
+}
+
+fn default_font_scale() -> String {
+    "medium".to_string()
 }
 
 impl Default for AppSettings {
@@ -92,6 +99,7 @@ impl Default for AppSettings {
             persona_onboarding_done: false,
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: default_thinking_budget_tokens(),
+            font_scale: default_font_scale(),
         }
     }
 }
@@ -152,6 +160,7 @@ impl AppSettings {
                 "thinkingBudgetTokens",
                 defaults.thinking_budget_tokens,
             ),
+            font_scale: get_str("fontScale", &defaults.font_scale),
         }
     }
 }

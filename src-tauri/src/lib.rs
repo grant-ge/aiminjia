@@ -13,7 +13,6 @@ pub mod telemetry;
 pub mod transport;
 
 use commands::chat;
-use commands::export;
 use commands::file;
 use commands::settings;
 use commands::workspace;
@@ -518,12 +517,15 @@ pub fn run() {
             chat::delete_conversation,
             chat::rename_conversation,
             chat::archive_conversation,
+            chat::restore_conversation,
             chat::get_archived_conversations,
             chat::get_conversations,
             chat::get_tasks,
             chat::is_agent_busy,
             // File commands
             file::upload_file,
+            file::read_clipboard_file_paths,
+            file::save_clipboard_image_attachment,
             file::open_generated_file,
             file::reveal_file_in_folder,
             file::preview_file,
@@ -552,8 +554,6 @@ pub fn run() {
             workspace::get_authorized_workspace,
             workspace::revoke_authorized_workspace,
             workspace::get_default_folder,
-            // Export commands
-            export::export_conversation,
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,

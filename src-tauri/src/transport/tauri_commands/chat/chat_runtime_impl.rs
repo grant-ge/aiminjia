@@ -120,31 +120,33 @@ pub(crate) fn load_authorized_workspace(
 
 pub(crate) fn build_llm_content(
     content: &str,
-    file_attachments: &[serde_json::Value],
+    attachments: &[crate::runtime::chat::chat_turn_driver::ChatAttachmentRef],
     has_authorized_workspace: bool,
 ) -> String {
-    if file_attachments.is_empty() {
+    if attachments.is_empty() {
         return content.to_string();
     }
 
-    let file_refs: Vec<String> = file_attachments
+    let file_refs: Vec<String> = attachments
         .iter()
         .map(|file| {
-            let name = file["originalName"].as_str().unwrap_or("unknown");
-            let file_type = file["fileType"].as_str().unwrap_or("unknown");
-            let file_id = file["id"].as_str().unwrap_or("");
-            format!("- {} (file_id: \"{}\", 类型: {})", name, file_id, file_type)
+            format!(
+                "- {} (path: \"{}\", 类型: {})",
+                file.file_name,
+                file.file_path,
+                file.file_type
+            )
         })
         .collect();
 
     let hint = if has_authorized_workspace {
-        "提示：对这些已上传文件请调用 load_file(file_id) 加载数据；对已连接本地目录请优先使用 list_directory / read_workspace_file / search_files / get_file_info，需要计算或生成文件时再结合 execute_python。"
+        "提示：对这些显式附加路径请优先使用 list_directory / read_workspace_file / search_files / get_file_info；对已连接本地目录也优先使用工作区文件工具，需要计算或生成文件时再结合 execute_python。"
     } else {
-        "提示：对这些已上传文件请先调用 load_file(file_id) 加载文件数据，然后在 execute_python 中直接使用 _df（表格数据）或 _text（文本）变量。"
+        "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时再结合 execute_python 处理内容。"
     };
 
     format!(
-        "{}\n\n[已上传文件]\n{}\n\n{}",
+        "{}\n\n[当前消息附件]\n{}\n\n{}",
         content,
         file_refs.join("\n"),
         hint
@@ -156,7 +158,6 @@ mod tests {
     use super::*;
     use crate::plugin::builtin::tools::register_builtin_tools;
     use crate::plugin::registry::ToolRegistry;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_build_visible_tool_defs_with_authorized_workspace() {
@@ -216,19 +217,23 @@ mod tests {
 
     #[test]
     fn test_build_llm_content_with_authorized_workspace_scopes_load_file_to_uploads() {
-        let attachments = vec![json!({
-            "id": "file-1",
-            "originalName": "sales.xlsx",
-            "fileType": "xlsx"
-        })];
+        let attachments = vec![crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+            id: "attachment-1".to_string(),
+            file_name: "sales.xlsx".to_string(),
+            file_path: "/tmp/sales.xlsx".to_string(),
+            kind: "file".to_string(),
+            file_size: 0,
+            file_type: "xlsx".to_string(),
+            mime_type: Some("application/vnd.ms-excel".to_string()),
+        }];
 
         let content = build_llm_content("请分析这个目录里的销售数据", &attachments, true);
 
-        assert!(content.contains("[已上传文件]"));
-        assert!(content.contains("对这些已上传文件请调用 load_file(file_id)"));
+        assert!(content.contains("[当前消息附件]"));
+        assert!(content.contains("这些显式附加路径"));
         assert!(content.contains(
-            "对已连接本地目录请优先使用 list_directory / read_workspace_file / search_files / get_file_info"
+            "对已连接本地目录也优先使用工作区文件工具"
         ));
-        assert!(!content.contains("提示：先调用 load_file(file_id) 加载文件数据"));
+        assert!(!content.contains("load_file(file_id)"));
     }
 }

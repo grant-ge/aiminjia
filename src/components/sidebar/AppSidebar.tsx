@@ -65,12 +65,14 @@ export function AppSidebar() {
     activeConversationId,
   )
 
-  const activeKey: SidebarNavKey =
+  const activeKey: SidebarNavKey | null =
     route.kind === 'skill-center'
       ? 'skill-center'
       : route.kind === 'schedules'
         ? 'schedules'
-        : 'home'
+        : route.kind === 'home'
+          ? 'home'
+          : null
 
   const tenantDisplay = tenant?.name ?? productName
 

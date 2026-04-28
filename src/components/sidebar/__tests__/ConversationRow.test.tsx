@@ -5,19 +5,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConversationRow } from '../ConversationRow'
 
 describe('ConversationRow', () => {
-  it('renders title with left padding 30 (indent under project)', () => {
+  it('renders title with left padding 32 on the row wrapper (indent under project)', () => {
     const { container } = render(
       <ConversationRow id="c1" title="测试会话" onClick={() => {}} />,
     )
-    const btn = container.querySelector('button')
-    expect(btn?.className).toMatch(/pl-\[30px\]/)
+    const wrapper = container.firstElementChild?.firstElementChild
+    expect(wrapper?.className).toMatch(/pl-\[32px\]/)
   })
 
-  it('uses sidebar-accent bg when active', () => {
+  it('uses sidebar-accent bg on the row wrapper when active', () => {
     const { container } = render(
       <ConversationRow id="c2" title="X" active onClick={() => {}} />,
     )
-    expect(container.querySelector('button')?.className).toMatch(/bg-sidebar-accent/)
+    expect(container.querySelector('.bg-sidebar-accent')).toBeInTheDocument()
   })
 
   it('shows a loader icon when loading', () => {
@@ -30,7 +30,7 @@ describe('ConversationRow', () => {
   it('invokes onClick on click', () => {
     const onClick = vi.fn()
     render(<ConversationRow id="c4" title="X" onClick={onClick} />)
-    screen.getByRole('button').click()
+    screen.getByRole('button', { name: 'X' }).click()
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 })

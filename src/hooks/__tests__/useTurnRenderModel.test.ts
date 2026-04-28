@@ -121,6 +121,66 @@ describe('buildTurnsFromMessages', () => {
     })
   })
 
+  it('formats generated file metadata for the compact file card subtitle', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        generatedFiles: [
+          {
+            id: 'file-1',
+            fileName: 'mock-data-matrix.csv',
+            filePath: '/tmp/mock-data-matrix.csv',
+            fileType: 'csv',
+            fileSize: 12_288,
+            category: 'data',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: 'exported matrix',
+            actions: [],
+          },
+        ],
+      },
+    }
+
+    const turns = buildTurnsFromMessages([userMsg('u1', 'export'), msg], [])
+
+    expect(turns[0].generatedFiles[0]).toMatchObject({
+      title: 'mock-data-matrix.csv',
+      sub: '12 KB · 数据',
+      appName: 'Open',
+    })
+  })
+
+  it('uses degradation notice as generated file metadata when available', () => {
+    const msg: Message = {
+      ...aiMsg('a1', 'done'),
+      content: {
+        generatedFiles: [
+          {
+            id: 'file-1',
+            fileName: 'report.html',
+            filePath: '/tmp/report.html',
+            fileType: 'html',
+            fileSize: 2048,
+            category: 'report',
+            version: 1,
+            isLatest: true,
+            createdAt: '2026-04-28T00:00:00Z',
+            description: '',
+            actions: [],
+            isDegraded: true,
+            requestedFormat: 'docx',
+          },
+        ],
+      },
+    }
+
+    const turns = buildTurnsFromMessages([userMsg('u1', 'report'), msg], [])
+
+    expect(turns[0].generatedFiles[0].sub).toBe('已降级为 HTML · 原请求 DOCX')
+  })
+
 
   it('normalizes slash command user text into skill command metadata', () => {
     const turns = buildTurnsFromMessages([userMsg('u1', '/salary-query 看看你的技能能力')], [])

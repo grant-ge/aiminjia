@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   CheckCircle2,
@@ -29,7 +29,7 @@ export function RightPanel({ conversationId }: RightPanelProps) {
   return (
     <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
       <div className="px-4 py-4">
-        <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+        <h2 className="text-[0.9375rem] font-semibold text-foreground">任务监控</h2>
       </div>
       <TaskSection conversationId={conversationId} />
       <ArtifactSection conversationId={conversationId} />
@@ -45,9 +45,13 @@ function TaskSection({ conversationId }: { conversationId: string }) {
   const hasRunning = tasks.some((t) => isRunningTaskStatus(t.status))
   const [open, setOpen] = useState(true)
 
-  useEffect(() => {
-    if (hasRunning) setOpen(true)
-  }, [hasRunning])
+  // Force-open the panel on the rising edge of hasRunning.
+  // Render-phase setState on this component is allowed; useEffect would warn.
+  const prevHasRunning = useRef(hasRunning)
+  if (hasRunning && !prevHasRunning.current && !open) {
+    setOpen(true)
+  }
+  prevHasRunning.current = hasRunning
 
   return (
     <div className="border-b border-border">
@@ -56,7 +60,7 @@ function TaskSection({ conversationId }: { conversationId: string }) {
         onClick={() => !hasRunning && setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-[13px] font-semibold text-foreground">待办</span>
+        <span className="text-[0.8125rem] font-semibold text-foreground">待办</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform duration-150',
@@ -67,7 +71,7 @@ function TaskSection({ conversationId }: { conversationId: string }) {
       {open && (
         <div className="px-4 pb-3">
           {tasks.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">暂无待办</p>
+            <p className="text-xs text-muted-foreground">暂无待办</p>
           ) : (
             <div className="flex flex-col gap-0.5">
               {tasks.map((task) => (
@@ -88,7 +92,7 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
       <div className="flex min-w-0 flex-col gap-0.5">
         <span
           className={cn(
-            'text-[12px] font-medium leading-tight',
+            'text-xs font-medium leading-tight',
             task.status === 'completed'
               ? 'text-muted-foreground line-through'
               : 'text-foreground',
@@ -97,7 +101,7 @@ function TaskItem({ task }: { task: ConversationTaskState }) {
           {task.subject}
         </span>
         {isRunningTaskStatus(task.status) && task.activeForm && (
-          <span className="text-[11px] text-primary">{task.activeForm}</span>
+          <span className="text-[0.6875rem] text-primary">{task.activeForm}</span>
         )}
       </div>
     </div>
@@ -153,7 +157,7 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-[13px] font-semibold text-foreground">产物</span>
+        <span className="text-[0.8125rem] font-semibold text-foreground">产物</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform duration-150',
@@ -164,7 +168,7 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
       {open && (
         <div className="px-4 pb-3">
           {files.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">暂无产物</p>
+            <p className="text-xs text-muted-foreground">暂无产物</p>
           ) : (
             <div className="flex flex-col gap-1">
               {files.map((f) => (
@@ -182,7 +186,7 @@ function ArtifactItem({ file }: { file: GeneratedFile }) {
   return (
     <div className="flex items-center gap-2 py-1">
       <ArtifactFileIcon fileType={file.fileType} />
-      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
+      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
         {file.fileName}
       </span>
     </div>
@@ -216,7 +220,7 @@ function SkillMcpSection() {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-[13px] font-semibold text-foreground">技能与 MCP</span>
+        <span className="text-[0.8125rem] font-semibold text-foreground">技能与 MCP</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform duration-150',
@@ -226,7 +230,7 @@ function SkillMcpSection() {
       </button>
       {open && (
         <div className="px-4 pb-3">
-          <p className="text-[12px] text-muted-foreground">暂无调用</p>
+          <p className="text-xs text-muted-foreground">暂无调用</p>
         </div>
       )}
     </div>

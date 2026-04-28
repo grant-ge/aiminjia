@@ -13,7 +13,7 @@ export function LoginLogoStack({ logoUrl, brandName }: LoginLogoStackProps) {
       <div className="h-14 w-14 overflow-hidden rounded-full">
         <img src={logoUrl} alt="" className="h-full w-full object-cover" />
       </div>
-      <div className="text-[22px] font-semibold text-foreground">{brandName}</div>
+      <div className="text-[1.375rem] font-semibold text-foreground">{brandName}</div>
     </div>
   )
 }

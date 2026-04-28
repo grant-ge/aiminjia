@@ -1,5 +1,7 @@
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
+use crate::storage::AiJiaHome;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
@@ -38,6 +40,15 @@ fn resolve_stored_path(
 
 /// Maximum upload file size: 200 MB
 const MAX_UPLOAD_SIZE: u64 = 200 * 1024 * 1024;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedClipboardAttachment {
+    pub file_name: String,
+    pub path: String,
+    pub file_size: u64,
+    pub mime_type: String,
+}
 
 /// Upload a file to the workspace.
 /// Copies the file to workspace/uploads/ and records it in the database.
@@ -91,6 +102,108 @@ pub async fn upload_file(
         "fileId": file_id,
         "fileSize": file_size,
     }))
+}
+
+fn clipboard_extension_for_mime(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        _ => "png",
+    }
+}
+
+pub(crate) fn save_clipboard_image_attachment_to_home(
+    aijia_home: &AiJiaHome,
+    conversation_id: &str,
+    bytes: &[u8],
+    mime_type: &str,
+) -> Result<SavedClipboardAttachment, String> {
+    let ext = clipboard_extension_for_mime(mime_type);
+    let file_name = format!(
+        "clipboard-{}-{}.{}",
+        chrono::Utc::now().timestamp_millis(),
+        &uuid::Uuid::new_v4().simple().to_string()[..8],
+        ext
+    );
+    let dir = aijia_home
+        .root()
+        .join("conversations")
+        .join(conversation_id)
+        .join("attachments")
+        .join("clipboard");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let full_path = dir.join(&file_name);
+    std::fs::write(&full_path, bytes).map_err(|e| e.to_string())?;
+    Ok(SavedClipboardAttachment {
+        file_name,
+        path: full_path.to_string_lossy().to_string(),
+        file_size: bytes.len() as u64,
+        mime_type: mime_type.to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn save_clipboard_image_attachment(
+    aijia_home: State<'_, Arc<AiJiaHome>>,
+    conversation_id: String,
+    bytes: Vec<u8>,
+    mime_type: String,
+) -> Result<SavedClipboardAttachment, String> {
+    save_clipboard_image_attachment_to_home(
+        aijia_home.inner().as_ref(),
+        &conversation_id,
+        &bytes,
+        &mime_type,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn read_clipboard_file_paths_platform() -> Result<Vec<String>, String> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL};
+    use objc2_foundation::NSURL;
+
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let mut paths = Vec::new();
+    let mut seen = HashSet::new();
+
+    if let Some(items) = pasteboard.pasteboardItems() {
+        for item in items.iter() {
+            let item: &NSPasteboardItem = &item;
+            if let Some(url_text) = item.stringForType(unsafe { NSPasteboardTypeFileURL }) {
+                if let Some(url) = NSURL::URLWithString(&url_text) {
+                    if url.isFileURL() {
+                        let normalized = url.filePathURL().unwrap_or(url);
+                        if let Some(path) = normalized.to_file_path() {
+                            let path_string = path.to_string_lossy().to_string();
+                            if path.is_absolute() && seen.insert(path_string.clone()) {
+                                paths.push(path_string);
+                            }
+                        }
+                    } else if let Some(path) = url.to_file_path() {
+                        let path_string = path.to_string_lossy().to_string();
+                        if path.is_absolute() && seen.insert(path_string.clone()) {
+                            paths.push(path_string);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(paths)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_clipboard_file_paths_platform() -> Result<Vec<String>, String> {
+    Ok(Vec::new())
+}
+
+#[tauri::command]
+pub async fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
+    read_clipboard_file_paths_platform()
 }
 
 /// Open a generated file with system default application.
@@ -332,4 +445,29 @@ pub async fn delete_file(
         .delete_uploaded_file(&file_id, &conversation_id)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_clipboard_image_attachment_writes_to_conversation_clipboard_dir() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = AiJiaHome::from_path(tmp.path().to_path_buf());
+
+        let saved = save_clipboard_image_attachment_to_home(
+            &home,
+            "conv-1",
+            &[1, 2, 3, 4],
+            "image/png",
+        )
+        .expect("save clipboard image");
+
+        assert!(saved.path.contains("/conversations/conv-1/attachments/clipboard/"));
+        assert!(saved.file_name.ends_with(".png"));
+        assert_eq!(saved.file_size, 4);
+        assert_eq!(saved.mime_type, "image/png");
+        assert!(std::path::Path::new(&saved.path).exists());
+    }
 }

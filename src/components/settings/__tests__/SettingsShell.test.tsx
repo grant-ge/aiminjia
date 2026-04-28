@@ -35,6 +35,16 @@ describe('SettingsShell', () => {
     )
     const modal = container.querySelector('[data-testid="settings-modal-box"]')
     expect(modal?.className).toMatch(/w-\[980px\]/)
+    expect(modal?.className).toMatch(/h-\[720px\]/)
     expect(modal?.className).toMatch(/rounded-\[18px\]/)
+  })
+
+  it('pressing Escape invokes onClose', () => {
+    const onClose = vi.fn()
+    render(
+      <SettingsShell open menu={<div />} content={<div />} onClose={onClose} />,
+    )
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

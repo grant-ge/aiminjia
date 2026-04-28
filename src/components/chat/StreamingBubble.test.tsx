@@ -17,18 +17,6 @@ vi.mock('react-i18next', () => ({
   }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }))
-vi.mock('@/stores/brandingStore', () => ({
-  DEFAULTS: {
-    productName: 'AI小家',
-    productNameEn: 'AIjia',
-  },
-  useBrandingStore: (selector: (state: { productName: string; productNameEn: string }) => unknown) =>
-    selector({
-      productName: 'AI小家',
-      productNameEn: 'AIjia',
-    }),
-}))
-
 import { StreamingBubble } from './StreamingBubble'
 import { useChatStore } from '@/stores/chatStore'
 
@@ -121,7 +109,7 @@ describe('StreamingBubble — tool error visibility', () => {
     const { getByLabelText, getByText } = render(<StreamingBubble content="" />)
     const errorEl = getByLabelText('tool error')
     expect(errorEl.textContent?.length).toBeLessThanOrEqual(120)
-    expect(getByText(/…/)).toBeTruthy()
+    expect(getByText(/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA…/)).toBeTruthy()
   })
 })
 
@@ -168,5 +156,38 @@ describe('StreamingBubble — S1+S2 combined', () => {
     const { getByLabelText, getByRole } = render(<StreamingBubble content="Analyzing..." />)
     expect(getByLabelText('tool error')).toBeTruthy()
     expect(getByRole('img', { name: /running/i })).toBeTruthy()
+  })
+
+  it('uses the design TypingIndicator before the first streamed token', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: '',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    const { getByText } = render(<StreamingBubble content="" />)
+    expect(getByText('思考中…')).toBeInTheDocument()
+  })
+
+  it('does not render the old avatar-offset layout while streaming', () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      streamStates: {
+        'conv-1': {
+          isStreaming: true,
+          streamingContent: 'Hello',
+          toolExecutions: [],
+        },
+      },
+    })
+
+    const { container } = render(<StreamingBubble content="Hello" />)
+
+    expect(container.querySelector('.pl-9')).toBeNull()
   })
 })

@@ -101,7 +101,7 @@ pub fn transform_message_json_for_frontend(mut message: serde_json::Value) -> se
 
 pub async fn create_conversation(db: Arc<dyn ConversationStore>) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    db.create_conversation(&id, "New Conversation")
+    db.create_conversation(&id, "新对话")
         .map_err(|e| e.to_string())?;
     Ok(id)
 }
@@ -152,7 +152,7 @@ pub async fn delete_conversation(
         .map_err(|e| e.to_string())?;
 
     let mut deleted = 0usize;
-    let mut failed = 0usize;
+    let mut failures = Vec::new();
     for path in &file_paths {
         let full_path = file_mgr.full_path(path);
         match std::fs::remove_file(&full_path) {
@@ -160,7 +160,7 @@ pub async fn delete_conversation(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 log::warn!("Failed to delete file {:?}: {}", full_path, e);
-                failed += 1;
+                failures.push(format!("{}: {}", full_path.display(), e));
             }
         }
     }
@@ -169,9 +169,15 @@ pub async fn delete_conversation(
             "Conversation {} file cleanup: {} deleted, {} failed, {} already gone",
             conversation_id,
             deleted,
-            failed,
-            file_paths.len() - deleted - failed
+            failures.len(),
+            file_paths.len() - deleted - failures.len()
         );
+    }
+    if !failures.is_empty() {
+        return Err(format!(
+            "failed to delete associated files: {}",
+            failures.join("; ")
+        ));
     }
 
     let _ = db.delete_memories_by_prefix(&format!("loaded:{}:", conversation_id));
@@ -229,7 +235,7 @@ pub fn should_auto_title(
         .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    if title != "New Conversation" {
+    if title != "新对话" {
         return Ok(false);
     }
 
@@ -275,7 +281,7 @@ async fn generate_and_set_title_inner(
         .find(|c| c["id"].as_str() == Some(conversation_id.as_str()))
         .and_then(|c| c["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
-    if current_title != "New Conversation" {
+    if current_title != "新对话" {
         return Ok(None);
     }
 
@@ -370,6 +376,14 @@ pub async fn archive_conversation(
         .map_err(|e| e.to_string())
 }
 
+pub async fn restore_conversation(
+    db: Arc<dyn ConversationStore>,
+    conversation_id: String,
+) -> Result<(), String> {
+    db.restore_conversation(&conversation_id)
+        .map_err(|e| e.to_string())
+}
+
 pub async fn get_archived_conversations(
     db: Arc<dyn ConversationStore>,
 ) -> Result<Vec<serde_json::Value>, String> {
@@ -454,6 +468,9 @@ mod title_tests {
         fn archive_conversation(&self, id: &str) -> anyhow::Result<()> {
             self.inner.archive_conversation(id)
         }
+        fn restore_conversation(&self, id: &str) -> anyhow::Result<()> {
+            self.inner.restore_conversation(id)
+        }
         fn get_archived_conversations(&self) -> anyhow::Result<Vec<serde_json::Value>> {
             self.inner.get_archived_conversations()
         }
@@ -490,7 +507,7 @@ mod title_tests {
     #[test]
     fn should_auto_title_returns_false_when_no_assistant_message() {
         let store = StoreWithMessages::new(
-            "New Conversation",
+            "新对话",
             "conv1",
             vec![serde_json::json!({"role": "user", "content": {"text": "hello"}})],
         );
@@ -500,7 +517,7 @@ mod title_tests {
     #[test]
     fn should_auto_title_returns_true_when_conditions_met() {
         let store = StoreWithMessages::new(
-            "New Conversation",
+            "新对话",
             "conv1",
             vec![
                 serde_json::json!({"role": "user",      "content": {"text": "hello"}}),

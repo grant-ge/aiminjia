@@ -39,6 +39,8 @@ pub trait ConversationStore: Send + Sync {
     ) -> Result<()>;
     /// Mark a conversation as archived (soft delete).
     fn archive_conversation(&self, id: &str) -> Result<()>;
+    /// Restore an archived conversation to the active conversation list.
+    fn restore_conversation(&self, id: &str) -> Result<()>;
     /// Return all archived conversations as JSON values.
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>>;
 }
@@ -169,6 +171,11 @@ impl ConversationStore for InMemoryConversationStore {
         Ok(())
     }
 
+    fn restore_conversation(&self, id: &str) -> Result<()> {
+        self.archived.lock().unwrap().remove(id);
+        Ok(())
+    }
+
     fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
         let archived = self.archived.lock().unwrap();
         let convs = self.conversations.lock().unwrap();
@@ -227,6 +234,18 @@ mod tests {
             archived.is_empty(),
             "archiving a non-existent conversation should yield nothing in get_archived_conversations"
         );
+    }
+
+    #[test]
+    fn test_restore_conversation_removes_from_archived() {
+        let store = InMemoryConversationStore::new();
+        store.create_conversation("c1", "Title").unwrap();
+        store.archive_conversation("c1").unwrap();
+        assert_eq!(store.get_archived_conversations().unwrap().len(), 1);
+
+        store.restore_conversation("c1").unwrap();
+
+        assert!(store.get_archived_conversations().unwrap().is_empty());
     }
 
     #[test]

@@ -268,6 +268,7 @@ fn collect_results_keeps_content_within_declared_limit() {
 
 // ── S4-T13: driver_s4 core loop ──────────────────────────────────────────────
 
+use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::chat::{ChatTurnRequest, RuntimeChatTurnDriver};
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::query_engine::QueryEngine;
@@ -708,11 +709,12 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
         &self,
         _conversation_id: &str,
         content: &str,
-        file_ids: &[String],
+        attachments: &[ChatAttachmentRef],
     ) -> Result<String, TurnError> {
-        assert_eq!(file_ids, &["file-1".to_string()]);
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].file_path, "/tmp/demo.csv");
         Ok(format!(
-            "{}\n\n[已上传文件]\n- demo.csv (file_id: \"file-1\", 类型: text/csv)",
+            "{}\n\n[当前消息附件]\n- demo.csv (path: \"/tmp/demo.csv\", 类型: csv)",
             content
         ))
     }
@@ -736,7 +738,15 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
     let mut turn = make_test_turn("conv-upload");
-    let request = ChatTurnRequest::new("conv-upload", "请分析这个文件", vec!["file-1".to_string()]);
+    let request = ChatTurnRequest::new("conv-upload", "请分析这个文件", vec![ChatAttachmentRef {
+        id: "attachment-1".to_string(),
+        file_name: "demo.csv".to_string(),
+        file_path: "/tmp/demo.csv".to_string(),
+        kind: "file".to_string(),
+        file_size: 0,
+        file_type: "csv".to_string(),
+        mime_type: Some("text/csv".to_string()),
+    }]);
 
     driver.run_chat_turn(&mut turn, &request).await.unwrap();
 
@@ -745,13 +755,13 @@ async fn driver_s4_uses_enriched_user_message_content_for_uploaded_files() {
     let content = last["content"].as_str().unwrap_or("");
     assert_eq!(last["role"], "user");
     assert!(
-        content.contains("[已上传文件]"),
-        "user content sent to LLM must include uploaded-file hints, got: {}",
+        content.contains("[当前消息附件]"),
+        "user content sent to LLM must include attachment hints, got: {}",
         content
     );
     assert!(
-        content.contains("file-1"),
-        "user content sent to LLM must include file_id, got: {}",
+        content.contains("/tmp/demo.csv"),
+        "user content sent to LLM must include attachment path, got: {}",
         content
     );
 }
@@ -1033,7 +1043,7 @@ impl RuntimeLlmExecutor for TurnConfigOverrideExecutor {
         &self,
         _conversation_id: &str,
         _content: &str,
-        _file_ids: &[String],
+        _attachments: &[ChatAttachmentRef],
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok("user-id".to_string())

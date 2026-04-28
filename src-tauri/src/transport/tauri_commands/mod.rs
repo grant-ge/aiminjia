@@ -6,7 +6,6 @@
 pub mod agents;
 pub mod auth;
 pub mod chat;
-pub mod export;
 pub mod file;
 pub mod mcp;
 pub mod persona;

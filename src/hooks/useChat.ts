@@ -27,6 +27,7 @@ import {
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
   archiveConversation as tauriArchiveConversation,
+  type ChatAttachmentPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -39,12 +40,7 @@ function generateId(): string {
 }
 
 /** File info passed from chat input UI to sendUserMessage. */
-export interface PendingFileInfo {
-  id: string
-  fileName: string
-  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json'
-  fileSize: number
-}
+export interface PendingFileInfo extends ChatAttachmentPayload {}
 
 /**
  * Hook that exposes every chat-related action the UI needs.
@@ -64,6 +60,20 @@ export function useChat() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const switchVersionRef = useRef(0)
+
+  const syncBusyConversations = useCallback(async (): Promise<Set<string>> => {
+    try {
+      const busyIds = await isAgentBusyIpc()
+      useChatStore.getState().setBusyConversations(busyIds)
+      if (busyIds.length > 0) {
+        console.log('[useChat] Agent is busy with conversations:', busyIds)
+      }
+      return new Set(busyIds)
+    } catch (err) {
+      console.error('[useChat] isAgentBusy IPC failed:', err)
+      return new Set(useChatStore.getState().busyConversations)
+    }
+  }, [])
 
   /**
    * Create a brand-new conversation and make it active.
@@ -175,6 +185,7 @@ export function useChat() {
     store.setActiveConversation(id)
     store.setMessages([])
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
+    void syncBusyConversations()
 
     try {
       const [msgs, tasks] = await Promise.all([
@@ -200,7 +211,7 @@ export function useChat() {
       console.error('[useChat] getMessages IPC failed:', err)
       recordDiagnosticError('conversation.switch.failed', err, { conversationId: id })
     }
-  }, [])
+  }, [syncBusyConversations])
 
   /**
    * Send a user message in the currently active conversation.
@@ -215,6 +226,15 @@ export function useChat() {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
     console.log('[useChat] sendUserMessage, conversationId:', conversationId, 'text:', text.slice(0, 50))
+
+    if (
+      (conversationId && store.busyConversations.has(conversationId))
+      || store.busyConversations.size >= MAX_CONCURRENT_AGENTS
+    ) {
+      await syncBusyConversations()
+      store = useChatStore.getState()
+      conversationId = store.activeConversationId
+    }
 
     // Block if THIS conversation is already busy
     if (conversationId && store.busyConversations.has(conversationId)) {
@@ -286,8 +306,11 @@ export function useChat() {
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
+          filePath: f.filePath,
+          kind: f.kind,
           fileSize: f.fileSize,
           fileType: f.fileType,
+          mimeType: f.mimeType,
           status: 'uploaded' as const,
         })),
       },
@@ -303,9 +326,8 @@ export function useChat() {
     store.addBusyConversation(conversationId)
 
     try {
-      const fileIds = files?.map((f) => f.id) ?? []
-      console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, messageId, text, fileIds)
+      console.log('[useChat] Calling sendMessage IPC, attachments:', files)
+      await sendMessage(conversationId, text, files, null, messageId, null, null)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
@@ -333,7 +355,7 @@ export function useChat() {
       })
       return false
     }
-  }, [])
+  }, [syncBusyConversations])
 
   /**
    * Stop the streaming response for the active conversation.
@@ -374,16 +396,8 @@ export function useChat() {
     }
 
     // Sync agent busy state from backend (supports multiple concurrent)
-    try {
-      const busyIds = await isAgentBusyIpc()
-      useChatStore.getState().setBusyConversations(busyIds)
-      if (busyIds.length > 0) {
-        console.log('[useChat] Agent is busy with conversations:', busyIds)
-      }
-    } catch (err) {
-      console.error('[useChat] isAgentBusy IPC failed:', err)
-    }
-  }, [])
+    await syncBusyConversations()
+  }, [syncBusyConversations])
 
   /**
    * Rename a conversation title.

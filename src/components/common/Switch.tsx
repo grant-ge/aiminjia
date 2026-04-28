@@ -1,0 +1,46 @@
+import type { ButtonHTMLAttributes } from 'react'
+
+import { cn } from '@/lib/utils'
+
+interface SwitchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'checked' | 'onChange' | 'role'> {
+  checked: boolean
+  onCheckedChange?: (checked: boolean) => void
+}
+
+export function Switch({
+  checked,
+  onCheckedChange,
+  disabled,
+  className,
+  ...props
+}: SwitchProps) {
+  const handleClick = () => {
+    if (disabled) return
+    onCheckedChange?.(!checked)
+  }
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={handleClick}
+      className={cn(
+        'relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        checked ? 'bg-primary' : 'bg-muted-foreground/30',
+        disabled && 'cursor-not-allowed bg-muted-foreground/20',
+        className,
+      )}
+      {...props}
+    >
+      <span
+        className={cn(
+          'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+          checked ? 'translate-x-5' : 'translate-x-0',
+          disabled && 'bg-card',
+        )}
+      />
+    </button>
+  )
+}

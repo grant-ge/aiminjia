@@ -76,12 +76,6 @@ pub struct MessageContent {
     pub progress: Option<serde_json::Value>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub search_sources: Option<Vec<serde_json::Value>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exec_summary: Option<serde_json::Value>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<serde_json::Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

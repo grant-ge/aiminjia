@@ -9,8 +9,8 @@ interface SkillUsageBlockProps {
 export function SkillUsageBlock({ text }: SkillUsageBlockProps) {
   return (
     <section className="flex w-full flex-col gap-2">
-      <div className="text-[15px] font-semibold text-foreground">使用说明</div>
-      <p className="max-w-[880px] text-[13px] text-muted-foreground">{text}</p>
+      <div className="text-[0.9375rem] font-semibold text-foreground">使用说明</div>
+      <p className="max-w-[880px] text-[0.8125rem] text-muted-foreground">{text}</p>
     </section>
   )
 }

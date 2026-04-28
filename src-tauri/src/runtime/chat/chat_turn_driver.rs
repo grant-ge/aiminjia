@@ -40,15 +40,53 @@ use crate::runtime::store::{
 use crate::runtime::tools::permission::{PermissionDecision, PermissionMode};
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
-pub fn build_user_content_json(content: &str, file_ids: &[String]) -> serde_json::Value {
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatAttachmentRef {
+    pub id: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub kind: String,
+    pub file_size: u64,
+    pub file_type: String,
+    pub mime_type: Option<String>,
+}
+
+pub fn build_user_content_json(
+    content: &str,
+    attachments: &[ChatAttachmentRef],
+    selected_skill_id: Option<&str>,
+    selected_skill_label: Option<&str>,
+) -> serde_json::Value {
     let mut value = serde_json::json!({ "text": content });
-    if !file_ids.is_empty() {
+    if !attachments.is_empty() {
         value["files"] = serde_json::Value::Array(
-            file_ids
+            attachments
                 .iter()
-                .map(|id| serde_json::json!({ "id": id }))
+                .map(|att| serde_json::json!({
+                    "id": att.id,
+                    "fileName": att.file_name,
+                    "filePath": att.file_path,
+                    "kind": att.kind,
+                    "fileSize": att.file_size,
+                    "fileType": att.file_type,
+                    "mimeType": att.mime_type,
+                    "status": "uploaded"
+                }))
                 .collect(),
         );
+    }
+    if let Some(skill_id) = selected_skill_id.map(str::trim).filter(|id| !id.is_empty()) {
+        let command = format!("/{skill_id}");
+        value["commandText"] = serde_json::json!(format!("{} {}", command, content).trim());
+        value["skillCommand"] = serde_json::json!({
+            "id": skill_id,
+            "label": selected_skill_label
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(skill_id),
+            "command": command,
+        });
     }
     value
 }
@@ -59,7 +97,7 @@ pub fn build_user_content_json(content: &str, file_ids: &[String]) -> serde_json
 pub struct ChatTurnRequest {
     pub conversation_id: SessionId,
     pub content: String,
-    pub file_ids: Vec<String>,
+    pub attachments: Vec<ChatAttachmentRef>,
     pub agent_name: Option<String>,
     pub permission_mode: PermissionMode,
     /// The authoritative run_id for this turn.
@@ -68,23 +106,27 @@ pub struct ChatTurnRequest {
     pub run_id: RunId,
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
+    pub selected_skill_id: Option<String>,
+    pub selected_skill_label: Option<String>,
 }
 
 impl ChatTurnRequest {
     pub fn new(
         conversation_id: impl Into<SessionId>,
         content: impl Into<String>,
-        file_ids: Vec<String>,
+        attachments: Vec<ChatAttachmentRef>,
     ) -> Self {
         Self {
             conversation_id: conversation_id.into(),
             content: content.into(),
-            file_ids,
+            attachments,
             agent_name: None,
             permission_mode: PermissionMode::Default,
             run_id: RunId::new(uuid::Uuid::new_v4().to_string()),
             hook_registry: None,
             client_message_id: None,
+            selected_skill_id: None,
+            selected_skill_label: None,
         }
     }
 }
@@ -133,7 +175,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         &self,
         _conversation_id: &str,
         _content: &str,
-        _file_ids: &[String],
+        _attachments: &[ChatAttachmentRef],
         _client_message_id: Option<&str>,
     ) -> Result<String, TurnError> {
         Ok(String::new())
@@ -191,7 +233,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         &self,
         _conversation_id: &str,
         content: &str,
-        _file_ids: &[String],
+        _attachments: &[ChatAttachmentRef],
     ) -> Result<String, TurnError> {
         Ok(content.to_string())
     }
@@ -1037,7 +1079,7 @@ impl RuntimeChatTurnDriver {
             .build_user_message_content(
                 request.conversation_id.as_str(),
                 &request.content,
-                &request.file_ids,
+                &request.attachments,
             )
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -1093,7 +1135,7 @@ impl RuntimeChatTurnDriver {
             .persist_user_message(
                 request.conversation_id.as_str(),
                 &request.content,
-                &request.file_ids,
+                &request.attachments,
                 request.client_message_id.as_deref(),
             )
             .await
@@ -1111,7 +1153,12 @@ impl RuntimeChatTurnDriver {
                 RuntimeEventKind::StreamStarted,
             ))
             .await?;
-        let pending_user_content = build_user_content_json(&request.content, &request.file_ids);
+        let pending_user_content = build_user_content_json(
+            &request.content,
+            &request.attachments,
+            request.selected_skill_id.as_deref(),
+            request.selected_skill_label.as_deref(),
+        );
         self.event_bus
             .emit(RuntimeEvent::new(
                 session_id.clone(),
@@ -1778,6 +1825,77 @@ mod tests {
         let request = ChatTurnRequest::new("conv-chat-mode", "hello", vec![]);
 
         assert_eq!(request.permission_mode, PermissionMode::Default);
+        assert_eq!(request.selected_skill_id, None);
+        assert_eq!(request.selected_skill_label, None);
+    }
+
+    #[test]
+    fn build_user_content_json_includes_structured_attachments() {
+        let content = build_user_content_json(
+            "看下附件",
+            &[ChatAttachmentRef {
+                id: "attachment-1".to_string(),
+                file_name: "report.csv".to_string(),
+                file_path: "/tmp/report.csv".to_string(),
+                kind: "file".to_string(),
+                file_size: 0,
+                file_type: "csv".to_string(),
+                mime_type: Some("text/csv".to_string()),
+            }],
+            None,
+            None,
+        );
+
+        assert_eq!(
+            content
+                .get("files")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(|value| value.get("fileName"))
+                .and_then(|value| value.as_str()),
+            Some("report.csv")
+        );
+        assert_eq!(
+            content
+                .get("files")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(|value| value.get("filePath"))
+                .and_then(|value| value.as_str()),
+            Some("/tmp/report.csv")
+        );
+    }
+
+    #[test]
+    fn build_user_content_json_includes_selected_skill_metadata() {
+        let content =
+            build_user_content_json("用这个技能吧", &[], Some("salary-query"), Some("薪资查询"));
+
+        assert_eq!(
+            content.get("text").and_then(|value| value.as_str()),
+            Some("用这个技能吧")
+        );
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("id"))
+                .and_then(|value| value.as_str()),
+            Some("salary-query")
+        );
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("command"))
+                .and_then(|value| value.as_str()),
+            Some("/salary-query")
+        );
+        assert_eq!(
+            content
+                .get("skillCommand")
+                .and_then(|value| value.get("label"))
+                .and_then(|value| value.as_str()),
+            Some("薪资查询")
+        );
     }
 
     #[tokio::test]
@@ -1973,7 +2091,7 @@ mod tests {
             &self,
             _conversation_id: &str,
             _content: &str,
-            _file_ids: &[String],
+            _attachments: &[ChatAttachmentRef],
             _client_message_id: Option<&str>,
         ) -> Result<String, TurnError> {
             Ok("user-msg".to_string())

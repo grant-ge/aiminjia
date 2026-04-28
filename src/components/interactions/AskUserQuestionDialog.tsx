@@ -102,7 +102,7 @@ export function AskUserQuestionDialog({ interactionId, questions, onClose }: Pro
                         <div className="font-medium">{option.label}</div>
                         <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
                         {option.preview ? (
-                          <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted p-2 text-[11px] text-muted-foreground">{option.preview}</pre>
+                          <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted p-2 text-[0.6875rem] text-muted-foreground">{option.preview}</pre>
                         ) : null}
                       </button>
                     )

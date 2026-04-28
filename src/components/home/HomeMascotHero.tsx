@@ -17,7 +17,7 @@ export function HomeMascotHero({ mascotUrl, title, subtitle }: HomeMascotHeroPro
       >
         <img src={mascotUrl} alt="" className="w-full" />
       </div>
-      <div className="text-[30px] font-bold leading-tight text-foreground">
+      <div className="text-3xl font-bold leading-tight text-foreground">
         {title}
       </div>
       <div className="max-w-[760px] text-center text-sm text-muted-foreground">

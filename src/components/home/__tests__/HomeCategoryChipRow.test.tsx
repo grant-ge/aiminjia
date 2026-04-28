@@ -19,12 +19,13 @@ describe('HomeCategoryChipRow', () => {
     expect(screen.getByRole('button', { name: /研究专家/ })).toBeInTheDocument()
   })
 
-  it('marks the active chip with elevated background styling', () => {
+  it('marks the active chip with elevated text styling', () => {
     render(
       <HomeCategoryChipRow items={ITEMS} activeKey="recommend" onSelect={() => {}} />,
     )
     const active = screen.getByRole('button', { name: /为你推荐/ })
-    expect(active.className).toMatch(/bg-background/)
+    expect(active.className).toMatch(/font-semibold/)
+    expect(active.className).toMatch(/text-foreground/)
   })
 
   it('calls onSelect with key on click', () => {

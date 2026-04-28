@@ -1,11 +1,20 @@
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const uiState = vi.hoisted(() => ({
+  route: { kind: 'home' } as { kind: string; conversationId?: string },
+}))
+
+const chatState = vi.hoisted(() => ({
+  activeConversationId: null as string | null,
+  conversations: [] as Array<{ id: string; title: string; workspaceName?: string | null }>,
+}))
 
 vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({
-    conversations: [],
-    activeConversationId: null,
+    conversations: chatState.conversations,
+    activeConversationId: chatState.activeConversationId,
     switchConversation: vi.fn(),
     createNewConversation: vi.fn(),
   }),
@@ -14,7 +23,7 @@ vi.mock('@/hooks/useChat', () => ({
 vi.mock('@/stores/uiStore', () => ({
   useUiStore: (sel: (s: unknown) => unknown) =>
     sel({
-      route: { kind: 'home' },
+      route: uiState.route,
       setRoute: vi.fn(),
       openSettings: vi.fn(),
     }),
@@ -32,6 +41,12 @@ vi.mock('@/stores/brandingStore', () => ({
 import { AppSidebar } from '../AppSidebar'
 
 describe('AppSidebar', () => {
+  beforeEach(() => {
+    uiState.route = { kind: 'home' }
+    chatState.activeConversationId = null
+    chatState.conversations = []
+  })
+
   it('has sidebar background and 256 px width', () => {
     const { container } = render(<AppSidebar />)
     const aside = container.querySelector('aside')
@@ -67,5 +82,27 @@ describe('AppSidebar', () => {
     expect(container.querySelector('[data-tauri-drag-region]')).toBeInTheDocument()
     if (orig) Object.defineProperty(navigator, 'userAgent', orig)
     vi.resetModules()
+  })
+
+  it('does not highlight 新任务 while a chat route is active', () => {
+    uiState.route = { kind: 'chat', conversationId: 'conv-1' }
+
+    render(<AppSidebar />)
+
+    expect(screen.getByRole('button', { name: '新任务' }).className).not.toMatch(
+      /(^|\s)bg-sidebar-accent(\s|$)/,
+    )
+  })
+
+  it('does not highlight an active conversation while schedules route is active', () => {
+    uiState.route = { kind: 'schedules' }
+    chatState.activeConversationId = 'conv-1'
+    chatState.conversations = [{ id: 'conv-1', title: '旧对话', workspaceName: 'txl' }]
+
+    render(<AppSidebar />)
+
+    expect(screen.getByRole('button', { name: /旧对话/ }).className).not.toMatch(
+      /(^|\s)bg-sidebar-accent(\s|$)/,
+    )
   })
 })

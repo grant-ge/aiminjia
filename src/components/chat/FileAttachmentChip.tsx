@@ -33,6 +33,16 @@ const FILE_TYPE_CONFIG: Record<
     bg: 'var(--color-filetype-accent-bg)',
     color: 'var(--color-accent)',
   },
+  image: {
+    label: 'IMG',
+    bg: 'var(--color-filetype-blue-bg)',
+    color: 'var(--color-semantic-blue)',
+  },
+  folder: {
+    label: 'DIR',
+    bg: 'var(--color-primary-subtle)',
+    color: 'var(--color-text-primary)',
+  },
 }
 
 function formatFileSize(bytes: number): string {

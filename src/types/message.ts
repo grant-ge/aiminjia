@@ -44,9 +44,8 @@ export interface Conversation {
  * MessageContent supports multiple rich content types mixed together.
  *
  * Rendering order (resolved ambiguity):
- * progress → text → codeBlocks → codeResults → tables → metrics →
- * options → anomalies → insights → rootCauses → generatedFiles →
- * reports → searchSources → execSummary → confirmations
+ * text → codeBlocks → codeResults → tables → metrics →
+ * anomalies → insights → rootCauses → subagentEnvelope
  */
 export interface SkillCommandBreadcrumb {
   id: string
@@ -63,36 +62,24 @@ export interface MessageContent {
   codeResults?: CodeResult[]
   tables?: DataTable[]
   metrics?: MetricCard[]
-  options?: OptionGroup[]
   anomalies?: AnomalyItem[]
   insights?: InsightBlock[]
   rootCauses?: RootCauseBlock[]
-  confirmations?: ConfirmBlock[]
   progress?: ProgressState
-  searchSources?: SearchSource[]
-  execSummary?: ExecSummary
-  reports?: ReportCard[]
   generatedFiles?: GeneratedFile[]
   subagentEnvelope?: SubAgentEnvelopeContent
 }
 
 /** The fixed rendering order for MessageContent fields */
 export const MESSAGE_CONTENT_RENDER_ORDER: (keyof MessageContent)[] = [
-  'progress',
   'text',
   'codeBlocks',
   'codeResults',
   'tables',
   'metrics',
-  'options',
   'anomalies',
   'insights',
   'rootCauses',
-  'generatedFiles',
-  'reports',
-  'searchSources',
-  'execSummary',
-  'confirmations',
   'subagentEnvelope',
 ]
 
@@ -101,9 +88,12 @@ export const MESSAGE_CONTENT_RENDER_ORDER: (keyof MessageContent)[] = [
 export interface FileAttachment {
   id: string
   fileName: string
+  filePath?: string
+  kind?: 'file' | 'folder' | 'image'
   fileSize: number
-  fileType: 'excel' | 'word' | 'pdf' | 'csv' | 'json'
+  fileType: 'excel' | 'word' | 'pdf' | 'csv' | 'json' | 'folder' | 'image'
   status: 'uploading' | 'uploaded' | 'parsing' | 'parsed' | 'error'
+  mimeType?: string
   errorMessage?: string
 }
 
@@ -158,23 +148,6 @@ export interface MetricCard {
   state: 'good' | 'warn' | 'bad' | 'neutral'
 }
 
-// --- Option Cards ---
-
-export interface OptionGroup {
-  id: string
-  options: OptionCard[]
-  selectedId?: string
-  columns?: 2 | 3
-}
-
-export interface OptionCard {
-  id: string
-  tag?: string
-  tagColor?: string
-  title: string
-  description: string
-}
-
 // --- Anomaly List ---
 
 export interface AnomalyItem {
@@ -207,18 +180,6 @@ export interface RootCauseItem {
   action: string
 }
 
-// --- Confirm Block ---
-
-export interface ConfirmBlock {
-  id: string
-  title: string
-  primaryLabel: string
-  primaryAction: string
-  secondaryLabel?: string
-  secondaryAction?: string
-  status: 'pending' | 'confirmed' | 'rejected'
-}
-
 // --- Progress State ---
 
 export interface ProgressState {
@@ -230,44 +191,6 @@ export interface ProgressState {
 export interface ProgressStep {
   label: string
   status: 'done' | 'active' | 'pending'
-}
-
-// --- Search Source ---
-
-export interface SearchSource {
-  id: string
-  title: string
-  items: SearchSourceItem[]
-  warning?: string
-}
-
-export interface SearchSourceItem {
-  source: string
-  snippet: string
-  url?: string
-}
-
-// --- Exec Summary ---
-
-export interface ExecSummary {
-  title: string
-  boxes: ExecSummaryBox[]
-}
-
-export interface ExecSummaryBox {
-  label: string
-  value: string
-  subtitle?: string
-  variant?: 'danger' | 'money' | 'good' | 'neutral'
-}
-
-// --- Report Card ---
-
-export interface ReportCard {
-  id: string
-  title: string
-  description: string
-  fileType: 'html' | 'excel' | 'pdf'
 }
 
 // --- Generated File ---

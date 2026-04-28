@@ -106,6 +106,8 @@ src/
 
 **shadcn 原生命名**（`--primary` / `--background` / `--muted` / `--border` / `--sidebar-*` / `--destructive`），与 `design.pen` 的变量名一一对应。通过 `@theme inline` 映射到 Tailwind utility（`bg-primary` / `text-foreground` / `bg-sidebar`）。
 
+注意：这里只采用 shadcn 的 token 命名，不继承 shadcn 默认 neutral 主题的黑色 `primary`。Lotus / design.pen 的默认品牌主色是金色 `#DBAA22`，黑色 `#0a0a0a` 只用于正文与前景类 token。
+
 ### 3.2 Token 清单
 
 | 类别 | Token | 默认值 | 租户可改 | 说明 |

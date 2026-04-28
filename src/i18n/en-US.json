@@ -67,19 +67,6 @@
     "schedules": "Schedules",
     "tasks": "Tasks"
   },
-  "topBar": {
-    "exportConversation": "Export conversation",
-    "export": "Export",
-    "exportSuccess": "Export successful",
-    "saved": "saved",
-    "exportFailed": "Export failed",
-    "exportAsPdf": "Export as PDF",
-    "exportAsHtml": "Export as HTML",
-    "exportAsPptx": "Export as PPT",
-    "exportAsXlsx": "Export as Excel",
-    "exportPdfFallback": "PDF generator unavailable — exported as HTML",
-    "exportPdfFallbackHint": "Open {{fileName}} in your browser, then use Print → Save as PDF."
-  },
   "inputBar": {
     "attachData": "Add file or local directory",
     "uploadFile": "Upload file (Excel/Word/PDF)",

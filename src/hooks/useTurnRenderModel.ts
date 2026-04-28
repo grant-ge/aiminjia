@@ -33,6 +33,7 @@ export interface RenderToolGroup {
 
 export interface RenderGeneratedFile {
   id: string
+  conversationId: string
   title: string
   sub: string
   appName: string
@@ -50,15 +51,57 @@ function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['statu
   return s === 'executing' ? 'running' : s === 'error' ? 'error' : 'done'
 }
 
-function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
+function formatFileSize(bytes: number | undefined): string | null {
+  if (bytes == null || bytes <= 0) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function displayFileType(fileType: string | undefined): string | null {
+  const value = fileType?.trim().toUpperCase()
+  if (!value) return null
+  if (value === 'EXCEL') return 'XLS'
+  return value
+}
+
+function displayFileCategory(category: string | undefined): string | null {
+  switch (category) {
+    case 'report': return '报告'
+    case 'chart': return '图表'
+    case 'data': return '数据'
+    case 'analysis': return '分析'
+    case 'script': return '脚本'
+    case 'temp': return '临时'
+    default: return category || null
+  }
+}
+
+function buildGeneratedFileMeta(f: GeneratedFile, format?: string, subtitle?: string): string {
+  if (subtitle) return subtitle
+  if (f.isDegraded) {
+    const actual = displayFileType(f.fileType) ?? format?.toUpperCase() ?? '文件'
+    const requested = f.requestedFormat?.trim().toUpperCase()
+    return requested ? `已降级为 ${actual} · 原请求 ${requested}` : `已降级为 ${actual}`
+  }
+
+  const parts = [
+    formatFileSize(f.fileSize),
+    displayFileCategory(f.category),
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): RenderGeneratedFile {
   const anyF = f as unknown as {
     id: string; title?: string; fileName?: string;
     subtitle?: string; appName?: string; format?: string;
   }
   return {
     id: anyF.id,
+    conversationId,
     title: anyF.title || anyF.fileName || '未命名文件',
-    sub: anyF.subtitle || anyF.format || '',
+    sub: buildGeneratedFileMeta(f, anyF.format, anyF.subtitle),
     appName: anyF.appName || 'Open',
   }
 }
@@ -175,7 +218,7 @@ export function buildTurnsFromMessages(
       }
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
-          current.generatedFiles.push(normalizeGeneratedFile(f))
+          current.generatedFiles.push(normalizeGeneratedFile(f, m.conversationId))
         }
       }
       continue

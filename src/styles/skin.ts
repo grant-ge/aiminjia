@@ -1,5 +1,3 @@
-import { isDarkColor } from '@/lib/themeUtils'
-
 export const DEFAULT_ACCENT_COLOR = '#DBAA22'
 
 export const DERIVED_SKIN_KEYS = [
@@ -20,7 +18,7 @@ export function deriveSkin(
   accentColor?: string,
 ): Record<(typeof DERIVED_SKIN_KEYS)[number], string> {
   const accent = normalizeAccentColor(accentColor)
-  const foreground = isDarkColor(accent) ? '#FFFFFF' : '#1A1A1A'
+  const foreground = '#FFFFFF'
 
   return {
     '--primary': accent,

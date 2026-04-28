@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { ask } from '@tauri-apps/plugin-dialog'
@@ -6,9 +6,17 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useNotificationStore } from '@/stores/notificationStore'
 import i18n from '@/i18n'
 
-export function useUpdater() {
-  const userDeclinedRef = useRef(false)
+const SNOOZED_VERSION_KEY = 'update-snoozed-version'
 
+function getSnoozedVersion(): string | null {
+  try { return localStorage.getItem(SNOOZED_VERSION_KEY) } catch { return null }
+}
+
+function setSnoozedVersion(version: string) {
+  try { localStorage.setItem(SNOOZED_VERSION_KEY, version) } catch { /* ignore */ }
+}
+
+export function useUpdater() {
   useEffect(() => {
     let cancelled = false
 
@@ -24,8 +32,8 @@ export function useUpdater() {
           return
         }
 
-        // User already declined this session — don't ask again
-        if (userDeclinedRef.current) return
+        // User already snoozed this version (persisted across restarts)
+        if (getSnoozedVersion() === update.version) return
 
         const yes = await ask(
           `${update.body ?? i18n.t('updater.updateAvailableDesc')}`,
@@ -37,8 +45,8 @@ export function useUpdater() {
           }
         )
         if (!yes || cancelled) {
-          userDeclinedRef.current = true
-          console.info('User declined update to', update.version)
+          setSnoozedVersion(update.version)
+          console.info('User snoozed update to', update.version)
           return
         }
 

@@ -36,6 +36,9 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
+
+applyFontScale(loadPersistedFontScale())
 
 function RouteSwitch() {
   const route = useUiStore((state) => state.route)
@@ -98,7 +101,7 @@ function AppShell() {
   return (
     <div className="flex h-screen w-screen bg-sidebar text-foreground">
       <AppSidebar />
-      <main className="min-w-0 flex-1 overflow-hidden rounded-bl-xl rounded-tl-xl">
+      <main className="min-w-0 flex-1 overflow-hidden rounded-bl-xl rounded-tl-xl border-l border-border">
         <RouteSwitch />
       </main>
       <SettingsModal />

@@ -58,8 +58,8 @@ export function HomeCategoryChipRow({
             onClick={() => onSelect(it.key)}
             className={
               active
-                ? 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[20px] px-3 py-3 text-[14px] font-semibold text-foreground'
-                : 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[20px] px-3 py-3 text-[14px] font-medium text-muted-foreground'
+                ? 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[20px] px-3 py-3 text-sm font-semibold text-foreground'
+                : 'flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[20px] px-3 py-3 text-sm font-medium text-muted-foreground'
             }
           >
             <span className={active ? 'text-primary' : ''}>{renderIcon(it.icon)}</span>

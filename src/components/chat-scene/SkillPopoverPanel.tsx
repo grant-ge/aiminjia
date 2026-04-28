@@ -25,7 +25,7 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
         boxShadow: '0 2px 3.5px -1px rgba(0,0,0,0.06), 0 4px 5.25px -1px rgba(0,0,0,0.10)',
       }}
     >
-      <header className="flex items-center justify-between border-b border-border px-4 py-3 text-[12px] font-semibold text-muted-foreground">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3 text-xs font-semibold text-muted-foreground">
         <span>管理已安装的技能</span>
         <button
           type="button"
@@ -49,9 +49,9 @@ export function SkillPopoverPanel({ items, onPick, onClose }: SkillPopoverPanelP
             >
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-semibold text-foreground">{it.title}</span>
-                <span className="truncate text-[12px] text-muted-foreground">{it.subtitle}</span>
+                <span className="truncate text-xs text-muted-foreground">{it.subtitle}</span>
               </div>
-              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[12px] text-muted-foreground">
+              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                 {it.source}
               </span>
             </button>

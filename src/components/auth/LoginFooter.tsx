@@ -7,5 +7,5 @@ interface LoginFooterProps {
 }
 
 export function LoginFooter({ text }: LoginFooterProps) {
-  return <div className="text-[12px] text-muted-foreground">{text}</div>
+  return <div className="text-xs text-muted-foreground">{text}</div>
 }

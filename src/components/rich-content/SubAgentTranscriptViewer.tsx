@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getSubagentTranscript } from '@/lib/tauri'
@@ -6,6 +6,7 @@ import type { SubAgentTranscriptEntry } from '@/types/message'
 
 interface SubAgentTranscriptViewerProps {
   transcriptRef: string
+  variant?: 'toggle' | 'content'
 }
 
 type LoadState = 'idle' | 'loading' | 'loaded' | 'error'
@@ -29,8 +30,83 @@ function roleBadgeStyle(role: string) {
   return ROLE_BADGE_STYLE[role] ?? ROLE_BADGE_STYLE.user
 }
 
+function TranscriptBody({
+  loadState,
+  entries,
+  errorMsg,
+}: {
+  loadState: LoadState
+  entries: SubAgentTranscriptEntry[]
+  errorMsg: string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="px-4 py-3">
+      {loadState === 'loading' && (
+        <div className="py-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {t('subagent.transcript.loading', 'Loading execution trace...')}
+        </div>
+      )}
+
+      {loadState === 'error' && (
+        <div
+          role="alert"
+          className="rounded-md px-3 py-2 text-xs"
+          style={{
+            background: 'var(--color-semantic-red-bg-light)',
+            color: 'var(--color-semantic-red)',
+          }}
+        >
+          {t('subagent.transcript.error', 'Failed to load execution trace')}: {errorMsg}
+        </div>
+      )}
+
+      {loadState === 'loaded' && (
+        <div className="flex flex-col gap-2">
+          {entries.map((entry, index) => {
+            const badgeStyle = roleBadgeStyle(entry.role)
+            return (
+              <div key={`${entry.role}-${index}`} className="flex gap-2.5">
+                <span
+                  className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold"
+                  style={{
+                    background: badgeStyle.bg,
+                    color: badgeStyle.color,
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {entry.role}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  {entry.toolName && (
+                    <div
+                      className="mb-0.5 font-mono text-xs"
+                      style={{ color: 'var(--color-text-muted)' }}
+                    >
+                      {entry.toolName}
+                    </div>
+                  )}
+                  <p
+                    className="whitespace-pre-wrap break-words text-xs leading-relaxed"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    {entry.content}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SubAgentTranscriptViewer({
   transcriptRef,
+  variant = 'toggle',
 }: SubAgentTranscriptViewerProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -38,25 +114,42 @@ export function SubAgentTranscriptViewer({
   const [entries, setEntries] = useState<SubAgentTranscriptEntry[]>([])
   const [errorMsg, setErrorMsg] = useState('')
 
+  const loadTranscript = useCallback(async () => {
+    setLoadState('loading')
+    setErrorMsg('')
+    try {
+      const loaded = await getSubagentTranscript(transcriptRef)
+      setEntries(loaded)
+      setLoadState('loaded')
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : String(error))
+      setLoadState('error')
+    }
+  }, [transcriptRef])
+
+  useEffect(() => {
+    if (variant === 'content' && loadState === 'idle') {
+      const timeoutId = window.setTimeout(() => {
+        void loadTranscript()
+      }, 0)
+      return () => window.clearTimeout(timeoutId)
+    }
+  }, [loadState, loadTranscript, variant])
+
   const handleToggle = useCallback(async () => {
     const shouldLoad = !expanded && (loadState === 'idle' || loadState === 'error')
     if (shouldLoad) {
-      setLoadState('loading')
-      setErrorMsg('')
       setExpanded(true)
-      try {
-        const loaded = await getSubagentTranscript(transcriptRef)
-        setEntries(loaded)
-        setLoadState('loaded')
-      } catch (error) {
-        setErrorMsg(error instanceof Error ? error.message : String(error))
-        setLoadState('error')
-      }
+      await loadTranscript()
       return
     }
 
     setExpanded((prev) => !prev)
-  }, [expanded, loadState, transcriptRef])
+  }, [expanded, loadState, loadTranscript])
+
+  if (variant === 'content') {
+    return <TranscriptBody loadState={loadState} entries={entries} errorMsg={errorMsg} />
+  }
 
   return (
     <div>
@@ -106,66 +199,10 @@ export function SubAgentTranscriptViewer({
 
       {expanded && (
         <div
-          className="border-t px-4 py-3"
+          className="border-t"
           style={{ borderColor: 'var(--color-border)' }}
         >
-          {loadState === 'loading' && (
-            <div className="py-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              {t('subagent.transcript.loading', 'Loading execution trace...')}
-            </div>
-          )}
-
-          {loadState === 'error' && (
-            <div
-              role="alert"
-              className="rounded-md px-3 py-2 text-xs"
-              style={{
-                background: 'var(--color-semantic-red-bg-light)',
-                color: 'var(--color-semantic-red)',
-              }}
-            >
-              {t('subagent.transcript.error', 'Failed to load execution trace')}: {errorMsg}
-            </div>
-          )}
-
-          {loadState === 'loaded' && (
-            <div className="flex flex-col gap-2">
-              {entries.map((entry, index) => {
-                const badgeStyle = roleBadgeStyle(entry.role)
-                return (
-                  <div key={`${entry.role}-${index}`} className="flex gap-2.5">
-                    <span
-                      className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold"
-                      style={{
-                        background: badgeStyle.bg,
-                        color: badgeStyle.color,
-                        alignSelf: 'flex-start',
-                      }}
-                    >
-                      {entry.role}
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      {entry.toolName && (
-                        <div
-                          className="mb-0.5 font-mono text-xs"
-                          style={{ color: 'var(--color-text-muted)' }}
-                        >
-                          {entry.toolName}
-                        </div>
-                      )}
-                      <p
-                        className="whitespace-pre-wrap break-words text-xs leading-relaxed"
-                        style={{ color: 'var(--color-text-secondary)' }}
-                      >
-                        {entry.content}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          <TranscriptBody loadState={loadState} entries={entries} errorMsg={errorMsg} />
         </div>
       )}
     </div>
