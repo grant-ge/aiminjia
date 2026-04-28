@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ChevronDown,
   CheckCircle2,
@@ -89,21 +89,14 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
 function TaskSection({ conversationId }: { conversationId: string }) {
   const tasks = useChatStore((s) => s.taskStates[conversationId] ?? EMPTY_TASKS)
   const hasRunning = tasks.some((t) => isRunningTaskStatus(t.status))
-  const [open, setOpen] = useState(true)
-
-  // Force-open the panel on the rising edge of hasRunning.
-  // Render-phase setState on this component is allowed; useEffect would warn.
-  const prevHasRunning = useRef(hasRunning)
-  if (hasRunning && !prevHasRunning.current && !open) {
-    setOpen(true)
-  }
-  prevHasRunning.current = hasRunning
+  const [userCollapsed, setUserCollapsed] = useState(false)
+  const open = hasRunning || !userCollapsed
 
   return (
     <div className="border-b border-border">
       <button
         type="button"
-        onClick={() => !hasRunning && setOpen((v) => !v)}
+        onClick={() => !hasRunning && setUserCollapsed((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
         <span className="text-[13px] font-semibold text-foreground">待办</span>

@@ -82,7 +82,10 @@ describe('GeneratedFileCard inline preview', () => {
 
   it('keeps built-in open actions enabled when file actions are missing', () => {
     const onAction = vi.fn()
-    const { actions: _actions, ...fileWithoutActions } = baseFile
+    const fileWithoutActions: GeneratedFile = {
+      ...baseFile,
+      actions: undefined,
+    }
 
     render(<GeneratedFileCard file={fileWithoutActions} onAction={onAction} />)
 
