@@ -2,6 +2,7 @@ use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::RuntimeRepositoryFacade;
 use crate::storage::AiJiaHome;
 use std::collections::HashSet;
+use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::State;
@@ -242,7 +243,21 @@ fn preview_from_bytes(file_name: &str, file_type: &str, bytes: Vec<u8>) -> FileP
 }
 
 fn preview_from_record(file_mgr: &FileManager, record: ResolvedFileRecord) -> FilePreview {
-    preview_from_record_with_reader(file_mgr, record, |path| std::fs::read(path))
+    preview_from_record_with_reader(file_mgr, record, read_preview_file_bounded)
+}
+
+fn read_preview_file_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_PREVIEW_BYTES {
+        return Ok(vec![0; (MAX_PREVIEW_BYTES as usize) + 1]);
+    }
+
+    let mut file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.by_ref()
+        .take(MAX_PREVIEW_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn preview_from_record_with_reader(
@@ -254,9 +269,13 @@ fn preview_from_record_with_reader(
         Ok(path) => path,
         Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
     };
-    let bytes = match read_file(&full_path) {
-        Ok(bytes) => bytes,
-        Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
+    let bytes = if record.file_size > MAX_PREVIEW_BYTES {
+        vec![0; (MAX_PREVIEW_BYTES as usize) + 1]
+    } else {
+        match read_file(&full_path) {
+            Ok(bytes) => bytes,
+            Err(_) => return unsupported_preview(&record.file_name, "File is unavailable"),
+        }
     };
 
     preview_from_bytes(&record.file_name, &record.file_type, bytes)
@@ -906,6 +925,45 @@ mod preview_tests {
             }
             other => panic!("expected unsupported preview, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn oversized_metadata_skips_file_read() {
+        let tmp = TempDir::new().expect("tempdir");
+        let stored_path = "generated/large.txt";
+        let full_path = tmp.path().join(stored_path);
+        std::fs::create_dir_all(full_path.parent().expect("parent")).expect("create parent");
+        std::fs::write(&full_path, "small").expect("write file");
+        let file_mgr = FileManager::new(tmp.path());
+        let record = ResolvedFileRecord {
+            file_name: "large.txt".to_string(),
+            stored_path: stored_path.to_string(),
+            file_type: "text".to_string(),
+            file_size: MAX_PREVIEW_BYTES + 1,
+        };
+
+        let preview = preview_from_record_with_reader(&file_mgr, record, |_path| {
+            panic!("oversized metadata should skip file reads")
+        });
+
+        match preview {
+            FilePreview::Unsupported { reason, .. } => {
+                assert!(reason.contains("too large"), "unexpected reason: {reason}");
+            }
+            other => panic!("expected unsupported preview, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bounded_reader_uses_actual_file_size_before_reading() {
+        let tmp = TempDir::new().expect("tempdir");
+        let full_path = tmp.path().join("large.txt");
+        std::fs::write(&full_path, vec![b'a'; (MAX_PREVIEW_BYTES as usize) + 2])
+            .expect("write large file");
+
+        let bytes = read_preview_file_bounded(&full_path).expect("read preview bytes");
+
+        assert_eq!(bytes.len(), (MAX_PREVIEW_BYTES as usize) + 1);
     }
 
     #[test]

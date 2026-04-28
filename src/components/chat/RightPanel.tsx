@@ -216,10 +216,8 @@ function ArtifactSection({ conversationId }: { conversationId: string }) {
                   key={f.id}
                   file={f}
                   conversationId={conversationId}
-                  canPreview={
-                    isPreviewableFileType(f.fileType, f.fileName) &&
-                    isFileActionEnabled(f.actions, 'preview')
-                  }
+                  canPreview={isFileActionEnabled(f.actions, 'preview')}
+                  previewable={isPreviewableFileType(f.fileType, f.fileName)}
                 />
               ))}
             </div>
@@ -234,10 +232,12 @@ function ArtifactItem({
   file,
   conversationId,
   canPreview,
+  previewable,
 }: {
   file: GeneratedFile
   conversationId: string
   canPreview: boolean
+  previewable: boolean
 }) {
   const target = useGeneratedFilePreviewStore((s) => s.target)
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
@@ -255,6 +255,7 @@ function ArtifactItem({
         'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/70',
         active && 'bg-muted',
         !canPreview && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+        canPreview && !previewable && 'opacity-70',
       )}
     >
       <ArtifactFileIcon fileType={file.fileType} />

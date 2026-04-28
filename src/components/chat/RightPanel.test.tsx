@@ -114,7 +114,7 @@ describe('RightPanel preview workspace', () => {
     })
   })
 
-  it('keeps non-previewable artifacts visible but disabled', () => {
+  it('allows non-previewable artifacts to open the unsupported preview fallback', () => {
     useChatStore.setState({
       messages: [
         messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
@@ -130,19 +130,15 @@ describe('RightPanel preview workspace', () => {
 
     expect(screen.getByText('table.xlsx')).toBeInTheDocument()
     const tableButton = screen.getByRole('button', { name: 'Preview table.xlsx' })
-    expect(tableButton).toBeDisabled()
+    expect(tableButton).toBeEnabled()
 
     fireEvent.click(tableButton)
 
-    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
-
     expect(useGeneratedFilePreviewStore.getState().target).toEqual({
-      fileId: 'gf-1',
+      fileId: 'gf-2',
       conversationId: 'conv-1',
-      fileName: 'summary.md',
-      fileType: 'markdown',
+      fileName: 'table.xlsx',
+      fileType: 'excel',
     })
   })
 
