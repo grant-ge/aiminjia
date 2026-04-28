@@ -834,9 +834,7 @@ fn safe_truncate(content: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::streaming::ToolDefinition;
     use crate::runtime::tools::permission::PermissionMode;
-    use serde_json::json;
 
     #[test]
     fn build_run_config_preserves_permission_mode_from_subagent_config() {

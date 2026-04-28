@@ -1732,10 +1732,6 @@ mod tests {
         PendingPermissionControlPlane, PendingPermissionRequest, PendingPermissionResolution,
     };
     use crate::runtime::tools::permission::{PermissionDecision, PermissionMode, PermissionReason};
-    use crate::runtime::tools::{
-        AllowAllPermissionPipeline, RuntimeTool, ToolDefinition, ToolDispatcher, ToolError,
-        ToolExecutionContext, ToolResult,
-    };
     use async_trait::async_trait;
     use serde_json::json;
     use std::path::PathBuf;
@@ -1925,103 +1921,6 @@ mod tests {
             content.contains("interrupted before completion"),
             "missing cancel reason should fall back to generic interrupt wording"
         );
-    }
-
-    struct RecordingExecutor {
-        calls: AtomicUsize,
-        seen_system_prompts: Mutex<Vec<String>>,
-        seen_tool_defs: Mutex<Vec<Vec<String>>>,
-    }
-
-    impl RecordingExecutor {
-        fn new() -> Self {
-            Self {
-                calls: AtomicUsize::new(0),
-                seen_system_prompts: Mutex::new(Vec::new()),
-                seen_tool_defs: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl RuntimeLlmExecutor for RecordingExecutor {
-        async fn run_llm_step(
-            &self,
-            input: &LlmStepInput<'_>,
-            _bus: &RuntimeEventBus,
-            _cancel: &CancellationToken,
-        ) -> Result<LlmStepResult, TurnError> {
-            self.seen_system_prompts
-                .lock()
-                .unwrap()
-                .push(input.system_prompt.to_string());
-            self.seen_tool_defs.lock().unwrap().push(
-                input
-                    .tool_defs
-                    .iter()
-                    .filter_map(|value| value.get("name").and_then(|name| name.as_str()))
-                    .map(|name| name.to_string())
-                    .collect(),
-            );
-
-            match self.calls.fetch_add(1, Ordering::SeqCst) {
-                0 => Ok(LlmStepResult::ToolCalls {
-                    assistant_content: String::new(),
-                    tool_calls: vec![RuntimeToolCallRequest {
-                        tool_call_id: "tc-switch".to_string(),
-                        tool_name: "switch_skill".to_string(),
-                        args: json!({
-                            "skill_id": "comp-analysis"
-                        }),
-                        purpose: None,
-                    }],
-                    tokens_in: 0,
-                    tokens_out: 0,
-                }),
-                _ => Ok(LlmStepResult::ContentComplete {
-                    content: "done".to_string(),
-                    tokens_in: 0,
-                    tokens_out: 0,
-                    stop_reason: Some("end_turn".to_string()),
-                }),
-            }
-        }
-
-        async fn persist_assistant_message(
-            &self,
-            _conversation_id: &str,
-            _content: &str,
-            _tool_calls: &[serde_json::Value],
-            _generated_file_ids: &[String],
-            _file_metas: &[serde_json::Value],
-        ) -> Result<String, TurnError> {
-            Ok("assistant-msg".to_string())
-        }
-
-        async fn persist_user_message(
-            &self,
-            _conversation_id: &str,
-            _content: &str,
-            _file_ids: &[String],
-            _client_message_id: Option<&str>,
-        ) -> Result<String, TurnError> {
-            Ok("user-msg".to_string())
-        }
-
-        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
-            Ok("daily prompt".to_string())
-        }
-
-        async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-            Ok(vec![json!({
-                "name": "bash",
-                "description": "bash"
-            })])
-        }
-
-        async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
-            Ok(std::env::temp_dir())
-        }
     }
 
     struct SnapshotPromptExecutor {
