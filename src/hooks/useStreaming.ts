@@ -128,6 +128,17 @@ export function useStreaming() {
   const deltaBufferRef = useRef<Record<string, string>>({})
   const rafIdRef = useRef<number | null>(null)
 
+  // --- Streaming timing diagnostics（临时排查"无流式感"问题）---
+  // 记录每个对话的：首 delta 时间、上一次 flush 时间、累计 delta 个数/字节数。
+  // 用 console.log 直接输出，前端 DevTools Console 可见。
+  const streamTimingRef = useRef<Record<string, {
+    firstDeltaAt: number
+    lastFlushAt: number
+    deltaCount: number
+    totalBytes: number
+    flushCount: number
+  }>>({})
+
   /** Flush accumulated deltas to the store, then clear the buffer. */
   function flushDeltas() {
     rafIdRef.current = null
@@ -142,6 +153,18 @@ export function useStreaming() {
     for (const convId of keys) {
       const accumulated = buffer[convId]
       if (accumulated) {
+        const t = streamTimingRef.current[convId]
+        if (t) {
+          const now = performance.now()
+          const sinceLast = t.lastFlushAt > 0 ? Math.round(now - t.lastFlushAt) : 0
+          const sinceFirst = Math.round(now - t.firstDeltaAt)
+          t.flushCount += 1
+          t.lastFlushAt = now
+          console.log(
+            '[stream-timing] flush#%d conv=%s bytes=%d sinceLast=%dms sinceFirst=%dms totalBytes=%d totalDeltas=%d',
+            t.flushCount, convId, accumulated.length, sinceLast, sinceFirst, t.totalBytes, t.deltaCount,
+          )
+        }
         recordDiagnostic({
           event: 'streaming.delta.flushed',
           conversationId: convId,
@@ -195,6 +218,16 @@ export function useStreaming() {
   useTauriEvent(() =>
     onStreamingDelta(({ conversationId, delta }: StreamingDeltaPayload) => {
       touchActivity(conversationId)
+      // 时序统计：首次到达打一条，后续累计计数
+      let t = streamTimingRef.current[conversationId]
+      if (!t) {
+        const now = performance.now()
+        t = { firstDeltaAt: now, lastFlushAt: 0, deltaCount: 0, totalBytes: 0, flushCount: 0 }
+        streamTimingRef.current[conversationId] = t
+        console.log('[stream-timing] FIRST delta conv=%s len=%d', conversationId, delta.length)
+      }
+      t.deltaCount += 1
+      t.totalBytes += delta.length
       recordDiagnostic({
         event: 'streaming.delta.received',
         conversationId,
@@ -210,6 +243,19 @@ export function useStreaming() {
   // --- streaming:done --------------------------------------------------
   useTauriEvent(() =>
     onStreamingDone(({ conversationId }: StreamingDonePayload) => {
+      const t = streamTimingRef.current[conversationId]
+      if (t) {
+        const now = performance.now()
+        const totalMs = Math.round(now - t.firstDeltaAt)
+        console.log(
+          '[stream-timing] DONE conv=%s totalDeltas=%d totalBytes=%d flushes=%d totalMs=%dms avgBytesPerFlush=%d',
+          conversationId, t.deltaCount, t.totalBytes, t.flushCount, totalMs,
+          t.flushCount > 0 ? Math.round(t.totalBytes / t.flushCount) : 0,
+        )
+        delete streamTimingRef.current[conversationId]
+      } else {
+        console.log('[stream-timing] DONE conv=%s (no deltas received)', conversationId)
+      }
       console.log('[streaming:done] conversationId:', conversationId)
       recordDiagnostic({ event: 'streaming.done.received', conversationId })
       // Flush buffered deltas synchronously before clearing stream state

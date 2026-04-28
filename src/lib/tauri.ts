@@ -1329,51 +1329,6 @@ export function onAuthExpired(
 }
 
 // ---------------------------------------------------------------------------
-// Browser Events (WebView → Frontend)
-// ---------------------------------------------------------------------------
-
-/** Show the CDP browser window (bring active tab to front). */
-export function showBrowseView(): Promise<void> {
-  return invoke<void>('show_browse_view')
-}
-
-export interface BrowserNavigatingPayload {
-  appId?: number
-  url: string
-}
-
-export interface BrowserPageReadyPayload {
-  appId?: number
-  url: string
-  title: string
-}
-
-export interface BrowserClosedPayload {
-  appId?: number
-}
-
-/** Listen for browser navigating events. */
-export function onBrowserNavigating(
-  handler: (payload: BrowserNavigatingPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserNavigatingPayload>('browser:navigating', (event) => handler(event.payload))
-}
-
-/** Listen for browser page-ready events. */
-export function onBrowserPageReady(
-  handler: (payload: BrowserPageReadyPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserPageReadyPayload>('browser:page-ready', (event) => handler(event.payload))
-}
-
-/** Listen for browser closed events. */
-export function onBrowserClosed(
-  handler: (payload: BrowserClosedPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserClosedPayload>('browser:closed', (event) => handler(event.payload))
-}
-
-// ---------------------------------------------------------------------------
 // Skill Management Commands
 // ---------------------------------------------------------------------------
 

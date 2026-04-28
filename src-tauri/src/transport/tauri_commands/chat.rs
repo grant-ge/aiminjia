@@ -618,6 +618,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 let clean = strip_thinking_tag(&delta);
                                 if !clean.is_empty() {
                                     iter_content.push_str(&clean);
+                                    log::info!(
+                                        "[stream-timing-be] delta len={} total={} run={}",
+                                        clean.len(), iter_content.len(), run_id.as_str(),
+                                    );
                                     // TODO(leak-detect): skipped — check_for_leak requires
                                     // app_handle context not available in executor
                                     let _ = bus
@@ -2005,6 +2009,31 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
+        // 读 tavily/bocha key 和 use_cloud 给 web_search 工具用。之前这里写死成
+        // None/false，导致 web_search 只能走 Bing 抓取，反爬挂掉就整个工具失败。
+        let (tavily_api_key, bocha_api_key, use_cloud) = {
+            let map = self.services.db.get_all_settings().unwrap_or_default();
+            let mut s = if map.is_empty() {
+                AppSettings::default()
+            } else {
+                AppSettings::from_string_map(&map)
+            };
+            if let Some(ss) = self.services.crypto.as_ref() {
+                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
+                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
+            }
+            let tavily = if s.tavily_api_key.is_empty() {
+                None
+            } else {
+                Some(s.tavily_api_key)
+            };
+            let bocha = if s.bocha_api_key.is_empty() {
+                None
+            } else {
+                Some(s.bocha_api_key)
+            };
+            (tavily, bocha, s.use_cloud)
+        };
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db.clone(),
             file_manager: self.services.file_mgr.clone(),
@@ -2013,13 +2042,13 @@ impl TauriChatCommandAdapter {
             session_id: session_id.clone(),
             run_id: Some(run_id.clone()),
             agent_id: None,
-            tavily_api_key: None,
-            bocha_api_key: None,
+            tavily_api_key,
+            bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             session_manager: self.services.session_mgr.clone(),
             auth_manager: Some(self.services.auth_manager.clone()),
             connector_engine,
-            use_cloud: false,
+            use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
@@ -2038,10 +2067,16 @@ impl TauriChatCommandAdapter {
             .tool_registry
             .to_runtime_dispatcher(request_scoped_runtime_deps)
             .await;
+        let browser_available = self
+            .services
+            .app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .is_some();
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone()),
+                .with_runtime_resolver(self.services.runtime_resolver.clone())
+                .with_browser_available(browser_available),
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;

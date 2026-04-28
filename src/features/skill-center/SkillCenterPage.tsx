@@ -83,7 +83,7 @@ export function SkillCenterPage() {
   const reload = useSkillStore((s) => s.reload)
   const listByCategory = useSkillStore((s) => s.listByCategory)
   const setRoute = useUiStore((s) => s.setRoute)
-  const { createConversationFromSkill } = useChat()
+  useChat()
 
   const loadSkills = async () => {
     setLoadError(null)

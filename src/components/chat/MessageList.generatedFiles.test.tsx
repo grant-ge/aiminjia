@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const openGeneratedFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const openPreviewMock = vi.hoisted(() => vi.fn())

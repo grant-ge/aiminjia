@@ -331,7 +331,7 @@ describe('ChatBottomArea', () => {
     // '/salary-query' triggerText + ' 你好' tail
     expect(screen.getByRole('textbox')).toHaveValue('/salary-query 你好')
     // No selectedSkillCommands on the store
-    expect((useChatStore.getState() as Record<string, unknown>)['selectedSkillCommands']).toBeUndefined()
+    expect((useChatStore.getState() as unknown as Record<string, unknown>)['selectedSkillCommands']).toBeUndefined()
   })
 
   it('clears input after successful send, no skill state involved', async () => {

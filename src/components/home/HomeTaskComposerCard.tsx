@@ -92,9 +92,13 @@ export function HomeTaskComposerCard() {
       store.setMessages([])
       useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
 
-      // Authorize the selected (or default) workspace
+      // Authorize the selected workspace. Skip when it's the implicit default
+      // folder (id === 'default') — leaving workspaceName empty lets the sidebar
+      // fallback group it under "默认文件夹" instead of creating a duplicate
+      // "defaultFolder" project from the path's last component.
       const workspacePath = displayWorkspace?.rootPath
-      if (workspacePath) {
+      const isDefaultFolder = displayWorkspace?.id === 'default'
+      if (workspacePath && !isDefaultFolder) {
         try {
           await authorizeLocalDirectory(workspacePath, backendId)
           // Patch workspaceName into the optimistic conversation so the sidebar

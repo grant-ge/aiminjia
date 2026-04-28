@@ -5,7 +5,6 @@
 import { useChatStore } from '@/stores/chatStore'
 import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
-import { TaskStatusList } from './TaskStatusList'
 import { stripHallucinatedXml } from '@/lib/sanitize'
 import { useTranslation } from 'react-i18next'
 
@@ -20,13 +19,6 @@ const EMPTY_TOOL_EXECUTIONS: Array<{
   summary?: string
 }> = []
 
-const EMPTY_TASK_STATES: Array<{
-  taskId: string
-  status: string
-  runId: string
-  subject: string
-}> = []
-
 export function StreamingBubble({ content }: StreamingBubbleProps) {
   const { t } = useTranslation()
   const toolExecutions = useChatStore((s) => {
@@ -35,16 +27,11 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
       ? (s.streamStates[activeId]?.toolExecutions ?? s.toolExecutions)
       : (s.toolExecutions ?? EMPTY_TOOL_EXECUTIONS)
   })
-  const tasks = useChatStore((s) => {
-    const activeId = s.activeConversationId
-    return activeId ? (s.taskStates[activeId] ?? EMPTY_TASK_STATES) : EMPTY_TASK_STATES
-  })
   const agentPhase = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? s.streamStates[activeId]?.agentPhase : undefined
   })
   const activeTool = toolExecutions.find((t) => t.status === 'executing')
-  const errorTools = toolExecutions.filter((t) => t.status === 'error')
 
   // Strip hallucinated XML blocks that some models emit in text content
   const cleanContent = stripHallucinatedXml(content)
@@ -60,7 +47,7 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
       : (cleanContent ? '' : t('streaming.phases.think'))
 
   return (
-    <div className="mb-7 animate-[fadeUp_0.3s_ease]">
+    <div className="mb-7">
       <div>
         {cleanContent ? (
           <AssistantMarkdown text={cleanContent} />
@@ -83,29 +70,6 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             ) : null}
           </div>
         )}
-        {errorTools.length > 0 && (
-          <div className="mt-2 flex flex-col gap-1">
-            {errorTools.map((tool) => {
-              const label = t('streaming.tools.' + tool.toolName, tool.toolName)
-              const rawSummary = tool.summary ?? ''
-              const summary = rawSummary.length > 80 ? rawSummary.slice(0, 80) + '…' : rawSummary
-              return (
-                <div
-                  key={tool.toolId}
-                  className="flex items-start gap-1.5 text-xs"
-                  style={{ color: 'var(--color-semantic-red, #ef4444)' }}
-                >
-                  <span aria-label="tool error" className="mt-px shrink-0">❌</span>
-                  <span>
-                    <span className="font-medium">{label}</span>
-                    {summary ? <span className="opacity-80">: {summary}</span> : null}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        <TaskStatusList tasks={tasks} />
       </div>
     </div>
   )

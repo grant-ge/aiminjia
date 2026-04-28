@@ -4,8 +4,9 @@ import { Button } from '@/components/common/Button'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
   listCustomSkills, uninstallCustomSkill, initSkillTemplate, packSkill,
-  reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
+  reloadSkill, startSkillWatch, stopSkillWatch, TAURI_EVENTS,
 } from '@/lib/tauri'
+import { listen } from '@tauri-apps/api/event'
 import type { CustomSkillInfo } from '@/lib/tauri'
 import { message } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -20,7 +21,7 @@ interface SkillsTabProps {
   onRequestClose?: () => void
 }
 
-export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
+export function SkillsTab(_props: SkillsTabProps = {}) {
   const { t } = useTranslation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const [subTab, setSubTab] = useState<SubTab>('installed')
@@ -78,7 +79,7 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
 
     let unlisten: (() => void) | null = null
     const setup = async () => {
-      unlisten = await onSkillFileChanged(handleFileChanged)
+      unlisten = await listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => handleFileChanged(event.payload))
     }
     setup()
 

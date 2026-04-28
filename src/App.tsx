@@ -22,14 +22,10 @@ import {
   denyPermissionRequest,
   getPluginInfo,
   onAuthExpired,
-  onBrowserClosed,
-  onBrowserNavigating,
-  onBrowserPageReady,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
-import { useBrowserStore } from '@/stores/browserStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -171,23 +167,6 @@ function App() {
     })
     return () => {
       unlisten.then((fn) => fn())
-    }
-  }, [])
-
-  useEffect(() => {
-    const unlistenNavigating = onBrowserNavigating(({ appId, url }) => {
-      useBrowserStore.getState().setNavigating(appId ?? 0, url)
-    })
-    const unlistenReady = onBrowserPageReady(({ appId, url, title }) => {
-      useBrowserStore.getState().setPageReady(appId ?? 0, url, title)
-    })
-    const unlistenClosed = onBrowserClosed(({ appId }) => {
-      useBrowserStore.getState().setClosed(appId ?? 0)
-    })
-    return () => {
-      unlistenNavigating.then((fn) => fn())
-      unlistenReady.then((fn) => fn())
-      unlistenClosed.then((fn) => fn())
     }
   }, [])
 

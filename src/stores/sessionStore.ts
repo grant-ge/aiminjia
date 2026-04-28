@@ -102,6 +102,6 @@ export function createSessionSlice<T extends SessionState & SessionSliceBridge>(
     removeMessage: (id) =>
       apply((state) => ({ messages: state.messages.filter((m) => m.id !== id) } as Partial<T>)),
     resetAll: () =>
-      apply({ conversations: [], activeConversationId: null, messages: [] } as Partial<T>),
+      apply({ conversations: [], activeConversationId: null, messages: [] } as unknown as Partial<T>),
   }
 }

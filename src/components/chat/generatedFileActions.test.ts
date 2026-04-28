@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import type { FileAction } from '@/types/message'
+
 import {
   getGeneratedFilePrimaryAction,
   isFileActionEnabled,
@@ -68,10 +70,10 @@ describe('generatedFileActions', () => {
   })
 
   it('uses file type for preview when actions omit preview', () => {
-    const actions = [
+    const actions: FileAction[] = [
       { type: 'open', label: 'Open', enabled: true },
       { type: 'reveal', label: 'Open Folder', enabled: true },
-    ] as const
+    ]
 
     expect(isPreviewActionEnabledForFile(actions, 'png', 'mock-status-chart.png')).toBe(true)
     expect(isPreviewActionEnabledForFile(actions, 'html', 'mock-coverage-report.html')).toBe(true)

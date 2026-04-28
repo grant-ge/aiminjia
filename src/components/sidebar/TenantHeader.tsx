@@ -2,7 +2,6 @@
  * @designSource design.pen#6xhgh
  * @sizing width fluid, padding 8, gap 8
  */
-import { ChevronsUpDown } from 'lucide-react'
 
 interface TenantHeaderProps {
   name?: string

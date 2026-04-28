@@ -44,7 +44,7 @@ export function ExecutionTraceCard({
 
   return (
     <div
-      className="my-2 overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-lg border"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',

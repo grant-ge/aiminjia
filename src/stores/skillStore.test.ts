@@ -10,7 +10,7 @@ const tauriMock = vi.hoisted(() => ({
 
 vi.mock('@/lib/tauri', () => tauriMock)
 
-import { useSkillStore, SkillAlreadyExistsError } from '@/stores/skillStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 
 describe('skillStore', () => {

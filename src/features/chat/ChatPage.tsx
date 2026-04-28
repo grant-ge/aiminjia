@@ -1,4 +1,3 @@
-import { BrowserPanel } from '@/components/browser/BrowserPanel'
 import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
 import { RightPanel } from '@/components/chat/RightPanel'
 import type { PreviewTarget } from '@/components/chat/generatedFileActions'
@@ -61,7 +60,6 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           conversationId={conversationId}
           onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
         />
-        <BrowserPanel />
       </div>
     </div>
   )

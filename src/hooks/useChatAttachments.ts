@@ -85,7 +85,7 @@ export function useChatAttachments() {
 
       if (!selected) return []
       const paths = Array.isArray(selected) ? selected : [selected]
-      return paths.map(makePendingAttachment)
+      return paths.map((p) => makePendingAttachment(p))
     } finally {
       setIsPickingAttachments(false)
     }
@@ -114,7 +114,7 @@ export function useChatAttachments() {
   }, [])
 
   const resolvePastedPaths = useCallback(async (paths: string[]): Promise<PendingAttachment[]> => {
-    const resolved = await Promise.all(paths.map(async (path) => {
+    const resolved = await Promise.all(paths.map(async (path): Promise<PendingAttachment | null> => {
       try {
         const info = await stat(path)
         const attachment = makePendingAttachment(path, info.isDirectory ? 'folder' : detectAttachmentFileType(path))
@@ -123,7 +123,7 @@ export function useChatAttachments() {
           kind: info.isDirectory ? 'folder' : attachment.fileType === 'image' ? 'image' : 'file',
           fileType: info.isDirectory ? 'folder' : attachment.fileType,
           fileSize: info.isDirectory ? 0 : info.size,
-          source: 'paste' as const,
+          source: 'paste',
         }
       } catch (error) {
         console.warn('[useChatAttachments] resolvePastedPaths skipped path:', path, error)

@@ -172,7 +172,6 @@ export function ChatBottomArea() {
     })
 
     setIsSending(true)
-    const submittedInput = overrideText ?? input
     setInput('')
       const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
         id: f.id,
@@ -191,12 +190,9 @@ export function ChatBottomArea() {
       )
       if (sent) {
         setPendingFiles([])
-      } else {
-        setInput((current) => current === '' ? submittedInput : current)
       }
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
-      setInput((current) => current === '' ? submittedInput : current)
     } finally {
       setIsSending(false)
     }

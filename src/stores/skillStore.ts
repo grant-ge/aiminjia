@@ -5,8 +5,10 @@ import { ALREADY_EXISTS_PREFIX } from '@/data/skill-constants'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
 export class SkillAlreadyExistsError extends Error {
-  constructor(public readonly skillId: string) {
+  readonly skillId: string
+  constructor(skillId: string) {
     super(`ALREADY_EXISTS:${skillId}`)
+    this.skillId = skillId
     this.name = 'SkillAlreadyExistsError'
   }
 }

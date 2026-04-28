@@ -42,7 +42,7 @@ export function AiBubble({ message, isStreaming }: AiBubbleProps) {
   if (!hasContent && !isStreaming) return null
 
   return (
-    <div className="animate-[fadeUp_0.3s_ease]">
+    <div>
       <div className="group relative">
         {AI_BUBBLE_RENDER_FIELDS.map((field) => {
           const value = content[field]

@@ -420,6 +420,6 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         isStreaming: false,
         streamingContent: '',
         toolExecutions: [],
-      } as Partial<T>),
+      } as unknown as Partial<T>),
   }
 }

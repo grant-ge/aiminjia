@@ -219,9 +219,36 @@ pub fn sanitize_title(raw: &str) -> String {
                 | '」'
                 | '『'
                 | '』'
+                | '#'
+                | '*'
+                | ' '
         )
     });
-    trimmed.trim().chars().take(30).collect()
+    let candidate: String = trimmed.trim().chars().take(30).collect();
+
+    if looks_like_refusal(&candidate) {
+        return String::new();
+    }
+    candidate
+}
+
+fn looks_like_refusal(s: &str) -> bool {
+    const REFUSAL_PREFIXES: &[&str] = &[
+        "我无法",
+        "我不能",
+        "抱歉",
+        "对不起",
+        "很抱歉",
+        "Sorry",
+        "sorry",
+        "I cannot",
+        "I can't",
+        "I'm sorry",
+        "I am sorry",
+        "I am unable",
+        "I'm unable",
+    ];
+    REFUSAL_PREFIXES.iter().any(|p| s.starts_with(p))
 }
 
 pub fn should_auto_title(
@@ -305,17 +332,17 @@ async fn generate_and_set_title_inner(
             .collect()
     };
 
-    let first_user: String = messages
-        .iter()
-        .find(|m| m["role"].as_str() == Some("user"))
-        .map(extract_text)
-        .unwrap_or_default();
+    let first_nonempty = |role: &str| -> String {
+        messages
+            .iter()
+            .filter(|m| m["role"].as_str() == Some(role))
+            .map(extract_text)
+            .find(|s| !s.trim().is_empty())
+            .unwrap_or_default()
+    };
 
-    let first_assistant: String = messages
-        .iter()
-        .find(|m| m["role"].as_str() == Some("assistant"))
-        .map(extract_text)
-        .unwrap_or_default();
+    let first_user = first_nonempty("user");
+    let first_assistant = first_nonempty("assistant");
 
     if first_user.is_empty() {
         anyhow::bail!("no user message content found");
@@ -489,6 +516,23 @@ mod title_tests {
         let long = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十X";
         let result = sanitize_title(long);
         assert!(result.chars().count() <= 30);
+    }
+
+    #[test]
+    fn sanitize_title_rejects_refusals() {
+        assert_eq!(
+            sanitize_title("我无法直接访问网页，但可以根据公开信息为你总结 **Reac"),
+            ""
+        );
+        assert_eq!(sanitize_title("抱歉，我无法完成请求"), "");
+        assert_eq!(sanitize_title("Sorry, I can't help with that"), "");
+        assert_eq!(sanitize_title("I cannot access external URLs"), "");
+    }
+
+    #[test]
+    fn sanitize_title_strips_markdown_decoration() {
+        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新特性详解");
+        assert_eq!(sanitize_title("**重要标题**"), "重要标题");
     }
 
     #[test]

@@ -281,7 +281,14 @@ impl AuthManager {
                     };
                 }
                 Err(e) => {
-                    log::warn!("refresh_auth_info: refresh_token failed: {}", e);
+                    if session_key.is_some() {
+                        log::debug!(
+                            "refresh_auth_info: refresh_token failed: {}, will fall back to session_key",
+                            e
+                        );
+                    } else {
+                        log::warn!("refresh_auth_info: refresh_token failed: {}", e);
+                    }
                 }
             }
         }

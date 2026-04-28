@@ -2,7 +2,7 @@
  * @designSource design.pen#F8ixG flow
  * @sizing padding [24,40] gap 18
  */
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
 import { StreamingBubble } from '@/components/chat/StreamingBubble'
@@ -28,7 +28,7 @@ const FILE_ACTION_ERROR_TITLES: Record<FileActionKind, string> = {
 
 export function MessageList() {
   const turns = useTurnRenderModel()
-  const { sendUserMessage } = useChat()
+  useChat()
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => {
@@ -38,9 +38,6 @@ export function MessageList() {
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const clearIfConversationChanged = useGeneratedFilePreviewStore((s) => s.clearIfConversationChanged)
   const pushNotification = useNotificationStore((s) => s.push)
-  const [expansion, setExpansion] = useState<
-    Record<number, { expanded: boolean; stepIndex: number | null }>
-  >({})
 
   useEffect(() => {
     if (activeConversationId) clearIfConversationChanged(activeConversationId)
@@ -92,7 +89,6 @@ export function MessageList() {
   return (
     <div className="flex flex-col gap-5 px-2 py-3">
       {turns.map((t, i) => {
-        const e = expansion[i] ?? { expanded: true, stepIndex: null }
         return (
           <div key={i} className="flex flex-col gap-4">
             {t.userMessage ? (
@@ -106,22 +102,10 @@ export function MessageList() {
               <ToolGroupCard
                 status={t.toolGroup.status}
                 steps={t.toolGroup.steps}
-                durationMs={t.toolGroup.durationMs}
-                expanded={e.expanded}
-                expandedStepIndex={e.stepIndex}
-                onToggle={() =>
-                  setExpansion((prev) => ({ ...prev, [i]: { ...e, expanded: !e.expanded } }))
-                }
-                onToggleStep={(index) =>
-                  setExpansion((prev) => ({
-                    ...prev,
-                    [i]: { ...e, stepIndex: e.stepIndex === index ? null : index },
-                  }))
-                }
               />
             ) : null}
             {t.aiSegments.map((s) => (
-              <AiBubble key={s.id} message={s.message} onUserResponse={sendUserMessage} />
+              <AiBubble key={s.id} message={s.message} />
             ))}
             {t.generatedFiles.map((f) => (
               <GeneratedFileCard

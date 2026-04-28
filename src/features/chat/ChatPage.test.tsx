@@ -25,10 +25,6 @@ vi.mock('@/components/chat/RightPanel', () => ({
   RightPanel: () => <div data-testid="right-panel" />,
 }))
 
-vi.mock('@/components/browser/BrowserPanel', () => ({
-  BrowserPanel: () => <div data-testid="browser-panel" />,
-}))
-
 describe('ChatPage layout', () => {
   it('composes the chat column as header, content, and footer using flex layout', () => {
     useChatStore.setState({

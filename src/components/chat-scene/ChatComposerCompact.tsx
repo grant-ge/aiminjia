@@ -5,7 +5,11 @@
 import { type KeyboardEvent, type ReactNode, type RefObject, type CompositionEventHandler, type ClipboardEventHandler, useRef } from 'react'
 import { ArrowUp, Blocks, Folder, Plus, Sparkles, X } from 'lucide-react'
 
-import type { ComposerSkillCommand } from '@/stores/chatStore'
+export interface ComposerSkillCommand {
+  command: string
+  label: string
+  id?: string
+}
 
 interface ChatComposerCompactProps {
   value: string
