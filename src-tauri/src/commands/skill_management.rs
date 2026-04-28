@@ -1,10 +1,74 @@
+use crate::plugin::skill::loader::is_valid_skill_id;
+use crate::plugin::skill::registry::SkillRegistry;
+use crate::storage::UserScopedPathResolver;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
-use crate::storage::UserScopedPathResolver;
-use crate::plugin::skill::registry::SkillRegistry;
+
+/// Structured error returned by `validate_skill_directory`. The Tauri command
+/// surface stringifies this via `to_user_message()` so the frontend can show
+/// a precise reason without parsing free-form strings.
+#[derive(Debug)]
+pub enum SkillValidationError {
+    MissingSkillMd,
+    ParseFailed(String),
+    InvalidName(String),
+    EmptyDescription,
+}
+
+impl SkillValidationError {
+    pub fn to_user_message(&self) -> String {
+        match self {
+            Self::MissingSkillMd => "目录中缺少 SKILL.md".to_string(),
+            Self::ParseFailed(detail) => format!("SKILL.md 解析失败：{}", detail),
+            Self::InvalidName(name) => format!(
+                "SKILL.md 中 name='{}' 不合法（必须以小写字母或数字开头，仅允许 a-z 0-9 - _，长度 ≤ 64）",
+                name
+            ),
+            Self::EmptyDescription => "SKILL.md 中 description 不能为空".to_string(),
+        }
+    }
+}
+
+/// Validate that `source` is a well-formed skill directory the runtime loader
+/// will actually pick up. Mirrors the rules in `loader::load_one_root` so an
+/// upload that passes here is guaranteed to surface in `list_skills`.
+pub fn validate_skill_directory(source: &std::path::Path) -> Result<(), SkillValidationError> {
+    let skill_md = source.join("SKILL.md");
+    if !skill_md.is_file() {
+        return Err(SkillValidationError::MissingSkillMd);
+    }
+    let content = std::fs::read_to_string(&skill_md)
+        .map_err(|e| SkillValidationError::ParseFailed(e.to_string()))?;
+
+    // Extract and parse YAML frontmatter manually so we can distinguish
+    // ParseFailed (malformed YAML) from semantic errors (InvalidName, EmptyDescription).
+    let input = content.strip_prefix('\u{feff}').unwrap_or(&content);
+    let rest = input.strip_prefix("---\n").ok_or_else(|| {
+        SkillValidationError::ParseFailed("SKILL.md missing YAML frontmatter".to_string())
+    })?;
+    let end = rest.find("\n---").ok_or_else(|| {
+        SkillValidationError::ParseFailed("SKILL.md frontmatter is not closed with ---".to_string())
+    })?;
+    let yaml = &rest[..end];
+
+    let frontmatter: crate::plugin::skill::types::SkillFrontmatter = serde_yaml::from_str(yaml)
+        .map_err(|e| {
+            SkillValidationError::ParseFailed(format!(
+                "Failed to parse SKILL.md YAML frontmatter: {e}"
+            ))
+        })?;
+
+    if !is_valid_skill_id(&frontmatter.name) {
+        return Err(SkillValidationError::InvalidName(frontmatter.name));
+    }
+    if frontmatter.description.trim().is_empty() {
+        return Err(SkillValidationError::EmptyDescription);
+    }
+    Ok(())
+}
 
 /// Skill info returned by `list_skills` IPC — only SKILL.md-backed skills.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -85,13 +149,9 @@ fn list_custom_skills_in_dir(custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, 
     Ok(skills)
 }
 
-
 fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let cus = app.state::<Arc<crate::storage::CurrentUserStorage>>();
-    Ok(cus
-        .require_paths()
-        .map_err(|e| e.to_string())?
-        .skills_dir())
+    Ok(cus.require_paths().map_err(|e| e.to_string())?.skills_dir())
 }
 
 fn install_custom_skill_to_dir(source: &Path, custom_dir: &Path) -> Result<String, String> {
@@ -101,11 +161,14 @@ fn install_custom_skill_to_dir(source: &Path, custom_dir: &Path) -> Result<Strin
     let dest = custom_dir.join(basename);
     if dest.exists() {
         std::fs::remove_dir_all(&dest).map_err(|e| {
-            format!("Failed to remove existing skill at '{}': {}", dest.display(), e)
+            format!(
+                "Failed to remove existing skill at '{}': {}",
+                dest.display(),
+                e
+            )
         })?;
     }
-    copy_dir_recursive(source, &dest)
-        .map_err(|e| format!("Failed to copy skill: {}", e))?;
+    copy_dir_recursive(source, &dest).map_err(|e| format!("Failed to copy skill: {}", e))?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -238,7 +301,9 @@ description: 描述这个技能何时应该被使用。
 /// Pack a skill directory into a .aijia-skill zip file.
 #[tauri::command]
 pub async fn pack_skill(_skill_dir: String) -> Result<String, String> {
-    unimplemented!("Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands.")
+    unimplemented!(
+        "Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands."
+    )
 }
 
 /// Reload a custom skill from disk (hot-reload for dev mode).
@@ -501,7 +566,9 @@ pub async fn install_marketplace_skill(
 }
 
 pub(crate) fn pack_skill_to_dir(_skill_dir: &Path, _output_dir: &Path) -> Result<PathBuf, String> {
-    unimplemented!("Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands.")
+    unimplemented!(
+        "Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands."
+    )
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
