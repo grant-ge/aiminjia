@@ -16,7 +16,6 @@ use serde_json::Value;
 use crate::python::runner::PythonRunner;
 
 use super::context::PluginContext;
-use super::manifest::PluginManifest;
 use super::tool_trait::{ToolError, ToolOutput, ToolPlugin};
 
 fn managed_python_runner(
@@ -49,27 +48,9 @@ pub struct PythonToolBridge {
 
 impl PythonToolBridge {
     /// Create from a parsed plugin manifest and its directory.
-    pub fn from_manifest(manifest: &PluginManifest, plugin_dir: PathBuf) -> Result<Self, String> {
-        let handler = manifest
-            .plugin
-            .handler
-            .as_deref()
-            .ok_or("Python tool plugin must specify 'handler' in plugin.toml")?;
-
-        let handler_path = plugin_dir.join(handler);
-        if !handler_path.exists() {
-            return Err(format!("Handler file not found: {:?}", handler_path));
-        }
-
-        // Read the schema from the Python handler by calling schema()
-        // For now, use a placeholder — actual schema loading happens at registration time
-        Ok(Self {
-            id: manifest.plugin.id.clone(),
-            description: String::new(),
-            schema: Value::Object(serde_json::Map::new()),
-            plugin_dir,
-            handler_file: handler.to_string(),
-        })
+    #[allow(dead_code)]
+    pub fn from_manifest(_id: &str, _handler: &str, plugin_dir: PathBuf) -> Result<Self, String> {
+        unimplemented!("removed in Phase B Task 5; restored in Task 8")
     }
 
     /// Load schema by executing the Python handler's schema() function.

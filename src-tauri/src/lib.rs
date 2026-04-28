@@ -639,92 +639,13 @@ pub fn run() {
 /// Scan a plugin directory for external plugins.
 /// `source` identifies the origin: "builtin" for bundled, "custom" for user-installed.
 async fn scan_external_plugins(
-    plugins_dir: &std::path::Path,
-    tool_registry: &plugin::ToolRegistry,
-    skill_registry: &plugin::SkillRegistry,
-    workspace_path: &std::path::Path,
-    source: &str,
+    _plugins_dir: &std::path::Path,
+    _tool_registry: &plugin::ToolRegistry,
+    _skill_registry: &plugin::SkillRegistry,
+    _workspace_path: &std::path::Path,
+    _source: &str,
 ) {
-    let entries = match std::fs::read_dir(plugins_dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::warn!("Failed to read plugins directory: {}", e);
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Skip directories starting with '_' (disabled plugins)
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('_') {
-                continue;
-            }
-        }
-
-        let manifest = match plugin::manifest::read_manifest_from_skill_dir(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!("Invalid skill manifest in {:?}: {}", path, e);
-                continue;
-            }
-        };
-
-        match manifest.plugin.plugin_type.as_str() {
-            "tool" => {
-                if manifest.plugin.runtime.as_deref() == Some("python") {
-                    match plugin::python_bridge::PythonToolBridge::from_manifest(
-                        &manifest,
-                        path.clone(),
-                    ) {
-                        Ok(mut bridge) => {
-                            if let Err(e) = bridge.load_schema(workspace_path).await {
-                                log::warn!(
-                                    "Failed to load schema for plugin '{}': {}",
-                                    manifest.plugin.id,
-                                    e
-                                );
-                                continue;
-                            }
-                            tool_registry
-                                .register(std::sync::Arc::new(bridge), source)
-                                .await;
-                            log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to create Python tool bridge for '{}': {}",
-                                manifest.plugin.id,
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-            "skill" => match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
-                Ok(skill) => {
-                    skill_registry
-                        .register(std::sync::Arc::new(skill), source)
-                        .await;
-                    log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to load skill plugin '{}': {}",
-                        manifest.plugin.id,
-                        e
-                    );
-                }
-            },
-            other => {
-                log::warn!("Unknown plugin type '{}' in {:?}", other, path);
-            }
-        }
-    }
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 #[cfg(test)]

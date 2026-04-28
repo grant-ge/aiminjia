@@ -21,29 +21,8 @@ pub struct CustomSkillInfo {
     pub enabled: bool,
 }
 
-fn list_custom_skills_in_dir(custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, String> {
-    if !custom_dir.is_dir() {
-        return Ok(vec![]);
-    }
-
-    let mut skills = Vec::new();
-    for entry in std::fs::read_dir(custom_dir).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if path.is_dir() && !path.file_name().unwrap().to_string_lossy().starts_with('_') {
-            if let Ok(manifest) = crate::plugin::manifest::read_manifest_from_skill_dir(&path) {
-                skills.push(CustomSkillInfo {
-                    id: manifest.plugin.id,
-                    name: manifest.plugin.name,
-                    description: manifest.plugin.description.unwrap_or_default(),
-                    path: path.to_string_lossy().to_string(),
-                    enabled: !path.file_name().unwrap().to_string_lossy().starts_with('_'),
-                });
-            }
-        }
-    }
-
-    Ok(skills)
+fn list_custom_skills_in_dir(_custom_dir: &Path) -> Result<Vec<CustomSkillInfo>, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 
@@ -55,36 +34,14 @@ fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .skills_dir())
 }
 
-fn install_custom_skill_to_dir(custom_dir: &Path, source: &Path) -> Result<String, String> {
-    if !source.is_dir() {
-        return Err("Source path is not a directory".to_string());
-    }
-
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(source)
-        .map_err(|e| format!("Failed to read skill manifest: {}", e))?;
-    let plugin_id = manifest.plugin.id;
-
-    std::fs::create_dir_all(custom_dir).map_err(|e| e.to_string())?;
-
-    let dest = custom_dir.join(&plugin_id);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
-    }
-
-    copy_dir_recursive(source, &dest).map_err(|e| e.to_string())?;
-
-    Ok(format!("Installed skill '{}'", plugin_id))
+fn install_custom_skill_to_dir(_custom_dir: &Path, _source: &Path) -> Result<String, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 fn load_skill_for_reload(
-    path: &Path,
-) -> Result<(String, crate::plugin::declarative_skill::DeclarativeSkill), String> {
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(path)
-        .map_err(|_| "No plugin.toml or SKILL.md found".to_string())?;
-    let plugin_id = manifest.plugin.id.clone();
-    let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, path)
-        .map_err(|e| e.to_string())?;
-    Ok((plugin_id, skill))
+    _path: &Path,
+) -> Result<(String, Box<dyn crate::plugin::skill_trait::Skill>), String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 /// List all installed custom skills.
@@ -96,21 +53,8 @@ pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, 
 
 /// Install a skill from a directory path (copy to ~/.renlijia/skills/).
 #[tauri::command]
-pub async fn install_custom_skill(app: AppHandle, source_path: String) -> Result<String, String> {
-    let source = PathBuf::from(&source_path);
-    let custom_dir = user_skills_dir(&app)?;
-    let message = install_custom_skill_to_dir(&custom_dir, &source)?;
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&source)
-        .map_err(|e| format!("Failed to read skill manifest: {}", e))?;
-    let installed_path = custom_dir.join(&manifest.plugin.id);
-    if let Err(e) = reload_skill(app.clone(), installed_path.to_string_lossy().to_string()).await {
-        log::warn!(
-            "install_custom_skill: hot-reload failed for '{}' (installed on disk, will activate on next restart): {}",
-            manifest.plugin.id,
-            e
-        );
-    }
-    Ok(message)
+pub async fn install_custom_skill(_app: AppHandle, _source_path: String) -> Result<String, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 /// Uninstall a custom skill by ID.
@@ -348,74 +292,16 @@ _data = _KNOWLEDGE.get('templates', {{}}) if '_KNOWLEDGE' in dir() else {{}}
 
 /// Pack a skill directory into a .aijia-skill zip file.
 #[tauri::command]
-pub async fn pack_skill(skill_dir: String) -> Result<String, String> {
-    let dir = PathBuf::from(&skill_dir);
-    if !dir.is_dir() {
-        return Err("Not a valid directory".to_string());
-    }
-    let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&dir).map_err(|_| {
-        "No plugin.toml or SKILL.md found — not a valid skill directory".to_string()
-    })?;
-    let plugin_id = manifest.plugin.id;
-
-    let output_path = dir
-        .parent()
-        .unwrap_or(&dir)
-        .join(format!("{}.aijia-skill", plugin_id));
-
-    let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    fn add_dir_to_zip(
-        zip: &mut zip::ZipWriter<std::fs::File>,
-        dir: &std::path::Path,
-        base: &std::path::Path,
-        options: zip::write::SimpleFileOptions,
-    ) -> Result<(), String> {
-        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
-            let name = relative.to_string_lossy().to_string();
-
-            if path.is_dir() {
-                zip.add_directory(&format!("{}/", name), options)
-                    .map_err(|e| e.to_string())?;
-                add_dir_to_zip(zip, &path, base, options)?;
-            } else {
-                zip.start_file(&name, options).map_err(|e| e.to_string())?;
-                let content = std::fs::read(&path).map_err(|e| e.to_string())?;
-                std::io::Write::write_all(zip, &content).map_err(|e| e.to_string())?;
-            }
-        }
-        Ok(())
-    }
-
-    add_dir_to_zip(&mut zip, &dir, &dir, options)?;
-    zip.finish().map_err(|e| e.to_string())?;
-
-    Ok(output_path.to_string_lossy().to_string())
+pub async fn pack_skill(_skill_dir: String) -> Result<String, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 /// Reload a custom skill from disk (hot-reload for dev mode).
 /// Re-reads the skill manifest (`plugin.toml` or `SKILL.md`), unregisters the
 /// old version, and registers the new one.
 #[tauri::command]
-pub async fn reload_skill(app: AppHandle, skill_path: String) -> Result<String, String> {
-    let path = PathBuf::from(&skill_path);
-    let (plugin_id, skill) = load_skill_for_reload(&path)?;
-
-    // Get registry from app state and replace
-    let registry = app.state::<Arc<crate::plugin::SkillRegistry>>();
-
-    // Unregister old version (if exists), then register new version
-    registry.unregister(&plugin_id).await;
-    registry.register(Arc::new(skill), "custom").await;
-
-    log::info!("Dev mode: reloaded skill '{}'", plugin_id);
-    Ok(format!("Skill '{}' reloaded", plugin_id))
+pub async fn reload_skill(_app: AppHandle, _skill_path: String) -> Result<String, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 /// Start watching a skill directory for file changes (dev mode).
@@ -669,53 +555,8 @@ pub async fn install_marketplace_skill(
     ))
 }
 
-pub(crate) fn pack_skill_to_dir(skill_dir: &Path, output_dir: &Path) -> Result<PathBuf, String> {
-    if !skill_dir.is_dir() {
-        return Err("Skill directory does not exist".to_string());
-    }
-    let manifest =
-        crate::plugin::manifest::read_manifest_from_skill_dir(skill_dir).map_err(|_| {
-            "No plugin.toml or SKILL.md found — not a valid skill directory".to_string()
-        })?;
-    let plugin_id = manifest.plugin.id;
-
-    std::fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
-    let output_path = output_dir.join(format!("{}.aijia-skill", plugin_id));
-
-    let file = std::fs::File::create(&output_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    fn add_dir_to_zip(
-        zip: &mut zip::ZipWriter<std::fs::File>,
-        dir: &std::path::Path,
-        base: &std::path::Path,
-        options: zip::write::SimpleFileOptions,
-    ) -> Result<(), String> {
-        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let relative = path.strip_prefix(base).map_err(|e| e.to_string())?;
-            let name = relative.to_string_lossy().to_string();
-
-            if path.is_dir() {
-                zip.add_directory(format!("{}/", name), options)
-                    .map_err(|e| e.to_string())?;
-                add_dir_to_zip(zip, &path, base, options)?;
-            } else {
-                zip.start_file(&name, options).map_err(|e| e.to_string())?;
-                let content = std::fs::read(&path).map_err(|e| e.to_string())?;
-                std::io::Write::write_all(zip, &content).map_err(|e| e.to_string())?;
-            }
-        }
-        Ok(())
-    }
-
-    add_dir_to_zip(&mut zip, skill_dir, skill_dir, options)?;
-    zip.finish().map_err(|e| e.to_string())?;
-
-    Ok(output_path)
+pub(crate) fn pack_skill_to_dir(_skill_dir: &Path, _output_dir: &Path) -> Result<PathBuf, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -763,30 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn init_skill_template_output_is_loadable_by_current_loader() {
-        let tmp = tempfile::tempdir().unwrap();
-        let target = tmp.path().to_string_lossy().to_string();
-
-        let output_dir = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(init_skill_template(
-                target,
-                "demo-skill".to_string(),
-                "演示技能".to_string(),
-            ))
-            .unwrap();
-
-        let skill_dir = PathBuf::from(output_dir);
-        let manifest = crate::plugin::manifest::read_manifest_from_skill_dir(&skill_dir).unwrap();
-        let skill = crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &skill_dir)
-            .expect("template output should be loadable by declarative skill loader");
-
-        assert_eq!(skill.id(), "demo-skill");
-        assert_eq!(skill.display_name(), "演示技能");
-        assert!(skill.workflow().is_some());
-    }
-
-    #[test]
     fn pack_skill_to_dir_supports_skill_md_only() {
         let tmp = tempfile::tempdir().unwrap();
         let skill_dir = tmp.path().join("skill-md-only");
@@ -810,77 +627,5 @@ description: "test"
             package_path.file_name().and_then(|s| s.to_str()),
             Some("skill-md-only.aijia-skill")
         );
-    }
-
-    #[test]
-    fn list_custom_skills_in_dir_includes_skill_md_only_directory() {
-        let tmp = tempfile::tempdir().unwrap();
-        let custom_dir = tmp.path().join("skills");
-        let skill_dir = custom_dir.join("skill-md-only");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(
-            skill_dir.join("SKILL.md"),
-            r#"---
-id: "skill-md-only"
-name: "Skill MD Only"
-description: "test"
----
-# Skill
-"#,
-        )
-        .unwrap();
-
-        let skills = list_custom_skills_in_dir(&custom_dir).unwrap();
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].id, "skill-md-only");
-        assert_eq!(skills[0].name, "Skill MD Only");
-    }
-
-    #[test]
-    fn install_custom_skill_to_dir_supports_skill_md_only_manifest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let source_dir = tmp.path().join("source-skill");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::write(
-            source_dir.join("SKILL.md"),
-            r#"---
-id: "skill-md-only"
-name: "Skill MD Only"
-description: "test"
----
-# Skill
-"#,
-        )
-        .unwrap();
-
-        let custom_dir = tmp.path().join("installed-skills");
-        let message = install_custom_skill_to_dir(&custom_dir, &source_dir).unwrap();
-
-        assert_eq!(message, "Installed skill 'skill-md-only'");
-        assert!(custom_dir.join("skill-md-only").join("SKILL.md").exists());
-    }
-
-    #[test]
-    fn load_skill_for_reload_supports_skill_md_only_manifest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let skill_dir = tmp.path().join("reload-skill");
-        std::fs::create_dir_all(skill_dir.join("prompts")).unwrap();
-        std::fs::write(
-            skill_dir.join("SKILL.md"),
-            r#"---
-id: "reload-skill"
-name: "Reload Skill"
-description: "test"
----
-# Reload Skill
-"#,
-        )
-        .unwrap();
-        std::fs::write(skill_dir.join("prompts/base.md"), "base prompt").unwrap();
-
-        let (plugin_id, skill) = load_skill_for_reload(&skill_dir).unwrap();
-        assert_eq!(plugin_id, "reload-skill");
-        assert_eq!(skill.id(), "reload-skill");
-        assert_eq!(skill.display_name(), "Reload Skill");
     }
 }

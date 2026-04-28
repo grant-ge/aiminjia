@@ -298,61 +298,8 @@ fn check_knowledge(dir: &Path) -> CheckResult {
 /// the draft. A "schema-valid but not loadable" draft is almost never seen
 /// (T3 validation exceeds what the loader requires), but keeping this check
 /// guards against drift between T3 rules and the actual plugin loader.
-fn check_loadable(dir: &Path) -> CheckResult {
-    let plugin_toml_path = dir.join("plugin.toml");
-    let Ok(plugin_content) = std::fs::read_to_string(&plugin_toml_path) else {
-        return CheckResult {
-            name: "loadable".into(),
-            status: CheckStatus::Fail,
-            detail: "无法读取 plugin.toml".into(),
-        };
-    };
-
-    let manifest = match crate::plugin::manifest::parse_plugin_manifest(&plugin_content) {
-        Ok(m) => m,
-        Err(e) => {
-            return CheckResult {
-                name: "loadable".into(),
-                status: CheckStatus::Fail,
-                detail: format!("plugin.toml 解析失败: {}", e),
-            };
-        }
-    };
-
-    // If workflow.toml exists, parse it too (loader will).
-    let workflow_path = dir.join("workflow.toml");
-    if workflow_path.is_file() {
-        let wf_content = match std::fs::read_to_string(&workflow_path) {
-            Ok(s) => s,
-            Err(e) => {
-                return CheckResult {
-                    name: "loadable".into(),
-                    status: CheckStatus::Fail,
-                    detail: format!("无法读取 workflow.toml: {}", e),
-                };
-            }
-        };
-        if let Err(e) = crate::plugin::manifest::parse_workflow_manifest(&wf_content) {
-            return CheckResult {
-                name: "loadable".into(),
-                status: CheckStatus::Fail,
-                detail: format!("workflow.toml 解析失败: {}", e),
-            };
-        }
-    }
-
-    match crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, dir) {
-        Ok(_skill) => CheckResult {
-            name: "loadable".into(),
-            status: CheckStatus::Pass,
-            detail: "DeclarativeSkill 构造成功".into(),
-        },
-        Err(e) => CheckResult {
-            name: "loadable".into(),
-            status: CheckStatus::Fail,
-            detail: format!("DeclarativeSkill::load 失败: {}", e),
-        },
-    }
+fn check_loadable(_dir: &Path) -> CheckResult {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 // ---------------------------------------------------------------------------

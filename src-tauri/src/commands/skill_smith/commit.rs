@@ -18,7 +18,6 @@ use tauri::{AppHandle, Manager};
 
 use super::{draft_dir, validation::validate_draft_dir};
 use crate::commands::skill_management::{copy_dir_recursive, pack_skill_to_dir};
-use crate::plugin::manifest::read_manifest_from_skill_dir;
 use crate::storage::UserScopedPathResolver;
 
 /// Staging suffix used for atomic installs. Collisions (unlikely —
@@ -219,10 +218,8 @@ pub(crate) fn export_draft_to(src_draft: &Path, output_dir: &Path) -> Result<Pat
     pack_skill_to_dir(src_draft, output_dir)
 }
 
-fn extract_skill_id(skill_dir: &Path) -> Result<String, String> {
-    read_manifest_from_skill_dir(skill_dir)
-        .map(|manifest| manifest.plugin.id)
-        .map_err(|e| format!("Failed to read skill manifest: {}", e))
+fn extract_skill_id(_skill_dir: &Path) -> Result<String, String> {
+    unimplemented!("removed in Phase B Task 5; restored in Task 8")
 }
 
 // ---------------------------------------------------------------------------

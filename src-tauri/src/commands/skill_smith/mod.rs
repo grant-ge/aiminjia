@@ -602,36 +602,6 @@ name = "Test Skill"
 
     // ---- Built-in skill-smith self-test (T1) ----
     //
-    // Guard against future edits breaking our own bundled skill. Runs the
-    // real plugin-loader code path that startup uses.
-
-    #[test]
-    fn bundled_skill_smith_manifest_parses_and_loads() {
-        let plugins_dir: std::path::PathBuf =
-            [env!("CARGO_MANIFEST_DIR"), "plugins", "skill-smith"]
-                .iter()
-                .collect();
-        assert!(
-            plugins_dir.is_dir(),
-            "built-in skill-smith not found at {:?}",
-            plugins_dir
-        );
-
-        let plugin_toml =
-            std::fs::read_to_string(plugins_dir.join("plugin.toml")).expect("plugin.toml readable");
-        let manifest = crate::plugin::manifest::parse_plugin_manifest(&plugin_toml)
-            .expect("plugin.toml should parse");
-        assert_eq!(manifest.plugin.id, "skill-smith");
-
-        let workflow_toml = std::fs::read_to_string(plugins_dir.join("workflow.toml"))
-            .expect("workflow.toml readable");
-        let _wf = crate::plugin::manifest::parse_workflow_manifest(&workflow_toml)
-            .expect("workflow.toml should parse");
-
-        crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, &plugins_dir)
-            .expect("DeclarativeSkill::load should succeed on built-in skill-smith");
-    }
-
     // ─── Serde camelCase regression tests (T2 + T3 + T4 + T7 IPC payloads) ──
     //
     // ALL structs that cross the Tauri JS<->Rust boundary as serialized

@@ -216,19 +216,15 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     if !path.is_file() {
         let skill_md = dir.join("SKILL.md");
         if skill_md.is_file() {
-            match crate::plugin::manifest::read_manifest_from_skill_dir(dir) {
-                Ok(manifest) => validate_shared_plugin_manifest(&manifest, errors),
-                Err(e) => errors.push(ValidationError {
-                    file: "SKILL.md".into(),
-                    path: "(root)".into(),
-                    rule: "frontmatter".into(),
-                    actual: e.clone(),
-                    message: format!("SKILL.md frontmatter 解析失败 ({})", e),
-                    fix_hint: Some(
-                        "检查 YAML frontmatter，至少提供 name，必要时显式提供 id".into(),
-                    ),
-                }),
-            }
+            // TODO(Phase B Task 8): restore SKILL.md frontmatter validation
+            errors.push(ValidationError {
+                file: "SKILL.md".into(),
+                path: "(root)".into(),
+                rule: "frontmatter".into(),
+                actual: "unimplemented".into(),
+                message: "SKILL.md manifest validation removed in Phase B Task 5; restored in Task 8".into(),
+                fix_hint: None,
+            });
         } else {
             errors.push(ValidationError {
                 file: "plugin.toml".into(),
@@ -273,32 +269,6 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     validate_trigger_section("plugin.toml", &manifest.trigger, errors);
     validate_model_section("plugin.toml", &manifest.model, errors);
     validate_display_section("plugin.toml", &manifest.display, errors, true);
-}
-
-fn validate_shared_plugin_manifest(
-    manifest: &crate::plugin::manifest::PluginManifest,
-    errors: &mut Vec<ValidationError>,
-) {
-    let plugin = Some(PluginSection {
-        id: Some(manifest.plugin.id.clone()),
-        name: Some(manifest.plugin.name.clone()),
-        kind: Some(manifest.plugin.plugin_type.clone()),
-    });
-    let trigger = manifest.trigger.as_ref().map(|trigger| TriggerSection {
-        keywords: Some(trigger.keywords.clone()),
-    });
-    let model = manifest.model.as_ref().map(|model| ModelSection {
-        preference: model.preference.clone(),
-    });
-    let display = manifest.display.as_ref().map(|display| DisplaySection {
-        category: display.category.clone(),
-        icon: display.icon.clone(),
-    });
-
-    validate_plugin_section("SKILL.md", &plugin, errors);
-    validate_trigger_section("SKILL.md", &trigger, errors);
-    validate_model_section("SKILL.md", &model, errors);
-    validate_display_section("SKILL.md", &display, errors, false);
 }
 
 fn validate_plugin_section(
