@@ -14,7 +14,12 @@ import {
 } from 'lucide-react'
 
 import { FilePreviewPane } from './FilePreviewPane'
-import { toPreviewTarget, type PreviewTarget } from './generatedFileActions'
+import {
+  isFileActionEnabled,
+  isPreviewableFileType,
+  toPreviewTarget,
+  type PreviewTarget,
+} from './generatedFileActions'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
@@ -214,7 +219,15 @@ function ArtifactSection({ conversationId }: { conversationId: string }) {
           ) : (
             <div className="flex flex-col gap-1">
               {files.map((f) => (
-                <ArtifactItem key={f.id} file={f} conversationId={conversationId} />
+                <ArtifactItem
+                  key={f.id}
+                  file={f}
+                  conversationId={conversationId}
+                  canPreview={
+                    isPreviewableFileType(f.fileType, f.fileName) &&
+                    isFileActionEnabled(f.actions, 'preview')
+                  }
+                />
               ))}
             </div>
           )}
@@ -224,7 +237,15 @@ function ArtifactSection({ conversationId }: { conversationId: string }) {
   )
 }
 
-function ArtifactItem({ file, conversationId }: { file: GeneratedFile; conversationId: string }) {
+function ArtifactItem({
+  file,
+  conversationId,
+  canPreview,
+}: {
+  file: GeneratedFile
+  conversationId: string
+  canPreview: boolean
+}) {
   const target = useGeneratedFilePreviewStore((s) => s.target)
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
   const active = target?.conversationId === conversationId && target.fileId === file.id
@@ -233,10 +254,14 @@ function ArtifactItem({ file, conversationId }: { file: GeneratedFile; conversat
     <button
       type="button"
       aria-label={`Preview ${file.fileName}`}
-      onClick={() => openPreview(toPreviewTarget(file, conversationId))}
+      disabled={!canPreview}
+      onClick={() => {
+        if (canPreview) openPreview(toPreviewTarget(file, conversationId))
+      }}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/70',
         active && 'bg-muted',
+        !canPreview && 'cursor-not-allowed opacity-50 hover:bg-transparent',
       )}
     >
       <ArtifactFileIcon fileType={file.fileType} />

@@ -91,12 +91,77 @@ describe('RightPanel preview workspace', () => {
     expect(screen.queryByText('other.md')).not.toBeInTheDocument()
   })
 
-  it('switches the preview target when clicking an artifact', () => {
+  it('switches the preview target when clicking a previewable artifact', () => {
     useChatStore.setState({
       messages: [messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' }))],
     })
 
     render(<RightPanel conversationId="conv-1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-1',
+      conversationId: 'conv-1',
+      fileName: 'summary.md',
+      fileType: 'markdown',
+    })
+  })
+
+  it('keeps non-previewable artifacts visible but disabled', () => {
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-2',
+          fileName: 'table.xlsx',
+          fileType: 'excel',
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" />)
+
+    expect(screen.getByText('table.xlsx')).toBeInTheDocument()
+    const tableButton = screen.getByRole('button', { name: 'Preview table.xlsx' })
+    expect(tableButton).toBeDisabled()
+
+    fireEvent.click(tableButton)
+
+    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-1',
+      conversationId: 'conv-1',
+      fileName: 'summary.md',
+      fileType: 'markdown',
+    })
+  })
+
+  it('keeps preview-disabled markdown artifacts visible but disabled', () => {
+    useChatStore.setState({
+      messages: [
+        messageWithFile('conv-1', generatedFile({ id: 'gf-1', fileName: 'summary.md' })),
+        messageWithFile('conv-1', generatedFile({
+          id: 'gf-3',
+          fileName: 'locked.md',
+          fileType: 'markdown',
+          actions: [{ type: 'preview', label: 'Preview', enabled: false }],
+        })),
+      ],
+    })
+
+    render(<RightPanel conversationId="conv-1" />)
+
+    expect(screen.getByText('locked.md')).toBeInTheDocument()
+    const lockedButton = screen.getByRole('button', { name: 'Preview locked.md' })
+    expect(lockedButton).toBeDisabled()
+
+    fireEvent.click(lockedButton)
+
+    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview summary.md' }))
 
