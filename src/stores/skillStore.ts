@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type { SkillCategoryId } from '@/data/skill-categories'
 import { installCustomSkill, listSkills, uninstallCustomSkill, type SkillInfo } from '@/lib/tauri'
 
-const RECOMMENDED_SKILL_IDS = ['skill-smith', 'salary-benchmarking', 'biz-writing', 'contract-review']
+const RECOMMENDED_SKILL_IDS = ['salary-benchmarking', 'biz-writing', 'contract-review', 'org-diagnosis']
 
 function normalizeSkill(skill: SkillInfo): SkillInfo {
   return {

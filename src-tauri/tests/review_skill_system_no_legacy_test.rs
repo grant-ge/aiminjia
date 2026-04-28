@@ -29,7 +29,7 @@ fn check_no_forbidden_markers(
         {
             return;
         }
-        // 跳过显式排除的路径片段（用于 skill_smith follow-up 范围）
+        // 跳过显式排除的路径片段。
         let path_str = path.to_string_lossy();
         for skip in skip_paths {
             if path_str.contains(skip) {
@@ -116,19 +116,9 @@ fn production_source_has_no_legacy_filename_references() {
         .canonicalize()
         .unwrap();
 
-    // skill_smith / skill_management 中的 plugin.toml / workflow.toml 引用是
-    // Phase B Task 8 决定的 follow-up：skill_smith 子系统的 PluginManifest /
-    // WorkflowManifest schema 校验、SCAFFOLD 模板常量、draft 文件处理在 Phase D
-    // SkillRegistry 落地后会单独立项重写。本测试暂时排除这些路径，等重写完成
-    // 后再把例外移除。
-    //
-    // storage/migration.rs 同理：测试 fixture 中的 plugin.toml 仅用于验证旧
-    // 数据迁移，跳过的语义同 skill_smith 重写计划。
-    let skip_paths = &[
-        "commands/skill_smith/",
-        "commands/skill_management.rs",
-        "storage/migration.rs",
-    ];
+    // storage/migration.rs 中的旧文件名仅用于历史数据迁移 fixture；生产 skill runtime
+    // 不再解析这些文件。
+    let skip_paths = &["storage/migration.rs"];
 
     let forbidden = &[
         "plugin.toml",

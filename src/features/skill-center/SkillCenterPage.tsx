@@ -159,8 +159,8 @@ export function SkillCenterPage() {
             <Button variant="outline" onClick={() => setUploadOpen(true)}>
               上传技能资料
             </Button>
-            <Button onClick={() => void createConversationFromSkill('skill-smith')}>
-              + 创建技能
+            <Button onClick={() => setUploadOpen(true)}>
+              + 导入技能
             </Button>
           </div>
         </header>
