@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ChevronDown,
   CheckCircle2,
@@ -10,11 +10,20 @@ import {
   FileSpreadsheet,
   FileText,
   Image,
+  X,
 } from 'lucide-react'
 
+import { FilePreviewPane } from './FilePreviewPane'
+import {
+  isFileActionEnabled,
+  isPreviewableFileType,
+  toPreviewTarget,
+  type PreviewTarget,
+} from './generatedFileActions'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
 import type { ConversationTaskState } from '@/stores/streamingStore'
+import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import type { GeneratedFile } from '@/types/message'
 
 const EMPTY_TASKS: ConversationTaskState[] = []
@@ -23,11 +32,48 @@ const EMPTY_TASKS: ConversationTaskState[] = []
 
 interface RightPanelProps {
   conversationId: string
+  onOpenExternal?: (target: PreviewTarget) => void
 }
 
-export function RightPanel({ conversationId }: RightPanelProps) {
+export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) {
+  const target = useGeneratedFilePreviewStore((s) => s.target)
+  const closePreview = useGeneratedFilePreviewStore((s) => s.closePreview)
+  const previewOpen = target?.conversationId === conversationId
+
+  if (previewOpen) {
+    return (
+      <div
+        data-testid="right-panel"
+        className="flex h-full w-[720px] shrink-0 overflow-hidden border-l border-border bg-background"
+      >
+        <div className="min-w-0 flex-1">
+          <FilePreviewPane target={target} onOpenExternal={onOpenExternal} />
+        </div>
+        <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
+          <div className="flex items-center justify-between gap-2 px-4 py-4">
+            <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+            <button
+              type="button"
+              aria-label="Close preview"
+              onClick={closePreview}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <TaskSection conversationId={conversationId} />
+          <ArtifactSection conversationId={conversationId} />
+          <SkillMcpSection />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
+    <div
+      data-testid="right-panel"
+      className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background"
+    >
       <div className="px-4 py-4">
         <h2 className="text-[0.9375rem] font-semibold text-foreground">任务监控</h2>
       </div>
@@ -43,21 +89,14 @@ export function RightPanel({ conversationId }: RightPanelProps) {
 function TaskSection({ conversationId }: { conversationId: string }) {
   const tasks = useChatStore((s) => s.taskStates[conversationId] ?? EMPTY_TASKS)
   const hasRunning = tasks.some((t) => isRunningTaskStatus(t.status))
-  const [open, setOpen] = useState(true)
-
-  // Force-open the panel on the rising edge of hasRunning.
-  // Render-phase setState on this component is allowed; useEffect would warn.
-  const prevHasRunning = useRef(hasRunning)
-  if (hasRunning && !prevHasRunning.current && !open) {
-    setOpen(true)
-  }
-  prevHasRunning.current = hasRunning
+  const [userCollapsed, setUserCollapsed] = useState(false)
+  const open = hasRunning || !userCollapsed
 
   return (
     <div className="border-b border-border">
       <button
         type="button"
-        onClick={() => !hasRunning && setOpen((v) => !v)}
+        onClick={() => !hasRunning && setUserCollapsed((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
         <span className="text-[0.8125rem] font-semibold text-foreground">待办</span>
@@ -132,7 +171,7 @@ function isRunningTaskStatus(status: string) {
 
 // ─── ArtifactSection ──────────────────────────────────────────────────────────
 
-function ArtifactSection({ conversationId: _conversationId }: { conversationId: string }) {
+function ArtifactSection({ conversationId }: { conversationId: string }) {
   const messages = useChatStore((s) => s.messages)
   const [open, setOpen] = useState(true)
 
@@ -140,6 +179,7 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
     const seen = new Set<string>()
     const result: GeneratedFile[] = []
     for (const msg of messages) {
+      if (msg.conversationId !== conversationId) continue
       for (const f of msg.content.generatedFiles ?? []) {
         if (!seen.has(f.id) && f.isLatest) {
           seen.add(f.id)
@@ -148,7 +188,7 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
       }
     }
     return result
-  }, [messages])
+  }, [conversationId, messages])
 
   return (
     <div className="border-b border-border">
@@ -172,7 +212,13 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
           ) : (
             <div className="flex flex-col gap-1">
               {files.map((f) => (
-                <ArtifactItem key={f.id} file={f} />
+                <ArtifactItem
+                  key={f.id}
+                  file={f}
+                  conversationId={conversationId}
+                  canPreview={isFileActionEnabled(f.actions, 'preview')}
+                  previewable={isPreviewableFileType(f.fileType, f.fileName)}
+                />
               ))}
             </div>
           )}
@@ -182,19 +228,46 @@ function ArtifactSection({ conversationId: _conversationId }: { conversationId: 
   )
 }
 
-function ArtifactItem({ file }: { file: GeneratedFile }) {
+function ArtifactItem({
+  file,
+  conversationId,
+  canPreview,
+  previewable,
+}: {
+  file: GeneratedFile
+  conversationId: string
+  canPreview: boolean
+  previewable: boolean
+}) {
+  const target = useGeneratedFilePreviewStore((s) => s.target)
+  const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
+  const active = target?.conversationId === conversationId && target.fileId === file.id
+
   return (
-    <div className="flex items-center gap-2 py-1">
+    <button
+      type="button"
+      aria-label={`Preview ${file.fileName}`}
+      disabled={!canPreview}
+      onClick={() => {
+        if (canPreview) openPreview(toPreviewTarget(file, conversationId))
+      }}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-muted/70',
+        active && 'bg-muted',
+        !canPreview && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+        canPreview && !previewable && 'opacity-70',
+      )}
+    >
       <ArtifactFileIcon fileType={file.fileType} />
       <span className="min-w-0 flex-1 truncate text-xs text-foreground">
         {file.fileName}
       </span>
-    </div>
+    </button>
   )
 }
 
-function ArtifactFileIcon({ fileType }: { fileType: string }) {
-  switch (fileType) {
+function ArtifactFileIcon({ fileType }: { fileType?: string }) {
+  switch (fileType?.toLowerCase()) {
     case 'excel':
     case 'csv':
       return <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-green-600" />

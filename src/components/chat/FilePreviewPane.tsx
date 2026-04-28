@@ -1,0 +1,143 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ExternalLink, FileText, Loader2 } from 'lucide-react'
+
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
+import { Button } from '@/components/ui/button'
+import { getFilePreview, type FilePreview } from '@/lib/tauri'
+import type { PreviewTarget } from './generatedFileActions'
+
+interface FilePreviewPaneProps {
+  target: PreviewTarget | null
+  onOpenExternal?: (target: PreviewTarget) => void
+}
+
+type PreviewState =
+  | { status: 'success'; key: string; preview: FilePreview }
+  | { status: 'error'; key: string; error: string }
+  | null
+
+export function FilePreviewPane({ target, onOpenExternal }: FilePreviewPaneProps) {
+  const [previewState, setPreviewState] = useState<PreviewState>(null)
+  const [retryToken, setRetryToken] = useState(0)
+  const requestIdRef = useRef(0)
+
+  const retryPreview = useCallback(() => {
+    setRetryToken((current) => current + 1)
+  }, [])
+
+  const targetFileId = target?.fileId
+  const targetConversationId = target?.conversationId
+  const previewKey = targetFileId && targetConversationId
+    ? `${targetConversationId}:${targetFileId}:${retryToken}`
+    : null
+
+  useEffect(() => {
+    if (!targetFileId || !targetConversationId || !previewKey) {
+      requestIdRef.current += 1
+      return
+    }
+
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+
+    getFilePreview(targetFileId, targetConversationId)
+      .then((nextPreview) => {
+        if (requestIdRef.current === requestId) {
+          setPreviewState({ status: 'success', key: previewKey, preview: nextPreview })
+        }
+      })
+      .catch((err: unknown) => {
+        if (requestIdRef.current === requestId) {
+          setPreviewState({
+            status: 'error',
+            key: previewKey,
+            error: err instanceof Error ? err.message : '无法预览文件',
+          })
+        }
+      })
+
+    return () => {
+      if (requestIdRef.current === requestId) {
+        requestIdRef.current += 1
+      }
+    }
+  }, [targetFileId, targetConversationId, previewKey])
+
+  if (!target) {
+    return (
+      <div className="flex h-full flex-1 items-center justify-center bg-muted/20 px-6 text-center">
+        <p className="text-sm text-muted-foreground">选择一个产物进行预览</p>
+      </div>
+    )
+  }
+
+  const isCurrentPreviewState = previewState?.key === previewKey
+
+  return (
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <h2 className="truncate text-sm font-semibold text-foreground">{target.fileName}</h2>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1.5"
+          onClick={() => onOpenExternal?.(target)}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Open with default app
+        </Button>
+      </div>
+      <div className="flex-1 overflow-auto p-6">
+        {!isCurrentPreviewState ? (
+          <div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            正在加载预览
+          </div>
+        ) : previewState.status === 'error' ? (
+          <div className="space-y-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-[13px] text-destructive">
+            <p>{previewState.error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={retryPreview}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <PreviewContent preview={previewState.preview} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PreviewContent({ preview }: { preview: FilePreview }) {
+  switch (preview.kind) {
+    case 'markdown':
+      return <AssistantMarkdown text={preview.content} />
+    case 'html':
+      return (
+        <iframe
+          title={preview.fileName}
+          sandbox=""
+          srcDoc={preview.content}
+          className="h-full min-h-[520px] w-full rounded-xl border border-border bg-background"
+        />
+      )
+    case 'json':
+    case 'csv':
+    case 'text':
+      return (
+        <pre className="whitespace-pre-wrap rounded-xl bg-muted p-4 text-[12px] leading-6 text-foreground">
+          {preview.content}
+        </pre>
+      )
+    case 'unsupported':
+      return (
+        <div className="rounded-xl border border-border bg-muted/40 p-4 text-[13px] text-muted-foreground">
+          {preview.reason}
+        </div>
+      )
+  }
+}

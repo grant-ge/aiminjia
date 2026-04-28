@@ -450,6 +450,7 @@ pub fn run() {
             file::save_clipboard_image_attachment,
             file::open_generated_file,
             file::reveal_file_in_folder,
+            file::get_file_preview,
             file::preview_file,
             file::delete_file,
             file::open_file_by_name,

@@ -3,14 +3,29 @@
  * @sizing height 64 r-14 border 1 bg card padding x16; clipped tilted monochrome file icon
  */
 import type { ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ExternalLink, Eye, FolderOpen } from 'lucide-react'
+
+import type { GeneratedFilePrimaryAction } from '@/components/chat/generatedFileActions'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface GeneratedFileCardProps {
   title: string
   sub: string
   appName: string
   appIcon?: ReactNode
-  onOpen: () => void
+  primaryAction?: GeneratedFilePrimaryAction
+  canPreview?: boolean
+  canOpenExternal?: boolean
+  canReveal?: boolean
+  onOpen?: () => void
+  onPreview?: () => void
+  onOpenExternal?: () => void
+  onReveal?: () => void
 }
 
 function normalizeFileLabel(raw: string | undefined): string | null {
@@ -66,8 +81,34 @@ export function GeneratedFileCard({
   sub,
   appName,
   appIcon,
+  primaryAction = 'open',
+  canPreview = false,
+  canOpenExternal = true,
+  canReveal = true,
   onOpen,
+  onPreview,
+  onOpenExternal,
+  onReveal,
 }: GeneratedFileCardProps) {
+  const openExternalAction = onOpenExternal ?? onOpen
+  const previewAction = canPreview ? onPreview : undefined
+  const enabledOpenExternalAction = canOpenExternal !== false ? openExternalAction : undefined
+  const revealAction = canReveal !== false ? onReveal : undefined
+  const previewEnabled = Boolean(previewAction)
+  const openEnabled = Boolean(enabledOpenExternalAction)
+  const revealEnabled = Boolean(revealAction)
+  const isPreviewPrimary = primaryAction === 'preview'
+  const primaryLabel = isPreviewPrimary ? 'Preview' : 'Open'
+  const isPrimaryDisabled = isPreviewPrimary ? !previewEnabled : !openEnabled
+
+  const handlePrimaryAction = () => {
+    if (isPreviewPrimary) {
+      previewAction?.()
+      return
+    }
+    enabledOpenExternalAction?.()
+  }
+
   return (
     <div data-testid="generated-file-card" className="flex h-16 items-center justify-between gap-4 overflow-hidden rounded-[14px] border border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-2">
@@ -79,17 +120,44 @@ export function GeneratedFileCard({
           <div className="truncate text-xs leading-4 text-muted-foreground">{sub}</div>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={`${appName} open`}
-        className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] text-foreground transition-colors hover:bg-muted"
-      >
-        {appIcon}
-        <span>{appName}</span>
-        <span className="mx-1 h-4 w-px bg-border" />
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
+      <div className="flex shrink-0 items-center rounded-full border border-border bg-background text-[0.8125rem] text-foreground shadow-sm">
+        <button
+          type="button"
+          onClick={handlePrimaryAction}
+          disabled={isPrimaryDisabled}
+          aria-label={`${primaryLabel} ${title}`}
+          className="flex items-center gap-2 rounded-l-full py-1.5 pl-3 pr-2 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+        >
+          {appIcon}
+          <span>{appName}</span>
+        </button>
+        <span className="h-4 w-px bg-border" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`More actions for ${title}`}
+              className="flex items-center rounded-r-full py-1.5 pl-2 pr-2 transition-colors hover:bg-muted"
+            >
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuItem disabled={!previewEnabled} onSelect={() => previewAction?.()}>
+              <Eye className="h-4 w-4" />
+              <span>{previewEnabled ? 'Preview inside' : 'Preview unavailable'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!openEnabled} onSelect={() => enabledOpenExternalAction?.()}>
+              <ExternalLink className="h-4 w-4" />
+              <span>Open with default app</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!revealEnabled} onSelect={() => revealAction?.()}>
+              <FolderOpen className="h-4 w-4" />
+              <span>Show in folder</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 }

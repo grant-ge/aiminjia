@@ -195,20 +195,38 @@ export interface ProgressStep {
 
 // --- Generated File ---
 
+export type GeneratedFileType =
+  | 'excel'
+  | 'xlsx'
+  | 'html'
+  | 'pdf'
+  | 'csv'
+  | 'json'
+  | 'png'
+  | 'jpg'
+  | 'jpeg'
+  | 'py'
+  | 'markdown'
+  | 'md'
+  | 'text'
+  | 'txt'
+  | string
+
 export interface GeneratedFile {
   id: string
+  title?: string
   fileName: string
   filePath: string
-  fileType: 'excel' | 'html' | 'pdf' | 'csv' | 'json' | 'png' | 'py'
+  fileType?: GeneratedFileType
   fileSize: number
-  category: 'report' | 'chart' | 'data' | 'analysis' | 'script' | 'temp'
+  category: 'report' | 'chart' | 'data' | 'analysis' | 'script' | 'temp' | string
   version: number
   isLatest: boolean
   supersededBy?: string
   createdAt: string
   createdByStep?: number
   description: string
-  actions: FileAction[]
+  actions?: FileAction[]
   isDegraded?: boolean
   degradationNotice?: string | null
   requestedFormat?: string

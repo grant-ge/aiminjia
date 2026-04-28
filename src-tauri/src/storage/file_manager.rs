@@ -159,6 +159,14 @@ impl FileManager {
         Ok(())
     }
 
+    pub fn resolve_existing_file(&self, stored_path: &str) -> Result<PathBuf> {
+        let path = self.safe_resolve(stored_path)?;
+        if !path.is_file() {
+            return Err(anyhow!("Stored file does not exist: {}", stored_path));
+        }
+        Ok(path)
+    }
+
     /// Get full absolute path for a stored_path.
     /// Validates that the path stays within the workspace.
     pub fn full_path(&self, stored_path: &str) -> PathBuf {

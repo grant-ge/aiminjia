@@ -5,9 +5,13 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 
+import {
+  isFileActionEnabled,
+  isPreviewableFileType,
+} from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
 import type { ToolExecution } from '@/stores/streamingStore'
-import type { GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
+import type { FileAction, GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
 
 export interface RenderAiSegment {
   id: string
@@ -35,8 +39,15 @@ export interface RenderGeneratedFile {
   id: string
   conversationId: string
   title: string
+  fileName: string
   sub: string
   appName: string
+  fileType?: string
+  actions: FileAction[]
+  canPreview: boolean
+  canOpenExternal: boolean
+  canReveal: boolean
+  primaryAction: 'preview' | 'open'
 }
 
 export interface RenderTurn {
@@ -96,13 +107,29 @@ function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): Rende
   const anyF = f as unknown as {
     id: string; title?: string; fileName?: string;
     subtitle?: string; appName?: string; format?: string;
+    fileType?: string; actions?: FileAction[];
   }
+  const title = anyF.title || anyF.fileName || '未命名文件'
+  const fileName = anyF.fileName ?? title
+  const fileType = anyF.fileType
+  const actions = anyF.actions ?? []
+  const canPreviewByType = isPreviewableFileType(fileType, fileName)
+  const canPreview = canPreviewByType && isFileActionEnabled(actions, 'preview')
+  const canOpenExternal = isFileActionEnabled(actions, 'open')
+  const canReveal = isFileActionEnabled(actions, 'reveal')
   return {
     id: anyF.id,
     conversationId,
-    title: anyF.title || anyF.fileName || '未命名文件',
+    title,
+    fileName,
     sub: buildGeneratedFileMeta(f, anyF.format, anyF.subtitle),
     appName: anyF.appName || 'Open',
+    fileType,
+    actions,
+    canPreview,
+    canOpenExternal,
+    canReveal,
+    primaryAction: canPreview ? 'preview' : 'open',
   }
 }
 
