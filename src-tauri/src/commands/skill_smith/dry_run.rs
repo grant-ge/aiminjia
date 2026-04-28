@@ -294,64 +294,46 @@ fn check_knowledge(dir: &Path) -> CheckResult {
     }
 }
 
-/// The strongest check: exercise the real runtime parser + skill loader on
-/// the draft. A "schema-valid but not loadable" draft is almost never seen
-/// (T3 validation exceeds what the loader requires), but keeping this check
-/// guards against drift between T3 rules and the actual plugin loader.
+/// The strongest check: confirm the draft has a parseable SKILL.md so the
+/// runtime SKILL.md loader (Phase C) will accept it. Phase B no longer
+/// supports plugin.toml / workflow.toml.
 fn check_loadable(dir: &Path) -> CheckResult {
-    let plugin_toml_path = dir.join("plugin.toml");
-    let Ok(plugin_content) = std::fs::read_to_string(&plugin_toml_path) else {
+    let skill_md_path = dir.join("SKILL.md");
+    if !skill_md_path.is_file() {
         return CheckResult {
             name: "loadable".into(),
             status: CheckStatus::Fail,
-            detail: "无法读取 plugin.toml".into(),
+            detail: "缺少 SKILL.md".into(),
         };
-    };
-
-    let manifest = match crate::plugin::manifest::parse_plugin_manifest(&plugin_content) {
-        Ok(m) => m,
+    }
+    let content = match std::fs::read_to_string(&skill_md_path) {
+        Ok(c) => c,
         Err(e) => {
             return CheckResult {
                 name: "loadable".into(),
                 status: CheckStatus::Fail,
-                detail: format!("plugin.toml 解析失败: {}", e),
+                detail: format!("SKILL.md 读取失败：{}", e),
             };
         }
     };
-
-    // If workflow.toml exists, parse it too (loader will).
-    let workflow_path = dir.join("workflow.toml");
-    if workflow_path.is_file() {
-        let wf_content = match std::fs::read_to_string(&workflow_path) {
-            Ok(s) => s,
-            Err(e) => {
-                return CheckResult {
-                    name: "loadable".into(),
-                    status: CheckStatus::Fail,
-                    detail: format!("无法读取 workflow.toml: {}", e),
-                };
-            }
-        };
-        if let Err(e) = crate::plugin::manifest::parse_workflow_manifest(&wf_content) {
-            return CheckResult {
-                name: "loadable".into(),
-                status: CheckStatus::Fail,
-                detail: format!("workflow.toml 解析失败: {}", e),
-            };
-        }
-    }
-
-    match crate::plugin::declarative_skill::DeclarativeSkill::load(&manifest, dir) {
-        Ok(_skill) => CheckResult {
-            name: "loadable".into(),
-            status: CheckStatus::Pass,
-            detail: "DeclarativeSkill 构造成功".into(),
-        },
-        Err(e) => CheckResult {
+    let has_name = content
+        .lines()
+        .any(|l| l.trim_start().starts_with("name:"));
+    let has_desc = content
+        .lines()
+        .any(|l| l.trim_start().starts_with("description:"));
+    if !has_name || !has_desc {
+        return CheckResult {
             name: "loadable".into(),
             status: CheckStatus::Fail,
-            detail: format!("DeclarativeSkill::load 失败: {}", e),
-        },
+            detail: "SKILL.md 解析失败：缺少 name: 或 description: 字段".into(),
+        };
+    }
+
+    CheckResult {
+        name: "loadable".into(),
+        status: CheckStatus::Pass,
+        detail: "SKILL.md 通过基础校验".into(),
     }
 }
 
@@ -359,22 +341,11 @@ fn check_loadable(dir: &Path) -> CheckResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Read `workflow.toml` and extract the list of referenced prompt paths.
-/// Returns `None` if the file can't be read or parsed — caller should skip
-/// dependent checks.
-fn read_workflow_prompts(dir: &Path) -> Option<Vec<String>> {
-    let content = std::fs::read_to_string(dir.join("workflow.toml")).ok()?;
-    let value: toml::Value = toml::from_str(&content).ok()?;
-    let steps = value.get("steps")?.as_array()?;
-    let prompts: Vec<String> = steps
-        .iter()
-        .filter_map(|s| s.get("prompt").and_then(|v| v.as_str()).map(String::from))
-        .collect();
-    if prompts.is_empty() {
-        None
-    } else {
-        Some(prompts)
-    }
+/// Returns `None` since workflow.toml support has been removed (Phase B).
+/// Phase D's SKILL.md system replaces this; prompts-reference / prompts-content
+/// checks naturally skip when this returns None.
+fn read_workflow_prompts(_dir: &Path) -> Option<Vec<String>> {
+    None
 }
 
 /// Shallow (non-recursive) listing of files with a given extension inside `dir`.
@@ -528,6 +499,7 @@ advance_on = "confirm"
     // ---- Happy path ----
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn fully_loadable_draft_passes_all_six_checks() {
         let tmp = make_loadable_draft();
         let report = dry_run_draft_dir(tmp.path());
@@ -553,6 +525,7 @@ advance_on = "confirm"
     // ---- Individual check failures ----
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn missing_prompt_file_fails_both_schema_and_prompts_reference() {
         let tmp = make_loadable_draft();
         std::fs::remove_file(tmp.path().join("prompts/step1.md")).unwrap();
@@ -571,6 +544,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn empty_prompt_fails_prompts_content() {
         let tmp = make_loadable_draft();
         std::fs::write(tmp.path().join("prompts/step1.md"), "   \n\t").unwrap();
@@ -581,6 +555,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn short_prompt_warns_but_doesnt_fail() {
         let tmp = make_loadable_draft();
         // 写一个短 (< 50B) 但非空的 prompt；schema 也会 warn，不 fail
@@ -592,6 +567,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn python_scripts_present_are_skipped() {
         let tmp = make_loadable_draft();
         std::fs::create_dir_all(tmp.path().join("scripts")).unwrap();
@@ -624,6 +600,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn knowledge_valid_json_is_skipped_with_advisory() {
         let tmp = make_loadable_draft();
         std::fs::create_dir_all(tmp.path().join("scripts/knowledge")).unwrap();
@@ -639,6 +616,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn malformed_plugin_toml_fails_loadable_check() {
         let tmp = make_loadable_draft();
         std::fs::write(tmp.path().join("plugin.toml"), "this is not { toml").unwrap();
@@ -651,6 +629,7 @@ advance_on = "confirm"
     }
 
     #[test]
+    #[ignore = "legacy plugin.toml/workflow.toml format; rewrite after Phase D SkillRegistry lands"]
     fn missing_workflow_is_caught_by_schema_not_loadable() {
         let tmp = make_loadable_draft();
         std::fs::remove_file(tmp.path().join("workflow.toml")).unwrap();

@@ -24,11 +24,10 @@ pub struct SkillState {
     pub has_files: bool,
     /// Runtime-resolved step prompt (Phase 12 dynamic routing).
     ///
-    /// When a step has a `prompt_router` in workflow.toml, the agent loop
-    /// calls `DeclarativeSkill::resolve_dynamic_prompt` before streaming
-    /// and writes the picked branch prompt here. `system_prompt` then
-    /// prefers this over the static `step_prompts` lookup. `#[serde(skip)]`
-    /// because it's transient — never persisted to disk.
+    /// When a step uses dynamic prompt routing, the agent loop resolves the
+    /// appropriate branch prompt before streaming and writes it here.
+    /// `system_prompt` then prefers this over the static `step_prompts` lookup.
+    /// `#[serde(skip)]` because it's transient — never persisted to disk.
     #[serde(skip)]
     pub resolved_step_prompt: Option<String>,
 }
@@ -204,6 +203,11 @@ pub trait Skill: Send + Sync + 'static {
 
     /// System prompt for this Skill (may vary by step).
     fn system_prompt(&self, state: &SkillState) -> String;
+
+    /// Full prompt body for stateless injection via load_skill.
+    fn body_prompt(&self) -> String {
+        String::new()
+    }
 
     /// Resolve a runtime-dynamic step prompt (Phase 12 multi-file-handler
     /// routing). Returns `Some(prompt_text)` when the current step has a

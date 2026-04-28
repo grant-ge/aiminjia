@@ -216,18 +216,54 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     if !path.is_file() {
         let skill_md = dir.join("SKILL.md");
         if skill_md.is_file() {
-            match crate::plugin::manifest::read_manifest_from_skill_dir(dir) {
-                Ok(manifest) => validate_shared_plugin_manifest(&manifest, errors),
-                Err(e) => errors.push(ValidationError {
-                    file: "SKILL.md".into(),
-                    path: "(root)".into(),
-                    rule: "frontmatter".into(),
-                    actual: e.clone(),
-                    message: format!("SKILL.md frontmatter 解析失败 ({})", e),
-                    fix_hint: Some(
-                        "检查 YAML frontmatter，至少提供 name，必要时显式提供 id".into(),
-                    ),
-                }),
+            // Validate SKILL.md: check readable, has frontmatter delimiters, has name: and description:
+            match std::fs::read_to_string(&skill_md) {
+                Err(e) => {
+                    errors.push(ValidationError {
+                        file: "SKILL.md".into(),
+                        path: "(file)".into(),
+                        rule: "readable".into(),
+                        actual: "unreadable".into(),
+                        message: format!("读取 SKILL.md 失败 (failed to read SKILL.md): {}", e),
+                        fix_hint: Some("检查 SKILL.md 文件权限并重试".into()),
+                    });
+                }
+                Ok(content) => {
+                    // Check frontmatter delimiters: first two lines containing "---"
+                    let mut dashes = content.lines().filter(|l| l.trim() == "---").take(2);
+                    if dashes.next().is_none() || dashes.next().is_none() {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "(frontmatter)".into(),
+                            rule: "frontmatter".into(),
+                            actual: "no --- delimiters".into(),
+                            message: "SKILL.md 缺少 YAML frontmatter 边界 (missing --- delimiters)".into(),
+                            fix_hint: Some("SKILL.md 应以 --- 开头，并在 frontmatter 后以 --- 结尾".into()),
+                        });
+                    }
+                    let has_name = content.lines().any(|l| l.trim_start().starts_with("name:"));
+                    if !has_name {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "name".into(),
+                            rule: "exists".into(),
+                            actual: "missing".into(),
+                            message: "SKILL.md frontmatter 缺少 name: 字段".into(),
+                            fix_hint: Some("在 frontmatter 中添加 name: 技能名称".into()),
+                        });
+                    }
+                    let has_desc = content.lines().any(|l| l.trim_start().starts_with("description:"));
+                    if !has_desc {
+                        errors.push(ValidationError {
+                            file: "SKILL.md".into(),
+                            path: "description".into(),
+                            rule: "exists".into(),
+                            actual: "missing".into(),
+                            message: "SKILL.md frontmatter 缺少 description: 字段".into(),
+                            fix_hint: Some("在 frontmatter 中添加 description: 技能描述".into()),
+                        });
+                    }
+                }
             }
         } else {
             errors.push(ValidationError {
@@ -273,32 +309,6 @@ fn validate_plugin_manifest(dir: &Path, errors: &mut Vec<ValidationError>) {
     validate_trigger_section("plugin.toml", &manifest.trigger, errors);
     validate_model_section("plugin.toml", &manifest.model, errors);
     validate_display_section("plugin.toml", &manifest.display, errors, true);
-}
-
-fn validate_shared_plugin_manifest(
-    manifest: &crate::plugin::manifest::PluginManifest,
-    errors: &mut Vec<ValidationError>,
-) {
-    let plugin = Some(PluginSection {
-        id: Some(manifest.plugin.id.clone()),
-        name: Some(manifest.plugin.name.clone()),
-        kind: Some(manifest.plugin.plugin_type.clone()),
-    });
-    let trigger = manifest.trigger.as_ref().map(|trigger| TriggerSection {
-        keywords: Some(trigger.keywords.clone()),
-    });
-    let model = manifest.model.as_ref().map(|model| ModelSection {
-        preference: model.preference.clone(),
-    });
-    let display = manifest.display.as_ref().map(|display| DisplaySection {
-        category: display.category.clone(),
-        icon: display.icon.clone(),
-    });
-
-    validate_plugin_section("SKILL.md", &plugin, errors);
-    validate_trigger_section("SKILL.md", &trigger, errors);
-    validate_model_section("SKILL.md", &model, errors);
-    validate_display_section("SKILL.md", &display, errors, false);
 }
 
 fn validate_plugin_section(

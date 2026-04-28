@@ -70,7 +70,6 @@ describe('ChatBottomArea', () => {
       activeConversationId: 'conv-chat-bottom',
       conversations: [],
       messages: [],
-      selectedSkillCommands: {},
     })
     useSkillStore.setState({
       skills: [
@@ -90,7 +89,7 @@ describe('ChatBottomArea', () => {
     expect(screen.getByText('Shift+Enter 换行')).toBeInTheDocument()
   })
 
-  it('sends message on Enter', async () => {
+  it('sends message on Enter without skill id param', async () => {
     render(<ChatBottomArea />)
 
     fireEvent.change(screen.getByRole('textbox'), {
@@ -99,7 +98,7 @@ describe('ChatBottomArea', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
 
     await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, undefined)
+      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
     })
   })
 
@@ -111,95 +110,38 @@ describe('ChatBottomArea', () => {
     expect(stopCurrentStreamMock).toHaveBeenCalled()
   })
 
-  it('renders selected skill command token from chat store', () => {
-    useChatStore.setState({
-      selectedSkillCommands: {
-        'conv-chat-bottom': {
-          id: 'skill-smith',
-          label: '创建自己的技能',
-          command: '/skill-smith',
-        },
-      },
-    })
-
+  it('sends slash-prefixed text verbatim (skill id not in IPC)', async () => {
     render(<ChatBottomArea />)
 
-    expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
-    expect(screen.getByText('/skill-smith')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /当前已加载技能 创建自己的技能/ })).toBeInTheDocument()
+    // Type a slash command that is NOT in the skill store (unknown skill)
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '/not-a-skill hello' },
+    })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(sendUserMessageMock).toHaveBeenCalledWith('/not-a-skill hello', undefined)
+    })
   })
 
-  it('turns typed slash skill command into composer token', () => {
+  it('typing /salary-query expands to triggerText in input via useSkillComposer', () => {
     render(<ChatBottomArea />)
 
+    // Type the skill command with a space-separated tail — useSkillComposer will
+    // replace the slash-command prefix with triggerText
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: '/salary-query 你好' },
     })
 
-    expect(screen.getByText('薪酬查询')).toBeInTheDocument()
-    expect(screen.getByText('/salary-query')).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toHaveValue('你好')
-    expect(useChatStore.getState().selectedSkillCommands['conv-chat-bottom']).toEqual({
-      id: 'salary-query',
-      label: '薪酬查询',
-      command: '/salary-query',
-    })
+    // The input value should now be the triggerText + tail
+    // '/salary-query' triggerText + ' 你好' tail
+    expect(screen.getByRole('textbox')).toHaveValue('/salary-query 你好')
+    // No selectedSkillCommands on the store
+    expect((useChatStore.getState() as Record<string, unknown>)['selectedSkillCommands']).toBeUndefined()
   })
 
-  it('does not leak selected skill command across conversations', () => {
-    useChatStore.setState({
-      activeConversationId: 'conv-other',
-      selectedSkillCommands: {
-        'conv-chat-bottom': {
-          id: 'skill-smith',
-          label: '创建自己的技能',
-          command: '/skill-smith',
-        },
-      },
-    })
-
-    render(<ChatBottomArea />)
-
-    expect(screen.queryByText('创建自己的技能')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '打开技能选择' })).toBeInTheDocument()
-  })
-
-  it('keeps token and input when sendUserMessage reports failure', async () => {
-    sendUserMessageMock.mockResolvedValueOnce(false)
-    useChatStore.setState({
-      selectedSkillCommands: {
-        'conv-chat-bottom': {
-          id: 'skill-smith',
-          label: '创建自己的技能',
-          command: '/skill-smith',
-        },
-      },
-    })
-
-    render(<ChatBottomArea />)
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } })
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, 'skill-smith')
-    })
-
-    expect(screen.getByRole('textbox')).toHaveValue('hello')
-    expect(screen.getByText('创建自己的技能')).toBeInTheDocument()
-  })
-
-  it('clears token and input after successful send', async () => {
+  it('clears input after successful send, no skill state involved', async () => {
     sendUserMessageMock.mockResolvedValueOnce(true)
-    useChatStore.setState({
-      selectedSkillCommands: {
-        'conv-chat-bottom': {
-          id: 'skill-smith',
-          label: '创建自己的技能',
-          command: '/skill-smith',
-        },
-      },
-    })
 
     render(<ChatBottomArea />)
 
@@ -210,8 +152,6 @@ describe('ChatBottomArea', () => {
       expect(screen.getByRole('textbox')).toHaveValue('')
     })
 
-    expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined, undefined, 'skill-smith')
-    expect(screen.queryByText('创建自己的技能')).not.toBeInTheDocument()
+    expect(sendUserMessageMock).toHaveBeenCalledWith('hello', undefined)
   })
-
 })

@@ -256,7 +256,7 @@ pub(crate) async fn handle_skill_smith_install(
             "skill_id": result.skill_id,
             "installed_path": result.installed_path,
             "message": format!(
-                "A skill with id '{}' is already installed. Ask the user whether to overwrite (re-call with force=true) or rename (write a new plugin.toml with a different plugin.id and retry).",
+                "A skill with id '{}' is already installed. Ask the user whether to overwrite (re-call with force=true) or rename (rename the draft directory or update SKILL.md `name` and retry).",
                 result.skill_id
             ),
         })

@@ -1,6 +1,3 @@
-/**
- * @designSource design.pen#Cbtm1 ChatBottomArea
- */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -86,8 +83,6 @@ export function ChatBottomArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const selectedSkillCommand = useChatStore((s) => activeConversationId ? s.selectedSkillCommands[activeConversationId] ?? null : null)
-  const clearSelectedSkillCommand = useChatStore((s) => s.clearSelectedSkillCommand)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isUploading, selectAndUploadFiles } = useFileUpload()
   const openSettings = useUiStore((s) => s.openSettings)
@@ -104,7 +99,6 @@ export function ChatBottomArea() {
     input,
     setInput,
     textareaRef,
-    conversationId: activeConversationId,
   })
 
   useEffect(() => {
@@ -138,16 +132,6 @@ export function ChatBottomArea() {
     if (!trimmed && pendingFiles.length === 0) return
     if (isStreaming || isSending) return
 
-    console.debug('[skill-command][composer-submit]', {
-      traceId: activeConversationId,
-      conversationId: activeConversationId,
-      selectedSkillId: selectedSkillCommand?.id ?? null,
-      selectedSkillCommand,
-      hasOverrideText: overrideText !== undefined,
-      textLength: trimmed.length,
-      pendingFileCount: pendingFiles.length,
-    })
-
     setIsSending(true)
     const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
       id: f.id,
@@ -162,8 +146,6 @@ export function ChatBottomArea() {
         sendUserMessage(
           trimmed || t('inputBar.analyzeFile'),
           fileInfos.length > 0 ? fileInfos : undefined,
-          undefined,
-          selectedSkillCommand?.id ?? undefined,
         ),
         new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('IPC timeout')), IPC_TIMEOUT_MS),
@@ -172,14 +154,13 @@ export function ChatBottomArea() {
       if (sent) {
         setInput('')
         setPendingFiles([])
-        clearSelectedSkillCommand(activeConversationId)
       }
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed or timed out:', err)
     } finally {
       setIsSending(false)
     }
-  }, [activeConversationId, clearSelectedSkillCommand, input, isSending, isStreaming, pendingFiles, selectedSkillCommand, sendUserMessage, t])
+  }, [input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) return
@@ -271,8 +252,8 @@ export function ChatBottomArea() {
                 onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
               />
             ) : null}
-            skillCommand={selectedSkillCommand}
-            onClearSkillCommand={() => clearSelectedSkillCommand(activeConversationId)}
+            skillCommand={null}
+            onClearSkillCommand={undefined}
             textareaRef={textareaRef}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => { isComposingRef.current = true }}

@@ -93,6 +93,17 @@ const STALE_STREAM_TIMEOUT_MS = 200_000
 /** How often (ms) the watchdog checks for stale streams. */
 const WATCHDOG_INTERVAL_MS = 10_000
 
+function extractTaskCreateState(message: Message): ConversationTaskState | null {
+  const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
+  if (!match) return null
+  return {
+    taskId: match[1],
+    status: 'pending',
+    runId: message.runId ?? '',
+    subject: match[2],
+  }
+}
+
 /**
  * Registers all streaming-related Tauri event listeners.
  *
@@ -353,8 +364,6 @@ export function useStreaming() {
         toolCallId: toolId,
         payload: { toolName, purpose },
       })
-      const HIDDEN_TOOLS = ['switch_skill']
-      if (HIDDEN_TOOLS.includes(toolName)) return
       useChatStore.getState().addConversationToolExecution(conversationId, {
         toolName,
         toolId,
@@ -381,7 +390,6 @@ export function useStreaming() {
       if (message.conversationId === store.activeConversationId) {
         store.upsertMessage(message)
       }
-      const HIDDEN_TOOLS = ['switch_skill']
       if (message.toolResult) {
         if (message.toolResult.name === 'TaskCreate' && !message.toolResult.isError) {
           const task = extractTaskCreateState(message)
@@ -389,7 +397,6 @@ export function useStreaming() {
             store.upsertConversationTaskState(message.conversationId, task)
           }
         }
-        if (HIDDEN_TOOLS.includes(message.toolResult.name)) return
         store.updateConversationToolExecution(
           message.conversationId,
           message.toolResult.toolCallId,
@@ -402,17 +409,6 @@ export function useStreaming() {
       }
     }),
   )
-
-  function extractTaskCreateState(message: Message): ConversationTaskState | null {
-    const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
-    if (!match) return null
-    return {
-      taskId: match[1],
-      status: 'pending',
-      runId: message.runId ?? '',
-      subject: match[2],
-    }
-  }
 
   // --- analysis:step-changed --------------------------------------------
   useTauriEvent(() =>

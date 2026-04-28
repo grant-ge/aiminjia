@@ -12,9 +12,9 @@ pub fn build_iteration_context(
     workspace_context: &str,
     file_context: &str,
     analysis_notes: &str,
-    precompute_result: Option<&str>,
     connector_context: Option<&str>,
     analysis_ctx_prompt: Option<&str>,
+    skill_catalog: &str,
 ) -> String {
     let mut ctx = String::from("[动态上下文 — 请勿回复此消息]\n");
 
@@ -47,15 +47,7 @@ pub fn build_iteration_context(
         ctx.push_str(analysis_notes);
     }
 
-    // 6. Precompute result — tagged block so the LLM treats it as pre-computed data
-    if let Some(pc_result) = precompute_result {
-        ctx.push_str("\n\n[precompute_result]\n");
-        ctx.push_str("以下是系统自动计算的结果，请基于这些数据向用户展示分析结论。\n");
-        ctx.push_str(pc_result);
-        ctx.push_str("\n[/precompute_result]");
-    }
-
-    // 7. Internal connector context (browsing sessions / legacy app integrations)
+    // 6. Internal connector context (browsing sessions / legacy app integrations)
     if let Some(connector) = connector_context {
         ctx.push_str("\n\n[内部系统浏览]\n");
         ctx.push_str(
@@ -66,7 +58,7 @@ pub fn build_iteration_context(
         ctx.push_str("\n[/内部系统浏览]");
     }
 
-    // 8. Optional step context prompt (AnalysisContext::format_for_prompt())
+    // 7. Optional step context prompt (AnalysisContext::format_for_prompt())
     //    and step plan are injected by the caller and forwarded here as a single
     //    pre-formatted string.
     //
@@ -79,6 +71,13 @@ pub fn build_iteration_context(
         if !ctx_prompt.is_empty() {
             ctx.push_str(ctx_prompt);
         }
+    }
+
+    // 8. Skill catalog — dynamic LLM-driven skill discovery.
+    if !skill_catalog.is_empty() {
+        ctx.push_str("\n\n<system-reminder>\n");
+        ctx.push_str(skill_catalog);
+        ctx.push_str("\n</system-reminder>");
     }
 
     ctx
@@ -193,13 +192,13 @@ mod tests {
 
     #[test]
     fn test_empty_inputs_yields_only_header() {
-        let result = build_iteration_context("", "", "", "", "", None, None, None);
+        let result = build_iteration_context("", "", "", "", "", None, None, "");
         assert_eq!(result, EMPTY_HEADER);
     }
 
     #[test]
     fn test_core_memory_block() {
-        let result = build_iteration_context("mem content", "", "", "", "", None, None, None);
+        let result = build_iteration_context("mem content", "", "", "", "", None, None, "");
         assert!(result.contains("\n[核心记忆]\n"));
         assert!(result.contains("mem content"));
         assert!(result.contains("\n[核心记忆]\nmem content\n"));
@@ -207,27 +206,36 @@ mod tests {
 
     #[test]
     fn test_project_memory_block() {
-        let result = build_iteration_context("", "memory index", "", "", "", None, None, None);
+        let result = build_iteration_context("", "memory index", "", "", "", None, None, "");
         assert!(result.contains("\n[项目记忆]\n"));
         assert!(result.contains("memory index"));
         assert!(result.contains("\n[项目记忆]\nmemory index\n"));
     }
 
-    #[test]
-    fn test_precompute_result_block() {
-        let result = build_iteration_context("", "", "", "", "", Some("computed data"), None, None);
-        assert!(result.contains("[precompute_result]\n"));
-        assert!(result.contains("computed data"));
-        assert!(result.contains("[/precompute_result]"));
-    }
+    // Note: skill precompute block test removed in Phase B Task 7 (precompute pipeline deleted).
 
     #[test]
     fn test_connector_context_block() {
         let result =
-            build_iteration_context("", "", "", "", "", None, Some("connector info"), None);
+            build_iteration_context("", "", "", "", "", Some("connector info"), None, "");
         assert!(result.contains("[内部系统浏览]\n"));
         assert!(result.contains("connector info"));
         assert!(result.contains("[/内部系统浏览]"));
+    }
+
+    #[test]
+    fn test_skill_catalog_block() {
+        let catalog = "## 可用专项技能\n- `biz-writing` — 商务写作";
+        let result = build_iteration_context("", "", "", "", "", None, None, catalog);
+        assert!(result.contains("<system-reminder>\n## 可用专项技能"));
+        assert!(result.contains("biz-writing"));
+        assert!(result.contains("\n</system-reminder>"));
+    }
+
+    #[test]
+    fn test_empty_skill_catalog_not_injected() {
+        let result = build_iteration_context("", "", "", "", "", None, None, "");
+        assert!(!result.contains("可用专项技能"));
     }
 
     #[test]
@@ -238,9 +246,9 @@ mod tests {
             "WORKSPACE",
             "FILES",
             "NOTES",
-            Some("PRECOMPUTE"),
             Some("CONNECTOR"),
             Some("ANALYSIS"),
+            "## 可用专项技能\n- `biz-writing` — 商务写作",
         );
 
         let core_pos = result.find("CORE").expect("CORE missing");
@@ -248,17 +256,17 @@ mod tests {
         let ws_pos = result.find("WORKSPACE").expect("WORKSPACE missing");
         let file_pos = result.find("FILES").expect("FILES missing");
         let notes_pos = result.find("NOTES").expect("NOTES missing");
-        let pre_pos = result.find("PRECOMPUTE").expect("PRECOMPUTE missing");
         let conn_pos = result.find("CONNECTOR").expect("CONNECTOR missing");
         let ana_pos = result.find("ANALYSIS").expect("ANALYSIS missing");
+        let skill_pos = result.find("biz-writing").expect("skill catalog missing");
 
         assert!(core_pos < mem_pos);
         assert!(mem_pos < ws_pos);
         assert!(ws_pos < file_pos);
         assert!(file_pos < notes_pos);
-        assert!(notes_pos < pre_pos);
-        assert!(pre_pos < conn_pos);
+        assert!(notes_pos < conn_pos);
         assert!(conn_pos < ana_pos);
+        assert!(ana_pos < skill_pos);
     }
 
     #[tokio::test]

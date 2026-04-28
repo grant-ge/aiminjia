@@ -21,7 +21,7 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, SkillSessionStore,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor,
     TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
@@ -266,92 +266,9 @@ pub fn load_history_via_runtime_history(
         .collect())
 }
 
-fn build_skill_session_store(
-    memory_store: Option<Arc<dyn crate::runtime::store::MemoryStore>>,
-) -> Arc<SkillSessionStore> {
-    match memory_store {
-        Some(memory_store) => Arc::new(SkillSessionStore::with_memory_store(memory_store)),
-        None => Arc::new(SkillSessionStore::new()),
-    }
-}
-
-async fn resolve_skill_turn_context_for_request(
-    skill_sessions: &SkillSessionStore,
-    skill_registry: &SkillRegistry,
-    all_tool_names: &[String],
-    request: &ChatTurnRequest,
-) -> Result<(crate::runtime::chat::skill_session::SkillTurnContext, bool), TurnError> {
-    let has_files = !request.file_ids.is_empty();
-    let selected_skill_id = request
-        .selected_skill_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|id| !id.is_empty());
-
-    if let Some(selected_skill_id) = selected_skill_id {
-        log::info!(
-            "[skill-command][turn-config-selected-skill] trace_id={:?} conversation_id={} selected_skill_id={} selected_skill_label={:?}",
-            request
-                .client_message_id
-                .as_deref()
-                .or(Some(selected_skill_id)),
-            request.conversation_id,
-            selected_skill_id,
-            request.selected_skill_label,
-        );
-
-        let mut ctx = skill_sessions
-            .switch_skill(
-                skill_registry,
-                all_tool_names,
-                request.conversation_id.as_str(),
-                selected_skill_id,
-                has_files,
-            )
-            .await
-            .map_err(|err| {
-                TurnError::PersistenceError(format!(
-                    "Failed to switch selected skill '{}': {err}",
-                    selected_skill_id
-                ))
-            })?;
-
-        // Claude Code Best treats explicit command loading as already resolved.
-        // Do not expose switch_skill in the same turn, or the model can re-pick a different skill.
-        match ctx.allowed_tools.as_mut() {
-            Some(allowed_tools) => {
-                allowed_tools.remove("switch_skill");
-            }
-            None => {
-                ctx.allowed_tools = Some(
-                    all_tool_names
-                        .iter()
-                        .filter(|name| name.as_str() != "switch_skill")
-                        .cloned()
-                        .collect::<std::collections::HashSet<_>>(),
-                );
-            }
-        }
-
-        return Ok((ctx, true));
-    }
-
-    let ctx = skill_sessions
-        .resolve_turn_context(
-            skill_registry,
-            all_tool_names,
-            request.conversation_id.as_str(),
-            request.content.as_str(),
-            has_files,
-        )
-        .await
-        .map_err(|err| {
-            TurnError::PersistenceError(format!("Failed to resolve skill session: {err}"))
-        })?;
-    Ok((ctx, false))
-}
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct TauriChatServices {
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
@@ -362,8 +279,7 @@ struct TauriChatServices {
     session_mgr: Arc<crate::python::session::PythonSessionManager>,
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
-    skill_registry: Arc<SkillRegistry>,
-    skill_sessions: Arc<SkillSessionStore>,
+    skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
@@ -896,37 +812,18 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         })
     }
 
-    async fn run_precompute(
-        &self,
-        _config: &TurnConfig,
-        _state: &mut TurnIterationState,
-    ) -> Result<Option<String>, TurnError> {
-        // TODO(S4-T12/future): full precompute requires StepConfig.precompute, which is not yet
-        // carried by TurnConfig.
-        // When S4-T13 wires the driver loop, TurnConfig should be extended with:
-        //   pub step_config: Option<StepConfig>,
-        // at which point this body can be extracted from chat_runtime_impl.rs Block 6 (L1795-L2034).
-        // Until then, falling back to no-precompute is safe (the agent can do the
-        // computation itself in the tool loop).
-        Ok(None)
-    }
-
     async fn persist_user_message(
         &self,
         conversation_id: &str,
         content: &str,
         file_ids: &[String],
         _client_message_id: Option<&str>,
-        selected_skill_id: Option<&str>,
-        selected_skill_label: Option<&str>,
     ) -> Result<String, TurnError> {
         let msg_id = format!("msg-{}", uuid::Uuid::new_v4());
 
         let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
             content,
             file_ids,
-            selected_skill_id,
-            selected_skill_label,
         )
         .to_string();
 
@@ -1350,37 +1247,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .into_iter()
             .map(|def| def.name)
             .collect::<Vec<_>>();
-
-        let (skill_ctx, explicit_selection) = resolve_skill_turn_context_for_request(
-            self.services.skill_sessions.as_ref(),
-            self.services.skill_registry.as_ref(),
-            &all_tools,
-            request,
-        )
-        .await?;
-
-        log::info!(
-            "[skill-command][turn-config-resolved] trace_id={:?} conversation_id={} selected_skill_id={:?} selected_skill_label={:?} resolved_skill_id={} explicit_selection={} allowed_tools_count={} switch_skill_allowed={}",
-            request
-                .client_message_id
-                .as_deref()
-                .or(request.selected_skill_id.as_deref()),
-            request.conversation_id,
-            request.selected_skill_id,
-            request.selected_skill_label,
-            skill_ctx.skill_id,
-            explicit_selection,
-            skill_ctx
-                .allowed_tools
-                .as_ref()
-                .map(|tools| tools.len())
-                .unwrap_or(all_tools.len()),
-            skill_ctx
-                .allowed_tools
-                .as_ref()
-                .map(|tools| tools.contains("switch_skill"))
-                .unwrap_or(true),
-        );
+        let allowed_tools = all_tools
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
 
         let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
             &self.services.app,
@@ -1389,7 +1259,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
-            skill_ctx.allowed_tools.as_ref(),
+            Some(&allowed_tools),
         )
         .await;
         let json_defs = visible_tool_defs
@@ -1398,25 +1268,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .collect();
 
         Ok(TurnConfigOverrides {
-            system_prompt: Some(skill_ctx.system_prompt),
+            system_prompt: Some(crate::runtime::chat::base_prompt::DAILY_BASE_PROMPT.to_string()),
             tool_defs: Some(json_defs),
-            allowed_tools: skill_ctx.allowed_tools,
-            max_iterations: Some(
-                self.services
-                    .skill_registry
-                    .get(skill_ctx.skill_id.as_str())
-                    .await
-                    .map(|skill| skill.max_iterations(&skill_ctx.state))
-                    .unwrap_or(30),
-            ),
-            token_budget: Some(
-                self.services
-                    .skill_registry
-                    .get(skill_ctx.skill_id.as_str())
-                    .await
-                    .map(|skill| skill.token_budget(&skill_ctx.state) as usize)
-                    .unwrap_or(4096),
-            ),
+            allowed_tools: Some(allowed_tools),
+            max_iterations: Some(30),
+            token_budget: Some(4096),
         })
     }
 
@@ -1502,6 +1358,14 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(env_info)
     }
 
+    async fn get_skill_catalog(&self, agent_id: Option<&str>) -> String {
+        self.services
+            .skill_registry
+            .lock()
+            .map(|mut reg| reg.catalog_delta_for_agent(agent_id, 200_000))
+            .unwrap_or_default()
+    }
+
     async fn load_workspace_path(&self) -> Result<std::path::PathBuf, TurnError> {
         Ok(self.services.file_mgr.workspace_path().to_path_buf())
     }
@@ -1537,14 +1401,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
 
-    use crate::plugin::skill_trait::{
-        Skill, SkillState, StepAction, ToolFilter, WorkflowDefinition,
-    };
-    use crate::runtime::store::MemoryStore;
     use crate::storage::message_write_queue::{MessageWriteQueue, MessageWriteTarget};
     use tempfile::TempDir;
 
@@ -1678,215 +1537,6 @@ mod tests {
         }
     }
 
-    struct TestSkill {
-        id: &'static str,
-        trigger: Option<&'static str>,
-        prompt_prefix: &'static str,
-        default_tools: Vec<String>,
-        workflow: Option<WorkflowDefinition>,
-        allow_all_tools: bool,
-    }
-
-    #[async_trait]
-    impl Skill for TestSkill {
-        fn id(&self) -> &str {
-            self.id
-        }
-
-        fn display_name(&self) -> &str {
-            self.id
-        }
-
-        fn description(&self) -> &str {
-            self.id
-        }
-
-        fn system_prompt(&self, state: &SkillState) -> String {
-            format!(
-                "{}:{}",
-                self.prompt_prefix,
-                state.current_step.as_deref().unwrap_or("none")
-            )
-        }
-
-        fn tool_filter(&self, _state: &SkillState) -> ToolFilter {
-            if self.allow_all_tools {
-                ToolFilter::All
-            } else {
-                ToolFilter::Only(self.default_tools.clone())
-            }
-        }
-
-        fn workflow(&self) -> Option<WorkflowDefinition> {
-            self.workflow.clone()
-        }
-
-        fn allowed_tool_names(&self, state: &SkillState) -> Option<Vec<String>> {
-            match state.current_step.as_deref() {
-                Some("step0") => Some(vec!["search_files".to_string()]),
-                Some("step1") => Some(vec!["read_workspace_file".to_string()]),
-                _ if self.allow_all_tools => None,
-                _ => Some(self.default_tools.clone()),
-            }
-        }
-
-        fn on_step_complete(&self, _state: &mut SkillState, user_message: &str) -> StepAction {
-            match user_message.trim() {
-                "继续" => StepAction::AdvanceToStep("step1".to_string()),
-                "完成" => StepAction::Finish,
-                _ => StepAction::WaitForUser,
-            }
-        }
-    }
-
-    async fn registry_with_test_skills() -> SkillRegistry {
-        let registry = SkillRegistry::new("daily-assistant");
-        registry
-            .register(
-                Arc::new(TestSkill {
-                    id: "daily-assistant",
-                    trigger: None,
-                    prompt_prefix: "daily",
-                    default_tools: vec!["bash".to_string()],
-                    workflow: None,
-                    allow_all_tools: false,
-                }),
-                "test",
-            )
-            .await;
-        registry
-            .register(
-                Arc::new(TestSkill {
-                    id: "comp-analysis",
-                    trigger: Some("分析"),
-                    prompt_prefix: "skill",
-                    default_tools: vec!["search_files".to_string()],
-                    workflow: Some(WorkflowDefinition {
-                        initial_step: "step0".to_string(),
-                        steps: vec![],
-                    }),
-                    allow_all_tools: false,
-                }),
-                "test",
-            )
-            .await;
-        registry
-            .register(
-                Arc::new(TestSkill {
-                    id: "salary-query",
-                    trigger: None,
-                    prompt_prefix: "salary",
-                    default_tools: vec!["bash".to_string(), "switch_skill".to_string()],
-                    workflow: None,
-                    allow_all_tools: false,
-                }),
-                "test",
-            )
-            .await;
-        registry
-            .register(
-                Arc::new(TestSkill {
-                    id: "all-tools-skill",
-                    trigger: None,
-                    prompt_prefix: "all-tools",
-                    default_tools: Vec::new(),
-                    workflow: None,
-                    allow_all_tools: true,
-                }),
-                "test",
-            )
-            .await;
-        registry
-    }
-
-    #[tokio::test]
-    async fn selected_skill_id_overrides_activation_detection_for_turn_context() {
-        let registry = registry_with_test_skills().await;
-        let skill_sessions = SkillSessionStore::new();
-        let all_tools = vec![
-            "bash".to_string(),
-            "search_files".to_string(),
-            "read_workspace_file".to_string(),
-            "switch_skill".to_string(),
-        ];
-        let mut request = ChatTurnRequest::new("c-selected-skill", "请分析这个问题", Vec::new());
-        request.client_message_id = Some("client-selected".to_string());
-        request.selected_skill_id = Some("salary-query".to_string());
-        request.selected_skill_label = Some("salary-query".to_string());
-
-        let (ctx, explicit) = resolve_skill_turn_context_for_request(
-            &skill_sessions,
-            &registry,
-            &all_tools,
-            &request,
-        )
-        .await
-        .expect("selected skill should resolve");
-
-        assert!(
-            explicit,
-            "selected_skill_id should mark this as explicit selection"
-        );
-        assert_eq!(ctx.skill_id, "salary-query");
-        assert!(
-            ctx.system_prompt.starts_with("salary:"),
-            "expected selected salary-query prompt, got {}",
-            ctx.system_prompt
-        );
-        assert!(
-            !ctx.allowed_tools
-                .as_ref()
-                .map(|tools| tools.contains("switch_skill"))
-                .unwrap_or(false),
-            "explicit skill turn must not expose switch_skill"
-        );
-
-        let restored = skill_sessions
-            .resolve_turn_context(&registry, &all_tools, "c-selected-skill", "继续", false)
-            .await
-            .expect("explicit skill state should persist for following turns");
-
-        assert_eq!(restored.skill_id, "salary-query");
-    }
-
-    #[tokio::test]
-    async fn selected_skill_id_with_all_tools_still_hides_switch_skill() {
-        let registry = registry_with_test_skills().await;
-        let skill_sessions = SkillSessionStore::new();
-        let all_tools = vec![
-            "bash".to_string(),
-            "search_files".to_string(),
-            "read_workspace_file".to_string(),
-            "switch_skill".to_string(),
-        ];
-        let mut request = ChatTurnRequest::new("c-selected-all-tools", "用全工具技能", Vec::new());
-        request.selected_skill_id = Some("all-tools-skill".to_string());
-        request.selected_skill_label = Some("all-tools-skill".to_string());
-
-        let (ctx, explicit) = resolve_skill_turn_context_for_request(
-            &skill_sessions,
-            &registry,
-            &all_tools,
-            &request,
-        )
-        .await
-        .expect("all-tools selected skill should resolve");
-
-        assert!(
-            explicit,
-            "selected_skill_id should mark this as explicit selection"
-        );
-        let allowed_tools = ctx
-            .allowed_tools
-            .as_ref()
-            .expect("explicit all-tools skill turn should narrow allowed_tools");
-        assert!(allowed_tools.contains("bash"));
-        assert!(
-            !allowed_tools.contains("switch_skill"),
-            "explicit all-tools skill turn must not expose switch_skill"
-        );
-    }
-
     #[test]
     fn build_history_message_content_preserves_uploaded_file_hints() {
         let content = serde_json::json!({
@@ -1981,38 +1631,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn build_skill_session_store_uses_memory_backing_when_available() {
-        let registry = registry_with_test_skills().await;
-        let memory_store = Arc::new(crate::runtime::store::InMemoryMemoryStore::default());
-        let skill_sessions = build_skill_session_store(Some(memory_store.clone()));
-
-        memory_store
-            .set(
-                "note:conv-restored:active_skill_state",
-                r#"{"skillId":"comp-analysis","currentStep":"step1","stepStatus":{"step0":"completed","step1":"active"},"customData":null,"hasFiles":true}"#,
-            )
-            .unwrap();
-
-        let restored = skill_sessions
-            .resolve_turn_context(
-                &registry,
-                &[
-                    "bash".to_string(),
-                    "search_files".to_string(),
-                    "read_workspace_file".to_string(),
-                    "switch_skill".to_string(),
-                ],
-                "conv-restored",
-                "我先看看",
-                true,
-            )
-            .await
-            .expect("memory-backed skill sessions should restore persisted state");
-
-        assert_eq!(restored.skill_id, "comp-analysis");
-        assert_eq!(restored.state.current_step.as_deref(), Some("step1"));
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2225,16 +1843,12 @@ impl TauriChatCommandAdapter {
         file_mgr: Arc<FileManager>,
         crypto: Option<Arc<SecureStorage>>,
         tool_registry: Arc<ToolRegistry>,
-        skill_registry: Arc<SkillRegistry>,
+        skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
         session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
-        let skill_session_memory_store = app
-            .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
-            .map(|facade| facade.inner().clone_memory_store());
-        let skill_sessions = build_skill_session_store(skill_session_memory_store);
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
@@ -2250,7 +1864,6 @@ impl TauriChatCommandAdapter {
             auth_manager,
             app,
             skill_registry,
-            skill_sessions,
             runtime_resolver,
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
@@ -2272,8 +1885,7 @@ impl TauriChatCommandAdapter {
                 .with_runtime_resolver(services.runtime_resolver.clone()),
             bus,
             llm_executor,
-        )
-        .with_skill_sessions(services.skill_sessions.clone())
+)
         .with_permission_store(permission_store);
         if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
             runtime = runtime.with_default_folder(home.default_folder());
@@ -2328,23 +1940,16 @@ impl TauriChatCommandAdapter {
         permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
         agent_name: Option<String>,
         client_message_id: Option<String>,
-        selected_skill_id: Option<String>,
-        selected_skill_label: Option<String>,
     ) -> Result<(), String> {
         log::info!(
-            "[skill-command][send-message] trace_id={:?} conversation_id={} client_message_id={:?} selected_skill_id={:?} selected_skill_label={:?} content_len={}",
-            client_message_id.as_deref().or(selected_skill_id.as_deref()),
+            "[send_message] trace_id={:?} conversation_id={} content_len={}",
+            client_message_id.as_deref(),
             conversation_id,
-            client_message_id,
-            selected_skill_id,
-            selected_skill_label,
             content.len()
         );
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, file_ids);
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
-        request.selected_skill_id = selected_skill_id;
-        request.selected_skill_label = selected_skill_label;
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
@@ -2386,7 +1991,6 @@ impl TauriChatCommandAdapter {
             agent_runtime,
             event_bus: None,
             skill_registry: Some(self.services.skill_registry.clone()),
-            skill_sessions: Some(self.services.skill_sessions.clone()),
             authorized_workspace: None,
             read_file_state: None,
             cancellation: None,
@@ -2726,8 +2330,6 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
             conversation_id,
             prompt,
             Vec::new(),
-            None,
-            None,
             None,
             None,
             None,

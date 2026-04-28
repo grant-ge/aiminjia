@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react'
 
 import type { SkillInfo } from '@/lib/tauri'
-import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
 
 interface UseSkillComposerArgs {
@@ -15,7 +14,6 @@ export function useSkillComposer({
   input,
   setInput,
   textareaRef,
-  conversationId,
 }: UseSkillComposerArgs) {
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
@@ -42,31 +40,14 @@ export function useSkillComposer({
   const slashOpen = slashMatch !== null
 
   const applySkillCommand = useCallback((skill: SkillInfo, tail: string) => {
-    if (!conversationId) {
-      const trigger = skill.triggerText || `/${skill.id}`
-      const next = tail ? `${trigger}${tail}` : trigger
-      setInput(next)
-      focusToEnd(next)
-      return
-    }
-
-    useChatStore.getState().setSelectedSkillCommand(conversationId, {
-      id: skill.id,
-      label: skill.displayName || skill.id,
-      command: `/${skill.id}`,
-    })
-    const next = tail.trimStart()
+    const trigger = skill.triggerText || `/${skill.id}`
+    const next = tail ? `${trigger}${tail}` : trigger
     setInput(next)
     setShowSkillPopover(false)
     focusToEnd(next)
-  }, [conversationId, focusToEnd, setInput])
+  }, [focusToEnd, setInput])
 
   const handleInputChange = useCallback((value: string) => {
-    if (!conversationId) {
-      setInput(value)
-      return
-    }
-
     const match = value.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(\s+[\s\S]*)$/)
     if (!match) {
       setInput(value)

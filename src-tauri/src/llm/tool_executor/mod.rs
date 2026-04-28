@@ -156,7 +156,6 @@ pub(crate) mod tests {
             agent_runtime: None,
             event_bus: None,
             skill_registry: None,
-            skill_sessions: None,
             authorized_workspace: None,
             read_file_state: None,
             cancellation: None,

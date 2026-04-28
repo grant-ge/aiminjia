@@ -55,7 +55,6 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         agent_runtime: None,
         event_bus: None,
         skill_registry: None,
-        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,
@@ -88,7 +87,6 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         agent_runtime: request.agent_runtime,
         event_bus: request.event_bus,
         skill_registry: request.skill_registry,
-        skill_sessions: request.skill_sessions,
         authorized_workspace: request.authorized_workspace,
         read_file_state: request.read_file_state,
         cancellation: request.cancellation,
@@ -118,6 +116,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         read_file_state: parent.read_file_state.clone(),
         app_handle: parent.app_handle.clone(),
         runtime_resolver: parent.runtime_resolver.clone(),
+        skill_registry: None,
     };
 
     let child = subagent_deps.request_scoped_tool_deps(RunId::new("child-run"), None, None, None);

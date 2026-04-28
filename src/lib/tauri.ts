@@ -241,26 +241,21 @@ export interface AgentInfo {
  * Send a user message to a conversation and trigger the AI response pipeline.
  *
  * @param conversationId - Target conversation ID
+ * @param clientMessageId - Client-generated message ID for dedup
  * @param content - The user's message text
- * @param fileIds - Optional list of uploaded file IDs to attach
+ * @param fileIds - List of uploaded file IDs to attach
  */
-export function sendMessage(
+export async function sendMessage(
   conversationId: string,
+  clientMessageId: string,
   content: string,
-  fileIds?: string[],
-  agentName?: string | null,
-  clientMessageId?: string,
-  selectedSkillId?: string | null,
-  selectedSkillLabel?: string | null,
+  fileIds: string[],
 ): Promise<void> {
-  return invoke<void>('send_message', {
+  return invoke('send_message', {
     conversationId,
+    clientMessageId,
     content,
-    fileIds: fileIds ?? [],
-    agentName: agentName ?? null,
-    clientMessageId: clientMessageId ?? null,
-    selectedSkillId: selectedSkillId ?? null,
-    selectedSkillLabel: selectedSkillLabel ?? null,
+    fileIds,
   })
 }
 
@@ -1476,7 +1471,7 @@ export function cleanupExpiredDrafts(): Promise<number> {
 
 /** A structured schema error or warning from validateSkillDraft. */
 export interface DraftValidationIssue {
-  /** e.g. `"plugin.toml"` / `"prompts/step0.md"` */
+  /** e.g. `"SKILL.md"` / `"scripts/init.sh"` */
   file: string
   /** e.g. `"trigger.keywords[0]"` */
   path: string

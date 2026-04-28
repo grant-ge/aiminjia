@@ -55,7 +55,6 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         agent_runtime: None,
         event_bus: None,
         skill_registry: None,
-        skill_sessions: None,
         authorized_workspace: None,
         read_file_state: None,
         cancellation: None,

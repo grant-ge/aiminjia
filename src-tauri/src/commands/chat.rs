@@ -51,8 +51,6 @@ pub async fn send_message(
     permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
     agent_name: Option<String>,
     client_message_id: Option<String>,
-    selected_skill_id: Option<String>,
-    selected_skill_label: Option<String>,
 ) -> Result<(), String> {
     // Compatibility marker for review tests:
     // .send_message(conversation_id, content, file_ids, permission_mode, agent_name)
@@ -72,8 +70,6 @@ pub async fn send_message(
             permission_mode,
             agent_name,
             client_message_id,
-            selected_skill_id,
-            selected_skill_label,
         )
         .await;
     match &result {
@@ -502,7 +498,6 @@ pub mod testsupport {
             agent_runtime: None,
             event_bus: None,
             skill_registry: None,
-            skill_sessions: None,
             authorized_workspace,
             read_file_state: None,
             cancellation: None,
@@ -604,8 +599,8 @@ mod auto_capture_tests {
     }
 
     #[test]
-    fn does_not_skip_when_last_tool_is_analysis() {
-        // execute_python is the last tool — analysis step, should be captured
+    fn does_not_skip_when_last_tool_is_execute_python() {
+        // execute_python is the last tool — data step, should be captured
         let msgs = vec![
             user("clean data"),
             assistant("分析中"),

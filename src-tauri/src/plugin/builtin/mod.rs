@@ -1,4 +1,3 @@
-//! Built-in plugins — tools and skills compiled into the binary.
+//! Built-in plugins — tools compiled into the binary.
 
-pub mod skills;
 pub mod tools;

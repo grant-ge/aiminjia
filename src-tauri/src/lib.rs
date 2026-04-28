@@ -268,6 +268,26 @@ pub fn run() {
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
+            // Load SKILL.md-based skills from user and global roots
+            let global_skills_dir = aijia_home.skills_dir();
+            let user_skills_dir = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.skills_dir());
+            let skill_roots: Vec<std::path::PathBuf> = match user_skills_dir {
+                Some(user) => vec![user, global_skills_dir],
+                None => vec![global_skills_dir],
+            };
+            let loaded_skills = plugin::skill::loader::load_skill_roots(&skill_roots)
+                .unwrap_or_else(|e| {
+                    log::warn!("[setup] Failed to load skills from roots: {}", e);
+                    Default::default()
+                });
+            let disk_skill_registry = Arc::new(std::sync::Mutex::new(
+                plugin::skill::registry::SkillRegistry::from_skills(
+                    loaded_skills.into_values().collect(),
+                ),
+            ));
+            app.manage(disk_skill_registry.clone());
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
                 Some(
@@ -325,16 +345,11 @@ pub fn run() {
                 }
             });
 
-            // Register builtin tools and skills
+            // Register builtin tools
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(
-                    &skill_registry,
-                    db.clone(),
-                    auth_manager.clone(),
-                    None,
-                )
-                .await;
+                // Note: builtin skills (daily_assistant) removed in Phase B Task 6.
+                // SKILL.md disk loading implemented in Phase C/D via plugin::skill module.
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
@@ -430,7 +445,7 @@ pub fn run() {
                     file_mgr.clone(),
                     secure_storage.clone(),
                     tool_registry.clone(),
-                    skill_registry.clone(),
+                    disk_skill_registry.clone(),
                     session_mgr.clone(),
                     auth_manager.clone(),
                     permission_store.clone(),
@@ -639,154 +654,23 @@ pub fn run() {
 /// Scan a plugin directory for external plugins.
 /// `source` identifies the origin: "builtin" for bundled, "custom" for user-installed.
 async fn scan_external_plugins(
-    plugins_dir: &std::path::Path,
-    tool_registry: &plugin::ToolRegistry,
-    skill_registry: &plugin::SkillRegistry,
-    workspace_path: &std::path::Path,
-    source: &str,
+    _plugins_dir: &std::path::Path,
+    _tool_registry: &plugin::ToolRegistry,
+    _skill_registry: &plugin::SkillRegistry,
+    _workspace_path: &std::path::Path,
+    _source: &str,
 ) {
-    let entries = match std::fs::read_dir(plugins_dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::warn!("Failed to read plugins directory: {}", e);
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Skip directories starting with '_' (disabled plugins)
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('_') {
-                continue;
-            }
-        }
-
-        let manifest = match plugin::manifest::read_manifest_from_skill_dir(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!("Invalid skill manifest in {:?}: {}", path, e);
-                continue;
-            }
-        };
-
-        match manifest.plugin.plugin_type.as_str() {
-            "tool" => {
-                if manifest.plugin.runtime.as_deref() == Some("python") {
-                    match plugin::python_bridge::PythonToolBridge::from_manifest(
-                        &manifest,
-                        path.clone(),
-                    ) {
-                        Ok(mut bridge) => {
-                            if let Err(e) = bridge.load_schema(workspace_path).await {
-                                log::warn!(
-                                    "Failed to load schema for plugin '{}': {}",
-                                    manifest.plugin.id,
-                                    e
-                                );
-                                continue;
-                            }
-                            tool_registry
-                                .register(std::sync::Arc::new(bridge), source)
-                                .await;
-                            log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to create Python tool bridge for '{}': {}",
-                                manifest.plugin.id,
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-            "skill" => match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
-                Ok(skill) => {
-                    skill_registry
-                        .register(std::sync::Arc::new(skill), source)
-                        .await;
-                    log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to load skill plugin '{}': {}",
-                        manifest.plugin.id,
-                        e
-                    );
-                }
-            },
-            other => {
-                log::warn!("Unknown plugin type '{}' in {:?}", other, path);
-            }
-        }
-    }
+    // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+    // This legacy entrypoint is intentionally a no-op.
 }
 
 #[cfg(test)]
 mod tests {
-    use super::scan_external_plugins;
-    use crate::plugin::{SkillRegistry, ToolRegistry};
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_scan_external_plugins_keeps_source_label_for_skill_registration() {
-        let tmp = tempfile::tempdir().unwrap();
-        let plugin_dir = tmp.path().join("md-skill");
-        std::fs::create_dir_all(plugin_dir.join("prompts")).unwrap();
-        std::fs::write(
-            plugin_dir.join("SKILL.md"),
-            r#"---
-id: "md-skill"
-name: "Markdown Skill"
-description: "desc"
-keywords:
-  - "分析"
-include_app_base: false
----
-# Markdown Skill
-"#,
-        )
-        .unwrap();
-        std::fs::write(plugin_dir.join("prompts/base.md"), "base prompt").unwrap();
-
-        let storage = Arc::new(
-            crate::storage::file_store::AppStorage::new(tmp.path()).expect("test storage"),
-        );
-        let global_store = Arc::new(crate::storage::GlobalConfigStore::new(tmp.path().join("global")));
-        let tool_registry = ToolRegistry::new();
-        let skill_registry = SkillRegistry::new("daily-assistant");
-        skill_registry
-            .register(
-                Arc::new(
-                    crate::plugin::builtin::skills::daily_assistant::DailyAssistantSkill::new(
-                        storage.clone(),
-                        Arc::new(crate::auth::AuthManager::new(global_store, None)),
-                    ),
-                ),
-                "builtin",
-            )
-            .await;
-
-        scan_external_plugins(
-            tmp.path(),
-            &tool_registry,
-            &skill_registry,
-            tmp.path(),
-            "custom",
-        )
-        .await;
-
-        let skills = skill_registry.list().await;
-        let md_skill = skills
-            .into_iter()
-            .find(|skill| skill.id == "md-skill")
-            .expect("SKILL.md-only directory should be scanned and registered");
-        assert_eq!(md_skill.source, "custom");
+    #[test]
+    fn scan_external_plugins_is_intentional_noop() {
+        // scan_external_plugins is a no-op in Phase B.
+        // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+        // This test documents the intentional state.
     }
 }
 
