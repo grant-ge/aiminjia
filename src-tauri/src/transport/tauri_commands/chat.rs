@@ -21,7 +21,7 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, SkillSessionStore,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor,
     TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
@@ -280,7 +280,6 @@ struct TauriChatServices {
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
     skill_registry: Arc<SkillRegistry>,
-    skill_sessions: Arc<SkillSessionStore>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
 }
 
@@ -1861,7 +1860,6 @@ impl TauriChatCommandAdapter {
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
-        let skill_sessions = Arc::new(SkillSessionStore::new());
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
@@ -1877,7 +1875,6 @@ impl TauriChatCommandAdapter {
             auth_manager,
             app,
             skill_registry,
-            skill_sessions,
             runtime_resolver,
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
@@ -2005,7 +2002,6 @@ impl TauriChatCommandAdapter {
             agent_runtime,
             event_bus: None,
             skill_registry: Some(self.services.skill_registry.clone()),
-            skill_sessions: None,
             authorized_workspace: None,
             read_file_state: None,
             cancellation: None,

@@ -71,7 +71,6 @@ impl SubAgentRuntimeDeps {
             agent_runtime: self.agent_runtime.clone(),
             event_bus: self.event_bus.clone(),
             skill_registry: None,
-            skill_sessions: None,
             authorized_workspace: self.authorized_workspace.clone(),
             read_file_state,
             cancellation,

@@ -103,8 +103,6 @@ pub struct PluginContext {
     pub event_bus: Option<RuntimeEventBus>,
     /// Skill registry for request-scoped skill switch runtime tools.
     pub skill_registry: Option<Arc<crate::plugin::SkillRegistry>>,
-    /// Session-local skill state store shared with the turn driver.
-    pub skill_sessions: Option<Arc<crate::runtime::chat::SkillSessionStore>>,
     /// 用户通过 UI 授权的本地目录（workspace-first 专项新增）
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     /// Transitional bridge for request-scoped runtime executions that still

@@ -498,7 +498,6 @@ pub mod testsupport {
             agent_runtime: None,
             event_bus: None,
             skill_registry: None,
-            skill_sessions: None,
             authorized_workspace,
             read_file_state: None,
             cancellation: None,

@@ -31,7 +31,6 @@ pub struct SessionRuntime {
     query_engine: QueryEngine,
     session_query_engines: Arc<Mutex<HashMap<String, QueryEngine>>>,
     session_cancel_roots: Arc<Mutex<HashMap<String, CancellationToken>>>,
-    skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
     event_bus: RuntimeEventBus,
     /// S4 executor: owns the query loop; executor is a provider streaming adapter only.
     /// When present, `build_driver_for_turn` uses `RuntimeChatTurnDriver::with_llm_executor`.
@@ -49,7 +48,6 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
-            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: None,
             authorized_workspace_store: None,
@@ -74,7 +72,6 @@ impl SessionRuntime {
             query_engine,
             session_query_engines: Arc::new(Mutex::new(HashMap::new())),
             session_cancel_roots: Arc::new(Mutex::new(HashMap::new())),
-            skill_sessions: Arc::new(crate::runtime::chat::SkillSessionStore::new()),
             event_bus,
             llm_executor: Some(executor),
             authorized_workspace_store: None,
@@ -126,14 +123,6 @@ impl SessionRuntime {
         self.query_engine = query_engine;
         // Clear cached per-session engines so they inherit the new base engine.
         self.session_query_engines = Arc::new(Mutex::new(HashMap::new()));
-        self
-    }
-
-    pub fn with_skill_sessions(
-        mut self,
-        skill_sessions: Arc<crate::runtime::chat::SkillSessionStore>,
-    ) -> Self {
-        self.skill_sessions = skill_sessions;
         self
     }
 
@@ -274,7 +263,6 @@ impl SessionRuntime {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .remove(&session_key);
-        self.skill_sessions.clear_session(session_id.as_str());
     }
 
     fn query_engine_for_session(&self, session_id: &SessionId) -> QueryEngine {
