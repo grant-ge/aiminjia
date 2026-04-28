@@ -2,7 +2,7 @@
  * @designSource design.pen#F8ixG flow
  * @sizing padding [24,40] gap 18
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 
 import { AiBubble } from '@/components/chat/AiBubble'
@@ -37,10 +37,15 @@ export function MessageList() {
     return activeId ? (s.streamStates[activeId]?.streamingContent ?? '') : ''
   })
   const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
+  const clearIfConversationChanged = useGeneratedFilePreviewStore((s) => s.clearIfConversationChanged)
   const pushNotification = useNotificationStore((s) => s.push)
   const [expansion, setExpansion] = useState<
     Record<number, { expanded: boolean; stepIndex: number | null }>
   >({})
+
+  useEffect(() => {
+    if (activeConversationId) clearIfConversationChanged(activeConversationId)
+  }, [activeConversationId, clearIfConversationChanged])
 
   const notifyFileError = (kind: FileActionKind, message: string) => {
     pushNotification({
@@ -54,32 +59,32 @@ export function MessageList() {
   }
 
   const handlePreview = (file: RenderGeneratedFile) => {
-    if (!activeConversationId) {
-      notifyFileError('preview', '当前没有可用对话，无法预览生成文件。')
+    if (!file.conversationId) {
+      notifyFileError('preview', '生成文件缺少所属对话，无法预览。')
       return
     }
-    openPreview(toPreviewTarget(file, activeConversationId))
+    openPreview(toPreviewTarget(file, file.conversationId))
   }
 
   const handleOpenExternal = async (file: RenderGeneratedFile) => {
-    if (!activeConversationId) {
-      notifyFileError('open', '当前没有可用对话，无法打开生成文件。')
+    if (!file.conversationId) {
+      notifyFileError('open', '生成文件缺少所属对话，无法打开。')
       return
     }
     try {
-      await openGeneratedFile(file.id, activeConversationId)
+      await openGeneratedFile(file.id, file.conversationId)
     } catch (err) {
       notifyFileError('open', err instanceof Error ? err.message : '打开生成文件失败。')
     }
   }
 
   const handleReveal = async (file: RenderGeneratedFile) => {
-    if (!activeConversationId) {
-      notifyFileError('reveal', '当前没有可用对话，无法定位生成文件。')
+    if (!file.conversationId) {
+      notifyFileError('reveal', '生成文件缺少所属对话，无法定位。')
       return
     }
     try {
-      await revealFileInFolder(file.id, activeConversationId)
+      await revealFileInFolder(file.id, file.conversationId)
     } catch (err) {
       notifyFileError('reveal', err instanceof Error ? err.message : '定位生成文件失败。')
     }

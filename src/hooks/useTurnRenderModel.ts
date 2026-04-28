@@ -47,6 +47,7 @@ export interface RenderGeneratedFile {
   canOpenExternal: boolean
   canReveal: boolean
   primaryAction: 'preview' | 'open'
+  conversationId: string
 }
 
 export interface RenderTurn {
@@ -61,7 +62,7 @@ function toolExecStatusToStep(s: ToolExecution['status']): RenderToolStep['statu
   return s === 'executing' ? 'running' : s === 'error' ? 'error' : 'done'
 }
 
-function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
+function normalizeGeneratedFile(f: GeneratedFile, conversationId: string): RenderGeneratedFile {
   const anyF = f as unknown as {
     id: string; title?: string; fileName?: string;
     subtitle?: string; appName?: string; format?: string;
@@ -87,6 +88,7 @@ function normalizeGeneratedFile(f: GeneratedFile): RenderGeneratedFile {
     canOpenExternal,
     canReveal,
     primaryAction: canPreview ? 'preview' : 'open',
+    conversationId,
   }
 }
 
@@ -202,7 +204,7 @@ export function buildTurnsFromMessages(
       }
       if (m.content.generatedFiles?.length) {
         for (const f of m.content.generatedFiles) {
-          current.generatedFiles.push(normalizeGeneratedFile(f))
+          current.generatedFiles.push(normalizeGeneratedFile(f, m.conversationId))
         }
       }
       continue

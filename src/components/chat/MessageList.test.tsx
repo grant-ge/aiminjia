@@ -87,6 +87,41 @@ beforeEach(() => {
 })
 
 describe('MessageList generated file actions', () => {
+  it('uses the generated file owner conversation for preview/open/reveal when active conversation differs', async () => {
+    renderWithFile(generatedFile(), 'conv-2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Summary' }))
+
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-1',
+      conversationId: 'conv-1',
+      fileName: 'summary.md',
+      fileType: 'markdown',
+    })
+
+    openActionsMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open with default app' }))
+    await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
+
+    openActionsMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
+    await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
+  })
+
+  it('clears stale preview target when rendering a different active conversation', () => {
+    resetStores('conv-1')
+    useGeneratedFilePreviewStore.getState().openPreview({
+      fileId: 'old-file',
+      conversationId: 'conv-old',
+      fileName: 'old.md',
+      fileType: 'markdown',
+    })
+
+    render(<MessageList />)
+
+    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
+  })
+
   it('opens previewable file in the generated file preview store from primary action', () => {
     renderWithFile(generatedFile())
 
@@ -143,42 +178,38 @@ describe('MessageList generated file actions', () => {
     })
   })
 
-  it('pushes an error toast instead of previewing when active conversation is missing', () => {
+  it('previews using file owner conversation even when active conversation is missing', () => {
     renderWithFile(generatedFile(), null)
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview Summary' }))
 
-    expect(useGeneratedFilePreviewStore.getState().target).toBeNull()
+    expect(useGeneratedFilePreviewStore.getState().target).toEqual({
+      fileId: 'gf-1',
+      conversationId: 'conv-1',
+      fileName: 'summary.md',
+      fileType: 'markdown',
+    })
     expect(openGeneratedFileMock).not.toHaveBeenCalled()
     expect(revealFileInFolderMock).not.toHaveBeenCalled()
-    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
-      level: 'error',
-      title: '无法预览文件',
-    })
+    expect(useNotificationStore.getState().notifications).toEqual([])
   })
 
-  it('pushes an error toast instead of opening when active conversation is missing', () => {
+  it('opens using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile({ fileName: 'summary.xlsx', fileType: 'excel' }), null)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Summary' }))
 
-    expect(openGeneratedFileMock).not.toHaveBeenCalled()
-    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
-      level: 'error',
-      title: '无法打开文件',
-    })
+    await waitFor(() => expect(openGeneratedFileMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
+    expect(useNotificationStore.getState().notifications).toEqual([])
   })
 
-  it('pushes an error toast instead of revealing when active conversation is missing', () => {
+  it('reveals using file owner conversation even when active conversation is missing', async () => {
     renderWithFile(generatedFile(), null)
 
     openActionsMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Show in folder' }))
 
-    expect(revealFileInFolderMock).not.toHaveBeenCalled()
-    expect(useNotificationStore.getState().notifications.at(-1)).toMatchObject({
-      level: 'error',
-      title: '无法定位文件',
-    })
+    await waitFor(() => expect(revealFileInFolderMock).toHaveBeenCalledWith('gf-1', 'conv-1'))
+    expect(useNotificationStore.getState().notifications).toEqual([])
   })
 })

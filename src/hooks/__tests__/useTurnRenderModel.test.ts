@@ -168,6 +168,7 @@ describe('buildTurnsFromMessages', () => {
         canPreview: true,
         canOpenExternal: false,
         primaryAction: 'preview',
+        conversationId: 'c1',
       }),
     )
   })
