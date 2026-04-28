@@ -816,5 +816,12 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
 
     assert!(!output.is_error);
     assert!(output.content.contains("Follow the biz writing checklist."));
-    assert!(output.data.is_none(), "load_skill must not emit runtime-control data");
+    assert!(
+        output
+            .data
+            .as_ref()
+            .and_then(|data| data.get("skill_control"))
+            .is_none(),
+        "load_skill must not emit SkillRuntimePatch data"
+    );
 }

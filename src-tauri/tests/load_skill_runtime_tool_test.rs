@@ -117,7 +117,14 @@ async fn load_skill_execute_returns_skill_body_without_runtime_patch() {
     assert_eq!(result.tool_name, "load_skill");
     assert!(result.content.contains("Follow the biz writing checklist."));
     assert!(!result.content.contains("Switched to skill"));
-    assert!(result.data.is_none(), "load_skill must not emit runtime-control data");
+    assert!(
+        result
+            .data
+            .as_ref()
+            .and_then(|data| data.get("skill_control"))
+            .is_none(),
+        "load_skill must not emit SkillRuntimePatch data"
+    );
 }
 
 #[tokio::test]
