@@ -47,7 +47,7 @@ describe('GeneratedFileCard', () => {
     expect(screen.getByRole('button', { name: 'More actions for 绩效分析总结 · Q2' })).toBeInTheDocument()
   })
 
-  it('keeps legacy onOpen as the default open primary action', () => {
+  it('keeps legacy onOpen as the default open action and disables missing reveal action', () => {
     const onOpen = vi.fn()
 
     render(
@@ -60,8 +60,16 @@ describe('GeneratedFileCard', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Open 绩效分析总结 · Q2' }))
+    openMenu()
+    const openItem = screen.getByRole('menuitem', { name: 'Open with default app' })
+    expect(openItem).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(openItem)
+    openMenu()
+    const revealItem = screen.getByRole('menuitem', { name: 'Show in folder' })
+    expect(revealItem).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(revealItem)
 
-    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen).toHaveBeenCalledTimes(2)
   })
 
   it('fires onPreview from preview primary action without opening externally', () => {
