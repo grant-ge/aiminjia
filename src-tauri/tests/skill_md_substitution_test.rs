@@ -49,3 +49,17 @@ fn leaves_unknown_placeholders_unchanged() {
     assert!(result.contains("$unknown"));
     assert!(result.contains("${AIJIA_UNKNOWN}"));
 }
+
+#[test]
+fn executes_inline_shell_blocks_when_enabled() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let ctx = SkillSubstitutionContext {
+        skill_dir: dir.path().to_path_buf(),
+        session_id: "s".to_string(),
+        args: "".to_string(),
+        argument_names: vec![],
+        execute_shell: true,
+    };
+    let result = substitute_skill_body("before !`printf hello` after", &ctx).unwrap();
+    assert_eq!(result, "before hello after");
+}
