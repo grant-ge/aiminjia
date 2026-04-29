@@ -12,19 +12,6 @@ vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn(),
 }))
 
-vi.mock('@/hooks/useSkillComposer', () => ({
-  useSkillComposer: () => ({
-    showSkillPopover: false,
-    setShowSkillPopover: vi.fn(),
-    slashMatch: null,
-    slashOpen: false,
-    handleSkillPick: vi.fn(),
-    handleInputChange: vi.fn(),
-    handleSlashSelect: vi.fn(),
-    handleSlashClose: vi.fn(),
-  }),
-}))
-
 vi.mock('@/hooks/useFileUpload', () => ({
   useFileUpload: () => ({
     isUploading: false,

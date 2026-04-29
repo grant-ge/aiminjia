@@ -260,10 +260,8 @@ pub async fn uninstall_custom_skill(app: AppHandle, skill_id: String) -> Result<
     }
 
     std::fs::remove_dir_all(&skill_dir).map_err(|e| e.to_string())?;
-    Ok(format!(
-        "Uninstalled skill '{}' — restart app to take effect",
-        skill_id
-    ))
+    refresh_skill_registry(&app)?;
+    Ok(format!("Uninstalled skill '{}'", skill_id))
 }
 
 /// Create a new skill template directory with scaffolding files.

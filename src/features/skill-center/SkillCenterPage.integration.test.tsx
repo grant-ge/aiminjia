@@ -50,9 +50,9 @@ describe('SkillCenterPage', () => {
     expect(screen.getByPlaceholderText('搜索技能名称或场景')).toBeInTheDocument()
   })
 
-  it('顶栏有上传技能资料和创建技能按钮', () => {
+  it('顶栏只保留导入技能按钮，不再有重复的上传技能资料按钮', () => {
     render(<SkillCenterPage />)
-    expect(screen.getByRole('button', { name: '上传技能资料' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '上传技能资料' })).toBeNull()
     expect(screen.getByRole('button', { name: /导入技能/ })).toBeInTheDocument()
   })
 
@@ -62,7 +62,7 @@ describe('SkillCenterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /导入技能/ }))
 
     expect(createConversationFromSkillMock).not.toHaveBeenCalled()
-    expect(screen.getByText('上传技能资料')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toHaveTextContent('上传技能')
   })
 
 

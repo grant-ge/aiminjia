@@ -21,18 +21,6 @@ vi.mock('@/hooks/useChat', () => ({
   useChat: () => ({ sendUserMessage: vi.fn().mockResolvedValue(undefined) }),
 }))
 
-vi.mock('@/hooks/useSkillComposer', () => ({
-  useSkillComposer: () => ({
-    showSkillPopover: false,
-    setShowSkillPopover: vi.fn(),
-    slashMatch: null,
-    slashOpen: false,
-    handleSkillPick: vi.fn(),
-    handleSlashSelect: vi.fn(),
-    handleSlashClose: vi.fn(),
-  }),
-}))
-
 vi.mock('@/stores/chatStore', () => ({
   useChatStore: {
     getState: () => ({
@@ -58,7 +46,6 @@ vi.mock('@/stores/homeStore', () => ({
 }))
 
 vi.mock('@/components/chat/SkillPopover', () => ({ SkillPopover: () => null }))
-vi.mock('@/components/chat/SlashCommandPopover', () => ({ SlashCommandPopover: () => null }))
 
 describe('HomeTaskComposerCard', () => {
   beforeEach(() => {

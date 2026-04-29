@@ -51,10 +51,6 @@ vi.mock('@/hooks/useChatAttachments', async (importOriginal) => {
   }
 })
 
-vi.mock('@/components/chat/SlashCommandPopover', () => ({
-  SlashCommandPopover: () => null,
-}))
-
 vi.mock('@/lib/tauri', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/tauri')>()
   return {
@@ -316,22 +312,6 @@ describe('ChatBottomArea', () => {
     await waitFor(() => {
       expect(sendUserMessageMock).toHaveBeenCalledWith('/not-a-skill hello', undefined)
     })
-  })
-
-  it('typing /salary-query expands to triggerText in input via useSkillComposer', () => {
-    render(<ChatBottomArea />)
-
-    // Type the skill command with a space-separated tail — useSkillComposer will
-    // replace the slash-command prefix with triggerText
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '/salary-query 你好' },
-    })
-
-    // The input value should now be the triggerText + tail
-    // '/salary-query' triggerText + ' 你好' tail
-    expect(screen.getByRole('textbox')).toHaveValue('/salary-query 你好')
-    // No selectedSkillCommands on the store
-    expect((useChatStore.getState() as unknown as Record<string, unknown>)['selectedSkillCommands']).toBeUndefined()
   })
 
   it('clears input after successful send, no skill state involved', async () => {

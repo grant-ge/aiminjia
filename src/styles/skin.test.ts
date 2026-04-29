@@ -3,15 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from './skin'
 
 describe('deriveSkin', () => {
-  it('returns only the 5 accent-bound CSS variables', () => {
+  it('returns only the 6 accent-bound CSS variables', () => {
     const result = deriveSkin(DEFAULT_ACCENT_COLOR)
     expect(Object.keys(result).sort()).toEqual([
+      '--brand-primary-subtle',
       '--primary',
       '--primary-foreground',
       '--ring',
       '--sidebar-primary',
       '--sidebar-primary-foreground',
     ])
+  })
+
+  it('derives --brand-primary-subtle from accent via color-mix with white', () => {
+    expect(deriveSkin('#DBAA22')['--brand-primary-subtle']).toBe(
+      'color-mix(in srgb, #DBAA22 14%, #FFFFFF)',
+    )
   })
 
   it('uses the given accent color for --primary / --ring / --sidebar-primary', () => {

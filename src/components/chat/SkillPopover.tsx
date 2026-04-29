@@ -40,9 +40,5 @@ export function SkillPopover({ open: openProp, onPick, onClose }: SkillPopoverPr
     source: s.source === 'builtin' ? '内置' : '已安装',
   }))
 
-  return (
-    <div className="absolute bottom-full left-10 z-30 mb-3">
-      <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />
-    </div>
-  )
+  return <SkillPopoverPanel items={items} onPick={handlePick} onClose={handleClose} />
 }

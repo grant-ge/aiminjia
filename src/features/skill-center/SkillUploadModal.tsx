@@ -67,9 +67,11 @@ export function SkillUploadModal({ open: isOpen, onOpenChange }: SkillUploadModa
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button onClick={() => void handlePickDirectory()} disabled={isUploading}>
-            {isUploading ? '正在上传...' : '选择技能目录'}
-          </Button>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => void handlePickDirectory()} disabled={isUploading}>
+              {isUploading ? '正在上传...' : '选择技能目录'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

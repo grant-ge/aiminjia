@@ -5,14 +5,13 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { useTranslation } from 'react-i18next'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
-import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import { PendingAttachmentChips } from '@/components/chat/PendingAttachmentChips'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useComposerPaste } from '@/hooks/useComposerPaste'
-import { useSkillComposer } from '@/hooks/useSkillComposer'
 import { useChatStore } from '@/stores/chatStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 function BottomTips() {
@@ -37,23 +36,24 @@ export function ChatBottomArea() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
   const { isPickingAttachments, pickAttachments } = useChatAttachments()
+  const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const getSkillById = useSkillStore((s) => s.getById)
   // TODO: openSettings 待权限按钮功能上线后恢复使用
   // const openSettings = useUiStore((s) => s.openSettings)
-  const {
-    showSkillPopover,
-    setShowSkillPopover,
-    slashMatch,
-    slashOpen,
-    handleSkillPick,
-    handleInputChange,
-    handleSlashSelect,
-    handleSlashClose,
-  } = useSkillComposer({
-    input,
-    setInput,
-    textareaRef,
-    conversationId: activeConversationId,
-  })
+
+  const handleSkillPick = useCallback((skillId: string) => {
+    const skill = getSkillById(skillId)
+    const trigger = skill?.triggerText || `/${skillId}`
+    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
+    setInput(next)
+    setShowSkillPopover(false)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(next.length, next.length)
+    })
+  }, [getSkillById])
 
   useEffect(() => {
     const prefill = useUiStore.getState().consumePrefillText()
@@ -118,12 +118,11 @@ export function ChatBottomArea() {
   }, [activeConversationId, input, isSending, isStreaming, pendingFiles, sendUserMessage, t])
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slashOpen) return
     if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current && !e.nativeEvent.isComposing) {
       e.preventDefault()
       void handleSend()
     }
-  }, [handleSend, slashOpen])
+  }, [handleSend])
 
   const handlePickAttachments = useCallback(async () => {
     const results = await pickAttachments()
@@ -160,7 +159,7 @@ export function ChatBottomArea() {
         style={{ background: 'linear-gradient(transparent, var(--color-bg-main) 30%)' }}
       >
         <div className="relative mx-auto w-full max-w-[736px]">
-          <div className="absolute bottom-full left-10 z-30 mb-3">
+          <div className="absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2">
             <SkillPopover
               open={showSkillPopover}
               onPick={handleSkillPick}
@@ -168,18 +167,10 @@ export function ChatBottomArea() {
             />
           </div>
 
-          {slashOpen && slashMatch ? (
-            <SlashCommandPopover
-              filterText={slashMatch.filter}
-              onSelect={handleSlashSelect}
-              onClose={handleSlashClose}
-            />
-          ) : null}
-
           <div className="relative">
             <ChatComposerCompact
               value={input}
-              onChange={handleInputChange}
+              onChange={setInput}
               onSubmit={(value) => void handleSend(value)}
               submitDisabled={isSendDisabled}
               placeholder={pendingFiles.length > 0 ? t('inputBar.placeholderWithFile') : t('inputBar.placeholder')}

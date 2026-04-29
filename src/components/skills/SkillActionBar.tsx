@@ -6,24 +6,26 @@ import { Button } from '@/components/ui/button'
 
 interface SkillActionBarProps {
   primaryLabel: string
-  secondaryLabel: string
   onPrimary: () => void
-  onSecondary: () => void
   primaryDisabled?: boolean
+  secondaryLabel?: string
+  onSecondary?: () => void
 }
 
 export function SkillActionBar({
   primaryLabel,
-  secondaryLabel,
   onPrimary,
-  onSecondary,
   primaryDisabled,
+  secondaryLabel,
+  onSecondary,
 }: SkillActionBarProps) {
   return (
     <div className="flex items-center gap-2.5">
-      <Button variant="outline" onClick={onSecondary}>
-        {secondaryLabel}
-      </Button>
+      {secondaryLabel && onSecondary ? (
+        <Button variant="outline" onClick={onSecondary}>
+          {secondaryLabel}
+        </Button>
+      ) : null}
       <Button onClick={onPrimary} disabled={primaryDisabled}>
         {primaryLabel}
       </Button>
