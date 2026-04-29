@@ -317,12 +317,20 @@ impl McpConnection for StdioMcpConnection {
 
         let (program, args) =
             Self::parse_stdio_command(&self.config.endpoint, self.runtime_resolver.as_ref())?;
-        let mut command = Command::new(program);
+        let mut command = Command::new(&program);
         command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+
+        // Prepend the bundle bin dir to PATH so shebang scripts (npx → node, etc.) find
+        // the bundled node interpreter rather than failing on systems without system node.
+        log::debug!("[mcp] prepending bundle bin to PATH for MCP server command: {program}");
+        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
+            &mut command,
+            std::path::Path::new(&program),
+        );
 
         for (key, value) in self.env_map() {
             command.env(key, value);

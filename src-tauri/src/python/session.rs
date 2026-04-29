@@ -112,6 +112,12 @@ impl PythonSession {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         super::configure_python_env(&mut cmd, python_home.map(|p| p.as_path()));
+        // Prepend bundle bin dir so the REPL process (and any sub-processes it spawns)
+        // finds the bundled interpreters/tools on PATH.
+        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
+            &mut cmd,
+            python_binary,
+        );
 
         let mut child = cmd.spawn().context(format!(
             "Failed to spawn Python REPL: {}",

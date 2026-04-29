@@ -91,18 +91,14 @@ impl From<RuntimeArtifactFetchError> for RuntimeManagerError {
 
 impl RuntimeResolver for RuntimeManager {
     fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
-        match self.resolver.workspace_dependencies() {
-            Ok(dependencies) => Ok(dependencies),
-            Err(error) if self.manifest_install.is_some() => {
-                self.ensure().map_err(|ensure_error| {
-                    super::RuntimeDependencyError::ResolverUnavailable(format!(
-                        "failed to ensure managed runtime after resolver error ({error}): {ensure_error}"
-                    ))
-                })?;
-                self.resolver.workspace_dependencies()
-            }
-            Err(error) => Err(error),
-        }
+        // Never trigger lazy install on the chat hot path. If the runtime is
+        // not ready, return the resolver error as-is and let the caller decide
+        // (e.g. show "runtime not ready" to the user). Background ensure runs
+        // at app startup; a failed install must not silently retry inside chat
+        // because that would (a) block the tokio worker for tens of seconds,
+        // (b) loop forever if the install keeps failing, and (c) leave the user
+        // staring at a stuck UI with no feedback.
+        self.resolver.workspace_dependencies()
     }
 }
 
@@ -275,9 +271,47 @@ impl RuntimeManager {
                 &config.runtime_name,
                 config.platform,
             ),
-            RuntimeManifestSource::Url(url) => tauri::async_runtime::block_on(
-                self.install_from_manifest_url(url, &config.runtime_name, config.platform),
-            ),
+            RuntimeManifestSource::Url(url) => {
+                log::info!(
+                    "[runtime-manager] install_from_configured_manifest_blocking entering for runtime={} platform={:?}",
+                    config.runtime_name, config.platform
+                );
+                // We may be called from inside a tokio multi-thread runtime
+                // (e.g. when ensure() is invoked lazily during chat handling).
+                // Calling tauri::async_runtime::block_on() in that context panics
+                // with "Cannot start a runtime from within a runtime". Use
+                // block_in_place + Handle.block_on when a runtime already exists,
+                // and fall back to a fresh current-thread runtime when called
+                // from sync init code with no runtime context.
+                //
+                // NOTE: block_in_place only works on multi-thread runtimes.
+                // tauri::async_runtime uses multi-thread by default. If the runtime
+                // is ever reconfigured to current-thread this will panic — revisit.
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => {
+                        log::info!("[runtime-manager] using block_in_place + existing tokio handle");
+                        tokio::task::block_in_place(|| {
+                            handle.block_on(self.install_from_manifest_url(
+                                url,
+                                &config.runtime_name,
+                                config.platform,
+                            ))
+                        })
+                    }
+                    Err(_) => {
+                        log::info!("[runtime-manager] no current tokio runtime, building current-thread runtime");
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("failed to build temporary tokio runtime");
+                        rt.block_on(self.install_from_manifest_url(
+                            url,
+                            &config.runtime_name,
+                            config.platform,
+                        ))
+                    }
+                }
+            }
         }
     }
 

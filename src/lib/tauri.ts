@@ -285,13 +285,11 @@ export function sendMessage(
   })
 }
 
-export function saveClipboardImageAttachment(
-  conversationId: string,
+export function saveClipboardImageToTmp(
   bytes: number[],
   mimeType: string,
 ): Promise<SavedClipboardAttachmentPayload> {
-  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_attachment', {
-    conversationId,
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_tmp_dir', {
     bytes,
     mimeType,
   })
@@ -562,6 +560,14 @@ export type FilePreview =
 
 export function getFilePreview(fileId: string, conversationId: string): Promise<FilePreview> {
   return invoke<FilePreview>('get_file_preview', { fileId, conversationId })
+}
+
+export function getLocalFilePreview(path: string): Promise<FilePreview> {
+  return invoke<FilePreview>('get_local_file_preview', { path })
+}
+
+export function openLocalFile(path: string): Promise<void> {
+  return invoke<void>('open_local_file', { path })
 }
 
 /**

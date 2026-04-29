@@ -1,8 +1,7 @@
 import { useCallback, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { stat } from '@tauri-apps/plugin-fs'
 
-import { saveClipboardImageAttachment } from '@/lib/tauri'
+import { saveClipboardImageToTmp } from '@/lib/tauri'
 import type { FileAttachment } from '@/types/message'
 
 export interface PendingAttachment {
@@ -68,6 +67,22 @@ export function makePendingAttachment(filePath: string, fileType?: FileAttachmen
   }
 }
 
+/**
+ * Reject pathological paths from clipboard paste:
+ * - "/" (e.g. macOS "Macintosh HD" alias resolves to root → would attach the
+ *   whole disk and freeze the app)
+ * - "/Volumes" (volumes root)
+ * - empty / single-segment system roots like "/System", "/private", "/var"
+ */
+function isAcceptablePastedPath(path: string): boolean {
+  if (!path || !path.startsWith('/')) return false
+  const normalized = path.replace(/\/+$/, '')
+  if (normalized === '') return false
+  const FORBIDDEN = new Set(['', '/Volumes', '/System', '/private', '/var', '/etc', '/dev', '/cores', '/usr', '/bin', '/sbin', '/Library'])
+  if (FORBIDDEN.has(normalized)) return false
+  return true
+}
+
 export function useChatAttachments() {
   const [isPickingAttachments, setIsPickingAttachments] = useState(false)
 
@@ -92,12 +107,10 @@ export function useChatAttachments() {
   }, [])
 
   const saveClipboardImage = useCallback(async (
-    conversationId: string,
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<PendingAttachment> => {
-    const saved: SavedClipboardAttachment = await saveClipboardImageAttachment(
-      conversationId,
+    const saved: SavedClipboardAttachment = await saveClipboardImageToTmp(
       Array.from(bytes),
       mimeType,
     )
@@ -114,24 +127,21 @@ export function useChatAttachments() {
   }, [])
 
   const resolvePastedPaths = useCallback(async (paths: string[]): Promise<PendingAttachment[]> => {
-    const resolved = await Promise.all(paths.map(async (path): Promise<PendingAttachment | null> => {
-      try {
-        const info = await stat(path)
-        const attachment = makePendingAttachment(path, info.isDirectory ? 'folder' : detectAttachmentFileType(path))
+    return paths
+      .filter((path) => isAcceptablePastedPath(path))
+      .map((path) => {
+        const hasExtension = /\.[A-Za-z0-9]+$/.test(path.split('/').pop() ?? '')
+        const isDirectory = !hasExtension
+        const fileType: FileAttachment['fileType'] = isDirectory ? 'folder' : detectAttachmentFileType(path)
+        const attachment = makePendingAttachment(path, fileType)
         return {
           ...attachment,
-          kind: info.isDirectory ? 'folder' : attachment.fileType === 'image' ? 'image' : 'file',
-          fileType: info.isDirectory ? 'folder' : attachment.fileType,
-          fileSize: info.isDirectory ? 0 : info.size,
-          source: 'paste',
+          kind: isDirectory ? 'folder' : fileType === 'image' ? 'image' : 'file',
+          fileType,
+          fileSize: 0,
+          source: 'paste' as const,
         }
-      } catch (error) {
-        console.warn('[useChatAttachments] resolvePastedPaths skipped path:', path, error)
-        return null
-      }
-    }))
-
-    return resolved.filter((attachment): attachment is PendingAttachment => attachment !== null)
+      })
   }, [])
 
   return {

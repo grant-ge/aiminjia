@@ -21,21 +21,24 @@ import {
   cancelPermissionRequest,
   denyPermissionRequest,
   getPluginInfo,
+  getSettings,
   onAuthExpired,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { useBrandingStore, applyAccentColor, loadPersistedAccentColor } from '@/stores/brandingStore'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { usePluginStore } from '@/stores/pluginStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
-import { applyFontScale, loadPersistedFontScale } from '@/styles/fontScale'
+import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
+applyAccentColor(loadPersistedAccentColor())
 
 function RouteSwitch() {
   const route = useUiStore((state) => state.route)
@@ -134,6 +137,22 @@ function App() {
         useSkillStore.setState({ skills, isLoading: false })
       })
       .catch((err) => console.error('Failed to load plugin info:', err))
+  }, [])
+
+  useEffect(() => {
+    getSettings()
+      .then((settings) => {
+        if (settings.fontScale) {
+          const fontScale = normalizeFontScale(settings.fontScale)
+          persistFontScale(fontScale)
+          applyFontScale(fontScale)
+          useSettingsStore.setState({ fontScale })
+        }
+        if (settings.accentColor) {
+          useBrandingStore.getState().applyBranding({ accentColor: settings.accentColor })
+        }
+      })
+      .catch((err) => console.error('Failed to load settings:', err))
   }, [])
 
   useEffect(() => {

@@ -205,6 +205,12 @@ impl PythonRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         super::configure_python_env(&mut cmd, self.python_home.as_deref());
+        // Prepend bundle bin dir so that any sub-process spawned by user Python code
+        // (or by our runtime tools) can find the bundled interpreters/tools on PATH.
+        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
+            &mut cmd,
+            &self.python_binary,
+        );
 
         let mut child = cmd.spawn().context(format!(
             "Failed to spawn Python process: {}",

@@ -113,6 +113,10 @@ fn run_version_command_with_timeout(
         .arg("--version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Prepend our bundle's bin dir to PATH so that shebang scripts (e.g. npm/npx
+    // which start with `#!/usr/bin/env node`) can find the bundled node interpreter
+    // rather than relying on a system-wide node that may not exist.
+    super::command_env::prepend_bundle_bin_to_path(&mut command, &probe.executable);
     configure_child_process_group(&mut command);
 
     let mut child = command

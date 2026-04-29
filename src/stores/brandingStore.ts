@@ -8,6 +8,8 @@ import { create } from 'zustand'
 
 import { DEFAULT_ACCENT_COLOR, DERIVED_SKIN_KEYS, deriveSkin } from '@/styles/skin'
 
+export const ACCENT_COLOR_STORAGE_KEY = 'aijia-accent-color'
+
 export const DEFAULTS = {
   productName: 'AI小家',
   productNameEn: 'AIjia',
@@ -63,6 +65,33 @@ function normalizeAccentColor(input?: string): string {
   return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(input) ? input : DEFAULTS.accentColor
 }
 
+export function loadPersistedAccentColor(): string {
+  if (typeof localStorage === 'undefined') return DEFAULTS.accentColor
+  try {
+    const value = localStorage.getItem(ACCENT_COLOR_STORAGE_KEY)
+    return normalizeAccentColor(value ?? undefined)
+  } catch {
+    return DEFAULTS.accentColor
+  }
+}
+
+function persistAccentColor(value: string) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, value)
+  } catch {
+    // ignore
+  }
+}
+
+export function applyAccentColor(accentColor: string) {
+  const normalized = normalizeAccentColor(accentColor)
+  const skin = deriveSkin(normalized)
+  for (const [key, value] of Object.entries(skin)) {
+    setVar(key, value)
+  }
+}
+
 function setWindowTitle(title: string) {
   const fullTitle = `${title} — ${i18n.t('welcome.defaultSubtitle')}`
   document.title = fullTitle
@@ -98,6 +127,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     }
 
     setWindowTitle(productName)
+    persistAccentColor(accentColor)
     set({
       productName,
       logoUrl,

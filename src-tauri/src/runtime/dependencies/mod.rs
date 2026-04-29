@@ -1,6 +1,7 @@
 mod archive;
 mod artifact_fetcher;
 mod checksum;
+mod command_env;
 mod config;
 mod downloader;
 mod health;
@@ -42,3 +43,4 @@ pub use resolver::{
     InstalledRuntimeResolver, ManagedRuntimeResolver, RuntimeResolver, StaticRuntimeResolver,
 };
 pub use types::{RuntimeDependencyError, RuntimeDependencyResult, WorkspaceDependencies};
+pub use command_env::{prepend_bundle_bin_to_path, prepend_bundle_bin_to_path_tokio};

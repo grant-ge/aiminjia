@@ -29,6 +29,7 @@ export interface Settings {
   personaOnboardingDone?: boolean
   appLanguage?: AppLanguage
   fontScale?: FontScale
+  accentColor?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   personaOnboardingDone: false,
   appLanguage: 'zh-CN',
   fontScale: 'medium',
+  accentColor: '',
 }
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {

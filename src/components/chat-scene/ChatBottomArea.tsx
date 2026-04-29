@@ -1,98 +1,19 @@
 /**
  * @designSource design.pen#Cbtm1 ChatBottomArea
  */
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
+import { PendingAttachmentChips } from '@/components/chat/PendingAttachmentChips'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
+import { useComposerPaste } from '@/hooks/useComposerPaste'
 import { useSkillComposer } from '@/hooks/useSkillComposer'
-import { readClipboardFilePaths } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
-
-const FILE_TYPE_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  excel: { label: 'XLS', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
-  csv: { label: 'CSV', bg: 'var(--color-filetype-green-bg)', color: 'var(--color-semantic-green)' },
-  word: { label: 'DOC', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
-  pdf: { label: 'PDF', bg: 'var(--color-filetype-red-bg)', color: 'var(--color-semantic-red)' },
-  json: { label: 'JSON', bg: 'var(--color-filetype-accent-bg)', color: 'var(--color-accent)' },
-  image: { label: 'IMG', bg: 'var(--color-filetype-blue-bg)', color: 'var(--color-semantic-blue)' },
-  folder: { label: 'DIR', bg: 'var(--color-primary-subtle)', color: 'var(--color-text-primary)' },
-}
-
-function PendingFiles({
-  pendingFiles,
-  onRemove,
-}: {
-  pendingFiles: PendingAttachment[]
-  onRemove: (id: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {pendingFiles.map((file) => {
-        const config = FILE_TYPE_CONFIG[file.fileType] ?? FILE_TYPE_CONFIG.csv
-        return (
-          <div
-            key={file.id}
-            className="inline-flex items-center gap-2 rounded-lg py-1.5 pr-2 pl-2.5"
-            style={{ background: config.bg }}
-          >
-            <span className="text-xs font-bold" style={{ color: config.color }}>
-              {config.label}
-            </span>
-            <span className="max-w-[180px] truncate text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              {file.fileName}
-            </span>
-            <button
-              type="button"
-              className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-none transition-colors"
-              style={{
-                background: 'var(--color-primary-subtle)',
-                color: 'var(--color-text-muted)',
-              }}
-              onClick={() => onRemove(file.id)}
-            >
-              <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-              </svg>
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function extractAbsolutePaths(text: string): string[] {
-  return text
-    .split(/[\n\r]+/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('/'))
-}
-
-async function appendResolvedPastedPaths(
-  paths: string[],
-  resolvePastedPaths: (paths: string[]) => Promise<PendingAttachment[]>,
-  setPendingFiles: React.Dispatch<React.SetStateAction<PendingAttachment[]>>,
-) {
-  const resolved = await resolvePastedPaths(paths)
-  if (resolved.length === 0) return
-
-  setPendingFiles((prev) => {
-    const seen = new Set(prev.map((file) => file.id))
-    const next = resolved.filter((file) => !seen.has(file.id))
-    return next.length > 0 ? [...prev, ...next] : prev
-  })
-}
-
-async function readClipboardImageBytes(file: File): Promise<Uint8Array> {
-  const buffer = await file.arrayBuffer()
-  return new Uint8Array(buffer)
-}
 
 function BottomTips() {
   return (
@@ -115,7 +36,7 @@ export function ChatBottomArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isPickingAttachments, pickAttachments, resolvePastedPaths, saveClipboardImage } = useChatAttachments()
+  const { isPickingAttachments, pickAttachments } = useChatAttachments()
   // TODO: openSettings 待权限按钮功能上线后恢复使用
   // const openSettings = useUiStore((s) => s.openSettings)
   const {
@@ -173,24 +94,22 @@ export function ChatBottomArea() {
 
     setIsSending(true)
     setInput('')
-      const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
-        id: f.id,
-        fileName: f.fileName,
-        filePath: f.path,
-        kind: f.kind,
-        fileType: f.fileType,
-        fileSize: f.fileSize,
-        mimeType: f.mimeType,
-      }))
+    setPendingFiles([])
+    const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
+      id: f.id,
+      fileName: f.fileName,
+      filePath: f.path,
+      kind: f.kind,
+      fileType: f.fileType,
+      fileSize: f.fileSize,
+      mimeType: f.mimeType,
+    }))
 
     try {
-      const sent = await sendUserMessage(
+      await sendUserMessage(
         trimmed || t('inputBar.analyzeFile'),
         fileInfos.length > 0 ? fileInfos : undefined,
       )
-      if (sent) {
-        setPendingFiles([])
-      }
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
     } finally {
@@ -217,39 +136,14 @@ export function ChatBottomArea() {
     }
   }, [pickAttachments])
 
-  const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(event.clipboardData?.items ?? [])
-    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    if (imageItem && activeConversationId) {
-      const imageFile = imageItem.getAsFile()
-      if (imageFile) {
-        event.preventDefault()
-        void (async () => {
-          const bytes = await readClipboardImageBytes(imageFile)
-          const pending = await saveClipboardImage(activeConversationId, bytes, imageFile.type || 'image/png')
-          setPendingFiles((prev) => {
-            if (prev.some((file) => file.id === pending.id)) return prev
-            return [...prev, pending]
-          })
-        })()
-      }
-      return
-    }
-
-    const text = event.clipboardData?.getData('text/plain') ?? ''
-    const paths = extractAbsolutePaths(text)
-    if (paths.length > 0) {
-      event.preventDefault()
-      void appendResolvedPastedPaths(paths, resolvePastedPaths, setPendingFiles)
-      return
-    }
-
-    void (async () => {
-      const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
-      if (nativePaths.length === 0) return
-      void appendResolvedPastedPaths(nativePaths, resolvePastedPaths, setPendingFiles)
-    })()
-  }, [activeConversationId, resolvePastedPaths, saveClipboardImage])
+  const appendPendingFiles = useCallback((resolved: PendingAttachment[]) => {
+    setPendingFiles((prev) => {
+      const seen = new Set(prev.map((file) => file.id))
+      const next = resolved.filter((file) => !seen.has(file.id))
+      return next.length > 0 ? [...prev, ...next] : prev
+    })
+  }, [])
+  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
@@ -295,9 +189,9 @@ export function ChatBottomArea() {
               onStop={stopCurrentStream}
               onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
               pendingFilesSlot={pendingFiles.length > 0 ? (
-                <PendingFiles
+                <PendingAttachmentChips
                   pendingFiles={pendingFiles}
-                  onRemove={(id) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
+                  onRemove={(id: string) => setPendingFiles((prev) => prev.filter((file) => file.id !== id))}
                 />
               ) : null}
               textareaRef={textareaRef}

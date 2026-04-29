@@ -3,7 +3,7 @@ import { ExternalLink, FileText, Loader2, X } from 'lucide-react'
 
 import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { Button } from '@/components/ui/button'
-import { getFilePreview, type FilePreview } from '@/lib/tauri'
+import { getFilePreview, getLocalFilePreview, openLocalFile, type FilePreview } from '@/lib/tauri'
 import type { PreviewTarget } from './generatedFileActions'
 
 interface FilePreviewPaneProps {
@@ -28,12 +28,13 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
 
   const targetFileId = target?.fileId
   const targetConversationId = target?.conversationId
-  const previewKey = targetFileId && targetConversationId
-    ? `${targetConversationId}:${targetFileId}:${retryToken}`
+  const targetLocalPath = target?.localPath
+  const previewKey = (targetLocalPath || (targetFileId && targetConversationId))
+    ? `${targetConversationId ?? '-'}:${targetLocalPath ?? targetFileId}:${retryToken}`
     : null
 
   useEffect(() => {
-    if (!targetFileId || !targetConversationId || !previewKey) {
+    if (!previewKey) {
       requestIdRef.current += 1
       return
     }
@@ -41,7 +42,13 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
 
-    getFilePreview(targetFileId, targetConversationId)
+    const promise = targetLocalPath
+      ? getLocalFilePreview(targetLocalPath)
+      : (targetFileId && targetConversationId
+          ? getFilePreview(targetFileId, targetConversationId)
+          : Promise.reject(new Error('No file selected')))
+
+    promise
       .then((nextPreview) => {
         if (requestIdRef.current === requestId) {
           setPreviewState({ status: 'success', key: previewKey, preview: nextPreview })
@@ -62,7 +69,16 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
         requestIdRef.current += 1
       }
     }
-  }, [targetFileId, targetConversationId, previewKey])
+  }, [targetFileId, targetConversationId, targetLocalPath, previewKey])
+
+  const handleOpenExternal = useCallback(() => {
+    if (!target) return
+    if (target.localPath) {
+      void openLocalFile(target.localPath)
+      return
+    }
+    onOpenExternal?.(target)
+  }, [target, onOpenExternal])
 
   if (!target) {
     return (
@@ -87,7 +103,7 @@ export function FilePreviewPane({ target, onOpenExternal, onClosePreview }: File
             variant="outline"
             size="sm"
             className="gap-1.5"
-            onClick={() => onOpenExternal?.(target)}
+            onClick={handleOpenExternal}
           >
             <ExternalLink className="h-3.5 w-3.5" />
             用默认应用打开

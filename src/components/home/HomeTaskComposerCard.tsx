@@ -6,12 +6,15 @@
  * 2. On project button click: open folder picker, update homeStore.
  * 3. On submit: create conversation → authorize workspace → send message.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
 import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
+import { PendingAttachmentChips } from '@/components/chat/PendingAttachmentChips'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
-import { useChat } from '@/hooks/useChat'
+import { useChat, type PendingFileInfo } from '@/hooks/useChat'
+import { type PendingAttachment } from '@/hooks/useChatAttachments'
+import { useComposerPaste } from '@/hooks/useComposerPaste'
 import { useSkillComposer } from '@/hooks/useSkillComposer'
 import {
   authorizeLocalDirectory,
@@ -29,6 +32,18 @@ export function HomeTaskComposerCard() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { sendUserMessage } = useChat()
+
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([])
+
+  const appendPendingFiles = useCallback((resolved: PendingAttachment[]) => {
+    setPendingFiles((prev) => {
+      const seen = new Set(prev.map((file) => file.id))
+      const next = resolved.filter((file) => !seen.has(file.id))
+      return next.length > 0 ? [...prev, ...next] : prev
+    })
+  }, [])
+
+  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
 
   const { selectedWorkspace, setSelectedWorkspace } = useHomeStore()
   const [displayWorkspace, setDisplayWorkspace] = useState<AuthorizedWorkspaceRef | null>(
@@ -119,7 +134,17 @@ export function HomeTaskComposerCard() {
       }
 
       // sendUserMessage will use the already-active conversation
-      await sendUserMessage(text)
+      const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
+        id: f.id,
+        fileName: f.fileName,
+        filePath: f.path,
+        kind: f.kind,
+        fileSize: f.fileSize,
+        fileType: f.fileType,
+        mimeType: f.mimeType,
+      }))
+      await sendUserMessage(text, fileInfos)
+      setPendingFiles([])
     } finally {
       setIsSubmitting(false)
     }
@@ -153,6 +178,13 @@ export function HomeTaskComposerCard() {
         projectLabel={displayWorkspace?.displayName ?? '默认项目'}
         textareaRef={textareaRef}
         submitDisabled={isSubmitting}
+        onPaste={handlePaste}
+        pendingFilesSlot={pendingFiles.length > 0 ? (
+          <PendingAttachmentChips
+            pendingFiles={pendingFiles}
+            onRemove={(id: string) => setPendingFiles((prev) => prev.filter((f) => f.id !== id))}
+          />
+        ) : null}
       />
     </div>
   )

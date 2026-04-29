@@ -58,34 +58,30 @@ describe('AboutPanel', () => {
     expect(screen.getByRole('button', { name: '重置' })).toHaveAttribute('data-variant', 'destructive')
   })
 
-  it('wires copied actions to their handlers', () => {
+  it('wires the still-active actions to their handlers', () => {
     render(<AboutPanel {...baseProps} />)
 
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }))
-    fireEvent.click(screen.getByRole('button', { name: /在线客服/ }))
-    fireEvent.click(screen.getByRole('button', { name: /产品建议/ }))
-    fireEvent.click(screen.getByRole('button', { name: /隐私政策/ }))
-    fireEvent.click(screen.getByRole('button', { name: /服务条款/ }))
-    fireEvent.click(screen.getByRole('button', { name: '上传日志' }))
 
     expect(baseProps.onCheckUpdate).toHaveBeenCalledTimes(1)
-    expect(baseProps.links.customerService).toHaveBeenCalledTimes(1)
-    expect(baseProps.links.productSuggestion).toHaveBeenCalledTimes(1)
-    expect(baseProps.links.privacyPolicy).toHaveBeenCalledTimes(1)
-    expect(baseProps.links.terms).toHaveBeenCalledTimes(1)
-    expect(baseProps.onUploadLogs).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the user experience improvement opt-in off until the user enables it', () => {
+  it('disables the help, feedback, log-upload, and reset entries pending implementation', () => {
+    render(<AboutPanel {...baseProps} />)
+
+    expect(screen.getByRole('switch', { name: '用户体验改进计划' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /在线客服/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /产品建议/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /服务条款/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '上传日志' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '重置' })).toBeDisabled()
+    expect(screen.getAllByText('即将支持').length).toBeGreaterThan(0)
+  })
+
+  it('defaults the user experience improvement opt-in to ON', () => {
     render(<AboutPanel {...baseProps} />)
 
     const toggle = screen.getByRole('switch', { name: '用户体验改进计划' })
-    expect(toggle).not.toBeChecked()
-    expect(localStorage.getItem('about.user-experience-program')).toBeNull()
-
-    fireEvent.click(toggle)
-
     expect(toggle).toBeChecked()
-    expect(localStorage.getItem('about.user-experience-program')).toBe('on')
   })
 })
