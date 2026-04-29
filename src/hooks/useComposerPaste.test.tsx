@@ -159,4 +159,21 @@ describe('useComposerPaste', () => {
     expect(resolvePastedPathsMock).toHaveBeenCalledWith(['/Users/me/photo.png'])
     expect(onResolved).toHaveBeenCalledWith([samplePending])
   })
+
+  it('falls back to tmpImage when image paste has Files type but no real path', async () => {
+    readClipboardFilePathsMock.mockResolvedValue([])
+    saveClipboardImageMock.mockResolvedValue(samplePending)
+    const onResolved = vi.fn()
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+
+    const file = new File([new Uint8Array([1])], 'shot.png', { type: 'image/png' })
+    const event = makeImagePasteEvent(file, ['Files'])
+    result.current.handlePaste(event)
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(readClipboardFilePathsMock).toHaveBeenCalled()
+    expect(saveClipboardImageMock).toHaveBeenCalledTimes(1)
+    expect(onResolved).toHaveBeenCalledWith([samplePending])
+  })
 })

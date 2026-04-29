@@ -31,22 +31,29 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
 
     const items = Array.from(event.clipboardData?.items ?? [])
     const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    // Only treat as clipboard-image (and save to tmpImage) when there is no real file
-    // on the system pasteboard. Finder-copied images expose `Files` and have a real path.
-    if (imageItem && !hasFileType) {
+
+    // Image present: try to get a real file path first; if none, save bytes to tmpImage.
+    if (imageItem) {
       const file = imageItem.getAsFile()
-      if (file) {
-        event.preventDefault()
-        void (async () => {
-          try {
-            const bytes = await readClipboardImageBytes(file)
-            const pending = await saveClipboardImage(bytes, file.type || 'image/png')
-            onAttachmentsResolved([pending])
-          } catch (err) {
-            console.error('[useComposerPaste] failed to save clipboard image', err)
+      if (!file) return
+      event.preventDefault()
+      void (async () => {
+        try {
+          if (hasFileType) {
+            const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
+            if (nativePaths.length > 0) {
+              const resolved = await resolvePastedPaths(nativePaths)
+              if (resolved.length > 0) onAttachmentsResolved(resolved)
+              return
+            }
           }
-        })()
-      }
+          const bytes = await readClipboardImageBytes(file)
+          const pending = await saveClipboardImage(bytes, file.type || 'image/png')
+          onAttachmentsResolved([pending])
+        } catch (err) {
+          console.error('[useComposerPaste] failed to handle image paste', err)
+        }
+      })()
       return
     }
 
