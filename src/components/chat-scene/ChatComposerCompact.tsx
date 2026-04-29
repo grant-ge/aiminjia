@@ -64,11 +64,22 @@ export function ChatComposerCompact({
 }: ChatComposerCompactProps) {
   const internalRef = useRef<HTMLTextAreaElement>(null)
   const ref = textareaRef ?? internalRef
+  const isComposingRef = useRef(false)
+
+  const handleCompositionStart: CompositionEventHandler<HTMLTextAreaElement> = (e) => {
+    isComposingRef.current = true
+    onCompositionStart?.(e)
+  }
+
+  const handleCompositionEnd: CompositionEventHandler<HTMLTextAreaElement> = (e) => {
+    setTimeout(() => { isComposingRef.current = false }, 50)
+    onCompositionEnd?.(e)
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     onKeyDown?.(e)
     if (e.defaultPrevented) return
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current && !e.nativeEvent.isComposing) {
       e.preventDefault()
       if (!submitDisabled && value.trim()) onSubmit(value)
     }
@@ -118,8 +129,8 @@ export function ChatComposerCompact({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          onCompositionStart={onCompositionStart}
-          onCompositionEnd={onCompositionEnd}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
