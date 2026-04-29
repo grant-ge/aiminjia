@@ -37,12 +37,13 @@ function makeImagePasteEvent(file: File) {
   } as unknown as React.ClipboardEvent<HTMLTextAreaElement>
 }
 
-function makeTextPasteEvent(text: string) {
+function makeTextPasteEvent(text: string, types: string[] = []) {
   return {
     preventDefault: vi.fn(),
     clipboardData: {
       items: [] as unknown as DataTransferItemList,
       getData: (kind: string) => (kind === 'text/plain' ? text : ''),
+      types,
     },
   } as unknown as React.ClipboardEvent<HTMLTextAreaElement>
 }
@@ -117,12 +118,26 @@ describe('useComposerPaste', () => {
     const onResolved = vi.fn()
     const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
 
-    const event = makeTextPasteEvent('')
+    const event = makeTextPasteEvent('foo.zip', ['Files', 'text/plain'])
     result.current.handlePaste(event)
 
     await new Promise((r) => setTimeout(r, 0))
+    expect(event.preventDefault).toHaveBeenCalled()
     expect(readClipboardFilePathsMock).toHaveBeenCalled()
     expect(resolvePastedPathsMock).toHaveBeenCalledWith(['/Users/me/native.png'])
     expect(onResolved).toHaveBeenCalledWith([samplePending])
+  })
+
+  it('lets plain text paste through without preventDefault', async () => {
+    const onResolved = vi.fn()
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+
+    const event = makeTextPasteEvent('hello world')
+    result.current.handlePaste(event)
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(readClipboardFilePathsMock).not.toHaveBeenCalled()
+    expect(onResolved).not.toHaveBeenCalled()
   })
 })

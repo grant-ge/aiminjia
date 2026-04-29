@@ -54,6 +54,13 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
       return
     }
 
+    const types = Array.from(event.clipboardData?.types ?? [])
+    const hasFileType = types.some((t) =>
+      t === 'Files' || t === 'text/uri-list' || t.startsWith('public.file-url'),
+    )
+    if (!hasFileType) return
+
+    event.preventDefault()
     void (async () => {
       const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
       if (nativePaths.length === 0) return
