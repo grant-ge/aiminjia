@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 
 use super::site_map::{PageProfile, SiteMap, TableSchema};
 use super::types::{
-    ApiFetchResult, BrowseNavigateResult, BrowseResult, DiscoveredApi, ExecuteJsResult,
+    ApiFetchResult, BrowseNavigateResult, BrowseResult, ExecuteJsResult,
     FormData, FormField, FullPageResult, LinkData, TableData,
 };
 
@@ -333,6 +333,7 @@ impl PlaywrightBrowser {
     }
 
     /// Bring browser to front.
+    #[allow(dead_code)]
     pub async fn show_active_page(&self) -> Result<(), String> {
         self.send_command("show_page", serde_json::json!({})).await?;
         Ok(())
@@ -484,6 +485,7 @@ impl PlaywrightBrowser {
     }
 
     /// Get active origin.
+    #[allow(dead_code)]
     pub async fn get_active_origin(&self) -> Option<String> {
         self.state.lock().await.active_origin.clone()
     }
@@ -511,7 +513,7 @@ impl PlaywrightBrowser {
     /// Ensure Node.js sidecar is running, launch if needed.
     /// On first launch failure due to corrupted profile, wipes the profile and retries once.
     async fn ensure_running(&self) -> Result<(), String> {
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if state.process.is_some() {
             return Ok(());
         }
