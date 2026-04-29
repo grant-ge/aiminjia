@@ -21,7 +21,7 @@ vi.mock('@/lib/tauri', () => ({
   readClipboardFilePaths: () => readClipboardFilePathsMock(),
 }))
 
-function makeImagePasteEvent(file: File) {
+function makeImagePasteEvent(file: File, types: string[] = []) {
   const item = {
     kind: 'file',
     type: file.type,
@@ -33,6 +33,7 @@ function makeImagePasteEvent(file: File) {
     clipboardData: {
       items: [item] as unknown as DataTransferItemList,
       getData: () => '',
+      types,
     },
   } as unknown as React.ClipboardEvent<HTMLTextAreaElement>
 }
@@ -139,5 +140,23 @@ describe('useComposerPaste', () => {
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(readClipboardFilePathsMock).not.toHaveBeenCalled()
     expect(onResolved).not.toHaveBeenCalled()
+  })
+
+  it('routes Finder-copied images through native paths instead of tmpImage', async () => {
+    readClipboardFilePathsMock.mockResolvedValue(['/Users/me/photo.png'])
+    resolvePastedPathsMock.mockResolvedValue([samplePending])
+    const onResolved = vi.fn()
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+
+    const file = new File([new Uint8Array([1, 2])], 'photo.png', { type: 'image/png' })
+    const event = makeImagePasteEvent(file, ['Files'])
+    result.current.handlePaste(event)
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(saveClipboardImageMock).not.toHaveBeenCalled()
+    expect(readClipboardFilePathsMock).toHaveBeenCalled()
+    expect(resolvePastedPathsMock).toHaveBeenCalledWith(['/Users/me/photo.png'])
+    expect(onResolved).toHaveBeenCalledWith([samplePending])
   })
 })

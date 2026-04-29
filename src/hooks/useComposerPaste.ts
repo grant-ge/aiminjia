@@ -24,9 +24,16 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
   const { saveClipboardImage, resolvePastedPaths } = useChatAttachments()
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const types = Array.from(event.clipboardData?.types ?? [])
+    const hasFileType = types.some((t) =>
+      t === 'Files' || t === 'text/uri-list' || t.startsWith('public.file-url'),
+    )
+
     const items = Array.from(event.clipboardData?.items ?? [])
     const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    if (imageItem) {
+    // Only treat as clipboard-image (and save to tmpImage) when there is no real file
+    // on the system pasteboard. Finder-copied images expose `Files` and have a real path.
+    if (imageItem && !hasFileType) {
       const file = imageItem.getAsFile()
       if (file) {
         event.preventDefault()
@@ -54,10 +61,6 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
       return
     }
 
-    const types = Array.from(event.clipboardData?.types ?? [])
-    const hasFileType = types.some((t) =>
-      t === 'Files' || t === 'text/uri-list' || t.startsWith('public.file-url'),
-    )
     if (!hasFileType) return
 
     event.preventDefault()
