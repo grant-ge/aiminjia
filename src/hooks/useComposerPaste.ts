@@ -31,9 +31,13 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
       if (file) {
         event.preventDefault()
         void (async () => {
-          const bytes = await readClipboardImageBytes(file)
-          const pending = await saveClipboardImage(bytes, file.type || 'image/png')
-          onAttachmentsResolved([pending])
+          try {
+            const bytes = await readClipboardImageBytes(file)
+            const pending = await saveClipboardImage(bytes, file.type || 'image/png')
+            onAttachmentsResolved([pending])
+          } catch (err) {
+            console.error('[useComposerPaste] failed to save clipboard image', err)
+          }
         })()
       }
       return

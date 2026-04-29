@@ -94,6 +94,23 @@ describe('useComposerPaste', () => {
     expect(onResolved).toHaveBeenCalledWith([samplePending])
   })
 
+  it('does not call onResolved when image save throws', async () => {
+    saveClipboardImageMock.mockRejectedValue(new Error('ipc fail'))
+    const onResolved = vi.fn()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+
+    const file = new File([new Uint8Array([1])], 'paste.png', { type: 'image/png' })
+    const event = makeImagePasteEvent(file)
+    result.current.handlePaste(event)
+
+    await new Promise((r) => setTimeout(r, 0))
+    expect(saveClipboardImageMock).toHaveBeenCalled()
+    expect(onResolved).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
   it('falls back to native clipboard file paths', async () => {
     readClipboardFilePathsMock.mockResolvedValue(['/Users/me/native.png'])
     resolvePastedPathsMock.mockResolvedValue([samplePending])
