@@ -7,6 +7,8 @@ export interface PreviewTarget {
   conversationId: string
   fileName: string
   fileType?: string
+  /** When set, preview is sourced from a user-attached local absolute path. */
+  localPath?: string
 }
 
 interface GeneratedFileActionSource {

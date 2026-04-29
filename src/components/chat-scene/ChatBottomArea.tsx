@@ -94,24 +94,22 @@ export function ChatBottomArea() {
 
     setIsSending(true)
     setInput('')
-      const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
-        id: f.id,
-        fileName: f.fileName,
-        filePath: f.path,
-        kind: f.kind,
-        fileType: f.fileType,
-        fileSize: f.fileSize,
-        mimeType: f.mimeType,
-      }))
+    setPendingFiles([])
+    const fileInfos: PendingFileInfo[] = pendingFiles.map((f) => ({
+      id: f.id,
+      fileName: f.fileName,
+      filePath: f.path,
+      kind: f.kind,
+      fileType: f.fileType,
+      fileSize: f.fileSize,
+      mimeType: f.mimeType,
+    }))
 
     try {
-      const sent = await sendUserMessage(
+      await sendUserMessage(
         trimmed || t('inputBar.analyzeFile'),
         fileInfos.length > 0 ? fileInfos : undefined,
       )
-      if (sent) {
-        setPendingFiles([])
-      }
     } catch (err) {
       console.error('[ChatBottomArea] sendUserMessage failed:', err)
     } finally {

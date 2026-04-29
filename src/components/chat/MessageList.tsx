@@ -97,6 +97,7 @@ export function MessageList() {
                 commandText={t.userMessage.commandText}
                 skillCommand={t.userMessage.skillCommand}
                 files={t.userMessage.files}
+                conversationId={activeConversationId ?? undefined}
               />
             ) : null}
             {t.toolGroup ? (

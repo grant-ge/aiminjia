@@ -575,6 +575,74 @@ pub async fn get_file_preview(
     Ok(preview_from_record(&file_mgr, record))
 }
 
+/// Preview a local file by absolute path (used for user-attached files that
+/// were never uploaded to the workspace, e.g. drag/drop or paste).
+#[tauri::command]
+pub async fn get_local_file_preview(path: String) -> Result<FilePreview, String> {
+    let p = Path::new(&path);
+    let file_name = p
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let metadata = match std::fs::metadata(p) {
+        Ok(m) => m,
+        Err(e) => return Ok(unsupported_preview(&file_name, format!("File is unavailable: {}", e))),
+    };
+    if !metadata.is_file() {
+        return Ok(unsupported_preview(&file_name, "Not a regular file"));
+    }
+    if metadata.len() > MAX_PREVIEW_BYTES {
+        return Ok(unsupported_preview(&file_name, "File is too large to preview"));
+    }
+
+    let file_type = p
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if normalize_preview_kind(&file_name, &file_type).is_none() {
+        return Ok(unsupported_preview(
+            &file_name,
+            format!("File type '{}' is not supported", file_type),
+        ));
+    }
+
+    let bytes = match std::fs::read(p) {
+        Ok(b) => b,
+        Err(e) => return Ok(unsupported_preview(&file_name, format!("File is unavailable: {}", e))),
+    };
+
+    Ok(preview_from_bytes(&file_name, &file_type, bytes))
+}
+
+/// Open a local file by absolute path with the system default application.
+#[tauri::command]
+pub async fn open_local_file(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(p)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(p)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(p)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Preview a file (returns preview content as string).
 #[tauri::command]
 pub async fn preview_file(

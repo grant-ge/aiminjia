@@ -562,6 +562,14 @@ export function getFilePreview(fileId: string, conversationId: string): Promise<
   return invoke<FilePreview>('get_file_preview', { fileId, conversationId })
 }
 
+export function getLocalFilePreview(path: string): Promise<FilePreview> {
+  return invoke<FilePreview>('get_local_file_preview', { path })
+}
+
+export function openLocalFile(path: string): Promise<void> {
+  return invoke<void>('open_local_file', { path })
+}
+
 /**
  * Delete a generated or uploaded file from the workspace.
  *

@@ -2,6 +2,9 @@
  * @designSource design.pen#1JNrw bubble/adaptive-max-80
  * @sizing r-16 padding [8,12] bg primary fg primary-foreground; align right; max-w 80%
  */
+import { openLocalFile } from '@/lib/tauri'
+import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
+import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
 
 interface UserMessageBubbleProps {
@@ -9,6 +12,7 @@ interface UserMessageBubbleProps {
   commandText?: string
   skillCommand?: SkillCommandBreadcrumb
   files?: FileAttachment[]
+  conversationId?: string
 }
 
 function AttachmentIcon({ kind }: { kind: FileAttachment['kind'] }) {
@@ -33,19 +37,42 @@ function AttachmentIcon({ kind }: { kind: FileAttachment['kind'] }) {
   )
 }
 
-export function UserMessageBubble({ text, commandText, skillCommand, files }: UserMessageBubbleProps) {
+export function UserMessageBubble({ text, commandText, skillCommand, files, conversationId }: UserMessageBubbleProps) {
   const command = skillCommand?.command ?? commandText?.split(/\s+/)[0]
   const tokenLabel = skillCommand?.label ?? skillCommand?.id ?? command?.replace(/^\//, '')
   const hasFiles = (files?.length ?? 0) > 0
+  const openPreview = useGeneratedFilePreviewStore((s) => s.openPreview)
+
+  const handleAttachmentClick = (file: FileAttachment) => {
+    const localPath = file.filePath
+    if (!localPath) return
+    if (file.kind === 'folder') {
+      void openLocalFile(localPath)
+      return
+    }
+    if (isPreviewableFileType(file.fileType, file.fileName) && conversationId) {
+      openPreview({
+        fileId: file.id,
+        conversationId,
+        fileName: file.fileName,
+        fileType: file.fileType,
+        localPath,
+      })
+      return
+    }
+    void openLocalFile(localPath)
+  }
 
   return (
     <div className="flex w-full flex-col items-end gap-1.5">
       {hasFiles ? (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {files!.map((file) => (
-            <div
+            <button
               key={file.id}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1"
+              type="button"
+              onClick={() => handleAttachmentClick(file)}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 transition-opacity hover:opacity-80"
               style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
               title={file.fileName}
             >
@@ -53,7 +80,7 @@ export function UserMessageBubble({ text, commandText, skillCommand, files }: Us
               <span className="max-w-[64px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
                 {file.fileName}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}
