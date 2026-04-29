@@ -7,6 +7,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { Switch } from '@/components/common/Switch'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import type { DataMaskingLevel } from '@/types/settings'
 
 const UX_PROGRAM_STORAGE_KEY = 'about.user-experience-program'
 
@@ -25,6 +26,8 @@ interface AboutPanelProps {
   onCheckUpdate: () => void
   onUploadLogs: () => void
   onResetData: () => void
+  dataMaskingLevel: DataMaskingLevel
+  onDataMaskingChange: (level: DataMaskingLevel) => void
   links: AboutPanelLinks
 }
 
@@ -118,6 +121,8 @@ export function AboutPanel({
   onCheckUpdate,
   onUploadLogs,
   onResetData,
+  dataMaskingLevel,
+  onDataMaskingChange,
   links,
 }: AboutPanelProps) {
   const [experienceProgramEnabled, setExperienceProgramEnabled] = useState(readExperienceProgramDefault)
@@ -146,6 +151,25 @@ export function AboutPanel({
           </div>
         </div>
         <PillButton onClick={onCheckUpdate}>检查更新</PillButton>
+      </section>
+
+      <div className="h-px bg-border mb-2" />
+
+      <section className="flex flex-col gap-4">
+        <div className="text-xl font-bold tracking-tight text-foreground">隐私</div>
+        <div className="flex items-center justify-between gap-8">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="text-base font-semibold text-foreground">隐私保护增强</div>
+            <div className="text-sm text-muted-foreground">
+              开启后，发送给模型前会自动隐藏部分敏感信息。关闭后可获得更完整的上下文体验。
+            </div>
+          </div>
+          <Switch
+            aria-label="隐私保护增强"
+            checked={dataMaskingLevel !== 'relaxed'}
+            onCheckedChange={(checked) => onDataMaskingChange(checked ? 'strict' : 'relaxed')}
+          />
+        </div>
       </section>
 
       <div className="h-px bg-border mb-2" />

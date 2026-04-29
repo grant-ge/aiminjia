@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/ui/button', () => ({
@@ -20,6 +21,8 @@ const baseProps = {
   onCheckUpdate: vi.fn(),
   onUploadLogs: vi.fn(),
   onResetData: vi.fn(),
+  dataMaskingLevel: 'relaxed' as const,
+  onDataMaskingChange: vi.fn(),
   links: {
     customerService: vi.fn(),
     productSuggestion: vi.fn(),
@@ -83,5 +86,20 @@ describe('AboutPanel', () => {
 
     const toggle = screen.getByRole('switch', { name: '用户体验改进计划' })
     expect(toggle).toBeChecked()
+  })
+
+  it('renders 隐私保护 section with a toggle', () => {
+    render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={() => {}} />)
+    expect(screen.getByText('隐私保护增强')).toBeInTheDocument()
+    const toggle = screen.getByRole('switch', { name: '隐私保护增强' })
+    expect(toggle).not.toBeChecked()
+  })
+
+  it('calls onDataMaskingChange with strict when toggle turned on', async () => {
+    const onChange = vi.fn()
+    render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={onChange} />)
+    const toggle = screen.getByRole('switch', { name: '隐私保护增强' })
+    await userEvent.setup().click(toggle)
+    expect(onChange).toHaveBeenCalledWith('strict')
   })
 })
