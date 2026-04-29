@@ -170,6 +170,7 @@ pub fn collect_results(round_results: Vec<ToolRoundResult>) -> ToolRoundResults 
             "toolCallId": tr_id,
             "name": tr_name,
             "content": truncated_result,
+            "isError": tr_is_error,
         }));
     }
 
@@ -248,7 +249,17 @@ mod tests {
         assert_eq!(msg["toolCallId"], "tc-42");
         assert_eq!(msg["name"], "my_tool");
         assert_eq!(msg["content"], "hello world");
+        assert_eq!(msg["isError"], false);
     }
+
+    #[test]
+    fn error_message_carries_is_error_for_persistence_reload() {
+        let results = vec![completed("tc-err", "bash", "failed", true)];
+        let out = collect_results(results);
+        let msg = &out.tool_result_messages[0];
+        assert_eq!(msg["isError"], true);
+    }
+
 
     #[test]
     fn context_modifier_messages_are_collected() {

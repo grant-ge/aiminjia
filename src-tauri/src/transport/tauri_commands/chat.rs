@@ -967,11 +967,15 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
+            let is_error = msg
+                .get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let stored = crate::storage::file_store::types::StoredMessage {
                 id: msg_id.clone(),
                 conversation_id: conversation_id.to_string(),
                 role: "tool".to_string(),
-                content: serde_json::json!({ "text": content }),
+                content: serde_json::json!({ "text": content, "isError": is_error }),
                 created_at: chrono::Utc::now().to_rfc3339(),
                 tool_call_id: Some(tool_call_id),
                 name: Some(name),
