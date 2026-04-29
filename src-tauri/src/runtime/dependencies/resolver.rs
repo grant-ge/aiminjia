@@ -57,7 +57,7 @@ impl RuntimeResolver for InstalledRuntimeResolver {
     fn workspace_dependencies(&self) -> RuntimeDependencyResult<WorkspaceDependencies> {
         let install_dir = self.current_install_dir()?;
         let dependencies = WorkspaceDependencies::from_install_dir(&install_dir)?;
-        validate_installed_dependencies(&dependencies)?;
+        validate_installed_dependencies(&dependencies, &install_dir)?;
         Ok(dependencies)
     }
 }
@@ -131,6 +131,7 @@ fn validate_dependencies(dependencies: &WorkspaceDependencies) -> RuntimeDepende
 
 fn validate_installed_dependencies(
     dependencies: &WorkspaceDependencies,
+    install_dir: &Path,
 ) -> RuntimeDependencyResult<()> {
     validate_dependencies(dependencies)?;
     validate_existing("node", &dependencies.node)?;
@@ -141,31 +142,9 @@ fn validate_installed_dependencies(
     validate_existing("uvx", &dependencies.uvx)?;
     validate_existing_dir("node_modules", &dependencies.node_modules)?;
     validate_existing_dir("python_site_packages", &dependencies.python_site_packages)?;
-    let install_manifest = infer_install_dir_from_python_path(&dependencies.python)
-        .map(|install_dir| install_dir.join("install.json"))
-        .ok_or_else(|| {
-            RuntimeDependencyError::ResolverUnavailable(
-                "failed to derive runtime install manifest path".to_string(),
-            )
-        })?;
+    let install_manifest = install_dir.join("install.json");
     validate_existing("install_json", &install_manifest)?;
     Ok(())
-}
-
-fn infer_install_dir_from_python_path(python_path: &Path) -> Option<PathBuf> {
-    for platform in [
-        RuntimePlatform::DarwinArm64,
-        RuntimePlatform::DarwinX64,
-        RuntimePlatform::LinuxX64,
-        RuntimePlatform::WindowsX64,
-    ] {
-        if let Some(install_dir) =
-            RuntimeLayout::for_platform(platform).install_dir_from_python_path(python_path)
-        {
-            return Some(install_dir);
-        }
-    }
-    None
 }
 
 fn runtime_platform_error(error: RuntimePlatformError) -> RuntimeDependencyError {
@@ -202,5 +181,58 @@ fn validate_absolute(field: &'static str, path: &PathBuf) -> RuntimeDependencyRe
             field,
             path: path.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// 在临时目录里模拟 Windows layout 的已安装 runtime bundle，
+    /// 验证 install.json 被正确定位到版本子目录而不是 versions/ 顶层。
+    #[test]
+    fn installed_resolver_finds_install_json_in_version_subdir() {
+        let tmp = TempDir::new().unwrap();
+        let bundle_root = tmp.path().join("renlijia-primary-runtime");
+        let version = "2026.04.26-runtime.1";
+        let install_dir = bundle_root.join("versions").join(version);
+
+        // 写 current 指针
+        std::fs::create_dir_all(&bundle_root).unwrap();
+        std::fs::write(bundle_root.join("current"), format!("versions/{version}")).unwrap();
+
+        // 用当前平台 layout 创建必要的可执行文件/目录
+        let platform = RuntimePlatform::current().expect("should detect platform");
+        let layout = RuntimeLayout::for_platform(platform);
+        let deps = layout.workspace_dependencies(&install_dir);
+
+        for path in [
+            &deps.python,
+            &deps.node,
+            &deps.npm,
+            &deps.npx,
+            &deps.uv,
+            &deps.uvx,
+        ] {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, b"").unwrap();
+        }
+        for dir in [&deps.node_modules, &deps.python_site_packages] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        // 关键：install.json 放在版本子目录，不放在 versions/ 顶层
+        std::fs::write(install_dir.join("install.json"), b"{}").unwrap();
+
+        let resolver = InstalledRuntimeResolver::new(&bundle_root);
+        let result = resolver.workspace_dependencies();
+        assert!(
+            result.is_ok(),
+            "should resolve correctly on all platforms, got: {:?}",
+            result.err()
+        );
     }
 }
