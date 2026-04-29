@@ -396,9 +396,8 @@ fn clipboard_extension_for_mime(mime_type: &str) -> &'static str {
     }
 }
 
-pub(crate) fn save_clipboard_image_attachment_to_home(
+pub(crate) fn save_clipboard_image_to_tmp(
     aijia_home: &AiJiaHome,
-    conversation_id: &str,
     bytes: &[u8],
     mime_type: &str,
 ) -> Result<SavedClipboardAttachment, String> {
@@ -409,12 +408,7 @@ pub(crate) fn save_clipboard_image_attachment_to_home(
         &uuid::Uuid::new_v4().simple().to_string()[..8],
         ext
     );
-    let dir = aijia_home
-        .root()
-        .join("conversations")
-        .join(conversation_id)
-        .join("attachments")
-        .join("clipboard");
+    let dir = aijia_home.root().join("tmpImage");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let full_path = dir.join(&file_name);
     std::fs::write(&full_path, bytes).map_err(|e| e.to_string())?;
@@ -427,18 +421,12 @@ pub(crate) fn save_clipboard_image_attachment_to_home(
 }
 
 #[tauri::command]
-pub async fn save_clipboard_image_attachment(
+pub async fn save_clipboard_image_to_tmp_dir(
     aijia_home: State<'_, Arc<AiJiaHome>>,
-    conversation_id: String,
     bytes: Vec<u8>,
     mime_type: String,
 ) -> Result<SavedClipboardAttachment, String> {
-    save_clipboard_image_attachment_to_home(
-        aijia_home.inner().as_ref(),
-        &conversation_id,
-        &bytes,
-        &mime_type,
-    )
+    save_clipboard_image_to_tmp(aijia_home.inner().as_ref(), &bytes, &mime_type)
 }
 
 #[cfg(target_os = "macos")]
@@ -763,23 +751,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn save_clipboard_image_attachment_writes_to_conversation_clipboard_dir() {
+    fn save_clipboard_image_writes_to_tmp_image_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = AiJiaHome::from_path(tmp.path().to_path_buf());
 
-        let saved = save_clipboard_image_attachment_to_home(
-            &home,
-            "conv-1",
-            &[1, 2, 3, 4],
-            "image/png",
-        )
-        .expect("save clipboard image");
+        let saved = save_clipboard_image_to_tmp(&home, &[1, 2, 3, 4], "image/png")
+            .expect("save clipboard image");
 
-        assert!(saved.path.contains("/conversations/conv-1/attachments/clipboard/"));
+        assert!(saved.path.contains("/tmpImage/"));
+        assert!(!saved.path.contains("/conversations/"));
+        assert!(saved.file_name.starts_with("clipboard-"));
         assert!(saved.file_name.ends_with(".png"));
         assert_eq!(saved.file_size, 4);
         assert_eq!(saved.mime_type, "image/png");
         assert!(std::path::Path::new(&saved.path).exists());
+
+        let parent = std::path::Path::new(&saved.path).parent().expect("parent");
+        assert_eq!(parent, home.root().join("tmpImage").as_path());
     }
 }
 
