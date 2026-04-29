@@ -8,6 +8,7 @@ import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
 import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
 import { SettingsModal } from '@/components/settings/SettingsModal'
+import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
 import { HomePage } from '@/features/home/HomePage'
@@ -98,12 +99,17 @@ function AppShell() {
     }
   }
 
+  const isWindows = navigator.userAgent.includes('Windows')
+
   return (
-    <div className="flex h-screen w-screen bg-sidebar text-foreground">
-      <AppSidebar />
-      <main className="min-w-0 flex-1 overflow-hidden rounded-bl-xl rounded-tl-xl border-l border-border">
-        <RouteSwitch />
-      </main>
+    <div className="flex h-screen w-screen flex-col bg-sidebar text-foreground">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <AppSidebar />
+        <main className={`min-w-0 flex-1 overflow-hidden border-l border-border${isWindows ? '' : ' rounded-tl-xl'}`}>
+          <RouteSwitch />
+        </main>
+      </div>
       <SettingsModal />
       <ConfirmDialogHost />
       <ToastContainer />

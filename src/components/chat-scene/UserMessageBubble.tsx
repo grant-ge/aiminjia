@@ -93,7 +93,7 @@ export function UserMessageBubble({ text, commandText, skillCommand, files, conv
           {tokenLabel ? (
             <span
               data-testid="user-skill-token"
-              className="mr-2 inline-flex translate-y-[-1px] items-center gap-1.5 rounded-lg bg-white/24 px-2 py-1 text-xs font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
+              className="mr-2 inline-flex translate-y-[1px] items-center gap-1.5 rounded-lg bg-white/24 px-2 py-1 text-xs font-semibold leading-none text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.24)]"
               title={command}
             >
               <Blocks aria-hidden="true" className="shrink-0" style={{ width: '0.75rem', height: '0.75rem', transform: 'translateY(1px)' }} />
