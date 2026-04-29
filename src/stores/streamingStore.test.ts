@@ -54,7 +54,7 @@ describe('streamingStore view', () => {
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.streaming.append')).toBe(true)
   })
 
-  it('preserves tool executions when clearing a conversation stream state', () => {
+  it('clears tool executions when clearing a conversation stream state', () => {
     const store = useStreamingStore.getState()
     store.setConversationStreaming('c1', true)
     store.addConversationToolExecution('c1', {
@@ -66,7 +66,7 @@ describe('streamingStore view', () => {
     store.clearConversationStreamState('c1')
 
     expect(useChatStore.getState().streamStates['c1']?.isStreaming).toBe(false)
-    expect(useChatStore.getState().streamStates['c1']?.toolExecutions).toHaveLength(1)
+    expect(useChatStore.getState().streamStates['c1']?.toolExecutions).toHaveLength(0)
     expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.streaming.clear')).toBe(true)
   })
 

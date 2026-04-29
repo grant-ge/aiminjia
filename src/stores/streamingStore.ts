@@ -219,7 +219,12 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
         if (!previous) {
           return {} as Partial<T>
         }
-        if (!previous.isStreaming && previous.streamingContent === '' && !previous.agentPhase) {
+        if (
+          !previous.isStreaming &&
+          previous.streamingContent === '' &&
+          !previous.agentPhase &&
+          previous.toolExecutions.length === 0
+        ) {
           return {} as Partial<T>
         }
         const streamStates = {
@@ -227,7 +232,7 @@ export function createStreamingSlice<T extends StreamingState & StreamingSliceBr
           [convId]: {
             isStreaming: false,
             streamingContent: '',
-            toolExecutions: previous.toolExecutions,
+            toolExecutions: [],
             agentPhase: undefined,
             lastTurnSummary: previous.lastTurnSummary,
           },
