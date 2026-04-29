@@ -38,6 +38,7 @@ pub fn build_chat_history(
         .collect();
 
     messages = filter_invalid_tool_pairs(messages);
+    messages = reorder_tool_results_after_assistant(messages);
     messages = trim_to_budget(messages, config);
 
     if let Some(boundary) = boundary {
@@ -82,10 +83,46 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
     ChatMessage {
         role: message.role.clone(),
         content: build_chat_message_content(message, config),
-        tool_calls: normalize_tool_calls(message.tool_calls.as_ref()),
-        tool_call_id: message.tool_call_id.clone(),
-        name: message.name.clone(),
+        tool_calls: normalize_tool_calls(message.tool_calls.as_ref())
+            .or_else(|| extract_content_tool_calls(message)),
+        tool_call_id: extract_tool_call_id(message),
+        name: message.name.clone().or_else(|| {
+            message
+                .content
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        }),
     }
+}
+
+/// Tool messages may have toolCallId at top-level (new schema) or nested in
+/// `content.toolCallId` (legacy/embedded). Fall back to content so LLM gateway
+/// always receives a non-null tool_use_id.
+fn extract_tool_call_id(message: &StoredMessage) -> Option<String> {
+    message
+        .tool_call_id
+        .clone()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            message
+                .content
+                .get("toolCallId")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+        })
+}
+
+/// Assistant messages may carry tool_calls at top-level (new schema) or nested
+/// in `content.toolCalls` (legacy). Fall back so we don't drop tool linkage.
+fn extract_content_tool_calls(message: &StoredMessage) -> Option<Vec<ToolCall>> {
+    if message.role != "assistant" {
+        return None;
+    }
+    let arr = message.content.get("toolCalls")?.as_array()?;
+    let calls: Vec<serde_json::Value> = arr.clone();
+    normalize_tool_calls(Some(&calls))
 }
 
 fn build_chat_message_content(message: &StoredMessage, config: &HistoryConfig) -> String {
@@ -252,6 +289,52 @@ fn filter_invalid_tool_pairs(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
             message
         })
         .collect()
+}
+
+/// Some legacy conversations stored tool messages BEFORE their owning assistant
+/// message (because tool results were persisted as they streamed, while the
+/// assistant's tool_use was finalized later). LLM gateways require strict
+/// `assistant(tool_use) → tool(tool_result)` ordering, so reorder here.
+///
+/// Strategy: walk messages in order. Buffer any tool messages we encounter.
+/// When we see an assistant message with tool_calls, emit it followed by the
+/// matching tools (preserving the assistant's tool_call order). Drop tools
+/// whose owning assistant cannot be found.
+fn reorder_tool_results_after_assistant(messages: Vec<ChatMessage>) -> Vec<ChatMessage> {
+    use std::collections::HashMap;
+
+    // Index every tool message by tool_call_id. If duplicates exist, last wins.
+    let mut tool_pool: HashMap<String, ChatMessage> = HashMap::new();
+    let mut non_tool: Vec<ChatMessage> = Vec::with_capacity(messages.len());
+
+    for m in messages {
+        if m.role == "tool" {
+            if let Some(id) = m.tool_call_id.clone().filter(|s| !s.is_empty()) {
+                tool_pool.insert(id, m);
+            }
+            // tools without id were already filtered earlier; drop silently
+            continue;
+        }
+        non_tool.push(m);
+    }
+
+    let mut out: Vec<ChatMessage> = Vec::with_capacity(non_tool.len() + tool_pool.len());
+    for m in non_tool {
+        let tool_call_ids: Vec<String> = m
+            .tool_calls
+            .as_ref()
+            .map(|calls| calls.iter().map(|c| c.id.clone()).collect())
+            .unwrap_or_default();
+        out.push(m);
+        for id in tool_call_ids {
+            if let Some(tool_msg) = tool_pool.remove(&id) {
+                out.push(tool_msg);
+            }
+        }
+    }
+    // Any remaining tool messages are orphans: their assistant declaration was
+    // dropped by filter_invalid_tool_pairs. Discarding them is correct.
+    out
 }
 
 fn trim_to_budget(messages: Vec<ChatMessage>, config: &HistoryConfig) -> Vec<ChatMessage> {
