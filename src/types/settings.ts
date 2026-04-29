@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoModelRouting: true,
   workspacePath: '',
   analysisThreshold: 1.65,
-  dataMaskingLevel: 'strict',
+  dataMaskingLevel: 'relaxed',
   autoCleanupEnabled: true,
   tempFileRetentionDays: 7,
   keepOldVersions: 1,

@@ -18,7 +18,7 @@ describe('settingsStore — defaults', () => {
     expect(state.primaryApiKey).toBe('')
     expect(state.autoModelRouting).toBe(true)
     expect(state.analysisThreshold).toBe(1.65)
-    expect(state.dataMaskingLevel).toBe('strict')
+    expect(state.dataMaskingLevel).toBe('relaxed')
     expect(state.autoCleanupEnabled).toBe(true)
     expect(state.tempFileRetentionDays).toBe(7)
     expect(state.keepOldVersions).toBe(1)
