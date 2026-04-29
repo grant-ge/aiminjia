@@ -40,7 +40,7 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex h-7 w-full shrink-0 items-center bg-sidebar"
+      className="flex h-7 w-full shrink-0 items-center border-b border-border bg-sidebar"
       onMouseDown={handleDragStart}
     >
       <div className="flex-1" data-tauri-drag-region />

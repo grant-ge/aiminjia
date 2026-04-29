@@ -32,4 +32,10 @@ describe('TitleBar', () => {
     expect(screen.getByLabelText('Maximize')).toBeInTheDocument()
     expect(screen.getByLabelText('Close')).toBeInTheDocument()
   })
+
+  it('has a bottom border on Windows', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
+    const { container } = render(<TitleBar />)
+    expect(container.firstChild).toHaveClass('border-b')
+  })
 })
