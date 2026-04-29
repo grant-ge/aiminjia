@@ -5,8 +5,10 @@ import { useEffect, useState } from 'react'
 import { message } from '@tauri-apps/plugin-dialog'
 
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
+import { getSettings, updateSettings } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { useUiStore } from '@/stores/uiStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
@@ -25,6 +27,8 @@ export function SettingsModal() {
   const logout = useAuthStore((s) => s.logout)
   const productName = useBrandingStore((s) => s.productName)
   const logoUrl = useBrandingStore((s) => s.logoUrl)
+  const dataMaskingLevel = useSettingsStore((s) => s.dataMaskingLevel ?? 'relaxed')
+  const setDataMaskingLevel = useSettingsStore((s) => s.setDataMaskingLevel)
   const [pendingLogout, setPendingLogout] = useState(false)
   const [appVersion, setAppVersion] = useState('读取中')
 
@@ -158,6 +162,16 @@ export function SettingsModal() {
                 onCheckUpdate={() => void onCheckUpdate()}
                 onUploadLogs={() => void onUploadLogs()}
                 onResetData={() => void onResetData()}
+                dataMaskingLevel={dataMaskingLevel}
+                onDataMaskingChange={async (level) => {
+                  setDataMaskingLevel(level)
+                  try {
+                    const current = await getSettings()
+                    await updateSettings({ ...current, dataMaskingLevel: level })
+                  } catch (err) {
+                    console.error('Failed to persist dataMaskingLevel:', err)
+                  }
+                }}
                 links={{
                   customerService: () => void openExternalLink('https://www.renlijia.com/support'),
                   productSuggestion: () => void openExternalLink('https://www.renlijia.com/feedback'),
