@@ -12,7 +12,7 @@ import {
 } from '@/components/chat/generatedFileActions'
 import { useChatStore } from '@/stores/chatStore'
 import type { ToolExecution } from '@/stores/streamingStore'
-import type { FileAction, GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
+import type { FileAction, FileAttachment, GeneratedFile, Message, SkillCommandBreadcrumb } from '@/types/message'
 
 export interface RenderAiSegment {
   id: string
@@ -52,7 +52,7 @@ export interface RenderGeneratedFile {
 }
 
 export interface RenderTurn {
-  userMessage?: { id: string; text: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb }
+  userMessage?: { id: string; text: string; commandText?: string; skillCommand?: SkillCommandBreadcrumb; files?: FileAttachment[] }
   aiSegments: RenderAiSegment[]
   toolGroup?: RenderToolGroup
   generatedFiles: RenderGeneratedFile[]
@@ -170,18 +170,20 @@ function recalcToolGroup(group: RenderToolGroup): void {
 
 function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn['userMessage']> {
   const rawText = message.content.text ?? ''
+  const files = message.content.files
   if (message.content.skillCommand || message.content.commandText) {
     return {
       id: message.id,
       text: rawText,
       commandText: message.content.commandText,
       skillCommand: message.content.skillCommand,
+      files,
     }
   }
 
   const slashMatch = rawText.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\s+([\s\S]*))?$/)
   if (!slashMatch) {
-    return { id: message.id, text: rawText }
+    return { id: message.id, text: rawText, files }
   }
 
   const skillId = slashMatch[1]
@@ -192,6 +194,7 @@ function normalizeUserMessageForRender(message: Message): NonNullable<RenderTurn
     text,
     commandText: rawText,
     skillCommand: { id: skillId, label: skillId, command },
+    files,
   }
 }
 

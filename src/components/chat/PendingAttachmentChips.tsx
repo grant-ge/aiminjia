@@ -30,15 +30,15 @@ export function PendingAttachmentChips({
   onRemove: (id: string) => void
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="relative -top-2 flex flex-wrap gap-1.5">
       {pendingFiles.map((file) => (
         <div
           key={file.id}
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1"
-          style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-text-secondary)' }}
+          style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
         >
           <AttachmentIcon kind={file.kind} />
-          <span className="max-w-[160px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
+          <span className="max-w-[64px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
             {file.fileName}
           </span>
           <button
