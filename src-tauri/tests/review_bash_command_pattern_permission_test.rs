@@ -1,5 +1,7 @@
 //! BashTool 应查询 PermissionStore 的 CommandPattern 规则并返回正确决策。
 
+#![cfg(not(windows))]
+
 use std::sync::Arc;
 
 use app_lib::runtime::store::permission_store::{

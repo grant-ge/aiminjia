@@ -259,6 +259,38 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "powershell",
+            "在授权工作目录中执行 PowerShell 命令（Windows 平台专用）。\
+            优先使用 pwsh.exe（PowerShell 7+，支持 `&&` `||`），否则回退 powershell.exe（5.1，**不支持 `&&`/`||`**，请用 `;` 分隔或显式判断 `$LASTEXITCODE`）。\
+            \n\n用法说明：\
+            \n- 文件操作：`Get-ChildItem`、`Get-Content`、`Remove-Item -Recurse -Force`\
+            \n- 文本搜索：`Select-String -Pattern 'foo' -Path *.txt`（grep 等价）\
+            \n- 调用 .exe：直接写程序名即可，如 `python script.py`、`node app.js`\
+            \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
+            \n\n默认 timeout 120s；timeout/cancel 时终止进程并返回错误。\
+            \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
+            \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
+        )
+        .with_kind(ToolKind::Primitive)
+        .with_destructive(true)
+        .with_default_timeout_secs(120)
+        .with_capability_scope(["workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+                "command": { "type": "string", "description": "要执行的 PowerShell 命令" },
+                "timeout_secs": {
+                    "type": "integer",
+                    "description": "超时秒数，默认 120，最大 600",
+                    "default": 120
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "grep_content",
             "在授权工作目录中搜索文件内容。当前 Phase 1 对标 claude-code-best 的 GrepTool 核心模式：\
             \n- `output_mode=files_with_matches`：返回命中文件路径\
@@ -787,6 +819,7 @@ fn build_default_catalog() -> ToolCatalog {
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     "bash",
+    "powershell",
     "read_workspace_file",
     "write_file",
     "edit_file",

@@ -1,3 +1,5 @@
+#![cfg(not(windows))]
+
 use app_lib::runtime::tools::builtin::bash::BashTool;
 use app_lib::runtime::tools::permission::PermissionDecision;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};

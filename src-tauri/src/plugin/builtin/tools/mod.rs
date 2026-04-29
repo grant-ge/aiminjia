@@ -87,8 +87,11 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
 
     // ── RuntimeTool 注册（正确路径，走 ToolDispatcher）─────────────────────
     use crate::runtime::tools::builtin::ask_user_question::AskUserQuestionRuntimeTool;
+    #[cfg(not(windows))]
     use crate::runtime::tools::builtin::bash::BashTool;
     use crate::runtime::tools::builtin::grep::GrepContentTool;
+    #[cfg(windows)]
+    use crate::runtime::tools::builtin::powershell::PowerShellTool;
     use crate::runtime::tools::builtin::task_tools::{
         TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
     };
@@ -114,7 +117,10 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     registry
         .register_runtime(Arc::new(EditFileRuntimeTool))
         .await;
+    #[cfg(not(windows))]
     registry.register_runtime(Arc::new(BashTool)).await;
+    #[cfg(windows)]
+    registry.register_runtime(Arc::new(PowerShellTool)).await;
     registry.register_runtime(Arc::new(GrepContentTool)).await;
     registry
         .register_runtime(Arc::new(AskUserQuestionRuntimeTool))

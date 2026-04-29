@@ -1,7 +1,8 @@
-//! BashTool — execute shell commands inside the authorized workspace.
-//! Unix-only; Windows uses PowerShellTool instead.
+//! PowerShellTool — execute PowerShell commands inside the authorized workspace.
+//! Windows-only. Prefers pwsh.exe (7+ Core, supports `&&`/`||`) over
+//! powershell.exe (5.1 Desktop, no chain operators).
 
-#![cfg(not(windows))]
+#![cfg(windows)]
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
 
+use super::powershell_detect::{detect, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
     interpret_command_result, kill_child_process_tree, read_merged_streams,
@@ -26,57 +28,59 @@ use super::workspace::require_workspace_root;
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
 
+/// Case-insensitive substring patterns. The match logic is
+/// `command.to_lowercase().contains(pattern_lc)`. Patterns are stored already
+/// lower-cased to avoid an allocation per pattern on every check.
 static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     (
-        "rm -rf /",
-        "Refusing: rm -rf / would destroy the entire filesystem",
+        "remove-item c:\\windows",
+        "Refusing: removing C:\\Windows would brick the OS",
     ),
     (
-        "rm -rf /*",
-        "Refusing: rm -rf /* would destroy the entire filesystem",
-    ),
-    ("sudo ", "Refusing: sudo escalation is not allowed"),
-    ("| sh", "Refusing: pipe-to-shell execution is not allowed"),
-    ("| bash", "Refusing: pipe-to-shell execution is not allowed"),
-    (
-        "<(curl",
-        "Refusing: process substitution remote execution is not allowed",
+        "remove-item -path c:\\windows",
+        "Refusing: removing C:\\Windows would brick the OS",
     ),
     (
-        "<(wget",
-        "Refusing: process substitution remote execution is not allowed",
-    ),
-    ("> /etc/", "Refusing: writing to /etc/ is not allowed"),
-    (">> /etc/", "Refusing: writing to /etc/ is not allowed"),
-    ("> /bin/", "Refusing: writing to /bin/ is not allowed"),
-    (
-        "> /usr/bin/",
-        "Refusing: writing to /usr/bin/ is not allowed",
+        "remove-item c:\\program files",
+        "Refusing: removing Program Files is not allowed",
     ),
     (
-        "of=/dev/sd",
-        "Refusing: writing raw block devices is not allowed",
+        "remove-item -path c:\\program files",
+        "Refusing: removing Program Files is not allowed",
+    ),
+    ("format-volume", "Refusing: Format-Volume erases data"),
+    ("clear-disk", "Refusing: Clear-Disk wipes a disk"),
+    (
+        "initialize-disk",
+        "Refusing: Initialize-Disk wipes a disk",
     ),
     (
-        "> /dev/sd",
-        "Refusing: writing raw block devices is not allowed",
+        "stop-computer",
+        "Refusing: Stop-Computer shuts down the machine",
     ),
     (
-        "dd of=/dev/",
-        "Refusing: writing raw block devices is not allowed",
+        "restart-computer",
+        "Refusing: Restart-Computer reboots the machine",
     ),
-    ("mkfs", "Refusing: mkfs formats filesystems"),
     (
-        "dd if=",
-        "Refusing: dd with if= can be dangerous; use with caution",
+        "| invoke-expression",
+        "Refusing: pipe-to-Invoke-Expression is remote code execution",
+    ),
+    (
+        "| iex",
+        "Refusing: pipe-to-iex is remote code execution",
+    ),
+    (
+        ").downloadstring(",
+        "Refusing: WebClient.DownloadString followed by execution is RCE",
     ),
 ];
 
-pub struct BashTool;
+pub struct PowerShellTool;
 
-fn default_bash_timeout_secs() -> u64 {
+fn default_powershell_timeout_secs() -> u64 {
     TOOL_CATALOG
-        .get("bash")
+        .get("powershell")
         .and_then(|def| def.default_timeout_secs)
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
@@ -85,13 +89,13 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
     input
         .get("timeout_secs")
         .and_then(Value::as_u64)
-        .unwrap_or_else(default_bash_timeout_secs)
+        .unwrap_or_else(default_powershell_timeout_secs)
         .min(MAX_TIMEOUT_SECS)
 }
 
-fn tool_result_bash(content: String, data: Value) -> ToolResult {
+fn tool_result_powershell(content: String, data: Value) -> ToolResult {
     ToolResult {
-        tool_name: "bash".to_string(),
+        tool_name: "powershell".to_string(),
         content,
         data: Some(data),
         file_meta: None,
@@ -100,27 +104,12 @@ fn tool_result_bash(content: String, data: Value) -> ToolResult {
     }
 }
 
-#[cfg(unix)]
-fn configure_child_process_group(command: &mut Command) {
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setpgid(0, 0) != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
-#[cfg(not(unix))]
-fn configure_child_process_group(_command: &mut Command) {}
-
 #[async_trait]
-impl RuntimeTool for BashTool {
+impl RuntimeTool for PowerShellTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("bash")
-            .unwrap_or_else(|| ToolDefinition::new("bash", "Execute shell command"))
+            .get("powershell")
+            .unwrap_or_else(|| ToolDefinition::new("powershell", "Execute PowerShell command"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -134,11 +123,11 @@ impl RuntimeTool for BashTool {
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("command") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "bash".to_string(),
+                tool_name: "powershell".to_string(),
                 message: "Missing required field: command (string)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "bash".to_string(),
+                tool_name: "powershell".to_string(),
                 message: format!(
                     "Field 'command' must be a string, got: {}",
                     value.to_string().chars().take(40).collect::<String>()
@@ -156,8 +145,9 @@ impl RuntimeTool for BashTool {
         use crate::runtime::store::permission_store::PolicyDecision;
 
         let command = input.get("command").and_then(Value::as_str).unwrap_or("");
-        for (pattern, message) in DANGEROUS_PATTERNS {
-            if command.contains(pattern) {
+        let lc = command.to_lowercase();
+        for (pattern_lc, message) in DANGEROUS_PATTERNS {
+            if lc.contains(pattern_lc) {
                 return Some(PermissionDecision::Deny {
                     message: (*message).to_string(),
                     reason: PermissionReason::Other("dangerous_pattern".to_string()),
@@ -166,7 +156,7 @@ impl RuntimeTool for BashTool {
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
-            match store.get_for_command("bash", command) {
+            match store.get_for_command("powershell", command) {
                 Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                     return Some(PermissionDecision::Deny {
                         message: format!(
@@ -201,16 +191,22 @@ impl RuntimeTool for BashTool {
             .to_string();
         let timeout_secs = resolve_timeout_secs(&input);
 
-        let mut shell = Command::new("/bin/sh");
-        configure_child_process_group(&mut shell);
-        let mut child = shell
-            .arg("-c")
+        let location: PowerShellLocation = detect().ok_or_else(|| {
+            ToolError::ExecutionFailed(
+                "PowerShell not found on this system. Install PowerShell 7 or ensure powershell.exe is on PATH.".into(),
+            )
+        })?;
+
+        let mut child = Command::new(&location.path)
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
             .arg(&command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn process: {e}")))?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
 
         let stdout = child
             .stdout
@@ -257,7 +253,7 @@ impl RuntimeTool for BashTool {
                 }
 
                 let content = content_from_output(&combined_output, semantics.message);
-                Ok(tool_result_bash(
+                Ok(tool_result_powershell(
                     content,
                     json!({
                         "command": command,
@@ -265,6 +261,8 @@ impl RuntimeTool for BashTool {
                         "stdout_stderr": combined_output,
                         "truncated": truncated,
                         "semantic_message": semantics.message,
+                        "shell_path": location.path.display().to_string(),
+                        "edition": format!("{:?}", location.edition),
                     }),
                 ))
             }
@@ -285,7 +283,6 @@ impl RuntimeTool for BashTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn resolve_timeout_secs_prefers_input_override() {
@@ -293,17 +290,16 @@ mod tests {
     }
 
     #[test]
-    fn resolve_timeout_secs_falls_back_to_catalog_default() {
-        let expected = TOOL_CATALOG
-            .get("bash")
-            .and_then(|def| def.default_timeout_secs)
-            .expect("bash should declare default timeout");
-        assert_eq!(default_bash_timeout_secs(), expected);
-        assert_eq!(resolve_timeout_secs(&json!({})), expected);
+    fn resolve_timeout_secs_caps_large_values() {
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
     }
 
     #[test]
-    fn resolve_timeout_secs_caps_large_values() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
+    fn resolve_timeout_secs_falls_back_to_catalog_default() {
+        let expected = TOOL_CATALOG
+            .get("powershell")
+            .and_then(|def| def.default_timeout_secs)
+            .unwrap_or(DEFAULT_TIMEOUT_SECS);
+        assert_eq!(resolve_timeout_secs(&json!({})), expected);
     }
 }

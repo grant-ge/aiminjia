@@ -1,6 +1,8 @@
 //! Integration tests for BashTool.
 //! 所有测试仅使用安全命令（echo, ls, cat, grep 等），不执行危险操作。
 
+#![cfg(not(windows))]
+
 use app_lib::runtime::cancellation::{CancellationReason, CancellationToken};
 use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::tools::builtin::bash::BashTool;
