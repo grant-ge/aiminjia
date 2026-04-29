@@ -371,7 +371,16 @@ export function useStreaming() {
       // state IN THE SAME callback so React batches both updates into one
       // render. This prevents the visual "flash" where StreamingBubble
       // unmounts (streaming:done) before the persisted assistant bubble appears.
-      if (message.role === 'assistant') {
+      //
+      // Skip iteration-only messages: assistant messages that carry toolCalls
+      // but no text are mid-turn snapshots (one per tool-call batch). Clearing
+      // streaming state here would kill the loading indicator while more tool
+      // calls are still in flight.
+      const isIterationToolCallsMessage =
+        message.role === 'assistant' &&
+        !message.content.text &&
+        (message.toolCalls?.length ?? 0) > 0
+      if (message.role === 'assistant' && !isIterationToolCallsMessage) {
         const streamState = store.streamStates[message.conversationId]
         if (streamState?.isStreaming) {
           console.log('[message:updated] Clearing streaming state for %s (assistant message persisted)', message.conversationId)
