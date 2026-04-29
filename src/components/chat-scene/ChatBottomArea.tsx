@@ -1,7 +1,7 @@
 /**
  * @designSource design.pen#Cbtm1 ChatBottomArea
  */
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
@@ -9,8 +9,8 @@ import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
+import { useComposerPaste } from '@/hooks/useComposerPaste'
 import { useSkillComposer } from '@/hooks/useSkillComposer'
-import { readClipboardFilePaths } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -67,33 +67,6 @@ function PendingFiles({
   )
 }
 
-function extractAbsolutePaths(text: string): string[] {
-  return text
-    .split(/[\n\r]+/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('/'))
-}
-
-async function appendResolvedPastedPaths(
-  paths: string[],
-  resolvePastedPaths: (paths: string[]) => Promise<PendingAttachment[]>,
-  setPendingFiles: React.Dispatch<React.SetStateAction<PendingAttachment[]>>,
-) {
-  const resolved = await resolvePastedPaths(paths)
-  if (resolved.length === 0) return
-
-  setPendingFiles((prev) => {
-    const seen = new Set(prev.map((file) => file.id))
-    const next = resolved.filter((file) => !seen.has(file.id))
-    return next.length > 0 ? [...prev, ...next] : prev
-  })
-}
-
-async function readClipboardImageBytes(file: File): Promise<Uint8Array> {
-  const buffer = await file.arrayBuffer()
-  return new Uint8Array(buffer)
-}
-
 function BottomTips() {
   return (
     <>
@@ -115,7 +88,7 @@ export function ChatBottomArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isPickingAttachments, pickAttachments, resolvePastedPaths, saveClipboardImage } = useChatAttachments()
+  const { isPickingAttachments, pickAttachments } = useChatAttachments()
   // TODO: openSettings 待权限按钮功能上线后恢复使用
   // const openSettings = useUiStore((s) => s.openSettings)
   const {
@@ -217,39 +190,14 @@ export function ChatBottomArea() {
     }
   }, [pickAttachments])
 
-  const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(event.clipboardData?.items ?? [])
-    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    if (imageItem && activeConversationId) {
-      const imageFile = imageItem.getAsFile()
-      if (imageFile) {
-        event.preventDefault()
-        void (async () => {
-          const bytes = await readClipboardImageBytes(imageFile)
-          const pending = await saveClipboardImage(activeConversationId, bytes, imageFile.type || 'image/png')
-          setPendingFiles((prev) => {
-            if (prev.some((file) => file.id === pending.id)) return prev
-            return [...prev, pending]
-          })
-        })()
-      }
-      return
-    }
-
-    const text = event.clipboardData?.getData('text/plain') ?? ''
-    const paths = extractAbsolutePaths(text)
-    if (paths.length > 0) {
-      event.preventDefault()
-      void appendResolvedPastedPaths(paths, resolvePastedPaths, setPendingFiles)
-      return
-    }
-
-    void (async () => {
-      const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
-      if (nativePaths.length === 0) return
-      void appendResolvedPastedPaths(nativePaths, resolvePastedPaths, setPendingFiles)
-    })()
-  }, [activeConversationId, resolvePastedPaths, saveClipboardImage])
+  const appendPendingFiles = useCallback((resolved: PendingAttachment[]) => {
+    setPendingFiles((prev) => {
+      const seen = new Set(prev.map((file) => file.id))
+      const next = resolved.filter((file) => !seen.has(file.id))
+      return next.length > 0 ? [...prev, ...next] : prev
+    })
+  }, [])
+  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
