@@ -66,6 +66,9 @@ pub struct AppSettings {
     /// UI font scale: small | medium | large.
     #[serde(default = "default_font_scale")]
     pub font_scale: String,
+    /// UI accent color hex string, e.g. "#DBAA22". Empty = use default.
+    #[serde(default)]
+    pub accent_color: String,
 }
 
 fn default_font_scale() -> String {
@@ -100,6 +103,7 @@ impl Default for AppSettings {
             thinking_type: "disabled".to_string(),
             thinking_budget_tokens: default_thinking_budget_tokens(),
             font_scale: default_font_scale(),
+            accent_color: String::new(),
         }
     }
 }
@@ -161,6 +165,7 @@ impl AppSettings {
                 defaults.thinking_budget_tokens,
             ),
             font_scale: get_str("fontScale", &defaults.font_scale),
+            accent_color: get_str("accentColor", &defaults.accent_color),
         }
     }
 }

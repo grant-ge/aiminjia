@@ -1,6 +1,7 @@
 import { Select } from '@/components/common/Select'
 import { Switch } from '@/components/common/Switch'
 import { Button } from '@/components/ui/button'
+import { getSettings, updateSettings } from '@/lib/tauri'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { FontScale } from '@/types/settings'
@@ -41,6 +42,25 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
   const appLanguage = useSettingsStore((s) => s.appLanguage)
   const fontScale = useSettingsStore((s) => s.fontScale ?? 'medium')
   const setFontScale = useSettingsStore((s) => s.setFontScale)
+
+  const persistToBackend = async (patch: { fontScale?: FontScale; accentColor?: string }) => {
+    try {
+      const current = await getSettings()
+      await updateSettings({ ...current, ...patch })
+    } catch (err) {
+      console.error('Failed to persist appearance settings:', err)
+    }
+  }
+
+  const handleFontScaleChange = (value: FontScale) => {
+    setFontScale(value)
+    void persistToBackend({ fontScale: value })
+  }
+
+  const handleAccentChange = (color: string) => {
+    applyBranding({ accentColor: color })
+    void persistToBackend({ accentColor: color })
+  }
 
   return (
     <div className="flex flex-col gap-5 text-foreground">
@@ -125,7 +145,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                   aria-checked={selected}
                   aria-label={option.label}
                   title={option.description}
-                  onClick={() => setFontScale(option.value)}
+                  onClick={() => handleFontScaleChange(option.value)}
                   className={
                     selected
                       ? 'rounded-[10px] bg-card px-3 py-1.5 text-sm font-semibold text-foreground shadow-sm'
@@ -151,7 +171,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
                 role="radio"
                 aria-checked={accentColor === color}
                 aria-label={color}
-                onClick={() => applyBranding({ accentColor: color })}
+                onClick={() => handleAccentChange(color)}
                 className="h-6 w-6 rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 style={{
                   background: color,
