@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
 
-import { saveClipboardImageAttachment } from '@/lib/tauri'
+import { saveClipboardImageToTmp } from '@/lib/tauri'
 import type { FileAttachment } from '@/types/message'
 
 export interface PendingAttachment {
@@ -92,12 +92,10 @@ export function useChatAttachments() {
   }, [])
 
   const saveClipboardImage = useCallback(async (
-    conversationId: string,
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<PendingAttachment> => {
-    const saved: SavedClipboardAttachment = await saveClipboardImageAttachment(
-      conversationId,
+    const saved: SavedClipboardAttachment = await saveClipboardImageToTmp(
       Array.from(bytes),
       mimeType,
     )

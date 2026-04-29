@@ -285,13 +285,11 @@ export function sendMessage(
   })
 }
 
-export function saveClipboardImageAttachment(
-  conversationId: string,
+export function saveClipboardImageToTmp(
   bytes: number[],
   mimeType: string,
 ): Promise<SavedClipboardAttachmentPayload> {
-  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_attachment', {
-    conversationId,
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_tmp_dir', {
     bytes,
     mimeType,
   })
