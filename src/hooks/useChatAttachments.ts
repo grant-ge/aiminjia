@@ -22,11 +22,6 @@ export interface SavedClipboardAttachment {
   mimeType: string
 }
 
-const ALLOWED_EXTENSIONS = [
-  'xlsx', 'xls', 'csv', 'pdf', 'docx', 'doc', 'json',
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
-]
-
 export function detectAttachmentFileType(path: string): FileAttachment['fileType'] {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   switch (ext) {
@@ -92,10 +87,6 @@ export function useChatAttachments() {
       const selected = await open({
         multiple: true,
         directory: false,
-        filters: [{
-          name: 'Supported Files',
-          extensions: ALLOWED_EXTENSIONS,
-        }],
       })
 
       if (!selected) return []

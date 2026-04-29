@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { ArrowLeft, Sparkles } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
@@ -10,6 +10,7 @@ import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
 import { useChat } from '@/hooks/useChat'
 import { useSkillStore } from '@/stores/skillStore'
+import { useUiStore } from '@/stores/uiStore'
 
 interface SkillDetailPageProps {
   skillId: string
@@ -24,10 +25,45 @@ const TRY_PROMPTS = [
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
   const { createConversationFromSkill } = useChat()
+  const setRoute = useUiStore((s) => s.setRoute)
+  const setPrefillText = useUiStore((s) => s.setPrefillText)
+  const goToSkillCenter = () => setRoute({ kind: 'skill-center' })
+
+  const handleUseSkill = () => {
+    if (!skill) return
+    const trigger = skill.triggerText?.trim() || `/${skill.id}`
+    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
+    setPrefillText(next)
+    setRoute({ kind: 'home' })
+  }
+
+  const backButton = (
+    <button
+      type="button"
+      aria-label="返回技能中心"
+      onClick={goToSkillCenter}
+      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" />
+    </button>
+  )
 
   if (!skill) {
     return (
-      <PageSectionShell topBar={<PageTopBar variant="default" />} padding="px-10 pt-10 pb-8" gap="gap-4">
+      <PageSectionShell
+        topBar={
+          <PageTopBar
+            variant="breadcrumb"
+            leading={backButton}
+            breadcrumbs={[
+              { label: '技能中心', onClick: goToSkillCenter },
+              { label: '未知技能', current: true },
+            ]}
+          />
+        }
+        padding="px-10 pt-10 pb-8"
+        gap="gap-4"
+      >
         <div className="text-sm text-muted-foreground">技能不存在或尚未加载。</div>
       </PageSectionShell>
     )
@@ -35,7 +71,16 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
 
   return (
     <PageSectionShell
-      topBar={<PageTopBar variant="default" />}
+      topBar={
+        <PageTopBar
+          variant="breadcrumb"
+          leading={backButton}
+          breadcrumbs={[
+            { label: '技能中心', onClick: goToSkillCenter },
+            { label: skill.displayName, current: true },
+          ]}
+        />
+      }
       padding="px-10 pt-7 pb-8"
       gap="gap-6"
     >
@@ -45,10 +90,8 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
         subtitle={skill.shortDescription || skill.description}
         actionBar={
           <SkillActionBar
-            secondaryLabel="禁用"
             primaryLabel="使用"
-            onSecondary={() => {}}
-            onPrimary={() => void createConversationFromSkill(skill.id)}
+            onPrimary={handleUseSkill}
           />
         }
       />

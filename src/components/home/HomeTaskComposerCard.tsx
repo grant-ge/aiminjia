@@ -9,13 +9,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { SkillPopover } from '@/components/chat/SkillPopover'
-import { SlashCommandPopover } from '@/components/chat/SlashCommandPopover'
 import { PendingAttachmentChips } from '@/components/chat/PendingAttachmentChips'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useComposerPaste } from '@/hooks/useComposerPaste'
-import { useSkillComposer } from '@/hooks/useSkillComposer'
 import {
   authorizeLocalDirectory,
   createConversation,
@@ -25,6 +23,7 @@ import {
 } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
 import { useHomeStore } from '@/stores/homeStore'
+import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
 export function HomeTaskComposerCard() {
@@ -49,20 +48,36 @@ export function HomeTaskComposerCard() {
   const [displayWorkspace, setDisplayWorkspace] = useState<AuthorizedWorkspaceRef | null>(
     selectedWorkspace,
   )
+  const [showSkillPopover, setShowSkillPopover] = useState(false)
+  const getSkillById = useSkillStore((s) => s.getById)
 
-  const {
-    showSkillPopover,
-    setShowSkillPopover,
-    slashMatch,
-    slashOpen,
-    handleSkillPick,
-    handleSlashSelect,
-    handleSlashClose,
-  } = useSkillComposer({
-    input: value,
-    setInput: setValue,
-    textareaRef,
-  })
+  useEffect(() => {
+    const prefill = useUiStore.getState().consumePrefillText()
+    if (prefill) {
+      setValue(prefill)
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        if (!el) return
+        el.focus()
+        el.setSelectionRange(prefill.length, prefill.length)
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleSkillPick = useCallback((skillId: string) => {
+    const skill = getSkillById(skillId)
+    const trigger = skill?.triggerText || `/${skillId}`
+    const next = trigger.endsWith(' ') ? trigger : `${trigger} `
+    setValue(next)
+    setShowSkillPopover(false)
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(next.length, next.length)
+    })
+  }, [getSkillById])
 
   // Load default folder if no workspace has been selected yet
   useEffect(() => {
@@ -152,7 +167,7 @@ export function HomeTaskComposerCard() {
 
   return (
     <div className="relative">
-      <div className="absolute bottom-full left-10 z-30 mb-3">
+      <div className="absolute top-full left-1/2 z-30 mt-1 -translate-x-1/2">
         <SkillPopover
           open={showSkillPopover}
           onPick={handleSkillPick}
@@ -160,19 +175,11 @@ export function HomeTaskComposerCard() {
         />
       </div>
 
-      {slashOpen && slashMatch ? (
-        <SlashCommandPopover
-          filterText={slashMatch.filter}
-          onSelect={handleSlashSelect}
-          onClose={handleSlashClose}
-        />
-      ) : null}
-
       <ChatComposerCompact
         value={value}
         onChange={setValue}
         onSubmit={(v) => void handleSubmit(v)}
-        placeholder="描述你的任务，或输入 / 选择技能来开始..."
+        placeholder="描述你的任务，或点击「技能」按钮选择技能..."
         onOpenSkill={() => setShowSkillPopover((prev) => !prev)}
         onPickProject={() => void handlePickProject()}
         projectLabel={displayWorkspace?.displayName ?? '默认项目'}

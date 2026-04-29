@@ -6,6 +6,7 @@ export const DERIVED_SKIN_KEYS = [
   '--ring',
   '--sidebar-primary',
   '--sidebar-primary-foreground',
+  '--brand-primary-subtle',
 ] as const
 
 function normalizeAccentColor(input?: string): string {
@@ -26,5 +27,6 @@ export function deriveSkin(
     '--ring': accent,
     '--sidebar-primary': accent,
     '--sidebar-primary-foreground': foreground,
+    '--brand-primary-subtle': `color-mix(in srgb, ${accent} 14%, #FFFFFF)`,
   }
 }
