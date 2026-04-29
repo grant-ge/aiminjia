@@ -108,3 +108,12 @@ describe('settingsStore — setter independence', () => {
     expect(useSettingsStore.getState().primaryModel).toBe('deepseek-v3')
   })
 })
+
+describe('settingsStore — setDataMaskingLevel', () => {
+  it('updates dataMaskingLevel in store', () => {
+    useSettingsStore.getState().setDataMaskingLevel('strict')
+    expect(useSettingsStore.getState().dataMaskingLevel).toBe('strict')
+    useSettingsStore.getState().setDataMaskingLevel('relaxed')
+    expect(useSettingsStore.getState().dataMaskingLevel).toBe('relaxed')
+  })
+})
