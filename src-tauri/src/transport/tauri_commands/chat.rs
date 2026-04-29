@@ -637,6 +637,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                                 // ThinkingDelta: internal model reasoning — intentionally dropped.
                                 // Not shown to users; bypasses prompt_guard.
                             }
+                            Some(StreamEvent::ThinkingBlock { .. }) => {
+                                // ThinkingBlock: full thinking block w/ signature — intentionally dropped here.
+                            }
                             Some(StreamEvent::ToolCallStart { tool_call }) => {
                                 log::info!(
                                     "[run_llm_step] Tool call received: name='{}' id='{}'",

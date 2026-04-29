@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.4.16"
+version = "0.5.5"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -67,6 +67,7 @@ shell-words = "1.1"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
+urlencoding = "2"
 
 # Plugin system
 async-trait = "0.1"

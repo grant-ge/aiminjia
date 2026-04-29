@@ -658,6 +658,7 @@ impl ToolRegistry {
                 cancellation: ctx.cancellation.clone(),
                 permission_mode: ctx.permission_mode,
                 runtime_resolver: ctx.runtime_resolver.clone(),
+                dingtalk_bridge: None,
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(

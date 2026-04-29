@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
-import { listMarketplaceSkills, installMarketplaceSkill } from '@/lib/tauri'
-import type { MarketplaceSkillItem } from '@/lib/tauri'
+import { listMarketplaceSkills, installMarketplaceSkill, listCustomSkills } from '@/lib/tauri'
+import type { MarketplaceSkillItem, CustomSkillInfo } from '@/lib/tauri'
 import { useNotificationStore } from '@/stores/notificationStore'
 
 const CATEGORY_KEYS = ['', 'hr', 'finance', 'legal', 'sales', 'ops', 'general'] as const
 
 const PAGE_SIZE = 20
 
-export function SkillMarketplace() {
+export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } = {}) {
   const { t } = useTranslation()
   const pushNotification = useNotificationStore((s) => s.push)
 
@@ -21,8 +21,26 @@ export function SkillMarketplace() {
   const [category, setCategory] = useState('')
   const [search, setSearch] = useState('')
   const [installingId, setInstallingId] = useState<number | null>(null)
+  // Track locally installed skills to show "installed" / "update available" badges
+  const [installedMap, setInstalledMap] = useState<Map<string, string>>(new Map())
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load installed skills map (pluginId → version placeholder)
+  const loadInstalledMap = useCallback(async () => {
+    try {
+      const skills: CustomSkillInfo[] = await listCustomSkills()
+      const map = new Map<string, string>()
+      for (const s of skills) {
+        map.set(s.id, 'installed')
+      }
+      setInstalledMap(map)
+    } catch {
+      // Best-effort; marketplace still works without this
+    }
+  }, [])
+
+  useEffect(() => { loadInstalledMap() }, [loadInstalledMap])
 
   const loadSkills = useCallback(async (p: number, cat: string, q: string) => {
     setLoading(true)
@@ -57,11 +75,14 @@ export function SkillMarketplace() {
   const handleInstall = async (item: MarketplaceSkillItem) => {
     setInstallingId(item.id)
     try {
-      await installMarketplaceSkill(item.id, item.pluginId)
+      const msg = await installMarketplaceSkill(item.id, item.pluginId)
+      // Refresh installed map so badge updates immediately
+      await loadInstalledMap()
+      onInstalled?.()
       pushNotification({
         level: 'success',
         title: t('settings.skills.installSuccess', { name: item.name }),
-        message: '',
+        message: msg.includes('restart') ? t('settings.skills.restartHint') : '',
         actions: [],
         dismissible: true,
         autoHide: 5,
@@ -172,7 +193,7 @@ export function SkillMarketplace() {
                   background: 'var(--color-bg-card)',
                 }}
               >
-                {/* Header: icon + name + featured badge */}
+                {/* Header: icon + name + badges */}
                 <div className="flex items-center gap-2">
                   <span style={{ fontSize: '1.3rem' }}>{item.icon || '🔧'}</span>
                   <span
@@ -181,6 +202,14 @@ export function SkillMarketplace() {
                   >
                     {item.name}
                   </span>
+                  {installedMap.has(item.pluginId) && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-xs font-medium"
+                      style={{ background: 'var(--color-semantic-green-bg, rgba(52,199,89,0.15))', color: 'var(--color-semantic-green, #34C759)' }}
+                    >
+                      {t('settings.skills.alreadyInstalled')}
+                    </span>
+                  )}
                   {item.featured && (
                     <span
                       className="rounded-full px-1.5 py-0.5 text-xs font-medium"
@@ -210,14 +239,16 @@ export function SkillMarketplace() {
                     {t('settings.skills.downloads', { count: item.downloads })}
                   </span>
                   <Button
-                    variant="primary"
+                    variant={installedMap.has(item.pluginId) ? 'secondary' : 'primary'}
                     size="sm"
                     disabled={installingId === item.id}
                     onClick={() => handleInstall(item)}
                   >
                     {installingId === item.id
                       ? t('settings.skills.installing')
-                      : t('settings.skills.install')}
+                      : installedMap.has(item.pluginId)
+                        ? t('settings.skills.reinstall')
+                        : t('settings.skills.install')}
                   </Button>
                 </div>
               </div>

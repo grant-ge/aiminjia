@@ -511,6 +511,7 @@ pub mod testsupport {
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+            dingtalk_bridge: None,
         };
 
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()

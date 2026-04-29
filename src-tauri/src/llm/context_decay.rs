@@ -216,6 +216,8 @@ mod tests {
                 name: "execute_python".to_string(),
                 arguments: serde_json::json!({}),
             }],
+            None,
+            None,
         )
     }
 

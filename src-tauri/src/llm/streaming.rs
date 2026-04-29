@@ -40,6 +40,8 @@ pub enum StreamEvent {
     ContentDelta { delta: String },
     /// Thinking/reasoning content (for R1-style models)
     ThinkingDelta { delta: String },
+    /// Complete thinking block with signature (from Anthropic via gateway)
+    ThinkingBlock { block: serde_json::Value },
     /// Model wants to call a tool
     ToolCallStart { tool_call: ToolCall },
     /// Stream completed
@@ -81,6 +83,16 @@ pub struct ChatMessage {
     /// Tool name (only for role="tool").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Thinking/reasoning content from the model (e.g. Claude extended thinking,
+    /// DeepSeek R1 reasoning). Must be passed back to the API on subsequent turns
+    /// for providers that require it (Anthropic thinking mode).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    /// Full thinking blocks with signatures from Anthropic API (passed through
+    /// the gateway as `_thinking_blocks`). These are opaque and must be echoed
+    /// back verbatim so the upstream can validate them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_blocks: Option<Vec<serde_json::Value>>,
 }
 
 impl ChatMessage {
@@ -92,17 +104,26 @@ impl ChatMessage {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            thinking: None,
+            thinking_blocks: None,
         }
     }
 
-    /// Create an assistant message that includes tool calls.
-    pub fn assistant_with_tool_calls(content: String, tool_calls: Vec<ToolCall>) -> Self {
+    /// Create an assistant message that includes tool calls and optional thinking.
+    pub fn assistant_with_tool_calls(
+        content: String,
+        tool_calls: Vec<ToolCall>,
+        thinking: Option<String>,
+        thinking_blocks: Option<Vec<serde_json::Value>>,
+    ) -> Self {
         Self {
             role: "assistant".to_string(),
             content,
             tool_calls: Some(tool_calls),
             tool_call_id: None,
             name: None,
+            thinking,
+            thinking_blocks,
         }
     }
 
@@ -114,6 +135,8 @@ impl ChatMessage {
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
             name: Some(tool_name.to_string()),
+            thinking: None,
+            thinking_blocks: None,
         }
     }
 }

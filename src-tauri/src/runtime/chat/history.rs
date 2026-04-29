@@ -85,6 +85,8 @@ fn stored_to_chat(message: &StoredMessage, config: &HistoryConfig) -> ChatMessag
         tool_calls: normalize_tool_calls(message.tool_calls.as_ref()),
         tool_call_id: message.tool_call_id.clone(),
         name: message.name.clone(),
+        thinking: None,
+        thinking_blocks: None,
     }
 }
 

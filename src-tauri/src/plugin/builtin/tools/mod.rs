@@ -48,6 +48,8 @@ pub mod read_page_content;
 pub mod report_gen;
 pub mod slides_gen;
 pub mod web_search;
+// DingTalk AI Table integration (Phase 13)
+pub mod dingtalk;
 
 use crate::plugin::ToolRegistry;
 use std::sync::Arc;

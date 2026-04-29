@@ -1441,6 +1441,7 @@ export function installMarketplaceSkill(
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // MCP Server Commands
 // ---------------------------------------------------------------------------
 
@@ -1584,4 +1585,34 @@ export function cancelRuntimeOperation(operationId: string): Promise<boolean> {
 
 export function cleanupOldRuntimeVersions(keepVersions: number): Promise<RuntimeCleanupResult> {
   return invoke<RuntimeCleanupResult>('runtime_cleanup_old_versions', { keepVersions })
+}
+
+// ---------------------------------------------------------------------------
+// DingTalk Commands
+// ---------------------------------------------------------------------------
+
+export interface DingtalkStatusInfo {
+  connected: boolean
+  userName: string | null
+  corpName: string | null
+}
+
+/** Start DingTalk OAuth login (opens system browser). */
+export function dingtalkLogin(): Promise<DingtalkStatusInfo> {
+  return invoke<DingtalkStatusInfo>('dingtalk_login')
+}
+
+/** Disconnect from DingTalk. */
+export function dingtalkLogout(): Promise<void> {
+  return invoke<void>('dingtalk_logout')
+}
+
+/** Get current DingTalk connection status (no network call). */
+export function dingtalkStatus(): Promise<DingtalkStatusInfo> {
+  return invoke<DingtalkStatusInfo>('dingtalk_status')
+}
+
+/** Refresh DingTalk auth status from dws (network call). */
+export function dingtalkRefreshStatus(): Promise<DingtalkStatusInfo> {
+  return invoke<DingtalkStatusInfo>('dingtalk_refresh_status')
 }

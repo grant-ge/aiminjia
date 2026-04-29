@@ -274,6 +274,12 @@ pub trait Skill: Send + Sync + 'static {
         None // default: no restriction
     }
 
+    /// Returns tool names explicitly blocked for the current step (hard block).
+    /// Tools in this list are rejected at runtime with an error message.
+    fn excluded_tool_names(&self, _state: &SkillState) -> Option<Vec<String>> {
+        None // default: no tools blocked
+    }
+
     /// Called when the Skill is deactivated.
     fn on_deactivate(&self, _state: &SkillState) {}
 
@@ -288,6 +294,19 @@ pub trait Skill: Send + Sync + 'static {
     /// When the user provides non-confirmation feedback during a precompute step,
     /// the engine switches to this tool set and iteration limit.
     fn feedback_config(&self, _state: &SkillState) -> Option<FeedbackConfig> {
+        None
+    }
+
+    /// Whether this skill uses SKILL.md format (no workflow.toml).
+    /// SKILL.md skills run in guided daily mode with enhanced system prompt.
+    fn has_skill_md(&self) -> bool {
+        false
+    }
+
+    /// Tool names that require user confirmation text before execution.
+    /// The agent loop will block these tools unless the preceding assistant
+    /// message contains an operation description for the user to review.
+    fn confirm_before_tools(&self) -> Option<Vec<String>> {
         None
     }
 }

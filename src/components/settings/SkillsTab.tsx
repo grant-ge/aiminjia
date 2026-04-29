@@ -114,7 +114,30 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
       }
       // 'cancelled' — silent
     } catch (e) {
-      await message(String(e), { title: 'AI小家', kind: 'error' })
+      const errStr = String(e)
+      if (errStr.startsWith('conflict:')) {
+        const skillId = errStr.slice(9)
+        const overwrite = await ask(
+          t('settings.skills.conflictMessage', { name: skillId }),
+          { title: 'AI小家', kind: 'warning' }
+        )
+        if (overwrite) {
+          try {
+            await uninstallCustomSkill(skillId)
+            const { open: reOpen } = await import('@tauri-apps/plugin-dialog')
+            const reSelected = await reOpen({ directory: true, title: t('settings.skills.selectFolder') })
+            if (reSelected) {
+              const msg = await installCustomSkill(reSelected)
+              await loadSkills()
+              await message(msg, { title: 'AI小家' })
+            }
+          } catch (e2) {
+            await message(String(e2), { title: 'AI小家', kind: 'error' })
+          }
+        }
+      } else {
+        await message(errStr, { title: 'AI小家', kind: 'error' })
+      }
     }
   }
 
@@ -319,7 +342,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
           )}
         </div>
       ) : (
-        <SkillMarketplace />
+        <SkillMarketplace onInstalled={loadSkills} />
       )}
     </div>
   )

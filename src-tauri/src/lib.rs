@@ -244,11 +244,19 @@ pub fn run() {
             );
 
             // Set window title from persisted branding (before WebView renders)
+            // Window setup: custom titlebar on all platforms
             {
-                // Title bar is rendered by HTML TitleBar component (titleBarStyle: Overlay)
-                // Set native window title to empty to avoid duplicate text
                 if let Some(win) = app.get_webview_window("main") {
+                    // Title bar is rendered by HTML TitleBar component
                     let _ = win.set_title(" ");
+
+                    // Windows: disable native decorations to avoid double titlebar.
+                    // macOS uses titleBarStyle: Overlay (set in tauri.conf.json) which
+                    // keeps the traffic light buttons overlaid on content.
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = win.set_decorations(false);
+                    }
                 }
             }
 
@@ -264,6 +272,25 @@ pub fn run() {
                     .set_playwright_browser(playwright_browser.clone())
                     .await;
             });
+
+            // Initialize DingTalk bridge (dws CLI sidecar)
+            let dingtalk_bridge = Arc::new(
+                connector::dingtalk::DingtalkBridge::new(app.handle().clone())
+            );
+            // Restore DingTalk auth status from dws persisted token (non-blocking)
+            {
+                let dt = dingtalk_bridge.clone();
+                tauri::async_runtime::spawn(async move {
+                    match dt.refresh_status().await {
+                        Ok(info) if info.connected => {
+                            log::info!("DingTalk: restored session — {} @ {}",
+                                info.user_name.as_deref().unwrap_or("?"),
+                                info.corp_name.as_deref().unwrap_or("?"));
+                        }
+                        _ => log::info!("DingTalk: no active session"),
+                    }
+                });
+            }
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
@@ -482,6 +509,7 @@ pub fn run() {
             app.manage(current_user_storage.clone());
             app.manage(auth_manager);
             app.manage(connector_engine);
+            app.manage(dingtalk_bridge);
             app.manage(tool_registry);
             app.manage(mcp_server_manager);
             app.manage(mcp_config_store);
@@ -586,6 +614,11 @@ pub fn run() {
             commands::schedules::list_schedules,
             commands::schedules::create_schedule,
             commands::schedules::delete_schedule,
+            // DingTalk commands
+            commands::dingtalk::dingtalk_login,
+            commands::dingtalk::dingtalk_logout,
+            commands::dingtalk::dingtalk_status,
+            commands::dingtalk::dingtalk_refresh_status,
             // Auth commands
             commands::auth::cloud_login,
             commands::auth::cloud_logout,

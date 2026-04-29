@@ -46,6 +46,12 @@ struct SseState {
     tool_json_fragments: String,
     /// Input token count (reported in `message_start`).
     input_tokens: u32,
+    /// Whether the currently open content block is a thinking block.
+    in_thinking_block: bool,
+    /// Accumulated thinking text for the current thinking block.
+    thinking_text: String,
+    /// Accumulated signature for the current thinking block.
+    thinking_signature: String,
 }
 
 impl SseState {
@@ -56,6 +62,9 @@ impl SseState {
             current_tool_name: None,
             tool_json_fragments: String::new(),
             input_tokens: 0,
+            in_thinking_block: false,
+            thinking_text: String::new(),
+            thinking_signature: String::new(),
         }
     }
 }
@@ -94,25 +103,51 @@ impl ClaudeProvider {
     }
 
     /// Build the JSON request body for Anthropic Messages API.
+    ///
+    /// Assistant messages with thinking or tool_calls are serialized as
+    /// structured content block arrays, as required by the Anthropic API.
+    /// Tool result messages use `tool_result` content blocks.
     fn build_request_body(&self, request: &LlmRequest) -> Value {
         let messages: Vec<Value> = request
             .messages
             .iter()
             .filter_map(|msg| {
-                match msg.role.as_str() {
-                    // assistant turn with tool_calls → content blocks
-                    "assistant" if msg.tool_calls.is_some() => {
+                // System messages handled via top-level "system" field
+                if msg.role == "system" {
+                    return None;
+                }
+
+                // Assistant messages may need structured content blocks
+                if msg.role == "assistant" {
+                    let needs_blocks = msg.thinking.is_some()
+                        || msg.thinking_blocks.is_some()
+                        || msg.tool_calls.as_ref().map_or(false, |tc| !tc.is_empty());
+
+                    if needs_blocks {
                         let mut blocks: Vec<Value> = Vec::new();
-                        // Optional text block
+
+                        // Thinking blocks must come first.
+                        // Prefer full blocks (with signatures) over plain text.
+                        if let Some(ref tb) = msg.thinking_blocks {
+                            blocks.extend(tb.iter().cloned());
+                        } else if let Some(ref thinking) = msg.thinking {
+                            blocks.push(json!({
+                                "type": "thinking",
+                                "thinking": thinking,
+                            }));
+                        }
+
+                        // Text block
                         if !msg.content.is_empty() {
                             blocks.push(json!({
                                 "type": "text",
                                 "text": msg.content,
                             }));
                         }
-                        // tool_use blocks
-                        if let Some(ref tcs) = msg.tool_calls {
-                            for tc in tcs {
+
+                        // Tool use blocks
+                        if let Some(ref tool_calls) = msg.tool_calls {
+                            for tc in tool_calls {
                                 blocks.push(json!({
                                     "type": "tool_use",
                                     "id": tc.id,
@@ -121,32 +156,33 @@ impl ClaudeProvider {
                                 }));
                             }
                         }
-                        Some(json!({
+
+                        return Some(json!({
                             "role": "assistant",
                             "content": blocks,
-                        }))
+                        }));
                     }
-                    // tool result → user turn with tool_result block
-                    "tool" => {
-                        let tool_call_id = msg.tool_call_id.as_deref().unwrap_or_default();
-                        Some(json!({
+                }
+
+                // Tool result messages use content blocks
+                if msg.role == "tool" {
+                    if let Some(ref tc_id) = msg.tool_call_id {
+                        return Some(json!({
                             "role": "user",
                             "content": [{
                                 "type": "tool_result",
-                                "tool_use_id": tool_call_id,
+                                "tool_use_id": tc_id,
                                 "content": msg.content,
                             }],
-                        }))
+                        }));
                     }
-                    // system messages are handled via top-level "system" field;
-                    // skip them here (Anthropic Messages API separates system)
-                    "system" => None,
-                    // plain user / assistant text
-                    _ => Some(json!({
-                        "role": msg.role,
-                        "content": msg.content,
-                    })),
                 }
+
+                // Default: plain text message
+                Some(json!({
+                    "role": msg.role,
+                    "content": msg.content,
+                }))
             })
             .collect();
 
@@ -495,18 +531,26 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
             None
         }
 
-        // content_block_start: may begin a tool_use block
+        // content_block_start: may begin a tool_use or thinking block
         "content_block_start" => {
             let block = &parsed["content_block"];
-            if block["type"].as_str() == Some("tool_use") {
-                state.current_tool_id = block["id"].as_str().map(String::from);
-                state.current_tool_name = block["name"].as_str().map(String::from);
-                state.tool_json_fragments.clear();
+            match block["type"].as_str() {
+                Some("tool_use") => {
+                    state.current_tool_id = block["id"].as_str().map(String::from);
+                    state.current_tool_name = block["name"].as_str().map(String::from);
+                    state.tool_json_fragments.clear();
+                }
+                Some("thinking") => {
+                    state.in_thinking_block = true;
+                    state.thinking_text.clear();
+                    state.thinking_signature.clear();
+                }
+                _ => {}
             }
             None
         }
 
-        // content_block_delta: text, thinking, or tool input fragments
+        // content_block_delta: text, thinking, signature, or tool input fragments
         "content_block_delta" => {
             let delta = &parsed["delta"];
             match delta["type"].as_str() {
@@ -516,10 +560,17 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                     }]
                 }),
                 Some("thinking_delta") => delta["thinking"].as_str().map(|text| {
+                    state.thinking_text.push_str(text);
                     vec![StreamEvent::ThinkingDelta {
                         delta: text.to_string(),
                     }]
                 }),
+                Some("signature_delta") => {
+                    if let Some(sig) = delta["signature"].as_str() {
+                        state.thinking_signature.push_str(sig);
+                    }
+                    None
+                }
                 Some("input_json_delta") => {
                     if let Some(partial) = delta["partial_json"].as_str() {
                         state.tool_json_fragments.push_str(partial);
@@ -530,8 +581,26 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
             }
         }
 
-        // content_block_stop: finalize any pending tool call
+        // content_block_stop: finalize any pending tool call or thinking block
         "content_block_stop" => {
+            if state.in_thinking_block {
+                let mut block = serde_json::Map::new();
+                block.insert("type".to_string(), Value::String("thinking".to_string()));
+                block.insert(
+                    "thinking".to_string(),
+                    Value::String(std::mem::take(&mut state.thinking_text)),
+                );
+                if !state.thinking_signature.is_empty() {
+                    block.insert(
+                        "signature".to_string(),
+                        Value::String(std::mem::take(&mut state.thinking_signature)),
+                    );
+                }
+                state.in_thinking_block = false;
+                return Some(vec![StreamEvent::ThinkingBlock {
+                    block: Value::Object(block),
+                }]);
+            }
             let events = finalize_tool_call(state);
             if events.is_empty() {
                 None

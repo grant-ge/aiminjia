@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod chat;
+pub mod dingtalk;
 pub mod file;
 pub mod plugin;
 

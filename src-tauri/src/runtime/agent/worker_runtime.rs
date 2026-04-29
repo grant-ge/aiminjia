@@ -332,6 +332,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             arguments: tool_call.arguments.clone(),
                         })
                         .collect(),
+                    None,
+                    None,
                 ));
 
             let runtime_tool_calls: Vec<RuntimeToolCallRequest> = tool_calls
