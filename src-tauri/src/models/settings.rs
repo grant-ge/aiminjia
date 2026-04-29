@@ -87,7 +87,7 @@ impl Default for AppSettings {
             auto_model_routing: true,
             workspace_path: default_workspace,
             analysis_threshold: 1.65,
-            data_masking_level: "strict".to_string(),
+            data_masking_level: "relaxed".to_string(),
             auto_cleanup_enabled: true,
             temp_file_retention_days: 7,
             keep_old_versions: 1,
