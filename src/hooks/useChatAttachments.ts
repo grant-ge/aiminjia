@@ -67,6 +67,22 @@ export function makePendingAttachment(filePath: string, fileType?: FileAttachmen
   }
 }
 
+/**
+ * Reject pathological paths from clipboard paste:
+ * - "/" (e.g. macOS "Macintosh HD" alias resolves to root → would attach the
+ *   whole disk and freeze the app)
+ * - "/Volumes" (volumes root)
+ * - empty / single-segment system roots like "/System", "/private", "/var"
+ */
+function isAcceptablePastedPath(path: string): boolean {
+  if (!path || !path.startsWith('/')) return false
+  const normalized = path.replace(/\/+$/, '')
+  if (normalized === '') return false
+  const FORBIDDEN = new Set(['', '/Volumes', '/System', '/private', '/var', '/etc', '/dev', '/cores', '/usr', '/bin', '/sbin', '/Library'])
+  if (FORBIDDEN.has(normalized)) return false
+  return true
+}
+
 export function useChatAttachments() {
   const [isPickingAttachments, setIsPickingAttachments] = useState(false)
 
@@ -111,19 +127,21 @@ export function useChatAttachments() {
   }, [])
 
   const resolvePastedPaths = useCallback(async (paths: string[]): Promise<PendingAttachment[]> => {
-    return paths.map((path) => {
-      const hasExtension = /\.[A-Za-z0-9]+$/.test(path.split('/').pop() ?? '')
-      const isDirectory = !hasExtension
-      const fileType: FileAttachment['fileType'] = isDirectory ? 'folder' : detectAttachmentFileType(path)
-      const attachment = makePendingAttachment(path, fileType)
-      return {
-        ...attachment,
-        kind: isDirectory ? 'folder' : fileType === 'image' ? 'image' : 'file',
-        fileType,
-        fileSize: 0,
-        source: 'paste' as const,
-      }
-    })
+    return paths
+      .filter((path) => isAcceptablePastedPath(path))
+      .map((path) => {
+        const hasExtension = /\.[A-Za-z0-9]+$/.test(path.split('/').pop() ?? '')
+        const isDirectory = !hasExtension
+        const fileType: FileAttachment['fileType'] = isDirectory ? 'folder' : detectAttachmentFileType(path)
+        const attachment = makePendingAttachment(path, fileType)
+        return {
+          ...attachment,
+          kind: isDirectory ? 'folder' : fileType === 'image' ? 'image' : 'file',
+          fileType,
+          fileSize: 0,
+          source: 'paste' as const,
+        }
+      })
   }, [])
 
   return {

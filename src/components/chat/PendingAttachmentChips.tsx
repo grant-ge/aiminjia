@@ -30,7 +30,7 @@ export function PendingAttachmentChips({
   onRemove: (id: string) => void
 }) {
   return (
-    <div className="relative -top-2 flex flex-wrap gap-1.5">
+    <div className="relative -top-2 max-h-[80px] overflow-y-auto flex flex-wrap gap-1.5">
       {pendingFiles.map((file) => (
         <div
           key={file.id}
