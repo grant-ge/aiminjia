@@ -170,6 +170,7 @@ async fn review_user_message_persisted_includes_client_message_id() {
             role: "user".to_string(),
             content: serde_json::json!({ "text": "hello" }),
             client_message_id: Some("client-uuid-123".to_string()),
+            tool_calls: None,
         },
     ))
     .await

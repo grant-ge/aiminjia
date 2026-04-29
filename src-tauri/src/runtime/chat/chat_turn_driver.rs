@@ -193,13 +193,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 
     /// 持久化单次 iteration 的 assistant[toolCalls] 消息（无文字内容，无生成文件）。
     /// 在工具执行前调用，使存储顺序正确反映 assistant → tools 穿插结构。
-    /// 默认 no-op；生产 executor 必须 override。
+    /// 返回新建消息的 id（无 tool_calls 时返回 None）。默认 no-op。
     async fn persist_iteration_assistant_message(
         &self,
         _conversation_id: &str,
         _tool_calls: &[serde_json::Value],
-    ) -> Result<(), TurnError> {
-        Ok(())
+    ) -> Result<Option<String>, TurnError> {
+        Ok(None)
     }
 
     /// Step 后处理。默认 no-op。
@@ -1168,6 +1168,7 @@ impl RuntimeChatTurnDriver {
                     role: "user".to_string(),
                     content: pending_user_content,
                     client_message_id: pending_client_msg_id.clone(),
+                    tool_calls: None,
                 },
             ))
             .await?;
@@ -1517,14 +1518,41 @@ impl RuntimeChatTurnDriver {
                     // 先持久化本次 iteration 的 assistant[toolCalls]，再持久化 tool results，
                     // 保证存储顺序与执行顺序一致（assistant → tools 穿插）。
                     if !normalized_tool_calls.is_empty() {
-                        if let Err(e) = executor
+                        match executor
                             .persist_iteration_assistant_message(
                                 config.conversation_id.as_str(),
                                 &normalized_tool_calls,
                             )
                             .await
                         {
-                            log::warn!("[chat_turn_driver] Failed to persist iteration assistant message: {}", e);
+                            Ok(Some(iter_msg_id)) => {
+                                // 推送给前端，让流式 UI 立即拿到 toolCalls.arguments
+                                // 而不必等到刷新会话。
+                                if let Err(emit_err) = self
+                                    .event_bus
+                                    .emit(RuntimeEvent::new(
+                                        session_id.clone(),
+                                        run_id.clone(),
+                                        RuntimeEventKind::MessagePersisted {
+                                            message_id: iter_msg_id,
+                                            role: "assistant".to_string(),
+                                            content: serde_json::json!({ "text": "" }),
+                                            client_message_id: None,
+                                            tool_calls: Some(normalized_tool_calls.clone()),
+                                        },
+                                    ))
+                                    .await
+                                {
+                                    log::warn!(
+                                        "[chat_turn_driver] Failed to emit MessagePersisted for iteration assistant: {}",
+                                        emit_err
+                                    );
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                log::warn!("[chat_turn_driver] Failed to persist iteration assistant message: {}", e);
+                            }
                         }
                     }
                     // 持久化本轮 tool 消息（忽略错误，不阻断流程）

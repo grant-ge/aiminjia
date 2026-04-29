@@ -81,6 +81,11 @@ pub enum RuntimeEventKind {
         role: String,
         content: serde_json::Value,
         client_message_id: Option<String>,
+        /// Optional `toolCalls` array carried on assistant messages that issued
+        /// tool calls.  When present the transport layer forwards it to the
+        /// frontend so streaming UI can render tool-call inputs without waiting
+        /// for the conversation history to be reloaded.
+        tool_calls: Option<Vec<serde_json::Value>>,
     },
     TurnCompleted {
         outcome: ChatTurnOutcome,
@@ -151,6 +156,7 @@ impl RuntimeEvent {
                 role: role.into(),
                 content,
                 client_message_id: None,
+                tool_calls: None,
             },
         )
     }

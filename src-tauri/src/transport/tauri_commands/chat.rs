@@ -906,9 +906,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         conversation_id: &str,
         tool_calls: &[serde_json::Value],
-    ) -> Result<(), TurnError> {
+    ) -> Result<Option<String>, TurnError> {
         if tool_calls.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let msg_id = uuid::Uuid::new_v4().to_string();
         log::info!(
@@ -917,7 +917,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             conversation_id
         );
         let stored = crate::storage::file_store::types::StoredMessage {
-            id: msg_id,
+            id: msg_id.clone(),
             conversation_id: conversation_id.to_string(),
             role: "assistant".to_string(),
             content: serde_json::json!({ "text": "" }),
@@ -935,7 +935,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .db
             .insert_chat_message_record(&stored)
             .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
-        Ok(())
+        Ok(Some(msg_id))
     }
 
     async fn persist_tool_messages(
