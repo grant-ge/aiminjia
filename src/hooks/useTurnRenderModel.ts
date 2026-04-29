@@ -233,7 +233,8 @@ export function buildTurnsFromMessages(
       if (m.toolCalls?.length) {
         const group = ensureToolGroup(current)
         for (const tc of m.toolCalls) {
-          if (!group.steps.some((s) => s.toolCallId === tc.id)) {
+          const existing = group.steps.find((s) => s.toolCallId === tc.id)
+          if (!existing) {
             group.steps.push({
               index: group.steps.length + 1,
               toolCallId: tc.id,
@@ -241,6 +242,8 @@ export function buildTurnsFromMessages(
               status: 'running',
               inputJson: stringifyInput(tc.arguments),
             })
+          } else if (!existing.inputJson) {
+            existing.inputJson = stringifyInput(tc.arguments)
           }
         }
       }

@@ -74,6 +74,19 @@ describe('buildTurnsFromMessages', () => {
     expect(step?.output).toContain('1')
   })
 
+  it('backfills inputJson when tool result arrives before assistant.toolCalls snapshot', () => {
+    const msgs = [
+      userMsg('u1', 'go'),
+      toolResultMsg('t1', { toolCallId: 'tc-1', name: 'run_python', content: '1\n', isError: false }),
+      assistantMsgWithToolCalls('a1', [
+        { id: 'tc-1', name: 'run_python', arguments: { code: 'print(1)' } },
+      ]),
+    ]
+    const step = buildTurnsFromMessages(msgs, [])[0].toolGroup?.steps[0]
+    expect(step?.inputJson).toContain('print(1)')
+    expect(step?.output).toContain('1')
+  })
+
   it('does not confuse same-name tools called twice', () => {
     const msgs = [
       userMsg('u1', 'go'),
