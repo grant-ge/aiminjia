@@ -139,6 +139,11 @@ impl SessionRuntime {
     }
 
     pub async fn run_chat_request(&self, request: ChatTurnRequest) -> std::result::Result<(), String> {
+        log::info!(
+            "[session_runtime] run_chat_request enter conv={} run={}",
+            request.conversation_id.as_str(),
+            request.run_id.as_str()
+        );
         let mapping = IdentityMapping::from_legacy_conversation_id(request.conversation_id.clone());
         // `ChatTurnRequest::new` creates the authoritative RunId for the turn.
         // Transport code may reserve per-run resources before entering runtime,
@@ -162,11 +167,25 @@ impl SessionRuntime {
         // Build a driver for this session and drive the full turn lifecycle.
         // The driver remains the only chat-turn entry and may invoke the legacy
         // executor helper internally on production paths.
+        log::info!(
+            "[session_runtime] build_driver_for_turn conv={}",
+            turn.session_id().as_str()
+        );
         let driver = self.build_driver_for_turn(&turn);
-        driver
+        log::info!(
+            "[session_runtime] run_chat_turn starting conv={}",
+            turn.session_id().as_str()
+        );
+        let result = driver
             .run_chat_turn(&mut turn, &request)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string());
+        log::info!(
+            "[session_runtime] run_chat_turn finished conv={} ok={}",
+            turn.session_id().as_str(),
+            result.is_ok()
+        );
+        result
     }
 
     pub async fn run_for_test(
@@ -266,6 +285,10 @@ impl SessionRuntime {
     }
 
     fn query_engine_for_session(&self, session_id: &SessionId) -> QueryEngine {
+        log::info!(
+            "[session_runtime] query_engine_for_session enter session={}",
+            session_id.as_str()
+        );
         let authorized_workspace = self
             .authorized_workspace_store
             .as_ref()
@@ -285,6 +308,11 @@ impl SessionRuntime {
                             .map(|h| h.join(".renlijia").join("defaultFolder"))
                             .expect("Cannot determine home directory")
                     });
+                log::info!(
+                    "[session_runtime] query_engine_for_session defaultFolder path={} exists={}",
+                    default_path.display(),
+                    default_path.exists()
+                );
                 if let Err(err) = std::fs::create_dir_all(&default_path) {
                     log::warn!(
                         "[session_runtime] failed to create defaultFolder for session {}: {}",
@@ -299,6 +327,10 @@ impl SessionRuntime {
                     display_name: "默认项目".to_string(),
                 })
             });
+        log::info!(
+            "[session_runtime] query_engine_for_session authorized_workspace={}",
+            authorized_workspace.as_ref().map(|aw| aw.root_path.to_string_lossy().into_owned()).unwrap_or_else(|| "(none)".to_string())
+        );
         let mut engines = self
             .session_query_engines
             .lock()

@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.5"
+version = "0.5.6"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -101,4 +101,4 @@ strip = true
 opt-level = "s"
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "unwind" # TEMP v0.5.6: switched to unwind so panic hook can flush logs before abort

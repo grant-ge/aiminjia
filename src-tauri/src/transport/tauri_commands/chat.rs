@@ -1997,11 +1997,20 @@ impl TauriChatCommandAdapter {
             request.permission_mode = permission_mode;
         }
         let run_id = request.run_id.clone();
+        log::info!(
+            "[send_message] calling set_busy_for_run conv={} run={}",
+            conversation_id,
+            run_id.as_str()
+        );
         self.services
             .gateway
             .set_busy_for_run(&conversation_id, run_id.clone())?;
 
         let session_id = request.conversation_id.clone();
+        log::info!(
+            "[send_message] resolving connector_engine and agent_runtime states conv={}",
+            conversation_id
+        );
         let connector_engine = self
             .services
             .app
@@ -2012,8 +2021,17 @@ impl TauriChatCommandAdapter {
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
+        log::info!(
+            "[send_message] connector_engine={} agent_runtime={}",
+            connector_engine.is_some(),
+            agent_runtime.is_some()
+        );
         // 读 tavily/bocha key 和 use_cloud 给 web_search 工具用。之前这里写死成
         // None/false，导致 web_search 只能走 Bing 抓取，反爬挂掉就整个工具失败。
+        log::info!(
+            "[send_message] loading settings for api-keys conv={}",
+            conversation_id
+        );
         let (tavily_api_key, bocha_api_key, use_cloud) = {
             let map = self.services.db.get_all_settings().unwrap_or_default();
             let mut s = if map.is_empty() {
@@ -2037,10 +2055,24 @@ impl TauriChatCommandAdapter {
             };
             (tavily, bocha, s.use_cloud)
         };
+        log::info!(
+            "[send_message] settings loaded use_cloud={} tavily={} bocha={} conv={}",
+            use_cloud,
+            tavily_api_key.is_some(),
+            bocha_api_key.is_some(),
+            conversation_id
+        );
+        let workspace_path = self.services.file_mgr.workspace_path();
+        log::info!(
+            "[send_message] workspace_path={} exists={} conv={}",
+            workspace_path.display(),
+            workspace_path.exists(),
+            conversation_id
+        );
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db.clone(),
             file_manager: self.services.file_mgr.clone(),
-            workspace_path: self.services.file_mgr.workspace_path().to_path_buf(),
+            workspace_path: workspace_path.clone(),
             conversation_id: session_id.as_str().to_string(),
             session_id: session_id.clone(),
             run_id: Some(run_id.clone()),
@@ -2065,21 +2097,38 @@ impl TauriChatCommandAdapter {
             permission_mode: request.permission_mode,
             runtime_resolver: self.services.runtime_resolver.clone(),
         };
+        log::info!(
+            "[send_message] building runtime_dispatcher conv={}",
+            conversation_id
+        );
         let runtime_dispatcher = self
             .services
             .tool_registry
             .to_runtime_dispatcher(request_scoped_runtime_deps)
             .await;
+        log::info!(
+            "[send_message] runtime_dispatcher built conv={}",
+            conversation_id
+        );
         let browser_available = self
             .services
             .app
             .try_state::<Arc<crate::connector::ConnectorEngine>>()
             .is_some();
+        log::info!(
+            "[send_message] browser_available={} conv={}",
+            browser_available,
+            conversation_id
+        );
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
                 .with_runtime_resolver(self.services.runtime_resolver.clone())
                 .with_browser_available(browser_available),
+        );
+        log::info!(
+            "[send_message] calling runtime.run_chat_request conv={}",
+            conversation_id
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
         let result = runtime.run_chat_request(request).await;

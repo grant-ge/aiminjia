@@ -125,6 +125,28 @@ pub fn run() {
                     .build(),
             )?;
 
+            // Install global panic hook — captures panic message + backtrace into the log
+            // file BEFORE the default abort handler runs (panic = "abort" in release).
+            // Must be installed after the logger plugin is registered so log::error! writes
+            // to the file.
+            std::panic::set_hook(Box::new(|info| {
+                let location = info
+                    .location()
+                    .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                    .unwrap_or_else(|| "unknown".to_string());
+                let msg = info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "<non-string panic>".to_string());
+                let bt = std::backtrace::Backtrace::force_capture();
+                log::error!("[PANIC] at {}: {}\nBacktrace:\n{}", location, msg, bt);
+                eprintln!("[PANIC] at {}: {}\nBacktrace:\n{}", location, msg, bt);
+                // Brief sleep so async log writers can flush before the abort signal fires.
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }));
+
             // Auto-cleanup old log files (> 7 days)
             cleanup_old_logs(&logs_dir, 7);
 
