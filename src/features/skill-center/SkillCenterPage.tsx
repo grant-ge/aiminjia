@@ -178,24 +178,24 @@ export function SkillCenterPage() {
   return (
     <PageSectionShell
       topBar={
-        <header data-tauri-drag-region className="flex h-14 items-center justify-between border-b border-border px-6">
+        <header data-tauri-drag-region className="flex h-[45px] items-center justify-between border-b border-border px-6">
           <div className="flex items-center gap-3">
-            <span className="text-lg font-bold text-foreground">技能中心</span>
-            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {skills.length} 个技能
+            <span className="text-base font-semibold text-foreground">技能中心</span>
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+              已安装 {skills.length} 个技能
             </span>
           </div>
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-[34px] w-[220px] items-center gap-2 rounded-full bg-secondary px-3">
-              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-[180px] items-center gap-1.5 rounded-full bg-secondary px-2.5">
+              <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="flex-1 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
                 placeholder="搜索技能名称或场景"
               />
             </div>
-            <Button onClick={() => setUploadOpen(true)}>
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
               + 导入技能
             </Button>
           </div>

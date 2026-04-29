@@ -30,6 +30,7 @@ export function HomePage() {
 
   return (
     <PageSectionShell
+      topBar={<div data-tauri-drag-region className="h-8 shrink-0" />}
       padding="px-10 pt-8 pb-7"
       gap="gap-4"
       className="min-h-full justify-center"
