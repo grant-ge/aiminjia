@@ -207,24 +207,60 @@ pub async fn rename_conversation(
 
 pub fn sanitize_title(raw: &str) -> String {
     let line = raw.lines().next().unwrap_or("").trim();
-    let trimmed = line.trim_matches(|c: char| {
-        matches!(
-            c,
-            '"' | '\''
-                | '\u{201C}'
-                | '\u{201D}'
-                | '\u{2018}'
-                | '\u{2019}'
-                | '「'
-                | '」'
-                | '『'
-                | '』'
-                | '#'
-                | '*'
-                | ' '
-        )
-    });
-    let candidate: String = trimmed.trim().chars().take(30).collect();
+
+    // Strip markdown link syntax: [text](url) -> text
+    let mut stripped = String::with_capacity(line.len());
+    let bytes: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == '[' {
+            if let Some(close) = bytes[i + 1..].iter().position(|&c| c == ']') {
+                let text_end = i + 1 + close;
+                if text_end + 1 < bytes.len() && bytes[text_end + 1] == '(' {
+                    if let Some(paren_close) =
+                        bytes[text_end + 2..].iter().position(|&c| c == ')')
+                    {
+                        stripped.extend(&bytes[i + 1..text_end]);
+                        i = text_end + 2 + paren_close + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        stripped.push(bytes[i]);
+        i += 1;
+    }
+
+    // Drop characters used for markdown decoration anywhere in the line
+    // (#, *, _, `, ~) plus surrounding quotes / brackets.
+    let cleaned: String = stripped
+        .chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                '"' | '\''
+                    | '\u{201C}'
+                    | '\u{201D}'
+                    | '\u{2018}'
+                    | '\u{2019}'
+                    | '「'
+                    | '」'
+                    | '『'
+                    | '』'
+                    | '#'
+                    | '*'
+                    | '_'
+                    | '`'
+                    | '~'
+                    | '['
+                    | ']'
+                    | '<'
+                    | '>'
+            )
+        })
+        .collect();
+
+    let candidate: String = cleaned.trim().chars().take(10).collect();
 
     if looks_like_refusal(&candidate) {
         return String::new();
@@ -354,8 +390,9 @@ async fn generate_and_set_title_inner(
     }
 
     let system_prompt =
-        "你是一个对话标题生成器。根据下面的对话内容，用 6 到 12 个中文字生成一个简洁的标题，\
-         直接输出标题文字，不加引号、不加标点、不加解释。";
+        "你是一个对话标题生成器。根据下面的对话内容，用不超过 10 个中文字生成一个简洁标题，\
+         只输出纯文本标题本身，禁止使用任何 Markdown 语法（不要 #、*、_、`、链接、引号或括号），\
+         不加标点、不加解释。";
 
     let response = gateway
         .send_message(
@@ -515,7 +552,8 @@ mod title_tests {
     fn sanitize_title_truncates_long_output() {
         let long = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十X";
         let result = sanitize_title(long);
-        assert!(result.chars().count() <= 30);
+        assert!(result.chars().count() <= 10);
+        assert_eq!(result, "一二三四五六七八九十");
     }
 
     #[test]
@@ -531,8 +569,15 @@ mod title_tests {
 
     #[test]
     fn sanitize_title_strips_markdown_decoration() {
-        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新特性详解");
+        // # heading marker stripped, then truncated to 10 chars
+        assert_eq!(sanitize_title("# React 19 新特性详解"), "React 19 新");
         assert_eq!(sanitize_title("**重要标题**"), "重要标题");
+        // bold/italic mid-string and inline code
+        assert_eq!(sanitize_title("讨论 **React** 的 `useEffect`"), "讨论 React 的");
+        // markdown link [text](url) keeps only the text
+        assert_eq!(sanitize_title("[React 文档](https://react.dev)"), "React 文档");
+        // underscore italic + tilde strikethrough
+        assert_eq!(sanitize_title("_emphasis_ ~strike~"), "emphasis s");
     }
 
     #[test]
