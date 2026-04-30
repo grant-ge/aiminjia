@@ -336,13 +336,14 @@ pub fn run() {
                 ),
             ));
             app.manage(disk_skill_registry.clone());
-            plugin::skill::global_sync::spawn_global_skill_sync(
+            // Builtin skill sync moved to AuthGate post-login (see sync_builtin_skills command).
+            // Persist the sync config so the IPC command can rebuild it.
+            let global_skill_sync_config =
                 plugin::skill::global_sync::GlobalSkillSyncConfig::for_home(
                     aijia_home.root(),
                     skill_roots.clone(),
-                ),
-                disk_skill_registry.clone(),
-            );
+                );
+            app.manage(global_skill_sync_config);
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
                 Some(
