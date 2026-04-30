@@ -1622,3 +1622,12 @@ export function dingtalkStatus(): Promise<DingtalkStatusInfo> {
 export function dingtalkRefreshStatus(): Promise<DingtalkStatusInfo> {
   return invoke<DingtalkStatusInfo>('dingtalk_refresh_status')
 }
+
+export interface SyncBuiltinSkillsResult {
+  installed: string[]
+  skipped: string[]
+}
+
+export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
+  return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills')
+}
