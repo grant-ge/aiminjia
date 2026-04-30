@@ -117,12 +117,26 @@ impl<'a> SubagentWorkerRuntime<'a> {
 
     async fn build_turn_request(&self, config: &SubAgentConfig) -> WorkerTurnRequest {
         let all_schemas = self.tool_registry.get_all_schemas().await;
+        let available_names: Vec<String> = all_schemas.iter().map(|s| s.name.clone()).collect();
+
+        let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+            &config.allowed_tools,
+            &config.disallowed_tools,
+            &available_names,
+            config.background,
+            false,
+        );
+
         let tool_defs: Vec<ToolDefinition> = all_schemas
             .into_iter()
-            .filter(|schema| config.allowed_tools.contains(&schema.name))
+            .filter(|schema| final_allowed.contains(&schema.name))
             .collect();
 
-        info!("[SubAgent] Tool schemas loaded: {}", tool_defs.len());
+        info!(
+            "[SubAgent] Tool schemas after whitelist: {} (was {} available)",
+            tool_defs.len(),
+            final_allowed.len()
+        );
 
         WorkerTurnRequest {
             subagent_conversation_id: String::new(),

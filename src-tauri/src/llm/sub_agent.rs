@@ -125,13 +125,6 @@ pub async fn run_sub_agent(
     config: SubAgentConfig,
     settings: &AppSettings,
 ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-    if config.allowed_tools.contains(&"browse_data".to_string()) {
-        return Err(anyhow::anyhow!(
-            "Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"
-        )
-        .into());
-    }
-
     let runtime = SubagentWorkerRuntime::new(gateway, tool_registry, runtime_deps, settings);
     runtime.run(config).await
 }
