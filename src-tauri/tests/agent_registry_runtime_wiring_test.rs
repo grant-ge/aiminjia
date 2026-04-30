@@ -5,14 +5,12 @@
 use std::fs;
 use tempfile::TempDir;
 
-use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::agent::registry_loader::load_registry_with_user_dir;
 
 #[test]
 fn lib_rs_pattern_loads_builtins_when_no_user_dir() {
     // Mimic lib.rs path: user not logged in → user_agents_dir = None
-    let reg = load_registry_with_user_dir(None, None)
-        .unwrap_or_else(|_| AgentRegistry::with_builtins());
+    let reg = load_registry_with_user_dir(None, None);
     assert!(reg.get("browse_data_agent").is_some());
     assert!(reg.get("daily_assistant_agent").is_some());
 }
@@ -27,18 +25,8 @@ fn lib_rs_pattern_loads_user_dir_when_present() {
     )
     .unwrap();
 
-    let reg = load_registry_with_user_dir(Some(dir.path()), None)
-        .unwrap_or_else(|_| AgentRegistry::with_builtins());
+    let reg = load_registry_with_user_dir(Some(dir.path()), None);
     assert!(reg.get("custom").is_some());
     // builtins still loaded
-    assert!(reg.get("browse_data_agent").is_some());
-}
-
-#[test]
-fn lib_rs_pattern_falls_back_to_builtins_on_loader_error() {
-    // load_registry_with_user_dir returns Result — verify the fallback in lib.rs
-    // works (we can't easily make it actually error, so this test is a structural
-    // sanity check that the fallback path compiles + returns a valid registry)
-    let reg = AgentRegistry::with_builtins();
     assert!(reg.get("browse_data_agent").is_some());
 }

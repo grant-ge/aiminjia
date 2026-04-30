@@ -10,7 +10,6 @@
 
 use std::path::Path;
 
-use anyhow::Result;
 use log::warn;
 
 use crate::runtime::agent::markdown_loader::load_agent_from_markdown;
@@ -24,7 +23,7 @@ use crate::runtime::agent::registry::AgentRegistry;
 pub fn load_registry_with_user_dir(
     user_dir: Option<&Path>,
     project_dir: Option<&Path>,
-) -> Result<AgentRegistry> {
+) -> AgentRegistry {
     let mut reg = AgentRegistry::with_builtins();
     if let Some(dir) = user_dir {
         merge_dir(&mut reg, dir, "user");
@@ -32,7 +31,7 @@ pub fn load_registry_with_user_dir(
     if let Some(dir) = project_dir {
         merge_dir(&mut reg, dir, "project");
     }
-    Ok(reg)
+    reg
 }
 
 fn merge_dir(reg: &mut AgentRegistry, dir: &Path, source_label: &str) {

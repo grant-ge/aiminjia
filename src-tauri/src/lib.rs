@@ -352,13 +352,7 @@ pub fn run() {
                 runtime::agent::registry_loader::load_registry_with_user_dir(
                     user_agents_dir.as_deref(),
                     None,
-                )
-                .unwrap_or_else(|e| {
-                    log::warn!(
-                        "[setup] Failed to load agent registry: {e}; falling back to builtins only"
-                    );
-                    runtime::agent::registry::AgentRegistry::with_builtins()
-                }),
+                ),
             );
             app.manage(agent_registry.clone());
 
