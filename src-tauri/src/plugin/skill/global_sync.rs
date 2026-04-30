@@ -365,6 +365,50 @@ async fn fetch_download_url(
     Ok(body.data.url)
 }
 
+async fn install_one_skill_package(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+    item: &SkillPackageItem,
+    config: &GlobalSkillSyncConfig,
+) -> Result<()> {
+    if !is_valid_skill_id(&item.plugin_id) {
+        bail!("invalid skill id from server: {}", item.plugin_id);
+    }
+
+    // 1. Get a fresh signed download URL from server
+    let download_url = fetch_download_url(client, server_base_url, session_key, item.id).await?;
+
+    // 2. Download zip into downloads/{plugin_id}-{version}.zip
+    let archive = config.downloads_dir.join(format!(
+        "{}-{}.zip",
+        sanitize_filename(&item.plugin_id),
+        sanitize_filename(&item.version)
+    ));
+    download_file(&download_url, &archive).await?;
+
+    // 3. Extract into prepared/{plugin_id}/  (clears any prior content)
+    let prepared = config.prepared_dir.join(&item.plugin_id);
+    extract_global_skills_zip(&archive, &prepared)?;
+
+    // 4. Locate SKILL.md (compatible with both layouts)
+    let source = if prepared.join("SKILL.md").exists() {
+        prepared.clone()
+    } else if prepared.join(&item.plugin_id).join("SKILL.md").exists() {
+        prepared.join(&item.plugin_id)
+    } else {
+        bail!(
+            "skill package '{}' v{} missing SKILL.md after extraction",
+            item.plugin_id,
+            item.version
+        );
+    };
+
+    // 5. Atomically install into global_skills_dir/{plugin_id}/
+    install_one_prepared_skill(&source, &config.global_skills_dir, &item.plugin_id)?;
+    Ok(())
+}
+
 pub async fn sync_global_skills_from_manifest(
     config: GlobalSkillSyncConfig,
 ) -> Result<GlobalSkillInstallReport> {
