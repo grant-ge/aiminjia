@@ -9,6 +9,7 @@ pub mod markdown_loader;
 pub mod message_bridge;
 pub mod python_recovery;
 pub mod registry;
+pub mod registry_loader;
 pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
