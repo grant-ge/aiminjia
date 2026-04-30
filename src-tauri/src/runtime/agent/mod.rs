@@ -13,6 +13,7 @@ pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
 pub mod task_notification;
 pub mod team;
+pub mod tool_whitelist;
 pub mod worker_runtime;
 pub mod worktree;
 
