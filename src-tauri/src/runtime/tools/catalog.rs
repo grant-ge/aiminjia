@@ -872,6 +872,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "grep_content",
     "write_memory",
     "search_memory",
+    "spawn_subagent",
     "load_skill",
     "AskUserQuestion",
     "TaskCreate",
