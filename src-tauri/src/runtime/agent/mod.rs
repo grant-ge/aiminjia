@@ -5,6 +5,7 @@ pub mod child_run;
 pub mod definition;
 pub mod file_agent_invocation_store;
 pub mod invocation;
+pub mod markdown_loader;
 pub mod message_bridge;
 pub mod python_recovery;
 pub mod registry;
