@@ -83,7 +83,6 @@ pub struct GlobalSkillInstallReport {
 
 #[derive(Debug, Clone)]
 pub struct GlobalSkillSyncConfig {
-    pub manifest_url: String,
     pub state_path: PathBuf,
     pub downloads_dir: PathBuf,
     pub prepared_dir: PathBuf,
@@ -95,7 +94,6 @@ impl GlobalSkillSyncConfig {
     pub fn for_home(root: &Path, skill_roots_for_reload: Vec<PathBuf>) -> Self {
         let global_dir = root.join("global");
         Self {
-            manifest_url: configured_global_skills_manifest_url(),
             state_path: global_dir.join("state.json"),
             downloads_dir: global_dir.join("downloads").join("skills"),
             prepared_dir: global_dir.join("prepared").join("skills"),
