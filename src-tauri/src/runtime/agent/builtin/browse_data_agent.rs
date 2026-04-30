@@ -1,4 +1,4 @@
-use crate::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPrompt, AgentSource};
+use crate::runtime::agent::definition::{AgentDefinition, AgentModel, AgentPermissionMode, AgentPrompt, AgentSource};
 
 pub fn browse_data_agent_definition() -> AgentDefinition {
     AgentDefinition {
@@ -12,9 +12,12 @@ pub fn browse_data_agent_definition() -> AgentDefinition {
             "extract_table_data".to_string(),
             "extract_with_pagination".to_string(),
         ],
+        disallowed_tools: vec![],
         max_iterations: 30,
         model: AgentModel::Inherit,
         system_prompt: AgentPrompt::Inline(String::new()),
         source: AgentSource::Builtin,
+        permission_mode: AgentPermissionMode::Bubble,
+        background_default: false,
     }
 }
