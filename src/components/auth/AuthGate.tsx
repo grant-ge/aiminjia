@@ -3,6 +3,8 @@ import { type PropsWithChildren, useEffect, useRef } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useChat } from '@/hooks/useChat'
 import { useUiStore } from '@/stores/uiStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { syncBuiltinSkills } from '@/lib/tauri'
 
 import { FullscreenLoader } from './FullscreenLoader'
 import { LoginPage } from './LoginPage'
@@ -28,6 +30,20 @@ export function AuthGate({ children }: PropsWithChildren) {
   useEffect(() => {
     if (isLoggedIn) {
       void loadConversations()
+
+      syncBuiltinSkills()
+        .then((result) => {
+          if (result.installed.length > 0) {
+            console.info('[builtin-skills] installed:', result.installed)
+            void useSkillStore.getState().reload()
+          }
+          if (result.skipped.length > 0) {
+            console.info('[builtin-skills] skipped:', result.skipped)
+          }
+        })
+        .catch((err) => {
+          console.warn('[builtin-skills] sync failed:', err)
+        })
     }
   }, [isLoggedIn, loadConversations])
 
