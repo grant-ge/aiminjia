@@ -182,6 +182,7 @@ mod tests {
                 None,
             )),
             auth_manager: None,
+            dingtalk_bridge: None,
             connector_engine: None,
             use_cloud: false,
             model: String::new(),

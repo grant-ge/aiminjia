@@ -91,6 +91,7 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         read_file_state: request.read_file_state,
         cancellation: request.cancellation,
         permission_mode: request.permission_mode,
+        dingtalk_bridge: None,
         runtime_resolver: request.runtime_resolver,
     }
 }
