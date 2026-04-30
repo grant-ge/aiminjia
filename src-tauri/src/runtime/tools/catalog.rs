@@ -566,6 +566,49 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "spawn_subagent",
+            "【Composite 工具】启动一个子 Agent 执行聚焦任务，返回子 Agent 的最终输出文本。\
+            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'browse_data_agent'）或不同模型。\
+            \n\n同步路径（run_in_background=false 或省略）：等待子 Agent 完成并返回输出。\
+            \n\n异步路径（run_in_background=true）：暂未实现，返回 not_implemented_yet 占位符（P6.x 实现）。",
+        )
+        .with_kind(ToolKind::Composite)
+        .with_capability_scope(["workspace:write"]),
+        json!({
+            "type": "object",
+            "required": ["subagent_type", "prompt", "description"],
+            "properties": {
+                "subagent_type": {
+                    "type": "string",
+                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'、'browse_data_agent'）。"
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "子 Agent 应执行的完整任务指令。"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "3-5 词任务描述，用于日志和 UI 展示。"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "为该子 Agent 调用覆盖模型（如 'haiku'）。省略则继承父 Agent 的模型。"
+                },
+                "run_in_background": {
+                    "type": "boolean",
+                    "description": "若为 true，异步运行并立即返回（P6.x 功能；当前返回 not_implemented_yet 占位符）。",
+                    "default": false
+                },
+                "name": {
+                    "type": "string",
+                    "description": "可选的实例名，用于 SendMessage 路由到异步子 Agent（仅异步模式使用）。"
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "generate_slides",
             "【Composite 工具】生成演示文稿（多页渲染 + 写文件）。",
         )

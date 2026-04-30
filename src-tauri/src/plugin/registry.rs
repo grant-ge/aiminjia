@@ -45,7 +45,8 @@ pub struct RequestScopedRuntimeDeps {
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
@@ -134,6 +135,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "browse_and_extract",
     "load_file",
     "browse_data",
+    "spawn_subagent",
     "execute_python",
     "generate_report",
     "generate_chart",
@@ -879,6 +881,31 @@ impl ToolRegistry {
                     ),
                 )),
             ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            "spawn_subagent" => {
+                use tauri::Manager;
+
+                let agent_registry = ctx
+                    .app_handle
+                    .as_ref()
+                    .and_then(|app| {
+                        app.try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
+                            .map(|state| state.inner().clone())
+                    })
+                    .unwrap_or_else(|| {
+                        Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins())
+                    });
+                Some(Arc::new(
+                    builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+                        Arc::new(
+                            crate::llm::tool_executor::DefaultSpawnSubagentLauncher::from_runtime_deps(
+                                ctx.clone(),
+                                agent_registry.clone(),
+                            ),
+                        ),
+                        agent_registry,
+                    ),
+                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             "execute_python" => {
                 use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
 
@@ -965,8 +992,10 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "load_skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                Some(Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             _ => None,
         }

@@ -14,6 +14,7 @@
 #![allow(deprecated)]
 
 mod chart;
+mod dingtalk;
 mod export;
 pub(crate) mod file_load;
 mod internal_system;
@@ -23,9 +24,9 @@ mod python;
 mod report;
 mod search;
 mod slides;
+pub(crate) mod spawn_subagent;
 mod stats;
 mod util;
-mod dingtalk;
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -74,31 +75,32 @@ pub(crate) use report::ReportCoreParams;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
 pub(crate) use slides::handle_generate_slides;
+pub(crate) use spawn_subagent::DefaultSpawnSubagentLauncher;
 pub(crate) use stats::handle_detect_anomalies;
 pub(crate) use stats::handle_hypothesis_test;
 // DingTalk — AI Table (6)
-pub(crate) use dingtalk::handle_dingtalk_list_bases;
-pub(crate) use dingtalk::handle_dingtalk_schema;
-pub(crate) use dingtalk::handle_dingtalk_query_records;
 pub(crate) use dingtalk::handle_dingtalk_create_record;
-pub(crate) use dingtalk::handle_dingtalk_update_record;
 pub(crate) use dingtalk::handle_dingtalk_delete_record;
+pub(crate) use dingtalk::handle_dingtalk_list_bases;
+pub(crate) use dingtalk::handle_dingtalk_query_records;
+pub(crate) use dingtalk::handle_dingtalk_schema;
+pub(crate) use dingtalk::handle_dingtalk_update_record;
 // DingTalk — Contacts (3)
-pub(crate) use dingtalk::handle_dingtalk_search_contacts;
-pub(crate) use dingtalk::handle_dingtalk_get_user;
 pub(crate) use dingtalk::handle_dingtalk_get_department;
+pub(crate) use dingtalk::handle_dingtalk_get_user;
+pub(crate) use dingtalk::handle_dingtalk_search_contacts;
 // DingTalk — Chat (3)
 pub(crate) use dingtalk::handle_dingtalk_list_groups;
-pub(crate) use dingtalk::handle_dingtalk_send_message;
 pub(crate) use dingtalk::handle_dingtalk_search_chat;
+pub(crate) use dingtalk::handle_dingtalk_send_message;
 // DingTalk — Calendar (3)
-pub(crate) use dingtalk::handle_dingtalk_list_events;
 pub(crate) use dingtalk::handle_dingtalk_create_event;
 pub(crate) use dingtalk::handle_dingtalk_free_busy;
+pub(crate) use dingtalk::handle_dingtalk_list_events;
 // DingTalk — Todo (3)
-pub(crate) use dingtalk::handle_dingtalk_list_todos;
-pub(crate) use dingtalk::handle_dingtalk_create_todo;
 pub(crate) use dingtalk::handle_dingtalk_complete_todo;
+pub(crate) use dingtalk::handle_dingtalk_create_todo;
+pub(crate) use dingtalk::handle_dingtalk_list_todos;
 pub(crate) use util::py_escape;
 pub(crate) use util::slugify;
 
