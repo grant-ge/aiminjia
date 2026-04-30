@@ -7,7 +7,7 @@
 //! - `is_concurrency_safe` returns `true`
 //! - missing required fields produce `ToolError::ExecutionFailed`
 //! - unknown `subagent_type` produces a helpful error message
-//! - `run_in_background=true` returns the `not_implemented_yet` placeholder
+//! - `run_in_background=true` returns the `async_launched` JSON
 //! - sync path invokes the launcher and returns its output
 //! - permission mode is forwarded to the launch context
 //! - empty `model` string is treated as inherit (not forwarded as empty)
@@ -19,8 +19,10 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::ids::AgentId;
 use app_lib::runtime::tools::builtin::spawn_subagent::{
-    SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest, SpawnSubagentRuntimeTool,
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnSubagentRuntimeTool,
 };
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::permission::PermissionMode;
@@ -49,6 +51,17 @@ impl SpawnSubagentLauncher for StubLauncher {
             "stub: type={} model={:?} -> {}",
             request.subagent_type, request.effective_model, self.output
         ))
+    }
+
+    async fn launch_async(
+        &self,
+        request: SpawnSubagentRequest,
+        _context: SpawnSubagentContext,
+    ) -> Result<SpawnAsyncOutcome> {
+        Ok(SpawnAsyncOutcome {
+            agent_id: AgentId::new("stub-async-id"),
+            name: request.name.clone(),
+        })
     }
 }
 
@@ -159,7 +172,7 @@ async fn unknown_subagent_type_returns_helpful_error() {
     );
 }
 
-// ─── Async placeholder ────────────────────────────────────────────────────────
+// ─── Async path ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn run_in_background_true_returns_not_implemented_placeholder() {
@@ -177,9 +190,13 @@ async fn run_in_background_true_returns_not_implemented_placeholder() {
         )
         .await
         .expect("async path must not return Err");
-    assert!(
-        result.content.contains("not_implemented_yet"),
-        "placeholder JSON should contain 'not_implemented_yet', got: {}",
+    // P6.2: async path now returns async_launched JSON, not the old placeholder.
+    let parsed: serde_json::Value =
+        serde_json::from_str(&result.content).expect("response must be valid JSON");
+    assert_eq!(
+        parsed.get("status").and_then(|v| v.as_str()),
+        Some("async_launched"),
+        "status should be async_launched, got: {}",
         result.content
     );
 }
@@ -231,6 +248,17 @@ async fn permission_mode_is_forwarded_to_launch_context() {
         ) -> Result<String> {
             *self.captured_mode.lock().unwrap() = Some(context.permission_mode);
             Ok("done".into())
+        }
+
+        async fn launch_async(
+            &self,
+            _request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-id"),
+                name: None,
+            })
         }
     }
 
@@ -284,6 +312,17 @@ async fn caller_model_overrides_definition() {
             *self.model.lock().unwrap() = Some(request.effective_model.clone());
             Ok("done".into())
         }
+
+        async fn launch_async(
+            &self,
+            _request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-id"),
+                name: None,
+            })
+        }
     }
 
     let model_seen = Arc::new(Mutex::new(None));
@@ -333,6 +372,17 @@ async fn empty_model_string_treated_as_inherit() {
         ) -> Result<String> {
             *self.model.lock().unwrap() = Some(request.effective_model.clone());
             Ok("done".into())
+        }
+
+        async fn launch_async(
+            &self,
+            _request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-id"),
+                name: None,
+            })
         }
     }
 

@@ -19,8 +19,9 @@ use serde_json::json;
 use tokio::time::sleep;
 
 use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::ids::AgentId;
 use app_lib::runtime::tools::builtin::spawn_subagent::{
-    SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest, SpawnSubagentRuntimeTool,
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest, SpawnSubagentRuntimeTool,
 };
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::RuntimeTool;
@@ -40,6 +41,18 @@ impl SpawnSubagentLauncher for DelayLauncher {
     ) -> Result<String> {
         sleep(Duration::from_millis(self.delay_ms)).await;
         Ok(format!("done: {}", request.subagent_type))
+    }
+
+    async fn launch_async(
+        &self,
+        request: SpawnSubagentRequest,
+        _context: SpawnSubagentContext,
+    ) -> Result<SpawnAsyncOutcome> {
+        sleep(Duration::from_millis(self.delay_ms)).await;
+        Ok(SpawnAsyncOutcome {
+            agent_id: AgentId::new("stub-async-id"),
+            name: request.name.clone(),
+        })
     }
 }
 

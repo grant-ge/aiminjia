@@ -11,8 +11,13 @@
 //! [`ToolResult`].
 //!
 //! ## Async path (`run_in_background = true`)
-//! Returns a `not_implemented_yet` JSON placeholder. Full implementation lands
-//! in P6.x alongside `AsyncAgentTaskStore` + lifecycle management.
+//! Calls `launcher.launch_async()` which registers the agent in
+//! `AsyncAgentTaskStore`, `tokio::spawn`s a detached task, and returns
+//! immediately. The spawned task updates the store state to
+//! `Completed`/`Failed` and enqueues a task-notification XML into
+//! `TaskNotificationQueue` when it finishes. The tool returns a JSON
+//! `{"status":"async_launched","agent_id":"...","name":"..."}` so the
+//! parent LLM knows the launch succeeded.
 
 use std::sync::Arc;
 
@@ -23,7 +28,7 @@ use serde_json::Value;
 use crate::runtime::agent::definition::AgentModel;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::cancellation::CancellationToken;
-use crate::runtime::ids::{AgentId, RunId, SessionId};
+use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
@@ -54,6 +59,14 @@ pub struct SpawnSubagentContext {
     pub parent_agent_id: Option<AgentId>,
     pub cancellation: CancellationToken,
     pub permission_mode: PermissionMode,
+    pub parent_tool_use_id: ToolCallId,
+}
+
+/// Outcome from the async launcher path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpawnAsyncOutcome {
+    pub agent_id: AgentId,
+    pub name: Option<String>,
 }
 
 // ─── Launcher trait ───────────────────────────────────────────────────────────
@@ -71,6 +84,13 @@ pub trait SpawnSubagentLauncher: Send + Sync {
         request: SpawnSubagentRequest,
         context: SpawnSubagentContext,
     ) -> Result<String>;
+
+    /// Async path: launch a detached sub-agent task and return its identity.
+    async fn launch_async(
+        &self,
+        request: SpawnSubagentRequest,
+        context: SpawnSubagentContext,
+    ) -> Result<SpawnAsyncOutcome>;
 }
 
 // ─── RuntimeTool implementation ───────────────────────────────────────────────
@@ -166,13 +186,26 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             parent_agent_id: ctx.agent_id.clone(),
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
+            parent_tool_use_id: ctx.tool_call_id.clone(),
         };
 
-        // ── Async path: P6.x placeholder ──────────────────────────────────
+        // ── Async path: launch detached sub-agent ─────────────────────────
         if request.run_in_background {
+            let outcome = self
+                .launcher
+                .launch_async(request, launch_ctx)
+                .await
+                .map_err(|e| {
+                    ToolError::ExecutionFailed(format!("async sub-agent launch failed: {e}"))
+                })?;
+            let json = serde_json::json!({
+                "status": "async_launched",
+                "agent_id": outcome.agent_id.to_string(),
+                "name": outcome.name,
+            });
             return Ok(ToolResult::new(
                 "spawn_subagent",
-                r#"{"status":"not_implemented_yet","message":"async sub-agent path lands in P6.x; pass run_in_background=false for now"}"#,
+                json.to_string(),
                 None,
             ));
         }
@@ -199,6 +232,7 @@ mod tests {
 
     struct RecordingLauncher {
         seen_requests: Arc<Mutex<Vec<SpawnSubagentRequest>>>,
+        async_seen: Arc<Mutex<Vec<SpawnSubagentRequest>>>,
     }
 
     #[async_trait]
@@ -214,6 +248,18 @@ mod tests {
                 request.subagent_type, request.effective_model
             ))
         }
+
+        async fn launch_async(
+            &self,
+            request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            self.async_seen.lock().unwrap().push(request.clone());
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-async-id"),
+                name: request.name.clone(),
+            })
+        }
     }
 
     fn build_tool_with_recorder(
@@ -223,6 +269,7 @@ mod tests {
         SpawnSubagentRuntimeTool::new(
             Arc::new(RecordingLauncher {
                 seen_requests: seen,
+                async_seen: Arc::new(Mutex::new(Vec::new())),
             }),
             registry,
         )
@@ -316,7 +363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_in_background_true_returns_placeholder() {
+    async fn run_in_background_true_calls_launch_async() {
         let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         let result = tool
@@ -325,16 +372,24 @@ mod tests {
                     "subagent_type": "browse_data_agent",
                     "prompt": "scrape some data",
                     "description": "test background",
-                    "run_in_background": true
+                    "run_in_background": true,
+                    "name": "w1"
                 }),
                 ctx,
             )
             .await
             .expect("background path should not return Err");
-        assert!(
-            result.content.contains("not_implemented_yet"),
-            "placeholder should contain not_implemented_yet, got: {}",
+        let parsed: serde_json::Value = serde_json::from_str(&result.content)
+            .expect("background response should be valid JSON");
+        assert_eq!(
+            parsed.get("status").and_then(|v| v.as_str()),
+            Some("async_launched"),
+            "status should be async_launched, got: {}",
             result.content
+        );
+        assert!(
+            parsed.get("agent_id").and_then(|v| v.as_str()).is_some(),
+            "agent_id should be present"
         );
     }
 

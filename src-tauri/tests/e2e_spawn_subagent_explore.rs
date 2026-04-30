@@ -18,7 +18,8 @@ use serde_json::json;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::ids::{AgentId, RunId, SessionId};
 use app_lib::runtime::tools::builtin::spawn_subagent::{
-    SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest, SpawnSubagentRuntimeTool,
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnSubagentRuntimeTool,
 };
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::executor::ToolResult;
@@ -75,6 +76,17 @@ impl SpawnSubagentLauncher for RecordingLauncher {
             permission_mode: context.permission_mode,
         });
         Ok(self.output.clone())
+    }
+
+    async fn launch_async(
+        &self,
+        _request: SpawnSubagentRequest,
+        _context: SpawnSubagentContext,
+    ) -> Result<SpawnAsyncOutcome> {
+        Ok(SpawnAsyncOutcome {
+            agent_id: AgentId::new("stub-async-id"),
+            name: None,
+        })
     }
 }
 

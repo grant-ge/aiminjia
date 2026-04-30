@@ -894,12 +894,34 @@ impl ToolRegistry {
                     .unwrap_or_else(|| {
                         Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins())
                     });
+                let task_store = ctx
+                    .app_handle
+                    .as_ref()
+                    .and_then(|app| {
+                        app.try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>()
+                            .map(|s| s.inner().clone())
+                    })
+                    .unwrap_or_else(|| {
+                        Arc::new(crate::runtime::agent::async_task_store::AsyncAgentTaskStore::new())
+                    });
+                let notif_queue = ctx
+                    .app_handle
+                    .as_ref()
+                    .and_then(|app| {
+                        app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
+                            .map(|s| s.inner().clone())
+                    })
+                    .unwrap_or_else(|| {
+                        Arc::new(crate::runtime::agent::task_notification::TaskNotificationQueue::new())
+                    });
                 Some(Arc::new(
                     builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
                         Arc::new(
                             crate::llm::tool_executor::DefaultSpawnSubagentLauncher::from_runtime_deps(
                                 ctx.clone(),
                                 agent_registry.clone(),
+                                task_store,
+                                notif_queue,
                             ),
                         ),
                         agent_registry,

@@ -17,8 +17,8 @@ use commands::file;
 use commands::settings;
 use commands::workspace;
 use std::sync::Arc;
-use tauri::Manager;
 use storage::UserScopedPathResolver;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -188,7 +188,8 @@ pub fn run() {
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
-            let current_user_storage = Arc::new(storage::CurrentUserStorage::new(aijia_home.clone()));
+            let current_user_storage =
+                Arc::new(storage::CurrentUserStorage::new(aijia_home.clone()));
             let user_scope: Option<storage::UserScope> = {
                 let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
                 if info.logged_in {
@@ -202,12 +203,14 @@ pub fn run() {
             };
             if let Some(ref scope) = user_scope {
                 let user_dir = aijia_home.user_dir(scope);
-                if let Err(e) = storage::migration_user_scope::migrate_legacy_to_user_scope_if_needed(
-                    aijia_home.root(),
-                    &user_dir,
-                    &scope.key(),
-                    &aijia_home.global_state_path(),
-                ) {
+                if let Err(e) =
+                    storage::migration_user_scope::migrate_legacy_to_user_scope_if_needed(
+                        aijia_home.root(),
+                        &user_dir,
+                        &scope.key(),
+                        &aijia_home.global_state_path(),
+                    )
+                {
                     log::warn!("[setup] user-scope migration warning: {}", e);
                 }
                 if let Err(e) = storage::migration_user_scope::migrate_legacy_config_if_needed(
@@ -237,7 +240,12 @@ pub fn run() {
 
             let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
                 .resolve_paths()
-                .map(|paths| (paths.agent_invocations_path(), paths.subagent_transcripts_dir()))
+                .map(|paths| {
+                    (
+                        paths.agent_invocations_path(),
+                        paths.subagent_transcripts_dir(),
+                    )
+                })
                 .unwrap_or_else(|| {
                     (
                         aijia_home.agent_invocations_path(),
@@ -257,7 +265,9 @@ pub fn run() {
                 }),
             );
 
-            let db = current_user_storage.get().unwrap_or_else(|| root_db.clone());
+            let db = current_user_storage
+                .get()
+                .unwrap_or_else(|| root_db.clone());
 
             // Initialize LLM gateway (with auth_manager for cloud session_key injection)
             let gateway = Arc::new(
@@ -296,18 +306,20 @@ pub fn run() {
             });
 
             // Initialize DingTalk bridge (dws CLI sidecar)
-            let dingtalk_bridge = Arc::new(
-                connector::dingtalk::DingtalkBridge::new(app.handle().clone())
-            );
+            let dingtalk_bridge = Arc::new(connector::dingtalk::DingtalkBridge::new(
+                app.handle().clone(),
+            ));
             // Restore DingTalk auth status from dws persisted token (non-blocking)
             {
                 let dt = dingtalk_bridge.clone();
                 tauri::async_runtime::spawn(async move {
                     match dt.refresh_status().await {
                         Ok(info) if info.connected => {
-                            log::info!("DingTalk: restored session — {} @ {}",
+                            log::info!(
+                                "DingTalk: restored session — {} @ {}",
                                 info.user_name.as_deref().unwrap_or("?"),
-                                info.corp_name.as_deref().unwrap_or("?"));
+                                info.corp_name.as_deref().unwrap_or("?")
+                            );
                         }
                         _ => log::info!("DingTalk: no active session"),
                     }
@@ -355,6 +367,8 @@ pub fn run() {
                 ),
             );
             app.manage(agent_registry.clone());
+            let async_agent_task_store = Arc::new(runtime::agent::async_task_store::AsyncAgentTaskStore::new());
+            let task_notification_queue = Arc::new(runtime::agent::task_notification::TaskNotificationQueue::new());
 
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
@@ -553,6 +567,8 @@ pub fn run() {
             app.manage(session_mgr);
             app.manage(agent_runtime);
             app.manage(chat_adapter);
+            app.manage(async_agent_task_store);
+            app.manage(task_notification_queue);
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
