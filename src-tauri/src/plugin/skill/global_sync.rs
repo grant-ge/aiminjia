@@ -412,12 +412,27 @@ pub async fn sync_skill_packages_from_server(
 ) -> Result<GlobalSkillInstallReport> {
     let client = reqwest::Client::new();
 
+    log::info!("[skill-sync] start sync from {}", server_base_url);
+
     // 1. Fetch the published skill list from lotus-server
     let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+    log::info!(
+        "[skill-sync] fetched {} skills from server: {:?}",
+        list.data.len(),
+        list.data
+            .iter()
+            .map(|i| format!("{}@{}", i.plugin_id, i.version))
+            .collect::<Vec<_>>()
+    );
 
     // 2. Read local installed-version state (None if first run or schema mismatch)
     let local_state = read_global_skills_state(&config.state_path)?
         .unwrap_or_default();
+    log::info!(
+        "[skill-sync] local state has {} installed skills: {:?}",
+        local_state.installed.len(),
+        local_state.installed
+    );
 
     let mut report = GlobalSkillInstallReport::default();
     let mut new_installed: HashMap<String, String> = local_state.installed.clone();
@@ -439,14 +454,29 @@ pub async fn sync_skill_packages_from_server(
             .map_or(true, |v| v != &item.version);
         if !need_install {
             report.skipped.push(item.plugin_id.clone());
+            log::info!(
+                "[skill-sync] skip '{}' v{} (already installed)",
+                item.plugin_id,
+                item.version
+            );
             continue;
         }
+        log::info!(
+            "[skill-sync] installing '{}' v{} ...",
+            item.plugin_id,
+            item.version
+        );
         match install_one_skill_package(&client, &server_base_url, &session_key, item, &config)
             .await
         {
             Ok(()) => {
                 report.installed.push(item.plugin_id.clone());
                 new_installed.insert(item.plugin_id.clone(), item.version.clone());
+                log::info!(
+                    "[skill-sync] installed '{}' v{}",
+                    item.plugin_id,
+                    item.version
+                );
             }
             Err(error) => {
                 log::warn!(
@@ -493,6 +523,11 @@ pub async fn sync_skill_packages_from_server(
 
     report.installed.sort();
     report.skipped.sort();
+    log::info!(
+        "[skill-sync] done: installed={:?}, skipped={:?}",
+        report.installed,
+        report.skipped
+    );
     Ok(report)
 }
 
