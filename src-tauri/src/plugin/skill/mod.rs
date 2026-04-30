@@ -5,4 +5,5 @@ pub mod invoked;
 pub mod loader;
 pub mod registry;
 pub mod substitution;
+pub mod sync_command;
 pub mod types;

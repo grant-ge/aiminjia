@@ -18,7 +18,7 @@ use serde_json::json;
 
 use super::state::{CloudModelInfo, TenantInfo, UserInfo};
 
-const BASE_URL: &str = "https://ai-tenant.renlijia.com";
+pub const BASE_URL: &str = "https://ai-tenant.renlijia.com";
 
 /// Raw login/refresh response from the API (snake_case fields).
 #[derive(Debug, Deserialize)]
