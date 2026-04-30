@@ -3,6 +3,11 @@
 //! Endpoint: `https://ark.cn-beijing.volces.com/api/v3/chat/completions`
 //! Model: configurable endpoint ID (e.g. `ep-xxxx`).
 //! Supports tool use.
+//!
+//! ## ⚠ DEPRECATED — 待删除
+//! 死代码：产品仅对外暴露 lotus / custom，火山方舟直连不会被 UI 触发。
+//! `model_hint` 虽然透传，但产品 UI 不暴露选择路径。
+//! 删除计划：专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
 
 use anyhow::Result;
 use reqwest::Client;

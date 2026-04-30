@@ -3,6 +3,11 @@
 //! Endpoint: `https://api.deepseek.com/chat/completions`
 //! Uses the OpenAI-compatible chat completions format.
 //! Model: `deepseek-chat`
+//!
+//! ## ⚠ DEPRECATED — 待删除
+//! 死代码：产品仅对外暴露 lotus / custom 两个端点，DeepSeek 直连不会被 UI 触发。
+//! 实现写死 `DEFAULT_MODEL`，settings 里的 model id 不透传。
+//! 删除计划：专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
 
 use anyhow::Result;
 use reqwest::Client;

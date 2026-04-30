@@ -4,6 +4,11 @@
 //! Supports two endpoints:
 //! - /v1/chat/completions     — chat models
 //! - /v1/reasoner/completions — reasoner models
+//!
+//! ## ⚠ DEPRECATED — 待重构后删除
+//! 当前在用 provider，但与其他 7 个 provider 一起属于「半成品」状态。
+//! 重构方向：收敛为单一 OpenAI-兼容实现 + endpoint/认证配置。
+//! 重构计划：专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
 
 use anyhow::Result;
 use reqwest::Client;

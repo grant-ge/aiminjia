@@ -6,6 +6,17 @@
 //! This module also exposes `pub(super)` helpers that other OpenAI-compatible
 //! providers (DeepSeek V3, DeepSeek R1, Volcano) reuse for request building,
 //! response parsing, and SSE stream process.
+//!
+//! ## ⚠ 部分 DEPRECATED
+//! `OpenAiProvider` 本身（直连 api.openai.com）是死代码：产品仅对外暴露
+//! lotus 网关 + custom 端点。`new(api_key)` 不收 model 参数，请求 body 写死
+//! `DEFAULT_MODEL = "gpt-4o"`，settings 里的 model id 丢失。删除计划：
+//! 专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
+//!
+//! **保留**本文件中的 `send_openai_compat` / `stream_openai_compat` /
+//! `validate_key_openai_compat` 等 `pub(super)` 共享函数 —— 它们被 `lotus.rs`
+//! 和 `custom.rs` 复用，是 OpenAI 协议的核心实现，不能删。删除时只去掉
+//! `OpenAiProvider` 本身的 struct/impl，保留共享 helper。
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Result};
@@ -576,15 +587,17 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
     // from Anthropic thinking mode even for non-R1 providers.
     if let Some(thinking) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
         if !thinking.is_empty() {
-            st.pending_events
-                .push(StreamEvent::ThinkingDelta { delta: thinking.to_string() });
+            st.pending_events.push(StreamEvent::ThinkingDelta {
+                delta: thinking.to_string(),
+            });
         }
     }
 
     // Full thinking block with signature (from gateway Anthropic adapter).
     if let Some(block) = delta.get("_thinking_block") {
-        st.pending_events
-            .push(StreamEvent::ThinkingBlock { block: block.clone() });
+        st.pending_events.push(StreamEvent::ThinkingBlock {
+            block: block.clone(),
+        });
     }
 
     // Text content delta.
