@@ -1,4 +1,5 @@
 pub mod agent_runtime;
+pub mod async_task_store;
 pub mod background;
 pub mod builtin;
 pub mod child_run;
