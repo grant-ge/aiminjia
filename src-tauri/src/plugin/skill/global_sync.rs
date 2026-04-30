@@ -310,6 +310,61 @@ fn is_zip_symlink(entry: &zip::read::ZipFile<'_>) -> bool {
         .unwrap_or(false)
 }
 
+async fn fetch_skill_list(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+) -> Result<SkillListResponse> {
+    let url = format!(
+        "{}/v1/skill-packages?scope=public&page=1&size=100",
+        server_base_url.trim_end_matches('/')
+    );
+    let response = client
+        .get(&url)
+        .bearer_auth(session_key)
+        .timeout(MANIFEST_DOWNLOAD_TIMEOUT)
+        .send()
+        .await
+        .with_context(|| format!("fetch skill list '{}'", url))?
+        .error_for_status()
+        .with_context(|| format!("skill list status '{}'", url))?;
+    let body: SkillListResponse = response
+        .json()
+        .await
+        .with_context(|| format!("parse skill list body '{}'", url))?;
+    Ok(body)
+}
+
+async fn fetch_download_url(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+    skill_id: u64,
+) -> Result<String> {
+    let url = format!(
+        "{}/v1/skill-packages/{}/download",
+        server_base_url.trim_end_matches('/'),
+        skill_id
+    );
+    let response = client
+        .post(&url)
+        .bearer_auth(session_key)
+        .timeout(MANIFEST_DOWNLOAD_TIMEOUT)
+        .send()
+        .await
+        .with_context(|| format!("fetch download url '{}'", url))?
+        .error_for_status()
+        .with_context(|| format!("download url status '{}'", url))?;
+    let body: DownloadResponseEnvelope = response
+        .json()
+        .await
+        .with_context(|| format!("parse download url body '{}'", url))?;
+    if body.data.url.is_empty() {
+        bail!("server returned empty download url for skill {}", skill_id);
+    }
+    Ok(body.data.url)
+}
+
 pub async fn sync_global_skills_from_manifest(
     config: GlobalSkillSyncConfig,
 ) -> Result<GlobalSkillInstallReport> {
