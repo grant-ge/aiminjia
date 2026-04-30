@@ -53,6 +53,9 @@ impl UserScopedPaths {
     pub fn skills_dir(&self) -> PathBuf {
         self.base.join("skills")
     }
+    pub fn agents_dir(&self) -> PathBuf {
+        self.base.join("agents")
+    }
     pub fn agent_invocations_path(&self) -> PathBuf {
         self.base.join("agent_invocations.json")
     }
@@ -123,6 +126,7 @@ mod tests {
             root.join("users/t_1__u_2/permissions.json")
         );
         assert_eq!(paths.skills_dir(), root.join("users/t_1__u_2/skills"));
+        assert_eq!(paths.agents_dir(), root.join("users/t_1__u_2/agents"));
         assert_eq!(
             paths.agent_invocations_path(),
             root.join("users/t_1__u_2/agent_invocations.json")
