@@ -10,9 +10,11 @@ fn write_md(dir: &std::path::Path, name: &str, content: &str) {
 #[test]
 fn builtin_loaded_when_no_user_files() {
     let reg = load_registry_with_user_dir(None, None);
-    // 内置 agent 名称由 P0.1/P9.1 决定，已知存在 browse_data_agent / daily_assistant_agent
+    // 内置 agent 名称由 P0.1/P9.1 决定，已知存在 browse_data_agent / daily_assistant_agent / general-purpose / explore
     assert!(reg.get("browse_data_agent").is_some());
     assert!(reg.get("daily_assistant_agent").is_some());
+    assert!(reg.get("general-purpose").is_some());
+    assert!(reg.get("explore").is_some());
 }
 
 #[test]
