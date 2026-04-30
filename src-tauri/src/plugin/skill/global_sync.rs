@@ -12,7 +12,6 @@ use serde_json::Value;
 use crate::plugin::skill::frontmatter::parse_skill_md;
 use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::runtime::dependencies::verify_sha256;
 
 const MAX_EXTRACTED_BYTES: u64 = 50 * 1024 * 1024;
 const MANIFEST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
@@ -497,36 +496,23 @@ pub async fn sync_skill_packages_from_server(
     Ok(report)
 }
 
-pub fn spawn_global_skill_sync(
-    config: GlobalSkillSyncConfig,
-    registry: Arc<Mutex<SkillRegistry>>,
-) -> tauri::async_runtime::JoinHandle<()> {
-    tauri::async_runtime::spawn(async move {
-        let skill_roots_for_reload = config.skill_roots_for_reload.clone();
-        match sync_global_skills_from_manifest(config).await {
-            Ok(report) => {
-                if report.installed.is_empty() {
-                    return;
-                }
-                match load_skill_roots(&skill_roots_for_reload) {
-                    Ok(skills) => match registry.lock() {
-                        Ok(mut guard) => {
-                            *guard = SkillRegistry::from_skills(skills.into_values().collect());
-                        }
-                        Err(error) => {
-                            log::warn!("[global-skill-sync] registry lock poisoned: {}", error);
-                        }
-                    },
-                    Err(error) => {
-                        log::warn!("[global-skill-sync] reload skill roots failed: {}", error);
-                    }
-                }
+pub fn reload_skill_registry(
+    skill_roots: &[PathBuf],
+    registry: &Arc<Mutex<SkillRegistry>>,
+) {
+    match load_skill_roots(skill_roots) {
+        Ok(skills) => match registry.lock() {
+            Ok(mut guard) => {
+                *guard = SkillRegistry::from_skills(skills.into_values().collect());
             }
             Err(error) => {
-                log::warn!("[global-skill-sync] sync failed: {}", error);
+                log::warn!("[skill-sync] registry lock poisoned: {}", error);
             }
+        },
+        Err(error) => {
+            log::warn!("[skill-sync] reload skill roots failed: {}", error);
         }
-    })
+    }
 }
 
 pub fn read_global_skills_state(state_path: &Path) -> Result<Option<GlobalSkillsState>> {
