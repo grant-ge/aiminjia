@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,89 +14,61 @@ use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
 use crate::plugin::skill::registry::SkillRegistry;
 use crate::runtime::dependencies::verify_sha256;
 
-pub const DEFAULT_GLOBAL_SKILLS_MANIFEST_URL: &str =
-    "https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/skills/global-skills-manifest.json";
-const GLOBAL_SKILLS_MANIFEST_ENV: &str = "RENLIJIA_GLOBAL_SKILLS_MANIFEST_URL";
 const MAX_EXTRACTED_BYTES: u64 = 50 * 1024 * 1024;
 const MANIFEST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const ARTIFACT_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
-pub fn configured_global_skills_manifest_url() -> String {
-    std::env::var(GLOBAL_SKILLS_MANIFEST_ENV)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_GLOBAL_SKILLS_MANIFEST_URL.to_string())
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillPackageItem {
+    pub id: u64,
+    pub plugin_id: String,
+    pub name: String,
+    pub version: String,
+    pub package_url: String,
+    #[serde(default)]
+    pub package_size: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GlobalSkillsManifest {
-    pub bundle_version: String,
-    pub artifact: GlobalSkillsArtifact,
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillListResponse {
+    pub data: Vec<SkillPackageItem>,
+    #[serde(default)]
+    pub total: i64,
 }
 
-impl GlobalSkillsManifest {
-    pub fn from_json(input: &str) -> Result<Self> {
-        let manifest: Self = serde_json::from_str(input).context("parse global skills manifest")?;
-        if manifest.artifact.archive_format != "zip" {
-            bail!(
-                "unsupported global skills artifact archiveFormat: {}",
-                manifest.artifact.archive_format
-            );
-        }
-        Ok(manifest)
-    }
+#[derive(Debug, Clone, Deserialize)]
+pub struct DownloadResponseEnvelope {
+    pub data: DownloadResponseData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GlobalSkillsArtifact {
+#[derive(Debug, Clone, Deserialize)]
+pub struct DownloadResponseData {
     pub url: String,
-    pub sha256: String,
-    pub size_bytes: u64,
-    pub archive_format: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSkillsState {
-    pub bundle_version: String,
-    pub artifact_sha256: String,
-    pub installed_at_unix_seconds: u64,
+    #[serde(default)]
+    pub installed: HashMap<String, String>, // plugin_id -> version
+    #[serde(default)]
+    pub updated_at_unix_seconds: u64,
 }
 
 impl GlobalSkillsState {
-    pub fn from_manifest(manifest: &GlobalSkillsManifest) -> Self {
-        Self {
-            bundle_version: manifest.bundle_version.clone(),
-            artifact_sha256: manifest.artifact.sha256.clone(),
-            installed_at_unix_seconds: now_unix_seconds(),
-        }
-    }
-
     pub fn from_global_state_json(input: &str) -> Result<Option<Self>> {
         let value: Value = serde_json::from_str(input).context("parse global state json")?;
         match value.get("globalSkills") {
             Some(global_skills) => {
-                let state = serde_json::from_value(global_skills.clone())
-                    .context("parse globalSkills state")?;
-                Ok(Some(state))
+                // Best-effort parse; if old single-bundle format, return None to trigger full re-install.
+                match serde_json::from_value::<GlobalSkillsState>(global_skills.clone()) {
+                    Ok(state) if !state.installed.is_empty() => Ok(Some(state)),
+                    _ => Ok(None),
+                }
             }
             None => Ok(None),
         }
     }
-
-    pub fn matches(&self, manifest: &GlobalSkillsManifest) -> bool {
-        self.bundle_version == manifest.bundle_version
-    }
-}
-
-pub fn should_skip_manifest(
-    current: Option<&GlobalSkillsState>,
-    manifest: &GlobalSkillsManifest,
-) -> bool {
-    current.map_or(false, |state| state.matches(manifest))
 }
 
 pub fn should_persist_success_state(report: &GlobalSkillInstallReport) -> bool {
