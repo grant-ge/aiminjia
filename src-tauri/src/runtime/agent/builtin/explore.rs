@@ -15,7 +15,7 @@ pub fn explore_agent_definition() -> AgentDefinition {
         ],
         disallowed_tools: vec![],
         max_iterations: 25,
-        model: AgentModel::Fixed("haiku".into()),
+        model: AgentModel::Inherit,
         system_prompt: AgentPrompt::Inline(
             "You are a read-only explorer. Search and read files to answer questions. Never modify anything.".into()
         ),

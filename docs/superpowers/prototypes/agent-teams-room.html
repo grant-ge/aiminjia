@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Teams 协作房间原型</title>
+  <style>
+    :root {
+      --bg: #10120f;
+      --panel: rgba(247, 242, 225, 0.08);
+      --panel-strong: rgba(247, 242, 225, 0.13);
+      --paper: #f7f2e1;
+      --ink: #211f18;
+      --muted: #a8a18e;
+      --line: rgba(247, 242, 225, 0.16);
+      --green: #8ee3a2;
+      --amber: #f3c969;
+      --red: #ff876f;
+      --blue: #86b7ff;
+      --cyan: #6ee7df;
+      --shadow: 0 24px 90px rgba(0, 0, 0, 0.38);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --font-display: Georgia, "Times New Roman", serif;
+      --font-ui: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+      --font-mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--paper);
+      font-family: var(--font-ui);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(142, 227, 162, 0.22), transparent 28%),
+        radial-gradient(circle at 86% 24%, rgba(134, 183, 255, 0.20), transparent 30%),
+        radial-gradient(circle at 52% 92%, rgba(243, 201, 105, 0.16), transparent 34%),
+        linear-gradient(135deg, #11140f 0%, #1a1e19 48%, #0b0d0c 100%);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(247, 242, 225, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(247, 242, 225, 0.035) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: radial-gradient(circle at center, black, transparent 78%);
+    }
+
+    .shell {
+      width: min(1680px, calc(100vw - 36px));
+      margin: 18px auto;
+      display: grid;
+      grid-template-columns: 280px minmax(520px, 1fr) 390px;
+      grid-template-rows: 74px minmax(600px, calc(100vh - 178px)) 68px;
+      gap: 14px;
+    }
+
+    .topbar, .members, .main, .side, .events {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar {
+      grid-column: 1 / -1;
+      border-radius: var(--radius-xl);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .sigil {
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      background:
+        conic-gradient(from 210deg, var(--green), var(--cyan), var(--amber), var(--green));
+      position: relative;
+      box-shadow: 0 0 28px rgba(142, 227, 162, 0.24);
+    }
+
+    .sigil::after {
+      content: "";
+      position: absolute;
+      inset: 9px;
+      border-radius: 10px;
+      background: #11140f;
+      border: 1px solid rgba(247, 242, 225, 0.26);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 28px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .subtitle {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .pill, .button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 13px;
+      font-size: 12px;
+      color: var(--paper);
+      background: rgba(247, 242, 225, 0.08);
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      color: #0d130f;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--green), var(--amber));
+      font-weight: 800;
+    }
+
+    .members {
+      border-radius: var(--radius-xl);
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 14px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .count {
+      font-family: var(--font-mono);
+      color: var(--green);
+      font-size: 12px;
+    }
+
+    .member-card {
+      position: relative;
+      padding: 14px;
+      margin-bottom: 10px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(247, 242, 225, 0.055);
+      overflow: hidden;
+    }
+
+    .member-card.active {
+      border-color: rgba(142, 227, 162, 0.55);
+      background: rgba(142, 227, 162, 0.10);
+    }
+
+    .member-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 14px;
+      bottom: 14px;
+      width: 4px;
+      border-radius: 999px;
+      background: var(--accent, var(--green));
+    }
+
+    .member-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .member-name {
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px currentColor;
+    }
+
+    .dot.idle { background: var(--amber); }
+    .dot.blocked { background: var(--red); }
+
+    .member-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .mini-log {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .mini-item {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      margin: 10px 0;
+    }
+
+    .main {
+      border-radius: var(--radius-xl);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .channel-head {
+      padding: 18px 20px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .channel-head h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 24px;
+      letter-spacing: -0.025em;
+    }
+
+    .channel-note {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .chat {
+      padding: 18px 20px;
+      overflow: auto;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 12px;
+      margin-bottom: 18px;
+      animation: rise 520ms ease both;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      color: #10120f;
+      font-weight: 900;
+      background: var(--accent, var(--green));
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .bubble {
+      border: 1px solid var(--line);
+      background: rgba(247, 242, 225, 0.07);
+      border-radius: 18px;
+      padding: 13px 14px;
+    }
+
+    .bubble.user {
+      background: rgba(247, 242, 225, 0.90);
+      color: var(--ink);
+    }
+
+    .msg-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .bubble.user .msg-head { color: rgba(33, 31, 24, 0.62); }
+
+    .msg-author {
+      font-weight: 900;
+      color: var(--paper);
+    }
+
+    .bubble.user .msg-author { color: var(--ink); }
+
+    .msg-text {
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .tool-call {
+      margin-top: 10px;
+      border: 1px dashed rgba(142, 227, 162, 0.45);
+      border-radius: 14px;
+      padding: 10px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--green);
+      background: rgba(142, 227, 162, 0.07);
+    }
+
+    .composer {
+      padding: 14px 18px 18px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+    }
+
+    .input {
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(247, 242, 225, 0.08);
+      color: var(--paper);
+      padding: 14px 15px;
+      font-size: 14px;
+    }
+
+    .send {
+      border: 0;
+      border-radius: 18px;
+      padding: 0 18px;
+      font-weight: 900;
+      color: #10120f;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+    }
+
+    .side {
+      border-radius: var(--radius-xl);
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .side-block {
+      padding: 18px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .side-block + .side-block {
+      border-top: 1px solid var(--line);
+    }
+
+    .mailbox-card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 13px;
+      margin-bottom: 10px;
+      background: rgba(247, 242, 225, 0.06);
+    }
+
+    .mailbox-card.unread {
+      border-color: rgba(134, 183, 255, 0.48);
+      background: rgba(134, 183, 255, 0.10);
+    }
+
+    .mailbox-top {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      margin-bottom: 8px;
+    }
+
+    .mailbox-text {
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .task {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: rgba(247, 242, 225, 0.055);
+    }
+
+    .task-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: #11140f;
+      font-weight: 900;
+      font-size: 10px;
+      background: var(--amber);
+    }
+
+    .tag.done { background: var(--green); }
+    .tag.blocked { background: var(--red); }
+    .task-title { font-weight: 800; font-size: 13px; line-height: 1.4; }
+    .task-owner { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+    .events {
+      grid-column: 1 / -1;
+      border-radius: var(--radius-xl);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      overflow: hidden;
+    }
+
+    .event-label {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .event-track {
+      display: flex;
+      gap: 10px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .event {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      background: rgba(247, 242, 225, 0.06);
+      animation: slide 18s linear infinite;
+    }
+
+    .event strong { color: var(--paper); }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes slide {
+      from { transform: translateX(0); }
+      to { transform: translateX(-150px); }
+    }
+
+    @media (max-width: 1180px) {
+      .shell {
+        grid-template-columns: 250px 1fr;
+        grid-template-rows: 74px 620px 560px 68px;
+      }
+      .side { grid-column: 1 / -1; grid-row: 3; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+      .side-block + .side-block { border-top: 0; border-left: 1px solid var(--line); }
+      .events { grid-row: 4; }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100vw - 20px, 620px);
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 620px auto 78px;
+      }
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .top-actions { width: 100%; overflow-x: auto; }
+      .members, .main, .side, .events { grid-column: 1; }
+      .side { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .side-block + .side-block { border-left: 0; border-top: 1px solid var(--line); }
+      .events { align-items: flex-start; flex-direction: column; }
+      h1 { font-size: 23px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigil" aria-hidden="true"></div>
+        <div>
+          <h1>Agent Teams Room</h1>
+          <div class="subtitle">一个“群里讨论事情”的多智能体协作界面原型</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="pill">team: auth-fix</div>
+        <div class="pill">backend: in-process</div>
+        <div class="pill">mailbox: 3 unread</div>
+        <div class="button primary">新建队友</div>
+      </div>
+    </header>
+
+    <aside class="members">
+      <div class="section-title">
+        <h2>Team 成员</h2>
+        <span class="count">4 online</span>
+      </div>
+
+      <article class="member-card active" style="--accent: var(--green)">
+        <div class="member-head">
+          <div class="member-name">team-lead</div>
+          <div class="status"><span class="dot"></span>running</div>
+        </div>
+        <div class="member-meta">负责拆任务、汇总决策、向用户解释当前进展。</div>
+      </article>
+
+      <article class="member-card" style="--accent: var(--blue)">
+        <div class="member-head">
+          <div class="member-name">researcher</div>
+          <div class="status"><span class="dot idle"></span>idle</div>
+        </div>
+        <div class="member-meta">刚完成 auth 链路调研，等待下一条消息。</div>
+      </article>
+
+      <article class="member-card" style="--accent: var(--amber)">
+        <div class="member-head">
+          <div class="member-name">tester</div>
+          <div class="status"><span class="dot"></span>running</div>
+        </div>
+        <div class="member-meta">正在跑后端权限回归测试，预计 2 分钟。</div>
+      </article>
+
+      <article class="member-card" style="--accent: var(--red)">
+        <div class="member-head">
+          <div class="member-name">reviewer</div>
+          <div class="status"><span class="dot blocked"></span>blocked</div>
+        </div>
+        <div class="member-meta">等待 team-lead 批准读取 workspace 外部参考仓库。</div>
+      </article>
+
+      <div class="mini-log">
+        <div class="section-title">
+          <h2>Mailbox 摘要</h2>
+          <span class="count">live</span>
+        </div>
+        <div class="mini-item"><span>↳</span><span><b>researcher</b> 收到 tester 的复现请求。</span></div>
+        <div class="mini-item"><span>↳</span><span><b>team-lead</b> 广播了新的实现边界。</span></div>
+        <div class="mini-item"><span>↳</span><span><b>reviewer</b> 发起 permission request。</span></div>
+      </div>
+    </aside>
+
+    <section class="main">
+      <div class="channel-head">
+        <div>
+          <h2># team-lead 主频道</h2>
+          <div class="channel-note">用户主要跟 team-lead 对话；team-lead 再把任务派给队友。</div>
+        </div>
+        <div class="pill">mode: coordination</div>
+      </div>
+
+      <div class="chat">
+        <article class="message" style="--accent: var(--paper)">
+          <div class="avatar">你</div>
+          <div class="bubble user">
+            <div class="msg-head"><span class="msg-author">User</span><span>09:41</span></div>
+            <div class="msg-text">帮我把 auth refresh token 的 bug 修一下，但先让不同 agent 分别调研、测试和 review。</div>
+          </div>
+        </article>
+
+        <article class="message" style="--accent: var(--green)">
+          <div class="avatar">L</div>
+          <div class="bubble">
+            <div class="msg-head"><span class="msg-author">team-lead</span><span>09:42</span></div>
+            <div class="msg-text">我会建立一个临时 team：researcher 查根因，tester 准备复现，reviewer 关注安全边界。我先发起 TeamCreate，然后给每个 teammate 发初始任务。</div>
+            <div class="tool-call">TeamCreate({ team_name: "auth-fix" })</div>
+          </div>
+        </article>
+
+        <article class="message" style="--accent: var(--blue)">
+          <div class="avatar">R</div>
+          <div class="bubble">
+            <div class="msg-head"><span class="msg-author">researcher</span><span>09:46</span></div>
+            <div class="msg-text">我查到 refresh token 的过期判断使用了 access token 的 ttl。建议改 loader 层的 session merge 逻辑，并补一个边界测试。</div>
+          </div>
+        </article>
+
+        <article class="message" style="--accent: var(--amber)">
+          <div class="avatar">T</div>
+          <div class="bubble">
+            <div class="msg-head"><span class="msg-author">tester</span><span>09:48</span></div>
+            <div class="msg-text">复现脚本准备好了。当前 main 分支可稳定复现：refresh 后 401，日志显示 refresh token 被提前判 expired。</div>
+            <div class="tool-call">TaskUpdate(#2, status: "in_progress", owner: "tester")</div>
+          </div>
+        </article>
+
+        <article class="message" style="--accent: var(--green)">
+          <div class="avatar">L</div>
+          <div class="bubble">
+            <div class="msg-head"><span class="msg-author">team-lead</span><span>09:51</span></div>
+            <div class="msg-text">收到。我会先修改实现，再让 tester 跑回归，让 reviewer 检查权限和 session 兼容性。所有队友保持 idle，等我下一条 SendMessage。</div>
+            <div class="tool-call">SendMessage(to: "*", summary: "等待实现后回归", message: "先暂停，等待补丁。")</div>
+          </div>
+        </article>
+      </div>
+
+      <div class="composer">
+        <div class="input">输入给 team-lead 的下一条指令，例如：让 reviewer 先看方案风险</div>
+        <button class="send">发送</button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="side-block">
+        <div class="section-title">
+          <h2>队友消息 / Transcript</h2>
+          <span class="count">researcher</span>
+        </div>
+
+        <article class="mailbox-card unread">
+          <div class="mailbox-top"><span>from team-lead</span><span>unread</span></div>
+          <div class="mailbox-text">实现补丁后，请你只复核 session merge 的数据流，不要改文件。</div>
+        </article>
+
+        <article class="mailbox-card">
+          <div class="mailbox-top"><span>from tester</span><span>read</span></div>
+          <div class="mailbox-text">我需要你确认 refresh token ttl 的配置来源，测试里要 mock 哪个字段？</div>
+        </article>
+
+        <article class="mailbox-card">
+          <div class="mailbox-top"><span>transcript</span><span>09:46</span></div>
+          <div class="mailbox-text">researcher: 根因在 token family 的 metadata 被 access session 覆盖，建议补 merge precedence 测试。</div>
+        </article>
+      </section>
+
+      <section class="side-block">
+        <div class="section-title">
+          <h2>任务板</h2>
+          <span class="count">5 tasks</span>
+        </div>
+
+        <article class="task">
+          <div class="task-head"><span class="tag done">done</span><span>#1</span></div>
+          <div class="task-title">定位 refresh token 过期判断错误来源</div>
+          <div class="task-owner">owner: researcher</div>
+        </article>
+
+        <article class="task">
+          <div class="task-head"><span class="tag">running</span><span>#2</span></div>
+          <div class="task-title">构造稳定复现脚本与回归验证命令</div>
+          <div class="task-owner">owner: tester</div>
+        </article>
+
+        <article class="task">
+          <div class="task-head"><span class="tag blocked">blocked</span><span>#3</span></div>
+          <div class="task-title">审查 session 权限边界和兼容影响</div>
+          <div class="task-owner">owner: reviewer · waiting permission</div>
+        </article>
+
+        <article class="task">
+          <div class="task-head"><span class="tag">todo</span><span>#4</span></div>
+          <div class="task-title">实现修复并通知 tester/reviewer 继续</div>
+          <div class="task-owner">owner: team-lead</div>
+        </article>
+      </section>
+    </aside>
+
+    <footer class="events">
+      <div class="event-label">Team Event Stream</div>
+      <div class="event-track">
+        <div class="event"><span>09:42</span><strong>TeamCreate</strong><span>auth-fix</span></div>
+        <div class="event"><span>09:43</span><strong>spawned</strong><span>researcher</span></div>
+        <div class="event"><span>09:43</span><strong>spawned</strong><span>tester</span></div>
+        <div class="event"><span>09:44</span><strong>mailbox</strong><span>team-lead → reviewer</span></div>
+        <div class="event"><span>09:46</span><strong>idle</strong><span>researcher</span></div>
+        <div class="event"><span>09:48</span><strong>task claimed</strong><span>tester #2</span></div>
+        <div class="event"><span>09:50</span><strong>permission</strong><span>reviewer requested</span></div>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
