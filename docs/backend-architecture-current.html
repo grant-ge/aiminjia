@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lotus-App 后端架构图（当前实现）</title>
+    <style>
+      :root {
+        --bg: #f4f6fb;
+        --panel: #ffffff;
+        --text: #10213a;
+        --muted: #58657a;
+        --border: #d7ddea;
+        --transport: #d8ecff;
+        --runtime: #dff7e6;
+        --domain: #ffeac9;
+        --store: #efe5ff;
+        --infra: #ffe0dc;
+        --active: #0f6fe8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: radial-gradient(circle at 10% 10%, #f8fbff 0%, var(--bg) 55%);
+        color: var(--text);
+      }
+      .shell {
+        display: grid;
+        grid-template-columns: 300px 1fr 360px;
+        min-height: 100vh;
+        gap: 12px;
+        padding: 12px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: 0 10px 26px rgba(32, 56, 91, 0.08);
+      }
+      .left,
+      .right {
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      h2 {
+        margin: 0 0 10px;
+        font-size: 14px;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .layer-list {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0 16px;
+      }
+      label.layer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      button:hover {
+        border-color: #b3c0da;
+      }
+      .canvas-wrap {
+        padding: 10px;
+        position: relative;
+      }
+      svg {
+        width: 100%;
+        height: calc(100vh - 44px);
+        display: block;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #fff 0%, #f8fafd 100%);
+      }
+      .edge {
+        stroke: #8b98b2;
+        stroke-width: 1.4;
+        fill: none;
+        marker-end: url(#arrow);
+        opacity: 0.7;
+      }
+      .edge.active {
+        stroke: var(--active);
+        stroke-width: 2.5;
+        opacity: 1;
+      }
+      .node {
+        stroke: #93a5c4;
+        stroke-width: 1;
+        rx: 14;
+      }
+      .node.active {
+        stroke: var(--active);
+        stroke-width: 2.3;
+      }
+      .node-text {
+        font-size: 12px;
+        fill: #0f213d;
+        pointer-events: none;
+      }
+      .badge {
+        font-size: 11px;
+        fill: #33486b;
+      }
+      .hint {
+        font-size: 10px;
+        fill: #4d607e;
+        pointer-events: none;
+      }
+      .arch-note {
+        display: inline-block;
+        margin-right: 8px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #0f213d;
+      }
+      .detail-title {
+        font-size: 16px;
+        margin: 0 0 10px;
+      }
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .kv {
+        margin: 10px 0;
+        padding: 10px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+      }
+      .kv strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 12px;
+      }
+      ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+      li {
+        margin-bottom: 5px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      code {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 11px;
+        background: #edf2fd;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      .legend {
+        display: grid;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      @media (max-width: 1280px) {
+        .shell {
+          grid-template-columns: 260px 1fr;
+        }
+        .right {
+          grid-column: span 2;
+        }
+        svg {
+          height: 70vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="panel left">
+        <h1>Lotus 后端架构</h1>
+        <div class="muted">视图基于当前代码结构（<code>src-tauri/src</code>）。点击组件可高亮调用链并查看详情。</div>
+
+        <h2 style="margin-top: 14px">层过滤</h2>
+        <div id="layerList" class="layer-list"></div>
+        <div class="toolbar">
+          <button id="showAll">全选</button>
+          <button id="clearAll">清空</button>
+          <button id="resetFocus">重置高亮</button>
+        </div>
+        <div class="toolbar">
+          <button id="flowChat">消息主链路</button>
+          <button id="flowRuntime">Runtime 事件链</button>
+          <button id="flowAgent">子代理链路</button>
+          <button id="flowDataTruth">数据真相源（旧）</button>
+          <button id="flowEventLayer">事件通知层（新）</button>
+          <button id="toggleEdges">显示全部连线</button>
+        </div>
+
+        <div class="legend">
+          <div class="muted">箭头表示主要调用/依赖方向（非严格时序）。</div>
+          <div class="muted">当前仍存在 Runtime + Legacy 并行路径：<code>SessionRuntime</code> 已接入，但核心聊天仍经 <code>legacy_send_message_impl</code>。</div>
+          <div class="muted">边界提醒：当前“数据真相源”仍主要在旧链路（legacy + file_store），新链路先强化事件分发与编排能力。</div>
+          <div class="muted">
+            <span class="arch-note" style="background:#dcf6e1">新</span>
+            <span class="arch-note" style="background:#ffe2d7">旧</span>
+            <span class="arch-note" style="background:#dbe9ff">过渡</span>
+            （每个模块右上角都有标记）
+          </div>
+        </div>
+      </aside>
+
+      <main class="panel canvas-wrap">
+        <svg id="graph" viewBox="0 0 1500 980" preserveAspectRatio="xMidYMid meet"></svg>
+      </main>
+
+      <aside class="panel right">
+        <h2 class="detail-title" id="detailTitle">选择一个组件</h2>
+        <div class="meta" id="detailLayer">层级：-</div>
+        <div class="meta" id="detailArch">架构归属：-</div>
+        <div class="kv">
+          <strong>职责</strong>
+          <div id="detailRole" class="muted">点击图中的节点查看职责说明。</div>
+        </div>
+        <div class="kv">
+          <strong>关键文件</strong>
+          <div id="detailFiles" class="muted">-</div>
+        </div>
+        <div class="kv">
+          <strong>上游 / 下游</strong>
+          <div id="detailDeps" class="muted">-</div>
+        </div>
+        <div class="kv">
+          <strong>Legacy 事件映射（当前）</strong>
+          <ul id="eventMap" class="muted">
+            <li><code>StreamDelta</code> → <code>streaming:delta</code></li>
+            <li><code>StreamDone</code> → <code>streaming:done</code></li>
+            <li><code>ToolCallExecuting</code> → <code>tool:executing</code></li>
+            <li><code>ToolCallCompleted</code> → <code>tool:completed</code></li>
+            <li><code>MessagePersisted</code> → <code>message:updated</code></li>
+            <li><code>AgentIdle</code> → <code>agent:idle</code></li>
+          </ul>
+          <div class="muted" style="margin-top:8px">
+            区别说明：<code>streaming:delta</code> 是“内容分片事件”（会多次触发，携带 delta 文本）；
+            <code>streaming:done</code> 是“收尾事件”（通常一次，不负责正文，通知前端结束流式状态并清理 isStreaming/busy）。
+          </div>
+        </div>
+        <div class="kv">
+          <strong>当前链路顺序</strong>
+          <div id="flowName" class="muted">未选择链路</div>
+          <ol id="flowSteps" class="muted" style="margin-top:8px; padding-left:18px"></ol>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      const layers = {
+        transport: { label: "L1 Transport / 命令适配", color: getCss("--transport") },
+        runtime: { label: "L2 Runtime Core", color: getCss("--runtime") },
+        domain: { label: "L3/L4 Tool + Agent/Task", color: getCss("--domain") },
+        store: { label: "L5 State/Store", color: getCss("--store") },
+        infra: { label: "L6 Infra Adapter", color: getCss("--infra") }
+      };
+      const archKinds = {
+        new: { label: "新架构（runtime-first）", short: "新", color: "#dcf6e1" },
+        old: { label: "旧架构（legacy 主路径）", short: "旧", color: "#ffe2d7" },
+        bridge: { label: "过渡层（新旧桥接）", short: "过渡", color: "#dbe9ff" }
+      };
+      const nodeArch = {
+        frontend: "bridge",
+        tauri_cmd: "old",
+        chat_adapter: "bridge",
+        session_runtime: "new",
+        legacy_turn: "old",
+        query_engine: "new",
+        event_bus: "new",
+        event_adapter: "bridge",
+        llm_gateway: "old",
+        run_registry: "bridge",
+        tool_runtime: "new",
+        plugin_system: "bridge",
+        agent_runtime: "new",
+        task_runtime: "new",
+        runtime_stores: "new",
+        app_storage: "old",
+        py_session: "old",
+        connector: "old",
+        auth: "old"
+      };
+
+      const nodes = [
+        {
+          id: "frontend",
+          name: "WebView 前端",
+          layer: "transport",
+          x: 110,
+          y: 120,
+          w: 210,
+          h: 74,
+          role: "真实场景：用户点发送后，前端先本地插入用户气泡，再 invoke('send_message')；同时订阅 streaming:delta、tool:*、message:updated，实时更新 AI 回复和工具状态。",
+          files: ["src/lib/tauri.ts", "src/hooks/useChat.ts", "src/stores/chatStore.ts"]
+        },
+        {
+          id: "tauri_cmd",
+          name: "Tauri Commands",
+          layer: "transport",
+          x: 390,
+          y: 120,
+          w: 230,
+          h: 74,
+          role: "真实场景：前端调用 send_message/get_messages/stop_streaming 时先进入这里；这里主要做参数接收和路由，把请求转给对应 adapter，不承载复杂业务编排。",
+          files: ["src-tauri/src/lib.rs", "src-tauri/src/commands/*.rs"]
+        },
+        {
+          id: "chat_adapter",
+          name: "TauriChatCommandAdapter",
+          layer: "transport",
+          x: 690,
+          y: 120,
+          w: 260,
+          h: 74,
+          role: "真实场景：收到 send_message 后，这里构建 ChatTurnRequest 交给 SessionRuntime；删除会话时也会补发 streaming:done/agent:idle 等兼容事件。",
+          files: ["src-tauri/src/transport/tauri_commands/chat.rs"]
+        },
+        {
+          id: "session_runtime",
+          name: "SessionRuntime",
+          layer: "runtime",
+          x: 1020,
+          y: 120,
+          w: 220,
+          h: 74,
+          role: "真实场景：每次用户提问先在这里创建 run 级上下文并触发 RunStarted；当前生产链路会把执行委托给 legacy executor。",
+          files: ["src-tauri/src/runtime/session_runtime.rs"]
+        },
+        {
+          id: "legacy_turn",
+          name: "legacy_send_message_impl",
+          layer: "runtime",
+          x: 1020,
+          y: 240,
+          w: 260,
+          h: 88,
+          role: "真实场景：日常问答主流程在这里完成：busy 检查、写入用户消息、加载设置和历史、驱动 LLM+tool loop，并持续向前端推流与落盘。",
+          files: ["src-tauri/src/transport/tauri_commands/chat/chat_runtime_impl.rs"]
+        },
+        {
+          id: "query_engine",
+          name: "QueryEngine",
+          layer: "runtime",
+          x: 1320,
+          y: 120,
+          w: 160,
+          h: 74,
+          role: "真实场景：runtime-first 新链路会在这里执行 turn 和工具调用；测试里常用它验证 StreamDelta、ToolCall 事件顺序是否正确。",
+          files: ["src-tauri/src/runtime/query_engine.rs"]
+        },
+        {
+          id: "event_bus",
+          name: "RuntimeEventBus",
+          layer: "runtime",
+          x: 1320,
+          y: 240,
+          w: 160,
+          h: 88,
+          role: "运行时事件分发中心。真实场景：1) send_message 期间 QueryEngine 产出 StreamDelta/StreamDone，事件总线把事件推给 TauriEventAdapter，前端实时看到打字流；2) 工具调用时产出 ToolCallExecuting/ToolCallCompleted，前端据此显示“工具执行中/已完成”；3) 子代理完成时发 AgentIdle，前端据此关闭忙碌状态。",
+          files: ["src-tauri/src/runtime/event_bus.rs", "src-tauri/src/runtime/events.rs"]
+        },
+        {
+          id: "event_adapter",
+          name: "TauriEventAdapter",
+          layer: "transport",
+          x: 1320,
+          y: 370,
+          w: 160,
+          h: 82,
+          role: "真实场景：Runtime 发出 StreamDelta 时，这里转换成 streaming:delta；ToolCallCompleted 转成 tool:completed，保证前端旧协议无需修改。",
+          files: ["src-tauri/src/transport/tauri_event_adapter.rs", "src-tauri/src/transport/tauri_runtime_host.rs"]
+        },
+        {
+          id: "llm_gateway",
+          name: "LlmGateway",
+          layer: "infra",
+          x: 700,
+          y: 260,
+          w: 230,
+          h: 88,
+          role: "真实场景：legacy_turn 调它发起流式生成；它按 settings 选择 provider（deepseek/openai/lotus 等），并对 429/5xx/超时做重试和取消控制。",
+          files: ["src-tauri/src/llm/gateway.rs", "src-tauri/src/llm/router.rs", "src-tauri/src/llm/providers/*.rs"]
+        },
+        {
+          id: "run_registry",
+          name: "RuntimeRunRegistry",
+          layer: "store",
+          x: 430,
+          y: 300,
+          w: 220,
+          h: 74,
+          role: "真实场景：同一会话重复点击发送时，通过 run 占位判断 busy 并拒绝并发；用户点停止时，也通过这里把 cancel 信号发给对应 run。",
+          files: ["src-tauri/src/runtime/run_registry.rs"]
+        },
+        {
+          id: "tool_runtime",
+          name: "Tool Runtime",
+          layer: "domain",
+          x: 700,
+          y: 410,
+          w: 230,
+          h: 84,
+          role: "真实场景：模型产出工具调用后，先过 PermissionPipeline，再发 tool:executing，执行完成发 tool:completed，并把结果回注给模型继续推理。",
+          files: ["src-tauri/src/runtime/tools/dispatcher.rs", "src-tauri/src/runtime/tools/permission.rs"]
+        },
+        {
+          id: "plugin_system",
+          name: "Plugin/Skill Registry",
+          layer: "domain",
+          x: 1020,
+          y: 410,
+          w: 260,
+          h: 84,
+          role: "真实场景：应用启动时扫描 builtin/custom 插件并注册；运行时按工具名或 skill id 找到实现，例如 web_search、python_exec、行业 workflow。",
+          files: ["src-tauri/src/plugin/registry.rs", "src-tauri/src/plugin/builtin/tools/mod.rs", "src-tauri/src/plugin/builtin/skills/mod.rs"]
+        },
+        {
+          id: "agent_runtime",
+          name: "AgentRuntime",
+          layer: "domain",
+          x: 1020,
+          y: 540,
+          w: 220,
+          h: 84,
+          role: "真实场景：主对话触发子代理时在这里 spawn child_run；后台子代理结束后更新状态并发 AgentIdle，让前端退出“处理中”。",
+          files: ["src-tauri/src/runtime/agent/agent_runtime.rs", "src-tauri/src/runtime/agent/worktree.rs", "src-tauri/src/runtime/agent/team.rs"]
+        },
+        {
+          id: "task_runtime",
+          name: "TaskRuntime",
+          layer: "domain",
+          x: 1320,
+          y: 540,
+          w: 160,
+          h: 84,
+          role: "真实场景：长任务创建先是 pending，开始执行变 running，成功变 completed，异常变 failed，用户中止变 cancelled；每次状态变化都可发 task:status-changed 事件。",
+          files: ["src-tauri/src/runtime/task/task_runtime.rs", "src-tauri/src/runtime/task/task_models.rs"]
+        },
+        {
+          id: "runtime_stores",
+          name: "Runtime Stores",
+          layer: "store",
+          x: 1020,
+          y: 670,
+          w: 260,
+          h: 84,
+          role: "真实场景：子代理 resume 时从 run/task/agent store 重建上下文；任务列表刷新时，也从这些分域 store 读取当前真实状态。",
+          files: ["src-tauri/src/runtime/store/mod.rs", "src-tauri/src/runtime/store/*.rs"]
+        },
+        {
+          id: "app_storage",
+          name: "AppStorage(File Store)",
+          layer: "store",
+          x: 700,
+          y: 670,
+          w: 230,
+          h: 84,
+          role: "真实场景：聊天消息、会话标题、设置、分析步骤最终都落到 file_store；应用重启后从这里恢复历史记录和配置。",
+          files: ["src-tauri/src/storage/file_store/mod.rs", "src-tauri/src/storage/file_store/*.rs"]
+        },
+        {
+          id: "py_session",
+          name: "PythonSessionManager",
+          layer: "infra",
+          x: 390,
+          y: 540,
+          w: 230,
+          h: 84,
+          role: "真实场景：用户调用 execute_python 时复用同会话里的变量（如 _df）；崩溃后可按 checkpoint 恢复，长时间空闲会被自动回收。",
+          files: ["src-tauri/src/python/session.rs", "src-tauri/src/python/runner.rs", "src-tauri/src/python/sandbox.rs"]
+        },
+        {
+          id: "connector",
+          name: "ConnectorEngine + Playwright",
+          layer: "infra",
+          x: 390,
+          y: 670,
+          w: 230,
+          h: 84,
+          role: "真实场景：工具需要网页采集或自动化点击时，通过 ConnectorEngine 驱动 Playwright 完成导航、提取、截图等动作。",
+          files: ["src-tauri/src/connector/engine.rs", "src-tauri/src/connector/playwright_browser.rs"]
+        },
+        {
+          id: "auth",
+          name: "AuthManager + SecureStorage",
+          layer: "infra",
+          x: 110,
+          y: 540,
+          w: 230,
+          h: 84,
+          role: "真实场景：启用云端模式时先由 AuthManager 校验登录并拿 session_key；本地 provider 的 API Key 通过 SecureStorage 加解密存取。",
+          files: ["src-tauri/src/auth/mod.rs", "src-tauri/src/storage/crypto.rs"]
+        }
+      ];
+
+      const edges = [
+        ["frontend", "tauri_cmd"],
+        ["tauri_cmd", "chat_adapter"],
+        ["chat_adapter", "session_runtime"],
+        ["session_runtime", "legacy_turn"],
+        ["session_runtime", "query_engine"],
+        ["query_engine", "event_bus"],
+        ["session_runtime", "event_bus"],
+        ["legacy_turn", "llm_gateway"],
+        ["legacy_turn", "plugin_system"],
+        ["legacy_turn", "app_storage"],
+        ["legacy_turn", "py_session"],
+        ["legacy_turn", "auth"],
+        ["llm_gateway", "run_registry"],
+        ["llm_gateway", "tool_runtime"],
+        ["tool_runtime", "plugin_system"],
+        ["agent_runtime", "runtime_stores"],
+        ["task_runtime", "runtime_stores"],
+        ["runtime_stores", "app_storage"],
+        ["plugin_system", "connector"],
+        ["plugin_system", "py_session"],
+        ["event_bus", "event_adapter"],
+        ["event_adapter", "frontend"],
+        ["session_runtime", "agent_runtime"],
+        ["session_runtime", "task_runtime"]
+      ];
+
+      const activeLayers = new Set(Object.keys(layers));
+      let focusNodeId = null;
+      let focusPath = [];
+      let focusFlowName = "";
+      let showAllEdges = false;
+      const flowCatalog = {
+        chat: { name: "消息主链路", path: ["frontend", "tauri_cmd", "chat_adapter", "session_runtime", "legacy_turn", "llm_gateway"] },
+        runtime: { name: "Runtime 事件链", path: ["session_runtime", "query_engine", "event_bus", "event_adapter", "frontend"] },
+        agent: { name: "子代理链路", path: ["session_runtime", "agent_runtime", "runtime_stores", "app_storage"] },
+        dataTruthOld: { name: "数据真相源（旧）", path: ["frontend", "tauri_cmd", "chat_adapter", "session_runtime", "legacy_turn", "app_storage"] },
+        eventLayerNew: { name: "事件通知层（新）", path: ["session_runtime", "query_engine", "event_bus", "event_adapter", "frontend"] }
+      };
+
+      const graphEl = document.getElementById("graph");
+      const layerListEl = document.getElementById("layerList");
+      const CORE_EDGES = new Set([
+        "frontend->tauri_cmd",
+        "tauri_cmd->chat_adapter",
+        "chat_adapter->session_runtime",
+        "session_runtime->legacy_turn",
+        "legacy_turn->llm_gateway",
+        "legacy_turn->app_storage",
+        "event_bus->event_adapter",
+        "event_adapter->frontend"
+      ]);
+
+      renderLayerFilters();
+      renderGraph();
+      bindActions();
+
+      function getCss(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+
+      function renderLayerFilters() {
+        layerListEl.innerHTML = "";
+        Object.entries(layers).forEach(([key, val]) => {
+          const row = document.createElement("label");
+          row.className = "layer";
+          row.innerHTML = `
+            <input type="checkbox" data-layer="${key}" checked>
+            <span class="dot" style="background:${val.color}"></span>
+            <span>${val.label}</span>
+          `;
+          layerListEl.appendChild(row);
+        });
+
+        layerListEl.querySelectorAll("input[type='checkbox']").forEach((box) => {
+          box.addEventListener("change", () => {
+            const layer = box.dataset.layer;
+            if (box.checked) activeLayers.add(layer);
+            else activeLayers.delete(layer);
+            renderGraph();
+          });
+        });
+      }
+
+      function bindActions() {
+        document.getElementById("showAll").addEventListener("click", () => {
+          Object.keys(layers).forEach((k) => activeLayers.add(k));
+          syncFilterUI();
+          renderGraph();
+        });
+
+        document.getElementById("clearAll").addEventListener("click", () => {
+          activeLayers.clear();
+          syncFilterUI();
+          renderGraph();
+        });
+
+        document.getElementById("resetFocus").addEventListener("click", () => {
+          focusNodeId = null;
+          focusPath = [];
+          focusFlowName = "";
+          renderGraph();
+          clearDetail();
+          renderFlowSteps();
+        });
+
+        document.getElementById("flowChat").addEventListener("click", () => {
+          setFocusFlow(flowCatalog.chat.name, flowCatalog.chat.path);
+        });
+        document.getElementById("flowRuntime").addEventListener("click", () => {
+          setFocusFlow(flowCatalog.runtime.name, flowCatalog.runtime.path);
+        });
+        document.getElementById("flowAgent").addEventListener("click", () => {
+          setFocusFlow(flowCatalog.agent.name, flowCatalog.agent.path);
+        });
+        document.getElementById("flowDataTruth").addEventListener("click", () => {
+          setFocusFlow(flowCatalog.dataTruthOld.name, flowCatalog.dataTruthOld.path);
+        });
+        document.getElementById("flowEventLayer").addEventListener("click", () => {
+          setFocusFlow(flowCatalog.eventLayerNew.name, flowCatalog.eventLayerNew.path);
+        });
+        document.getElementById("toggleEdges").addEventListener("click", () => {
+          showAllEdges = !showAllEdges;
+          document.getElementById("toggleEdges").textContent = showAllEdges
+            ? "仅显示关键连线"
+            : "显示全部连线";
+          renderGraph();
+        });
+      }
+
+      function syncFilterUI() {
+        layerListEl.querySelectorAll("input[type='checkbox']").forEach((box) => {
+          box.checked = activeLayers.has(box.dataset.layer);
+        });
+      }
+
+      function renderGraph() {
+        graphEl.innerHTML = `
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b98b2"></path>
+            </marker>
+          </defs>
+        `;
+
+        const visibleNodes = nodes.filter((n) => activeLayers.has(n.layer));
+        const visibleIds = new Set(visibleNodes.map((n) => n.id));
+        const visibleEdges = edges.filter(([from, to]) => visibleIds.has(from) && visibleIds.has(to));
+        const drawEdges = chooseEdgesToDraw(visibleEdges);
+
+        const neighborIds = getNeighbors(focusNodeId, drawEdges);
+        const focusPathSet = new Set(focusPath);
+
+        drawEdges.forEach(([from, to], edgeIndex) => {
+          const a = nodes.find((n) => n.id === from);
+          const b = nodes.find((n) => n.id === to);
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const route = buildEdgeRoute(a, b, edgeIndex);
+          path.setAttribute("d", route);
+          path.setAttribute("class", isEdgeActive(from, to, focusNodeId, focusPath) ? "edge active" : "edge");
+          graphEl.appendChild(path);
+        });
+
+        visibleNodes.forEach((node) => {
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          g.style.cursor = "pointer";
+          g.setAttribute("title", node.role);
+          const arch = archKinds[nodeArch[node.id] || "bridge"];
+
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", node.x);
+          rect.setAttribute("y", node.y);
+          rect.setAttribute("width", node.w);
+          rect.setAttribute("height", node.h);
+          rect.setAttribute("fill", layers[node.layer].color);
+          rect.setAttribute(
+            "class",
+            focusNodeId === node.id || neighborIds.has(node.id) || focusPathSet.has(node.id)
+              ? "node active"
+              : "node"
+          );
+
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", node.x + 12);
+          text.setAttribute("y", node.y + 30);
+          text.setAttribute("class", "node-text");
+          text.textContent = node.name;
+
+          const hint = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          hint.setAttribute("x", node.x + 12);
+          hint.setAttribute("y", node.y + 46);
+          hint.setAttribute("class", "hint");
+          hint.textContent = shortHint(node);
+
+          const badge = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          badge.setAttribute("x", node.x + 12);
+          badge.setAttribute("y", node.y + node.h - 14);
+          badge.setAttribute("class", "badge");
+          badge.textContent = layers[node.layer].label;
+
+          const archRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          archRect.setAttribute("x", node.x + node.w - 58);
+          archRect.setAttribute("y", node.y + 8);
+          archRect.setAttribute("width", 50);
+          archRect.setAttribute("height", 16);
+          archRect.setAttribute("rx", 8);
+          archRect.setAttribute("fill", arch.color);
+          archRect.setAttribute("stroke", "#94a7c6");
+          archRect.setAttribute("stroke-width", "0.8");
+
+          const archText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          archText.setAttribute("x", node.x + node.w - 33);
+          archText.setAttribute("y", node.y + 20);
+          archText.setAttribute("text-anchor", "middle");
+          archText.setAttribute("font-size", "10");
+          archText.setAttribute("font-weight", "700");
+          archText.setAttribute("fill", "#183152");
+          archText.textContent = arch.short;
+
+          g.appendChild(rect);
+          g.appendChild(archRect);
+          g.appendChild(archText);
+          g.appendChild(text);
+          g.appendChild(hint);
+          g.appendChild(badge);
+
+          g.addEventListener("click", () => {
+            focusNodeId = node.id;
+            focusPath = [];
+            focusFlowName = "";
+            renderGraph();
+            renderDetail(node, drawEdges);
+            renderFlowSteps();
+          });
+
+          graphEl.appendChild(g);
+
+          const stepNo = focusPath.indexOf(node.id) + 1;
+          if (stepNo > 0) {
+            const stepDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            stepDot.setAttribute("cx", node.x + 10);
+            stepDot.setAttribute("cy", node.y + 10);
+            stepDot.setAttribute("r", 10);
+            stepDot.setAttribute("fill", "#0f6fe8");
+            graphEl.appendChild(stepDot);
+
+            const stepText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            stepText.setAttribute("x", node.x + 10);
+            stepText.setAttribute("y", node.y + 14);
+            stepText.setAttribute("text-anchor", "middle");
+            stepText.setAttribute("font-size", "11");
+            stepText.setAttribute("font-weight", "700");
+            stepText.setAttribute("fill", "#ffffff");
+            stepText.textContent = String(stepNo);
+            graphEl.appendChild(stepText);
+          }
+        });
+      }
+
+      function getNeighbors(nodeId, list) {
+        const s = new Set();
+        if (!nodeId) return s;
+        list.forEach(([a, b]) => {
+          if (a === nodeId) s.add(b);
+          if (b === nodeId) s.add(a);
+        });
+        return s;
+      }
+
+      function isEdgeActive(from, to, focus, path) {
+        const onFocusNode = !!focus && (from === focus || to === focus);
+        const onFocusPath = edgeInPath(from, to, path);
+        return onFocusNode || onFocusPath;
+      }
+
+      function edgeInPath(from, to, path) {
+        if (!path || path.length < 2) return false;
+        for (let i = 0; i < path.length - 1; i += 1) {
+          if (path[i] === from && path[i + 1] === to) return true;
+        }
+        return false;
+      }
+
+      function setFocusFlow(name, path) {
+        focusNodeId = null;
+        focusFlowName = name;
+        focusPath = path.slice();
+        renderGraph();
+        renderFlowSteps();
+        if (path.length > 0) {
+          const last = nodes.find((n) => n.id === path[path.length - 1]);
+          if (last) {
+            const visibleNodes = nodes.filter((n) => activeLayers.has(n.layer));
+            const visibleIds = new Set(visibleNodes.map((n) => n.id));
+            const visibleEdges = edges.filter(([from, to]) => visibleIds.has(from) && visibleIds.has(to));
+            renderDetail(last, chooseEdgesToDraw(visibleEdges));
+          }
+        }
+      }
+
+      function renderFlowSteps() {
+        const nameEl = document.getElementById("flowName");
+        const listEl = document.getElementById("flowSteps");
+        if (!focusPath.length) {
+          nameEl.textContent = "未选择链路";
+          listEl.innerHTML = "";
+          return;
+        }
+        nameEl.textContent = focusFlowName || "自定义高亮";
+        listEl.innerHTML = focusPath
+          .map((id) => `<li>${escapeHtml(findName(id))}</li>`)
+          .join("");
+      }
+
+      function renderDetail(node, visibleEdges) {
+        document.getElementById("detailTitle").textContent = node.name;
+        document.getElementById("detailLayer").textContent = `层级：${layers[node.layer].label}`;
+        document.getElementById("detailArch").textContent = `架构归属：${archKinds[nodeArch[node.id] || "bridge"].label}`;
+        document.getElementById("detailRole").textContent = node.role;
+
+        document.getElementById("detailFiles").innerHTML = node.files
+          .map((f) => `<div><code>${escapeHtml(f)}</code></div>`)
+          .join("");
+
+        const incoming = visibleEdges.filter(([, to]) => to === node.id).map(([from]) => findName(from));
+        const outgoing = visibleEdges.filter(([from]) => from === node.id).map(([, to]) => findName(to));
+
+        document.getElementById("detailDeps").innerHTML = `
+          <div><strong>上游：</strong>${incoming.length ? incoming.join("、") : "无"}</div>
+          <div style="margin-top:6px"><strong>下游：</strong>${outgoing.length ? outgoing.join("、") : "无"}</div>
+        `;
+      }
+
+      function clearDetail() {
+        document.getElementById("detailTitle").textContent = "选择一个组件";
+        document.getElementById("detailLayer").textContent = "层级：-";
+        document.getElementById("detailArch").textContent = "架构归属：-";
+        document.getElementById("detailRole").textContent = "点击图中的节点查看职责说明。";
+        document.getElementById("detailFiles").textContent = "-";
+        document.getElementById("detailDeps").textContent = "-";
+      }
+
+      function findName(id) {
+        const node = nodes.find((n) => n.id === id);
+        return node ? node.name : id;
+      }
+
+      function shortHint(node) {
+        const raw = node.hint || node.role || "";
+        return raw.length > 16 ? `${raw.slice(0, 16)}...` : raw;
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function buildEdgeRoute(a, b, edgeIndex) {
+        const rightOfA = a.x + a.w;
+        const leftOfA = a.x;
+        const rightOfB = b.x + b.w;
+        const leftOfB = b.x;
+        const centerYA = a.y + a.h / 2;
+        const centerYB = b.y + b.h / 2;
+
+        // 正向（从左到右）走柔和曲线，阅读负担更低。
+        if (rightOfA <= leftOfB) {
+          const sx = rightOfA;
+          const sy = centerYA;
+          const tx = leftOfB;
+          const ty = centerYB;
+          const bend = Math.max(36, (tx - sx) * 0.42);
+          return `M ${sx} ${sy} C ${sx + bend} ${sy}, ${tx - bend} ${ty}, ${tx} ${ty}`;
+        }
+
+        // 反向（从右到左）走下方“回路”，避免穿过主体区域造成乱线。
+        if (leftOfA >= rightOfB) {
+          const sx = leftOfA;
+          const sy = centerYA;
+          const tx = rightOfB;
+          const ty = centerYB;
+          const laneY = Math.max(sy, ty) + 110 + (edgeIndex % 4) * 22;
+          return [
+            `M ${sx} ${sy}`,
+            `L ${sx - 24} ${sy}`,
+            `L ${sx - 24} ${laneY}`,
+            `L ${tx + 24} ${laneY}`,
+            `L ${tx + 24} ${ty}`,
+            `L ${tx} ${ty}`
+          ].join(" ");
+        }
+
+        // 同列上下关系，用竖向通道连接。
+        const down = centerYB > centerYA;
+        const sx = a.x + a.w / 2;
+        const sy = down ? a.y + a.h : a.y;
+        const tx = b.x + b.w / 2;
+        const ty = down ? b.y : b.y + b.h;
+        const midY = (sy + ty) / 2;
+        return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`;
+      }
+
+      function chooseEdgesToDraw(visibleEdges) {
+        if (showAllEdges) return visibleEdges;
+        if (focusPath.length >= 2) {
+          return visibleEdges.filter(([from, to]) => edgeInPath(from, to, focusPath));
+        }
+        if (focusNodeId) {
+          return visibleEdges.filter(([from, to]) => from === focusNodeId || to === focusNodeId);
+        }
+        return visibleEdges.filter(([from, to]) => CORE_EDGES.has(`${from}->${to}`));
+      }
+    </script>
+  </body>
+</html>

@@ -93,7 +93,11 @@ pub(super) fn build_request_body(
 ) -> Value {
     log::info!(
         "[API-BUILD] model={} stream={} include_tools={} msg_count={} tool_count={}",
-        model, stream, include_tools, request.messages.len(), request.tools.len()
+        model,
+        stream,
+        include_tools,
+        request.messages.len(),
+        request.tools.len()
     );
     let messages: Vec<Value> = request
         .messages
@@ -188,9 +192,7 @@ pub(super) fn parse_response(data: &Value) -> Result<LlmResponse> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let main_content = choice["message"]["content"]
-        .as_str()
-        .unwrap_or("");
+    let main_content = choice["message"]["content"].as_str().unwrap_or("");
 
     let content = if reasoning.is_empty() {
         main_content.to_string()
@@ -271,7 +273,12 @@ pub(super) async fn send_openai_compat(
     let status = resp.status();
     if !status.is_success() {
         let error_text = resp.text().await.unwrap_or_default();
-        log::error!("Streaming API error: status={}, url={}, body={}", status.as_u16(), url, error_text);
+        log::error!(
+            "Streaming API error: status={}, url={}, body={}",
+            status.as_u16(),
+            url,
+            error_text
+        );
         return Err(anyhow!("API error ({}): {}", status.as_u16(), error_text));
     }
 
@@ -297,11 +304,22 @@ pub(super) async fn stream_openai_compat(
 
     // Debug: log whether tools are included in the request
     if let Some(tools) = body.get("tools").and_then(|v| v.as_array()) {
-        log::info!("[STREAM-REQ] url={} model={} tools_count={} tool_names={:?}",
-            url, model, tools.len(),
-            tools.iter().filter_map(|t| t["function"]["name"].as_str()).collect::<Vec<_>>());
+        log::info!(
+            "[STREAM-REQ] url={} model={} tools_count={} tool_names={:?}",
+            url,
+            model,
+            tools.len(),
+            tools
+                .iter()
+                .filter_map(|t| t["function"]["name"].as_str())
+                .collect::<Vec<_>>()
+        );
     } else {
-        log::info!("[STREAM-REQ] url={} model={} tools_count=0 (no tools in body)", url, model);
+        log::info!(
+            "[STREAM-REQ] url={} model={} tools_count=0 (no tools in body)",
+            url,
+            model
+        );
     }
     let resp = client
         .post(url)
@@ -314,7 +332,12 @@ pub(super) async fn stream_openai_compat(
     let status = resp.status();
     if !status.is_success() {
         let error_text = resp.text().await.unwrap_or_default();
-        log::error!("Streaming API error: status={}, url={}, body={}", status.as_u16(), url, error_text);
+        log::error!(
+            "Streaming API error: status={}, url={}, body={}",
+            status.as_u16(),
+            url,
+            error_text
+        );
         return Err(anyhow!(
             "Streaming API error ({}): {}",
             status.as_u16(),
@@ -340,6 +363,7 @@ pub(super) async fn validate_key_openai_compat(
         max_tokens: 5,
         temperature: 0.0,
         stream: false,
+        thinking_config: None,
     };
 
     let body = build_request_body(&request, model, false, false);
@@ -427,8 +451,7 @@ fn sse_bytes_to_events(
                 if let Some(json_str) = parse_sse_line(&line) {
                     if json_str == "[DONE]" {
                         flush_pending_tool(&mut st);
-                        let reason = st.final_stop_reason.take()
-                            .unwrap_or(StopReason::EndTurn);
+                        let reason = st.final_stop_reason.take().unwrap_or(StopReason::EndTurn);
                         st.pending_events.push(StreamEvent::Done {
                             stop_reason: reason,
                             usage: TokenUsage::default(),
@@ -519,15 +542,16 @@ fn sse_bytes_to_events(
                 Some(Err(e)) => {
                     st.done = true;
                     return Some((
-                        StreamEvent::Error { error: format!("Stream read error: {}", e) },
+                        StreamEvent::Error {
+                            error: format!("Stream read error: {}", e),
+                        },
                         st,
                     ));
                 }
                 None => {
                     // End of stream.
                     flush_pending_tool(&mut st);
-                    let reason = st.final_stop_reason.take()
-                        .unwrap_or(StopReason::EndTurn);
+                    let reason = st.final_stop_reason.take().unwrap_or(StopReason::EndTurn);
                     st.pending_events.push(StreamEvent::Done {
                         stop_reason: reason,
                         usage: TokenUsage::default(),
@@ -566,8 +590,9 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
     // Text content delta.
     if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
         if !content.is_empty() {
-            st.pending_events
-                .push(StreamEvent::ContentDelta { delta: content.to_string() });
+            st.pending_events.push(StreamEvent::ContentDelta {
+                delta: content.to_string(),
+            });
         }
     }
 
@@ -590,7 +615,11 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
             }
 
             // Update tool name if provided (may arrive in any chunk).
-            if let Some(name) = tc.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()) {
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
                 if !name.is_empty() {
                     st.tool_name = Some(name.to_string());
                 }
@@ -599,7 +628,11 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
             // Accumulate argument fragments using .as_str() (standard approach).
             if let Some(frag) = tc["function"]["arguments"].as_str() {
                 if !frag.is_empty() {
-                    log::debug!("[SSE] Tool args fragment: len={} total_so_far={}", frag.len(), st.tool_args.len() + frag.len());
+                    log::debug!(
+                        "[SSE] Tool args fragment: len={} total_so_far={}",
+                        frag.len(),
+                        st.tool_args.len() + frag.len()
+                    );
                 }
                 st.tool_args.push_str(frag);
             }
@@ -630,7 +663,10 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         let args_preview: String = st.tool_args.chars().take(200).collect();
         log::info!(
             "[SSE] Flushing tool call: id={} name={} args_len={} args='{}'…",
-            id, name, st.tool_args.len(), args_preview
+            id,
+            name,
+            st.tool_args.len(),
+            args_preview
         );
 
         // Handle empty args: treat as empty object `{}` (valid for tools with all optional params).
@@ -651,19 +687,34 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         let arguments = match serde_json::from_str(&st.tool_args) {
             Ok(v) => v,
             Err(e) => {
-                let tail: String = st.tool_args.chars().rev().take(200).collect::<Vec<_>>().into_iter().rev().collect();
+                let tail: String = st
+                    .tool_args
+                    .chars()
+                    .rev()
+                    .take(200)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
                 log::error!(
                     "[SSE] Failed to parse tool args as JSON: err={} args_len={} first_500='{}' last_200='{}'",
                     e, st.tool_args.len(), st.tool_args.chars().take(500).collect::<String>(), tail
                 );
                 // Log hex dump of first 100 bytes to detect invisible control chars
-                let hex: String = st.tool_args.bytes().take(100).map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                let hex: String = st
+                    .tool_args
+                    .bytes()
+                    .take(100)
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 log::error!("[SSE] Tool args hex dump (first 100 bytes): {}", hex);
                 // Dump full tool_args to temp file for debugging
                 {
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs()).unwrap_or(0);
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
                     let dump_path = format!("/tmp/tool_args_dump_{}.txt", ts);
                     let _ = std::fs::write(&dump_path, &st.tool_args);
                     log::error!("[SSE] Full tool_args dumped to {}", dump_path);
@@ -678,7 +729,10 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
                         v
                     }
                     Err(e2) => {
-                        log::warn!("[SSE] Sanitize didn't fix it ({}), trying truncated JSON repair", e2);
+                        log::warn!(
+                            "[SSE] Sanitize didn't fix it ({}), trying truncated JSON repair",
+                            e2
+                        );
                         let repaired = repair_truncated_json(&sanitized);
                         match serde_json::from_str(&repaired) {
                             Ok(v) => {
@@ -686,7 +740,11 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
                                 v
                             }
                             Err(e3) => {
-                                log::error!("[SSE] All recovery failed: sanitize={}, repair={}", e2, e3);
+                                log::error!(
+                                    "[SSE] All recovery failed: sanitize={}, repair={}",
+                                    e2,
+                                    e3
+                                );
                                 Value::Null
                             }
                         }
@@ -699,7 +757,11 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         // Normalize here so all downstream code (allowed check, dispatch, logging) works.
         let normalized_name = if name.starts_with("mcp_") {
             let stripped = name.strip_prefix("mcp_").unwrap().to_string();
-            log::info!("[SSE] Stripped mcp_ prefix from tool name: '{}' → '{}'", name, stripped);
+            log::info!(
+                "[SSE] Stripped mcp_ prefix from tool name: '{}' → '{}'",
+                name,
+                stripped
+            );
             stripped
         } else {
             name
@@ -710,7 +772,8 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
             arguments,
         };
         st.tool_args.clear();
-        st.pending_events.push(StreamEvent::ToolCallStart { tool_call: tc });
+        st.pending_events
+            .push(StreamEvent::ToolCallStart { tool_call: tc });
     }
 }
 
@@ -822,8 +885,12 @@ fn repair_truncated_json(input: &str) -> String {
                 '"' => in_string = true,
                 '{' => stack.push('{'),
                 '[' => stack.push('['),
-                '}' => { stack.pop(); }
-                ']' => { stack.pop(); }
+                '}' => {
+                    stack.pop();
+                }
+                ']' => {
+                    stack.pop();
+                }
                 _ => {}
             }
         }
@@ -881,7 +948,8 @@ mod tests {
         let mut st = test_state();
 
         // Chunk 1: new tool call with id and name
-        let chunk1: Value = serde_json::from_str(r#"{
+        let chunk1: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -890,13 +958,16 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk1, &mut st);
         assert!(st.pending_events.is_empty(), "no flush yet");
         assert_eq!(st.tool_id.as_deref(), Some("call_abc123"));
 
         // Chunk 2: same id, continuation with partial args (Qwen pattern)
-        let chunk2: Value = serde_json::from_str(r#"{
+        let chunk2: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -905,13 +976,16 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk2, &mut st);
         assert!(st.pending_events.is_empty(), "should NOT flush — same id");
         assert_eq!(st.tool_args, "{\"file_id\":");
 
         // Chunk 3: no id, just more args
-        let chunk3: Value = serde_json::from_str(r#"{
+        let chunk3: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -919,22 +993,29 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk3, &mut st);
         assert!(st.pending_events.is_empty(), "still accumulating");
         assert_eq!(st.tool_args, "{\"file_id\": \"abc\"}");
 
         // Chunk 4: finish_reason triggers flush
-        let chunk4: Value = serde_json::from_str(r#"{
+        let chunk4: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {},
                 "finish_reason": "tool_calls"
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk4, &mut st);
 
         // Should produce exactly 1 ToolCallStart event
-        let tool_events: Vec<_> = st.pending_events.iter()
+        let tool_events: Vec<_> = st
+            .pending_events
+            .iter()
             .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
             .collect();
         assert_eq!(tool_events.len(), 1, "exactly one tool call, not split");
@@ -953,7 +1034,8 @@ mod tests {
         let mut st = test_state();
 
         // First tool call
-        let chunk1: Value = serde_json::from_str(r#"{
+        let chunk1: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -962,12 +1044,15 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk1, &mut st);
         assert!(st.pending_events.is_empty());
 
         // Second tool call with different id → should flush the first
-        let chunk2: Value = serde_json::from_str(r#"{
+        let chunk2: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -976,7 +1061,9 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&chunk2, &mut st);
 
         // First tool call should have been flushed
@@ -1029,7 +1116,10 @@ mod tests {
     fn test_sanitize_unescaped_content_quotes() {
         // Simplest case: one pair of content quotes
         let input = r#"{"content": "美国宣布"先发制人"打击"}"#;
-        assert!(serde_json::from_str::<Value>(input).is_err(), "should be invalid JSON");
+        assert!(
+            serde_json::from_str::<Value>(input).is_err(),
+            "should be invalid JSON"
+        );
         let sanitized = sanitize_json_control_chars(input);
         let v: Value = serde_json::from_str(&sanitized).expect("should parse after sanitize");
         assert_eq!(v["content"].as_str().unwrap(), r#"美国宣布"先发制人"打击"#);
@@ -1125,7 +1215,8 @@ mod tests {
         let mut st = test_state();
 
         // Gateway sends initial chunk with id and name (from content_block_start)
-        let start: Value = serde_json::from_str(r#"{
+        let start: Value = serde_json::from_str(
+            r#"{
             "choices": [{
                 "delta": {
                     "tool_calls": [{
@@ -1136,7 +1227,9 @@ mod tests {
                     }]
                 }
             }]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&start, &mut st);
         assert_eq!(st.tool_id.as_deref(), Some("toolu_01abc"));
 
@@ -1149,10 +1242,10 @@ mod tests {
         let fragments = vec![
             "{\"title\": \"测试报告\"",
             ", \"sections\": [",
-            "\n  {",                          // structural newline
+            "\n  {", // structural newline
             "\n    \"heading\": \"概述\"",
             ",",
-            "\n    \"content\": \"第一段\\n第二段\"",  // \\n = escaped newline in JSON string value
+            "\n    \"content\": \"第一段\\n第二段\"", // \\n = escaped newline in JSON string value
             "\n  }",
             "\n]",
             "}",
@@ -1173,9 +1266,12 @@ mod tests {
         }
 
         // Finish → should flush
-        let finish: Value = serde_json::from_str(r#"{
+        let finish: Value = serde_json::from_str(
+            r#"{
             "choices": [{"delta": {}, "finish_reason": "tool_calls"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         process_sse_chunk(&finish, &mut st);
 
         // Check accumulated args
@@ -1183,7 +1279,9 @@ mod tests {
         eprintln!("Accumulated tool_args: {:?}", expected_accumulated);
 
         // Verify tool call was parsed correctly
-        let tool_events: Vec<_> = st.pending_events.iter()
+        let tool_events: Vec<_> = st
+            .pending_events
+            .iter()
             .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
             .collect();
         assert_eq!(tool_events.len(), 1);
@@ -1191,9 +1289,11 @@ mod tests {
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
             assert_eq!(tool_call.name, "generate_report");
             // The accumulated JSON should parse correctly
-            assert!(tool_call.arguments != Value::Null,
+            assert!(
+                tool_call.arguments != Value::Null,
                 "arguments should not be null! accumulated: {:?}",
-                expected_accumulated);
+                expected_accumulated
+            );
             assert_eq!(
                 tool_call.arguments.get("title").and_then(|v| v.as_str()),
                 Some("测试报告"),
@@ -1222,10 +1322,10 @@ mod tests {
         // partial_json become real 0x0a bytes in the arguments string.
         // The JSON escape \n inside string values remains as two chars (\ + n).
         let fragments = vec![
-            "{\"title\": \"\u{6D4B}\u{8BD5}\u{62A5}\u{544A}\"",  // 测试报告
+            "{\"title\": \"\u{6D4B}\u{8BD5}\u{62A5}\u{544A}\"", // 测试报告
             ", \"sections\": [",
-            "\n  {",                                               // real 0x0a
-            "\n    \"heading\": \"\u{6982}\u{8FF0}\"",             // real 0x0a + 概述
+            "\n  {",                                   // real 0x0a
+            "\n    \"heading\": \"\u{6982}\u{8FF0}\"", // real 0x0a + 概述
             ",",
             "\n    \"content\": \"\u{7B2C}\u{4E00}\u{6BB5}\\n\u{7B2C}\u{4E8C}\u{6BB5}\"",
             // real 0x0a (structural) + content with \n (JSON escape, two chars)
@@ -1251,7 +1351,9 @@ mod tests {
         process_sse_chunk(&finish, &mut st);
 
         // Verify
-        let tool_events: Vec<_> = st.pending_events.iter()
+        let tool_events: Vec<_> = st
+            .pending_events
+            .iter()
             .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
             .collect();
         assert_eq!(tool_events.len(), 1);
@@ -1267,8 +1369,13 @@ mod tests {
                 Some("测试报告"),
             );
             // Content should have a decoded newline from the JSON \n escape
-            let content = tool_call.arguments["sections"][0]["content"].as_str().unwrap();
-            assert!(content.contains('\n'), "content should contain decoded newline");
+            let content = tool_call.arguments["sections"][0]["content"]
+                .as_str()
+                .unwrap();
+            assert!(
+                content.contains('\n'),
+                "content should contain decoded newline"
+            );
         }
     }
 }

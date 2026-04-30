@@ -1,126 +1,171 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { TopBar } from '@/components/layout/TopBar'
-import { TitleBar } from '@/components/layout/TitleBar'
-import { ChatArea } from '@/components/layout/ChatArea'
-import { InputBar } from '@/components/layout/InputBar'
-import { SettingsModal } from '@/components/settings/SettingsModal'
+
+import { AuthGate } from '@/components/auth/AuthGate'
+import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
-import { PersonaSelector } from '@/components/onboarding/PersonaSelector'
-import { BrowserPanel } from '@/components/browser/BrowserPanel'
-import { WhatsNewModal } from '@/components/common/WhatsNewModal'
+import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
+import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
+import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
+import { SettingsModal } from '@/components/settings/SettingsModal'
+import { TitleBar } from '@/components/layout/TitleBar'
+import { AppSidebar } from '@/components/sidebar/AppSidebar'
+import { ChatPage } from '@/features/chat/ChatPage'
+import { HomePage } from '@/features/home/HomePage'
+import { SchedulesPage } from '@/features/schedules/SchedulesPage'
+import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
+import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
-import { useWhatsNew } from '@/hooks/useWhatsNew'
-import { useChat } from '@/hooks/useChat'
-import { onConversationTitleUpdated, onAuthExpired, onBrowserNavigating, onBrowserPageReady, onBrowserClosed, getCloudAuth, getCloudModels, getSettings, updateSettings, getPluginInfo } from '@/lib/tauri'
-import { useChatStore } from '@/stores/chatStore'
+import {
+  approvePermissionRequest,
+  cancelPermissionRequest,
+  denyPermissionRequest,
+  getPluginInfo,
+  getSettings,
+  onAuthExpired,
+  onConversationTitleUpdated,
+} from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
-import { usePluginStore } from '@/stores/pluginStore'
-import { usePersonaStore } from '@/stores/personaStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useBrandingStore, applyAccentColor, loadPersistedAccentColor } from '@/stores/brandingStore'
+import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
-import { useBrowserStore } from '@/stores/browserStore'
-import { useBrandingStore } from '@/stores/brandingStore'
+import { usePluginStore } from '@/stores/pluginStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { useStreamingStore } from '@/stores/streamingStore'
+import { useInteractionStore } from '@/stores/interactionStore'
+import { useUiStore } from '@/stores/uiStore'
+import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
+
+applyFontScale(loadPersistedFontScale())
+applyAccentColor(loadPersistedAccentColor())
+
+function RouteSwitch() {
+  const route = useUiStore((state) => state.route)
+
+  switch (route.kind) {
+    case 'home':
+      return <HomePage />
+    case 'skill-center':
+      return <SkillCenterPage />
+    case 'skill-detail':
+      return <SkillDetailPage skillId={route.skillId} />
+    case 'schedules':
+      return <SchedulesPage />
+    case 'chat':
+      return <ChatPage conversationId={route.conversationId} />
+  }
+}
+
+function AppShell() {
+  const pendingAsks = useStreamingStore((s) => s.pendingAsks)
+  const removePendingAsk = useStreamingStore((s) => s.removePendingAsk)
+  const pendingInteractions = useInteractionStore((s) => s.pendingInteractions)
+  const removeInteraction = useInteractionStore((s) => s.removeInteraction)
+  const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
+  const activeInteraction = pendingInteractions[0] ?? null
+
+  const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await approvePermissionRequest(toolCallId, null, remember, destination)
+    } catch (err) {
+      console.error('[permission:ask] approve failed', err)
+    }
+  }
+
+  const handleDenyAsk = async ({ remember, destination }: PermissionAskDecision) => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await denyPermissionRequest(toolCallId, undefined, remember, destination)
+    } catch (err) {
+      console.error('[permission:ask] deny failed', err)
+    }
+  }
+
+  const handleCancelAsk = async () => {
+    if (!activeAsk) return
+    const toolCallId = activeAsk.toolCallId
+    removePendingAsk(toolCallId)
+    try {
+      await cancelPermissionRequest(toolCallId)
+    } catch (err) {
+      console.error('[permission:ask] cancel failed', err)
+    }
+  }
+
+  const isWindows = navigator.userAgent.includes('Windows')
+
+  return (
+    <div className="flex h-screen w-screen flex-col bg-sidebar text-foreground">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <AppSidebar />
+        <main className={`min-w-0 flex-1 overflow-hidden border-l border-border${isWindows ? '' : ' rounded-tl-xl'}`}>
+          <RouteSwitch />
+        </main>
+      </div>
+      <SettingsModal />
+      <ConfirmDialogHost />
+      <ToastContainer />
+      <PermissionAskDialog
+        open={activeAsk !== null}
+        ask={activeAsk}
+        onAllow={handleAllowAsk}
+        onDeny={handleDenyAsk}
+        onCancel={handleCancelAsk}
+      />
+      {activeInteraction ? (
+        <AskUserQuestionDialog
+          interactionId={activeInteraction.interactionId}
+          questions={activeInteraction.payload.questions}
+          onClose={() => removeInteraction(activeInteraction.interactionId)}
+        />
+      ) : null}
+    </div>
+  )
+}
 
 function App() {
   useStreaming()
   useUpdater()
-  const { showWhatsNew, dismissWhatsNew, currentVersion, changes } = useWhatsNew()
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
 
-  const { loadConversations } = useChat()
-
-  const [showPersonaSelector, setShowPersonaSelector] = useState(false)
-
-  // Check persona onboarding status
-  useEffect(() => {
-    getSettings()
-      .then((saved) => {
-        if (!saved.personaOnboardingDone) {
-          setShowPersonaSelector(true)
-        }
-        // Sync persisted language preference to i18next
-        if (saved.appLanguage && saved.appLanguage !== i18n.language) {
-          i18n.changeLanguage(saved.appLanguage)
-        }
-      })
-      .catch((err) => console.error('Failed to check onboarding:', err))
-  }, [])
-
-  const handlePersonaOnboardingComplete = async () => {
-    try {
-      const saved = await getSettings()
-      await updateSettings({ ...saved, personaOnboardingDone: true })
-      setShowPersonaSelector(false)
-    } catch (err) {
-      console.error('Failed to complete onboarding:', err)
-    }
-  }
-
-  
-  useEffect(() => {
-    loadConversations()
-  }, [loadConversations])
-
-  // Load plugin info (tools + skills) on startup
   useEffect(() => {
     getPluginInfo()
       .then(({ tools, skills }) => {
         usePluginStore.getState().setAll(tools, skills)
+        useSkillStore.setState({ skills, isLoading: false })
       })
       .catch((err) => console.error('Failed to load plugin info:', err))
   }, [])
 
-  // Load active persona on startup
   useEffect(() => {
-    usePersonaStore.getState().reload()
-      .catch((err) => console.error('Failed to load persona:', err))
-  }, [])
-
-  // Restore cloud auth state + branding on startup (single authoritative source)
-  useEffect(() => {
-    getCloudAuth()
-      .then(async (info) => {
-        if (info.loggedIn) {
-          useAuthStore.getState().setAuth(info)
-          // Apply tenant branding (product name, logo, colors)
-          useBrandingStore.getState().applyBranding(info.tenant ?? null)
-          // Fetch cloud models (get_auth_info returns empty models)
-          try {
-            const models = await getCloudModels()
-            useAuthStore.getState().setCloudModels(models)
-            // Restore selectedCloudModel and useCloud from persisted settings
-            const saved = await getSettings()
-            useSettingsStore.getState().setSettings({ useCloud: saved.useCloud ?? false })
-            if (saved.cloudModel && models.find((m) => m.id === saved.cloudModel)) {
-              useAuthStore.getState().setSelectedCloudModel(saved.cloudModel)
-            } else if (models.length > 0) {
-              useAuthStore.getState().setSelectedCloudModel(models[0].id)
-            }
-          } catch (err) {
-            console.error('Failed to fetch cloud models on restore:', err)
-          }
-        } else {
-          // Not logged in — ensure useCloud is false
-          const saved = await getSettings()
-          if (saved.useCloud) {
-            await updateSettings({ ...saved, useCloud: false }).catch(() => {})
-          }
-          useSettingsStore.getState().setSettings({ useCloud: false })
+    getSettings()
+      .then((settings) => {
+        if (settings.fontScale) {
+          const fontScale = normalizeFontScale(settings.fontScale)
+          persistFontScale(fontScale)
+          applyFontScale(fontScale)
+          useSettingsStore.setState({ fontScale })
+        }
+        if (settings.accentColor) {
+          useBrandingStore.getState().applyBranding({ accentColor: settings.accentColor })
         }
       })
-      .catch((err) => console.error('Failed to restore cloud auth:', err))
+      .catch((err) => console.error('Failed to load settings:', err))
   }, [])
 
-  // Listen for auth:expired events from backend
   useEffect(() => {
     const unlisten = onAuthExpired(({ message }) => {
       console.warn('[auth:expired]', message)
-      useAuthStore.getState().clearAuth()
+      useAuthStore.getState().clearAndRedirect(useUiStore.getState().route)
       useBrandingStore.getState().reset()
-      // Keep useCloud unchanged — user must explicitly switch
       useNotificationStore.getState().push({
         level: 'warning',
         title: t('auth.expired'),
@@ -134,15 +179,14 @@ function App() {
     return () => {
       unlisten.then((fn) => fn())
     }
-  }, [])
+  }, [t])
 
-  // Listen for conversation title updates from backend
   useEffect(() => {
     const unlisten = onConversationTitleUpdated(({ conversationId, title }) => {
       const store = useChatStore.getState()
       store.setConversations(
-        store.conversations.map((c) =>
-          c.id === conversationId ? { ...c, title } : c,
+        store.conversations.map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, title } : conversation,
         ),
       )
     })
@@ -151,56 +195,10 @@ function App() {
     }
   }, [])
 
-  // Listen for browser events from backend (WebView state sync)
-  useEffect(() => {
-    const unlistenNavigating = onBrowserNavigating(({ appId, url }) => {
-      useBrowserStore.getState().setNavigating(appId ?? 0, url)
-    })
-    const unlistenReady = onBrowserPageReady(({ appId, url, title }) => {
-      useBrowserStore.getState().setPageReady(appId ?? 0, url, title)
-    })
-    const unlistenClosed = onBrowserClosed(({ appId }) => {
-      useBrowserStore.getState().setClosed(appId ?? 0)
-    })
-    return () => {
-      unlistenNavigating.then((fn) => fn())
-      unlistenReady.then((fn) => fn())
-      unlistenClosed.then((fn) => fn())
-    }
-  }, [])
-
-  const [settingsOpen, setSettingsOpen] = useState(false)
-
   return (
-    <div className="flex h-screen w-full flex-col">
-      <TitleBar />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-        <main className="flex flex-1 flex-col overflow-hidden">
-          <TopBar />
-          <div className="relative flex flex-1 overflow-hidden">
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <ChatArea />
-              <InputBar />
-            </div>
-            <BrowserPanel />
-          </div>
-        </main>
-      </div>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <WhatsNewModal
-        open={showWhatsNew}
-        onClose={dismissWhatsNew}
-        version={currentVersion}
-        changes={changes}
-      />
-      <ToastContainer />
-    
-      {showPersonaSelector && (
-        <PersonaSelector onComplete={handlePersonaOnboardingComplete} />
-      )}
-
-    </div>
+    <AuthGate>
+      <AppShell />
+    </AuthGate>
   )
 }
 

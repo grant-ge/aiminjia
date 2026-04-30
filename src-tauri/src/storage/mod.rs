@@ -1,4 +1,20 @@
+pub mod aijia_home;
 pub mod crypto;
-pub mod workspace;
+pub mod current_user_storage;
 pub mod file_manager;
 pub mod file_store;
+pub mod global_config_store;
+pub mod mcp_config_store;
+pub mod message_write_queue;
+pub mod migration;
+pub mod migration_user_scope;
+pub mod user_scope;
+pub mod user_scoped_paths;
+pub mod upload_gc;
+pub mod workspace;
+
+pub use aijia_home::AiJiaHome;
+pub use current_user_storage::CurrentUserStorage;
+pub use global_config_store::GlobalConfigStore;
+pub use user_scope::UserScope;
+pub use user_scoped_paths::{UserScopedPathResolver, UserScopedPaths};

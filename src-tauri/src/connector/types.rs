@@ -2,8 +2,8 @@
 //!
 //! Shared between PlaywrightBrowser, SiteMap, and tool handlers.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Result from navigate().
 #[derive(Debug, Clone, Serialize, Deserialize)]

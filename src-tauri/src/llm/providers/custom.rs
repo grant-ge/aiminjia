@@ -7,9 +7,9 @@
 use anyhow::Result;
 use reqwest::Client;
 
+use super::openai::{send_openai_compat, stream_openai_compat, validate_key_openai_compat};
 use crate::llm::providers::LlmProviderTrait;
 use crate::llm::streaming::{LlmRequest, LlmResponse, StreamBox};
-use super::openai::{send_openai_compat, stream_openai_compat, validate_key_openai_compat};
 
 pub struct CustomProvider {
     api_key: String,

@@ -1,15 +1,22 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useChatStore } from './chatStore'
 import type { Message, Conversation } from '@/types/message'
+import { useDiagnosticsStore } from './diagnosticsStore'
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}))
 
 // Reset store between tests
 beforeEach(() => {
+  useDiagnosticsStore.getState().clearDiagnostics()
   useChatStore.setState({
     conversations: [],
     activeConversationId: null,
     messages: [],
     busyConversations: new Set(),
     streamStates: {},
+    taskStates: {},
     isStreaming: false,
     streamingContent: '',
     toolExecutions: [],
@@ -76,6 +83,10 @@ describe('chatStore — messages', () => {
   it('sets messages', () => {
     useChatStore.getState().setMessages([msg1, msg2])
     expect(useChatStore.getState().messages).toHaveLength(2)
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.messages.set',
+      payload: { messageCount: 2 },
+    })
   })
 
   it('adds a message', () => {
@@ -102,6 +113,17 @@ describe('chatStore — messages', () => {
     useChatStore.getState().setMessages([msg1])
     useChatStore.getState().updateMessage('nonexistent', { content: { text: 'X' } })
     expect(useChatStore.getState().messages[0].content.text).toBe('Hello')
+  })
+
+  it('records diagnostics when a message is upserted', () => {
+    useChatStore.getState().upsertMessage(msg1)
+
+    expect(useChatStore.getState().messages).toHaveLength(1)
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.messages.upsert',
+      conversationId: 'c1',
+      messageId: 'm1',
+    })
   })
 })
 
@@ -136,6 +158,11 @@ describe('chatStore — streaming', () => {
     useChatStore.getState().setStreamingContent('Hello')
     useChatStore.getState().appendStreamingContent(' World')
     expect(useChatStore.getState().streamingContent).toBe('Hello World')
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'store.streaming.append',
+      conversationId: 'c1',
+      payload: { deltaLength: 6 },
+    })
   })
 
   it('handles multiple appends', () => {
@@ -167,7 +194,7 @@ describe('chatStore — per-conversation streaming', () => {
     expect(s.streamStates['c2']?.streamingContent).toBe('World')
   })
 
-  it('clears stream state for one conversation without affecting others', () => {
+  it('resets stream state for one conversation without affecting others', () => {
     const store = useChatStore.getState()
 
     store.setConversationStreaming('c1', true)
@@ -178,7 +205,8 @@ describe('chatStore — per-conversation streaming', () => {
     store.clearConversationStreamState('c1')
 
     const s = useChatStore.getState()
-    expect(s.streamStates['c1']).toBeUndefined()
+    expect(s.streamStates['c1']?.isStreaming).toBe(false)
+    expect(s.streamStates['c1']?.streamingContent).toBe('')
     expect(s.streamStates['c2']?.isStreaming).toBe(true)
     expect(s.streamStates['c2']?.streamingContent).toBe('B')
   })
@@ -213,10 +241,12 @@ describe('chatStore — busy conversations', () => {
     store.addBusyConversation('c1')
     store.addBusyConversation('c2')
     expect(useChatStore.getState().busyConversations.size).toBe(2)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.busy.add')).toBe(true)
 
     store.removeBusyConversation('c1')
     expect(useChatStore.getState().busyConversations.size).toBe(1)
     expect(useChatStore.getState().busyConversations.has('c2')).toBe(true)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'store.busy.remove')).toBe(true)
   })
 
   it('setBusyConversations replaces entire set', () => {
@@ -227,6 +257,58 @@ describe('chatStore — busy conversations', () => {
     const s = useChatStore.getState()
     expect(s.busyConversations.size).toBe(3)
     expect(s.busyConversations.has('old')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task states
+// ---------------------------------------------------------------------------
+
+describe('chatStore — task states', () => {
+  it('records task terminal state per conversation', () => {
+    const store = useChatStore.getState()
+
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'completed',
+      runId: 'run-1',
+      subject: '',
+    })
+
+    expect(useChatStore.getState().taskStates['c1']).toEqual([
+      {
+        taskId: 'task-1',
+        status: 'completed',
+        runId: 'run-1',
+        subject: '',
+      },
+    ])
+  })
+
+  it('updates an existing task state in place', () => {
+    const store = useChatStore.getState()
+
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'running',
+      runId: 'run-1',
+      subject: '',
+    })
+    store.upsertConversationTaskState('c1', {
+      taskId: 'task-1',
+      status: 'failed',
+      runId: 'run-1',
+      subject: '',
+    })
+
+    expect(useChatStore.getState().taskStates['c1']).toEqual([
+      {
+        taskId: 'task-1',
+        status: 'failed',
+        runId: 'run-1',
+        subject: '',
+      },
+    ])
   })
 })
 

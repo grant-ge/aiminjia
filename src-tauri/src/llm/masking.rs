@@ -36,6 +36,31 @@ impl Default for MaskingLevel {
     }
 }
 
+impl MaskingLevel {
+    /// Parse a settings string into a `MaskingLevel`, falling back to `Strict`
+    /// for any empty, unknown, or malformed value.
+    ///
+    /// Accepts "relaxed", "standard", "strict" (case-insensitive, trims whitespace).
+    /// Everything else (including empty string) returns `Strict`.
+    pub fn from_str_or_strict(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "relaxed" => Self::Relaxed,
+            "standard" => Self::Standard,
+            "strict" => Self::Strict,
+            _ => Self::Strict,
+        }
+    }
+
+    /// Return the canonical lowercase string representation.
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Relaxed => "relaxed",
+            Self::Standard => "standard",
+            Self::Strict => "strict",
+        }
+    }
+}
+
 /// Holds the bidirectional mapping for a masking session.
 pub struct MaskingContext {
     level: MaskingLevel,
@@ -165,7 +190,9 @@ impl MaskingContext {
     /// by a later iteration can still be unmasked by the combined context.
     pub fn merge(&mut self, other: MaskingContext) {
         for (original, placeholder) in other.mask_map {
-            self.unmask_map.entry(placeholder.clone()).or_insert(original.clone());
+            self.unmask_map
+                .entry(placeholder.clone())
+                .or_insert(original.clone());
             self.mask_map.entry(original).or_insert(placeholder);
         }
         // Advance counters to avoid collisions
@@ -392,17 +419,14 @@ impl MaskingContext {
                     if all_digits {
                         // Make sure char before is not a digit (avoid matching
                         // middle of a longer number)
-                        let preceded_by_digit =
-                            i > 0 && chars[i - 1].is_ascii_digit();
+                        let preceded_by_digit = i > 0 && chars[i - 1].is_ascii_digit();
                         // Make sure char after (if any) is not a digit
                         let followed_by_digit =
                             i + 11 < chars.len() && chars[i + 11].is_ascii_digit();
 
                         if !preceded_by_digit && !followed_by_digit {
-                            let phone: String =
-                                chars[i..i + 11].iter().collect();
-                            let placeholder =
-                                self.get_or_create_placeholder(&phone, "PHONE");
+                            let phone: String = chars[i..i + 11].iter().collect();
+                            let placeholder = self.get_or_create_placeholder(&phone, "PHONE");
                             output.push_str(&placeholder);
                             i += 11;
                             continue;
@@ -486,7 +510,8 @@ impl MaskingContext {
         }
 
         // Boundary check: char after must not be a digit or X/x
-        if chars.len() > 18 && (chars[18].is_ascii_digit() || chars[18] == 'X' || chars[18] == 'x') {
+        if chars.len() > 18 && (chars[18].is_ascii_digit() || chars[18] == 'X' || chars[18] == 'x')
+        {
             return None;
         }
 
@@ -571,7 +596,8 @@ impl MaskingContext {
                     // Bank card: 16-19 digits with valid BIN prefix
                     if digit_len >= 16 && digit_len <= 19 {
                         let first = chars[i];
-                        let is_valid_bin = first == '6' || first == '4' || first == '5' || first == '3';
+                        let is_valid_bin =
+                            first == '6' || first == '4' || first == '5' || first == '3';
 
                         if is_valid_bin {
                             let card: String = chars[i..end].iter().collect();
@@ -691,7 +717,14 @@ fn find_unmasked_at(text: &str) -> Option<usize> {
 /// Handles both bracketed `[PERSON_1]` and bare `PERSON_1` forms.
 /// Replaces with `[已脱敏]` to avoid leaking placeholder text to users.
 fn replace_residual_placeholders(text: &str) -> String {
-    const CATEGORIES: &[&str] = &["PERSON", "COMPANY", "EMAIL", "PHONE", "ID_CARD", "BANK_CARD"];
+    const CATEGORIES: &[&str] = &[
+        "PERSON",
+        "COMPANY",
+        "EMAIL",
+        "PHONE",
+        "ID_CARD",
+        "BANK_CARD",
+    ];
 
     let mut result = text.to_string();
     let mut changed = true;
@@ -1014,8 +1047,14 @@ mod tests {
         assert!(result.contains("[COMPANY_1]"), "Company should be masked");
         assert!(result.contains("[PERSON_1]"), "Person should be masked");
         // Standard does NOT mask email or phone
-        assert!(result.contains("15912345678"), "Phone should NOT be masked in Standard");
-        assert!(result.contains("lisi@qq.com"), "Email should NOT be masked in Standard");
+        assert!(
+            result.contains("15912345678"),
+            "Phone should NOT be masked in Standard"
+        );
+        assert!(
+            result.contains("lisi@qq.com"),
+            "Email should NOT be masked in Standard"
+        );
     }
 
     // -- Multiple persons with same name reuse placeholder ----------------------
@@ -1307,7 +1346,10 @@ mod tests {
         let input = "身份证110108199001011234银行卡6222021234567890123";
         let result = ctx.mask_text(input);
         assert!(result.contains("[ID_CARD_1]"), "ID card should be masked");
-        assert!(result.contains("[BANK_CARD_1]"), "Bank card should be masked");
+        assert!(
+            result.contains("[BANK_CARD_1]"),
+            "Bank card should be masked"
+        );
     }
 
     #[test]
@@ -1357,7 +1399,10 @@ mod tests {
         assert!(result.contains("[COMPANY_1]"), "Company should be masked");
         assert!(result.contains("[PERSON_1]"), "Person should be masked");
         assert!(result.contains("[ID_CARD_1]"), "ID card should be masked");
-        assert!(result.contains("[BANK_CARD_1]"), "Bank card should be masked");
+        assert!(
+            result.contains("[BANK_CARD_1]"),
+            "Bank card should be masked"
+        );
         assert!(result.contains("[PHONE_1]"), "Phone should be masked");
         assert!(result.contains("[EMAIL_1]"), "Email should be masked");
 

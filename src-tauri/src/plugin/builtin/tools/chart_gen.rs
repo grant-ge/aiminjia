@@ -1,5 +1,10 @@
 //! generate_chart — create interactive data visualization charts via Plotly (HTML).
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +16,9 @@ pub struct ChartGenTool;
 
 #[async_trait]
 impl ToolPlugin for ChartGenTool {
-    fn name(&self) -> &str { "generate_chart" }
+    fn name(&self) -> &str {
+        "generate_chart"
+    }
 
     fn description(&self) -> &str {
         "Generate an interactive data visualization chart (Plotly HTML). \

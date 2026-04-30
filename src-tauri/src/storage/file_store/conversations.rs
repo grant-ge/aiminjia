@@ -34,11 +34,7 @@ fn index_path(base_dir: &Path) -> PathBuf {
 /// 1. Creates the conversation directory + subdirs (uploads/, generated/, notes/)
 /// 2. Writes `conv.json`
 /// 3. Adds an entry to `index.json`
-pub fn create_conversation(
-    base_dir: &Path,
-    id: &str,
-    title: &str,
-) -> StorageResult<()> {
+pub fn create_conversation(base_dir: &Path, id: &str, title: &str) -> StorageResult<()> {
     let dir = conv_dir(base_dir, id);
     let now = Utc::now().to_rfc3339();
 
@@ -51,10 +47,10 @@ pub fn create_conversation(
     let meta = ConversationMeta {
         id: id.to_string(),
         title: title.to_string(),
-        mode: "daily".to_string(),
         created_at: now.clone(),
         updated_at: now.clone(),
         is_archived: false,
+        model_override: None,
     };
     atomic_write_json(&conv_meta_path(base_dir, id), &meta)?;
 
@@ -74,11 +70,7 @@ pub fn create_conversation(
 }
 
 /// Update a conversation's title.
-pub fn update_conversation_title(
-    base_dir: &Path,
-    id: &str,
-    title: &str,
-) -> StorageResult<()> {
+pub fn update_conversation_title(base_dir: &Path, id: &str, title: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     let now = Utc::now().to_rfc3339();
@@ -97,23 +89,57 @@ pub fn update_conversation_title(
     Ok(())
 }
 
-/// Get the current mode of a conversation.
-pub fn get_conversation_mode(base_dir: &Path, id: &str) -> StorageResult<String> {
+/// Set is_archived = true on conv.json and update the global index.
+pub fn archive_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
-    let meta: ConversationMeta = read_json_safe(&meta_path)?;
-    Ok(meta.mode)
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    let now = Utc::now().to_rfc3339();
+    meta.is_archived = true;
+    meta.updated_at = now.clone();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.is_archived = true;
+        entry.updated_at = now;
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+
+    info!("Archived conversation: {}", id);
+    Ok(())
 }
 
-/// Set the mode of a conversation.
-pub fn set_conversation_mode(
+/// Get the configured model override for a conversation.
+pub fn get_conversation_model_override(base_dir: &Path, id: &str) -> StorageResult<Option<String>> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let meta: ConversationMeta = read_json_safe(&meta_path)?;
+    Ok(meta.model_override.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
+}
+
+/// Persist the optional model override for a conversation.
+pub fn set_conversation_model_override(
     base_dir: &Path,
     id: &str,
-    mode: &str,
+    model_override: Option<String>,
 ) -> StorageResult<()> {
     let meta_path = conv_meta_path(base_dir, id);
     let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
     let now = Utc::now().to_rfc3339();
-    meta.mode = mode.to_string();
+    meta.model_override = model_override.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
     meta.updated_at = now;
     atomic_write_json(&meta_path, &meta)?;
     Ok(())
@@ -137,7 +163,6 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
                 "createdAt": e.created_at,
                 "updatedAt": e.updated_at,
                 "isArchived": e.is_archived,
-                "mode": get_conversation_mode_safe(base_dir, &e.id),
             })
         })
         .collect();
@@ -152,20 +177,60 @@ pub fn get_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value
     Ok(result)
 }
 
+/// Retrieve all archived conversations, most recent first.
+pub fn get_archived_conversations(base_dir: &Path) -> StorageResult<Vec<serde_json::Value>> {
+    let index = read_global_index(base_dir)?;
+    let mut entries: Vec<_> = index
+        .conversations
+        .into_iter()
+        .filter(|e| e.is_archived)
+        .collect();
+    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let result = entries
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "id": e.id,
+                "title": e.title,
+                "updatedAt": e.updated_at,
+                "isArchived": true,
+            })
+        })
+        .collect();
+    Ok(result)
+}
+
+/// Set is_archived = false on conv.json and update the global index.
+pub fn restore_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let meta_path = conv_meta_path(base_dir, id);
+    let mut meta: ConversationMeta = read_json_safe(&meta_path)?;
+    let now = Utc::now().to_rfc3339();
+    meta.is_archived = false;
+    meta.updated_at = now.clone();
+    atomic_write_json(&meta_path, &meta)?;
+
+    let mut index = read_global_index(base_dir)?;
+    if let Some(entry) = index.conversations.iter_mut().find(|e| e.id == id) {
+        entry.is_archived = false;
+        entry.updated_at = now;
+    }
+    atomic_write_json(&index_path(base_dir), &index)?;
+
+    info!("Restored conversation: {}", id);
+    Ok(())
+}
+
 /// Delete a conversation and all associated data.
 pub fn delete_conversation(base_dir: &Path, id: &str) -> StorageResult<()> {
+    let dir = conv_dir(base_dir, id);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)?;
+    }
+
     // Remove from global index
     let mut index = read_global_index(base_dir)?;
     index.conversations.retain(|e| e.id != id);
     atomic_write_json(&index_path(base_dir), &index)?;
-
-    // Remove directory (best-effort)
-    let dir = conv_dir(base_dir, id);
-    if dir.exists() {
-        if let Err(e) = fs::remove_dir_all(&dir) {
-            warn!("Failed to remove conversation directory {:?}: {}", dir, e);
-        }
-    }
 
     info!("Deleted conversation: {}", id);
     Ok(())
@@ -233,7 +298,10 @@ pub fn reconcile_index(base_dir: &Path) -> StorageResult<()> {
                 info!("Reconciled: added missing index entry for {}", dir_id);
                 changed = true;
             } else {
-                warn!("Reconciled: directory {} has no valid conv.json, skipping", dir_id);
+                warn!(
+                    "Reconciled: directory {} has no valid conv.json, skipping",
+                    dir_id
+                );
             }
         }
     }
@@ -264,8 +332,8 @@ fn read_global_index(base_dir: &Path) -> StorageResult<GlobalIndex> {
 }
 
 /// Get conversation mode, defaulting to "daily" on error (for index reads).
-fn get_conversation_mode_safe(base_dir: &Path, id: &str) -> String {
-    get_conversation_mode(base_dir, id).unwrap_or_else(|_| "daily".to_string())
+pub fn get_conversation(base_dir: &Path, id: &str) -> StorageResult<ConversationMeta> {
+    Ok(read_json_safe(&conv_meta_path(base_dir, id))?)
 }
 
 #[cfg(test)]
@@ -288,7 +356,7 @@ mod tests {
         let convs = get_conversations(&base).unwrap();
         assert_eq!(convs.len(), 1);
         assert_eq!(convs[0]["title"], "Test Conv");
-        assert_eq!(convs[0]["mode"], "daily");
+        assert!(convs[0].get("mode").is_none());
     }
 
     #[test]
@@ -304,6 +372,42 @@ mod tests {
     }
 
     #[test]
+    fn test_restore_conversation_moves_it_back_to_active_list() {
+        let (base, _dir) = setup();
+
+        create_conversation(&base, "c1", "Conv 1").unwrap();
+        archive_conversation(&base, "c1").unwrap();
+        assert_eq!(get_conversations(&base).unwrap().len(), 0);
+        assert_eq!(get_archived_conversations(&base).unwrap().len(), 1);
+
+        restore_conversation(&base, "c1").unwrap();
+
+        let active = get_conversations(&base).unwrap();
+        let archived = get_archived_conversations(&base).unwrap();
+        let meta = get_conversation(&base, "c1").unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0]["id"], "c1");
+        assert_eq!(active[0]["isArchived"], false);
+        assert!(archived.is_empty());
+        assert!(!meta.is_archived);
+    }
+
+    #[test]
+    fn test_delete_conversation_returns_error_when_directory_removal_fails() {
+        let (base, _dir) = setup();
+        create_conversation(&base, "c1", "Conv 1").unwrap();
+        let dir = conv_dir(&base, "c1");
+        fs::remove_dir_all(&dir).unwrap();
+        fs::write(&dir, "not a directory").unwrap();
+
+        let result = delete_conversation(&base, "c1");
+
+        assert!(result.is_err());
+        assert_eq!(get_conversations(&base).unwrap().len(), 1);
+        assert!(dir.exists());
+    }
+
+    #[test]
     fn test_update_title() {
         let (base, _dir) = setup();
 
@@ -315,14 +419,22 @@ mod tests {
     }
 
     #[test]
-    fn test_conversation_mode() {
+    fn test_conversation_model_override_roundtrip() {
         let (base, _dir) = setup();
 
         create_conversation(&base, "c1", "Conv").unwrap();
-        assert_eq!(get_conversation_mode(&base, "c1").unwrap(), "daily");
+        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
 
-        set_conversation_mode(&base, "c1", "analyzing").unwrap();
-        assert_eq!(get_conversation_mode(&base, "c1").unwrap(), "analyzing");
+        set_conversation_model_override(&base, "c1", Some("claude".to_string())).unwrap();
+        assert_eq!(
+            get_conversation_model_override(&base, "c1")
+                .unwrap()
+                .as_deref(),
+            Some("claude")
+        );
+
+        set_conversation_model_override(&base, "c1", None).unwrap();
+        assert_eq!(get_conversation_model_override(&base, "c1").unwrap(), None);
     }
 
     #[test]
@@ -338,10 +450,10 @@ mod tests {
         let meta = ConversationMeta {
             id: "c2".to_string(),
             title: "Orphan".to_string(),
-            mode: "daily".to_string(),
             created_at: Utc::now().to_rfc3339(),
             updated_at: Utc::now().to_rfc3339(),
             is_archived: false,
+            model_override: None,
         };
         atomic_write_json(&orphan_dir.join("conv.json"), &meta).unwrap();
 

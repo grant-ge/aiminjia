@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 /// Subdirectories within the workspace
-const WORKSPACE_DIRS: &[&str] = &["uploads", "exports", "charts", "analysis", "reports", "scripts", "temp"];
+const WORKSPACE_DIRS: &[&str] = &[
+    "uploads", "exports", "charts", "analysis", "reports", "scripts", "temp",
+];
 
 pub struct WorkspaceManager {
     path: PathBuf,

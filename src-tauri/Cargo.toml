@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.5"
+version = "0.5.6"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -16,7 +16,7 @@ tauri-build = { version = "2.5.4", features = [] }
 
 [dependencies]
 # Tauri core
-tauri = { version = "2.10.0", features = [] }
+tauri = { version = "2.10.0", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-log = "2"
@@ -27,6 +27,8 @@ tauri-plugin-process = "2"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+base64 = "0.22"
+serde_yaml = "0.9"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -60,6 +62,8 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 once_cell = "1"
 bytes = "1"
+sha2 = "0.10"
+shell-words = "1.1"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
@@ -69,13 +73,26 @@ urlencoding = "2"
 async-trait = "0.1"
 toml = "0.8"
 zip = "2"
+tar = "0.4"
+flate2 = "1"
 
 # File watching (skill dev mode hot-reload)
 notify = "7"
+lru = "0.12"
+regex = "1"
 
 # Unix process inspection (kill(pid, 0) for orphan lock detection)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+which = "6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
 
 [dev-dependencies]
 tempfile = "3"
@@ -85,4 +102,4 @@ strip = true
 opt-level = "s"
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "unwind" # TEMP v0.5.6: switched to unwind so panic hook can flush logs before abort

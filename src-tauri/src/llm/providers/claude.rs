@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use std::pin::Pin;
 
 use crate::llm::streaming::{
-    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent,
-    TokenUsage, ToolCall,
+    parse_sse_line, LlmRequest, LlmResponse, StopReason, StreamBox, StreamEvent, TokenUsage,
+    ToolCall,
 };
 
 use super::LlmProviderTrait;
@@ -21,6 +21,7 @@ use super::LlmProviderTrait;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const ANTHROPIC_BETA_THINKING: &str = "interleaved-thinking-2025-05-14";
 
 /// Anthropic Claude provider.
 pub struct ClaudeProvider {
@@ -77,6 +78,30 @@ impl ClaudeProvider {
         }
     }
 
+    fn build_request_headers(
+        &self,
+        request: &LlmRequest,
+    ) -> std::collections::HashMap<String, String> {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-api-key".to_string(), self.api_key.clone());
+        headers.insert(
+            "anthropic-version".to_string(),
+            ANTHROPIC_VERSION.to_string(),
+        );
+        headers.insert("content-type".to_string(), "application/json".to_string());
+        match request.thinking_config {
+            Some(crate::llm::streaming::ThinkingConfig::Adaptive)
+            | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
+                headers.insert(
+                    "anthropic-beta".to_string(),
+                    ANTHROPIC_BETA_THINKING.to_string(),
+                );
+            }
+            _ => {}
+        }
+        headers
+    }
+
     /// Build the JSON request body for Anthropic Messages API.
     ///
     /// Assistant messages with thinking or tool_calls are serialized as
@@ -86,7 +111,12 @@ impl ClaudeProvider {
         let messages: Vec<Value> = request
             .messages
             .iter()
-            .map(|msg| {
+            .filter_map(|msg| {
+                // System messages handled via top-level "system" field
+                if msg.role == "system" {
+                    return None;
+                }
+
                 // Assistant messages may need structured content blocks
                 if msg.role == "assistant" {
                     let needs_blocks = msg.thinking.is_some()
@@ -127,40 +157,61 @@ impl ClaudeProvider {
                             }
                         }
 
-                        return json!({
+                        return Some(json!({
                             "role": "assistant",
                             "content": blocks,
-                        });
+                        }));
                     }
                 }
 
                 // Tool result messages use content blocks
                 if msg.role == "tool" {
                     if let Some(ref tc_id) = msg.tool_call_id {
-                        return json!({
+                        return Some(json!({
                             "role": "user",
                             "content": [{
                                 "type": "tool_result",
                                 "tool_use_id": tc_id,
                                 "content": msg.content,
                             }],
-                        });
+                        }));
                     }
                 }
 
                 // Default: plain text message
-                json!({
+                Some(json!({
                     "role": msg.role,
                     "content": msg.content,
-                })
+                }))
             })
             .collect();
+
+        // Extract system prompt (Anthropic requires it at top-level, not in messages)
+        let system_content: Option<String> = request
+            .messages
+            .iter()
+            .find(|m| m.role == "system")
+            .map(|m| m.content.clone());
 
         let mut body = json!({
             "model": self.model,
             "max_tokens": request.max_tokens,
             "messages": messages,
         });
+
+        if let Some(system) = system_content {
+            if !system.is_empty() {
+                if self.supports_prompt_caching() {
+                    body["system"] = json!([{
+                        "type": "text",
+                        "text": system,
+                        "cache_control": { "type": "ephemeral" },
+                    }]);
+                } else {
+                    body["system"] = json!(system);
+                }
+            }
+        }
 
         // Only include temperature if non-default (Anthropic default is 1.0)
         if (request.temperature - 1.0).abs() > f32::EPSILON {
@@ -169,7 +220,7 @@ impl ClaudeProvider {
 
         // Anthropic uses `input_schema` instead of OpenAI's `parameters`
         if !request.tools.is_empty() {
-            let tools: Vec<Value> = request
+            let mut tools: Vec<Value> = request
                 .tools
                 .iter()
                 .map(|t| {
@@ -180,6 +231,14 @@ impl ClaudeProvider {
                     })
                 })
                 .collect();
+
+            if self.supports_prompt_caching() {
+                if let Some(last) = tools.last_mut() {
+                    if let Some(obj) = last.as_object_mut() {
+                        obj.insert("cache_control".to_string(), json!({ "type": "ephemeral" }));
+                    }
+                }
+            }
             body["tools"] = json!(tools);
         }
 
@@ -187,7 +246,37 @@ impl ClaudeProvider {
             body["stream"] = json!(true);
         }
 
+        match &request.thinking_config {
+            Some(crate::llm::streaming::ThinkingConfig::Adaptive) => {
+                body["thinking"] = json!({ "type": "adaptive" });
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("temperature");
+                }
+            }
+            Some(crate::llm::streaming::ThinkingConfig::Enabled { budget_tokens }) => {
+                let budget = (*budget_tokens).min(request.max_tokens.saturating_sub(1));
+                body["thinking"] = json!({ "type": "enabled", "budget_tokens": budget });
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("temperature");
+                }
+            }
+            Some(crate::llm::streaming::ThinkingConfig::Disabled) | None => {}
+        }
+
         body
+    }
+
+    #[doc(hidden)]
+    pub fn build_request_body_for_test(&self, request: &LlmRequest) -> Value {
+        self.build_request_body(request)
+    }
+
+    #[doc(hidden)]
+    pub fn build_request_headers_for_test(
+        &self,
+        request: &LlmRequest,
+    ) -> std::collections::HashMap<String, String> {
+        self.build_request_headers(request)
     }
 
     /// Parse the non-streaming response into `LlmResponse`.
@@ -207,14 +296,8 @@ impl ClaudeProvider {
                     }
                 }
                 Some("tool_use") => {
-                    let id = block["id"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    let name = block["name"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
+                    let id = block["id"].as_str().unwrap_or_default().to_string();
+                    let name = block["name"].as_str().unwrap_or_default().to_string();
                     let arguments = block["input"].clone();
                     tool_calls.push(ToolCall {
                         id,
@@ -272,20 +355,21 @@ impl LlmProviderTrait for ClaudeProvider {
         true
     }
 
+    fn supports_prompt_caching(&self) -> bool {
+        true
+    }
+
     async fn send(&self, request: LlmRequest) -> Result<LlmResponse> {
         let body = self.build_request_body(&request);
 
         debug!("Claude send request to model: {}", self.model);
 
-        let response = self
-            .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let headers = self.build_request_headers(&request);
+        let mut req = self.client.post(ANTHROPIC_API_URL);
+        for (key, value) in headers {
+            req = req.header(key, value);
+        }
+        let response = req.json(&body).send().await?;
 
         let status = response.status();
         let response_text = response.text().await?;
@@ -311,15 +395,12 @@ impl LlmProviderTrait for ClaudeProvider {
 
         debug!("Claude stream request to model: {}", self.model);
 
-        let response = self
-            .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        let headers = self.build_request_headers(&stream_request);
+        let mut req = self.client.post(ANTHROPIC_API_URL);
+        for (key, value) in headers {
+            req = req.header(key, value);
+        }
+        let response = req.json(&body).send().await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -374,10 +455,7 @@ impl LlmProviderTrait for ClaudeProvider {
                             if state.current_tool_id.is_some() {
                                 let events = finalize_tool_call(&mut state);
                                 if !events.is_empty() {
-                                    return Some((
-                                        stream::iter(events),
-                                        (byte_stream, state),
-                                    ));
+                                    return Some((stream::iter(events), (byte_stream, state)));
                                 }
                             }
                             return None;
@@ -537,8 +615,7 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                 .as_str()
                 .unwrap_or("end_turn");
             let stop_reason = ClaudeProvider::parse_stop_reason(stop_reason_str);
-            let output_tokens =
-                parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
+            let output_tokens = parsed["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
 
             Some(vec![StreamEvent::Done {
                 stop_reason,
@@ -546,6 +623,24 @@ fn process_sse_data(data: &str, state: &mut SseState) -> Option<Vec<StreamEvent>
                     input_tokens: state.input_tokens,
                     output_tokens,
                 },
+            }])
+        }
+
+        "error" => {
+            let message = parsed["error"]["message"]
+                .as_str()
+                .unwrap_or("unknown SSE error")
+                .to_string();
+            let error_type = parsed["error"]["type"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string();
+            warn!(
+                "SSE error event from provider: type={} message={}",
+                error_type, message
+            );
+            Some(vec![StreamEvent::Error {
+                error: format!("{}: {}", error_type, message),
             }])
         }
 
@@ -697,6 +792,7 @@ mod tests {
             max_tokens: 1024,
             temperature: 1.0,
             stream: false,
+            thinking_config: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -709,8 +805,10 @@ mod tests {
 
     #[test]
     fn test_build_request_body_with_tools_and_stream() {
-        let provider =
-            ClaudeProvider::new("key".to_string(), Some("claude-opus-4-20250514".to_string()));
+        let provider = ClaudeProvider::new(
+            "key".to_string(),
+            Some("claude-opus-4-20250514".to_string()),
+        );
         let request = LlmRequest {
             messages: vec![ChatMessage::text("user", "Search")],
             tools: vec![ToolDefinition {
@@ -721,6 +819,7 @@ mod tests {
             max_tokens: 4096,
             temperature: 0.7,
             stream: true,
+            thinking_config: None,
         };
 
         let body = provider.build_request_body(&request);
@@ -798,21 +897,38 @@ mod tests {
         let mut state = SseState::new();
         state.input_tokens = 100;
 
-        let data =
-            r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":50}}"#;
+        let data = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":50}}"#;
         let result = process_sse_data(data, &mut state);
         assert!(result.is_some());
         let events = result.unwrap();
         match &events[0] {
-            StreamEvent::Done {
-                stop_reason,
-                usage,
-            } => {
+            StreamEvent::Done { stop_reason, usage } => {
                 assert_eq!(*stop_reason, StopReason::EndTurn);
                 assert_eq!(usage.input_tokens, 100);
                 assert_eq!(usage.output_tokens, 50);
             }
             _ => panic!("Expected Done"),
+        }
+    }
+
+    #[test]
+    fn test_process_sse_data_error_event_emits_stream_error() {
+        let mut state = SseState::new();
+        let data =
+            r#"{"type":"error","error":{"type":"overloaded_error","message":"API overloaded"}}"#;
+        let result = process_sse_data(data, &mut state);
+        assert!(
+            result.is_some(),
+            "error event must not be silently discarded"
+        );
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            StreamEvent::Error { error } => {
+                assert!(error.contains("overloaded_error"));
+                assert!(error.contains("API overloaded"));
+            }
+            other => panic!("Expected Error event, got {:?}", other),
         }
     }
 

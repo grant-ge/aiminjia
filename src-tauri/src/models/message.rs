@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
+
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+use crate::runtime::agent::subagent_transcript_store::SubagentTranscriptEntryRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -71,12 +76,6 @@ pub struct MessageContent {
     pub progress: Option<serde_json::Value>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub search_sources: Option<Vec<serde_json::Value>>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exec_summary: Option<serde_json::Value>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<serde_json::Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,6 +83,136 @@ pub struct MessageContent {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<serde_json::Value>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent_envelope: Option<SubAgentEnvelopePayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentEnvelopePayload {
+    pub schema_version: u32,
+    pub output: String,
+    pub iterations_used: usize,
+    pub generated_files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_ref: Option<String>,
+}
+
+impl From<SubAgentResultEnvelope> for SubAgentEnvelopePayload {
+    fn from(value: SubAgentResultEnvelope) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            output: value.output,
+            iterations_used: value.iterations_used,
+            generated_files: value.generated_files,
+            transcript_ref: value.transcript_ref,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentTranscriptEntryFrontend {
+    pub role: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl From<SubagentTranscriptEntryRecord> for SubAgentTranscriptEntryFrontend {
+    fn from(value: SubagentTranscriptEntryRecord) -> Self {
+        Self {
+            role: value.role,
+            content: value.content,
+            tool_name: value.tool_name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRecordFrontend {
+    pub task_id: String,
+    pub session_id: String,
+    pub run_id: String,
+    pub subject: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_form: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+impl From<crate::runtime::task::task_models::TaskRecord> for TaskRecordFrontend {
+    fn from(r: crate::runtime::task::task_models::TaskRecord) -> Self {
+        use crate::runtime::task::task_models::TaskStatus;
+        let status_str = match r.status {
+            TaskStatus::Pending => "pending",
+            TaskStatus::InProgress => "in_progress",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+        };
+        Self {
+            task_id: r.id,
+            session_id: r.session_id.as_str().to_string(),
+            run_id: r.parent_run_id.as_str().to_string(),
+            subject: r.subject,
+            status: status_str.to_string(),
+            active_form: r.active_form,
+            owner: r
+                .owner
+                .or_else(|| r.owner_agent_id.map(|id| id.as_str().to_string())),
+        }
+    }
+}
+
+impl TaskRecordFrontend {
+    pub fn list_from_task_v2_store(
+        aijia_home: &Path,
+        conversation_id: &str,
+    ) -> anyhow::Result<Vec<Self>> {
+        let records = list_task_records_with_legacy_root_fallback(aijia_home, conversation_id)?;
+        Ok(records.into_iter().map(Into::into).collect())
+    }
+}
+
+fn list_task_records_with_legacy_root_fallback(
+    aijia_home: &Path,
+    conversation_id: &str,
+) -> anyhow::Result<Vec<crate::runtime::task::task_models::TaskRecord>> {
+    let primary_store = crate::runtime::task::FileTaskV2Store::new(aijia_home.to_path_buf());
+    let primary = primary_store.list(conversation_id)?;
+
+    let Some(legacy_root) = legacy_aijia_root_for_user_scoped_base(aijia_home) else {
+        return Ok(primary);
+    };
+
+    let legacy_store = crate::runtime::task::FileTaskV2Store::new(legacy_root);
+    let legacy = legacy_store.list(conversation_id)?;
+    if legacy.is_empty() {
+        return Ok(primary);
+    }
+    if primary.is_empty() {
+        return Ok(legacy);
+    }
+
+    let mut by_id = std::collections::HashMap::new();
+    for task in legacy.into_iter().chain(primary) {
+        by_id.insert(task.id.clone(), task);
+    }
+    let mut merged = by_id.into_values().collect::<Vec<_>>();
+    merged.sort_by_key(|task| task.id.parse::<u64>().unwrap_or(u64::MAX));
+    Ok(merged)
+}
+
+fn legacy_aijia_root_for_user_scoped_base(base: &Path) -> Option<PathBuf> {
+    let users_dir = base.parent()?;
+    if users_dir.file_name()?.to_str()? != "users" {
+        return None;
+    }
+    users_dir.parent().map(Path::to_path_buf)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

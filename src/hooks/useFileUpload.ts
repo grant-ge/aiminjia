@@ -15,6 +15,10 @@ const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'csv', 'pdf', 'docx', 'doc', 'json']
 
 /** Human-readable filter label shown in the native dialog. */
 const DIALOG_FILTER_NAME = 'Supported Files'
+/** Maximum number of files per conversation. */
+const MAX_FILES = 10
+/** Maximum total file size in bytes (50 MB). */
+const MAX_TOTAL_SIZE = 50 * 1024 * 1024
 
 /** Detect FileAttachment.fileType from file extension. */
 function detectFileType(path: string): FileAttachment['fileType'] {
@@ -48,11 +52,6 @@ export function useFileUpload() {
    *
    * If no active conversation exists, one is created automatically.
    */
-  /** Maximum number of files per conversation. */
-  const MAX_FILES = 10
-  /** Maximum total file size in bytes (50 MB). */
-  const MAX_TOTAL_SIZE = 50 * 1024 * 1024
-
   /**
    * Open the native file dialog (supports multiple selection),
    * upload each file, and return metadata array.
@@ -72,7 +71,7 @@ export function useFileUpload() {
         const now = new Date().toISOString()
         const store = useChatStore.getState()
         store.setConversations([
-          { id: newId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+          { id: newId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
           ...store.conversations,
         ])
         store.setActiveConversation(newId)

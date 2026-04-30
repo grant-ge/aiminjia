@@ -1,914 +1,189 @@
 /**
- * SettingsModal — tabbed settings: model configuration (per-provider) + general settings.
+ * @designSource design.pen#S3D6p / 1MCFZ / az6ZY
  */
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Modal } from '@/components/common/Modal'
-import { Button } from '@/components/common/Button'
-import { useSettingsStore } from '@/stores/settingsStore'
-import { useNotificationStore } from '@/stores/notificationStore'
-import {
-  getSettings,
-  updateSettings,
-  validateApiKey,
-  selectWorkspace,
-  getAllProviderKeys,
-  updateAllProviderKeys,
-  getConfiguredProviders,
-  switchProvider,
-  openLogsDirectory,
-  openWorkspaceDirectory,
-  exportMetrics,
-  clearMetrics,
-  getMetricsInfo,
-} from '@/lib/tauri'
-import type { LlmProvider } from '@/types/settings'
-import { PROVIDER_CAPABILITIES } from '@/types/settings'
+import { message } from '@tauri-apps/plugin-dialog'
+
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
+import { getSettings, updateSettings } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
-import { LoginSection } from '@/components/settings/LoginSection'
-import { PersonaTab } from '@/components/settings/PersonaTab'
-import { SkillsTab } from '@/components/settings/SkillsTab'
-import { DingtalkSection } from '@/components/settings/DingtalkSection'
-import type { AppLanguage } from '@/i18n'
-import { resolveResource } from '@tauri-apps/api/path'
-import { readTextFile } from '@tauri-apps/plugin-fs'
+import { useBrandingStore } from '@/stores/brandingStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useUiStore } from '@/stores/uiStore'
 
-interface SettingsModalProps {
-  open: boolean
-  onClose: () => void
-}
+import { SettingsContentBody } from './SettingsContentBody'
+import { SettingsMenu } from './SettingsMenu'
+import { SettingsShell } from './SettingsShell'
+import { AboutPanel } from './panels/AboutPanel'
+import { GeneralPanel } from './panels/GeneralPanel'
+import { ArchivedPanel } from './panels/ArchivedPanel'
 
-type MainTab = 'account' | 'models' | 'search' | 'general' | 'persona' | 'skills' | 'dingtalk'
+export function SettingsModal() {
+  const settingsModal = useUiStore((s) => s.settingsModal)
+  const closeSettings = useUiStore((s) => s.closeSettings)
+  const openSettings = useUiStore((s) => s.openSettings)
+  const user = useAuthStore((s) => s.user)
+  const tenant = useAuthStore((s) => s.tenant)
+  const logout = useAuthStore((s) => s.logout)
+  const productName = useBrandingStore((s) => s.productName)
+  const logoUrl = useBrandingStore((s) => s.logoUrl)
+  const dataMaskingLevel = useSettingsStore((s) => s.dataMaskingLevel ?? 'relaxed')
+  const setDataMaskingLevel = useSettingsStore((s) => s.setDataMaskingLevel)
+  const [pendingLogout, setPendingLogout] = useState(false)
+  const [appVersion, setAppVersion] = useState('读取中')
 
-const PROVIDER_LIST: { value: LlmProvider; labelKey: string }[] = [
-  { value: 'deepseek-v3', labelKey: 'providers.deepseek-v3' },
-  { value: 'qwen-plus', labelKey: 'providers.qwen-plus' },
-  { value: 'volcano', labelKey: 'providers.volcano' },
-  { value: 'openai', labelKey: 'providers.openai' },
-  { value: 'claude', labelKey: 'providers.claude' },
-  { value: 'custom', labelKey: 'providers.custom' },
-]
-
-const API_KEY_PLACEHOLDERS: Record<LlmProvider, string> = {
-  'deepseek-v3': 'sk-...',
-  'qwen-plus': 'sk-...',
-  'volcano': 'API Key...',
-  'openai': 'sk-...',
-  'claude': 'sk-ant-...',
-  'custom': '', // will use t() at render time
-}
-
-export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const settings = useSettingsStore()
-  const notifications = useNotificationStore()
-  const { t } = useTranslation()
-
-  const [mainTab, setMainTab] = useState<MainTab>('account')
-  const [activeProvider, setActiveProvider] = useState<LlmProvider>('deepseek-v3')
-  const [saving, setSaving] = useState(false)
-  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
-
-  // Per-provider key cache: provider → plaintext key
-  const [keyCache, setKeyCache] = useState<Partial<Record<LlmProvider, string>>>({})
-  // Per-provider validation state
-  const [validating, setValidating] = useState(false)
-  const [keyValid, setKeyValid] = useState<Record<string, boolean | null>>({})
-  // Show/hide toggles
-  const [showApiKey, setShowApiKey] = useState(false)
-  const [showTavilyKey, setShowTavilyKey] = useState(false)
-  const [showBochaKey, setShowBochaKey] = useState(false)
-
-  // Metrics info state
-  const [metricsCount, setMetricsCount] = useState(0)
-  const [metricsBytes, setMetricsBytes] = useState(0)
-  const [metricsLoading, setMetricsLoading] = useState(false)
-
-  // Changelog state
-  const [showChangelog, setShowChangelog] = useState(false)
-  const [changelogEntries, setChangelogEntries] = useState<Array<{
-    version: string; date: string; changes: { zh: string[]; en: string[] }
-  }>>([])
-
-  // Load settings + all provider keys when modal opens
   useEffect(() => {
-    if (!open) return
-    setShowApiKey(false)
-    setShowTavilyKey(false)
-    setKeyValid({})
-    // Load metrics info
-    getMetricsInfo()
-      .then(({ entryCount, totalBytes }) => {
-        setMetricsCount(entryCount)
-        setMetricsBytes(totalBytes)
+    if (settingsModal !== 'about') return
+
+    let cancelled = false
+    import('@tauri-apps/api/app')
+      .then(({ getVersion }) => getVersion())
+      .then((version) => {
+        if (!cancelled) setAppVersion(version)
       })
       .catch(() => {
-        setMetricsCount(0)
-        setMetricsBytes(0)
+        if (!cancelled) setAppVersion('未知')
       })
-    ;(async () => {
-      try {
-        const [saved, allKeys] = await Promise.all([getSettings(), getAllProviderKeys()])
-        settings.setSettings(saved)
-        setActiveProvider(saved.primaryModel)
 
-        // Build key cache from all provider keys
-        const cache: Partial<Record<LlmProvider, string>> = {}
-        for (const [provider, key] of Object.entries(allKeys)) {
-          cache[provider as LlmProvider] = key
-        }
-        // Ensure current provider key is in cache (migration compat)
-        if (saved.primaryApiKey && !cache[saved.primaryModel]) {
-          cache[saved.primaryModel] = saved.primaryApiKey
-        }
-        setKeyCache(cache)
-      } catch (err) {
-        console.error('Failed to load settings:', err)
-      }
-    })()
-  }, [open])
-
-  useEffect(() => {
-    if (mainTab !== 'general') setShowChangelog(false)
-  }, [mainTab])
-
-  async function loadChangelog() {
-    try {
-      const resourcePath = await resolveResource('changelog.json')
-      const text = await readTextFile(resourcePath)
-      const data = JSON.parse(text)
-      const entries = (data.versions || []).filter((v: any) => v.product === 'desktop')
-      setChangelogEntries(entries)
-      setShowChangelog(true)
-    } catch (err) {
-      console.warn('Failed to load changelog:', err)
+    return () => {
+      cancelled = true
     }
-  }
+  }, [settingsModal])
 
-  const handleSave = async () => {
-    setSaving(true)
+  if (!settingsModal) return null
+
+  const onLogout = async () => {
+    if (pendingLogout) return
+    setPendingLogout(true)
     try {
-      // Build the final key cache with the current provider's key
-      const finalKeyCache = { ...keyCache }
-
-      // Batch-save all provider keys
-      const keysToSave: Record<string, string> = {}
-      for (const p of PROVIDER_LIST) {
-        const key = finalKeyCache[p.value] ?? ''
-        keysToSave[p.value] = key
-      }
-      await updateAllProviderKeys(keysToSave)
-
-      // Save general settings — use the active provider's key as primaryApiKey
-      const currentProviderKey = finalKeyCache[settings.primaryModel] ?? ''
-      await updateSettings({
-        primaryModel: settings.primaryModel,
-        primaryApiKey: currentProviderKey,
-        autoModelRouting: settings.autoModelRouting,
-        workspacePath: settings.workspacePath,
-        analysisThreshold: settings.analysisThreshold,
-        dataMaskingLevel: settings.dataMaskingLevel,
-        autoCleanupEnabled: settings.autoCleanupEnabled,
-        tempFileRetentionDays: settings.tempFileRetentionDays,
-        keepOldVersions: settings.keepOldVersions,
-        tavilyApiKey: settings.tavilyApiKey,
-        bochaApiKey: settings.bochaApiKey,
-        customModelEndpoint: settings.customModelEndpoint,
-        customModelName: settings.customModelName,
-        useCloud: settings.useCloud,
-        cloudModel: settings.cloudModel,
-        cloudModelType: settings.cloudModelType,
-        appLanguage: settings.appLanguage,
-      })
-      const providers = await getConfiguredProviders()
-      useSettingsStore.getState().setConfiguredProviders(providers as LlmProvider[])
-
-      onClose()
-    } catch (err) {
-      console.error('Failed to save settings:', err)
-      notifications.push({
-        level: 'error',
-        title: t('settings.saveFailed'),
-        message: err instanceof Error ? err.message : t('settings.saveFailedDesc'),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
-        context: 'toast',
-      })
+      await logout()
+      closeSettings()
     } finally {
-      setSaving(false)
+      setPendingLogout(false)
     }
   }
 
-  const handleSetAsPrimary = async (provider: LlmProvider) => {
-    // Update local state
-    settings.setPrimaryModel(provider)
-    const cachedKey = keyCache[provider] ?? ''
-    settings.setPrimaryApiKey(cachedKey)
-
-    // Persist immediately — save the key first, then switch provider
+  const openExternalLink = async (url: string) => {
     try {
-      const keysToSave: Record<string, string> = {}
-      keysToSave[provider] = cachedKey
-      await updateAllProviderKeys(keysToSave)
-      await switchProvider(provider)
+      const { open } = await import('@tauri-apps/plugin-shell')
+      await open(url)
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    }
+  }
 
-      // For custom provider, also persist endpoint/model settings
-      if (provider === 'custom') {
-        await updateSettings({
-          primaryModel: provider,
-          primaryApiKey: cachedKey,
-          autoModelRouting: settings.autoModelRouting,
-          workspacePath: settings.workspacePath,
-          analysisThreshold: settings.analysisThreshold,
-          dataMaskingLevel: settings.dataMaskingLevel,
-          autoCleanupEnabled: settings.autoCleanupEnabled,
-          tempFileRetentionDays: settings.tempFileRetentionDays,
-          keepOldVersions: settings.keepOldVersions,
-          tavilyApiKey: settings.tavilyApiKey,
-          bochaApiKey: settings.bochaApiKey,
-          customModelEndpoint: settings.customModelEndpoint,
-          customModelName: settings.customModelName,
-          useCloud: settings.useCloud,
-          cloudModel: settings.cloudModel,
-          cloudModelType: settings.cloudModelType,
-        })
+  const onCheckUpdate = async () => {
+    try {
+      const [{ check }, { getVersion }, { relaunch }] = await Promise.all([
+        import('@tauri-apps/plugin-updater'),
+        import('@tauri-apps/api/app'),
+        import('@tauri-apps/plugin-process'),
+      ])
+      const update = await check()
+      if (!update) {
+        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+        return
       }
 
-      notifications.push({
-        level: 'success',
-        title: t('settings.switchedModel'),
-        message: `${t('providers.' + provider)}`,
-        actions: [],
-        dismissible: true,
-        autoHide: 3,
-        context: 'toast',
+      const currentVersion = await getVersion()
+      if (update.version === currentVersion) {
+        await message('当前已是最新版本。', { title: productName, kind: 'info' })
+        return
+      }
+
+      const confirmed = await requestConfirm({
+        title: `发现新版本 v${update.version}`,
+        description: update.body ?? `发现新版本 v${update.version}，是否立即更新？`,
+        confirmLabel: '立即更新',
+        cancelLabel: '稍后再说',
       })
-    } catch (err) {
-      console.error('Failed to switch provider:', err)
-      notifications.push({
-        level: 'error',
-        title: t('settings.switchFailed'),
-        message: err instanceof Error ? err.message : t('settings.switchFailedDesc'),
-        actions: [],
-        dismissible: true,
-        autoHide: 6,
-        context: 'toast',
-      })
+      if (!confirmed) return
+
+      await update.downloadAndInstall()
+      await relaunch()
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
     }
   }
 
-  const currentKeyForProvider = keyCache[activeProvider] ?? ''
-  const providerCaps = PROVIDER_CAPABILITIES[activeProvider]
+  const onUploadLogs = async () => {
+    try {
+      const { openLogsDirectory } = await import('@/lib/tauri')
+      await openLogsDirectory()
+    } catch (e) {
+      await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
+    }
+  }
 
-  const footer = (
-    <>
-      <Button variant="secondary" onClick={onClose}>
-        {t('common.cancel')}
-      </Button>
-      <Button variant="primary" onClick={handleSave} disabled={saving}>
-        {saving ? t('settings.saving') : t('settings.saveSettings')}
-      </Button>
-    </>
-  )
+  const onResetData = async () => {
+    const confirmed = await requestConfirm({
+      title: productName,
+      description: '将清除本地缓存并恢复默认设置，是否继续？',
+      confirmLabel: '重置',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+
+    localStorage.clear()
+    useBrandingStore.getState().reset()
+    await message('本地缓存已清除，部分设置会在重启后恢复默认。', { title: productName, kind: 'info' })
+  }
 
   return (
-    <Modal open={open} onClose={onClose} title={t('settings.title')} footer={footer}>
-      {/* Main Tab Bar */}
-      <div
-        className="mb-4 flex items-center gap-1 border-b pb-3"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <TabButton
-          active={mainTab === 'account'}
-          onClick={() => setMainTab('account')}
-        >
-          {t('settings.tabs.account')}
-        </TabButton>
-        {!isLoggedIn && (
-          <TabButton
-            active={mainTab === 'models'}
-            onClick={() => setMainTab('models')}
-          >
-            {t('settings.tabs.models')}
-          </TabButton>
-        )}
-        {!isLoggedIn && (
-          <TabButton
-            active={mainTab === 'search'}
-            onClick={() => setMainTab('search')}
-          >
-            {t('settings.tabs.search')}
-          </TabButton>
-        )}
-        <TabButton
-          active={mainTab === 'general'}
-          onClick={() => setMainTab('general')}
-        >
-          {t('settings.tabs.general')}
-        </TabButton>
-        <TabButton
-          active={mainTab === 'persona'}
-          onClick={() => setMainTab('persona')}
-        >
-          {t('settings.tabs.persona')}
-        </TabButton>
-        <TabButton
-          active={mainTab === 'skills'}
-          onClick={() => setMainTab('skills')}
-        >
-          {t('settings.tabs.skills')}
-        </TabButton>
-        <TabButton
-          active={mainTab === 'dingtalk'}
-          onClick={() => setMainTab('dingtalk')}
-        >
-          {t('settings.tabs.dingtalk')}
-        </TabButton>
-      </div>
-
-      {/* Tab Content */}
-      {mainTab === 'account' && (
-        <LoginSection onLoginSuccess={() => setMainTab('account')} />
-      )}
-
-      {mainTab === 'models' && !isLoggedIn && (
-        <div>
-          {/* Provider Sub-tabs */}
-          <div className="mb-4 flex flex-wrap items-center gap-1">
-            {PROVIDER_LIST.map((p) => (
-              <SubTabButton
-                key={p.value}
-                active={activeProvider === p.value}
-                onClick={() => {
-                  setActiveProvider(p.value)
-                  setShowApiKey(false)
-                  setKeyValid((prev) => ({ ...prev, [p.value]: null }))
+    <SettingsShell
+      open
+      onClose={closeSettings}
+      height={720}
+      menu={
+        <SettingsMenu
+          activeKey={settingsModal}
+          onSelect={(k) => openSettings(k)}
+        />
+      }
+      content={
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <SettingsContentBody>
+            {settingsModal === 'account' ? (
+              <GeneralPanel
+                user={{
+                  name: user?.name ?? user?.username ?? '未登录',
+                  tenantName: tenant?.name ?? '',
+                  avatarUrl: '',
                 }}
-              >
-                {t(p.labelKey)}
-              </SubTabButton>
-            ))}
-          </div>
-
-          {/* Active badge */}
-          {activeProvider === settings.primaryModel && (
-            <div
-              className="mb-3 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs"
-              style={{
-                background: 'var(--color-primary-subtle)',
-                color: 'var(--color-primary)',
-              }}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: 'var(--color-semantic-green)' }}
+                onLogout={() => void onLogout()}
               />
-              {t('settings.currentDefault')}
-            </div>
-          )}
-
-          {/* API Key Input */}
-          <FormGroup
-            label="API Key"
-            desc={t('settings.enterApiKey', { provider: t('providers.' + activeProvider) })}
-          >
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
-                style={{
-                  background: 'var(--color-bg-main)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text-primary)',
-                }}
-                placeholder={activeProvider === 'custom' ? t('settings.apiKeyOptional') : (API_KEY_PLACEHOLDERS[activeProvider] ?? 'sk-...')}
-                value={currentKeyForProvider}
-                onChange={(e) => {
-                  setKeyCache((prev) => ({ ...prev, [activeProvider]: e.target.value }))
-                  setKeyValid((prev) => ({ ...prev, [activeProvider]: null }))
-                }}
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs"
-                style={{ color: 'var(--color-text-muted)' }}
-                onClick={() => setShowApiKey(!showApiKey)}
-              >
-                {showApiKey ? t('common.hide') : t('common.show')}
-              </button>
-            </div>
-          </FormGroup>
-
-          {/* Validate + Set as Primary */}
-          <div className="-mt-3 mb-3 flex items-center gap-2">
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                setValidating(true)
-                setKeyValid((prev) => ({ ...prev, [activeProvider]: null }))
-                try {
-                  const valid = await validateApiKey(activeProvider, currentKeyForProvider)
-                  setKeyValid((prev) => ({ ...prev, [activeProvider]: valid }))
-                } catch {
-                  setKeyValid((prev) => ({ ...prev, [activeProvider]: false }))
-                }
-                setValidating(false)
-              }}
-              disabled={(activeProvider !== 'custom' && !currentKeyForProvider) || validating}
-            >
-              {validating ? t('settings.validating') : activeProvider === 'custom' ? t('settings.testConnection') : t('settings.validateKey')}
-            </Button>
-
-            {activeProvider !== settings.primaryModel && (
-              <Button
-                variant="secondary"
-                onClick={() => handleSetAsPrimary(activeProvider)}
-              >
-                {t('settings.setAsDefault')}
-              </Button>
-            )}
-
-            {keyValid[activeProvider] === true && (
-              <span className="text-sm" style={{ color: 'var(--color-semantic-green)' }}>
-                {t('settings.keyValid')}
-              </span>
-            )}
-            {keyValid[activeProvider] === false && (
-              <span className="text-sm" style={{ color: 'var(--color-semantic-red)' }}>
-                {t('settings.keyInvalid')}
-              </span>
-            )}
-          </div>
-
-          {/* Custom model config — only for 'custom' provider */}
-          {activeProvider === 'custom' && (
-            <>
-              <FormGroup
-                label={t('settings.customModel.endpointLabel')}
-                desc={t('settings.customModel.endpointDesc')}
-              >
-                <FormInput
-                  value={settings.customModelEndpoint}
-                  placeholder="http://localhost:11434/v1"
-                  onChange={(v) => settings.setCustomModelEndpoint(v)}
-                />
-              </FormGroup>
-              <FormGroup
-                label={t('settings.customModel.modelNameLabel')}
-                desc={t('settings.customModel.modelNameDesc')}
-              >
-                <FormInput
-                  value={settings.customModelName}
-                  placeholder="qwen2.5:7b"
-                  onChange={(v) => settings.setCustomModelName(v)}
-                />
-              </FormGroup>
-
-              {/* Common service examples */}
-              <div
-                className="rounded-md border px-3 py-2.5 text-xs"
-                style={{
-                  background: 'var(--color-bg-main)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text-muted)',
-                }}
-              >
-                <div
-                  className="mb-2 text-xs font-semibold"
-                  style={{ color: 'var(--color-text-secondary)' }}
-                >
-                  {t('settings.customModel.examplesTitle')}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.ollamaLocal')}</span>
-                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:11434/v1</code>
-                    ，{t('settings.customModel.modelLike')} <code>qwen2.5:7b</code>
-                    ，{t('settings.customModel.keyEmpty')}
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.lmStudioLocal')}</span>
-                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>http://localhost:1234/v1</code>
-                    ，{t('settings.customModel.modelLike')} <code>llama3</code>
-                    ，{t('settings.customModel.keyEmpty')}
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.openRouter')}</span>
-                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>https://openrouter.ai/api/v1</code>
-                    ，{t('settings.customModel.modelLike')} <code>google/gemini-pro</code>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.siliconFlow')}</span>
-                    ：{t('settings.customModel.endpoint')} <code style={{ color: 'var(--color-semantic-blue)' }}>https://api.siliconflow.cn/v1</code>
-                    ，{t('settings.customModel.modelLike')} <code>deepseek-ai/DeepSeek-V3</code>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{t('settings.customModel.otherCompatible')}</span>
-                    ：{t('settings.customModel.otherDesc')}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Model info */}
-          {providerCaps && (
-            <div
-              className="rounded-md px-3 py-2 text-xs"
-              style={{
-                background: 'var(--color-bg-main)',
-                color: 'var(--color-text-muted)',
-              }}
-            >
-              <div>{t('settings.availableModels')}：{t('providers.capabilities.' + activeProvider)}</div>
-              {providerCaps.hasReasoning && (
-                <div className="mt-1">{t('settings.reasoningRouting')}</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {mainTab === 'search' && !isLoggedIn && (
-        <div>
-          {/* Tavily Search API Key */}
-          <FormGroup label={t('settings.search.tavilyLabel')} desc={t('settings.search.tavilyDesc')}>
-            <div className="relative">
-              <input
-                type={showTavilyKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
-                style={{
-                  background: 'var(--color-bg-main)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text-primary)',
-                }}
-                placeholder="tvly-..."
-                value={settings.tavilyApiKey}
-                onChange={(e) => settings.setTavilyApiKey(e.target.value)}
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs"
-                style={{ color: 'var(--color-text-muted)' }}
-                onClick={() => setShowTavilyKey(!showTavilyKey)}
-              >
-                {showTavilyKey ? t('common.hide') : t('common.show')}
-              </button>
-            </div>
-          </FormGroup>
-
-          {/* Bocha Search API Key */}
-          <FormGroup label={t('settings.search.bochaLabel')} desc={<>{t('settings.search.bochaDesc')}。<a href="https://open.bochaai.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>{t('settings.search.bochaGetKey')}</a></>}>
-            <div className="relative">
-              <input
-                type={showBochaKey ? 'text' : 'password'}
-                className="h-9 w-full rounded-md border px-3 pr-16 text-sm outline-none"
-                style={{
-                  background: 'var(--color-bg-main)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-text-primary)',
-                }}
-                placeholder="sk-..."
-                value={settings.bochaApiKey}
-                onChange={(e) => settings.setBochaApiKey(e.target.value)}
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs"
-                style={{ color: 'var(--color-text-muted)' }}
-                onClick={() => setShowBochaKey(!showBochaKey)}
-              >
-                {showBochaKey ? t('common.hide') : t('common.show')}
-              </button>
-            </div>
-          </FormGroup>
-        </div>
-      )}
-
-      {mainTab === 'general' && showChangelog && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <button
-              className="text-sm cursor-pointer border-none bg-transparent"
-              style={{ color: 'var(--color-text-secondary)' }}
-              onClick={() => setShowChangelog(false)}
-            >
-              ← {t('changelog.back')}
-            </button>
-            <h3 className="text-base font-semibold">{t('changelog.title')}</h3>
-          </div>
-          <div className="space-y-4">
-            {changelogEntries.map((entry) => {
-              const langKey = (settings.appLanguage || 'zh-CN').startsWith('zh') ? 'zh' : 'en'
-              const items = entry.changes[langKey] || entry.changes['en'] || []
-              return (
-                <div key={entry.version} className="border-b pb-3" style={{ borderColor: 'var(--color-border)' }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-semibold">v{entry.version}</span>
-                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{entry.date}</span>
-                  </div>
-                  <ul className="pl-4 list-disc space-y-1">
-                    {items.map((item, i) => (
-                      <li key={i} className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {mainTab === 'general' && !showChangelog && (
-        <div>
-          {/* Language toggle */}
-          <FormGroup label={t('settings.general.language')} desc={t('settings.general.languageDesc')}>
-            <div
-              className="inline-flex rounded-md border"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              {([['zh-CN', '中文'], ['en-US', 'English']] as const).map(([lang, label], idx) => (
-                <button
-                  key={lang}
-                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${idx === 0 ? 'rounded-l-md' : 'rounded-r-md'}`}
-                  style={{
-                    background: (settings.appLanguage || 'zh-CN') === lang ? 'var(--color-primary-subtle)' : 'transparent',
-                    color: (settings.appLanguage || 'zh-CN') === lang ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                    border: 'none',
-                    borderLeft: idx > 0 ? '1px solid var(--color-border)' : 'none',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => settings.setAppLanguage(lang as AppLanguage)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </FormGroup>
-
-          {/* Workspace */}
-          <FormGroup label={t('settings.general.workspace')} desc={t('settings.general.workspaceDesc')}>
-            <div className="flex items-center gap-2">
-              <FormInput
-                value={settings.workspacePath}
-                placeholder="/Users/hr/workspace"
-                onChange={(v) => settings.setWorkspacePath(v)}
-              />
-              <Button
-                variant="secondary"
-                className="shrink-0"
-                onClick={async () => {
+            ) : null}
+            {settingsModal === 'about' ? (
+              <AboutPanel
+                appName={productName}
+                version={appVersion}
+                copyright="仁励家网络科技(杭州)有限公司 版权所有"
+                logoUrl={logoUrl}
+                onCheckUpdate={() => void onCheckUpdate()}
+                onUploadLogs={() => void onUploadLogs()}
+                onResetData={() => void onResetData()}
+                dataMaskingLevel={dataMaskingLevel}
+                onDataMaskingChange={async (level) => {
+                  setDataMaskingLevel(level)
                   try {
-                    const { open } = await import('@tauri-apps/plugin-dialog')
-                    const selected = await open({ directory: true, multiple: false })
-                    if (selected && typeof selected === 'string') {
-                      settings.setWorkspacePath(selected)
-                      await selectWorkspace(selected)
-                    }
+                    const current = await getSettings()
+                    await updateSettings({ ...current, dataMaskingLevel: level })
                   } catch (err) {
-                    console.error('Failed to select workspace directory:', err)
+                    console.error('Failed to persist dataMaskingLevel:', err)
                   }
                 }}
-              >
-                {t('settings.general.selectDir')}
-              </Button>
-              <Button
-                variant="secondary"
-                className="shrink-0"
-                onClick={async () => {
-                  try {
-                    await openWorkspaceDirectory()
-                  } catch (err) {
-                    console.error('Failed to open workspace directory:', err)
-                  }
+                links={{
+                  customerService: () => void openExternalLink('https://www.renlijia.com/support'),
+                  productSuggestion: () => void openExternalLink('https://www.renlijia.com/feedback'),
+                  privacyPolicy: () => void openExternalLink('https://www.renlijia.com/privacy'),
+                  terms: () => void openExternalLink('https://www.renlijia.com/terms'),
                 }}
-                disabled={!settings.workspacePath}
-              >
-                {t('settings.general.openDir')}
-              </Button>
-            </div>
-          </FormGroup>
-
-          {/* System Info */}
-          <div
-            className="mt-6 border-t pt-4"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <div
-              className="mb-3 text-sm font-semibold"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              {t('settings.general.systemInfo')}
-            </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3">
-                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('settings.general.logs')}</span>
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    try {
-                      await openLogsDirectory()
-                    } catch (err) {
-                      console.error('Failed to open logs directory:', err)
-                    }
-                  }}
-                >
-                  {t('settings.general.openLogs')}
-                </Button>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{t('settings.general.metrics')}</span>
-                <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  {t('settings.general.metricsCount', {
-                    count: metricsCount,
-                    size: metricsBytes < 1024 ? `${metricsBytes} B` : `${(metricsBytes / 1024).toFixed(0)} KB`,
-                  })}
-                </span>
-                <Button
-                  variant="secondary"
-                  disabled={metricsCount === 0 || metricsLoading}
-                  onClick={async () => {
-                    try {
-                      setMetricsLoading(true)
-                      const { save } = await import('@tauri-apps/plugin-dialog')
-                      const now = new Date()
-                      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-                      const dest = await save({
-                        defaultPath: `aijia-metrics-${dateStr}.json`,
-                        filters: [{ name: 'JSON', extensions: ['json'] }],
-                      })
-                      if (dest) {
-                        const result = await exportMetrics(dest)
-                        notifications.push({ level: 'success', title: t('settings.general.exportSuccess'), message: t('settings.general.exportedCount', { count: result.entryCount }), actions: [], dismissible: true, autoHide: 3, context: 'toast' })
-                      }
-                    } catch (err) {
-                      console.error('Failed to export metrics:', err)
-                      notifications.push({ level: 'error', title: t('settings.general.exportFailed'), message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
-                    } finally {
-                      setMetricsLoading(false)
-                    }
-                  }}
-                >
-                  {t('common.export')}
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={metricsCount === 0 || metricsLoading}
-                  onClick={async () => {
-                    try {
-                      setMetricsLoading(true)
-                      await clearMetrics()
-                      setMetricsCount(0)
-                      setMetricsBytes(0)
-                      notifications.push({ level: 'success', title: t('settings.general.cleanupDone'), message: t('settings.general.metricsCleared'), actions: [], dismissible: true, autoHide: 3, context: 'toast' })
-                    } catch (err) {
-                      console.error('Failed to clear metrics:', err)
-                      notifications.push({ level: 'error', title: t('settings.general.cleanupFailed'), message: String(err), actions: [], dismissible: true, autoHide: 5, context: 'toast' })
-                    } finally {
-                      setMetricsLoading(false)
-                    }
-                  }}
-                >
-                  {t('settings.general.cleanup')}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Changelog */}
-          <div
-            className="mt-4 border-t pt-4"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <Button variant="secondary" size="sm" onClick={loadChangelog}>
-              {t('changelog.title')}
-            </Button>
-          </div>
+              />
+            ) : null}
+            {settingsModal === 'archived' ? <ArchivedPanel /> : null}
+          </SettingsContentBody>
         </div>
-      )}
-
-
-      {mainTab === 'persona' && (
-        <PersonaTab />
-      )}
-
-      {mainTab === 'skills' && (
-        <SkillsTab onRequestClose={onClose} />
-      )}
-
-      {mainTab === 'dingtalk' && (
-        <DingtalkSection />
-      )}
-
-    </Modal>
-  )
-}
-
-// --- Tab buttons ---
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      className="cursor-pointer rounded-md border-none px-3 py-1.5 text-sm font-medium transition-colors duration-150"
-      style={{
-        background: active ? 'var(--color-primary-subtle)' : 'transparent',
-        color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
-      }}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  )
-}
-
-function SubTabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      className="cursor-pointer rounded-md border-none px-2.5 py-1 text-xs font-medium transition-colors duration-150"
-      style={{
-        background: active ? 'var(--color-primary-subtle)' : 'transparent',
-        color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
-      }}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  )
-}
-
-// --- Internal form primitives ---
-
-function FormGroup({
-  label,
-  desc,
-  className,
-  children,
-}: {
-  label: string
-  desc?: React.ReactNode
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className={`mb-4.5 ${className ?? ''}`}>
-      <label
-        className="mb-1.5 block text-sm font-semibold"
-        style={{ color: 'var(--color-text-secondary)' }}
-      >
-        {label}
-      </label>
-      {desc && (
-        <div
-          className="mb-2 text-xs"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          {desc}
-        </div>
-      )}
-      {children}
-    </div>
-  )
-}
-
-function FormInput({
-  value,
-  placeholder,
-  type = 'text',
-  onChange,
-}: {
-  value: string
-  placeholder?: string
-  type?: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <input
-      type={type}
-      className="h-9 w-full rounded-md border px-3 text-sm outline-none"
-      style={{
-        background: 'var(--color-bg-main)',
-        borderColor: 'var(--color-border)',
-        color: 'var(--color-text-primary)',
-      }}
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      }
     />
   )
 }

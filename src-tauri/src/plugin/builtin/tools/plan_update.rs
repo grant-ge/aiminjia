@@ -4,6 +4,10 @@
 //! tracks sub-tasks and key findings within each analysis step. The LLM
 //! reads the plan from dynamic context and updates it after each sub-task.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -17,7 +21,9 @@ pub struct PlanUpdateTool;
 
 #[async_trait]
 impl ToolPlugin for PlanUpdateTool {
-    fn name(&self) -> &str { "update_plan" }
+    fn name(&self) -> &str {
+        "update_plan"
+    }
 
     fn description(&self) -> &str {
         "Update the analysis plan for the current step. Write a structured markdown plan \
@@ -41,7 +47,9 @@ impl ToolPlugin for PlanUpdateTool {
     async fn execute(&self, ctx: &PluginContext, input: Value) -> Result<ToolOutput, ToolError> {
         let content = input["plan_content"].as_str().unwrap_or("").trim();
         if content.is_empty() {
-            return Err(ToolError::InvalidArgument("plan_content cannot be empty".to_string()));
+            return Err(ToolError::InvalidArgument(
+                "plan_content cannot be empty".to_string(),
+            ));
         }
 
         // Truncate to prevent unbounded growth
@@ -52,21 +60,30 @@ impl ToolPlugin for PlanUpdateTool {
             content
         };
 
-        let plan_dir = ctx.workspace_path
+        let plan_dir = ctx
+            .workspace_path
             .join("analysis")
             .join(&ctx.conversation_id);
         if let Err(e) = std::fs::create_dir_all(&plan_dir) {
-            return Err(ToolError::ExecutionFailed(format!("Failed to create plan directory: {}", e)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "Failed to create plan directory: {}",
+                e
+            )));
         }
 
         let plan_path = plan_dir.join("_plan.md");
         if let Err(e) = std::fs::write(&plan_path, content) {
-            return Err(ToolError::ExecutionFailed(format!("Failed to write plan: {}", e)));
+            return Err(ToolError::ExecutionFailed(format!(
+                "Failed to write plan: {}",
+                e
+            )));
         }
 
         log::info!(
             "[update_plan] Saved plan ({} chars) for conversation {} at {:?}",
-            content.len(), ctx.conversation_id, plan_path,
+            content.len(),
+            ctx.conversation_id,
+            plan_path,
         );
 
         Ok(ToolOutput::success("Plan updated.".to_string()))

@@ -9,20 +9,25 @@
  * from render time. This keeps dependencies stable ([]) and avoids
  * infinite re-render loops.
  */
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useUiStore } from '@/stores/uiStore'
 import i18n from '@/i18n'
+import { recordDiagnostic, recordDiagnosticError } from '@/lib/diagnostics'
 import {
   sendMessage,
   stopStreaming,
   getMessages,
+  getTasks,
   createConversation,
   deleteConversation,
   getConversations,
   isAgentBusy as isAgentBusyIpc,
   renameConversation as tauriRenameConversation,
+  archiveConversation as tauriArchiveConversation,
+  type ChatAttachmentPayload,
 } from '@/lib/tauri'
 import type { Conversation, Message } from '@/types/message'
 
@@ -34,13 +39,8 @@ function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
 }
 
-/** File info passed from InputBar to sendUserMessage. */
-export interface PendingFileInfo {
-  id: string
-  fileName: string
-  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json'
-  fileSize: number
-}
+/** File info passed from chat input UI to sendUserMessage. */
+export interface PendingFileInfo extends ChatAttachmentPayload {}
 
 /**
  * Hook that exposes every chat-related action the UI needs.
@@ -53,12 +53,27 @@ export function useChat() {
   // NOTE: streamingContent is intentionally NOT subscribed here.
   // Only MessageList.tsx (which renders StreamingBubble) subscribes to it
   // directly from the store. Subscribing here would force ALL useChat()
-  // consumers (Sidebar, InputBar, App) to re-render on every streaming
+  // consumers (Sidebar, ChatBottomArea, App) to re-render on every streaming
   // delta token, saturating the JS main thread and freezing the UI.
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const switchVersionRef = useRef(0)
+
+  const syncBusyConversations = useCallback(async (): Promise<Set<string>> => {
+    try {
+      const busyIds = await isAgentBusyIpc()
+      useChatStore.getState().setBusyConversations(busyIds)
+      if (busyIds.length > 0) {
+        console.log('[useChat] Agent is busy with conversations:', busyIds)
+      }
+      return new Set(busyIds)
+    } catch (err) {
+      console.error('[useChat] isAgentBusy IPC failed:', err)
+      return new Set(useChatStore.getState().busyConversations)
+    }
+  }, [])
 
   /**
    * Create a brand-new conversation and make it active.
@@ -67,10 +82,11 @@ export function useChat() {
     const store = useChatStore.getState()
     const optimisticId = generateId()
     const now = new Date().toISOString()
+    recordDiagnostic({ event: 'conversation.create.started', conversationId: optimisticId })
 
     const conversation: Conversation = {
       id: optimisticId,
-      title: 'New Conversation',
+      title: '新对话',
       createdAt: now,
       updatedAt: now,
       isArchived: false,
@@ -84,6 +100,11 @@ export function useChat() {
     try {
       const backendId = await createConversation()
       console.log('[useChat] createConversation OK, backendId:', backendId)
+      recordDiagnostic({
+        event: 'conversation.create.completed',
+        ok: true,
+        conversationId: backendId ?? optimisticId,
+      })
 
       // Replace optimistic ID with the backend-generated ID
       if (backendId && backendId !== optimisticId) {
@@ -94,16 +115,19 @@ export function useChat() {
           ),
         )
         current.setActiveConversation(backendId)
+        useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         return backendId
       }
     } catch (err) {
       console.error('[useChat] createConversation IPC failed:', err)
+      recordDiagnosticError('conversation.create.failed', err, { conversationId: optimisticId })
       // Rollback
       const current = useChatStore.getState()
       current.setConversations(current.conversations.filter((c) => c.id !== optimisticId))
       current.setActiveConversation(null)
     }
 
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: optimisticId })
     return optimisticId
   }, [])
 
@@ -112,6 +136,7 @@ export function useChat() {
    */
   const removeConversation = useCallback(async (id: string) => {
     console.log('[useChat] deleteConversation called, id:', id)
+    recordDiagnostic({ event: 'conversation.delete.started', conversationId: id })
     const store = useChatStore.getState()
 
     store.setConversations(store.conversations.filter((c) => c.id !== id))
@@ -128,14 +153,16 @@ export function useChat() {
     try {
       await deleteConversation(id)
       console.log('[useChat] deleteConversation IPC succeeded')
+      recordDiagnostic({ event: 'conversation.delete.completed', ok: true, conversationId: id })
     } catch (err) {
       console.error('[useChat] deleteConversation IPC failed:', err)
+      recordDiagnosticError('conversation.delete.failed', err, { conversationId: id })
       // Rollback: reload conversations from backend
       try {
         const raw = await getConversations()
         const convs: Conversation[] = raw.map((c) => ({
           id: (c.id as string) ?? '',
-          title: (c.title as string) ?? 'New Conversation',
+          title: (c.title as string) ?? '新对话',
           createdAt: (c.createdAt as string) ?? new Date().toISOString(),
           updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
           isArchived: (c.isArchived as boolean) ?? false,
@@ -152,29 +179,62 @@ export function useChat() {
    */
   const switchConversation = useCallback(async (id: string) => {
     console.log('[useChat] switchConversation, id:', id)
+    recordDiagnostic({ event: 'conversation.switch.started', conversationId: id })
+    const loadVersion = ++switchVersionRef.current
     const store = useChatStore.getState()
     store.setActiveConversation(id)
     store.setMessages([])
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
+    void syncBusyConversations()
 
     try {
-      const msgs = await getMessages(id)
+      const [msgs, tasks] = await Promise.all([
+        getMessages(id),
+        getTasks(id).catch(() => []),
+      ])
+      if (switchVersionRef.current !== loadVersion) return
       console.log('[useChat] getMessages OK, count:', msgs.length)
+      console.log('[useChat] getTasks OK, count:', tasks.length)
+      recordDiagnostic({
+        event: 'conversation.switch.completed',
+        ok: true,
+        conversationId: id,
+        payload: { messageCount: msgs.length, taskCount: tasks.length },
+      })
       useChatStore.getState().setMessages(msgs)
+      // 恢复 task 列表到 store
+      const store = useChatStore.getState()
+      for (const task of tasks) {
+        store.upsertConversationTaskState(id, task)
+      }
     } catch (err) {
       console.error('[useChat] getMessages IPC failed:', err)
+      recordDiagnosticError('conversation.switch.failed', err, { conversationId: id })
     }
-  }, [])
+  }, [syncBusyConversations])
 
   /**
    * Send a user message in the currently active conversation.
    *
-   * @param text  - The user's plain-text input.
+   * @param text  - The user's plain-text input (slash-prefixed text is sent verbatim).
    * @param files - Optional list of attached file info objects.
    */
-  const sendUserMessage = useCallback(async (text: string, files?: PendingFileInfo[]) => {
+  const sendUserMessage = useCallback(async (
+    text: string,
+    files?: PendingFileInfo[],
+  ): Promise<boolean> => {
     let store = useChatStore.getState()
     let conversationId = store.activeConversationId
     console.log('[useChat] sendUserMessage, conversationId:', conversationId, 'text:', text.slice(0, 50))
+
+    if (
+      (conversationId && store.busyConversations.has(conversationId))
+      || store.busyConversations.size >= MAX_CONCURRENT_AGENTS
+    ) {
+      await syncBusyConversations()
+      store = useChatStore.getState()
+      conversationId = store.activeConversationId
+    }
 
     // Block if THIS conversation is already busy
     if (conversationId && store.busyConversations.has(conversationId)) {
@@ -187,7 +247,7 @@ export function useChat() {
         autoHide: 5,
         context: 'toast',
       })
-      return
+      return false
     }
 
     // Block if max concurrent conversations reached
@@ -201,7 +261,7 @@ export function useChat() {
         autoHide: 5,
         context: 'toast',
       })
-      return
+      return false
     }
 
     // Auto-create a conversation if none is active
@@ -212,20 +272,27 @@ export function useChat() {
         const now = new Date().toISOString()
         store = useChatStore.getState()
         store.setConversations([
-          { id: backendId, title: 'New Conversation', createdAt: now, updatedAt: now, isArchived: false },
+          { id: backendId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
           ...store.conversations,
         ])
         store.setActiveConversation(backendId)
         store.setMessages([])
+        useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         conversationId = backendId
       } catch (err) {
         console.error('[useChat] Failed to auto-create conversation:', err)
-        return
+        return false
       }
     }
 
     const messageId = generateId()
     const now = new Date().toISOString()
+    recordDiagnostic({
+      event: 'chat.submit.started',
+      conversationId,
+      clientMessageId: messageId,
+      payload: { messageLength: text.length, fileCount: files?.length ?? 0 },
+    })
 
     // Build the optimistic user message
     const auth = useAuthStore.getState()
@@ -239,8 +306,11 @@ export function useChat() {
         files: files?.map((f) => ({
           id: f.id,
           fileName: f.fileName,
+          filePath: f.filePath,
+          kind: f.kind,
           fileSize: f.fileSize,
           fileType: f.fileType,
+          mimeType: f.mimeType,
           status: 'uploaded' as const,
         })),
       },
@@ -256,13 +326,21 @@ export function useChat() {
     store.addBusyConversation(conversationId)
 
     try {
-      const fileIds = files?.map((f) => f.id)
-      console.log('[useChat] Calling sendMessage IPC, fileIds:', fileIds)
-      await sendMessage(conversationId, text, fileIds)
+      console.log('[useChat] Calling sendMessage IPC, attachments:', files)
+      await sendMessage(conversationId, text, files, null, messageId, null, null)
       console.log('[useChat] sendMessage IPC returned OK')
+      recordDiagnostic({
+        event: 'chat.submit.completed',
+        ok: true,
+        conversationId,
+        clientMessageId: messageId,
+      })
+      return true
     } catch (err) {
       console.error('[useChat] sendMessage IPC failed:', err)
+      recordDiagnosticError('chat.submit.failed', err, { conversationId, clientMessageId: messageId })
       const s = useChatStore.getState()
+      s.removeMessage(messageId)
       s.clearConversationStreamState(conversationId)
       s.removeBusyConversation(conversationId)
       // Show error toast so user knows the message failed
@@ -275,8 +353,9 @@ export function useChat() {
         autoHide: 8,
         context: 'toast',
       })
+      return false
     }
-  }, [])
+  }, [syncBusyConversations])
 
   /**
    * Stop the streaming response for the active conversation.
@@ -286,8 +365,8 @@ export function useChat() {
     const store = useChatStore.getState()
     const convId = store.activeConversationId
     if (convId) {
+      recordDiagnostic({ event: 'streaming.stop.requested', conversationId: convId })
       store.clearConversationStreamState(convId)
-      store.removeBusyConversation(convId)
       stopStreaming(convId).catch((err) => {
         console.error('[useChat] stopStreaming IPC failed:', err)
       })
@@ -304,10 +383,11 @@ export function useChat() {
       const raw = await getConversations()
       const convs: Conversation[] = raw.map((c) => ({
         id: (c.id as string) ?? '',
-        title: (c.title as string) ?? 'New Conversation',
+        title: (c.title as string) ?? '新对话',
         createdAt: (c.createdAt as string) ?? new Date().toISOString(),
         updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
         isArchived: (c.isArchived as boolean) ?? false,
+        workspaceName: (c.workspaceName as string | undefined) ?? undefined,
       }))
       console.log('[useChat] loadConversations OK, count:', convs.length)
       useChatStore.getState().setConversations(convs)
@@ -316,27 +396,52 @@ export function useChat() {
     }
 
     // Sync agent busy state from backend (supports multiple concurrent)
-    try {
-      const busyIds = await isAgentBusyIpc()
-      useChatStore.getState().setBusyConversations(busyIds)
-      if (busyIds.length > 0) {
-        console.log('[useChat] Agent is busy with conversations:', busyIds)
-      }
-    } catch (err) {
-      console.error('[useChat] isAgentBusy IPC failed:', err)
-    }
-  }, [])
+    await syncBusyConversations()
+  }, [syncBusyConversations])
 
   /**
    * Rename a conversation title.
    */
   const renameConversation = useCallback(async (id: string, newTitle: string) => {
     const store = useChatStore.getState()
+    recordDiagnostic({ event: 'conversation.rename.started', conversationId: id, payload: { titleLength: newTitle.length } })
     store.setConversations(
       store.conversations.map((c) => c.id === id ? { ...c, title: newTitle } : c)
     )
-    await tauriRenameConversation(id, newTitle)
+    try {
+      await tauriRenameConversation(id, newTitle)
+      recordDiagnostic({ event: 'conversation.rename.completed', ok: true, conversationId: id })
+    } catch (err) {
+      recordDiagnosticError('conversation.rename.failed', err, { conversationId: id })
+      throw err
+    }
   }, [])
+
+  const archiveConversation = useCallback(async (id: string) => {
+    const store = useChatStore.getState()
+    recordDiagnostic({ event: 'conversation.archive.started', conversationId: id })
+    // 乐观更新：从列表移除
+    store.setConversations(store.conversations.filter((c) => c.id !== id))
+    // 如果归档的是当前对话，切回 null
+    if (store.activeConversationId === id) {
+      store.setActiveConversation(null)
+    }
+    try {
+      await tauriArchiveConversation(id)
+      recordDiagnostic({ event: 'conversation.archive.completed', ok: true, conversationId: id })
+    } catch (err) {
+      console.error('[useChat] archiveConversation failed:', err)
+      recordDiagnosticError('conversation.archive.failed', err, { conversationId: id })
+      // 失败则重新加载
+      await loadConversations()
+    }
+  }, [loadConversations])
+
+  const createConversationFromSkill = useCallback(async (_skillId: string) => {
+    const conversationId = await createNewConversation()
+    useUiStore.getState().setRoute({ kind: 'chat', conversationId })
+    return conversationId
+  }, [createNewConversation])
 
   return {
     // State (subscribed for re-rendering)
@@ -349,7 +454,9 @@ export function useChat() {
     createNewConversation,
     deleteConversation: removeConversation,
     renameConversation,
+    archiveConversation,
     switchConversation,
+    createConversationFromSkill,
     sendUserMessage,
     stopCurrentStream,
     loadConversations,

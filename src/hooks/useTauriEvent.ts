@@ -30,14 +30,18 @@ export function useTauriEvent(setup: () => Promise<() => void>) {
     let unlisten: (() => void) | undefined
     let mounted = true
 
-    setup().then((fn) => {
-      if (mounted) {
-        unlisten = fn
-      } else {
-        // Component already unmounted before the listener was ready — clean up immediately
-        fn()
-      }
-    })
+    setup()
+      .then((fn) => {
+        if (mounted) {
+          unlisten = fn
+        } else {
+          // Component already unmounted before the listener was ready — clean up immediately
+          fn()
+        }
+      })
+      .catch((error) => {
+        console.error('[useTauriEvent] Failed to register Tauri event listener:', error)
+      })
 
     return () => {
       mounted = false

@@ -1,6 +1,6 @@
 //! P1: Intra-step context decay — reduce older tool outputs to save LLM context.
 //!
-//! During analysis steps, the agent may iterate 10+ times, producing tool results
+//! During long tool-using turns, the agent may iterate 10+ times, producing tool results
 //! (execute_python stdout, etc.) that accumulate in the message history. Older results
 //! are less relevant to the current iteration, so we apply progressive truncation:
 //!
@@ -13,6 +13,47 @@
 //! `auto_capture_step_context()` still see full data.
 
 use crate::llm::streaming::ChatMessage;
+
+pub const CONTEXT_WINDOW_CLAUDE: usize = 200_000;
+pub const CONTEXT_WINDOW_DEEPSEEK: usize = 128_000;
+pub const CONTEXT_WINDOW_DEFAULT: usize = 100_000;
+pub const CONTEXT_OVERFLOW_THRESHOLD: f64 = 0.8;
+
+pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
+    messages
+        .iter()
+        .map(|message| {
+            let mut chars = message.content.len();
+            if let Some(tool_calls) = &message.tool_calls {
+                chars += serde_json::to_string(tool_calls)
+                    .map(|s| s.len())
+                    .unwrap_or(0);
+            }
+            chars
+        })
+        .sum::<usize>()
+        / 4
+}
+
+pub fn estimate_context_tokens(system_prompt: &str, messages: &[ChatMessage]) -> usize {
+    (system_prompt.len() + estimate_tokens(messages) * 4) / 4
+}
+
+pub fn estimate_tokens_from_json(messages: &[serde_json::Value]) -> usize {
+    messages
+        .iter()
+        .map(|value| value.to_string().len())
+        .sum::<usize>()
+        / 4
+}
+
+pub fn context_window_for_provider(provider: &str) -> usize {
+    match provider {
+        "claude" => CONTEXT_WINDOW_CLAUDE,
+        "deepseek-v3" | "deepseek-r1" => CONTEXT_WINDOW_DEEPSEEK,
+        _ => CONTEXT_WINDOW_DEFAULT,
+    }
+}
 
 /// Max chars for tool results in the second-most-recent iteration.
 const RECENT_LIMIT: usize = 2000;
@@ -85,9 +126,8 @@ fn find_iterations(messages: &[ChatMessage]) -> Vec<Iteration> {
 /// Returns a **new** Vec with truncated tool results for older iterations.
 /// The original `messages` slice is not modified.
 ///
-/// Only applies when `is_analysis` is true; daily mode messages are returned as-is.
-pub fn apply_decay(messages: &[ChatMessage], is_analysis: bool) -> Vec<ChatMessage> {
-    if !is_analysis || messages.is_empty() {
+pub fn apply_decay(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    if messages.is_empty() {
         return messages.to_vec();
     }
 
@@ -107,7 +147,8 @@ pub fn apply_decay_with_policy(messages: &[ChatMessage], policy: &DecayPolicy) -
     let num_iterations = iterations.len();
 
     // Build a set of message indices that need truncation, with their limit
-    let mut truncation_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut truncation_map: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
     for (iter_idx, iteration) in iterations.iter().enumerate() {
         let age = num_iterations - 1 - iter_idx; // 0 = most recent
         let limit = match age {
@@ -189,13 +230,13 @@ mod tests {
     }
 
     #[test]
-    fn decay_skipped_in_daily_mode() {
+    fn decay_noop_for_empty_or_single_iteration_history() {
         let messages = vec![
             make_user("hello"),
             make_assistant_with_tools("running"),
             make_tool_result(&"x".repeat(10000)),
         ];
-        let result = apply_decay(&messages, false);
+        let result = apply_decay(&messages);
         assert_eq!(result.len(), messages.len());
         assert_eq!(result[2].content, messages[2].content);
     }
@@ -207,7 +248,7 @@ mod tests {
             make_assistant_with_tools("running"),
             make_tool_result(&"x".repeat(10000)),
         ];
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
         // Single iteration → no decay
         assert_eq!(result[2].content.len(), messages[2].content.len());
     }
@@ -228,7 +269,7 @@ mod tests {
             make_tool_result(&big_content),
         ];
 
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
 
         // Iteration 2 (most recent, idx=6) — full
         assert_eq!(result[6].content.len(), big_content.len());
@@ -253,7 +294,7 @@ mod tests {
             make_tool_result(&big_content),
         ];
 
-        let _ = apply_decay(&messages, true);
+        let _ = apply_decay(&messages);
 
         // Original messages should be unchanged
         assert_eq!(messages[2].content.len(), big_content.len());
@@ -271,7 +312,7 @@ mod tests {
             make_tool_result("short"),
         ];
 
-        let result = apply_decay(&messages, true);
+        let result = apply_decay(&messages);
         // Assistant messages (indices 1, 3) should not be truncated
         assert_eq!(result[1].content.len(), big.len());
         assert_eq!(result[3].content.len(), big.len());
@@ -302,7 +343,7 @@ mod tests {
         // tool results. This can happen if tool execution was cancelled or blocked.
         let messages = vec![
             make_user("hi"),
-            make_assistant_with_tools("phantom"),  // no tool results follow
+            make_assistant_with_tools("phantom"), // no tool results follow
             make_assistant_with_tools("real"),
             make_tool_result("r1"),
         ];

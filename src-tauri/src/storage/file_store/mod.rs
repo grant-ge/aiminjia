@@ -24,9 +24,10 @@
 //! │   └── cache/               # Search cache (per-query JSON)
 //! └── conversations/           # Per-conversation isolation
 //!     └── {id}/
-//!         ├── conv.json        # Metadata (title, mode, timestamps)
+//!         ├── conv.json        # Metadata (title, timestamps)
 //!         ├── file_index.json  # File records (uploads + generated)
 //!         ├── analysis.json    # Analysis state
+//!         ├── compact_boundaries.jsonl # Compact boundary records
 //!         ├── _current         # Shard metadata "{shard}:{seq}"
 //!         ├── messages.N.jsonl # Message shards (100 msgs each)
 //!         ├── notes/           # Analysis notes
@@ -39,6 +40,7 @@ pub mod analysis;
 pub mod audit;
 pub mod cache;
 pub mod cognitive;
+pub mod compact_boundaries;
 pub mod config;
 pub mod conversations;
 pub mod error;
@@ -49,6 +51,7 @@ pub mod messages;
 pub mod notes;
 pub mod persona;
 pub mod types;
+pub mod workspace_settings;
 
 use std::collections::HashMap;
 use std::fs;
@@ -82,7 +85,12 @@ impl AppStorage {
             session_id: uuid::Uuid::new_v4().to_string(),
         };
         storage.initialize()?;
-        info!("File storage initialized at {:?} (session={})", base_dir, &storage.session_id[..8]);
+        storage.run_startup_migrations();
+        info!(
+            "File storage initialized at {:?} (session={})",
+            base_dir,
+            &storage.session_id[..8]
+        );
         Ok(storage)
     }
 
@@ -119,6 +127,46 @@ impl AppStorage {
         Ok(())
     }
 
+    fn run_startup_migrations(&self) {
+        let conv_base = self.base_dir.join("conversations");
+        let Ok(entries) = fs::read_dir(&conv_base) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+
+            let conv_id = entry.file_name().to_string_lossy().to_string();
+            let conv_path = entry.path();
+            let has_new = conv_path.join("messages.jsonl").exists();
+            let has_shards = fs::read_dir(&conv_path)
+                .ok()
+                .map(|children| {
+                    children.flatten().any(|child| {
+                        let name = child.file_name().to_string_lossy().to_string();
+                        name.starts_with("messages.")
+                            && name.ends_with(".jsonl")
+                            && name != "messages.jsonl"
+                    })
+                })
+                .unwrap_or(false);
+
+            // Startup state migration handles mixed messages.jsonl + legacy shards.
+            // This older per-storage migration only covers shard-only conversations.
+            if has_shards && !has_new {
+                if let Err(err) = messages::migrate_shards_to_single_file(&self.base_dir, &conv_id)
+                {
+                    warn!("[migration] shard->single failed for {}: {}", conv_id, err);
+                }
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Conversations
     // ═══════════════════════════════════════════════════════════════════════
@@ -135,24 +183,35 @@ impl AppStorage {
         Ok(())
     }
 
-    pub fn get_conversation_mode(&self, id: &str) -> Result<String> {
-        Ok(conversations::get_conversation_mode(&self.base_dir, id)?)
-    }
-
-    pub fn set_conversation_mode(&self, id: &str, mode: &str) -> Result<()> {
-        let _lock = self.write_lock.lock().unwrap();
-        conversations::set_conversation_mode(&self.base_dir, id, mode)?;
-        Ok(())
-    }
-
     pub fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
         Ok(conversations::get_conversations(&self.base_dir)?)
+    }
+
+    pub fn get_conversation(
+        &self,
+        id: &str,
+    ) -> Result<crate::storage::file_store::types::ConversationMeta> {
+        Ok(conversations::get_conversation(&self.base_dir, id)?)
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
         conversations::delete_conversation(&self.base_dir, id)?;
         Ok(())
+    }
+
+    pub fn archive_conversation(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::archive_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
+    }
+
+    pub fn restore_conversation(&self, id: &str) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::restore_conversation(&self.base_dir, id).map_err(|e| anyhow::anyhow!(e))
+    }
+
+    pub fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        conversations::get_archived_conversations(&self.base_dir).map_err(|e| anyhow::anyhow!(e))
     }
 
     pub fn get_file_paths_for_conversation(&self, conversation_id: &str) -> Result<Vec<String>> {
@@ -174,12 +233,57 @@ impl AppStorage {
         content_json: &str,
     ) -> Result<()> {
         let _lock = self.write_lock.lock().unwrap();
-        messages::insert_message(&self.base_dir, id, conversation_id, role, content_json)?;
+        let content: serde_json::Value = serde_json::from_str(content_json)?;
+        let msg = types::StoredMessage {
+            seq: None,
+            rev: None,
+            id: id.to_string(),
+            conversation_id: conversation_id.to_string(),
+            role: role.to_string(),
+            content,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            run_id: None,
+            schema_version: Some(2),
+            sequence: None,
+        };
+        messages::insert_message_v2(&self.base_dir, &msg)?;
         Ok(())
     }
 
     pub fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
         Ok(messages::get_messages(&self.base_dir, conversation_id)?)
+    }
+
+    pub fn insert_chat_message_record(&self, msg: &types::StoredMessage) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        messages::insert_message_v2(&self.base_dir, msg)?;
+        Ok(())
+    }
+
+    pub fn get_messages_v2(&self, conversation_id: &str) -> Result<Vec<types::StoredMessage>> {
+        Ok(messages::get_messages_v2(&self.base_dir, conversation_id)?)
+    }
+
+    pub fn append_compact_boundary(
+        &self,
+        record: &crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        compact_boundaries::append_compact_boundary(&self.base_dir, record)?;
+        Ok(())
+    }
+
+    pub fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        Ok(compact_boundaries::list_compact_boundaries(
+            &self.base_dir,
+            conversation_id,
+        )?)
     }
 
     pub fn get_recent_messages(
@@ -221,6 +325,53 @@ impl AppStorage {
 
     pub fn get_all_settings(&self) -> Result<HashMap<String, String>> {
         Ok(config::get_all_settings(&self.base_dir)?)
+    }
+
+    pub fn get_effective_settings(
+        &self,
+        workspace_path: Option<&Path>,
+    ) -> Result<HashMap<String, String>> {
+        let mut settings = config::get_all_settings(&self.base_dir)?;
+        if let Some(workspace_path) = workspace_path {
+            let workspace_settings = workspace_settings::load_workspace_settings(workspace_path);
+            if let Some(primary_model) = workspace_settings
+                .primary_model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                settings.insert("primaryModel".to_string(), primary_model.to_string());
+            }
+            if let Some(data_masking_level) = workspace_settings
+                .data_masking_level
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                settings.insert(
+                    "dataMaskingLevel".to_string(),
+                    data_masking_level.to_string(),
+                );
+            }
+        }
+        Ok(settings)
+    }
+
+    pub fn get_conversation_model_override(&self, id: &str) -> Result<Option<String>> {
+        Ok(conversations::get_conversation_model_override(
+            &self.base_dir,
+            id,
+        )?)
+    }
+
+    pub fn set_conversation_model_override(
+        &self,
+        id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        let _lock = self.write_lock.lock().unwrap();
+        conversations::set_conversation_model_override(&self.base_dir, id, model_override)?;
+        Ok(())
     }
 
     pub fn get_settings_by_prefix(&self, prefix: &str) -> Result<HashMap<String, String>> {
@@ -405,10 +556,7 @@ impl AppStorage {
         Ok(())
     }
 
-    pub fn get_analysis_state(
-        &self,
-        conversation_id: &str,
-    ) -> Result<Option<serde_json::Value>> {
+    pub fn get_analysis_state(&self, conversation_id: &str) -> Result<Option<serde_json::Value>> {
         Ok(analysis::get_analysis_state(
             &self.base_dir,
             conversation_id,
@@ -476,10 +624,7 @@ impl AppStorage {
         Ok(())
     }
 
-    pub fn get_search_cache(
-        &self,
-        query_hash: &str,
-    ) -> Result<Option<types::CacheEntry>> {
+    pub fn get_search_cache(&self, query_hash: &str) -> Result<Option<types::CacheEntry>> {
         Ok(cache::get_search_cache(&self.base_dir, query_hash)?)
     }
 
@@ -496,7 +641,14 @@ impl AppStorage {
         to_core: bool,
     ) -> Result<(String, bool)> {
         let _lock = self.write_lock.lock().unwrap();
-        cognitive::save_memory(&self.base_dir, content, category, tags, conversation_id, to_core)
+        cognitive::save_memory(
+            &self.base_dir,
+            content,
+            category,
+            tags,
+            conversation_id,
+            to_core,
+        )
     }
 
     pub fn search_cognitive_memory(
@@ -507,16 +659,14 @@ impl AppStorage {
         conversation_id: &str,
     ) -> Result<Vec<serde_json::Value>> {
         // Phase 1: Search (read-only, no lock needed)
-        let results = cognitive::search_memory_readonly(
-            &self.base_dir, query, category, days,
-        )?;
+        let results = cognitive::search_memory_readonly(&self.base_dir, query, category, days)?;
 
         // Phase 2: Record hit counts (write, needs lock)
         if !results.is_empty() {
             let _lock = self.write_lock.lock().unwrap();
-            if let Err(e) = cognitive::record_search_hits(
-                &self.base_dir, &results, query, conversation_id,
-            ) {
+            if let Err(e) =
+                cognitive::record_search_hits(&self.base_dir, &results, query, conversation_id)
+            {
                 log::warn!("Failed to record search hits: {}", e);
             }
         }
@@ -528,7 +678,11 @@ impl AppStorage {
         cognitive::load_core_memory(&self.base_dir)
     }
 
-    pub fn distill_cognitive_memories(&self, days: i64, dry_run: bool) -> Result<cognitive::DistillReport> {
+    pub fn distill_cognitive_memories(
+        &self,
+        days: i64,
+        dry_run: bool,
+    ) -> Result<cognitive::DistillReport> {
         let _lock = self.write_lock.lock().unwrap();
         cognitive::distill_memories(&self.base_dir, days, dry_run)
     }
@@ -547,7 +701,8 @@ impl AppStorage {
         // Format: "SESSION_ID:UNIX_TIMESTAMP"
         // Session ID is unique per process instance, so a restart always gets a new one.
         // This avoids PID-reuse problems where the OS assigns the same PID to the new process.
-        let content = format!("{}:{}",
+        let content = format!(
+            "{}:{}",
             self.session_id,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -602,7 +757,10 @@ impl AppStorage {
 
                 if parts.len() < 2 {
                     // Corrupted or old-format lock file → treat as orphan
-                    warn!("[orphan] Corrupted run.lock for conversation {}: {:?}", conv_id, content);
+                    warn!(
+                        "[orphan] Corrupted run.lock for conversation {}: {:?}",
+                        conv_id, content
+                    );
                     orphans.push(conv_id);
                     continue;
                 }
@@ -612,8 +770,12 @@ impl AppStorage {
 
                 // Primary check: different session → definitely orphan
                 if lock_session != self.session_id {
-                    info!("[orphan] Session mismatch for conversation {} (lock={}, current={})",
-                        conv_id, &lock_session[..lock_session.len().min(8)], &self.session_id[..8]);
+                    info!(
+                        "[orphan] Session mismatch for conversation {} (lock={}, current={})",
+                        conv_id,
+                        &lock_session[..lock_session.len().min(8)],
+                        &self.session_id[..8]
+                    );
                     orphans.push(conv_id);
                     continue;
                 }
@@ -625,7 +787,11 @@ impl AppStorage {
                         .unwrap_or_default()
                         .as_secs();
                     if now.saturating_sub(ts) > 86400 {
-                        warn!("[orphan] Stale run.lock for conversation {} ({}s old)", conv_id, now - ts);
+                        warn!(
+                            "[orphan] Stale run.lock for conversation {} ({}s old)",
+                            conv_id,
+                            now - ts
+                        );
                         orphans.push(conv_id);
                     }
                 }
@@ -639,8 +805,7 @@ impl AppStorage {
     pub fn cleanup_orphaned_tasks(&self) -> Result<Vec<String>> {
         let orphans = self.get_orphaned_tasks()?;
         for conv_id in &orphans {
-            let lock_path =
-                conversations::conv_dir(&self.base_dir, conv_id).join("run.lock");
+            let lock_path = conversations::conv_dir(&self.base_dir, conv_id).join("run.lock");
             if lock_path.exists() {
                 let _ = fs::remove_file(&lock_path);
                 warn!("Cleaned up orphan lock for conversation {}", conv_id);
@@ -692,6 +857,781 @@ impl AppStorage {
     pub fn get_active_persona(&self) -> Result<persona::Persona> {
         let id = self.get_active_persona_id()?;
         self.get_persona(&id)
+    }
+}
+
+pub struct RuntimeRepositoryFacade {
+    session_store: std::sync::Arc<dyn crate::runtime::store::SessionStore>,
+    settings_store: std::sync::Arc<dyn crate::runtime::store::SettingsStore>,
+    memory_store: std::sync::Arc<dyn crate::runtime::store::MemoryStore>,
+    audit_store: std::sync::Arc<dyn crate::runtime::store::AuditStore>,
+    conversation_store: std::sync::Arc<dyn crate::runtime::store::ConversationStore>,
+    persona_store: std::sync::Arc<dyn crate::runtime::store::PersonaStore>,
+    file_record_store: std::sync::Arc<dyn crate::runtime::store::FileRecordStore>,
+    authorized_workspace_store: std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore>,
+}
+
+impl RuntimeRepositoryFacade {
+    pub fn for_test() -> Self {
+        Self {
+            session_store: std::sync::Arc::new(
+                crate::runtime::store::InMemorySessionStore::default(),
+            ),
+            settings_store: std::sync::Arc::new(
+                crate::runtime::store::InMemorySettingsStore::default(),
+            ),
+            memory_store: std::sync::Arc::new(crate::runtime::store::InMemoryMemoryStore::default()),
+            audit_store: std::sync::Arc::new(crate::runtime::store::InMemoryAuditStore::default()),
+            conversation_store: std::sync::Arc::new(
+                crate::runtime::store::InMemoryConversationStore::new(),
+            ),
+            persona_store: std::sync::Arc::new(InMemoryPersonaStore::default()),
+            file_record_store: std::sync::Arc::new(InMemoryFileRecordStore::default()),
+            authorized_workspace_store: std::sync::Arc::new(
+                crate::runtime::store::InMemoryAuthorizedWorkspaceStore::default(),
+            ),
+        }
+    }
+
+    pub fn from_storage(storage: std::sync::Arc<AppStorage>) -> Self {
+        Self {
+            session_store: std::sync::Arc::new(FileSessionStore {
+                storage: storage.clone(),
+            }),
+            settings_store: std::sync::Arc::new(FileSettingsStore {
+                storage: storage.clone(),
+            }),
+            memory_store: std::sync::Arc::new(FileMemoryStore {
+                storage: storage.clone(),
+            }),
+            audit_store: std::sync::Arc::new(FileAuditStore {
+                storage: storage.clone(),
+            }),
+            conversation_store: std::sync::Arc::new(FileConversationStore {
+                storage: storage.clone(),
+            }),
+            persona_store: std::sync::Arc::new(FilePersonaStore {
+                storage: storage.clone(),
+            }),
+            file_record_store: std::sync::Arc::new(FileFileRecordStore {
+                storage: storage.clone(),
+            }),
+            authorized_workspace_store: std::sync::Arc::new(
+                crate::runtime::store::FileAuthorizedWorkspaceStore {
+                    storage: storage.clone(),
+                },
+            ),
+        }
+    }
+
+    pub fn session_store(&self) -> &dyn crate::runtime::store::SessionStore {
+        self.session_store.as_ref()
+    }
+
+    pub fn settings_store(&self) -> &dyn crate::runtime::store::SettingsStore {
+        self.settings_store.as_ref()
+    }
+
+    pub fn memory_store(&self) -> &dyn crate::runtime::store::MemoryStore {
+        self.memory_store.as_ref()
+    }
+
+    pub fn clone_memory_store(&self) -> std::sync::Arc<dyn crate::runtime::store::MemoryStore> {
+        self.memory_store.clone()
+    }
+
+    pub fn audit_store(&self) -> &dyn crate::runtime::store::AuditStore {
+        self.audit_store.as_ref()
+    }
+
+    pub fn conversation_store(&self) -> &dyn crate::runtime::store::ConversationStore {
+        self.conversation_store.as_ref()
+    }
+
+    pub fn persona_store(&self) -> &dyn crate::runtime::store::PersonaStore {
+        self.persona_store.as_ref()
+    }
+
+    pub fn file_record_store(&self) -> &dyn crate::runtime::store::FileRecordStore {
+        self.file_record_store.as_ref()
+    }
+
+    pub fn authorized_workspace_store(
+        &self,
+    ) -> &dyn crate::runtime::store::AuthorizedWorkspaceStore {
+        self.authorized_workspace_store.as_ref()
+    }
+
+    pub fn clone_authorized_workspace_store(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::store::AuthorizedWorkspaceStore> {
+        self.authorized_workspace_store.clone()
+    }
+}
+
+struct FileSessionStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::SessionStore for FileSessionStore {
+    fn load_session(
+        &self,
+        session_id: &crate::runtime::ids::SessionId,
+    ) -> Result<crate::runtime::store::SessionRecord> {
+        let title = self
+            .storage
+            .get_conversations()?
+            .into_iter()
+            .find(|conversation| {
+                conversation.get("id").and_then(serde_json::Value::as_str)
+                    == Some(session_id.as_str())
+            })
+            .and_then(|conversation| {
+                conversation
+                    .get("title")
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToString::to_string)
+            });
+        Ok(crate::runtime::store::SessionRecord {
+            session_id: session_id.clone(),
+            title,
+        })
+    }
+
+    fn save_session(&self, record: crate::runtime::store::SessionRecord) -> Result<()> {
+        if let Some(title) = record.title {
+            self.storage
+                .update_conversation_title(record.session_id.as_str(), &title)?;
+        }
+        Ok(())
+    }
+}
+
+struct FileSettingsStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::SettingsStore for FileSettingsStore {
+    fn get(&self, key: &str) -> Result<Option<String>> {
+        self.storage.get_setting(key)
+    }
+
+    fn set(&self, key: &str, value: &str) -> Result<()> {
+        self.storage.set_setting(key, value)
+    }
+
+    fn get_all(&self) -> Result<std::collections::HashMap<String, String>> {
+        self.storage.get_all_settings()
+    }
+
+    fn get_by_prefix(&self, prefix: &str) -> Result<std::collections::HashMap<String, String>> {
+        self.storage.get_settings_by_prefix(prefix)
+    }
+
+    fn delete(&self, key: &str) -> Result<()> {
+        self.storage.delete_setting(key)
+    }
+}
+
+struct FileMemoryStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::MemoryStore for FileMemoryStore {
+    fn get(&self, key: &str) -> Result<Option<String>> {
+        self.storage.get_memory(key)
+    }
+
+    fn set(&self, key: &str, value: &str) -> Result<()> {
+        self.storage.set_memory(key, value, Some("runtime"))
+    }
+}
+
+struct FileAuditStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::AuditStore for FileAuditStore {
+    fn append_event(&self, run_id: &crate::runtime::ids::RunId, event: &str) -> Result<()> {
+        self.storage.log_action(event, Some(run_id.as_str()))
+    }
+
+    fn list(&self) -> Vec<crate::runtime::store::AuditRecord> {
+        Vec::new()
+    }
+}
+
+// FileConversationStore wraps an Arc<AppStorage> and is used by RuntimeRepositoryFacade
+// (which holds an Arc<dyn ConversationStore>). It coexists with the direct
+// `impl ConversationStore for AppStorage` because the facade requires an Arc<dyn> — it
+// cannot hold an Arc<AppStorage> and cast it to Arc<dyn ConversationStore> without
+// explicit trait impl. Both impls delegate to the same AppStorage methods; they are
+// behaviorally identical.
+struct FileConversationStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::ConversationStore for FileConversationStore {
+    fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
+        self.storage.create_conversation(id, title)
+    }
+
+    fn list_conversation_ids(&self) -> Result<Vec<String>> {
+        let convs = self.storage.get_conversations()?;
+        Ok(convs
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_owned))
+            .collect())
+    }
+
+    fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        self.storage.get_conversations()
+    }
+
+    fn delete_conversation(&self, id: &str) -> Result<()> {
+        self.storage.delete_conversation(id)
+    }
+
+    fn rename_conversation(&self, id: &str, new_title: &str) -> Result<()> {
+        self.storage.update_conversation_title(id, new_title)
+    }
+
+    fn insert_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.storage.insert_active_task(conversation_id)
+    }
+
+    fn remove_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.storage.remove_active_task(conversation_id)
+    }
+
+    fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
+        self.storage.get_messages(conversation_id)
+    }
+
+    fn append_compact_boundary(
+        &self,
+        record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        self.storage.append_compact_boundary(&record)
+    }
+
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        self.storage.list_compact_boundaries(conversation_id)
+    }
+
+    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
+        self.storage
+            .get_conversation_model_override(conversation_id)
+    }
+
+    fn set_conversation_model_override(
+        &self,
+        conversation_id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        self.storage
+            .set_conversation_model_override(conversation_id, model_override)
+    }
+
+    fn archive_conversation(&self, id: &str) -> Result<()> {
+        self.storage.archive_conversation(id)
+    }
+
+    fn restore_conversation(&self, id: &str) -> Result<()> {
+        self.storage.restore_conversation(id)
+    }
+
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        self.storage.get_archived_conversations()
+    }
+}
+
+impl crate::runtime::store::ConversationStore for AppStorage {
+    fn create_conversation(&self, id: &str, title: &str) -> Result<()> {
+        self.create_conversation(id, title)
+    }
+
+    fn list_conversation_ids(&self) -> Result<Vec<String>> {
+        let convs = self.get_conversations()?;
+        Ok(convs
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_owned))
+            .collect())
+    }
+
+    fn get_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        self.get_conversations()
+    }
+
+    fn delete_conversation(&self, id: &str) -> Result<()> {
+        self.delete_conversation(id)
+    }
+
+    fn rename_conversation(&self, id: &str, new_title: &str) -> Result<()> {
+        self.update_conversation_title(id, new_title)
+    }
+
+    fn insert_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.insert_active_task(conversation_id)
+    }
+
+    fn remove_active_task(&self, conversation_id: &str) -> Result<()> {
+        self.remove_active_task(conversation_id)
+    }
+
+    fn get_messages(&self, conversation_id: &str) -> Result<Vec<serde_json::Value>> {
+        self.get_messages(conversation_id)
+    }
+
+    fn append_compact_boundary(
+        &self,
+        record: crate::runtime::chat::compaction::CompactBoundaryRecord,
+    ) -> Result<()> {
+        self.append_compact_boundary(&record)
+    }
+
+    fn list_compact_boundaries(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<crate::runtime::chat::compaction::CompactBoundaryRecord>> {
+        self.list_compact_boundaries(conversation_id)
+    }
+
+    fn get_conversation_model_override(&self, conversation_id: &str) -> Result<Option<String>> {
+        self.get_conversation_model_override(conversation_id)
+    }
+
+    fn set_conversation_model_override(
+        &self,
+        conversation_id: &str,
+        model_override: Option<String>,
+    ) -> Result<()> {
+        self.set_conversation_model_override(conversation_id, model_override)
+    }
+
+    fn archive_conversation(&self, id: &str) -> Result<()> {
+        self.archive_conversation(id)
+    }
+
+    fn restore_conversation(&self, id: &str) -> Result<()> {
+        self.restore_conversation(id)
+    }
+
+    fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>> {
+        self.get_archived_conversations()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FilePersonaStore
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct FilePersonaStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+/// Convert between domain `PersonaRecord` and file-store `persona::Persona`.
+fn persona_to_record(p: persona::Persona) -> crate::runtime::store::PersonaRecord {
+    crate::runtime::store::PersonaRecord {
+        id: p.id,
+        version: p.version,
+        builtin: p.builtin,
+        name: p.name,
+        icon: p.icon,
+        description: p.description,
+        name_en: p.name_en,
+        description_en: p.description_en,
+        identity: p.identity,
+        expertise: p.expertise,
+        memory_hints: p.memory_hints,
+        linked_categories: p.linked_categories,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+    }
+}
+
+fn record_to_persona(r: &crate::runtime::store::PersonaRecord) -> persona::Persona {
+    persona::Persona {
+        id: r.id.clone(),
+        version: r.version,
+        builtin: r.builtin,
+        name: r.name.clone(),
+        icon: r.icon.clone(),
+        description: r.description.clone(),
+        name_en: r.name_en.clone(),
+        description_en: r.description_en.clone(),
+        identity: r.identity.clone(),
+        expertise: r.expertise.clone(),
+        memory_hints: r.memory_hints.clone(),
+        linked_categories: r.linked_categories.clone(),
+        created_at: r.created_at.clone(),
+        updated_at: r.updated_at.clone(),
+    }
+}
+
+impl crate::runtime::store::PersonaStore for FilePersonaStore {
+    fn list_personas(&self) -> Result<Vec<crate::runtime::store::PersonaSummary>> {
+        let raw = self.storage.list_personas()?;
+        Ok(raw
+            .into_iter()
+            .map(|s| crate::runtime::store::PersonaSummary {
+                id: s.id,
+                name: s.name,
+                icon: s.icon,
+                description: s.description,
+                builtin: s.builtin,
+                name_en: s.name_en,
+                description_en: s.description_en,
+            })
+            .collect())
+    }
+
+    fn get_persona(&self, id: &str) -> Result<crate::runtime::store::PersonaRecord> {
+        self.storage.get_persona(id).map(persona_to_record)
+    }
+
+    fn save_persona(&self, persona: &crate::runtime::store::PersonaRecord) -> Result<()> {
+        self.storage.save_persona(&record_to_persona(persona))
+    }
+
+    fn delete_persona(&self, id: &str) -> Result<()> {
+        self.storage.delete_persona(id)
+    }
+
+    fn get_active_persona_id(&self) -> Result<String> {
+        self.storage.get_active_persona_id()
+    }
+
+    fn set_active_persona(&self, id: &str) -> Result<()> {
+        self.storage.set_active_persona(id)
+    }
+
+    fn export_persona(&self, id: &str) -> Result<String> {
+        self.storage.export_persona(id)
+    }
+
+    fn import_persona(&self, json: &str) -> Result<String> {
+        self.storage.import_persona(json)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FileFileRecordStore
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct FileFileRecordStore {
+    storage: std::sync::Arc<AppStorage>,
+}
+
+impl crate::runtime::store::FileRecordStore for FileFileRecordStore {
+    fn insert_uploaded_file(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        original_name: &str,
+        stored_path: &str,
+        file_type: &str,
+        file_size: i64,
+        parsed_summary: Option<&str>,
+    ) -> Result<()> {
+        self.storage.insert_uploaded_file(
+            id,
+            conversation_id,
+            original_name,
+            stored_path,
+            file_type,
+            file_size,
+            parsed_summary,
+        )
+    }
+
+    fn get_uploaded_file_for_conversation(
+        &self,
+        id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        self.storage
+            .get_uploaded_file_for_conversation(id, conversation_id)
+    }
+
+    fn get_uploaded_files_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        self.storage
+            .get_uploaded_files_for_conversation(conversation_id)
+    }
+
+    fn delete_uploaded_file(&self, id: &str, conversation_id: &str) -> Result<()> {
+        self.storage.delete_uploaded_file(id, conversation_id)
+    }
+
+    fn insert_generated_file(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        message_id: Option<&str>,
+        file_name: &str,
+        stored_path: &str,
+        file_type: &str,
+        file_size: i64,
+        category: &str,
+        description: Option<&str>,
+        version: i32,
+        is_latest: bool,
+        superseded_by: Option<&str>,
+        created_by_step: Option<i32>,
+        expires_at: Option<&str>,
+    ) -> Result<()> {
+        self.storage.insert_generated_file(
+            id,
+            conversation_id,
+            message_id,
+            file_name,
+            stored_path,
+            file_type,
+            file_size,
+            category,
+            description,
+            version,
+            is_latest,
+            superseded_by,
+            created_by_step,
+            expires_at,
+        )
+    }
+
+    fn get_generated_file_for_conversation(
+        &self,
+        id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        self.storage
+            .get_generated_file_for_conversation(id, conversation_id)
+    }
+
+    fn get_generated_files_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        self.storage
+            .get_generated_files_for_conversation(conversation_id)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InMemory implementations (for tests via for_test())
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Default)]
+struct InMemoryPersonaStore {
+    personas:
+        std::sync::Mutex<std::collections::HashMap<String, crate::runtime::store::PersonaRecord>>,
+    active: std::sync::Mutex<String>,
+}
+
+impl crate::runtime::store::PersonaStore for InMemoryPersonaStore {
+    fn list_personas(&self) -> Result<Vec<crate::runtime::store::PersonaSummary>> {
+        Ok(self
+            .personas
+            .lock()
+            .unwrap()
+            .values()
+            .map(|p| crate::runtime::store::PersonaSummary {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                icon: p.icon.clone(),
+                description: p.description.clone(),
+                builtin: p.builtin,
+                name_en: p.name_en.clone(),
+                description_en: p.description_en.clone(),
+            })
+            .collect())
+    }
+
+    fn get_persona(&self, id: &str) -> Result<crate::runtime::store::PersonaRecord> {
+        self.personas
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Persona not found: {}", id))
+    }
+
+    fn save_persona(&self, persona: &crate::runtime::store::PersonaRecord) -> Result<()> {
+        self.personas
+            .lock()
+            .unwrap()
+            .insert(persona.id.clone(), persona.clone());
+        Ok(())
+    }
+
+    fn delete_persona(&self, id: &str) -> Result<()> {
+        self.personas.lock().unwrap().remove(id);
+        Ok(())
+    }
+
+    fn get_active_persona_id(&self) -> Result<String> {
+        Ok(self.active.lock().unwrap().clone())
+    }
+
+    fn set_active_persona(&self, id: &str) -> Result<()> {
+        *self.active.lock().unwrap() = id.to_string();
+        Ok(())
+    }
+
+    fn export_persona(&self, id: &str) -> Result<String> {
+        let p = self.get_persona(id)?;
+        serde_json::to_string(&p).map_err(Into::into)
+    }
+
+    fn import_persona(&self, json: &str) -> Result<String> {
+        let mut p: crate::runtime::store::PersonaRecord =
+            serde_json::from_str::<crate::runtime::store::PersonaRecord>(json)
+                .map_err(anyhow::Error::from)?;
+        p.id = uuid::Uuid::new_v4().to_string();
+        let id = p.id.clone();
+        self.save_persona(&p)?;
+        Ok(id)
+    }
+}
+
+#[derive(Default)]
+struct InMemoryFileRecordStore {
+    uploaded: std::sync::Mutex<Vec<serde_json::Value>>,
+    generated: std::sync::Mutex<Vec<serde_json::Value>>,
+}
+
+impl crate::runtime::store::FileRecordStore for InMemoryFileRecordStore {
+    fn insert_uploaded_file(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        original_name: &str,
+        stored_path: &str,
+        file_type: &str,
+        file_size: i64,
+        parsed_summary: Option<&str>,
+    ) -> Result<()> {
+        self.uploaded.lock().unwrap().push(serde_json::json!({
+            "id": id,
+            "conversationId": conversation_id,
+            "originalName": original_name,
+            "storedPath": stored_path,
+            "fileType": file_type,
+            "fileSize": file_size,
+            "parsedSummary": parsed_summary,
+        }));
+        Ok(())
+    }
+
+    fn get_uploaded_file_for_conversation(
+        &self,
+        id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(self
+            .uploaded
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v.get("id").and_then(|x| x.as_str()) == Some(id)
+                    && v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
+            })
+            .cloned())
+    }
+
+    fn get_uploaded_files_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        Ok(self
+            .uploaded
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id))
+            .cloned()
+            .collect())
+    }
+
+    fn delete_uploaded_file(&self, id: &str, conversation_id: &str) -> Result<()> {
+        self.uploaded.lock().unwrap().retain(|v| {
+            !(v.get("id").and_then(|x| x.as_str()) == Some(id)
+                && v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id))
+        });
+        Ok(())
+    }
+
+    fn insert_generated_file(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        message_id: Option<&str>,
+        file_name: &str,
+        stored_path: &str,
+        file_type: &str,
+        file_size: i64,
+        category: &str,
+        description: Option<&str>,
+        version: i32,
+        is_latest: bool,
+        superseded_by: Option<&str>,
+        created_by_step: Option<i32>,
+        expires_at: Option<&str>,
+    ) -> Result<()> {
+        self.generated.lock().unwrap().push(serde_json::json!({
+            "id": id,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "fileName": file_name,
+            "storedPath": stored_path,
+            "fileType": file_type,
+            "fileSize": file_size,
+            "category": category,
+            "description": description,
+            "version": version,
+            "isLatest": is_latest,
+            "supersededBy": superseded_by,
+            "createdByStep": created_by_step,
+            "expiresAt": expires_at,
+        }));
+        Ok(())
+    }
+
+    fn get_generated_file_for_conversation(
+        &self,
+        id: &str,
+        conversation_id: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        Ok(self
+            .generated
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v.get("id").and_then(|x| x.as_str()) == Some(id)
+                    && v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id)
+            })
+            .cloned())
+    }
+
+    fn get_generated_files_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        Ok(self
+            .generated
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| v.get("conversationId").and_then(|x| x.as_str()) == Some(conversation_id))
+            .cloned()
+            .collect())
     }
 }
 
@@ -839,9 +1779,7 @@ mod tests {
             )
             .unwrap();
 
-        let files = storage
-            .get_generated_files_for_conversation("c1")
-            .unwrap();
+        let files = storage.get_generated_files_for_conversation("c1").unwrap();
         assert_eq!(files.len(), 1);
     }
 

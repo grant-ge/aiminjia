@@ -1,0 +1,27 @@
+pub mod capability;
+pub mod context;
+pub mod definition;
+pub mod dispatcher;
+pub mod executor;
+pub mod legacy_adapter;
+pub mod permission;
+pub mod testing;
+
+pub use capability::{
+    CapabilityContext, FileOperations, FileReadingLimits, FileState, FileStateCache,
+    NotificationSink, SharedCapabilityContext, StorageCapability,
+};
+pub use context::{EventCollectingSink, ToolExecutionContext};
+pub use definition::ToolDefinition;
+pub use dispatcher::{InterruptBehavior, RuntimeTool, ToolDispatchOutcome, ToolDispatcher};
+pub use executor::{ToolError, ToolResult};
+pub use legacy_adapter::LegacyToolAdapter;
+pub use permission::{
+    AllowAllPermissionPipeline, CapabilityPermissionPipeline, PermissionDecision, PermissionMode,
+    PermissionPipeline, PermissionReason,
+};
+
+pub mod catalog;
+pub use catalog::{CatalogEntry, DynamicToolCatalog, ToolCatalog, TOOL_CATALOG};
+
+pub mod builtin;

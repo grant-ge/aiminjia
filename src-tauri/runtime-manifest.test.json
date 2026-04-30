@@ -1,0 +1,37 @@
+{
+  "bundleVersion": "2026.04.25-test",
+  "source": "test-fixture",
+  "runtimes": {
+    "node": {
+      "version": "22.15.0",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://example.invalid/runtimes/node-v22.15.0-darwin-arm64.tar.gz",
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        },
+        "linux-x64": {
+          "url": "https://example.invalid/runtimes/node-v22.15.0-linux-x64.tar.gz",
+          "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+        }
+      }
+    },
+    "python": {
+      "version": "3.12.13",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://example.invalid/runtimes/python-3.12.13-darwin-arm64.tar.gz",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    },
+    "uv": {
+      "version": "0.7.13",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://example.invalid/runtimes/uv-0.7.13-darwin-arm64.tar.gz",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    }
+  }
+}

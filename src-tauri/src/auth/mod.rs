@@ -11,13 +11,13 @@
 pub mod client;
 pub mod state;
 
-use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::storage::crypto::SecureStorage;
-use crate::storage::file_store::AppStorage;
+use crate::storage::GlobalConfigStore;
 
 use client::AuthClient;
 use state::{CloudAuth, CloudAuthInfo, CloudModelInfo};
@@ -28,20 +28,17 @@ const AUTH_STORAGE_KEY: &str = "cloud_auth";
 pub struct AuthManager {
     client: AuthClient,
     state: RwLock<Option<CloudAuth>>,
-    storage: Arc<AppStorage>,
+    global_store: Arc<GlobalConfigStore>,
     secure_storage: Option<Arc<SecureStorage>>,
 }
 
 impl AuthManager {
     /// Create a new AuthManager and restore persisted auth state (if any).
-    pub fn new(
-        storage: Arc<AppStorage>,
-        secure_storage: Option<Arc<SecureStorage>>,
-    ) -> Self {
+    pub fn new(global_store: Arc<GlobalConfigStore>, secure_storage: Option<Arc<SecureStorage>>) -> Self {
         let mgr = Self {
             client: AuthClient::new(),
             state: RwLock::new(None),
-            storage,
+            global_store,
             secure_storage,
         };
         mgr
@@ -85,13 +82,19 @@ impl AuthManager {
         }
 
         // Create session key
-        let sk_resp = self.client.create_session_key(&auth_resp.access_token).await?;
+        let sk_resp = self
+            .client
+            .create_session_key(&auth_resp.access_token)
+            .await?;
         if sk_resp.expires_at <= now {
             return Err(anyhow!("服务器返回了无效的会话密钥有效期"));
         }
 
         // Fetch available models
-        let models = self.client.list_models(&sk_resp.key).await
+        let models = self
+            .client
+            .list_models(&sk_resp.key)
+            .await
             .unwrap_or_default();
 
         let user: state::UserInfo = auth_resp.user.into();
@@ -139,7 +142,9 @@ impl AuthManager {
             let auth = state.as_ref().ok_or_else(|| anyhow!("未登录"))?;
             auth.access_token.clone()
         };
-        self.client.change_password(&access_token, old_password, new_password).await?;
+        self.client
+            .change_password(&access_token, old_password, new_password)
+            .await?;
         // Server revoked all refresh tokens; clear local state
         *self.state.write().await = None;
         self.clear_persisted_auth();
@@ -199,8 +204,16 @@ impl AuthManager {
             let state = self.state.read().await;
             match state.as_ref() {
                 Some(auth) => (
-                    if auth.refresh_expires_at > Utc::now() { Some(auth.refresh_token.clone()) } else { None },
-                    if auth.session_key_expires_at > Utc::now() { Some(auth.session_key.clone()) } else { None },
+                    if auth.refresh_expires_at > Utc::now() {
+                        Some(auth.refresh_token.clone())
+                    } else {
+                        None
+                    },
+                    if auth.session_key_expires_at > Utc::now() {
+                        Some(auth.session_key.clone())
+                    } else {
+                        None
+                    },
                 ),
                 _ => return self.get_auth_info().await,
             }
@@ -209,64 +222,75 @@ impl AuthManager {
         // Strategy 1: use refresh_token to get new tokens + latest profile
         if let Some(rt) = refresh_token {
             match self.client.refresh_token(&rt).await {
-            Ok(auth_resp) => {
-                let now = Utc::now();
+                Ok(auth_resp) => {
+                    let now = Utc::now();
 
-                let user: state::UserInfo = auth_resp.user.into();
-                let tenant: state::TenantInfo = auth_resp.tenant.into();
+                    let user: state::UserInfo = auth_resp.user.into();
+                    let tenant: state::TenantInfo = auth_resp.tenant.into();
 
-                // Persist refreshed tokens IMMEDIATELY — the old refresh_token is
-                // already revoked (single-use), so we must not lose the new one even
-                // if create_session_key fails below.
-                let mut cloud_auth = CloudAuth {
-                    access_token: auth_resp.access_token,
-                    access_expires_at: auth_resp.access_expires_at,
-                    refresh_token: auth_resp.refresh_token,
-                    refresh_expires_at: auth_resp.refresh_expires_at,
-                    // Keep existing session key for now — will update below if possible
-                    session_key: String::new(),
-                    session_key_expires_at: now,
-                    user: user.clone(),
-                    tenant: tenant.clone(),
-                };
+                    // Persist refreshed tokens IMMEDIATELY — the old refresh_token is
+                    // already revoked (single-use), so we must not lose the new one even
+                    // if create_session_key fails below.
+                    let mut cloud_auth = CloudAuth {
+                        access_token: auth_resp.access_token,
+                        access_expires_at: auth_resp.access_expires_at,
+                        refresh_token: auth_resp.refresh_token,
+                        refresh_expires_at: auth_resp.refresh_expires_at,
+                        // Keep existing session key for now — will update below if possible
+                        session_key: String::new(),
+                        session_key_expires_at: now,
+                        user: user.clone(),
+                        tenant: tenant.clone(),
+                    };
 
-                // Copy existing session key from current state as fallback
-                {
-                    let state = self.state.read().await;
-                    if let Some(current) = state.as_ref() {
-                        cloud_auth.session_key = current.session_key.clone();
-                        cloud_auth.session_key_expires_at = current.session_key_expires_at;
+                    // Copy existing session key from current state as fallback
+                    {
+                        let state = self.state.read().await;
+                        if let Some(current) = state.as_ref() {
+                            cloud_auth.session_key = current.session_key.clone();
+                            cloud_auth.session_key_expires_at = current.session_key_expires_at;
+                        }
+                    }
+
+                    // Try to create a fresh session key (best-effort)
+                    match self
+                        .client
+                        .create_session_key(&cloud_auth.access_token)
+                        .await
+                    {
+                        Ok(sk) if sk.expires_at > now => {
+                            cloud_auth.session_key = sk.key;
+                            cloud_auth.session_key_expires_at = sk.expires_at;
+                        }
+                        Ok(_) => {
+                            log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
+                        }
+                        Err(e) => {
+                            log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
+                        }
+                    }
+
+                    self.persist_auth(&cloud_auth);
+                    *self.state.write().await = Some(cloud_auth);
+
+                    return CloudAuthInfo {
+                        logged_in: true,
+                        user: Some(user),
+                        tenant: Some(tenant),
+                        models: vec![],
+                    };
+                }
+                Err(e) => {
+                    if session_key.is_some() {
+                        log::debug!(
+                            "refresh_auth_info: refresh_token failed: {}, will fall back to session_key",
+                            e
+                        );
+                    } else {
+                        log::warn!("refresh_auth_info: refresh_token failed: {}", e);
                     }
                 }
-
-                // Try to create a fresh session key (best-effort)
-                match self.client.create_session_key(&cloud_auth.access_token).await {
-                    Ok(sk) if sk.expires_at > now => {
-                        cloud_auth.session_key = sk.key;
-                        cloud_auth.session_key_expires_at = sk.expires_at;
-                    }
-                    Ok(_) => {
-                        log::warn!("refresh_auth_info: server returned expired session key, keeping existing");
-                    }
-                    Err(e) => {
-                        log::warn!("refresh_auth_info: create_session_key failed: {}, keeping existing", e);
-                    }
-                }
-
-                self.persist_auth(&cloud_auth);
-                *self.state.write().await = Some(cloud_auth);
-
-                return CloudAuthInfo {
-                    logged_in: true,
-                    user: Some(user),
-                    tenant: Some(tenant),
-                    models: vec![],
-                };
             }
-            Err(e) => {
-                log::warn!("refresh_auth_info: refresh_token failed: {}", e);
-            }
-        }
         }
 
         // Strategy 2: refresh_token unavailable/failed — use session_key to fetch profile only
@@ -316,6 +340,11 @@ impl AuthManager {
             let state = self.state.read().await;
             if let Some(auth) = state.as_ref() {
                 if auth.session_key_expires_at > now + buffer {
+                    log::info!(
+                        "[get_session_key] using cached session_key (len={}, expires_at={})",
+                        auth.session_key.len(),
+                        auth.session_key_expires_at
+                    );
                     return Ok(auth.session_key.clone());
                 }
             }
@@ -339,7 +368,11 @@ impl AuthManager {
                     auth.session_key = sk_resp.key.clone();
                     auth.session_key_expires_at = sk_resp.expires_at;
                     self.persist_auth(auth);
-                    log::info!("Session key renewed successfully");
+                    log::info!(
+                        "[get_session_key] renewed via access_token (len={}, expires_at={})",
+                        sk_resp.key.len(),
+                        sk_resp.expires_at
+                    );
                     return Ok(sk_resp.key);
                 }
                 Err(e) => {
@@ -355,7 +388,9 @@ impl AuthManager {
         if auth.refresh_expires_at > now + buffer {
             log::info!("Access token expired, refreshing...");
             match self.client.refresh_token(&auth.refresh_token).await {
-                Ok(auth_resp) if auth_resp.access_expires_at > now && auth_resp.refresh_expires_at > now => {
+                Ok(auth_resp)
+                    if auth_resp.access_expires_at > now && auth_resp.refresh_expires_at > now =>
+                {
                     let new_access_token = auth_resp.access_token.clone();
                     auth.access_token = auth_resp.access_token;
                     auth.access_expires_at = auth_resp.access_expires_at;
@@ -423,13 +458,13 @@ impl AuthManager {
             json
         };
 
-        if let Err(e) = self.storage.set_setting(AUTH_STORAGE_KEY, &value) {
+        if let Err(e) = self.global_store.set_setting(AUTH_STORAGE_KEY, &value) {
             log::error!("Failed to persist cloud auth: {}", e);
         }
     }
 
     fn load_persisted_auth(&self) -> Result<Option<CloudAuth>> {
-        let raw = match self.storage.get_setting(AUTH_STORAGE_KEY)? {
+        let raw = match self.global_store.get_setting(AUTH_STORAGE_KEY)? {
             Some(v) if !v.is_empty() => v,
             _ => return Ok(None),
         };
@@ -453,7 +488,7 @@ impl AuthManager {
     }
 
     fn clear_persisted_auth(&self) {
-        if let Err(e) = self.storage.delete_setting(AUTH_STORAGE_KEY) {
+        if let Err(e) = self.global_store.delete_setting(AUTH_STORAGE_KEY) {
             log::warn!("Failed to clear persisted cloud auth: {}", e);
         }
     }

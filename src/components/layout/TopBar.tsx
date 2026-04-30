@@ -1,15 +1,12 @@
 /**
- * TopBar — title + export menu. Hidden when no active conversation.
+ * TopBar — title bar. Hidden when no active conversation.
  * Based on visual-prototype-zh.html top-bar section.
  */
 import { useChatStore } from '@/stores/chatStore'
-import { ExportMenu } from '@/components/rich-content/ExportMenu'
 
 export function TopBar() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const conversations = useChatStore((s) => s.conversations)
-  const streamStates = useChatStore((s) => s.streamStates)
-  const isStreaming = activeConversationId ? (streamStates[activeConversationId]?.isStreaming ?? false) : false
 
   const activeConversation = conversations.find(
     (c) => c.id === activeConversationId,
@@ -31,12 +28,6 @@ export function TopBar() {
       >
         {title}
       </h2>
-
-      <div className="ml-auto flex items-center gap-2">
-        {!isStreaming && (
-          <ExportMenu conversationId={activeConversationId} />
-        )}
-      </div>
     </header>
   )
 }

@@ -11,12 +11,47 @@ use log::{info, warn};
 use serde_json::{json, Value};
 
 use crate::llm::masking::{MaskingContext, MaskingLevel};
-use crate::llm::orchestrator;
 use crate::plugin::context::PluginContext;
 use crate::python::parser;
 use crate::python::runner::PythonRunner;
+use crate::runtime::ids::RunId;
+use crate::storage::file_manager::FileManager;
+use crate::storage::file_store::AppStorage;
+use std::sync::Arc;
 
 use super::{optional_str, require_str};
+
+// ---------------------------------------------------------------------------
+// LoadFileParams — PluginContext-free parameter bundle for handle_load_file_core.
+// ---------------------------------------------------------------------------
+
+/// Parameters required by [`handle_load_file_core`].
+///
+/// This is the transport-neutral equivalent of the subset of `PluginContext`
+/// that `handle_load_file` reads.  Used by
+/// [`crate::runtime::tools::capability::DefaultFileOperations`] so that
+/// `LoadFileRuntimeTool` does not need to rebuild a `PluginContext`.
+pub(crate) struct LoadFileParams<'a> {
+    pub storage: &'a Arc<AppStorage>,
+    pub file_manager: &'a Arc<FileManager>,
+    pub workspace_path: &'a Path,
+    pub conversation_id: &'a str,
+    pub run_id: Option<&'a RunId>,
+    pub python_binary: Option<PathBuf>,
+    pub python_home: Option<PathBuf>,
+}
+
+impl<'a> LoadFileParams<'a> {
+    fn loaded_scope_id(&self) -> &str {
+        self.run_id
+            .map(|r| r.as_str())
+            .unwrap_or(self.conversation_id)
+    }
+
+    fn loaded_key(&self, file_id: &str) -> String {
+        format!("loaded:{}:{}", self.loaded_scope_id(), file_id)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Embedded Python script for tabular PII masking
@@ -240,7 +275,11 @@ async fn mask_tabular_file(
         warn!(
             "[PII] Tabular masking script exited with code {}: {}",
             exec_result.exit_code,
-            if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr }
+            if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            }
         );
         return None;
     }
@@ -248,13 +287,19 @@ async fn mask_tabular_file(
     let output: Value = match serde_json::from_str(&exec_result.stdout) {
         Ok(v) => v,
         Err(e) => {
-            warn!("[PII] Failed to parse masking script output: {} (stdout: {})", e, exec_result.stdout);
+            warn!(
+                "[PII] Failed to parse masking script output: {} (stdout: {})",
+                e, exec_result.stdout
+            );
             return None;
         }
     };
 
     if output.get("masked").and_then(|v| v.as_bool()) != Some(true) {
-        info!("[PII] No PII columns detected in {}", original_path.display());
+        info!(
+            "[PII] No PII columns detected in {}",
+            original_path.display()
+        );
         return None;
     }
 
@@ -352,7 +397,11 @@ except Exception as e:
     if exec_result.exit_code != 0 {
         return Err(anyhow!(
             "Text extraction failed: {}",
-            if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr }
+            if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            }
         ));
     }
 
@@ -372,7 +421,12 @@ fn store_pii_mapping(
     let key = format!("pii_mapping:{}:{}", conversation_id, file_id);
     let value = serde_json::to_string(mapping)?;
     storage.set_memory(&key, &value, Some("pii_mask"))?;
-    info!("[PII] Stored mapping for {}:{} ({} entries)", conversation_id, file_id, mapping.len());
+    info!(
+        "[PII] Stored mapping for {}:{} ({} entries)",
+        conversation_id,
+        file_id,
+        mapping.len()
+    );
     Ok(())
 }
 
@@ -431,20 +485,56 @@ pub(crate) fn unmask_text(text: &str, unmask_map: &HashMap<String, String>) -> S
 /// applies PII masking, and stores the mapping in DB so execute_python
 /// can auto-inject `_df`/`_text` using the masked version.
 /// The LLM never sees or handles file paths — all path resolution is system-managed.
+///
+/// Legacy wrapper — new callers should use [`handle_load_file_core`] with
+/// [`LoadFileParams`] directly.  This wrapper is retained so existing callers
+/// that still thread a `PluginContext` (e.g. legacy ToolPlugin, auto-load in
+/// execute_python) do not have to migrate atomically.
 pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Result<String> {
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let python_binary = deps.python;
+    let python_home = None;
+    let params = LoadFileParams {
+        storage: &ctx.storage,
+        file_manager: &ctx.file_manager,
+        workspace_path: &ctx.workspace_path,
+        conversation_id: &ctx.conversation_id,
+        run_id: ctx.run_id.as_ref(),
+        python_binary: Some(python_binary),
+        python_home,
+    };
+    handle_load_file_core(&params, args).await
+}
+
+/// PluginContext-free implementation of `load_file`.  All callers that do not
+/// already have a `PluginContext` (e.g. `LoadFileRuntimeTool` via
+/// `FileOperations`) should call this directly.
+pub(crate) async fn handle_load_file_core(
+    ctx: &LoadFileParams<'_>,
+    args: &Value,
+) -> Result<String> {
     let file_id = require_str(args, "file_id")?;
     let sheet = optional_str(args, "sheet");
     let nrows = args.get("nrows").and_then(|v| v.as_u64());
 
-    info!("[TOOL:load_file] file_id='{}' conversation_id='{}' sheet={:?} nrows={:?}",
-        file_id, ctx.conversation_id, sheet, nrows);
+    info!(
+        "[TOOL:load_file] file_id='{}' conversation_id='{}' sheet={:?} nrows={:?}",
+        file_id, ctx.conversation_id, sheet, nrows
+    );
 
     // 0. Cache check: if this file was already loaded (same file_id in this conversation),
     //    skip re-parsing and return the cached metadata directly.
-    let loaded_key = format!("loaded:{}:{}", ctx.conversation_id, file_id);
+    let loaded_key = ctx.loaded_key(file_id);
     if let Ok(Some(cached)) = ctx.storage.get_memory(&loaded_key) {
         if let Ok(cached_info) = serde_json::from_str::<Value>(&cached) {
-            info!("[TOOL:load_file] Cache hit for file_id='{}', skipping re-parse", file_id);
+            info!(
+                "[TOOL:load_file] Cache hit for file_id='{}', skipping re-parse",
+                file_id
+            );
             let mut output = json!({
                 "status": "loaded",
                 "fileId": file_id,
@@ -473,11 +563,13 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     // 1. Resolve file_id → stored_path → absolute path
     let file_record = ctx
         .storage
-        .get_uploaded_file_for_conversation(file_id, &ctx.conversation_id)?
-        .ok_or_else(|| anyhow!(
-            "Uploaded file not found or does not belong to this conversation: {}",
-            file_id
-        ))?;
+        .get_uploaded_file_for_conversation(file_id, ctx.conversation_id)?
+        .ok_or_else(|| {
+            anyhow!(
+                "Uploaded file not found or does not belong to this conversation: {}",
+                file_id
+            )
+        })?;
 
     let stored_path = file_record
         .get("storedPath")
@@ -492,7 +584,10 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     let full_path = ctx.file_manager.full_path(stored_path);
 
     if !full_path.exists() {
-        return Err(anyhow!("File does not exist on disk: {}", full_path.display()));
+        return Err(anyhow!(
+            "File does not exist on disk: {}",
+            full_path.display()
+        ));
     }
 
     // 2. Detect format
@@ -523,15 +618,34 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     };
 
     // 4. Parse the file to get metadata (reuses existing parser)
-    let mut parse_sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+    let workspace_pathbuf = ctx.workspace_path.to_path_buf();
+    let mut parse_sandbox =
+        crate::python::sandbox::SandboxConfig::for_workspace(&workspace_pathbuf);
     parse_sandbox.timeout_seconds = 60;
-    let runner = PythonRunner::with_config(
-        ctx.workspace_path.clone(), parse_sandbox, ctx.app_handle.as_ref(),
+    let runner = if let Some(binary) = ctx.python_binary.clone() {
+        PythonRunner::with_config_from_path(
+            binary,
+            ctx.python_home.clone(),
+            workspace_pathbuf,
+            parse_sandbox,
+        )
+    } else {
+        return Err(anyhow!(
+            "managed Python runtime is required for file parsing"
+        ));
+    };
+    info!(
+        "[TOOL:load_file] Starting parse_file for format={:?} path={}",
+        format,
+        full_path.display()
     );
-    info!("[TOOL:load_file] Starting parse_file for format={:?} path={}", format, full_path.display());
     let mut parse_result = parser::parse_file(&runner, &full_path).await?;
-    info!("[TOOL:load_file] parse_file completed: type={:?} columns={} rows={}",
-        parse_result.format, parse_result.column_names.len(), parse_result.row_count);
+    info!(
+        "[TOOL:load_file] parse_file completed: type={:?} columns={} rows={}",
+        parse_result.format,
+        parse_result.column_names.len(),
+        parse_result.row_count
+    );
 
     // Determine actual loaded_as based on parse result
     // Word/PPT/PDF must always be "text" — _smart_read_data (used in preamble)
@@ -559,7 +673,9 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
 
     if actual_loaded_as == "dataframe" {
         // Tabular data: use Python masking script
-        if let Some(mask_result) = mask_tabular_file(&runner, &full_path, &format, &ctx.workspace_path).await {
+        if let Some(mask_result) =
+            mask_tabular_file(&runner, &full_path, &format, ctx.workspace_path).await
+        {
             // Re-parse the masked file to get updated sample_data
             match parser::parse_file(&runner, &mask_result.masked_path).await {
                 Ok(masked_parse) => {
@@ -568,12 +684,20 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                     pii_masked = true;
                     pii_masked_columns = Some(mask_result.masked_columns);
                     // Store PII mapping for later unmask
-                    if let Err(e) = store_pii_mapping(&ctx.storage, &ctx.conversation_id, file_id, &mask_result.mapping) {
+                    if let Err(e) = store_pii_mapping(
+                        ctx.storage,
+                        ctx.conversation_id,
+                        file_id,
+                        &mask_result.mapping,
+                    ) {
                         warn!("[PII] Failed to store mapping: {}", e);
                     }
                 }
                 Err(e) => {
-                    warn!("[PII] Failed to re-parse masked file, using original: {}", e);
+                    warn!(
+                        "[PII] Failed to re-parse masked file, using original: {}",
+                        e
+                    );
                     // Clean up the masked file
                     let _ = std::fs::remove_file(&mask_result.masked_path);
                 }
@@ -583,15 +707,29 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
         // Text data (PDF/Word): extract full text, mask with Rust, save masked file
         let is_extractable = matches!(format, parser::FileFormat::Pdf | parser::FileFormat::Word);
         if is_extractable {
-            info!("[PII] Extracting full text for masking: format={:?}", format);
+            info!(
+                "[PII] Extracting full text for masking: format={:?}",
+                format
+            );
             match extract_full_text(&runner, &full_path, &format).await {
                 Ok(full_text) => {
-                    info!("[PII] Text extracted: {} chars, {} bytes", full_text.chars().count(), full_text.len());
+                    info!(
+                        "[PII] Text extracted: {} chars, {} bytes",
+                        full_text.chars().count(),
+                        full_text.len()
+                    );
                     if let Some((masked_text, mapping)) = mask_text_content(&full_text) {
-                        info!("[PII] Text masking complete: {} -> {} chars, {} mapping entries",
-                            full_text.len(), masked_text.len(), mapping.len());
+                        info!(
+                            "[PII] Text masking complete: {} -> {} chars, {} mapping entries",
+                            full_text.len(),
+                            masked_text.len(),
+                            mapping.len()
+                        );
                         // Save masked text to file
-                        let stem = full_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+                        let stem = full_path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("file");
                         let masked_dir = ctx.workspace_path.join("uploads").join("masked");
                         let _ = std::fs::create_dir_all(&masked_dir);
                         let masked_path = masked_dir.join(format!("{}_masked.txt", stem));
@@ -613,7 +751,12 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
                                 };
                                 parse_result.sample_data = json!({"preview": preview});
                                 // Store mapping
-                                if let Err(e) = store_pii_mapping(&ctx.storage, &ctx.conversation_id, file_id, &mapping) {
+                                if let Err(e) = store_pii_mapping(
+                                    ctx.storage,
+                                    ctx.conversation_id,
+                                    file_id,
+                                    &mapping,
+                                ) {
                                     warn!("[PII] Failed to store text mapping: {}", e);
                                 }
                             }
@@ -634,7 +777,7 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     //    fileId is stored so the preamble builder can use it as the dict key
     //    (avoids collision when two files have the same original name).
     //    path points to the masked file if PII masking was applied.
-    let loaded_key = format!("loaded:{}:{}", ctx.conversation_id, file_id);
+    let loaded_key = ctx.loaded_key(file_id);
     let mut loaded_info = json!({
         "path": effective_path.to_string_lossy(),
         "format": format_str,
@@ -648,31 +791,19 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     if let Some(ref cols) = pii_masked_columns {
         loaded_info["piiMaskedColumns"] = json!(cols);
     }
-    ctx.storage.set_memory(&loaded_key, &loaded_info.to_string(), Some("load_file"))?;
+    ctx.storage
+        .set_memory(&loaded_key, &loaded_info.to_string(), Some("load_file"))?;
 
-    // When user explicitly loads a (new) file during analysis, clear ALL pkl snapshots
-    // (_original, _step_df, _step{N}_df, _step_dfs) so fresh data takes priority.
-    if orchestrator::get_step_state(&ctx.storage, &ctx.conversation_id).is_some() {
-        let snap_dir = ctx.workspace_path.join("analysis").join(&ctx.conversation_id);
-        if snap_dir.exists() {
-            for entry in std::fs::read_dir(&snap_dir).into_iter().flatten() {
-                if let Ok(e) = entry {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".pkl") || name.ends_with(".pkl.tmp") {
-                        if let Err(err) = std::fs::remove_file(e.path()) {
-                            warn!("[TOOL:load_file] Failed to remove snapshot {}: {}", name, err);
-                        } else {
-                            info!("[TOOL:load_file] Cleared snapshot {} (new file loaded)", name);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Note: stateful workflow precompute snapshot cleanup removed in Phase B Task 7.
+    // Snapshot pkl files no longer need special handling.
 
-    info!("[TOOL:load_file] Stored loaded file mapping: {} -> {} ({}{})",
-        file_id, effective_path.display(), actual_loaded_as,
-        if pii_masked { ", PII masked" } else { "" });
+    info!(
+        "[TOOL:load_file] Stored loaded file mapping: {} -> {} ({}{})",
+        file_id,
+        effective_path.display(),
+        actual_loaded_as,
+        if pii_masked { ", PII masked" } else { "" }
+    );
 
     // 6. Return metadata to LLM (no file path exposed)
     let row_count_note = if actual_loaded_as == "dataframe" {
@@ -710,18 +841,12 @@ pub(crate) async fn handle_load_file(ctx: &PluginContext, args: &Value) -> Resul
     Ok(serde_json::to_string_pretty(&output)?)
 }
 
-/// Build Python preamble code that auto-loads files previously loaded via `load_file`.
-///
-/// Reads `loaded:{conversation_id}:*` from DB and generates Python code that
-/// loads each file into `_df` / `_text` variables before user code runs.
-/// If multiple files are loaded, also creates `_dfs` dict keyed by file_id
-/// (not original_name, to avoid collision when two files share the same name).
-pub(crate) fn build_loaded_files_preamble(
+pub(crate) fn build_loaded_files_preamble_for_scope(
     db: &std::sync::Arc<crate::storage::file_store::AppStorage>,
-    conversation_id: &str,
+    scope_id: &str,
     workspace_path: &std::path::Path,
 ) -> String {
-    let prefix = format!("loaded:{}:", conversation_id);
+    let prefix = format!("loaded:{}:", scope_id);
     let loaded_files = match db.get_memories_by_prefix(&prefix) {
         Ok(files) if !files.is_empty() => files,
         _ => return String::new(),
@@ -743,12 +868,24 @@ pub(crate) fn build_loaded_files_preamble(
         };
 
         let path = info.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        let original_name = info.get("originalName").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let original_name = info
+            .get("originalName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         // Use file_id as dict key to avoid collision when files share the same name.
         // Fall back to original_name for backward compatibility with entries that lack fileId.
-        let file_id = info.get("fileId").and_then(|v| v.as_str()).unwrap_or(original_name);
-        let loaded_as = info.get("loadedAs").and_then(|v| v.as_str()).unwrap_or("text");
-        let sheet = info.get("sheet").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let file_id = info
+            .get("fileId")
+            .and_then(|v| v.as_str())
+            .unwrap_or(original_name);
+        let loaded_as = info
+            .get("loadedAs")
+            .and_then(|v| v.as_str())
+            .unwrap_or("text");
+        let sheet = info
+            .get("sheet")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let nrows = info.get("nrows").and_then(|v| v.as_u64());
 
         if path.is_empty() {
@@ -763,14 +900,16 @@ pub(crate) fn build_loaded_files_preamble(
                 Ok(canonical) => {
                     log::warn!(
                         "[preamble] Path {:?} escapes workspace {:?}, skipping",
-                        canonical, ws
+                        canonical,
+                        ws
                     );
                     continue;
                 }
                 Err(e) => {
                     log::warn!(
                         "[preamble] Cannot resolve path {:?}: {}, skipping",
-                        file_path, e
+                        file_path,
+                        e
                     );
                     continue;
                 }
@@ -779,10 +918,20 @@ pub(crate) fn build_loaded_files_preamble(
 
         match loaded_as {
             "dataframe" => {
-                df_loads.push((file_id.to_string(), original_name.to_string(), path.to_string(), sheet, nrows));
+                df_loads.push((
+                    file_id.to_string(),
+                    original_name.to_string(),
+                    path.to_string(),
+                    sheet,
+                    nrows,
+                ));
             }
             "text" => {
-                text_loads.push((file_id.to_string(), original_name.to_string(), path.to_string()));
+                text_loads.push((
+                    file_id.to_string(),
+                    original_name.to_string(),
+                    path.to_string(),
+                ));
             }
             _ => {}
         }
@@ -807,12 +956,20 @@ pub(crate) fn build_loaded_files_preamble(
             load_call.push_str(&format!(", nrows={}", n));
         }
         load_call.push(')');
-        preamble.push_str(&format!("# Loaded: {}\n{}\n", py_comment_safe(original_name), load_call));
+        preamble.push_str(&format!(
+            "# Loaded: {}\n{}\n",
+            py_comment_safe(original_name),
+            load_call
+        ));
     } else if df_loads.len() > 1 {
         preamble.push_str("_dfs = {}\n");
         for (file_id, original_name, path, sheet, nrows) in &df_loads {
             let safe_key = py_escape(file_id);
-            let mut load_call = format!("_dfs['{}'] = _smart_read_data('{}'", safe_key, py_escape(path));
+            let mut load_call = format!(
+                "_dfs['{}'] = _smart_read_data('{}'",
+                safe_key,
+                py_escape(path)
+            );
             if let Some(s) = sheet {
                 load_call.push_str(&format!(", sheet_name='{}'", py_escape(s)));
             }
@@ -820,7 +977,11 @@ pub(crate) fn build_loaded_files_preamble(
                 load_call.push_str(&format!(", nrows={}", n));
             }
             load_call.push(')');
-            preamble.push_str(&format!("# {}\n{}\n", py_comment_safe(original_name), load_call));
+            preamble.push_str(&format!(
+                "# {}\n{}\n",
+                py_comment_safe(original_name),
+                load_call
+            ));
         }
         // _df points to the last loaded DataFrame
         if let Some((file_id, _, _, _, _)) = df_loads.last() {
@@ -855,6 +1016,41 @@ pub(crate) fn build_loaded_files_preamble(
     preamble
 }
 
+#[cfg(test)]
+mod tests {
+    use super::LoadFileParams;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    #[test]
+    fn load_file_params_accepts_python_binary_without_app_handle() {
+        let tempdir = tempfile::TempDir::new().expect("tempdir should exist");
+        let storage = Arc::new(AppStorage::new(tempdir.path()).expect("storage should initialize"));
+        storage
+            .create_conversation("conv-test", "Plan J")
+            .expect("conversation should exist");
+        let file_manager = Arc::new(FileManager::new(tempdir.path()));
+
+        let params = LoadFileParams {
+            storage: &storage,
+            file_manager: &file_manager,
+            workspace_path: Path::new("/tmp/ws"),
+            conversation_id: "conv-test",
+            run_id: None,
+            python_binary: Some(PathBuf::from("/usr/bin/python3")),
+            python_home: None,
+        };
+
+        assert_eq!(
+            params.python_binary.as_deref(),
+            Some(Path::new("/usr/bin/python3"))
+        );
+        assert!(params.python_home.is_none());
+    }
+}
+
 /// Build the analysis preamble that injects `_ANALYSIS_DIR`, `_CONV_ID`,
 /// snapshot restoration, and analysis utility functions into a Python session.
 ///
@@ -877,7 +1073,10 @@ pub(crate) fn build_analysis_preamble(
             std::fs::create_dir_all(parent).ok();
         }
         if let Err(e) = std::fs::write(&utils_path, crate::python::analysis_utils::ANALYSIS_UTILS) {
-            log::warn!("[build_analysis_preamble] Failed to write _analysis_utils.py: {}", e);
+            log::warn!(
+                "[build_analysis_preamble] Failed to write _analysis_utils.py: {}",
+                e
+            );
         }
     }
 
@@ -894,30 +1093,49 @@ _orig_path = os.path.join(_ANALYSIS_DIR, '_original.pkl')
 if '_df' in dir() and isinstance(_df, pd.DataFrame) and not os.path.exists(_orig_path):
     _pkl.dump(_df.copy(), open(_orig_path + '.tmp', 'wb'))
     os.replace(_orig_path + '.tmp', _orig_path)
+    _ckpt_sign(_orig_path)
 
 # Layer 3: Restore working snapshot (overrides file-loaded _df)
+# HMAC-verified before loading to prevent pickle RCE from tampered checkpoint files.
 _snap_path = os.path.join(_ANALYSIS_DIR, '_step_df.pkl')
 if os.path.exists(_snap_path):
-    _df = _pkl.load(open(_snap_path, 'rb'))
+    if _ckpt_verify(_snap_path):
+        _df = _pkl.load(open(_snap_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_path}} — skipped', file=_sys.stderr)
 
 # Restore _dfs snapshot if exists
 _snap_dfs_path = os.path.join(_ANALYSIS_DIR, '_step_dfs.pkl')
 if os.path.exists(_snap_dfs_path):
-    _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    if _ckpt_verify(_snap_dfs_path):
+        _dfs = _pkl.load(open(_snap_dfs_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_snap_dfs_path}} — skipped', file=_sys.stderr)
 
 # Restore user-created variables from previous execute_python calls
 _uv_path = os.path.join(_ANALYSIS_DIR, '_user_vars.pkl')
 if os.path.exists(_uv_path):
-    try:
-        for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
-            globals()[_k] = _v
-        del _k, _v
-    except Exception:
-        pass
+    if _ckpt_verify(_uv_path):
+        try:
+            for _k, _v in _pkl.load(open(_uv_path, 'rb')).items():
+                globals()[_k] = _v
+            del _k, _v
+        except Exception:
+            pass
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_uv_path}} — skipped', file=_sys.stderr)
 
 # _df_raw: read-only reference to original data (always available)
 if os.path.exists(_orig_path):
-    _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    if _ckpt_verify(_orig_path):
+        _df_raw = _pkl.load(open(_orig_path, 'rb'))
+    else:
+        import sys as _sys
+        print(f'[WARN] Checkpoint signature invalid: {{_orig_path}} — skipped', file=_sys.stderr)
+        _df_raw = None
 else:
     _df_raw = _df.copy() if '_df' in dir() and isinstance(_df, pd.DataFrame) else None
 
@@ -926,8 +1144,36 @@ _au_path = os.path.join(os.getcwd(), 'temp', '_analysis_utils.py')
 if os.path.exists(_au_path):
     with open(_au_path, encoding='utf-8') as _au_f:
         exec(_au_f.read())
+
+# Snapshot system variable names BEFORE user code runs (used by epilogue to detect user vars)
+_SYS_VARS_SNAPSHOT = set(globals().keys())
 "#,
         conv_id = py_escape(conversation_id),
         step = step,
+    )
+}
+
+/// 生成授权目录 preamble：注入 _WORKSPACE_ROOT 变量和 _find_workspace_file 工具函数。
+/// 在 execute_python handler 中，当 authorized_workspace 存在时追加到 sandbox preamble。
+pub(crate) fn build_local_workspace_preamble(root_path: &std::path::Path) -> String {
+    use super::util::py_escape;
+    let root_str = root_path.to_string_lossy();
+    format!(
+        r#"
+# ── 授权工作目录（workspace-first 注入）──
+_WORKSPACE_ROOT = '{root}'
+
+def _find_workspace_file(pattern='*', recursive=True):
+    """在授权工作目录中搜索匹配模式的文件。"""
+    import glob as _g
+    if recursive:
+        matches = _g.glob(os.path.join(_WORKSPACE_ROOT, '**', pattern), recursive=True)
+    else:
+        matches = _g.glob(os.path.join(_WORKSPACE_ROOT, pattern))
+    data_exts = ('.xlsx', '.xls', '.csv', '.tsv', '.json', '.jsonl', '.parquet', '.txt')
+    data_files = [f for f in matches if any(f.lower().endswith(e) for e in data_exts)]
+    return data_files[0] if data_files else (matches[0] if matches else None)
+"#,
+        root = py_escape(&root_str),
     )
 }

@@ -18,10 +18,12 @@ describe('settingsStore — defaults', () => {
     expect(state.primaryApiKey).toBe('')
     expect(state.autoModelRouting).toBe(true)
     expect(state.analysisThreshold).toBe(1.65)
-    expect(state.dataMaskingLevel).toBe('strict')
+    expect(state.dataMaskingLevel).toBe('relaxed')
     expect(state.autoCleanupEnabled).toBe(true)
     expect(state.tempFileRetentionDays).toBe(7)
     expect(state.keepOldVersions).toBe(1)
+    expect(state.cloudModel).toBe('')
+    expect(state.cloudModelType).toBe('')
     expect(state.isLoaded).toBe(false)
   })
 })
@@ -49,6 +51,15 @@ describe('settingsStore — setters', () => {
   it('sets auto model routing', () => {
     useSettingsStore.getState().setAutoModelRouting(false)
     expect(useSettingsStore.getState().autoModelRouting).toBe(false)
+  })
+
+  it('sets font scale and applies the root font size immediately', () => {
+    useSettingsStore.getState().setFontScale('large')
+    expect(useSettingsStore.getState().fontScale).toBe('large')
+    expect(document.documentElement.style.fontSize).toBe('18px')
+
+    useSettingsStore.getState().setFontScale('small')
+    expect(document.documentElement.style.fontSize).toBe('14px')
   })
 
   it('sets Tavily API key', () => {
@@ -95,5 +106,14 @@ describe('settingsStore — setter independence', () => {
     expect(useSettingsStore.getState().autoModelRouting).toBe(false)
     // Unrelated settings untouched
     expect(useSettingsStore.getState().primaryModel).toBe('deepseek-v3')
+  })
+})
+
+describe('settingsStore — setDataMaskingLevel', () => {
+  it('updates dataMaskingLevel in store', () => {
+    useSettingsStore.getState().setDataMaskingLevel('strict')
+    expect(useSettingsStore.getState().dataMaskingLevel).toBe('strict')
+    useSettingsStore.getState().setDataMaskingLevel('relaxed')
+    expect(useSettingsStore.getState().dataMaskingLevel).toBe('relaxed')
   })
 })

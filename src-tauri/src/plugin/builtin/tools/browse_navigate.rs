@@ -1,5 +1,9 @@
 //! browse_navigate — open any URL in the CDP browser and wait for page load.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct BrowseNavigateTool;
 
 #[async_trait]
 impl ToolPlugin for BrowseNavigateTool {
-    fn name(&self) -> &str { "browse_navigate" }
+    fn name(&self) -> &str {
+        "browse_navigate"
+    }
 
     fn description(&self) -> &str {
         "Navigate the Chrome browser to any URL. The browser window becomes visible so you and \

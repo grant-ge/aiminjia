@@ -3,9 +3,9 @@
 //! Detects the file format and generates a Python script that uses
 //! pandas/openpyxl to parse the file and output structured JSON.
 
-use std::path::Path;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use super::runner::PythonRunner;
 
@@ -38,7 +38,12 @@ pub struct ParseResult {
 
 /// Detect the file format from its extension.
 pub fn detect_format(file_path: &Path) -> FileFormat {
-    match file_path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
+    match file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .as_deref()
+    {
         Some("csv") | Some("tsv") => FileFormat::Csv,
         Some("xlsx") | Some("xls") => FileFormat::Excel,
         Some("json") | Some("jsonl") => FileFormat::Json,
@@ -83,10 +88,7 @@ pub async fn parse_file(runner: &PythonRunner, file_path: &Path) -> Result<Parse
     let escaped_path = crate::llm::tool_executor::py_escape(&file_path_str);
 
     let read_code = match format {
-        FileFormat::Csv => format!(
-            r#"df = smart_read_csv('{}', nrows=10000)"#,
-            escaped_path
-        ),
+        FileFormat::Csv => format!(r#"df = smart_read_csv('{}', nrows=10000)"#, escaped_path),
         FileFormat::Excel => format!(
             r#"
 # Use openpyxl in read_only + data_only mode for fast streaming reads.
@@ -118,10 +120,7 @@ except ValueError:
 "#,
             escaped_path, escaped_path
         ),
-        FileFormat::Parquet => format!(
-            r#"df = pd.read_parquet('{}')"#,
-            escaped_path
-        ),
+        FileFormat::Parquet => format!(r#"df = pd.read_parquet('{}')"#, escaped_path),
         FileFormat::Text => {
             return Ok(ParseResult {
                 format: FileFormat::Text,
@@ -213,13 +212,22 @@ except Exception as e:
     if exec_result.exit_code != 0 {
         return Err(anyhow!(
             "File parsing failed: {}",
-            if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr }
+            if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            }
         ));
     }
 
     // Parse the JSON output
-    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout)
-        .map_err(|e| anyhow!("Failed to parse Python output: {} (output: {})", e, exec_result.stdout))?;
+    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout).map_err(|e| {
+        anyhow!(
+            "Failed to parse Python output: {} (output: {})",
+            e,
+            exec_result.stdout
+        )
+    })?;
 
     if let Some(error) = output.get("error").and_then(|v| v.as_str()) {
         return Err(anyhow!("Parser error: {}", error));
@@ -227,14 +235,17 @@ except Exception as e:
 
     Ok(ParseResult {
         format,
-        column_names: output.get("columnNames")
+        column_names: output
+            .get("columnNames")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
-        row_count: output.get("rowCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0),
-        sample_data: output.get("sampleData").cloned().unwrap_or(serde_json::Value::Null),
-        schema_summary: output.get("schemaSummary")
+        row_count: output.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
+        sample_data: output
+            .get("sampleData")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        schema_summary: output
+            .get("schemaSummary")
             .and_then(|v| v.as_str())
             .unwrap_or("Unknown")
             .to_string(),
@@ -388,44 +399,67 @@ except Exception as e:
     let exec_result = runner.execute(&code).await?;
 
     if exec_result.exit_code != 0 {
-        let err_msg = if exec_result.stderr.contains("no_pdf_library") || exec_result.stdout.contains("no_pdf_library") {
+        let err_msg = if exec_result.stderr.contains("no_pdf_library")
+            || exec_result.stdout.contains("no_pdf_library")
+        {
             "PDF 解析需要 pdfplumber 库，请运行: pip install pdfplumber".to_string()
         } else {
-            let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
+            let raw = if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            };
             format!("PDF 解析失败: {}", raw)
         };
         return Err(anyhow!(err_msg));
     }
 
-    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout)
-        .map_err(|e| anyhow!("Failed to parse PDF output: {} (output: {})", e, exec_result.stdout))?;
+    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout).map_err(|e| {
+        anyhow!(
+            "Failed to parse PDF output: {} (output: {})",
+            e,
+            exec_result.stdout
+        )
+    })?;
 
     if let Some(error) = output.get("error").and_then(|v| v.as_str()) {
         return Err(anyhow!("PDF 解析失败: {}", error));
     }
 
-    let result_type = output.get("type").and_then(|v| v.as_str()).unwrap_or("text");
+    let result_type = output
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("text");
 
     if result_type == "table" {
         // PDF with extracted tables → structured data
         Ok(ParseResult {
             format: FileFormat::Pdf,
-            column_names: output.get("columnNames")
+            column_names: output
+                .get("columnNames")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
-            row_count: output.get("rowCount")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            sample_data: output.get("sampleData").cloned().unwrap_or(serde_json::Value::Null),
-            schema_summary: output.get("schemaSummary")
+            row_count: output.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
+            sample_data: output
+                .get("sampleData")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            schema_summary: output
+                .get("schemaSummary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("PDF with tables")
                 .to_string(),
         })
     } else {
         // PDF with text only
-        let total_pages = output.get("totalPages").and_then(|v| v.as_u64()).unwrap_or(0);
-        let text_length = output.get("textLength").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total_pages = output
+            .get("totalPages")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let text_length = output
+            .get("textLength")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let preview = output.get("preview").and_then(|v| v.as_str()).unwrap_or("");
 
         Ok(ParseResult {
@@ -556,42 +590,65 @@ except Exception as e:
     let exec_result = runner.execute(&code).await?;
 
     if exec_result.exit_code != 0 {
-        let err_msg = if exec_result.stderr.contains("no_docx_library") || exec_result.stdout.contains("no_docx_library") {
+        let err_msg = if exec_result.stderr.contains("no_docx_library")
+            || exec_result.stdout.contains("no_docx_library")
+        {
             "Word 文档解析需要 python-docx 库，请运行: pip install python-docx".to_string()
         } else {
-            let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
+            let raw = if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            };
             format!("Word 文档解析失败: {}", raw)
         };
         return Err(anyhow!(err_msg));
     }
 
-    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout)
-        .map_err(|e| anyhow!("Failed to parse Word output: {} (output: {})", e, exec_result.stdout))?;
+    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout).map_err(|e| {
+        anyhow!(
+            "Failed to parse Word output: {} (output: {})",
+            e,
+            exec_result.stdout
+        )
+    })?;
 
     if let Some(error) = output.get("error").and_then(|v| v.as_str()) {
         return Err(anyhow!("Word 文档解析失败: {}", error));
     }
 
-    let result_type = output.get("type").and_then(|v| v.as_str()).unwrap_or("text");
+    let result_type = output
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("text");
 
     if result_type == "table" {
         Ok(ParseResult {
             format: FileFormat::Word,
-            column_names: output.get("columnNames")
+            column_names: output
+                .get("columnNames")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
-            row_count: output.get("rowCount")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            sample_data: output.get("sampleData").cloned().unwrap_or(serde_json::Value::Null),
-            schema_summary: output.get("schemaSummary")
+            row_count: output.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
+            sample_data: output
+                .get("sampleData")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            schema_summary: output
+                .get("schemaSummary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Word document with tables")
                 .to_string(),
         })
     } else {
-        let paragraphs = output.get("paragraphCount").and_then(|v| v.as_u64()).unwrap_or(0);
-        let text_length = output.get("textLength").and_then(|v| v.as_u64()).unwrap_or(0);
+        let paragraphs = output
+            .get("paragraphCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let text_length = output
+            .get("textLength")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let preview = output.get("preview").and_then(|v| v.as_str()).unwrap_or("");
 
         Ok(ParseResult {
@@ -710,42 +767,65 @@ except Exception as e:
     let exec_result = runner.execute(&code).await?;
 
     if exec_result.exit_code != 0 {
-        let err_msg = if exec_result.stderr.contains("no_pptx_library") || exec_result.stdout.contains("no_pptx_library") {
+        let err_msg = if exec_result.stderr.contains("no_pptx_library")
+            || exec_result.stdout.contains("no_pptx_library")
+        {
             "PPT 解析需要 python-pptx 库，请运行: pip install python-pptx".to_string()
         } else {
-            let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
+            let raw = if exec_result.stderr.is_empty() {
+                &exec_result.stdout
+            } else {
+                &exec_result.stderr
+            };
             format!("PPT 解析失败: {}", raw)
         };
         return Err(anyhow!(err_msg));
     }
 
-    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout)
-        .map_err(|e| anyhow!("Failed to parse PPT output: {} (output: {})", e, exec_result.stdout))?;
+    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout).map_err(|e| {
+        anyhow!(
+            "Failed to parse PPT output: {} (output: {})",
+            e,
+            exec_result.stdout
+        )
+    })?;
 
     if let Some(error) = output.get("error").and_then(|v| v.as_str()) {
         return Err(anyhow!("PPT 解析失败: {}", error));
     }
 
-    let result_type = output.get("type").and_then(|v| v.as_str()).unwrap_or("text");
+    let result_type = output
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("text");
 
     if result_type == "table" {
         Ok(ParseResult {
             format: FileFormat::Ppt,
-            column_names: output.get("columnNames")
+            column_names: output
+                .get("columnNames")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
-            row_count: output.get("rowCount")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            sample_data: output.get("sampleData").cloned().unwrap_or(serde_json::Value::Null),
-            schema_summary: output.get("schemaSummary")
+            row_count: output.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
+            sample_data: output
+                .get("sampleData")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            schema_summary: output
+                .get("schemaSummary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("PPT with tables")
                 .to_string(),
         })
     } else {
-        let total_slides = output.get("totalSlides").and_then(|v| v.as_u64()).unwrap_or(0);
-        let text_length = output.get("textLength").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total_slides = output
+            .get("totalSlides")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let text_length = output
+            .get("textLength")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let preview = output.get("preview").and_then(|v| v.as_str()).unwrap_or("");
 
         Ok(ParseResult {
@@ -858,36 +938,54 @@ if not tables_found:
     let exec_result = runner.execute(&code).await?;
 
     if exec_result.exit_code != 0 {
-        let raw = if exec_result.stderr.is_empty() { &exec_result.stdout } else { &exec_result.stderr };
+        let raw = if exec_result.stderr.is_empty() {
+            &exec_result.stdout
+        } else {
+            &exec_result.stderr
+        };
         return Err(anyhow!("HTML 解析失败: {}", raw));
     }
 
-    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout)
-        .map_err(|e| anyhow!("Failed to parse HTML output: {} (output: {})", e, exec_result.stdout))?;
+    let output: serde_json::Value = serde_json::from_str(&exec_result.stdout).map_err(|e| {
+        anyhow!(
+            "Failed to parse HTML output: {} (output: {})",
+            e,
+            exec_result.stdout
+        )
+    })?;
 
     if let Some(error) = output.get("error").and_then(|v| v.as_str()) {
         return Err(anyhow!("HTML 解析失败: {}", error));
     }
 
-    let result_type = output.get("type").and_then(|v| v.as_str()).unwrap_or("text");
+    let result_type = output
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("text");
 
     if result_type == "table" {
         Ok(ParseResult {
             format: FileFormat::Html,
-            column_names: output.get("columnNames")
+            column_names: output
+                .get("columnNames")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default(),
-            row_count: output.get("rowCount")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            sample_data: output.get("sampleData").cloned().unwrap_or(serde_json::Value::Null),
-            schema_summary: output.get("schemaSummary")
+            row_count: output.get("rowCount").and_then(|v| v.as_u64()).unwrap_or(0),
+            sample_data: output
+                .get("sampleData")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            schema_summary: output
+                .get("schemaSummary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("HTML with tables")
                 .to_string(),
         })
     } else {
-        let text_length = output.get("textLength").and_then(|v| v.as_u64()).unwrap_or(0);
+        let text_length = output
+            .get("textLength")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let preview = output.get("preview").and_then(|v| v.as_str()).unwrap_or("");
 
         Ok(ParseResult {
@@ -895,10 +993,7 @@ if not tables_found:
             column_names: vec![],
             row_count: 0,
             sample_data: serde_json::json!({ "preview": preview }),
-            schema_summary: format!(
-                "HTML document, ~{} characters of text content",
-                text_length
-            ),
+            schema_summary: format!("HTML document, ~{} characters of text content", text_length),
         })
     }
 }

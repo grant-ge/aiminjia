@@ -1,37 +1,19 @@
 /**
  * WelcomeScreen — greeting + general mode entry + flat skill grid.
- * Shows only skills linked to the active persona (or all if none linked).
- * Persona switching is handled in Sidebar.
- */
-import type { SkillInfo } from '@/lib/tauri'
-import { usePluginStore } from '@/stores/pluginStore'
-import { usePersonaStore } from '@/stores/personaStore'
+ * Skill list is no longer filtered by persona.
+  */
+import { useSkillStore } from '@/stores/skillStore'
 import { useProductName } from '@/hooks/useProductName'
 import { useChat } from '@/hooks/useChat'
 import { useTranslation } from 'react-i18next'
-import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 export function WelcomeScreen() {
-  const { t, i18n } = useTranslation()
-  const lang = i18n.language
-  const skills = usePluginStore((s) => s.skills)
-  const activePersona = usePersonaStore((s) => s.activePersona)
+  const { t } = useTranslation()
+  const skills = useSkillStore((s) => s.skills)
   const productName = useProductName()
   const { sendUserMessage } = useChat()
 
-  // Linked categories from active persona (default: show all)
-  const linkedCategories = activePersona?.linkedCategories ?? []
-  const hasLinked = linkedCategories.length > 0
-
-  // Split skills: custom (user-created) always visible, builtin filtered by persona
-  const customSkills = skills.filter((s) =>
-    s.source === 'custom' && s.id !== 'daily-assistant'
-  )
-  const builtinSkills = skills.filter((s) => {
-    if (s.id === 'daily-assistant' || !s.icon || s.source === 'custom') return false
-    if (!hasLinked) return true
-    return linkedCategories.includes(s.category || 'general')
-  })
+  const displaySkills = skills.filter((s) => s.id !== 'daily-assistant' && !!s.icon)
 
   const handleSkillClick = (triggerText: string) => {
     if (triggerText) {
@@ -43,17 +25,8 @@ export function WelcomeScreen() {
     sendUserMessage(t('welcome.hello'))
   }
 
-  // Greeting follows persona — use i18n key for builtins, fallback to name for user-created
-  const personaLocalName = activePersona
-    ? t(`personas.${activePersona.id}`, activePersona.name)
-    : ''
-  const greeting = activePersona
-    ? t('welcome.greetingWithPersona', { productName, personaName: personaLocalName })
-    : t('welcome.greeting', { productName })
-  // Subtitle: builtins have no translation key for description, use descriptionEn from store or zh fallback
-  const subtitleEn = (activePersona as any)?.descriptionEn || ''
-  const subtitleZh = activePersona?.description || ''
-  const subtitle = (lang === 'en-US' && subtitleEn ? subtitleEn : subtitleZh) || t('welcome.defaultSubtitle')
+  const greeting = t('welcome.defaultGreeting', { productName })
+  const subtitle = t('welcome.defaultSubtitle')
 
   return (
     <div className="animate-[fadeUp_0.3s_ease] flex flex-col items-center pt-12">
@@ -65,7 +38,7 @@ export function WelcomeScreen() {
           color: 'var(--color-text-on-accent)',
         }}
       >
-        {activePersona?.icon || '家'}
+        家
       </div>
       <h2
         className="mb-1 text-lg font-semibold"
@@ -80,8 +53,6 @@ export function WelcomeScreen() {
         {subtitle}
       </p>
 
-      {/* Skill-smith: unfinished drafts nudge (self-hides when no drafts) */}
-      <DraftResumeBanner />
 
       {/* General mode entry */}
       <div className="w-full max-w-[640px] px-4">
@@ -126,57 +97,37 @@ export function WelcomeScreen() {
         </button>
       </div>
 
-      {/* Custom skills section (user-created, always visible) */}
-      {customSkills.length > 0 && (
+      {/* Flat skill grid */}
+      {displaySkills.length > 0 && (
         <div className="mt-4 w-full max-w-[640px] px-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span
-              className="text-xs font-medium"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              {t('welcome.mySkills')}
-            </span>
-            <button
-              type="button"
-              className="text-xs cursor-pointer"
-              style={{ color: 'var(--color-accent)' }}
-              onClick={() => handleSkillClick(t('welcome.createSkillTrigger'))}
-            >
-              + {t('welcome.createSkill')}
-            </button>
-          </div>
           <div className="grid grid-cols-3 gap-2.5">
-            {customSkills.map((skill) => (
-              <SkillCard
+            {displaySkills.map((skill) => (
+              <button
                 key={skill.id}
-                skill={skill}
+                type="button"
+                className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+                style={{
+                  background: 'var(--color-bg-elevated)',
+                  border: '1px solid var(--color-border-subtle)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--color-accent)'
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
                 onClick={() => handleSkillClick(skill.triggerText)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Built-in skill grid */}
-      {builtinSkills.length > 0 && (
-        <div className="mt-4 w-full max-w-[640px] px-4">
-          {customSkills.length > 0 && (
-            <div className="mb-2">
-              <span
-                className="text-xs font-medium"
-                style={{ color: 'var(--color-text-muted)' }}
               >
-                {t('welcome.builtinSkills')}
-              </span>
-            </div>
-          )}
-          <div className="grid grid-cols-3 gap-2.5">
-            {builtinSkills.map((skill) => (
-              <SkillCard
-                key={skill.id}
-                skill={skill}
-                onClick={() => handleSkillClick(skill.triggerText)}
-              />
+                <span className="text-xl leading-none">{skill.icon}</span>
+                <span
+                  className="text-xs font-medium leading-tight"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  {t(`skills.${skill.id}`, skill.displayName)}
+                </span>
+              </button>
             ))}
           </div>
         </div>
@@ -189,37 +140,5 @@ export function WelcomeScreen() {
         {t('welcome.askAnything')}
       </p>
     </div>
-  )
-}
-
-/** Reusable skill card button */
-function SkillCard({ skill, onClick }: { skill: SkillInfo; onClick: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <button
-      type="button"
-      className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-3.5 text-center transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
-      style={{
-        background: 'var(--color-bg-elevated)',
-        border: '1px solid var(--color-border-subtle)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-accent)'
-        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-border-subtle)'
-        e.currentTarget.style.boxShadow = 'none'
-      }}
-      onClick={onClick}
-    >
-      <span className="text-xl leading-none">{skill.icon || '\u{1F527}'}</span>
-      <span
-        className="text-xs font-medium leading-tight"
-        style={{ color: 'var(--color-text-primary)' }}
-      >
-        {t(`skills.${skill.id}`, skill.displayName)}
-      </span>
-    </button>
   )
 }

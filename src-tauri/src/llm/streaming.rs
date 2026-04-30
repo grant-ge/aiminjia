@@ -149,6 +149,15 @@ pub struct ToolDefinition {
     pub parameters: serde_json::Value, // JSON Schema
 }
 
+/// Extended thinking configuration for providers that support explicit reasoning controls.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ThinkingConfig {
+    Adaptive,
+    Enabled { budget_tokens: u32 },
+    Disabled,
+}
+
 /// Request to send to an LLM provider.
 #[derive(Debug, Clone)]
 pub struct LlmRequest {
@@ -157,6 +166,7 @@ pub struct LlmRequest {
     pub max_tokens: u32,
     pub temperature: f32,
     pub stream: bool,
+    pub thinking_config: Option<ThinkingConfig>,
 }
 
 impl Default for LlmRequest {
@@ -167,6 +177,7 @@ impl Default for LlmRequest {
             max_tokens: 4096,
             temperature: 0.7,
             stream: true,
+            thinking_config: None,
         }
     }
 }

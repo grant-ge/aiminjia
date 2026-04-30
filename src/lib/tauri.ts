@@ -13,7 +13,11 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-import type { Message } from '@/types/message'
+import { recordDiagnostic, recordDiagnosticError } from './diagnostics'
+export type { DiagnosticLevel, FrontendDiagnosticPayload } from './tauriDiagnostics'
+export { recordFrontendDiagnostic } from './tauriDiagnostics'
+
+import type { Message, SubAgentTranscriptEntry } from '@/types/message'
 import type { Settings } from '@/types/settings'
 
 // ---------------------------------------------------------------------------
@@ -24,8 +28,11 @@ export const TAURI_EVENTS = {
   STREAMING_DELTA: 'streaming:delta',
   STREAMING_DONE: 'streaming:done',
   STREAMING_ERROR: 'streaming:error',
+  STREAMING_RETRY_RESET: 'streaming:retry-reset',
   MESSAGE_UPDATED: 'message:updated',
   ANALYSIS_STEP_CHANGED: 'analysis:step-changed',
+  STOP_PREVENTED_CONTINUATION: 'stop:prevented-continuation',
+  /** @deprecated 后端不发送此事件 */
   FILE_PARSED: 'file:parsed',
   FILE_GENERATED: 'file:generated',
   NOTIFICATION: 'notification',
@@ -34,9 +41,15 @@ export const TAURI_EVENTS = {
   CONVERSATION_TITLE_UPDATED: 'conversation:title-updated',
   AGENT_IDLE: 'agent:idle',
   AGENT_PHASE: 'agent:phase',
+  TASK_STATUS_CHANGED: 'task:status-changed',
   STREAMING_STEP_RESET: 'streaming:step-reset',
   AUTH_EXPIRED: 'auth:expired',
   SKILL_FILE_CHANGED: 'skill-file-changed',
+  PERMISSION_ASK: 'permission:ask',
+  INTERACTION_REQUIRED: 'interaction:required',
+  INTERACTION_RESOLVED: 'interaction:resolved',
+  TURN_COMPLETED: 'turn:completed',
+  DIAGNOSTICS_EVENT: 'diagnostics:event',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -50,22 +63,24 @@ export interface StreamingDeltaPayload {
 
 export interface StreamingDonePayload {
   conversationId: string
-  messageId: string
 }
 
 export interface StreamingErrorPayload {
   conversationId: string
   error: string
-  errorType?: 'chunk_timeout' | 'stream_error' | 'gateway_error' | 'agent_timeout'
   rawError?: string
-  partialContent?: boolean
-  timeoutSeconds?: number
-  iteration?: number
-  maxIterations?: number
+}
+
+export interface StreamingRetryResetPayload {
+  conversationId: string
+  runId?: string
 }
 
 export interface AgentIdlePayload {
   conversationId: string
+  runId?: string
+  agentId?: string
+  scope?: 'primary' | 'child'
 }
 
 export interface AgentPhasePayload {
@@ -87,14 +102,37 @@ export interface ToolExecutingPayload {
   toolName: string
   toolId: string
   purpose?: string
+  input?: unknown  // 完整入参 JSON 对象
 }
 
+/** @deprecated tool:completed 现在直接推完整 Message，保留此类型仅供旧引用过渡 */
 export interface ToolCompletedPayload {
   conversationId: string
   toolName: string
   toolId: string
   success: boolean
   summary?: string
+}
+
+export interface ChatAttachmentPayload {
+  id: string
+  fileName: string
+  filePath: string
+  kind: 'file' | 'folder' | 'image'
+  fileSize: number
+  fileType: 'excel' | 'csv' | 'word' | 'pdf' | 'json' | 'folder' | 'image'
+  mimeType?: string
+}
+
+export interface SavedClipboardAttachmentPayload {
+  fileName: string
+  path: string
+  fileSize: number
+  mimeType: string
+}
+
+export function readClipboardFilePaths(): Promise<string[]> {
+  return invoke<string[]>('read_clipboard_file_paths')
 }
 
 export interface FileGeneratedPayload {
@@ -110,6 +148,112 @@ export interface FileGeneratedPayload {
   degradationNotice: string | null
 }
 
+export interface TaskStatusChangedPayload {
+  conversationId: string
+  taskId: string
+  status: string
+  runId: string
+  subject: string
+  description?: string
+  activeForm?: string
+  owner?: string
+  blockedBy?: string[]
+  createdAt?: string
+}
+
+export interface PermissionAskPayload {
+  conversationId: string
+  runId: string
+  toolCallId: string
+  toolName: string
+  message: string
+  suggestions: string[] | null
+  mode: 'default' | 'plan' | 'dontAsk'
+  rememberOptions: Array<'session' | 'workspace' | 'user'> | null
+  defaultDestination: 'session' | 'workspace' | 'user' | null
+}
+
+export interface QuestionOption {
+  label: string
+  description: string
+  preview?: string
+}
+
+export interface Question {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiSelect?: boolean
+}
+
+export interface InteractionRequiredPayload {
+  conversationId: string
+  runId: string
+  interactionId: string
+  toolCallId: string
+  toolName: string
+  kind: 'askUserQuestion'
+  payload: {
+    questions: Question[]
+    metadata?: unknown
+  }
+}
+
+export interface InteractionResolvedPayload {
+  conversationId: string
+  runId: string
+  interactionId: string
+}
+
+export type TurnOutcome =
+  | 'Success'
+  | 'Cancelled'
+  | 'MaxIterationsReached'
+  | 'BudgetExceeded'
+  | 'ExecutionError'
+
+export interface TurnCompletedPayload {
+  conversationId: string
+  runId: string
+  outcome: TurnOutcome
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCostUsd?: number | null
+  permissionDenialCount: number
+  iterations?: number
+  reason?: string
+  message?: string
+}
+
+export interface DiagnosticsEventPayload {
+  ts: string
+  seq: number
+  category: 'diagnostics'
+  level: 'debug' | 'info' | 'warn' | 'error'
+  source: 'frontend' | 'backend'
+  event: string
+  ok?: boolean
+  conversationId?: string
+  runId?: string
+  messageId?: string
+  clientMessageId?: string
+  toolCallId?: string
+  agentId?: string
+  interactionId?: string
+  taskId?: string
+  command?: string
+  durationMs?: number
+  elapsedMs?: number
+  error?: string
+  payload?: unknown
+}
+
+export interface AgentInfo {
+  name: string
+  description: string
+  source: 'builtin' | 'user'
+}
+
 // ---------------------------------------------------------------------------
 // Chat Commands
 // ---------------------------------------------------------------------------
@@ -119,14 +263,40 @@ export interface FileGeneratedPayload {
  *
  * @param conversationId - Target conversation ID
  * @param content - The user's message text
- * @param fileIds - Optional list of uploaded file IDs to attach
+ * @param attachments - Optional list of structured attachments to attach
  */
-export function sendMessage(conversationId: string, content: string, fileIds?: string[]): Promise<void> {
+export function sendMessage(
+  conversationId: string,
+  content: string,
+  attachments?: ChatAttachmentPayload[],
+  agentName?: string | null,
+  clientMessageId?: string,
+  selectedSkillId?: string | null,
+  selectedSkillLabel?: string | null,
+): Promise<void> {
   return invoke<void>('send_message', {
     conversationId,
     content,
-    fileIds: fileIds ?? [],
+    attachments: attachments ?? [],
+    agentName: agentName ?? null,
+    clientMessageId: clientMessageId ?? null,
+    selectedSkillId: selectedSkillId ?? null,
+    selectedSkillLabel: selectedSkillLabel ?? null,
   })
+}
+
+export function saveClipboardImageToTmp(
+  bytes: number[],
+  mimeType: string,
+): Promise<SavedClipboardAttachmentPayload> {
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_tmp_dir', {
+    bytes,
+    mimeType,
+  })
+}
+
+export function listAgents(): Promise<AgentInfo[]> {
+  return invoke<AgentInfo[]>('list_agents')
 }
 
 /**
@@ -136,6 +306,55 @@ export function sendMessage(conversationId: string, content: string, fileIds?: s
  */
 export function stopStreaming(conversationId: string): Promise<void> {
   return invoke<void>('stop_streaming', { conversationId })
+}
+
+export function approvePermissionRequest(
+  toolCallId: string,
+  updatedInput: unknown,
+  remember?: boolean,
+  destination?: 'session' | 'workspace' | 'user',
+): Promise<void> {
+  return invoke<void>('approve_permission_request', {
+    toolCallId,
+    updatedInput,
+    remember,
+    destination,
+  })
+}
+
+export function denyPermissionRequest(
+  toolCallId: string,
+  message?: string,
+  remember?: boolean,
+  destination?: 'session' | 'workspace' | 'user',
+): Promise<void> {
+  return invoke<void>('deny_permission_request', {
+    toolCallId,
+    message,
+    remember,
+    destination,
+  })
+}
+
+export function cancelPermissionRequest(
+  toolCallId: string,
+  message?: string,
+): Promise<void> {
+  return invoke<void>('cancel_permission_request', { toolCallId, message })
+}
+
+export function submitUserInteraction(
+  interactionId: string,
+  value: { answers: Record<string, string>; annotations?: Record<string, unknown> },
+): Promise<void> {
+  return invoke<void>('submit_user_interaction', { interactionId, value })
+}
+
+export function cancelUserInteraction(
+  interactionId: string,
+  message?: string,
+): Promise<void> {
+  return invoke<void>('cancel_user_interaction', { interactionId, message })
 }
 
 /**
@@ -150,6 +369,55 @@ export function getMessages(conversationId: string): Promise<Message[]> {
   })
 }
 
+export function getTasks(
+  conversationId: string,
+): Promise<import('@/stores/streamingStore').ConversationTaskState[]> {
+  return invoke('get_tasks', { conversationId })
+}
+
+export type ScheduleStatus = 'enabled' | 'disabled'
+
+export interface ScheduleRecord {
+  id: string
+  title: string
+  prompt: string
+  cron: string
+  humanSchedule: string
+  status: ScheduleStatus
+  nextRunAt?: string | null
+  timezone: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateScheduleRequest {
+  title: string
+  prompt: string
+  cron: string
+  timezone?: string
+  enabled?: boolean
+}
+
+export function listSchedules(): Promise<ScheduleRecord[]> {
+  return invoke<ScheduleRecord[]>('list_schedules')
+}
+
+export function createSchedule(request: CreateScheduleRequest): Promise<ScheduleRecord> {
+  return invoke<ScheduleRecord>('create_schedule', { request })
+}
+
+export function deleteSchedule(id: string): Promise<boolean> {
+  return invoke<boolean>('delete_schedule', { id })
+}
+
+export function getSubagentTranscript(
+  transcriptRef: string,
+): Promise<SubAgentTranscriptEntry[]> {
+  return invoke<SubAgentTranscriptEntry[]>('get_subagent_transcript', {
+    transcriptRef,
+  })
+}
+
 /**
  * Create a new empty conversation.
  *
@@ -157,6 +425,19 @@ export function getMessages(conversationId: string): Promise<Message[]> {
  */
 export function createConversation(): Promise<string> {
   return invoke<string>('create_conversation')
+}
+
+export function getConversationModelOverride(conversationId: string): Promise<string | null> {
+  return invoke<string | null>('get_conversation_model_override', {
+    conversationId,
+  })
+}
+
+export function setConversationModelOverride(conversationId: string, model: string | null): Promise<void> {
+  return invoke<void>('set_conversation_model_override', {
+    conversationId,
+    model,
+  })
 }
 
 /**
@@ -192,6 +473,18 @@ export function renameConversation(conversationId: string, newTitle: string): Pr
   })
 }
 
+export function archiveConversation(conversationId: string): Promise<void> {
+  return invoke<void>('archive_conversation', { conversationId })
+}
+
+export function restoreConversation(conversationId: string): Promise<void> {
+  return invoke<void>('restore_conversation', { conversationId })
+}
+
+export function getArchivedConversations(): Promise<Array<{ id: string; title: string; updatedAt: string; isArchived: boolean }>> {
+  return invoke('get_archived_conversations')
+}
+
 /**
  * Check which conversations currently have active agent tasks.
  *
@@ -199,38 +492,6 @@ export function renameConversation(conversationId: string, newTitle: string): Pr
  */
 export function isAgentBusy(): Promise<string[]> {
   return invoke<string[]>('is_agent_busy')
-}
-
-/**
- * Export a conversation to PDF or HTML format.
- *
- * @param conversationId - The conversation to export
- * @param format - Export format: 'pdf' or 'html'
- * @returns File info for the generated export
- */
-export interface ExportConversationResult {
-  fileId: string
-  fileName: string
-  storedPath: string
-  fileSize: number
-  /** Format the user asked for (e.g. "pdf"). */
-  requestedFormat: string
-  /** Format actually produced (may differ from requested on fallback). */
-  actualFormat: string
-  /** True when the requested format could not be generated and a fallback was produced. */
-  wasFallback: boolean
-  /** Human-readable explanation of why the fallback happened. */
-  fallbackMessage?: string | null
-}
-
-export function exportConversation(
-  conversationId: string,
-  format: 'pdf' | 'html',
-): Promise<ExportConversationResult> {
-  return invoke<ExportConversationResult>('export_conversation', {
-    conversationId,
-    format,
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +550,24 @@ export function previewFile(fileId: string, conversationId: string): Promise<str
     fileId,
     conversationId,
   })
+}
+
+export type FilePreview =
+  | { kind: 'markdown' | 'text' | 'json' | 'csv'; fileName: string; mimeType: string; content: string }
+  | { kind: 'html'; fileName: string; mimeType: 'text/html'; content: string; sandbox: true }
+  | { kind: 'image'; fileName: string; mimeType: string; dataUrl: string }
+  | { kind: 'unsupported'; fileName: string; reason: string }
+
+export function getFilePreview(fileId: string, conversationId: string): Promise<FilePreview> {
+  return invoke<FilePreview>('get_file_preview', { fileId, conversationId })
+}
+
+export function getLocalFilePreview(path: string): Promise<FilePreview> {
+  return invoke<FilePreview>('get_local_file_preview', { path })
+}
+
+export function openLocalFile(path: string): Promise<void> {
+  return invoke<void>('open_local_file', { path })
 }
 
 /**
@@ -420,6 +699,81 @@ export function getWorkspaceInfo(): Promise<string> {
   return invoke<string>('get_workspace_info')
 }
 
+// ---------------------------------------------------------------------------
+// Authorized Workspace Commands (Phase W1)
+// ---------------------------------------------------------------------------
+
+/** Lightweight reference to an authorized local directory. */
+export interface AuthorizedWorkspaceRef {
+  id: string
+  rootPath: string
+  displayName: string
+}
+
+interface PickLocalDirectoryOptions {
+  defaultPath?: string
+  title?: string
+}
+
+/**
+ * Open the native folder picker and return the selected directory path.
+ *
+ * @param options - Optional initial directory and custom title
+ * @returns Absolute path string, or null when the user cancels
+ */
+export function pickLocalDirectory(
+  options?: PickLocalDirectoryOptions,
+): Promise<string | null> {
+  return invoke<string | null>('pick_local_directory', {
+    defaultPath: options?.defaultPath ?? null,
+    title: options?.title ?? null,
+  })
+}
+
+/**
+ * Authorize a local directory for tool access within a session.
+ * Replaces any previously authorized directory for the same session.
+ *
+ * @param path - Absolute path to the directory to authorize
+ * @param sessionId - The session that will own this authorization
+ * @returns A reference to the newly authorized workspace
+ */
+export function authorizeLocalDirectory(
+  path: string,
+  sessionId: string,
+): Promise<AuthorizedWorkspaceRef> {
+  return invoke<AuthorizedWorkspaceRef>('authorize_local_directory', { path, sessionId })
+}
+
+/**
+ * Get the currently authorized workspace for a session.
+ *
+ * @param sessionId - The session to query
+ * @returns The authorized workspace ref, or null if none is set
+ */
+export function getAuthorizedWorkspace(
+  sessionId: string,
+): Promise<AuthorizedWorkspaceRef | null> {
+  return invoke<AuthorizedWorkspaceRef | null>('get_authorized_workspace', { sessionId })
+}
+
+/**
+ * Get the default folder (~/.renlijia/defaultFolder) as a workspace ref.
+ * Always returns a value; the directory is guaranteed to exist at startup.
+ */
+export function getDefaultFolder(): Promise<AuthorizedWorkspaceRef> {
+  return invoke<AuthorizedWorkspaceRef>('get_default_folder')
+}
+
+/**
+ * Revoke the authorized workspace for a session.
+ *
+ * @param sessionId - The session whose authorization should be cleared
+ */
+export function revokeAuthorizedWorkspace(sessionId: string): Promise<void> {
+  return invoke<void>('revoke_authorized_workspace', { sessionId })
+}
+
 /**
  * Open the logs directory in the system file manager.
  */
@@ -461,6 +815,7 @@ export function clearMetrics(): Promise<{ deletedFiles: number }> {
 export function getMetricsInfo(): Promise<{ entryCount: number; totalBytes: number }> {
   return invoke<{ entryCount: number; totalBytes: number }>('get_metrics_info')
 }
+
 
 // ---------------------------------------------------------------------------
 // Plugin Commands
@@ -607,32 +962,32 @@ export function cloudChangePassword(oldPassword: string, newPassword: string): P
 // Persona Commands
 // ---------------------------------------------------------------------------
 
-/** List all personas (summaries only). */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function listPersonas(): Promise<PersonaSummary[]> {
   return invoke<PersonaSummary[]>('list_personas')
 }
 
-/** Get a persona by ID. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function getPersona(id: string): Promise<Persona> {
   return invoke<Persona>('get_persona', { id })
 }
 
-/** Save a persona (create or update). */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function savePersona(persona: Persona): Promise<void> {
   return invoke<void>('save_persona', { persona })
 }
 
-/** Delete a persona by ID. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function deletePersona(id: string): Promise<void> {
   return invoke<void>('delete_persona', { id })
 }
 
-/** Set active persona. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function setActivePersona(id: string): Promise<void> {
   return invoke<void>('set_active_persona', { id })
 }
 
-/** Get active persona. */
+/** @deprecated 前端 Skill-First 改版后不再引用，仅为后端兼容保留。 */
 export function getActivePersona(): Promise<Persona> {
   return invoke<Persona>('get_active_persona')
 }
@@ -651,6 +1006,70 @@ export function importPersonas(json: string): Promise<string> {
 // Typed Event Listeners
 // ---------------------------------------------------------------------------
 
+interface TauriEventEnvelope<T> {
+  payload: T
+}
+
+function getStringField(payload: unknown, key: string): string | undefined {
+  if (!payload || typeof payload !== 'object' || !(key in payload)) return undefined
+  const value = (payload as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function getConversationIdFromPayload(payload: unknown): string | undefined {
+  return getStringField(payload, 'conversationId')
+}
+
+function getRunIdFromPayload(payload: unknown): string | undefined {
+  return getStringField(payload, 'runId')
+}
+
+export function createInstrumentedEventHandler<T>(
+  eventName: string,
+  handler: (event: TauriEventEnvelope<T>) => void | Promise<void>,
+): (event: TauriEventEnvelope<T>) => Promise<void> {
+  return async (event) => {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const conversationId = getConversationIdFromPayload(event.payload)
+    const runId = getRunIdFromPayload(event.payload)
+
+    recordDiagnostic({
+      event: 'event.received',
+      conversationId,
+      runId,
+      payload: { eventName, payload: event.payload },
+    })
+    recordDiagnostic({
+      event: 'event.handler.started',
+      conversationId,
+      runId,
+      payload: { eventName },
+    })
+
+    try {
+      await handler(event)
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      recordDiagnostic({
+        event: 'event.handler.completed',
+        ok: true,
+        conversationId,
+        runId,
+        durationMs: Math.round(endedAt - startedAt),
+        payload: { eventName },
+      })
+    } catch (error) {
+      const endedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      recordDiagnosticError('event.handler.failed', error, {
+        conversationId,
+        runId,
+        durationMs: Math.round(endedAt - startedAt),
+        payload: { eventName },
+      })
+      throw error
+    }
+  }
+}
+
 /**
  * Listen for streaming text deltas as the AI model generates a response.
  *
@@ -660,9 +1079,9 @@ export function importPersonas(json: string): Promise<string> {
 export function onStreamingDelta(
   handler: (payload: StreamingDeltaPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDeltaPayload>(TAURI_EVENTS.STREAMING_DELTA, (event) => {
+  return listen<StreamingDeltaPayload>(TAURI_EVENTS.STREAMING_DELTA, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DELTA, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -674,9 +1093,9 @@ export function onStreamingDelta(
 export function onStreamingDone(
   handler: (payload: StreamingDonePayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingDonePayload>(TAURI_EVENTS.STREAMING_DONE, (event) => {
+  return listen<StreamingDonePayload>(TAURI_EVENTS.STREAMING_DONE, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_DONE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -688,9 +1107,17 @@ export function onStreamingDone(
 export function onStreamingError(
   handler: (payload: StreamingErrorPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, (event) => {
+  return listen<StreamingErrorPayload>(TAURI_EVENTS.STREAMING_ERROR, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_ERROR, (event) => {
     handler(event.payload)
-  })
+  }))
+}
+
+export function onStreamingRetryReset(
+  handler: (payload: StreamingRetryResetPayload) => void,
+): Promise<() => void> {
+  return listen<StreamingRetryResetPayload>(TAURI_EVENTS.STREAMING_RETRY_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_RETRY_RESET, (event) => {
+    handler(event.payload)
+  }))
 }
 
 /**
@@ -703,9 +1130,9 @@ export function onStreamingError(
 export function onMessageUpdated(
   handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<Message>(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
+  return listen<Message>(TAURI_EVENTS.MESSAGE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.MESSAGE_UPDATED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -717,9 +1144,9 @@ export function onMessageUpdated(
 export function onAnalysisStepChanged(
   handler: (payload: { step: number; status: string }) => void,
 ): Promise<() => void> {
-  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
+  return listen<{ step: number; status: string }>(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.ANALYSIS_STEP_CHANGED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -731,9 +1158,9 @@ export function onAnalysisStepChanged(
 export function onNotification(
   handler: (payload: { level: string; title: string; message: string }) => void,
 ): Promise<() => void> {
-  return listen<{ level: string; title: string; message: string }>(TAURI_EVENTS.NOTIFICATION, (event) => {
+  return listen<{ level: string; title: string; message: string }>(TAURI_EVENTS.NOTIFICATION, createInstrumentedEventHandler(TAURI_EVENTS.NOTIFICATION, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -745,9 +1172,9 @@ export function onNotification(
 export function onToolExecuting(
   handler: (payload: ToolExecutingPayload) => void,
 ): Promise<() => void> {
-  return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
+  return listen<ToolExecutingPayload>(TAURI_EVENTS.TOOL_EXECUTING, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_EXECUTING, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -757,11 +1184,11 @@ export function onToolExecuting(
  * @returns A function to unlisten (unsubscribe) from the event
  */
 export function onToolCompleted(
-  handler: (payload: ToolCompletedPayload) => void,
+  handler: (payload: Message) => void,
 ): Promise<() => void> {
-  return listen<ToolCompletedPayload>(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
+  return listen<Message>(TAURI_EVENTS.TOOL_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TOOL_COMPLETED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -773,9 +1200,9 @@ export function onToolCompleted(
 export function onConversationTitleUpdated(
   handler: (payload: { conversationId: string; title: string }) => void,
 ): Promise<() => void> {
-  return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
+  return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -787,9 +1214,9 @@ export function onConversationTitleUpdated(
 export function onAgentIdle(
   handler: (payload: AgentIdlePayload) => void,
 ): Promise<() => void> {
-  return listen<AgentIdlePayload>(TAURI_EVENTS.AGENT_IDLE, (event) => {
+  return listen<AgentIdlePayload>(TAURI_EVENTS.AGENT_IDLE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_IDLE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -801,9 +1228,9 @@ export function onAgentIdle(
 export function onAgentPhase(
   handler: (payload: AgentPhasePayload) => void,
 ): Promise<() => void> {
-  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, (event) => {
+  return listen<AgentPhasePayload>(TAURI_EVENTS.AGENT_PHASE, createInstrumentedEventHandler(TAURI_EVENTS.AGENT_PHASE, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -816,9 +1243,9 @@ export function onAgentPhase(
 export function onStreamingStepReset(
   handler: (payload: StreamingStepResetPayload) => void,
 ): Promise<() => void> {
-  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
+  return listen<StreamingStepResetPayload>(TAURI_EVENTS.STREAMING_STEP_RESET, createInstrumentedEventHandler(TAURI_EVENTS.STREAMING_STEP_RESET, (event) => {
     handler(event.payload)
-  })
+  }))
 }
 
 /**
@@ -831,7 +1258,61 @@ export function onStreamingStepReset(
 export function onFileGenerated(
   handler: (payload: FileGeneratedPayload) => void,
 ): Promise<() => void> {
-  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, (event) => {
+  return listen<FileGeneratedPayload>(TAURI_EVENTS.FILE_GENERATED, createInstrumentedEventHandler(TAURI_EVENTS.FILE_GENERATED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+/**
+ * Listen for task status change events (emitted by the runtime task system).
+ *
+ * @param handler - Callback receiving the task status change payload
+ * @returns A function to unlisten (unsubscribe) from the event
+ */
+export function onTaskStatusChanged(
+  handler: (payload: TaskStatusChangedPayload) => void,
+): Promise<() => void> {
+  return listen<TaskStatusChangedPayload>(TAURI_EVENTS.TASK_STATUS_CHANGED, createInstrumentedEventHandler(TAURI_EVENTS.TASK_STATUS_CHANGED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onPermissionAsk(
+  handler: (payload: PermissionAskPayload) => void,
+): Promise<() => void> {
+  return listen<PermissionAskPayload>(TAURI_EVENTS.PERMISSION_ASK, createInstrumentedEventHandler(TAURI_EVENTS.PERMISSION_ASK, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onInteractionRequired(
+  handler: (payload: InteractionRequiredPayload) => void,
+): Promise<() => void> {
+  return listen<InteractionRequiredPayload>(TAURI_EVENTS.INTERACTION_REQUIRED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_REQUIRED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onInteractionResolved(
+  handler: (payload: InteractionResolvedPayload) => void,
+): Promise<() => void> {
+  return listen<InteractionResolvedPayload>(TAURI_EVENTS.INTERACTION_RESOLVED, createInstrumentedEventHandler(TAURI_EVENTS.INTERACTION_RESOLVED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onTurnCompleted(
+  handler: (payload: TurnCompletedPayload) => void,
+): Promise<() => void> {
+  return listen<TurnCompletedPayload>(TAURI_EVENTS.TURN_COMPLETED, createInstrumentedEventHandler(TAURI_EVENTS.TURN_COMPLETED, (event) => {
+    handler(event.payload)
+  }))
+}
+
+export function onDiagnosticsEvent(
+  handler: (payload: DiagnosticsEventPayload) => void,
+): Promise<() => void> {
+  return listen<DiagnosticsEventPayload>(TAURI_EVENTS.DIAGNOSTICS_EVENT, (event) => {
     handler(event.payload)
   })
 }
@@ -848,54 +1329,9 @@ export interface AuthExpiredPayload {
 export function onAuthExpired(
   handler: (payload: AuthExpiredPayload) => void,
 ): Promise<() => void> {
-  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
+  return listen<AuthExpiredPayload>(TAURI_EVENTS.AUTH_EXPIRED, createInstrumentedEventHandler(TAURI_EVENTS.AUTH_EXPIRED, (event) => {
     handler(event.payload)
-  })
-}
-
-/** Show the CDP browser window (bring active tab to front). */
-export function showBrowseView(): Promise<void> {
-  return invoke<void>('show_browse_view')
-}
-
-// ---------------------------------------------------------------------------
-// Browser Events (WebView → Frontend)
-// ---------------------------------------------------------------------------
-
-export interface BrowserNavigatingPayload {
-  appId?: number
-  url: string
-}
-
-export interface BrowserPageReadyPayload {
-  appId?: number
-  url: string
-  title: string
-}
-
-export interface BrowserClosedPayload {
-  appId?: number
-}
-
-/** Listen for browser navigating events. */
-export function onBrowserNavigating(
-  handler: (payload: BrowserNavigatingPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserNavigatingPayload>('browser:navigating', (event) => handler(event.payload))
-}
-
-/** Listen for browser page-ready events. */
-export function onBrowserPageReady(
-  handler: (payload: BrowserPageReadyPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserPageReadyPayload>('browser:page-ready', (event) => handler(event.payload))
-}
-
-/** Listen for browser closed events. */
-export function onBrowserClosed(
-  handler: (payload: BrowserClosedPayload) => void,
-): Promise<() => void> {
-  return listen<BrowserClosedPayload>('browser:closed', (event) => handler(event.payload))
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -917,8 +1353,11 @@ export function listCustomSkills(): Promise<CustomSkillInfo[]> {
 }
 
 /** Install a custom skill from a local directory. */
-export function installCustomSkill(sourcePath: string): Promise<string> {
-  return invoke<string>('install_custom_skill', { sourcePath })
+export async function installCustomSkill(
+  sourcePath: string,
+  force: boolean = false,
+): Promise<string> {
+  return invoke<string>('install_custom_skill', { sourcePath, force })
 }
 
 /** Uninstall a custom skill by ID. */
@@ -949,170 +1388,6 @@ export function startSkillWatch(skillPath: string): Promise<string> {
 /** Stop watching the skill directory (dev mode). */
 export function stopSkillWatch(): Promise<string> {
   return invoke<string>('stop_skill_watch')
-}
-
-// ---------------------------------------------------------------------------
-// Skill-Smith — conversational skill creation draft file system (T2)
-// ---------------------------------------------------------------------------
-
-/** A file inside a skill-smith draft. Paths are forward-slash normalized. */
-export interface DraftFile {
-  relativePath: string
-  size: number
-  modifiedTs: number
-}
-
-/** Summary of a skill-smith draft (for resume banner, list UI, etc). */
-export interface DraftSummary {
-  draftId: string
-  createdAt: number
-  lastModified: number
-  /** One of: "intent" | "manifest" | "workflow" | "prompts" */
-  stage: string
-  skillName: string | null
-}
-
-/** Create a new empty draft. Returns the 12-char hex draft_id. */
-export function createSkillDraft(): Promise<string> {
-  return invoke<string>('create_skill_draft')
-}
-
-/** Write `content` to `{draft}/{relativePath}`, creating parent dirs. */
-export function writeSkillDraftFile(
-  draftId: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
-  return invoke('write_skill_draft_file', { draftId, relativePath, content })
-}
-
-/** Read a file from a draft. Throws if not found. */
-export function readSkillDraftFile(
-  draftId: string,
-  relativePath: string,
-): Promise<string> {
-  return invoke<string>('read_skill_draft_file', { draftId, relativePath })
-}
-
-/** List all files in a draft (recursive). */
-export function listSkillDraftFiles(draftId: string): Promise<DraftFile[]> {
-  return invoke<DraftFile[]>('list_skill_draft_files', { draftId })
-}
-
-/** List all drafts (for the "resume your draft" banner). */
-export function listSkillDrafts(): Promise<DraftSummary[]> {
-  return invoke<DraftSummary[]>('list_skill_drafts')
-}
-
-/** Delete a draft entirely. */
-export function discardSkillDraft(draftId: string): Promise<void> {
-  return invoke('discard_skill_draft', { draftId })
-}
-
-/** Remove drafts untouched for >7 days. Returns count removed. */
-export function cleanupExpiredDrafts(): Promise<number> {
-  return invoke<number>('cleanup_expired_drafts')
-}
-
-/** A structured schema error or warning from validateSkillDraft. */
-export interface DraftValidationIssue {
-  /** e.g. `"plugin.toml"` / `"prompts/step0.md"` */
-  file: string
-  /** e.g. `"trigger.keywords[0]"` */
-  path: string
-  /** e.g. `"length: 2-30"` / `"enum"` / `"reserved"` */
-  rule: string
-  /** What we actually saw (stringified). */
-  actual: string
-  /** Chinese primary message, may include English in parentheses. */
-  message: string
-  /** Optional hint a downstream LLM can use to fix the field. */
-  fixHint: string | null
-}
-
-/** Validation report returned by `validateSkillDraft`. */
-export interface DraftValidationReport {
-  valid: boolean
-  errors: DraftValidationIssue[]
-  warnings: DraftValidationIssue[]
-  summary: string
-}
-
-/** Validate a draft against the skill schema. Errors block commit; warnings don't. */
-export function validateSkillDraft(draftId: string): Promise<DraftValidationReport> {
-  return invoke<DraftValidationReport>('validate_skill_draft', { draftId })
-}
-
-/** Outcome of a skill-smith commit attempt. */
-export interface SkillCommitResult {
-  skillId: string
-  installedPath: string
-  /** `true` iff a skill with the same id already exists AND we did NOT overwrite.
-   *  Caller should prompt the user to rename, force-overwrite, or cancel. */
-  conflict: boolean
-}
-
-/**
- * Commit a validated draft to `custom_plugins/`. Returns `{ conflict: true }`
- * without making changes if a skill with the same `plugin.id` already exists —
- * caller should then invoke `commitSkillDraftForce` or prompt the user to
- * rename the skill. Errors if validation fails.
- */
-export function commitSkillDraft(draftId: string): Promise<SkillCommitResult> {
-  return invoke<SkillCommitResult>('commit_skill_draft', { draftId })
-}
-
-/** Same as `commitSkillDraft` but overwrites any existing skill with the same id. */
-export function commitSkillDraftForce(draftId: string): Promise<SkillCommitResult> {
-  return invoke<SkillCommitResult>('commit_skill_draft_force', { draftId })
-}
-
-/**
- * Package a validated draft as a `.aijia-skill` zip and place it in `outputDir`.
- * The draft is preserved (unlike commit). Returns the full path to the zip.
- */
-export function exportSkillDraft(draftId: string, outputDir: string): Promise<string> {
-  return invoke<string>('export_skill_draft', { draftId, outputDir })
-}
-
-/** Status of an individual dry-run check. */
-export type DryRunCheckStatus = 'pass' | 'fail' | 'skip' | 'warn'
-
-/** One of the six dry-run checks (schema / prompts-reference / prompts-content / python-scripts / knowledge / loadable). */
-export interface DryRunCheck {
-  /** Stable machine id — safe to match on. */
-  name: string
-  status: DryRunCheckStatus
-  detail: string
-}
-
-/** Full dry-run report returned by `dryRunSkillDraft`. */
-export interface DryRunReport {
-  /** `true` iff no check has status "fail". Warnings and skips don't block. */
-  pass: boolean
-  checks: DryRunCheck[]
-  summary: string
-}
-
-/**
- * Static dry-run — verifies the draft's plumbing (schema, prompts, JSON syntax,
- * loadability) without invoking any LLM or running Python. Safe to call as
- * often as needed; no side effects.
- */
-export function dryRunSkillDraft(draftId: string): Promise<DryRunReport> {
-  return invoke<DryRunReport>('dry_run_skill_draft', { draftId })
-}
-
-/**
- * Listen for skill file change events (dev mode hot-reload).
- * The payload is the skill directory path that changed.
- */
-export function onSkillFileChanged(
-  handler: (skillPath: string) => void,
-): Promise<() => void> {
-  return listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => {
-    handler(event.payload)
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,6 +1444,153 @@ export function installMarketplaceSkill(
     packageId,
     pluginId,
   })
+}
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// MCP Server Commands
+// ---------------------------------------------------------------------------
+
+export interface McpServerConfig {
+  name: string
+  transportType: string
+  endpoint: string
+  envVars?: Record<string, string>
+}
+
+export interface McpServerStatus {
+  name: string
+  transportType: string
+  endpoint: string
+  state: 'configured' | 'connecting' | 'ready' | 'failed' | 'disconnected'
+  registeredToolIds: string[]
+  lastError: string | null
+}
+
+export function listMcpServers(): Promise<McpServerStatus[]> {
+  return invoke<McpServerStatus[]>('list_mcp_servers')
+}
+
+export function addMcpServer(config: McpServerConfig): Promise<void> {
+  return invoke<void>('add_mcp_server', { config })
+}
+
+export function removeMcpServer(serverName: string): Promise<void> {
+  return invoke<void>('remove_mcp_server', { serverName })
+}
+
+export function connectMcpServer(serverName: string): Promise<McpServerStatus> {
+  return invoke<McpServerStatus>('connect_mcp_server', { serverName })
+}
+
+export function disconnectMcpServer(serverName: string): Promise<void> {
+  return invoke<void>('disconnect_mcp_server', { serverName })
+}
+
+// ---------------------------------------------------------------------------
+// Project Memory Commands
+// ---------------------------------------------------------------------------
+
+export interface ProjectMemoryEntryDraft {
+  memoryType: 'user_preference' | 'project_constraint' | 'reference_info' | 'feedback'
+  name: string
+  description: string
+  content: string
+  source?: string
+}
+
+export function saveProjectMemory(
+  workspacePath: string,
+  memory: ProjectMemoryEntryDraft,
+): Promise<string> {
+  return invoke<string>('save_project_memory', { workspacePath, memory })
+}
+
+export function distillProjectMemory(workspacePath: string): Promise<number> {
+  return invoke<number>('distill_project_memory', { workspacePath })
+}
+
+// ---------------------------------------------------------------------------
+// Runtime Commands
+// ---------------------------------------------------------------------------
+
+export interface RuntimeToolHealth {
+  version: string
+  path: string
+}
+
+export interface RuntimeHealth {
+  bundleVersion: string
+  node: RuntimeToolHealth | null
+  npm: RuntimeToolHealth | null
+  npx: RuntimeToolHealth | null
+  python: RuntimeToolHealth | null
+  uv: RuntimeToolHealth | null
+  uvx: RuntimeToolHealth | null
+}
+
+
+export type RuntimeOperationKind = 'ensure' | 'reinstall'
+export type RuntimeOperationPhase =
+  | 'manifest'
+  | 'download'
+  | 'checksum'
+  | 'extract'
+  | 'smokeTest'
+  | 'promote'
+  | 'health'
+export type RuntimeOperationStatus = 'started' | 'progress' | 'retrying' | 'completed' | 'failed' | 'cancelled'
+
+export interface RuntimeOperationProgressPayload {
+  operationId: string
+  kind: RuntimeOperationKind
+  phase: RuntimeOperationPhase
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+  percent?: number | null
+  attempt: number
+  maxAttempts: number
+  resumed: boolean
+  status: RuntimeOperationStatus
+  message?: string | null
+  error?: string | null
+}
+
+export interface RuntimeCleanupResult {
+  removedVersions: string[]
+  keptVersions: string[]
+}
+
+export const RUNTIME_OPERATION_PROGRESS = 'runtime:operation-progress'
+
+export async function onRuntimeOperationProgress(
+  handler: (payload: RuntimeOperationProgressPayload) => void,
+): Promise<() => void> {
+  const { listen } = await import('@tauri-apps/api/event')
+  return listen<RuntimeOperationProgressPayload>(RUNTIME_OPERATION_PROGRESS, (event) => {
+    handler(event.payload)
+  })
+}
+
+export function getRuntimeHealth(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_get_health')
+}
+
+export function ensureRuntime(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_ensure')
+}
+
+export function reinstallRuntime(): Promise<RuntimeHealth> {
+  return invoke<RuntimeHealth>('runtime_reinstall')
+}
+
+
+export function cancelRuntimeOperation(operationId: string): Promise<boolean> {
+  return invoke<boolean>('runtime_cancel_operation', { operationId })
+}
+
+export function cleanupOldRuntimeVersions(keepVersions: number): Promise<RuntimeCleanupResult> {
+  return invoke<RuntimeCleanupResult>('runtime_cleanup_old_versions', { keepVersions })
 }
 
 // ---------------------------------------------------------------------------

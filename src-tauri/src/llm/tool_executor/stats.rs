@@ -6,9 +6,24 @@ use serde_json::Value;
 use crate::plugin::context::PluginContext;
 use crate::python::runner::PythonRunner;
 
-use super::{optional_str, require_str};
 use super::optional_f64;
-use super::util::{py_escape, indent_python};
+use super::util::{indent_python, py_escape};
+use super::{optional_str, require_str};
+
+fn managed_python_runner(ctx: &PluginContext) -> Result<PythonRunner> {
+    let resolver = ctx
+        .runtime_resolver
+        .as_ref()
+        .ok_or_else(|| anyhow!("managed runtime resolver is required for Python tools"))?;
+    let deps = resolver.workspace_dependencies()?;
+    let sandbox = crate::python::sandbox::SandboxConfig::for_workspace(&ctx.workspace_path);
+    Ok(PythonRunner::with_config_from_path(
+        deps.python,
+        None,
+        ctx.workspace_path.clone(),
+        sandbox,
+    ))
+}
 
 /// 6. hypothesis_test — run a statistical hypothesis test via Python.
 pub(crate) async fn handle_hypothesis_test(ctx: &PluginContext, args: &Value) -> Result<String> {
@@ -25,7 +40,7 @@ pub(crate) async fn handle_hypothesis_test(ctx: &PluginContext, args: &Value) ->
     let python_code =
         build_hypothesis_test_python(test_type, &group_names, data_source, significance_level)?;
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     if result.exit_code != 0 {
@@ -51,7 +66,7 @@ pub(crate) async fn handle_detect_anomalies(ctx: &PluginContext, args: &Value) -
 
     let python_code = build_anomaly_detection_python(column, method, threshold, group_by)?;
 
-    let runner = PythonRunner::new(ctx.workspace_path.clone(), ctx.app_handle.as_ref());
+    let runner = managed_python_runner(ctx)?;
     let result = runner.execute(&python_code).await?;
 
     if result.exit_code != 0 {
@@ -74,8 +89,7 @@ fn build_hypothesis_test_python(
     data_source: Option<&str>,
     significance_level: f64,
 ) -> Result<String> {
-    let groups_json =
-        serde_json::to_string(groups).unwrap_or_else(|_| "[]".to_string());
+    let groups_json = serde_json::to_string(groups).unwrap_or_else(|_| "[]".to_string());
 
     let load_data = if let Some(source) = data_source {
         let escaped_source = py_escape(source);
@@ -432,7 +446,8 @@ mod tests {
 
     #[test]
     fn test_build_anomaly_detection_iqr() {
-        let code = build_anomaly_detection_python("salary", "iqr", 1.5, Some("department")).unwrap();
+        let code =
+            build_anomaly_detection_python("salary", "iqr", 1.5, Some("department")).unwrap();
         assert!(code.contains("detect_iqr"));
         assert!(code.contains("salary"));
         assert!(code.contains("multiplier = 1.5"));

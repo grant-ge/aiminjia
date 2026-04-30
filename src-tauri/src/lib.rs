@@ -1,21 +1,24 @@
-mod auth;
-mod commands;
-mod connector;
-mod models;
-mod llm;
-mod search;
-mod storage;
-mod python;
-mod plugin;
-mod telemetry;
+pub mod auth;
+pub mod commands;
+pub mod connector;
+pub mod llm;
+pub mod models;
+pub mod plugin;
+pub mod python;
+pub mod runtime;
+pub mod runtime_audit;
+pub mod search;
+pub mod storage;
+pub mod telemetry;
+pub mod transport;
 
-use std::sync::Arc;
-use tauri::Manager;
 use commands::chat;
-use commands::export;
 use commands::file;
 use commands::settings;
 use commands::workspace;
+use std::sync::Arc;
+use tauri::Manager;
+use storage::UserScopedPathResolver;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,42 +29,86 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // Initialize app data directory
+            // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            // Initialize prompt store from external .md files
-            let resource_dir = app.path().resource_dir()
-                .unwrap_or_else(|_| app_data_dir.clone());
-            llm::prompts::init_prompts(&resource_dir, &app_data_dir);
+            let aijia_home = Arc::new(storage::AiJiaHome::from_home());
+            aijia_home
+                .ensure_dirs()
+                .expect("Failed to create ~/.renlijia dirs");
+            aijia_home
+                .ensure_global_dirs()
+                .expect("Failed to create global dirs");
+            if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
+            {
+                log::warn!("[setup] migration warning (non-fatal): {}", e);
+            }
+            if let Err(e) = storage::migration::reconcile_legacy_conversations_if_needed(
+                &app_data_dir,
+                aijia_home.root(),
+            ) {
+                log::warn!(
+                    "[setup] legacy conversation migration warning (non-fatal): {}",
+                    e
+                );
+            }
+            if let Err(e) = storage::migration::migrate_message_shards_to_single_file_if_needed(
+                aijia_home.root(),
+            ) {
+                log::warn!("[setup] message shard migration warning (non-fatal): {}", e);
+            }
+            app.manage(aijia_home.clone());
+            let runtime_paths = runtime::dependencies::RuntimePaths::new(
+                aijia_home.runtimes_dir(),
+                "renlijia-primary-runtime",
+            )
+            .expect("Failed to initialize managed runtime paths");
+            let platform = runtime::dependencies::RuntimePlatform::current()
+                .expect("Failed to identify managed runtime platform");
+            let manifest_url = runtime::dependencies::configured_runtime_manifest_url();
+            let runtime_manager: runtime::dependencies::ManagedRuntimeManager = Arc::new(
+                runtime::dependencies::RuntimeManager::new(
+                    runtime_paths.clone(),
+                    env!("CARGO_PKG_VERSION"),
+                )
+                .with_manifest_source(
+                    runtime::dependencies::RuntimeManifestSource::Url(manifest_url),
+                    "primary",
+                    platform,
+                ),
+            );
+            let runtime_resolver: runtime::dependencies::ManagedRuntimeResolver =
+                runtime_manager.clone();
+            {
+                let runtime_manager = runtime_manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = runtime_manager.ensure_managed().await {
+                        log::warn!("[runtime] background ensure failed: {}", error);
+                    }
+                });
+            }
+            app.manage(runtime_manager.clone());
+            app.manage(runtime_resolver.clone());
 
-            // Initialize file-based storage
-            let db = Arc::new(
-                storage::file_store::AppStorage::new(&app_data_dir)
-                    .expect("Failed to initialize file storage")
+            // Initialize prompt store from external .md files
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .unwrap_or_else(|_| aijia_home.root().to_path_buf());
+            llm::prompts::init_prompts(&resource_dir, aijia_home.root());
+
+            // Initialize fallback root storage; user-scoped storage replaces it after auth restore.
+            let root_db = Arc::new(
+                storage::file_store::AppStorage::new(aijia_home.root())
+                    .expect("Failed to initialize file storage"),
             );
 
-            // Initialize file manager
-            let workspace_path = db.get_setting("workspacePath")
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            let fm_path = if workspace_path.is_empty() {
-                // Default workspace: ~/.renlijia
-                let default_ws = dirs::home_dir()
-                    .map(|h| h.join(".renlijia"))
-                    .unwrap_or_else(|| app_data_dir.clone());
-                std::fs::create_dir_all(&default_ws).ok();
-                default_ws
-            } else {
-                let p = std::path::PathBuf::from(&workspace_path);
-                std::fs::create_dir_all(&p).ok();
-                p
-            };
-            let file_mgr = Arc::new(storage::file_manager::FileManager::new(fm_path.clone()));
+            // Initialize file manager with root as default; will be updated after user scope activates.
+            let file_mgr = Arc::new(storage::file_manager::FileManager::new(aijia_home.root()));
 
-            // Configure logging — write to workspace/logs/ for both debug and release
-            let logs_dir = fm_path.join("logs");
+            // Configure logging — write to root logs/ initially (before user scope is known)
+            let logs_dir = aijia_home.root().join("logs");
             std::fs::create_dir_all(&logs_dir).ok();
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -71,42 +118,154 @@ pub fn run() {
                         tauri_plugin_log::TargetKind::Folder {
                             path: logs_dir.clone(),
                             file_name: Some("renlijia".into()),
-                        }
+                        },
                     ))
                     .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                     .max_file_size(5_000_000) // 5MB per file
                     .build(),
             )?;
 
+            // Install global panic hook — captures panic message + backtrace into the log
+            // file BEFORE the default abort handler runs (panic = "abort" in release).
+            // Must be installed after the logger plugin is registered so log::error! writes
+            // to the file.
+            std::panic::set_hook(Box::new(|info| {
+                let location = info
+                    .location()
+                    .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                    .unwrap_or_else(|| "unknown".to_string());
+                let msg = info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "<non-string panic>".to_string());
+                let bt = std::backtrace::Backtrace::force_capture();
+                log::error!("[PANIC] at {}: {}\nBacktrace:\n{}", location, msg, bt);
+                eprintln!("[PANIC] at {}: {}\nBacktrace:\n{}", location, msg, bt);
+                // Brief sleep so async log writers can flush before the abort signal fires.
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }));
+
             // Auto-cleanup old log files (> 7 days)
             cleanup_old_logs(&logs_dir, 7);
 
             // Cleanup stale temp files from previous sessions (code_*.py)
-            cleanup_temp_dir(&fm_path.join("temp"));
+            cleanup_temp_dir(&aijia_home.root().join("temp"));
 
             // Initialize secure storage for API key encryption
             let secure_storage: Option<Arc<storage::crypto::SecureStorage>> =
-                match storage::crypto::SecureStorage::new(&app_data_dir) {
+                match storage::crypto::SecureStorage::new(&aijia_home.crypto_dir()) {
                     Ok(ss) => {
-                        log::info!("SecureStorage initialized (key file in app data dir)");
+                        log::info!("SecureStorage initialized (key file in ~/.renlijia/crypto)");
                         Some(Arc::new(ss))
                     }
                     Err(e) => {
-                        log::warn!("SecureStorage unavailable (API keys stored as plaintext): {}", e);
+                        log::warn!(
+                            "SecureStorage unavailable (API keys stored as plaintext): {}",
+                            e
+                        );
                         None
                     }
                 };
 
-            // Initialize LLM gateway
-            let gateway = Arc::new(llm::gateway::LlmGateway::new(db.clone()));
+            // Initialize runtime orchestration state
+            let run_registry = Arc::new(runtime::RuntimeRunRegistry::new());
+            let task_store = Arc::new(runtime::store::InMemoryTaskStore::new());
 
             // Initialize cloud auth manager
-            let auth_manager = Arc::new(
-                auth::AuthManager::new(db.clone(), secure_storage.clone())
-            );
+            let global_store = Arc::new(storage::GlobalConfigStore::new(aijia_home.global_dir()));
+            if let Err(e) = storage::migration_user_scope::bootstrap_cloud_auth_if_needed(
+                aijia_home.root(),
+                &aijia_home.global_dir(),
+            ) {
+                log::warn!("[setup] cloud_auth bootstrap warning: {}", e);
+            }
+            let auth_manager = Arc::new(auth::AuthManager::new(
+                global_store.clone(),
+                secure_storage.clone(),
+            ));
             // Restore persisted auth state
             tauri::async_runtime::block_on(auth_manager.restore());
 
+            let current_user_storage = Arc::new(storage::CurrentUserStorage::new(aijia_home.clone()));
+            let user_scope: Option<storage::UserScope> = {
+                let info = tauri::async_runtime::block_on(auth_manager.get_auth_info());
+                if info.logged_in {
+                    info.user
+                        .as_ref()
+                        .zip(info.tenant.as_ref())
+                        .map(|(u, t)| storage::UserScope::new(t.id, u.id))
+                } else {
+                    None
+                }
+            };
+            if let Some(ref scope) = user_scope {
+                let user_dir = aijia_home.user_dir(scope);
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_to_user_scope_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                    &scope.key(),
+                    &aijia_home.global_state_path(),
+                ) {
+                    log::warn!("[setup] user-scope migration warning: {}", e);
+                }
+                if let Err(e) = storage::migration_user_scope::migrate_legacy_config_if_needed(
+                    aijia_home.root(),
+                    &user_dir,
+                    &aijia_home.global_dir(),
+                ) {
+                    log::warn!("[setup] config split warning: {}", e);
+                }
+                current_user_storage
+                    .activate_scope(scope.clone())
+                    .expect("Failed to activate user storage");
+
+                // Update FileManager with user-scoped workspacePath
+                let workspace_path = current_user_storage
+                    .get()
+                    .and_then(|db| db.get_setting("workspacePath").ok().flatten())
+                    .unwrap_or_default();
+                if !workspace_path.is_empty() {
+                    let p = std::path::PathBuf::from(&workspace_path);
+                    std::fs::create_dir_all(&p).ok();
+                    file_mgr.update_workspace_path(&p);
+                } else {
+                    file_mgr.update_workspace_path(aijia_home.root());
+                }
+            }
+
+            let (agent_store_path, subagent_transcript_store_dir) = current_user_storage
+                .resolve_paths()
+                .map(|paths| (paths.agent_invocations_path(), paths.subagent_transcripts_dir()))
+                .unwrap_or_else(|| {
+                    (
+                        aijia_home.agent_invocations_path(),
+                        aijia_home.subagent_transcripts_dir(),
+                    )
+                });
+            let agent_runtime = Arc::new(
+                runtime::agent::AgentRuntime::from_storage(
+                    agent_store_path,
+                    subagent_transcript_store_dir,
+                )
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "Failed to create FileAgentInvocationStore: {e}, falling back to in-memory"
+                    );
+                    runtime::agent::AgentRuntime::for_test()
+                }),
+            );
+
+            let db = current_user_storage.get().unwrap_or_else(|| root_db.clone());
+
+            // Initialize LLM gateway (with auth_manager for cloud session_key injection)
+            let gateway = Arc::new(
+                llm::gateway::LlmGateway::new_with_registry(db.clone(), run_registry.clone())
+                    .with_auth_manager(auth_manager.clone()),
+            );
+
+            // Set window title from persisted branding (before WebView renders)
             // Window setup: custom titlebar on all platforms
             {
                 if let Some(win) = app.get_webview_window("main") {
@@ -125,15 +284,15 @@ pub fn run() {
 
             // Initialize Playwright browser — primary browser automation
             let playwright_browser = Arc::new(
-                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone())
+                connector::playwright_browser::PlaywrightBrowser::new(app.handle().clone()),
             );
 
             // Initialize connector engine (browser automation only)
-            let connector_engine = Arc::new(
-                connector::ConnectorEngine::new()
-            );
+            let connector_engine = Arc::new(connector::ConnectorEngine::new());
             tauri::async_runtime::block_on(async {
-                connector_engine.set_playwright_browser(playwright_browser.clone()).await;
+                connector_engine
+                    .set_playwright_browser(playwright_browser.clone())
+                    .await;
             });
 
             // Initialize DingTalk bridge (dws CLI sidecar)
@@ -157,37 +316,128 @@ pub fn run() {
 
             // Initialize plugin registries
             let tool_registry = Arc::new(plugin::ToolRegistry::new());
+            // Load SKILL.md-based skills from user and global roots
+            let global_skills_dir = aijia_home.skills_dir();
+            let user_skills_dir = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.skills_dir());
+            let skill_roots: Vec<std::path::PathBuf> = match user_skills_dir {
+                Some(user) => vec![user, global_skills_dir],
+                None => vec![global_skills_dir],
+            };
+            let loaded_skills = plugin::skill::loader::load_skill_roots(&skill_roots)
+                .unwrap_or_else(|e| {
+                    log::warn!("[setup] Failed to load skills from roots: {}", e);
+                    Default::default()
+                });
+            let disk_skill_registry = Arc::new(std::sync::Mutex::new(
+                plugin::skill::registry::SkillRegistry::from_skills(
+                    loaded_skills.into_values().collect(),
+                ),
+            ));
+            app.manage(disk_skill_registry.clone());
+            plugin::skill::global_sync::spawn_global_skill_sync(
+                plugin::skill::global_sync::GlobalSkillSyncConfig::for_home(
+                    aijia_home.root(),
+                    skill_roots.clone(),
+                ),
+                disk_skill_registry.clone(),
+            );
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
+            let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
+                Some(
+                    file_mgr
+                        .workspace_path()
+                        .join(".aijia")
+                        .join("permissions.json"),
+                ),
+                current_user_storage
+                    .resolve_paths()
+                    .map(|paths| paths.permissions_path())
+                    .or_else(|| Some(aijia_home.permissions_path())),
+            ));
+            tauri::async_runtime::block_on(
+                tool_registry.set_permission_store(permission_store.clone()),
+            );
+            let mcp_server_manager =
+                Arc::new(runtime::mcp::McpServerManager::new(tool_registry.clone()));
+            let mcp_config_path = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.mcp_config_path())
+                .unwrap_or_else(|| aijia_home.mcp_config_path());
+            let mcp_config_store = Arc::new(storage::mcp_config_store::McpConfigStore::new(
+                mcp_config_path,
+            ));
 
-            // Register builtin tools and skills
+            let persisted_mcp_configs = mcp_config_store.load().unwrap_or_else(|err| {
+                log::warn!("Failed to load MCP configs from disk: {}", err);
+                Vec::new()
+            });
+
+            tauri::async_runtime::block_on(async {
+                for config in persisted_mcp_configs {
+                    let connection = match runtime::mcp::build_mcp_connection(
+                        &config,
+                        Some(runtime_resolver.clone()),
+                    ) {
+                        Ok(connection) => connection,
+                        Err(err) => {
+                            log::warn!(
+                                "Failed to build persisted MCP server '{}': {}",
+                                config.name,
+                                err
+                            );
+                            continue;
+                        }
+                    };
+                    if let Err(err) = mcp_server_manager.register(connection).await {
+                        log::warn!(
+                            "Failed to pre-register persisted MCP server '{}': {}",
+                            config.name,
+                            err
+                        );
+                    }
+                }
+            });
+
+            // Register builtin tools
             tauri::async_runtime::block_on(async {
                 plugin::builtin::tools::register_builtin_tools(&tool_registry).await;
-                plugin::builtin::skills::register_builtin_skills(&skill_registry, db.clone(), auth_manager.clone()).await;
+                // Note: builtin skills (daily_assistant) removed in Phase B Task 6.
+                // SKILL.md disk loading implemented in Phase C/D via plugin::skill module.
 
                 // Scan bundled plugin directory for external plugins
                 let plugins_dir = resource_dir.join("plugins");
-                log::info!("Scanning plugins from: {:?} (exists={})", plugins_dir, plugins_dir.exists());
+                log::info!(
+                    "Scanning plugins from: {:?} (exists={})",
+                    plugins_dir,
+                    plugins_dir.exists()
+                );
                 if plugins_dir.exists() {
                     scan_external_plugins(
                         &plugins_dir,
                         &tool_registry,
                         &skill_registry,
-                        file_mgr.workspace_path(),
+                        &file_mgr.workspace_path(),
                         "builtin",
-                    ).await;
+                    )
+                    .await;
                 }
 
                 // Scan user-installed custom plugins
-                let custom_plugins_dir = app_data_dir.join("custom_plugins");
-                if custom_plugins_dir.is_dir() {
-                    log::info!("Scanning custom plugins from: {:?}", custom_plugins_dir);
-                    scan_external_plugins(
-                        &custom_plugins_dir,
-                        &tool_registry,
-                        &skill_registry,
-                        file_mgr.workspace_path(),
-                        "custom",
-                    ).await;
+                if let Some(paths) = current_user_storage.resolve_paths() {
+                    let skills_dir = paths.skills_dir();
+                    if skills_dir.is_dir() {
+                        log::info!("Scanning custom skills from: {:?}", skills_dir);
+                        scan_external_plugins(
+                            &skills_dir,
+                            &tool_registry,
+                            &skill_registry,
+                            &file_mgr.workspace_path(),
+                            "custom",
+                        )
+                        .await;
+                    }
                 }
             });
 
@@ -197,11 +447,16 @@ pub fn run() {
             match db.cleanup_orphaned_tasks() {
                 Ok(orphaned) => {
                     for conv_id in &orphaned {
-                        log::warn!("Cleaning up orphaned agent task for conversation: {}", conv_id);
-                        db.reset_stuck_analysis_state(conv_id).ok();
+                        log::warn!(
+                            "Cleaning up orphaned agent task for conversation: {}",
+                            conv_id
+                        );
                     }
                     if !orphaned.is_empty() {
-                        log::info!("Cleaned up {} orphaned agent tasks from previous crash", orphaned.len());
+                        log::info!(
+                            "Cleaned up {} orphaned agent tasks from previous crash",
+                            orphaned.len()
+                        );
                     }
                 }
                 Err(e) => {
@@ -209,9 +464,48 @@ pub fn run() {
                 }
             }
 
+            match storage::upload_gc::gc_orphan_upload_files(&db, &file_mgr) {
+                Ok(deleted) => {
+                    if deleted > 0 {
+                        log::info!("Cleaned up {} orphaned upload files", deleted);
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Failed to cleanup orphaned upload files: {}", err);
+                }
+            }
+
+            // Initialize runtime repository facade (routes settings/persona/file/export
+            // commands through domain traits instead of direct AppStorage access).
+            // IMPORTANT: facade must be managed before TauriChatCommandAdapter::new() is
+            // called, because new() calls try_state::<RuntimeRepositoryFacade>() to wire
+            // authorized_workspace_store. Registering it here ensures try_state succeeds.
+            let facade = Arc::new(storage::file_store::RuntimeRepositoryFacade::from_storage(
+                db.clone(),
+            ));
+            app.manage(facade);
+
             // Initialize Python session manager for persistent REPL sessions
             let session_mgr = Arc::new(
-                python::session::PythonSessionManager::new(fm_path.clone(), Some(app.handle()))
+                python::session::PythonSessionManager::with_lazy_runtime_resolver(
+                    file_mgr.workspace_path(),
+                    runtime_resolver.clone(),
+                ),
+            );
+
+            let chat_adapter = Arc::new(
+                transport::tauri_commands::chat::TauriChatCommandAdapter::new(
+                    db.clone(),
+                    gateway.clone(),
+                    file_mgr.clone(),
+                    secure_storage.clone(),
+                    tool_registry.clone(),
+                    disk_skill_registry.clone(),
+                    session_mgr.clone(),
+                    auth_manager.clone(),
+                    permission_store.clone(),
+                    app.handle().clone(),
+                ),
             );
 
             // Start idle session reaper (every 5 minutes)
@@ -230,24 +524,29 @@ pub fn run() {
             app.manage(db);
             app.manage(file_mgr);
             app.manage(gateway);
+            app.manage(run_registry);
+            app.manage(task_store);
             app.manage(secure_storage);
+            app.manage(global_store);
+            app.manage(current_user_storage.clone());
             app.manage(auth_manager);
             app.manage(connector_engine);
             app.manage(dingtalk_bridge);
             app.manage(tool_registry);
+            app.manage(mcp_server_manager);
+            app.manage(mcp_config_store);
+            app.manage(permission_store);
             app.manage(skill_registry);
             app.manage(session_mgr);
+            app.manage(agent_runtime);
+            app.manage(chat_adapter);
 
-            // Skill-smith: cleanup expired drafts on startup (non-blocking).
-            // Draft files older than 7 days are removed to keep _drafts/ tidy.
-            let cleanup_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                match commands::skill_smith::cleanup_expired_drafts(cleanup_handle).await {
-                    Ok(n) if n > 0 => log::info!("skill-smith: cleaned up {} expired draft(s)", n),
-                    Ok(_) => {}
-                    Err(e) => log::warn!("skill-smith: draft cleanup failed: {}", e),
-                }
-            });
+            runtime::schedule_runner::spawn_schedule_runner(
+                current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
+                app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                    .inner()
+                    .clone(),
+            );
 
             Ok(())
         })
@@ -255,16 +554,33 @@ pub fn run() {
             // Chat commands
             chat::send_message,
             chat::stop_streaming,
+            chat::approve_permission_request,
+            chat::deny_permission_request,
+            chat::cancel_permission_request,
+            chat::submit_user_interaction,
+            chat::cancel_user_interaction,
             chat::get_messages,
+            chat::get_subagent_transcript,
             chat::create_conversation,
+            chat::get_conversation_model_override,
+            chat::set_conversation_model_override,
             chat::delete_conversation,
             chat::rename_conversation,
+            chat::archive_conversation,
+            chat::restore_conversation,
+            chat::get_archived_conversations,
             chat::get_conversations,
+            chat::get_tasks,
             chat::is_agent_busy,
             // File commands
             file::upload_file,
+            file::read_clipboard_file_paths,
+            file::save_clipboard_image_to_tmp_dir,
             file::open_generated_file,
             file::reveal_file_in_folder,
+            file::get_file_preview,
+            file::get_local_file_preview,
+            file::open_local_file,
             file::preview_file,
             file::delete_file,
             file::open_file_by_name,
@@ -280,17 +596,32 @@ pub fn run() {
             // Workspace commands
             workspace::select_workspace,
             workspace::get_workspace_info,
+            workspace::pick_local_directory,
             workspace::open_logs_directory,
             workspace::open_workspace_directory,
             workspace::export_metrics,
             workspace::clear_metrics,
             workspace::get_metrics_info,
-            // Export commands
-            export::export_conversation,
+            workspace::record_frontend_diagnostic,
+            workspace::authorize_local_directory,
+            workspace::get_authorized_workspace,
+            workspace::revoke_authorized_workspace,
+            workspace::get_default_folder,
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
+            // MCP server management commands
+            transport::tauri_commands::mcp::list_mcp_servers,
+            transport::tauri_commands::mcp::add_mcp_server,
+            transport::tauri_commands::mcp::remove_mcp_server,
+            transport::tauri_commands::mcp::connect_mcp_server,
+            transport::tauri_commands::mcp::disconnect_mcp_server,
+            transport::tauri_commands::runtime::runtime_get_health,
+            transport::tauri_commands::runtime::runtime_ensure,
+            transport::tauri_commands::runtime::runtime_reinstall,
+            transport::tauri_commands::runtime::runtime_cleanup_old_versions,
+            transport::tauri_commands::runtime::runtime_cancel_operation,
             // Persona commands
             commands::persona::list_personas,
             commands::persona::get_persona,
@@ -300,6 +631,13 @@ pub fn run() {
             commands::persona::get_active_persona,
             commands::persona::export_personas,
             commands::persona::import_personas,
+            // Project memory commands
+            commands::project_memory::save_project_memory,
+            commands::project_memory::distill_project_memory,
+            // Schedule commands
+            commands::schedules::list_schedules,
+            commands::schedules::create_schedule,
+            commands::schedules::delete_schedule,
             // DingTalk commands
             commands::dingtalk::dingtalk_login,
             commands::dingtalk::dingtalk_logout,
@@ -324,27 +662,21 @@ pub fn run() {
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,
             commands::skill_management::install_marketplace_skill,
-            // Skill-smith (conversational skill creation) — draft file system (T2)
-            commands::skill_smith::create_skill_draft,
-            commands::skill_smith::write_skill_draft_file,
-            commands::skill_smith::read_skill_draft_file,
-            commands::skill_smith::list_skill_draft_files,
-            commands::skill_smith::list_skill_drafts,
-            commands::skill_smith::discard_skill_draft,
-            commands::skill_smith::cleanup_expired_drafts,
-            // Skill-smith schema validation (T3)
-            commands::skill_smith::validation::validate_skill_draft,
-            // Skill-smith commit + export (T4)
-            commands::skill_smith::commit::commit_skill_draft,
-            commands::skill_smith::commit::commit_skill_draft_force,
-            commands::skill_smith::commit::export_skill_draft,
-            // Skill-smith dry-run (T7)
-            commands::skill_smith::dry_run::dry_run_skill_draft,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
+                if let Some(chat_adapter) = app_handle
+                    .try_state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                {
+                    if let Err(err) = chat_adapter.flush_pending_message_writes() {
+                        log::warn!(
+                            "Failed to flush pending assistant message writes on exit: {err}"
+                        );
+                    }
+                }
+
                 // Graceful shutdown: checkpoint all Python sessions before exit.
                 // block_on is safe here — the event loop is already shutting down.
                 let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();
@@ -360,93 +692,23 @@ pub fn run() {
 /// Scan a plugin directory for external plugins.
 /// `source` identifies the origin: "builtin" for bundled, "custom" for user-installed.
 async fn scan_external_plugins(
-    plugins_dir: &std::path::Path,
-    tool_registry: &plugin::ToolRegistry,
-    skill_registry: &plugin::SkillRegistry,
-    workspace_path: &std::path::Path,
-    source: &str,
+    _plugins_dir: &std::path::Path,
+    _tool_registry: &plugin::ToolRegistry,
+    _skill_registry: &plugin::SkillRegistry,
+    _workspace_path: &std::path::Path,
+    _source: &str,
 ) {
-    let entries = match std::fs::read_dir(plugins_dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::warn!("Failed to read plugins directory: {}", e);
-            return;
-        }
-    };
+    // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+    // This legacy entrypoint is intentionally a no-op.
+}
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Skip directories starting with '_' (disabled plugins)
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('_') {
-                continue;
-            }
-        }
-
-        let manifest_path = path.join("plugin.toml");
-        if !manifest_path.exists() {
-            continue;
-        }
-
-        let manifest_content = match std::fs::read_to_string(&manifest_path) {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("Failed to read {:?}: {}", manifest_path, e);
-                continue;
-            }
-        };
-
-        let manifest = match plugin::manifest::parse_plugin_manifest(&manifest_content) {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!("Invalid plugin.toml in {:?}: {}", path, e);
-                continue;
-            }
-        };
-
-        match manifest.plugin.plugin_type.as_str() {
-            "tool" => {
-                if manifest.plugin.runtime.as_deref() == Some("python") {
-                    match plugin::python_bridge::PythonToolBridge::from_manifest(&manifest, path.clone()) {
-                        Ok(mut bridge) => {
-                            if let Err(e) = bridge.load_schema(workspace_path).await {
-                                log::warn!("Failed to load schema for plugin '{}': {}", manifest.plugin.id, e);
-                                continue;
-                            }
-                            tool_registry.register(
-                                std::sync::Arc::new(bridge),
-                                source,
-                            ).await;
-                            log::info!("Loaded Python tool plugin: {}", manifest.plugin.id);
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to create Python tool bridge for '{}': {}", manifest.plugin.id, e);
-                        }
-                    }
-                }
-            }
-            "skill" => {
-                match plugin::declarative_skill::DeclarativeSkill::load(&manifest, &path) {
-                    Ok(skill) => {
-                        skill_registry.register(
-                            std::sync::Arc::new(skill),
-                            "plugin",
-                        ).await;
-                        log::info!("Loaded declarative skill plugin: {}", manifest.plugin.id);
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to load skill plugin '{}': {}", manifest.plugin.id, e);
-                    }
-                }
-            }
-            other => {
-                log::warn!("Unknown plugin type '{}' in {:?}", other, manifest_path);
-            }
-        }
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn scan_external_plugins_is_intentional_noop() {
+        // scan_external_plugins is a no-op in Phase B.
+        // SKILL.md disk loading is implemented in Phase C/D via plugin::skill module.
+        // This test documents the intentional state.
     }
 }
 

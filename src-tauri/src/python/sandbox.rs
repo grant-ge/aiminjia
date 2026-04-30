@@ -3,8 +3,8 @@
 //! Controls what Python code is allowed to do. Prevents dangerous operations
 //! like running subprocesses or writing files outside the workspace.
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Sandbox configuration for Python execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,8 +16,10 @@ pub struct SandboxConfig {
     pub timeout_seconds: u32,
     /// Maximum memory usage in MB (advisory — enforced via Python resource module).
     pub memory_limit_mb: u32,
-    /// Directories the Python script is allowed to access.
-    pub allowed_paths: Vec<PathBuf>,
+    /// 可读路径（含授权目录）
+    pub allowed_read_paths: Vec<PathBuf>,
+    /// 可写路径（只含 Lotus workspace 子目录，不含授权目录）
+    pub allowed_write_paths: Vec<PathBuf>,
     /// Maximum output size in bytes before truncation.
     pub max_output_bytes: usize,
     /// Python modules that are forbidden from being imported.
@@ -29,7 +31,8 @@ impl Default for SandboxConfig {
         Self {
             timeout_seconds: 300,
             memory_limit_mb: 512,
-            allowed_paths: Vec::new(),
+            allowed_read_paths: Vec::new(),
+            allowed_write_paths: Vec::new(),
             max_output_bytes: 1_000_000, // 1 MB
             forbidden_modules: vec![
                 "subprocess".to_string(),
@@ -69,7 +72,7 @@ impl SandboxConfig {
     /// The script will be allowed to access uploads/ and analysis/ subdirs.
     pub fn for_workspace(workspace: &PathBuf) -> Self {
         let mut config = Self::default();
-        config.allowed_paths = vec![
+        let workspace_paths = vec![
             workspace.clone(),
             workspace.join("uploads"),
             workspace.join("exports"),
@@ -78,11 +81,39 @@ impl SandboxConfig {
             workspace.join("analysis"),
             workspace.join("temp"),
         ];
+        config.allowed_read_paths = workspace_paths.clone();
+        config.allowed_write_paths = workspace_paths;
+        config
+    }
+
+    /// 创建支持授权工作目录读取的 sandbox 配置。
+    /// allowed_read_paths = 旧 7 个路径 + extra_read_paths（授权目录）
+    /// allowed_write_paths = 旧 7 个路径（不变）
+    pub fn for_workspace_with_authorized(
+        workspace: &PathBuf,
+        extra_read_paths: Vec<PathBuf>,
+    ) -> Self {
+        let mut config = Self::for_workspace(workspace);
+        config.allowed_read_paths.extend(extra_read_paths);
         config
     }
 
     /// Validate Python code against sandbox rules.
-    /// Returns Ok(()) if the code passes all checks, Err with reason otherwise.
+    ///
+    /// # ⚠ Deprecated — not the primary security barrier
+    ///
+    /// Static string matching can be bypassed via string concatenation or getattr.
+    /// The primary security barrier is the runtime `_safe_open` write-path restriction
+    /// (only workspace subdirectories are writable) combined with the `PermissionPipeline`
+    /// capability check that runs before tool execution.
+    ///
+    /// This function is kept for defense-in-depth (blocks obvious patterns) but
+    /// MUST NOT be the sole or primary security check.
+    #[deprecated(
+        since = "0.4.1",
+        note = "Use _safe_open path restriction + PermissionPipeline as primary security. \
+                validate_code() is defense-in-depth only and can be bypassed."
+    )]
     pub fn validate_code(&self, code: &str) -> Result<(), String> {
         // Check for forbidden imports
         for module in &self.forbidden_modules {
@@ -129,9 +160,15 @@ impl SandboxConfig {
             ("os.fork", "os.fork() is not allowed"),
             ("os.spawn", "os.spawn*() is not allowed"),
             ("os.posix_spawn", "os.posix_spawn() is not allowed"),
-            ("builtins.__import__", "builtins.__import__() is not allowed"),
+            (
+                "builtins.__import__",
+                "builtins.__import__() is not allowed",
+            ),
             ("_real_import", "accessing _real_import is not allowed"),
-            ("_safe_import._real", "accessing _safe_import._real is not allowed"),
+            (
+                "_safe_import._real",
+                "accessing _safe_import._real is not allowed",
+            ),
             ("import ctypes", "ctypes is not allowed"),
             ("from ctypes", "ctypes is not allowed"),
             ("_original_open", "accessing _original_open is not allowed"),
@@ -164,7 +201,28 @@ impl SandboxConfig {
     ///   and the hook caused repeated breakage with legitimate library dependencies
     ///   (openpyxl→shutil, urllib.parse, etc.)
     pub fn preamble(&self) -> String {
-        // Part 1: Basic setup (dynamic — uses Rust format! for allowed_paths)
+        // Helper: format a Vec<PathBuf> as a Python list literal
+        fn fmt_path_list(paths: &[PathBuf]) -> String {
+            format!(
+                "[{}]",
+                paths
+                    .iter()
+                    .map(|p| {
+                        let s = p.display().to_string();
+                        // Escape backslashes and single quotes to prevent Python injection
+                        let escaped = s
+                            .replace('\\', "\\\\")
+                            .replace('\'', "\\'")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r");
+                        format!("'{}'", escaped)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+
+        // Part 1: Basic setup (dynamic — uses Rust format! for path lists)
         let basic_setup = format!(
             r#"import sys
 import os
@@ -179,7 +237,8 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # Restrict file access to allowed directories
-_ALLOWED_PATHS = {allowed_paths}
+_ALLOWED_READ_PATHS = {allowed_read_paths}
+_ALLOWED_WRITE_PATHS = {allowed_write_paths}
 
 # Set recursion limit
 sys.setrecursionlimit(2000)
@@ -193,26 +252,15 @@ try:
 except (ImportError, ValueError, OSError):
     pass  # Windows or unsupported platform
 
-# Working directory (workspace root — first element of _ALLOWED_PATHS)
-if _ALLOWED_PATHS:
+# Working directory (workspace root — first element of _ALLOWED_WRITE_PATHS)
+if _ALLOWED_WRITE_PATHS:
     try:
-        os.chdir(_ALLOWED_PATHS[0])
+        os.chdir(_ALLOWED_WRITE_PATHS[0])
     except OSError:
         pass
 "#,
-            allowed_paths = format!(
-                "[{}]",
-                self.allowed_paths
-                    .iter()
-                    .map(|p| {
-                        let s = p.display().to_string();
-                        // Escape backslashes and single quotes to prevent Python injection
-                        let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
-                        format!("'{}'", escaped)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            allowed_read_paths = fmt_path_list(&self.allowed_read_paths),
+            allowed_write_paths = fmt_path_list(&self.allowed_write_paths),
             memory_limit_mb = self.memory_limit_mb,
         );
 
@@ -222,45 +270,173 @@ if _ALLOWED_PATHS:
         // Part 3: File write restriction (no runtime import hook — static validation is enough)
         let file_write_hook = r#"
 # ── File write restriction (path enforcement layer) ──
-# Wraps builtins.open to block writes outside _ALLOWED_PATHS.
-# Read operations are unrestricted (pandas/numpy read from site-packages, /tmp, etc.).
+# Wraps builtins.open to block writes outside _ALLOWED_WRITE_PATHS.
+# Read operations are restricted only when _ALLOWED_READ_PATHS is non-empty.
 # Also tracks all write paths in _written_files for file lifecycle management.
 if '_written_files' not in dir():
     _written_files = []
 _original_open = builtins.open
+
+def _is_allowed_path(abs_path, roots):
+    return any(
+        (lambda real_root: abs_path == real_root or abs_path.startswith(real_root + os.sep))(os.path.realpath(p))
+        for p in roots
+    )
+
+def _normalize_path_arg(path_like):
+    if isinstance(path_like, bytes):
+        return path_like.decode('utf-8', errors='replace')
+    if hasattr(path_like, '__fspath__'):
+        path_like = os.fspath(path_like)
+    if isinstance(path_like, str):
+        return path_like
+    return None
+
+def _ensure_read_path(path_like, op='read'):
+    file_str = _normalize_path_arg(path_like)
+    if file_str is None:
+        return None
+    abs_path = os.path.realpath(os.path.abspath(file_str))
+    if _ALLOWED_READ_PATHS and not _is_allowed_path(abs_path, _ALLOWED_READ_PATHS):
+        raise PermissionError(
+            f"{op} source '{file_str}' is blocked (outside allowed read paths). "
+            f"Allowed read directories: {', '.join(_ALLOWED_READ_PATHS)}"
+        )
+    return abs_path
+
+def _ensure_write_path(path_like, op='write'):
+    file_str = _normalize_path_arg(path_like)
+    if file_str is None:
+        return None
+    abs_path = os.path.realpath(os.path.abspath(file_str))
+    allowed = _is_allowed_path(abs_path, _ALLOWED_WRITE_PATHS) if _ALLOWED_WRITE_PATHS else False
+    if not allowed:
+        raise PermissionError(
+            f"{op} destination '{file_str}' is blocked (outside workspace). "
+            f"Allowed write directories: {', '.join(_ALLOWED_WRITE_PATHS)}"
+        )
+    return abs_path
+
 def _safe_open(file, mode='r', *args, **kwargs):
-    if isinstance(file, (str, bytes)):
-        file_str = file if isinstance(file, str) else file.decode('utf-8', errors='replace')
-        # Check write operations: 'w', 'a', 'x' (create)
-        if any(m in str(mode) for m in ('w', 'a', 'x')):
-            try:
-                # Resolve to absolute path for comparison
-                abs_path = os.path.realpath(os.path.abspath(file_str))
-                allowed = any(
-                    abs_path.startswith(os.path.realpath(p))
-                    for p in _ALLOWED_PATHS
-                ) if _ALLOWED_PATHS else False
-                if not allowed:
-                    raise PermissionError(
-                        f"Writing to '{file_str}' is blocked (outside workspace). "
-                        f"Allowed directories: {', '.join(_ALLOWED_PATHS)}"
-                    )
-                # Track write path for file lifecycle management
+    try:
+        if any(m in str(mode) for m in ('w', 'a', 'x', '+')):
+            abs_path = _ensure_write_path(file, op='open')
+            if abs_path is not None:
                 _wf = globals().get('_written_files') or (getattr(builtins, '_written_files', None))
                 if _wf is not None and isinstance(_wf, list):
                     _wf.append(abs_path)
-            except (TypeError, ValueError):
-                pass  # Non-path argument (e.g. file descriptor) — let through
+        else:
+            _ensure_read_path(file, op='open')
+    except (TypeError, ValueError):
+        pass  # Non-path argument (e.g. file descriptor) — let through
     return _original_open(file, mode, *args, **kwargs)
 builtins.open = _safe_open
+
+def _patch_shutil_write_apis():
+    try:
+        import shutil as _shutil_mod
+    except Exception:
+        return
+
+    def _wrap_copy_like(func, name):
+        def _wrapped(src, dst, *args, **kwargs):
+            _ensure_read_path(src, op=name)
+            _ensure_write_path(dst, op=name)
+            return func(src, dst, *args, **kwargs)
+        return _wrapped
+
+    for _name in ('copy', 'copy2', 'copyfile', 'move'):
+        _fn = getattr(_shutil_mod, _name, None)
+        if callable(_fn):
+            setattr(_shutil_mod, _name, _wrap_copy_like(_fn, _name))
+
+_patch_shutil_write_apis()
 "#;
 
-        // Part 4: Utility functions (static — no Rust format! needed)
+        // Part 4: Checkpoint HMAC helpers (static — no Rust format! needed)
+        let checkpoint_hmac = CHECKPOINT_HMAC_HELPERS;
+
+        // Part 5: Utility functions (static — no Rust format! needed)
         let utilities = UTILITY_FUNCTIONS;
 
-        format!("{}\n{}\n{}\n{}", basic_setup, trusted_imports, file_write_hook, utilities)
+        format!(
+            "{}\n{}\n{}\n{}\n{}",
+            basic_setup, trusted_imports, file_write_hook, checkpoint_hmac, utilities
+        )
     }
 }
+
+/// Checkpoint HMAC helpers — injected into every sandbox execution.
+///
+/// Provides `_ckpt_sign(pkl_path)` and `_ckpt_verify(pkl_path)` so that
+/// checkpoint pickle files are protected by an HMAC-SHA256 signature.
+/// The per-workspace secret is auto-generated on first use and stored in
+/// `temp/_checkpoint.secret` (outside the user-writable `uploads/` dir).
+///
+/// Static string (not processed by `format!`) so Python f-strings work.
+const CHECKPOINT_HMAC_HELPERS: &str = r###"
+# ============================================================
+# Checkpoint HMAC helpers (P0/PY3 — pickle RCE mitigation)
+# ============================================================
+import hmac as _hmac_mod
+import hashlib as _hashlib_mod
+
+def _ckpt_secret() -> bytes:
+    """Load (or generate) the per-workspace HMAC secret from temp/_checkpoint.secret."""
+    _secret_path = os.path.join(os.getcwd(), 'temp', '_checkpoint.secret')
+    if os.path.exists(_secret_path):
+        try:
+            with _original_open(_secret_path, 'rb') as _sf:
+                _s = _sf.read().strip()
+            if len(_s) >= 32:
+                return _s
+        except Exception:
+            pass
+    # Generate a new 32-byte random secret and persist it
+    import binascii as _binascii
+    _new_secret = _binascii.hexlify(os.urandom(32))
+    try:
+        os.makedirs(os.path.join(os.getcwd(), 'temp'), exist_ok=True)
+        with _original_open(_secret_path, 'wb') as _sf:
+            _sf.write(_new_secret)
+    except Exception:
+        pass
+    return _new_secret
+
+def _ckpt_sign(pkl_path: str) -> None:
+    """Write an HMAC-SHA256 signature file alongside the given .pkl file."""
+    try:
+        _secret = _ckpt_secret()
+        with _original_open(pkl_path, 'rb') as _f:
+            _data = _f.read()
+        _sig = _hmac_mod.new(_secret, _data, _hashlib_mod.sha256).hexdigest()
+        _sig_path = pkl_path + '.sig'
+        with _original_open(_sig_path + '.tmp', 'w') as _sf:
+            _sf.write(_sig)
+        os.replace(_sig_path + '.tmp', _sig_path)
+    except Exception as _e:
+        import sys as _sys
+        print(f'[WARN] _ckpt_sign failed for {pkl_path}: {_e}', file=_sys.stderr)
+
+def _ckpt_verify(pkl_path: str) -> bool:
+    """
+    Verify the HMAC-SHA256 signature for the given .pkl file.
+    Returns True if valid, False if missing or tampered.
+    """
+    _sig_path = pkl_path + '.sig'
+    if not os.path.exists(_sig_path):
+        return False
+    try:
+        _secret = _ckpt_secret()
+        with _original_open(pkl_path, 'rb') as _f:
+            _data = _f.read()
+        with _original_open(_sig_path, 'r') as _sf:
+            _expected = _sf.read().strip()
+        _actual = _hmac_mod.new(_secret, _data, _hashlib_mod.sha256).hexdigest()
+        return _hmac_mod.compare_digest(_actual, _expected)
+    except Exception:
+        return False
+"###;
 
 /// Pre-loaded package imports (saves ~2-3s cold start per execution).
 ///
@@ -701,6 +877,7 @@ def _save_slides(slides, filename='slides.json'):
 "###;
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -711,7 +888,9 @@ mod tests {
         assert_eq!(config.memory_limit_mb, 512);
         assert!(config.forbidden_modules.contains(&"subprocess".to_string()));
         assert!(config.forbidden_modules.contains(&"importlib".to_string()));
-        assert!(config.forbidden_modules.contains(&"multiprocessing".to_string()));
+        assert!(config
+            .forbidden_modules
+            .contains(&"multiprocessing".to_string()));
         // Relaxed for local desktop use — no longer forbidden
         assert!(!config.forbidden_modules.contains(&"shutil".to_string()));
         assert!(!config.forbidden_modules.contains(&"requests".to_string()));
@@ -725,7 +904,9 @@ mod tests {
     #[test]
     fn test_validate_code_ok() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import pandas as pd\nprint('hello')").is_ok());
+        assert!(config
+            .validate_code("import pandas as pd\nprint('hello')")
+            .is_ok());
     }
 
     #[test]
@@ -777,21 +958,29 @@ mod tests {
     #[test]
     fn test_validate_code_builtins_import_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("builtins.__import__('subprocess')").is_err());
+        assert!(config
+            .validate_code("builtins.__import__('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_real_import_blocked() {
         let config = SandboxConfig::default();
         assert!(config.validate_code("_real_import('subprocess')").is_err());
-        assert!(config.validate_code("_safe_import._real('subprocess')").is_err());
+        assert!(config
+            .validate_code("_safe_import._real('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_original_open_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("_original_open('/etc/passwd', 'w')").is_err());
-        assert!(config.validate_code("f = _original_open('/tmp/x')").is_err());
+        assert!(config
+            .validate_code("_original_open('/etc/passwd', 'w')")
+            .is_err());
+        assert!(config
+            .validate_code("f = _original_open('/tmp/x')")
+            .is_err());
     }
 
     #[test]
@@ -800,25 +989,54 @@ mod tests {
         // Verify the hook is NOT present (it caused repeated breakage with library dependencies).
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(!preamble.contains("builtins.__import__ = _safe_import"),
-            "Runtime import hook should NOT be in preamble (removed for stability)");
-        assert!(!preamble.contains("_FORBIDDEN_MODULES"),
-            "Runtime _FORBIDDEN_MODULES should NOT be in preamble");
+        assert!(
+            !preamble.contains("builtins.__import__ = _safe_import"),
+            "Runtime import hook should NOT be in preamble (removed for stability)"
+        );
+        assert!(
+            !preamble.contains("_FORBIDDEN_MODULES"),
+            "Runtime _FORBIDDEN_MODULES should NOT be in preamble"
+        );
     }
 
     #[test]
     fn test_for_workspace() {
         let workspace = PathBuf::from("/tmp/workspace");
         let config = SandboxConfig::for_workspace(&workspace);
-        assert_eq!(config.allowed_paths.len(), 7);
-        assert_eq!(config.allowed_paths[0], workspace);
-        assert!(config.allowed_paths[1].ends_with("uploads"));
+        assert_eq!(config.allowed_read_paths.len(), 7);
+        assert_eq!(config.allowed_write_paths.len(), 7);
+        assert_eq!(config.allowed_read_paths[0], workspace);
+        assert!(config.allowed_read_paths[1].ends_with("uploads"));
+        assert_eq!(config.allowed_write_paths[0], workspace);
+    }
+
+    #[test]
+    fn test_for_workspace_with_authorized_adds_read_only_path() {
+        let workspace = PathBuf::from("/tmp/workspace");
+        let authorized = PathBuf::from("/tmp/external-data");
+        let config =
+            SandboxConfig::for_workspace_with_authorized(&workspace, vec![authorized.clone()]);
+
+        assert!(
+            config.allowed_read_paths.contains(&authorized),
+            "authorized workspace should be readable"
+        );
+        assert!(
+            !config.allowed_write_paths.contains(&authorized),
+            "authorized workspace must not become writable"
+        );
+        assert_eq!(
+            config.allowed_write_paths.len(),
+            7,
+            "authorized workspace should not expand write scope"
+        );
     }
 
     #[test]
     fn test_preamble_contains_paths() {
         let mut config = SandboxConfig::default();
-        config.allowed_paths = vec![PathBuf::from("/tmp/test")];
+        config.allowed_read_paths = vec![PathBuf::from("/tmp/test")];
+        config.allowed_write_paths = vec![PathBuf::from("/tmp/test")];
         let preamble = config.preamble();
         assert!(preamble.contains("/tmp/test"));
     }
@@ -834,7 +1052,9 @@ mod tests {
     #[test]
     fn test_validate_code_compile_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("code = compile('print(1)', '<string>', 'exec')").is_err());
+        assert!(config
+            .validate_code("code = compile('print(1)', '<string>', 'exec')")
+            .is_err());
     }
 
     // -- os.system and os.popen blocking ---------------------------------------
@@ -862,13 +1082,17 @@ mod tests {
     #[test]
     fn test_validate_code_dunder_import_single_quotes() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("mod = __import__('subprocess')").is_err());
+        assert!(config
+            .validate_code("mod = __import__('subprocess')")
+            .is_err());
     }
 
     #[test]
     fn test_validate_code_dunder_import_double_quotes() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("mod = __import__(\"subprocess\")").is_err());
+        assert!(config
+            .validate_code("mod = __import__(\"subprocess\")")
+            .is_err());
     }
 
     // -- All forbidden modules are blocked -------------------------------------
@@ -959,22 +1183,39 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_contains_utf8_setup() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("utf-8"), "Preamble should configure UTF-8 encoding");
-        assert!(preamble.contains("reconfigure"), "Preamble should reconfigure stdout");
+        assert!(
+            preamble.contains("utf-8"),
+            "Preamble should configure UTF-8 encoding"
+        );
+        assert!(
+            preamble.contains("reconfigure"),
+            "Preamble should reconfigure stdout"
+        );
     }
 
     #[test]
     fn test_preamble_contains_smart_read_functions() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("_smart_read_csv"), "Preamble should define _smart_read_csv");
-        assert!(preamble.contains("_smart_read_data"), "Preamble should define _smart_read_data");
+        assert!(
+            preamble.contains("_smart_read_csv"),
+            "Preamble should define _smart_read_csv"
+        );
+        assert!(
+            preamble.contains("_smart_read_data"),
+            "Preamble should define _smart_read_data"
+        );
     }
 
     #[test]
     fn test_preamble_multiple_allowed_paths() {
         let mut config = SandboxConfig::default();
-        config.allowed_paths = vec![
+        config.allowed_read_paths = vec![
+            PathBuf::from("/workspace/uploads"),
+            PathBuf::from("/workspace/analysis"),
+            PathBuf::from("/workspace/temp"),
+        ];
+        config.allowed_write_paths = vec![
             PathBuf::from("/workspace/uploads"),
             PathBuf::from("/workspace/analysis"),
             PathBuf::from("/workspace/temp"),
@@ -989,7 +1230,8 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_empty_allowed_paths() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("_ALLOWED_PATHS = []"));
+        assert!(preamble.contains("_ALLOWED_READ_PATHS = []"));
+        assert!(preamble.contains("_ALLOWED_WRITE_PATHS = []"));
     }
 
     // -- Pre-loaded imports ----------------------------------------------------
@@ -998,9 +1240,18 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_preamble_preloads_packages() {
         let config = SandboxConfig::default();
         let preamble = config.preamble();
-        assert!(preamble.contains("import pandas as pd"), "Preamble should pre-load pandas");
-        assert!(preamble.contains("import numpy as np"), "Preamble should pre-load numpy");
-        assert!(preamble.contains("import openpyxl"), "Preamble should pre-load openpyxl");
+        assert!(
+            preamble.contains("import pandas as pd"),
+            "Preamble should pre-load pandas"
+        );
+        assert!(
+            preamble.contains("import numpy as np"),
+            "Preamble should pre-load numpy"
+        );
+        assert!(
+            preamble.contains("import openpyxl"),
+            "Preamble should pre-load openpyxl"
+        );
     }
 
     // -- Standalone call detection (no false positives) -------------------------
@@ -1018,7 +1269,9 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_validate_code_re_compile_allowed() {
         let config = SandboxConfig::default();
         // re.compile() is a method call, not bare compile()
-        assert!(config.validate_code("pattern = re.compile(r'\\d+')").is_ok());
+        assert!(config
+            .validate_code("pattern = re.compile(r'\\d+')")
+            .is_ok());
         assert!(config.validate_code("regex.compile('test')").is_ok());
     }
 
@@ -1037,8 +1290,12 @@ print(f"Mean: {mean}, Std: {std}")
     #[test]
     fn test_validate_code_bare_compile_still_blocked() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("compile('code', '<string>', 'exec')").is_err());
-        assert!(config.validate_code("x = compile('c', '', 'eval')").is_err());
+        assert!(config
+            .validate_code("compile('code', '<string>', 'exec')")
+            .is_err());
+        assert!(config
+            .validate_code("x = compile('c', '', 'eval')")
+            .is_err());
     }
 
     #[test]
@@ -1053,13 +1310,17 @@ print(f"Mean: {mean}, Std: {std}")
     #[test]
     fn test_validate_code_shutil_allowed() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import shutil\nshutil.copy('a', 'b')").is_ok());
+        assert!(config
+            .validate_code("import shutil\nshutil.copy('a', 'b')")
+            .is_ok());
     }
 
     #[test]
     fn test_validate_code_requests_allowed() {
         let config = SandboxConfig::default();
-        assert!(config.validate_code("import requests\nr = requests.get('https://api.example.com')").is_ok());
+        assert!(config
+            .validate_code("import requests\nr = requests.get('https://api.example.com')")
+            .is_ok());
     }
 
     #[test]
@@ -1072,8 +1333,12 @@ print(f"Mean: {mean}, Std: {std}")
     fn test_validate_code_http_urllib_allowed() {
         let config = SandboxConfig::default();
         assert!(config.validate_code("import http\nimport urllib").is_ok());
-        assert!(config.validate_code("from urllib.request import urlopen").is_ok());
-        assert!(config.validate_code("from http.client import HTTPConnection").is_ok());
+        assert!(config
+            .validate_code("from urllib.request import urlopen")
+            .is_ok());
+        assert!(config
+            .validate_code("from http.client import HTTPConnection")
+            .is_ok());
     }
 
     // -- contains_standalone unit tests ----------------------------------------

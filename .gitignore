@@ -26,14 +26,22 @@ src-tauri/target
 *.sln
 *.sw?
 
-# Python runtime (downloaded via setup-python.sh)
-src-tauri/python-runtime/
 
 # Tauri generated
 src-tauri/gen/
 
 # Claude Code
 .claude/
+
+# Local tool scratch dirs
+.codex/
+.superpowers/
+.worktrees/
+
+# Playwright local artifacts (logs, snapshots, screenshots)
+.playwright-cli/
+.playwright-mcp/
+output/
 
 # Environment
 .env
@@ -43,3 +51,6 @@ src-tauri/gen/
 # Python
 __pycache__/
 *.pyc
+
+# Plan-A: visual realignment captures
+tmp/ui-capture/

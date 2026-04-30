@@ -42,6 +42,11 @@ pub trait LlmProviderTrait: Send + Sync {
         true
     }
 
+    /// Whether this provider supports Anthropic-style prompt caching.
+    fn supports_prompt_caching(&self) -> bool {
+        false
+    }
+
     /// Send a complete (non-streaming) request.
     fn send(
         &self,

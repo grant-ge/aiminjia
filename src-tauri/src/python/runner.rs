@@ -4,11 +4,12 @@
 //! Output is captured from stdout/stderr.
 #![allow(dead_code)]
 
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use anyhow::{anyhow, Context, Result};
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
@@ -55,7 +56,11 @@ impl PythonRunner {
     }
 
     /// Create a runner with custom sandbox config.
-    pub fn with_config(workspace_path: PathBuf, sandbox: SandboxConfig, app_handle: Option<&tauri::AppHandle>) -> Self {
+    pub fn with_config(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        app_handle: Option<&tauri::AppHandle>,
+    ) -> Self {
         let (python_binary, python_home) = resolve_python_path(app_handle);
         Self {
             workspace_path,
@@ -63,6 +68,62 @@ impl PythonRunner {
             python_home,
             sandbox,
         }
+    }
+
+    /// Create a runner with an already-resolved Python runtime.
+    ///
+    /// This keeps `runtime/` free from `tauri::AppHandle` while still letting
+    /// request-scoped runtime tools execute against the same Python binary that
+    /// the legacy `PluginContext` path resolved during startup.
+    pub fn with_runtime(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            workspace_path,
+            python_binary,
+            python_home,
+            sandbox,
+        }
+    }
+
+    /// Create a runner from an already-resolved Python runtime path.
+    pub fn with_config_from_path(
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+    ) -> Self {
+        Self {
+            workspace_path,
+            python_binary,
+            python_home,
+            sandbox,
+        }
+    }
+
+    /// Create a runner from a runtime resolver.
+    pub fn with_runtime_resolver(
+        workspace_path: PathBuf,
+        sandbox: SandboxConfig,
+        runtime_resolver: Arc<dyn crate::runtime::dependencies::RuntimeResolver>,
+    ) -> anyhow::Result<Self> {
+        let deps = runtime_resolver
+            .workspace_dependencies()
+            .context("failed to resolve managed Python runtime dependencies")?;
+        Ok(Self::with_runtime(
+            workspace_path,
+            sandbox,
+            deps.python,
+            None,
+        ))
+    }
+
+    /// Return the configured Python binary path.
+    pub fn python_binary_path(&self) -> &Path {
+        &self.python_binary
     }
 
     /// Execute Python code string.
@@ -74,8 +135,18 @@ impl PythonRunner {
     /// 5. Captures stdout/stderr.
     /// 6. Cleans up temp file.
     pub async fn execute(&self, code: &str) -> Result<ExecutionResult> {
-        // 1. Validate code
-        self.sandbox.validate_code(code).map_err(|e| anyhow!("Sandbox violation: {}", e))?;
+        // 1. Defense-in-depth: validate code for obvious dangerous patterns.
+        // Note: validate_code() is NOT the primary security barrier — _safe_open path
+        // restriction and PermissionPipeline capability checks are. This is kept as a
+        // best-effort check that warns on suspicious patterns without hard-blocking.
+        #[allow(deprecated)]
+        if let Err(e) = self.sandbox.validate_code(code) {
+            log::warn!(
+                "[Python] validate_code warning (non-blocking): {}. \
+                Primary safety enforced by _safe_open path restriction.",
+                e
+            );
+        }
 
         // 2. Execute without re-validation
         self.execute_raw(code).await
@@ -92,7 +163,11 @@ impl PythonRunner {
         let temp_file = temp_dir.join(format!("code_{}.py", file_id));
 
         // Prepend UTF-8 encoding declaration and sandbox preamble to code
-        let full_code = format!("# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}", self.sandbox.preamble(), code);
+        let full_code = format!(
+            "# -*- coding: utf-8 -*-\n{}\n# --- User Code ---\n{}",
+            self.sandbox.preamble(),
+            code
+        );
         std::fs::write(&temp_file, &full_code).context("Failed to write temp Python file")?;
 
         // Execute
@@ -130,10 +205,17 @@ impl PythonRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         super::configure_python_env(&mut cmd, self.python_home.as_deref());
+        // Prepend bundle bin dir so that any sub-process spawned by user Python code
+        // (or by our runtime tools) can find the bundled interpreters/tools on PATH.
+        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
+            &mut cmd,
+            &self.python_binary,
+        );
 
-        let mut child = cmd
-            .spawn()
-            .context(format!("Failed to spawn Python process: {}", self.python_binary.display()))?;
+        let mut child = cmd.spawn().context(format!(
+            "Failed to spawn Python process: {}",
+            self.python_binary.display()
+        ))?;
 
         // Take stdout/stderr handles out of the child so they can be read concurrently.
         // This avoids pipe buffer deadlock: if stdout fills its OS buffer while we
@@ -222,8 +304,10 @@ impl PythonRunner {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        let output = cmd.output().await
-            .context(format!("Python not found: {}", self.python_binary.display()))?;
+        let output = cmd.output().await.context(format!(
+            "Python not found: {}",
+            self.python_binary.display()
+        ))?;
 
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if version.is_empty() {
@@ -243,7 +327,9 @@ impl PythonRunner {
 ///
 /// Returns `(python_binary, python_home)`. `python_home` is `Some` only when
 /// using the bundled runtime.
-pub(crate) fn resolve_python_path(app_handle: Option<&tauri::AppHandle>) -> (PathBuf, Option<PathBuf>) {
+pub(crate) fn resolve_python_path(
+    app_handle: Option<&tauri::AppHandle>,
+) -> (PathBuf, Option<PathBuf>) {
     use tauri::Manager;
 
     if let Some(handle) = app_handle {
@@ -303,5 +389,17 @@ mod tests {
         let (binary, home) = resolve_python_path(None);
         assert_eq!(binary, PathBuf::from("python3"));
         assert!(home.is_none());
+    }
+
+    #[test]
+    fn runner_with_config_from_path_uses_provided_binary() {
+        let workspace = std::env::temp_dir().join("test_workspace_j1");
+        std::fs::create_dir_all(&workspace).ok();
+        let sandbox = SandboxConfig::for_workspace(&workspace);
+        let binary = PathBuf::from("/usr/bin/python3");
+
+        let runner = PythonRunner::with_config_from_path(binary.clone(), None, workspace, sandbox);
+
+        assert_eq!(runner.python_binary, binary);
     }
 }

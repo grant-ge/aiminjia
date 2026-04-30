@@ -1,20 +1,41 @@
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { TitleBar } from './TitleBar'
-import '@/i18n'
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    startDragging: vi.fn(),
+    minimize: vi.fn(),
     toggleMaximize: vi.fn(),
+    close: vi.fn(),
+    startDragging: vi.fn(),
   }),
 }))
 
 describe('TitleBar', () => {
-  it('title span has pointer-events-none so drag passes through to parent', () => {
+  const originalUserAgent = navigator.userAgent
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: originalUserAgent, configurable: true })
+  })
+
+  it('renders nothing on macOS', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Macintosh)', configurable: true })
+    const { container } = render(<TitleBar />)
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders window controls on Windows', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
     render(<TitleBar />)
-    const title = screen.getByText(/AIjia|AI小家/)
-    expect(title).toHaveClass('pointer-events-none')
+    expect(screen.getByLabelText('Minimize')).toBeInTheDocument()
+    expect(screen.getByLabelText('Maximize')).toBeInTheDocument()
+    expect(screen.getByLabelText('Close')).toBeInTheDocument()
+  })
+
+  it('has a bottom border on Windows', () => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0)', configurable: true })
+    const { container } = render(<TitleBar />)
+    expect(container.firstChild).toHaveClass('border-b')
   })
 })

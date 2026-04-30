@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AIjia",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "identifier": "com.aijia.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
@@ -24,7 +24,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://*; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: asset: https:"
+      "csp": "default-src 'self'; connect-src 'self' https://*; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: asset: https:",
+      "devCsp": "default-src 'self'; connect-src 'self' http://localhost:5173 ws://localhost:5173 http://127.0.0.1:5173 ws://127.0.0.1:5173 ipc: http://ipc.localhost https://*; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://localhost:5173 http://127.0.0.1:5173 https:"
     }
   },
   "plugins": {
@@ -51,11 +52,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "python-runtime": "python-runtime",
       "playwright-runtime": "playwright-runtime",
       "prompts": "prompts",
-      "plugins": "plugins",
-      "changelog.json": "changelog.json",
       "resources/dws*": ""
     }
   }

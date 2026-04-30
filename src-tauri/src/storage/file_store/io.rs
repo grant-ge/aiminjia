@@ -98,8 +98,8 @@ pub fn read_json_optional<T: DeserializeOwned>(path: &Path) -> io::Result<Option
 /// The `\t✓` suffix marks the line as completely written. Lines without it
 /// (e.g., from a crash mid-write) are discarded on read.
 pub fn append_jsonl<T: Serialize>(path: &Path, record: &T) -> io::Result<()> {
-    let json = serde_json::to_string(record)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let json =
+        serde_json::to_string(record).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -107,10 +107,7 @@ pub fn append_jsonl<T: Serialize>(path: &Path, record: &T) -> io::Result<()> {
     }
 
     let line = format!("{}{}\n", json, LINE_COMPLETE);
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     file.write_all(line.as_bytes())?;
     file.flush()?;
 
@@ -228,10 +225,7 @@ pub fn read_all_jsonl_shards<T: DeserializeOwned>(base_path: &Path) -> io::Resul
 /// Returns `[base.1.jsonl, base.2.jsonl, ..., base.jsonl]`.
 fn list_shard_paths(base_path: &Path) -> Vec<PathBuf> {
     let parent = base_path.parent().unwrap_or(Path::new("."));
-    let stem = base_path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
 
     let mut numbered: Vec<(u32, PathBuf)> = Vec::new();
 
@@ -280,10 +274,7 @@ fn parse_shard_number(filename: &str, stem: &str) -> Option<u32> {
 fn rotate_jsonl_shard(path: &Path) -> io::Result<()> {
     let next_num = find_max_shard_number(path) + 1;
     let parent = path.parent().unwrap_or(Path::new("."));
-    let stem = path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let shard_name = format!("{}.{}.jsonl", stem, next_num);
     let shard_path = parent.join(shard_name);
 
@@ -296,10 +287,7 @@ fn rotate_jsonl_shard(path: &Path) -> io::Result<()> {
 /// Find the highest shard number for a base path.
 fn find_max_shard_number(base_path: &Path) -> u32 {
     let parent = base_path.parent().unwrap_or(Path::new("."));
-    let stem = base_path
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
 
     let mut max = 0u32;
 
@@ -395,9 +383,9 @@ pub fn process_alive(pid: u32) -> bool {
     // On Windows, we could use OpenProcess, but for simplicity assume dead
     // if we can't verify. This is safe because the worst case is re-acquiring
     // a lock that's actually still held, which the gateway prevents anyway.
-    use std::process::Command;
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
     let mut cmd = Command::new("tasklist");
     cmd.args(["/FI", &format!("PID eq {}", pid)]);
     #[cfg(target_os = "windows")]
@@ -491,8 +479,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("data.jsonl");
 
-        let r1 = TestRecord { id: "a".into(), value: 1 };
-        let r2 = TestRecord { id: "b".into(), value: 2 };
+        let r1 = TestRecord {
+            id: "a".into(),
+            value: 1,
+        };
+        let r2 = TestRecord {
+            id: "b".into(),
+            value: 2,
+        };
 
         append_jsonl(&path, &r1).unwrap();
         append_jsonl(&path, &r2).unwrap();
@@ -509,14 +503,28 @@ mod tests {
         let path = dir.path().join("data.jsonl");
 
         // Write one valid line
-        append_jsonl(&path, &TestRecord { id: "ok".into(), value: 1 }).unwrap();
+        append_jsonl(
+            &path,
+            &TestRecord {
+                id: "ok".into(),
+                value: 1,
+            },
+        )
+        .unwrap();
 
         // Manually append an incomplete line (no marker)
         let mut file = OpenOptions::new().append(true).open(&path).unwrap();
         file.write_all(b"{\"id\":\"bad\",\"value\":99}\n").unwrap();
 
         // Write another valid line
-        append_jsonl(&path, &TestRecord { id: "ok2".into(), value: 2 }).unwrap();
+        append_jsonl(
+            &path,
+            &TestRecord {
+                id: "ok2".into(),
+                value: 2,
+            },
+        )
+        .unwrap();
 
         let records: Vec<TestRecord> = read_jsonl(&path).unwrap();
         assert_eq!(records.len(), 2);
@@ -530,7 +538,14 @@ mod tests {
         let path = dir.path().join("data.jsonl");
 
         for i in 0..10 {
-            append_jsonl(&path, &TestRecord { id: format!("r{}", i), value: i }).unwrap();
+            append_jsonl(
+                &path,
+                &TestRecord {
+                    id: format!("r{}", i),
+                    value: i,
+                },
+            )
+            .unwrap();
         }
 
         let tail: Vec<TestRecord> = read_jsonl_tail(&path, 3).unwrap();
@@ -548,9 +563,13 @@ mod tests {
         for i in 0..20 {
             append_jsonl_with_split(
                 &path,
-                &TestRecord { id: format!("r{}", i), value: i },
+                &TestRecord {
+                    id: format!("r{}", i),
+                    value: i,
+                },
                 100, // 100 bytes threshold
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // Should have split into multiple shards
@@ -597,7 +616,14 @@ mod tests {
         assert_eq!(count_jsonl_lines(&path).unwrap(), 0);
 
         for i in 0..5 {
-            append_jsonl(&path, &TestRecord { id: format!("r{}", i), value: i }).unwrap();
+            append_jsonl(
+                &path,
+                &TestRecord {
+                    id: format!("r{}", i),
+                    value: i,
+                },
+            )
+            .unwrap();
         }
 
         assert_eq!(count_jsonl_lines(&path).unwrap(), 5);

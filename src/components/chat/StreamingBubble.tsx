@@ -2,11 +2,9 @@
  * StreamingBubble — shows the AI response as it streams in,
  * with a typing indicator when waiting for the first token.
  */
-import { Avatar } from '@/components/common/Avatar'
 import { useChatStore } from '@/stores/chatStore'
-import { useProductName } from '@/hooks/useProductName'
-import { TypingIndicator } from './TypingIndicator'
-import { markdownToHtml } from '@/lib/markdown'
+import { TypingIndicator } from '@/components/chat-scene/TypingIndicator'
+import { AssistantMarkdown } from '@/components/chat-scene/AssistantMarkdown'
 import { stripHallucinatedXml } from '@/lib/sanitize'
 import { useTranslation } from 'react-i18next'
 
@@ -14,10 +12,21 @@ interface StreamingBubbleProps {
   content: string
 }
 
+const EMPTY_TOOL_EXECUTIONS: Array<{
+  toolName: string
+  toolId: string
+  status: 'executing' | 'completed' | 'error'
+  summary?: string
+}> = []
+
 export function StreamingBubble({ content }: StreamingBubbleProps) {
   const { t } = useTranslation()
-  const toolExecutions = useChatStore((s) => s.toolExecutions)
-  const productName = useProductName()
+  const toolExecutions = useChatStore((s) => {
+    const activeId = s.activeConversationId
+    return activeId
+      ? (s.streamStates[activeId]?.toolExecutions ?? s.toolExecutions)
+      : (s.toolExecutions ?? EMPTY_TOOL_EXECUTIONS)
+  })
   const agentPhase = useChatStore((s) => {
     const activeId = s.activeConversationId
     return activeId ? s.streamStates[activeId]?.agentPhase : undefined
@@ -38,25 +47,10 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
       : (cleanContent ? '' : t('streaming.phases.think'))
 
   return (
-    <div className="mb-7 animate-[fadeUp_0.3s_ease]">
-      {/* Header: avatar + name */}
-      <div className="mb-2 flex items-center gap-2">
-        <Avatar variant="ai" />
-        <span
-          className="text-sm font-semibold"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          {productName}
-        </span>
-      </div>
-
-      {/* Body — offset by avatar width */}
-      <div className="pl-9">
+    <div className="mb-7">
+      <div>
         {cleanContent ? (
-          <div
-            className="text-md leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: markdownToHtml(cleanContent) }}
-          />
+          <AssistantMarkdown text={cleanContent} />
         ) : null}
         {activeTool ? (
           <div
@@ -69,9 +63,11 @@ export function StreamingBubble({ content }: StreamingBubbleProps) {
             <span>{statusText}</span>
           </div>
         ) : (
-          <div className={`flex items-center gap-2 text-sm${cleanContent ? ' mt-2' : ''}`} style={{ color: 'var(--color-text-muted)' }}>
-            <TypingIndicator />
-            <span>{statusText}</span>
+          <div className={cleanContent ? 'mt-2' : ''}>
+            <TypingIndicator variant={agentPhase === 'observe' ? 'organize' : 'default'} />
+            {statusText && cleanContent ? (
+              <span className="sr-only">{statusText}</span>
+            ) : null}
           </div>
         )}
       </div>

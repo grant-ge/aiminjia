@@ -1,301 +1,161 @@
-//! Sub-agent executor — runs a mini agent loop with its own system prompt,
-//! tool set, and iteration budget. Used by delegation tools like `browse_data`
-//! to isolate complex multi-step tasks from the main conversation context.
+//! Sub-agent executor — 仅保留 worker runtime 的请求入口与共享数据结构。
 
-use anyhow::Result;
-use futures::StreamExt;
-use log::{info, warn};
+use std::sync::Arc;
 
 use crate::llm::gateway::LlmGateway;
-use crate::llm::masking::MaskingLevel;
-use crate::llm::streaming::{ChatMessage, StopReason, StreamEvent, ToolDefinition};
 use crate::models::settings::AppSettings;
-use crate::plugin::context::PluginContext;
-use crate::plugin::registry::ToolRegistry;
+use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
+use crate::plugin::tool_trait::ToolError as LegacyToolError;
+use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
+use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
+use crate::runtime::agent::AgentRuntime;
+use crate::runtime::ids::RunId;
+use crate::runtime::tools::permission::PermissionMode;
 
-use tauri::Emitter;
+#[cfg(test)]
+fn take_ask_required_decision(
+    err: &LegacyToolError,
+) -> Option<crate::runtime::tools::permission::PermissionDecision> {
+    match err {
+        LegacyToolError::AskRequired(decision) => Some(decision.clone()),
+        _ => None,
+    }
+}
 
-/// Truncate a string at a safe UTF-8 boundary.
-fn safe_truncate(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
+#[derive(Clone)]
+pub struct SubAgentRuntimeDeps {
+    pub storage: Arc<crate::storage::file_store::AppStorage>,
+    pub file_manager: Arc<crate::storage::file_manager::FileManager>,
+    pub workspace_path: std::path::PathBuf,
+    pub conversation_id: String,
+    pub session_id: crate::runtime::ids::SessionId,
+    pub run_id: Option<RunId>,
+    pub agent_id: Option<crate::runtime::ids::AgentId>,
+    pub session_manager: Arc<crate::python::session::PythonSessionManager>,
+    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
+    pub agent_runtime: Option<Arc<AgentRuntime>>,
+    pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
+    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    pub app_handle: Option<tauri::AppHandle>,
+    pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+}
+
+impl SubAgentRuntimeDeps {
+    pub fn request_scoped_tool_deps(
+        &self,
+        run_id: RunId,
+        agent_id: Option<crate::runtime::ids::AgentId>,
+        cancellation: Option<crate::runtime::cancellation::CancellationToken>,
+        read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
+    ) -> RequestScopedRuntimeDeps {
+        RequestScopedRuntimeDeps {
+            storage: self.storage.clone(),
+            file_manager: self.file_manager.clone(),
+            workspace_path: self.workspace_path.clone(),
+            conversation_id: self.conversation_id.clone(),
+            session_id: self.session_id.clone(),
+            run_id: Some(run_id),
+            agent_id,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: self.app_handle.clone(),
+            session_manager: self.session_manager.clone(),
+            auth_manager: None,
+            connector_engine: self.connector_engine.clone(),
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: self.agent_runtime.clone(),
+            event_bus: self.event_bus.clone(),
+            skill_registry: self.skill_registry.clone(),
+            authorized_workspace: self.authorized_workspace.clone(),
+            read_file_state,
+            cancellation,
+            permission_mode: PermissionMode::Default,
+            runtime_resolver: self.runtime_resolver.clone(),
+        }
     }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
 }
 
 /// Configuration for a sub-agent run.
 pub struct SubAgentConfig {
-    /// The task description (becomes the initial user message).
     pub task: String,
-    /// System prompt for the sub-agent.
     pub system_prompt: String,
-    /// Which tools the sub-agent can use (names must match registry).
     pub allowed_tools: Vec<String>,
-    /// Max iterations before forced stop.
     pub max_iterations: usize,
-    /// Dynamic context injected alongside the system prompt.
     pub dynamic_context: String,
-    /// Conversation ID of the parent (for emitting heartbeat events to prevent watchdog timeout).
     pub conversation_id: String,
-    /// App handle for emitting Tauri events.
+    pub parent_run_id: Option<RunId>,
+    pub background: bool,
     pub app_handle: Option<tauri::AppHandle>,
+    pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
+    pub permission_mode: PermissionMode,
 }
 
 /// Result from a sub-agent run.
 pub struct SubAgentResult {
-    /// Final text output from the sub-agent.
     pub output: String,
-    /// File paths produced during execution.
     pub files: Vec<String>,
-    /// How many iterations were used.
     pub iterations_used: usize,
+    pub envelope: SubAgentResultEnvelope,
 }
 
-/// Run a sub-agent loop: LLM + tool execution with isolated context.
-///
-/// The sub-agent has its own system prompt, tool set, and message history.
-/// It does not emit streaming events to the frontend (silent execution).
 pub async fn run_sub_agent(
     gateway: &LlmGateway,
     tool_registry: &ToolRegistry,
-    plugin_ctx: &PluginContext,
+    runtime_deps: &SubAgentRuntimeDeps,
     config: SubAgentConfig,
     settings: &AppSettings,
-) -> Result<SubAgentResult> {
-    info!(
-        "[SubAgent] Starting: task_len={}, tools={:?}, max_iter={}",
-        config.task.len(),
-        config.allowed_tools,
-        config.max_iterations
-    );
-
-    // Guard against recursive sub-agent calls
+) -> std::result::Result<SubAgentResult, LegacyToolError> {
     if config.allowed_tools.contains(&"browse_data".to_string()) {
-        return Err(anyhow::anyhow!("Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"));
+        return Err(anyhow::anyhow!(
+            "Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"
+        )
+        .into());
     }
 
-    // Build filtered tool schemas
-    let all_schemas = tool_registry.get_all_schemas().await;
-    let tool_defs: Vec<ToolDefinition> = all_schemas
-        .into_iter()
-        .filter(|s| config.allowed_tools.contains(&s.name))
-        .collect();
+    let runtime = SubagentWorkerRuntime::new(gateway, tool_registry, runtime_deps, settings);
+    runtime.run(config).await
+}
 
-    info!("[SubAgent] Tool schemas loaded: {}", tool_defs.len());
-
-    // Initialize message history with the task
-    let mut messages = vec![ChatMessage::text("user", &config.task)];
-
-    let mut output = String::new();
-    let mut files: Vec<String> = vec![];
-    let mut iterations_used = 0;
-
-    // Use a unique sub-agent conversation ID so gateway active_tasks doesn't conflict
-    let sub_conv_id = format!("sub_{}", uuid::Uuid::new_v4());
-
-    let dynamic_ctx = if config.dynamic_context.is_empty() {
-        None
-    } else {
-        Some(config.dynamic_context.as_str())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::tool_trait::ToolError as LegacyToolError;
+    use crate::runtime::tools::permission::{
+        default_permission_ask, PermissionDecision, PermissionReason,
     };
 
-    for iteration in 0..config.max_iterations {
-        iterations_used = iteration + 1;
-
-        info!("[SubAgent] iter={}/{}, messages={}", iteration, config.max_iterations, messages.len());
-
-        // Call LLM
-        let stream_result = gateway
-            .stream_message(
-                settings,
-                messages.clone(),
-                MaskingLevel::Relaxed,
-                Some(&config.system_prompt),
-                dynamic_ctx,
-                Some(tool_defs.clone()),
-                4096,
-                Some(&sub_conv_id),
-            )
-            .await;
-
-        let (_task_id, mut stream, _mask_ctx, _cancel_rx) = match stream_result {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("[SubAgent] LLM call failed at iter {}: {}", iteration, e);
-                output = format!("Sub-agent LLM error: {}", e);
-                break;
-            }
+    #[test]
+    fn take_ask_required_decision_preserves_structured_permission_request() {
+        let decision = PermissionDecision::Ask {
+            message: "need approval".to_string(),
+            suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
+            remember_options: default_permission_ask().0,
+            default_destination: default_permission_ask().1,
+            reason: PermissionReason::Other("subagent-inner".to_string()),
         };
 
-        // Collect stream events
-        let mut iter_content = String::new();
-        let mut tool_calls = vec![];
-        let mut stop_reason = StopReason::EndTurn;
+        let extracted = take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))
+            .expect("AskRequired must stay structured");
 
-        while let Some(event) = stream.next().await {
-            match event {
-                StreamEvent::ContentDelta { delta } => {
-                    iter_content.push_str(&delta);
-                }
-                StreamEvent::ToolCallStart { tool_call } => {
-                    tool_calls.push(tool_call);
-                }
-                StreamEvent::Done {
-                    stop_reason: sr, ..
-                } => {
-                    stop_reason = sr;
-                    break;
-                }
-                StreamEvent::Error { error } => {
-                    warn!("[SubAgent] Stream error: {}", error);
-                    break;
-                }
-                _ => {}
+        match extracted {
+            PermissionDecision::Ask {
+                message,
+                suggestions,
+                ..
+            } => {
+                assert_eq!(message, "need approval");
+                assert_eq!(
+                    suggestions,
+                    vec!["Allow once".to_string(), "Deny".to_string()]
+                );
             }
-        }
-
-        info!(
-            "[SubAgent] iter={} content_len={} tool_calls={} stop={:?}",
-            iteration,
-            iter_content.len(),
-            tool_calls.len(),
-            stop_reason
-        );
-
-        // If no tool calls, we're done
-        if stop_reason != StopReason::ToolUse || tool_calls.is_empty() {
-            output = iter_content;
-            break;
-        }
-
-        // Push assistant message with tool calls
-        messages.push(ChatMessage::assistant_with_tool_calls(
-            iter_content.clone(),
-            tool_calls.iter().map(|tc| crate::llm::streaming::ToolCall {
-                id: tc.id.clone(),
-                name: tc.name.clone(),
-                arguments: tc.arguments.clone(),
-            }).collect(),
-            None, // sub_agent doesn't use thinking mode
-            None,
-        ));
-
-        // Execute tool calls
-        for tc in &tool_calls {
-            // Check allowed
-            if !config.allowed_tools.contains(&tc.name) {
-                let err_msg = format!("Tool '{}' not available in this sub-agent", tc.name);
-                messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
-                continue;
-            }
-
-            info!("[SubAgent] Executing tool '{}' (id={})", tc.name, tc.id);
-
-            // Emit tool:executing event to keep frontend watchdog alive
-            if let Some(ref app) = config.app_handle {
-                let _ = app.emit("tool:executing", serde_json::json!({
-                    "conversationId": config.conversation_id,
-                    "toolName": tc.name,
-                    "toolId": tc.id,
-                    "purpose": format!("[Browser Agent] {}", tc.name),
-                }));
-            }
-
-            let result = tool_registry
-                .execute(&tc.name, plugin_ctx, tc.arguments.clone())
-                .await;
-
-            match result {
-                Ok(tool_output) => {
-                    // Emit tool:completed
-                    if let Some(ref app) = config.app_handle {
-                        let summary = if tool_output.content.len() > 100 {
-                            format!("{}...", safe_truncate(&tool_output.content, 100))
-                        } else {
-                            tool_output.content.clone()
-                        };
-                        let _ = app.emit("tool:completed", serde_json::json!({
-                            "conversationId": config.conversation_id,
-                            "toolId": tc.id,
-                            "success": true,
-                            "summary": summary,
-                        }));
-                    }
-                    // Collect file paths from tool output
-                    for f in &tool_output.generated_files {
-                        files.push(f.clone());
-                    }
-
-                    // Detect file paths in content (various formats)
-                    for line in tool_output.content.lines() {
-                        let trimmed = line.trim();
-                        // Match: "File: /path", "**File**: /path", "- **File**: /path"
-                        if let Some(rest) = trimmed.strip_prefix("File: ")
-                            .or_else(|| trimmed.strip_prefix("**File**: "))
-                            .or_else(|| trimmed.strip_prefix("- **File**: "))
-                        {
-                            let path = rest.trim();
-                            if path.starts_with('/') && !files.contains(&path.to_string()) {
-                                files.push(path.to_string());
-                            }
-                        }
-                        // Match paths in generated/ directory
-                        if trimmed.contains("/generated/") && trimmed.contains(".json") {
-                            for word in trimmed.split_whitespace() {
-                                let clean = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-');
-                                if clean.starts_with('/') && clean.contains("/generated/") && !files.contains(&clean.to_string()) {
-                                    files.push(clean.to_string());
-                                }
-                            }
-                        }
-                    }
-
-                    let content = if tool_output.content.len() > 8000 {
-                        format!("{}...(truncated)", safe_truncate(&tool_output.content, 8000))
-                    } else {
-                        tool_output.content
-                    };
-
-                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, content));
-                }
-                Err(e) => {
-                    let err_msg = format!("Tool error: {}", e);
-                    warn!("[SubAgent] Tool '{}' failed: {}", tc.name, err_msg);
-                    if let Some(ref app) = config.app_handle {
-                        let _ = app.emit("tool:completed", serde_json::json!({
-                            "conversationId": config.conversation_id,
-                            "toolId": tc.id,
-                            "success": false,
-                            "summary": err_msg.clone(),
-                        }));
-                    }
-                    messages.push(ChatMessage::tool_result(&tc.id, &tc.name, err_msg));
-                }
-            }
+            other => panic!("expected ask decision, got: {:?}", other),
         }
     }
-
-    if iterations_used >= config.max_iterations && output.is_empty() {
-        output = "Sub-agent reached iteration limit.".to_string();
-    }
-
-    // Clean up gateway active task entry
-    gateway.clear_task(&sub_conv_id);
-
-    info!(
-        "[SubAgent] Complete: iterations={}, output_len={}, files={}",
-        iterations_used,
-        output.len(),
-        files.len()
-    );
-
-    Ok(SubAgentResult {
-        output,
-        files,
-        iterations_used,
-    })
 }

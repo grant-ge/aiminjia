@@ -1,5 +1,9 @@
 //! read_page_content — extract structured data from the active page in the CDP browser.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -11,7 +15,9 @@ pub struct ReadPageContentTool;
 
 #[async_trait]
 impl ToolPlugin for ReadPageContentTool {
-    fn name(&self) -> &str { "read_page_content" }
+    fn name(&self) -> &str {
+        "read_page_content"
+    }
 
     fn description(&self) -> &str {
         "Read and extract structured data from the active page in the Chrome browser. \

@@ -60,33 +60,50 @@ impl PageProfile {
         let mut parts = vec![];
 
         if !self.table_schemas.is_empty() {
-            let schemas: Vec<String> = self.table_schemas.iter().map(|t| {
-                let name = if t.name.is_empty() { "table".to_string() } else { t.name.clone() };
-                let cols = if t.headers.len() > 4 {
-                    format!("{}...+{}", t.headers[..4].join("|"), t.headers.len() - 4)
-                } else {
-                    t.headers.join("|")
-                };
-                format!("{}({} rows: {})", name, t.row_count, cols)
-            }).collect();
+            let schemas: Vec<String> = self
+                .table_schemas
+                .iter()
+                .map(|t| {
+                    let name = if t.name.is_empty() {
+                        "table".to_string()
+                    } else {
+                        t.name.clone()
+                    };
+                    let cols = if t.headers.len() > 4 {
+                        format!("{}...+{}", t.headers[..4].join("|"), t.headers.len() - 4)
+                    } else {
+                        t.headers.join("|")
+                    };
+                    format!("{}({} rows: {})", name, t.row_count, cols)
+                })
+                .collect();
             parts.push(format!("tables: {}", schemas.join(", ")));
         }
 
         if !self.forms.is_empty() {
-            let form_info: Vec<String> = self.forms.iter().map(|f| {
-                let fields: Vec<&str> = f.fields.iter().map(|fl| fl.name.as_str()).collect();
-                format!("{} {} [{}]", f.method, f.action, fields.join(","))
-            }).collect();
+            let form_info: Vec<String> = self
+                .forms
+                .iter()
+                .map(|f| {
+                    let fields: Vec<&str> = f.fields.iter().map(|fl| fl.name.as_str()).collect();
+                    format!("{} {} [{}]", f.method, f.action, fields.join(","))
+                })
+                .collect();
             parts.push(format!("forms: {}", form_info.join("; ")));
         }
 
         if !self.api_endpoints.is_empty() {
-            let apis: Vec<String> = self.api_endpoints.iter().take(3).map(|a| {
-                format!("{} {}", a.method, a.url)
-            }).collect();
+            let apis: Vec<String> = self
+                .api_endpoints
+                .iter()
+                .take(3)
+                .map(|a| format!("{} {}", a.method, a.url))
+                .collect();
             let suffix = if self.api_endpoints.len() > 3 {
                 format!(" +{} more", self.api_endpoints.len() - 3)
-            } else { String::new() };
+            } else {
+                String::new()
+            };
             parts.push(format!("apis: {}{}", apis.join(", "), suffix));
         }
 
@@ -109,18 +126,32 @@ impl PageProfile {
             out.push_str("Tables:\n");
             for t in &self.table_schemas {
                 let name = if t.name.is_empty() { "table" } else { &t.name };
-                out.push_str(&format!("  - {} ({} rows): {}\n", name, t.row_count, t.headers.join(" | ")));
+                out.push_str(&format!(
+                    "  - {} ({} rows): {}\n",
+                    name,
+                    t.row_count,
+                    t.headers.join(" | ")
+                ));
             }
         }
 
         if !self.forms.is_empty() {
             out.push_str("Forms:\n");
             for f in &self.forms {
-                out.push_str(&format!("  - {}#{}: {} {}\n", "Form", f.id, f.method, f.action));
+                out.push_str(&format!(
+                    "  - {}#{}: {} {}\n",
+                    "Form", f.id, f.method, f.action
+                ));
                 for field in &f.fields {
-                    let val = if field.value.is_empty() { String::new() }
-                        else { format!("={}", field.value) };
-                    out.push_str(&format!("    {} ({}{})\n", field.name, field.field_type, val));
+                    let val = if field.value.is_empty() {
+                        String::new()
+                    } else {
+                        format!("={}", field.value)
+                    };
+                    out.push_str(&format!(
+                        "    {} ({}{})\n",
+                        field.name, field.field_type, val
+                    ));
                 }
             }
         }
@@ -133,10 +164,17 @@ impl PageProfile {
                 } else {
                     format!("{}B", a.size_bytes)
                 };
-                let ct = if a.content_type.contains("json") { "JSON" }
-                    else if a.content_type.contains("html") { "HTML" }
-                    else { &a.content_type };
-                out.push_str(&format!("  - {} {} → {} ({} {})\n", a.method, a.url, a.status, size, ct));
+                let ct = if a.content_type.contains("json") {
+                    "JSON"
+                } else if a.content_type.contains("html") {
+                    "HTML"
+                } else {
+                    &a.content_type
+                };
+                out.push_str(&format!(
+                    "  - {} {} → {} ({} {})\n",
+                    a.method, a.url, a.status, size, ct
+                ));
             }
         }
 
@@ -211,7 +249,10 @@ impl SiteMap {
         // Show detail for the active page
         if let Some(path) = active_path {
             if let Some(profile) = self.pages.get(path) {
-                out.push_str(&format!("\nCurrent page: {} ({})\n", profile.url_path, profile.title));
+                out.push_str(&format!(
+                    "\nCurrent page: {} ({})\n",
+                    profile.url_path, profile.title
+                ));
                 out.push_str(&profile.format_detail());
             }
         }
@@ -221,36 +262,40 @@ impl SiteMap {
 
     // ── Persistence ─────────────────────────────────────────────
 
-    fn cache_dir(app_data_dir: &Path) -> PathBuf {
-        app_data_dir.join("site-profiles")
+    fn cache_dir(data_root: &Path) -> PathBuf {
+        data_root.join("site-profiles")
     }
 
-    fn file_path(app_data_dir: &Path, origin: &str) -> PathBuf {
+    fn file_path(data_root: &Path, origin: &str) -> PathBuf {
         // Sanitize origin for filename: https://foo.com → foo.com.json
         let name = origin
             .replace("https://", "")
             .replace("http://", "")
             .replace(':', "_")
             .replace('/', "_");
-        Self::cache_dir(app_data_dir).join(format!("{}.json", name))
+        Self::cache_dir(data_root).join(format!("{}.json", name))
     }
 
-    pub fn load(app_data_dir: &Path, origin: &str) -> Option<Self> {
-        let path = Self::file_path(app_data_dir, origin);
+    pub fn load(data_root: &Path, origin: &str) -> Option<Self> {
+        let path = Self::file_path(data_root, origin);
         let content = std::fs::read_to_string(&path).ok()?;
         let map: Self = serde_json::from_str(&content).ok()?;
         info!("[SiteMap] Loaded {} pages for {}", map.pages.len(), origin);
         Some(map)
     }
 
-    pub fn save(&self, app_data_dir: &Path) -> Result<(), String> {
-        let dir = Self::cache_dir(app_data_dir);
+    pub fn save(&self, data_root: &Path) -> Result<(), String> {
+        let dir = Self::cache_dir(data_root);
         std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {}", e))?;
-        let path = Self::file_path(app_data_dir, &self.origin);
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("serialize: {}", e))?;
+        let path = Self::file_path(data_root, &self.origin);
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {}", e))?;
         std::fs::write(&path, json).map_err(|e| format!("write: {}", e))?;
-        info!("[SiteMap] Saved {} pages for {} → {:?}", self.pages.len(), self.origin, path);
+        info!(
+            "[SiteMap] Saved {} pages for {} → {:?}",
+            self.pages.len(),
+            self.origin,
+            path
+        );
         Ok(())
     }
 }

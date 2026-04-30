@@ -83,11 +83,9 @@ fn parse_bing_results(html: &str, max_results: usize) -> Vec<BingResult> {
 
     // Skip first element (before first result)
     for block in blocks.iter().skip(1).take(max_results) {
-        let title = extract_between(block, "<h2", "</h2>")
-            .and_then(|h2| extract_tag_text(&h2));
+        let title = extract_between(block, "<h2", "</h2>").and_then(|h2| extract_tag_text(&h2));
 
-        let url = extract_between(block, "<h2", "</h2>")
-            .and_then(|h2| extract_href(&h2));
+        let url = extract_between(block, "<h2", "</h2>").and_then(|h2| extract_href(&h2));
 
         let snippet = extract_snippet(block);
 

@@ -1,25 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/common/Button'
+import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import {
-  listCustomSkills, installCustomSkill, uninstallCustomSkill, initSkillTemplate, packSkill,
-  reloadSkill, startSkillWatch, stopSkillWatch, onSkillFileChanged,
+  listCustomSkills, uninstallCustomSkill, initSkillTemplate, packSkill,
+  reloadSkill, startSkillWatch, stopSkillWatch, TAURI_EVENTS,
 } from '@/lib/tauri'
+import { listen } from '@tauri-apps/api/event'
 import type { CustomSkillInfo } from '@/lib/tauri'
-import { message, ask } from '@tauri-apps/plugin-dialog'
+import { message } from '@tauri-apps/plugin-dialog'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useSkillStore } from '@/stores/skillStore'
+import { uploadWithOverwriteConfirm } from '@/features/skill-center/uploadWithOverwriteConfirm'
 import { SkillMarketplace } from './SkillMarketplace'
-import { DraftResumeBanner } from '@/components/skill-smith/DraftResumeBanner'
 
 type SubTab = 'installed' | 'marketplace'
 
 interface SkillsTabProps {
-  /** Called when the user triggers an action that should dismiss the containing modal (e.g. resuming a skill-smith draft returns control to the chat). */
   onRequestClose?: () => void
 }
 
-export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
+export function SkillsTab(_props: SkillsTabProps = {}) {
   const { t } = useTranslation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const [subTab, setSubTab] = useState<SubTab>('installed')
@@ -77,7 +79,7 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
 
     let unlisten: (() => void) | null = null
     const setup = async () => {
-      unlisten = await onSkillFileChanged(handleFileChanged)
+      unlisten = await listen<string>(TAURI_EVENTS.SKILL_FILE_CHANGED, (event) => handleFileChanged(event.payload))
     }
     setup()
 
@@ -93,41 +95,36 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({ directory: true, title: t('settings.skills.selectFolder') })
-      if (selected) {
-        const msg = await installCustomSkill(selected)
+      if (!selected || Array.isArray(selected)) return
+
+      const result = await uploadWithOverwriteConfirm((force) =>
+        useSkillStore.getState().upload(selected, force),
+      )
+      if (result === 'installed') {
         await loadSkills()
-        await message(msg, { title: 'AI小家' })
+        pushNotification({
+          level: 'success',
+          title: '技能已安装',
+          message: '',
+          actions: [],
+          dismissible: true,
+          autoHide: 4,
+          context: 'toast',
+        })
       }
+      // 'cancelled' — silent
     } catch (e) {
-      const errStr = String(e)
-      if (errStr.startsWith('conflict:')) {
-        const skillId = errStr.slice(9)
-        const overwrite = await ask(
-          t('settings.skills.conflictMessage', { name: skillId }),
-          { title: 'AI小家', kind: 'warning' }
-        )
-        if (overwrite) {
-          try {
-            await uninstallCustomSkill(skillId)
-            const { open: reOpen } = await import('@tauri-apps/plugin-dialog')
-            const reSelected = await reOpen({ directory: true, title: t('settings.skills.selectFolder') })
-            if (reSelected) {
-              const msg = await installCustomSkill(reSelected)
-              await loadSkills()
-              await message(msg, { title: 'AI小家' })
-            }
-          } catch (e2) {
-            await message(String(e2), { title: 'AI小家', kind: 'error' })
-          }
-        }
-      } else {
-        await message(errStr, { title: 'AI小家', kind: 'error' })
-      }
+      await message(String(e), { title: 'AI小家', kind: 'error' })
     }
   }
 
   const handleUninstall = async (id: string, name: string) => {
-    const confirmed = await ask(t('settings.skills.confirmUninstall', { name }), { title: 'AI小家', kind: 'warning' })
+    const confirmed = await requestConfirm({
+      title: t('settings.skills.uninstall'),
+      description: t('settings.skills.confirmUninstall', { name }),
+      confirmLabel: t('settings.skills.uninstall'),
+      variant: 'destructive',
+    })
     if (!confirmed) return
     try {
       await uninstallCustomSkill(id)
@@ -201,9 +198,6 @@ export function SkillsTab({ onRequestClose }: SkillsTabProps = {}) {
 
   return (
     <div>
-      {/* Skill-smith: unfinished drafts nudge (self-hides when no drafts) */}
-      <DraftResumeBanner onAfterResume={onRequestClose} />
-
       {/* Sub-tab switcher */}
       <div className="mb-4 flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--color-bg-main)' }}>
         <button

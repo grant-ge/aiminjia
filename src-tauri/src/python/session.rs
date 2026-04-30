@@ -3,6 +3,9 @@
 //! Maintains a long-running Python REPL process per conversation,
 //! eliminating cold-start overhead (import, pkl restore) on every call.
 //! Falls back to one-shot PythonRunner on crash/timeout via checkpoint recovery.
+// PluginContext is used here as part of the legacy tool-execution path.
+// Suppress the deprecation lint; migrate when PythonSessionManager is refactored.
+#![allow(deprecated)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,20 +17,19 @@ use anyhow::{anyhow, Context, Result};
 use log::{info, warn};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 
 use crate::python::runner::ExecutionResult;
 use crate::python::sandbox::SandboxConfig;
+use crate::runtime::dependencies::{ManagedRuntimeResolver, RuntimeResolver};
+use crate::runtime::ids::RunId;
 
 /// Maximum number of concurrent Python sessions.
 const MAX_SESSIONS: usize = 3;
 
 /// Idle timeout before a session is automatically reaped (15 minutes).
 const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-
-/// Seconds to wait for graceful __DONE__ after SIGINT before force-killing.
-const INTERRUPT_GRACE_SECS: u64 = 5;
 
 // ---------------------------------------------------------------------------
 // Embedded Python scripts (source files alongside this module)
@@ -47,6 +49,26 @@ const CHECKPOINT_SCRIPT: &str = include_str!("_checkpoint.py");
 
 /// Python code to restore session state from pkl checkpoint files.
 const RESTORE_SCRIPT: &str = include_str!("_restore.py");
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoadedKeyMigration {
+    pub source_prefix: String,
+    pub target_prefix: String,
+}
+
+pub fn session_key_for_run(run_id: &RunId) -> String {
+    format!("python-run:{}", run_id.as_str())
+}
+
+pub fn migrate_loaded_keys_to_run_scope(
+    conversation_id: &str,
+    run_id: &RunId,
+) -> LoadedKeyMigration {
+    LoadedKeyMigration {
+        source_prefix: format!("loaded:{conversation_id}"),
+        target_prefix: format!("loaded:{}", run_id.as_str()),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // PythonSession
@@ -79,8 +101,7 @@ impl PythonSession {
         std::fs::create_dir_all(&temp_dir)?;
         let repl_path = temp_dir.join("_repl.py");
         if !repl_path.exists() {
-            std::fs::write(&repl_path, REPL_SCRIPT)
-                .context("Failed to write REPL script")?;
+            std::fs::write(&repl_path, REPL_SCRIPT).context("Failed to write REPL script")?;
         }
 
         let mut cmd = Command::new(python_binary);
@@ -91,15 +112,29 @@ impl PythonSession {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         super::configure_python_env(&mut cmd, python_home.map(|p| p.as_path()));
+        // Prepend bundle bin dir so the REPL process (and any sub-processes it spawns)
+        // finds the bundled interpreters/tools on PATH.
+        crate::runtime::dependencies::prepend_bundle_bin_to_path_tokio(
+            &mut cmd,
+            python_binary,
+        );
 
-        let mut child = cmd.spawn()
-            .context(format!("Failed to spawn Python REPL: {}", python_binary.display()))?;
+        let mut child = cmd.spawn().context(format!(
+            "Failed to spawn Python REPL: {}",
+            python_binary.display()
+        ))?;
 
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| anyhow!("Failed to capture Python stdin"))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| anyhow!("Failed to capture Python stdout"))?;
-        let stderr = child.stderr.take()
+        let stderr = child
+            .stderr
+            .take()
             .ok_or_else(|| anyhow!("Failed to capture Python stderr"))?;
 
         let now_ts = SystemTime::now()
@@ -107,7 +142,10 @@ impl PythonSession {
             .unwrap_or_default()
             .as_secs();
 
-        info!("[SESSION] Spawned Python REPL for conversation {}", conversation_id);
+        info!(
+            "[SESSION] Spawned Python REPL for conversation {}",
+            conversation_id
+        );
 
         Ok(Self {
             child: Mutex::new(child),
@@ -127,8 +165,8 @@ impl PythonSession {
     async fn is_alive(&self) -> bool {
         let mut child = self.child.lock().await;
         match child.try_wait() {
-            Ok(None) => true,  // still running
-            _ => false,        // exited or error
+            Ok(None) => true, // still running
+            _ => false,       // exited or error
         }
     }
 
@@ -168,7 +206,8 @@ impl PythonSession {
              _builtins._written_files = _written_files\n",
         );
 
-        self.send_code(&uuid, &init_code, Duration::from_secs(30)).await
+        self.send_code(&uuid, &init_code, Duration::from_secs(30))
+            .await
             .context("Session initialization (sandbox preamble) failed")?;
 
         // Load analysis utils if the file exists
@@ -177,14 +216,22 @@ impl PythonSession {
             let uuid2 = uuid::Uuid::new_v4().to_string();
             let load_utils = format!(
                 "_au_path = '{}'\nexec(open(_au_path, encoding='utf-8').read())\n",
-                utils_path.display().to_string().replace('\\', "\\\\").replace('\'', "\\'")
+                utils_path
+                    .display()
+                    .to_string()
+                    .replace('\\', "\\\\")
+                    .replace('\'', "\\'")
             );
-            self.send_code(&uuid2, &load_utils, Duration::from_secs(30)).await
+            self.send_code(&uuid2, &load_utils, Duration::from_secs(30))
+                .await
                 .context("Session initialization (analysis utils) failed")?;
         }
 
         self.initialized.store(true, Ordering::Relaxed);
-        info!("[SESSION] Initialized session for conversation {}", self.conversation_id);
+        info!(
+            "[SESSION] Initialized session for conversation {}",
+            self.conversation_id
+        );
         Ok(())
     }
 
@@ -201,14 +248,20 @@ impl PythonSession {
         {
             let mut stdin = self.stdin.lock().await;
             let header = format!("__EXEC__ {} {}\n", uuid, timeout.as_secs());
-            stdin.write_all(header.as_bytes()).await
+            stdin
+                .write_all(header.as_bytes())
+                .await
                 .context("Failed to write to Python stdin")?;
-            stdin.write_all(code.as_bytes()).await
+            stdin
+                .write_all(code.as_bytes())
+                .await
                 .context("Failed to write code to Python stdin")?;
             if !code.ends_with('\n') {
                 stdin.write_all(b"\n").await?;
             }
-            stdin.write_all(b"__END__\n").await
+            stdin
+                .write_all(b"__END__\n")
+                .await
                 .context("Failed to write __END__ marker")?;
             stdin.flush().await?;
         }
@@ -252,8 +305,11 @@ impl PythonSession {
             Ok(Err(e)) => return Err(e),
             Err(_) => {
                 // Timeout — kill and let caller handle restart
-                warn!("[SESSION] Execution timed out after {}s for conversation {}",
-                    timeout.as_secs(), self.conversation_id);
+                warn!(
+                    "[SESSION] Execution timed out after {}s for conversation {}",
+                    timeout.as_secs(),
+                    self.conversation_id
+                );
                 let _ = self.kill().await;
                 return Err(anyhow!(
                     "Execution timed out after {} seconds. The code took too long.",
@@ -263,7 +319,9 @@ impl PythonSession {
         };
 
         // Read meta JSON file
-        let meta_path = self.workspace_path.join(format!("temp/_meta_{}.json", uuid));
+        let meta_path = self
+            .workspace_path
+            .join(format!("temp/_meta_{}.json", uuid));
         let (exit_code, execution_time_ms) = if meta_path.exists() {
             match std::fs::read_to_string(&meta_path) {
                 Ok(content) => {
@@ -271,7 +329,9 @@ impl PythonSession {
                     match serde_json::from_str::<serde_json::Value>(&content) {
                         Ok(meta) => (
                             meta.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                            meta.get("execution_time_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+                            meta.get("execution_time_ms")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
                         ),
                         Err(_) => (0, 0),
                     }
@@ -313,11 +373,15 @@ impl PythonSession {
     async fn interrupt(&self) -> Result<()> {
         let child = self.child.lock().await;
         if let Some(pid) = child.id() {
-            info!("[SESSION] Interrupting Python process (pid={}) for conversation {}",
-                pid, self.conversation_id);
+            info!(
+                "[SESSION] Interrupting Python process (pid={}) for conversation {}",
+                pid, self.conversation_id
+            );
             #[cfg(unix)]
             {
-                unsafe { libc::kill(pid as i32, libc::SIGINT); }
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGINT);
+                }
             }
             #[cfg(windows)]
             {
@@ -333,7 +397,10 @@ impl PythonSession {
     /// Kill the Python process.
     async fn kill(&self) -> Result<()> {
         let mut child = self.child.lock().await;
-        info!("[SESSION] Killing Python process for conversation {}", self.conversation_id);
+        info!(
+            "[SESSION] Killing Python process for conversation {}",
+            self.conversation_id
+        );
         let _ = child.kill().await;
         Ok(())
     }
@@ -345,13 +412,22 @@ impl PythonSession {
         }
 
         let uuid = uuid::Uuid::new_v4().to_string();
-        match self.send_code(&uuid, CHECKPOINT_SCRIPT, Duration::from_secs(30)).await {
+        match self
+            .send_code(&uuid, CHECKPOINT_SCRIPT, Duration::from_secs(30))
+            .await
+        {
             Ok(_) => {
-                info!("[SESSION] Checkpoint written for conversation {}", self.conversation_id);
+                info!(
+                    "[SESSION] Checkpoint written for conversation {}",
+                    self.conversation_id
+                );
                 Ok(())
             }
             Err(e) => {
-                warn!("[SESSION] Checkpoint failed for conversation {}: {}", self.conversation_id, e);
+                warn!(
+                    "[SESSION] Checkpoint failed for conversation {}: {}",
+                    self.conversation_id, e
+                );
                 Err(e)
             }
         }
@@ -372,18 +448,62 @@ pub struct PythonSessionManager {
     workspace_path: PathBuf,
     python_binary: PathBuf,
     python_home: Option<PathBuf>,
+    runtime_resolver: Option<ManagedRuntimeResolver>,
 }
 
 impl PythonSessionManager {
     /// Create a new session manager.
     pub fn new(workspace_path: PathBuf, app_handle: Option<&tauri::AppHandle>) -> Self {
         let (python_binary, python_home) = super::runner::resolve_python_path(app_handle);
+        Self::with_runtime(workspace_path, python_binary, python_home)
+    }
+
+    pub fn with_runtime(
+        workspace_path: PathBuf,
+        python_binary: PathBuf,
+        python_home: Option<PathBuf>,
+    ) -> Self {
         Self {
             sessions: std::sync::Mutex::new(HashMap::new()),
             workspace_path,
             python_binary,
             python_home,
+            runtime_resolver: None,
         }
+    }
+
+    pub fn with_runtime_resolver(
+        workspace_path: PathBuf,
+        runtime_resolver: &dyn RuntimeResolver,
+    ) -> Result<Self> {
+        let deps = runtime_resolver
+            .workspace_dependencies()
+            .context("failed to resolve managed Python session runtime")?;
+        Ok(Self::with_runtime(workspace_path, deps.python, None))
+    }
+
+    pub fn with_lazy_runtime_resolver(
+        workspace_path: PathBuf,
+        runtime_resolver: ManagedRuntimeResolver,
+    ) -> Self {
+        let (python_binary, python_home) = super::runner::resolve_python_path(None);
+        Self {
+            sessions: std::sync::Mutex::new(HashMap::new()),
+            workspace_path,
+            python_binary,
+            python_home,
+            runtime_resolver: Some(runtime_resolver),
+        }
+    }
+
+    fn resolve_runtime(&self) -> Result<(PathBuf, Option<PathBuf>)> {
+        if let Some(runtime_resolver) = &self.runtime_resolver {
+            let deps = runtime_resolver
+                .workspace_dependencies()
+                .context("failed to resolve managed Python session runtime")?;
+            return Ok((deps.python, None));
+        }
+        Ok((self.python_binary.clone(), self.python_home.clone()))
     }
 
     /// Execute code in a persistent session for the given conversation.
@@ -405,8 +525,10 @@ impl PythonSessionManager {
 
         // Health check under lock
         if !session.is_alive().await {
-            warn!("[SESSION] Process dead for conversation {}, restarting with recovery",
-                conversation_id);
+            warn!(
+                "[SESSION] Process dead for conversation {}, restarting with recovery",
+                conversation_id
+            );
             let new_session = self.restart_session(conversation_id).await?;
             new_session.initialize(sandbox).await?;
             self.restore_from_checkpoint(&new_session).await;
@@ -423,6 +545,17 @@ impl PythonSessionManager {
         Ok(SessionExecResult { result })
     }
 
+    pub async fn execute_for_run(
+        &self,
+        run_id: &RunId,
+        code: &str,
+        timeout: Duration,
+        sandbox: &SandboxConfig,
+    ) -> Result<SessionExecResult> {
+        let session_key = session_key_for_run(run_id);
+        self.execute(&session_key, code, timeout, sandbox).await
+    }
+
     /// Interrupt the current execution for a conversation (stop_streaming).
     pub async fn interrupt(&self, conversation_id: &str) -> Result<()> {
         let session = {
@@ -435,6 +568,11 @@ impl PythonSessionManager {
         Ok(())
     }
 
+    pub async fn interrupt_run(&self, run_id: &RunId) -> Result<()> {
+        let session_key = session_key_for_run(run_id);
+        self.interrupt(&session_key).await
+    }
+
     /// Destroy a session (conversation deleted).
     pub async fn destroy(&self, conversation_id: &str) {
         let session = {
@@ -444,8 +582,16 @@ impl PythonSessionManager {
         if let Some(session) = session {
             let _ = session.write_checkpoint().await;
             let _ = session.kill().await;
-            info!("[SESSION] Destroyed session for conversation {}", conversation_id);
+            info!(
+                "[SESSION] Destroyed session for conversation {}",
+                conversation_id
+            );
         }
+    }
+
+    pub async fn destroy_run(&self, run_id: &RunId) {
+        let session_key = session_key_for_run(run_id);
+        self.destroy(&session_key).await;
     }
 
     /// Shutdown all sessions (app exit).
@@ -466,13 +612,17 @@ impl PythonSessionManager {
     pub async fn reap_idle(&self) {
         let idle_convs: Vec<String> = {
             let sessions = self.sessions.lock().unwrap();
-            sessions.iter()
+            sessions
+                .iter()
                 .filter(|(_, s)| s.idle_seconds() > IDLE_TIMEOUT.as_secs())
                 .map(|(k, _)| k.clone())
                 .collect()
         };
         for conv_id in idle_convs {
-            info!("[SESSION] Reaping idle session for conversation {}", conv_id);
+            info!(
+                "[SESSION] Reaping idle session for conversation {}",
+                conv_id
+            );
             self.destroy(&conv_id).await;
         }
     }
@@ -484,7 +634,10 @@ impl PythonSessionManager {
     pub async fn session_stats(&self) -> Vec<SessionInfo> {
         let snapshots: Vec<(String, Arc<PythonSession>)> = {
             let sessions = self.sessions.lock().unwrap();
-            sessions.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            sessions
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
         };
         let mut infos = Vec::with_capacity(snapshots.len());
         for (conv_id, session) in snapshots {
@@ -525,13 +678,19 @@ impl PythonSessionManager {
 
             // Evict LRU if at capacity
             if sessions.len() >= MAX_SESSIONS {
-                let lru_key = sessions.iter()
+                let lru_key = sessions
+                    .iter()
                     .min_by_key(|(_, s)| s.last_used.load(Ordering::Relaxed))
                     .map(|(k, _)| k.clone());
                 if let Some(key) = lru_key {
                     if let Some(evicted) = sessions.remove(&key) {
                         info!("[SESSION] Evicting LRU session for conversation {}", key);
-                        // Write checkpoint in background (don't block)
+                        // Note: LRU eviction runs in background without a CancellationToken.
+                        // Threading a token through get_or_create() would require changing all
+                        // call-sites and is deferred to a future refactor. kill() is always
+                        // executed to prevent process leak even if the upstream turn was
+                        // cancelled; write_checkpoint() may be skipped in that refactor if
+                        // a token is available and already cancelled.
                         tokio::spawn(async move {
                             let _ = evicted.write_checkpoint().await;
                             let _ = evicted.kill().await;
@@ -541,13 +700,16 @@ impl PythonSessionManager {
             }
         }
 
-        // Spawn new session
+        // Spawn new session. Managed runtime is resolved lazily so app startup is not blocked
+        // by first-run runtime download/install.
+        let (python_binary, python_home) = self.resolve_runtime()?;
         let session = PythonSession::spawn(
             conversation_id,
             &self.workspace_path,
-            &self.python_binary,
-            self.python_home.as_ref(),
-        ).await?;
+            &python_binary,
+            python_home.as_ref(),
+        )
+        .await?;
 
         let session = Arc::new(session);
         {
@@ -564,12 +726,14 @@ impl PythonSessionManager {
             sessions.remove(conversation_id);
         }
         // Spawn fresh
+        let (python_binary, python_home) = self.resolve_runtime()?;
         let session = PythonSession::spawn(
             conversation_id,
             &self.workspace_path,
-            &self.python_binary,
-            self.python_home.as_ref(),
-        ).await?;
+            &python_binary,
+            python_home.as_ref(),
+        )
+        .await?;
         let session = Arc::new(session);
         {
             let mut sessions = self.sessions.lock().unwrap();
@@ -581,9 +745,14 @@ impl PythonSessionManager {
     /// Restore state from pkl checkpoint files (if they exist).
     async fn restore_from_checkpoint(&self, session: &PythonSession) {
         let uuid = uuid::Uuid::new_v4().to_string();
-        match session.send_code(&uuid, RESTORE_SCRIPT, Duration::from_secs(30)).await {
-            Ok(_) => info!("[SESSION] Checkpoint restored for conversation {}",
-                session.conversation_id),
+        match session
+            .send_code(&uuid, RESTORE_SCRIPT, Duration::from_secs(30))
+            .await
+        {
+            Ok(_) => info!(
+                "[SESSION] Checkpoint restored for conversation {}",
+                session.conversation_id
+            ),
             Err(e) => warn!("[SESSION] Checkpoint restore failed: {}", e),
         }
     }

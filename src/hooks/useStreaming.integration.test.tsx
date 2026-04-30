@@ -1,0 +1,551 @@
+import { act, render, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const tauriEventMock = vi.hoisted(() => {
+  const listeners = new Map<string, (event: { payload: unknown }) => void>()
+  const listen = vi.fn((eventName: string, handler: (event: { payload: unknown }) => void) => {
+    listeners.set(eventName, handler)
+    return Promise.resolve(() => {
+      listeners.delete(eventName)
+    })
+  })
+  return { listeners, listen }
+})
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: tauriEventMock.listen,
+}))
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
+
+vi.mock('@/i18n', () => ({
+  default: {
+    t: (key: string) => key,
+  },
+}))
+
+import { useStreaming } from './useStreaming'
+import { useChatStore } from '@/stores/chatStore'
+import { useStreamingStore } from '@/stores/streamingStore'
+import { useNotificationStore } from '@/stores/notificationStore'
+import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
+
+function HookHarness() {
+  useStreaming()
+  return null
+}
+
+async function waitForListeners() {
+  await waitFor(() => {
+    expect(tauriEventMock.listen).toHaveBeenCalled()
+  })
+}
+
+describe('useStreaming integration review', () => {
+  beforeEach(() => {
+    tauriEventMock.listeners.clear()
+    tauriEventMock.listen.mockClear()
+    useChatStore.setState({
+      conversations: [],
+      activeConversationId: null,
+      messages: [],
+      busyConversations: new Set(),
+      streamStates: {},
+      taskStates: {},
+      pendingAsks: new Map(),
+      isStreaming: false,
+      streamingContent: '',
+      toolExecutions: [],
+    })
+    useDiagnosticsStore.getState().clearDiagnostics()
+    useNotificationStore.getState().dismissAll()
+  })
+
+  it('registers a frontend listener for runtime task terminal notifications', async () => {
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    expect(tauriEventMock.listeners.has('task:status-changed')).toBe(
+      true,
+    )
+
+    view.unmount()
+  })
+
+  it('appends backend diagnostics events into the diagnostics store', async () => {
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const diagnosticsHandler = tauriEventMock.listeners.get('diagnostics:event')
+    expect(diagnosticsHandler).toBeTypeOf('function')
+
+    act(() => {
+      diagnosticsHandler?.({
+        payload: {
+          ts: '2026-04-25T00:00:00.000Z',
+          seq: 101,
+          category: 'diagnostics',
+          level: 'info',
+          source: 'backend',
+          event: 'turn.started',
+          conversationId: 'conv-diag',
+          runId: 'run-diag',
+          payload: { phase: 'start' },
+        },
+      })
+    })
+
+    expect(useDiagnosticsStore.getState().events.at(-1)).toMatchObject({
+      event: 'turn.started',
+      source: 'backend',
+      conversationId: 'conv-diag',
+      runId: 'run-diag',
+    })
+
+    view.unmount()
+  })
+
+  it('writes task terminal notifications into the chat store', async () => {
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const taskStatusChanged = tauriEventMock.listeners.get('task:status-changed')
+    expect(taskStatusChanged).toBeTypeOf('function')
+
+    act(() => {
+      taskStatusChanged?.({
+        payload: {
+          conversationId: 'conv-task',
+          taskId: 'task-1',
+          status: 'completed',
+          runId: 'run-task-1',
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    expect(state.taskStates['conv-task']).toEqual([
+      {
+        taskId: 'task-1',
+        status: 'completed',
+        runId: 'run-task-1',
+      },
+    ])
+
+    view.unmount()
+  })
+
+  it('does not clear the parent conversation when a child/background agent becomes idle', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-parent',
+      busyConversations: new Set(['conv-parent']),
+      streamStates: {
+        'conv-parent': {
+          isStreaming: true,
+          streamingContent: 'still running',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'still running',
+      toolExecutions: [],
+      taskStates: {},
+    })
+
+    const view = render(<HookHarness />)
+    await waitForListeners()
+
+    const agentIdle = tauriEventMock.listeners.get('agent:idle')
+    expect(agentIdle).toBeTypeOf('function')
+
+    act(() => {
+      agentIdle?.({
+        payload: {
+          conversationId: 'conv-parent',
+          agentId: 'child-agent-1',
+          runId: 'child-run-1',
+        },
+      })
+    })
+
+    const state = useChatStore.getState()
+    expect(state.busyConversations.has('conv-parent')).toBe(
+      true,
+    )
+    expect(state.streamStates['conv-parent']?.isStreaming).toBe(
+      true,
+    )
+
+    view.unmount()
+  })
+
+  it('adds pending ask to store when permission:ask event arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('permission:ask')
+    expect(handler).toBeTypeOf('function')
+
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'run-1',
+          toolCallId: 'tc-abc',
+          toolName: 'execute_python',
+          message: 'Run code?',
+          suggestions: null,
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().pendingAsks.get('tc-abc')).toBeDefined()
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'permission.ask.received')).toBe(true)
+  })
+
+  it('clears pending asks for conversation when streaming:done arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const askHandler = tauriEventMock.listeners.get('permission:ask')
+    const doneHandler = tauriEventMock.listeners.get('streaming:done')
+    expect(askHandler).toBeTypeOf('function')
+    expect(doneHandler).toBeTypeOf('function')
+
+    act(() => {
+      askHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          runId: 'r1',
+          toolCallId: 'tc-1',
+          toolName: 'execute_python',
+          message: 'Run code?',
+          suggestions: null,
+        },
+      })
+    })
+
+    act(() => {
+      doneHandler?.({
+        payload: {
+          conversationId: 'conv-1',
+          messageId: 'msg-1',
+        },
+      })
+    })
+
+    expect(useStreamingStore.getState().pendingAsks.has('tc-1')).toBe(false)
+    expect(useDiagnosticsStore.getState().events.some((event) => event.event === 'streaming.done.received')).toBe(true)
+  })
+
+  it('preserves optimistic user message sender when persisted echo replaces client id', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-1',
+      messages: [{
+        id: 'client-1',
+        conversationId: 'conv-1',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'hello' },
+        sender: { name: 'Alice', isLoggedIn: true },
+      }],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const messageUpdatedHandler = tauriEventMock.listeners.get('message:updated')
+    act(() => {
+      messageUpdatedHandler?.({
+        payload: {
+          id: 'msg-1',
+          conversationId: 'conv-1',
+          role: 'user',
+          createdAt: '2026-04-24T00:00:01Z',
+          content: { text: 'hello' },
+          clientMessageId: 'client-1',
+        },
+      })
+    })
+
+    expect(useChatStore.getState().messages).toEqual([{
+      id: 'msg-1',
+      conversationId: 'conv-1',
+      role: 'user',
+      createdAt: '2026-04-24T00:00:01Z',
+      content: { text: 'hello' },
+      sender: { name: 'Alice', isLoggedIn: true },
+      clientMessageId: 'client-1',
+    }])
+  })
+
+  it('does not remove optimistic user message on streaming:done', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-done',
+      messages: [{
+        id: 'client-1',
+        conversationId: 'conv-done',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'hello' },
+      }],
+      streamStates: {
+        'conv-done': { isStreaming: true, streamingContent: 'ok', toolExecutions: [] },
+      },
+      isStreaming: true,
+      streamingContent: 'ok',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const doneHandler = tauriEventMock.listeners.get('streaming:done')
+    act(() => {
+      doneHandler?.({ payload: { conversationId: 'conv-done' } })
+    })
+
+    expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-1'])
+  })
+
+  it('rolls back only same-conversation optimistic user message on streaming:error', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-active',
+      messages: [{
+        id: 'client-active',
+        conversationId: 'conv-active',
+        role: 'user',
+        createdAt: '2026-04-24T00:00:00Z',
+        content: { text: 'keep me' },
+      }],
+      streamStates: {
+        'conv-background': { isStreaming: true, streamingContent: 'bad', toolExecutions: [] },
+      },
+      isStreaming: false,
+      streamingContent: '',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const errorHandler = tauriEventMock.listeners.get('streaming:error')
+    act(() => {
+      errorHandler?.({ payload: { conversationId: 'conv-background', error: 'failed' } })
+    })
+
+    expect(useChatStore.getState().messages.map((m) => m.id)).toEqual(['client-active'])
+  })
+
+  it('registers a listener for turn:completed events', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    expect(tauriEventMock.listeners.has('turn:completed')).toBe(true)
+  })
+
+  it('pushes warning toast and clears busy state for MaxIterationsReached', async () => {
+    useChatStore.setState({
+      activeConversationId: 'conv-turn',
+      busyConversations: new Set(['conv-turn']),
+      streamStates: {
+        'conv-turn': {
+          isStreaming: true,
+          streamingContent: 'thinking',
+          toolExecutions: [],
+        },
+      },
+      isStreaming: true,
+      streamingContent: 'thinking',
+      toolExecutions: [],
+    })
+
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-turn',
+          runId: 'run-turn',
+          outcome: 'MaxIterationsReached',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.01,
+          permissionDenialCount: 0,
+          iterations: 30,
+        },
+      })
+    })
+
+    const chatState = useChatStore.getState()
+    const notifications = useNotificationStore.getState().notifications
+    expect(chatState.busyConversations.has('conv-turn')).toBe(false)
+    expect(chatState.streamStates['conv-turn']?.isStreaming).toBe(false)
+    expect(notifications.some((n) => n.level === 'warning' && n.title === 'turnOutcome.maxIterationsTitle')).toBe(true)
+  })
+
+  it('pushes warning toast for BudgetExceeded', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-budget',
+          runId: 'run-budget',
+          outcome: 'BudgetExceeded',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.12,
+          permissionDenialCount: 0,
+          reason: 'Reached maximum budget ($0.10)',
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'warning' && n.title === 'turnOutcome.budgetExceededTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('pushes error toast for ExecutionError', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-error',
+          runId: 'run-error',
+          outcome: 'ExecutionError',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.02,
+          permissionDenialCount: 0,
+          message: 'gateway timeout',
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'error' && n.title === 'turnOutcome.executionErrorTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('pushes info toast for Success when cost is present', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-success',
+          runId: 'run-success',
+          outcome: 'Success',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: 0.001,
+          permissionDenialCount: 0,
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.level === 'info' && n.title === 'turnOutcome.successSummaryTitle',
+      ),
+    ).toBe(true)
+  })
+
+  it('does not push Success toast when cost is null', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-success-null',
+          runId: 'run-success-null',
+          outcome: 'Success',
+          totalInputTokens: 100,
+          totalOutputTokens: 20,
+          totalCostUsd: null,
+          permissionDenialCount: 0,
+        },
+      })
+    })
+
+    expect(
+      useNotificationStore.getState().notifications.some(
+        (n) => n.title === 'turnOutcome.successSummaryTitle',
+      ),
+    ).toBe(false)
+  })
+
+  it('stores the latest turn summary when turn:completed arrives', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('turn:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-summary',
+          runId: 'run-summary',
+          outcome: 'ExecutionError',
+          totalInputTokens: 250,
+          totalOutputTokens: 50,
+          totalCostUsd: 0.003,
+          permissionDenialCount: 0,
+          message: 'bad gateway',
+        },
+      })
+    })
+
+    expect(useChatStore.getState().streamStates['conv-summary']?.lastTurnSummary).toMatchObject({
+      outcome: 'ExecutionError',
+      totalInputTokens: 250,
+      totalOutputTokens: 50,
+      totalCostUsd: 0.003,
+    })
+  })
+
+  it('adds load_skill tool events to streaming bubbles', async () => {
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('tool:executing')
+    act(() => {
+      handler?.({
+        payload: {
+          conversationId: 'conv-load-skill',
+          toolName: 'load_skill',
+          toolId: 'tool-load-skill-1',
+          purpose: 'Load salary query skill',
+          input: { skill_name: 'salary-query' },
+        },
+      })
+    })
+
+    expect(useChatStore.getState().streamStates['conv-load-skill']?.toolExecutions).toContainEqual(
+      expect.objectContaining({
+        toolName: 'load_skill',
+        toolId: 'tool-load-skill-1',
+        status: 'executing',
+        summary: 'Load salary query skill',
+      }),
+    )
+  })
+})

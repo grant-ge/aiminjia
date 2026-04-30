@@ -58,21 +58,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Cache Python runtime
-        id: python-cache
-        uses: actions/cache@v4
-        with:
-          path: src-tauri/python-runtime
-          key: python-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src-tauri/requirements.txt', 'scripts/setup-python.sh', 'scripts/setup-python.ps1') }}
-
-      - name: Setup bundled Python runtime (macOS/Linux)
-        if: steps.python-cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
-        run: bash scripts/setup-python.sh
-
-      - name: Setup bundled Python runtime (Windows)
-        if: steps.python-cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\setup-python.ps1
 
       - name: Cache Playwright runtime
         id: playwright-cache

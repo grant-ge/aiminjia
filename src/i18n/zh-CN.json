@@ -1,14 +1,4 @@
 {
-  "personas": {
-    "default": "通用工作助手",
-    "hr-expert": "HR 专家",
-    "finance-analyst": "财务分析师",
-    "sales-manager": "销售经理",
-    "ops-specialist": "运营专家",
-    "legal-advisor": "法务顾问",
-    "data-analyst": "数据分析师",
-    "project-manager": "项目经理"
-  },
   "skills": {
     "biz-proposal": "商业方案撰写",
     "biz-writing": "商务文档撰写",
@@ -29,7 +19,10 @@
     "salary-benchmarking": "薪酬市场对标分析",
     "sales-analysis": "销售数据分析",
     "survey-analysis": "问卷调研分析",
-    "talent-9box": "人才盘点九宫格"
+    "talent-9box": "人才盘点九宫格",
+    "market": "技能市场",
+    "upload": "上传技能",
+    "comingSoon": "即将开放"
   },
   "common": {
     "save": "保存",
@@ -48,10 +41,12 @@
     "loading": "加载中...",
     "unknownError": "未知错误"
   },
-
   "sidebar": {
     "newChat": "新对话",
     "noConversations": "暂无对话记录",
+    "searchPlaceholder": "搜索对话...",
+    "noSearchResults": "没有匹配的对话",
+    "conversationActions": "对话操作",
     "deleteConversation": "删除对话",
     "selectPersona": "选择角色",
     "settings": "设置",
@@ -60,31 +55,22 @@
     "cloud": "☁ 云端",
     "local": "⚡ 本地",
     "maxConcurrent": "已达最大并发数，请等待",
+    "useGlobalModel": "使用全局设置",
     "timeGroup": {
       "today": "今天",
       "yesterday": "昨天",
       "thisWeek": "本周",
       "earlier": "更早"
-    }
+    },
+    "home": "新任务",
+    "skillCenter": "技能中心",
+    "schedules": "定时任务",
+    "tasks": "任务"
   },
-
-  "topBar": {
-    "exportConversation": "导出对话",
-    "export": "导出",
-    "exportSuccess": "导出成功",
-    "saved": "已保存",
-    "exportFailed": "导出失败",
-    "exportAsPdf": "导出为 PDF",
-    "exportAsHtml": "导出为 HTML",
-    "exportAsPptx": "导出为 PPT",
-    "exportAsXlsx": "导出为 Excel",
-    "exportPdfFallback": "PDF 生成不可用，已导出为 HTML",
-    "exportPdfFallbackHint": "可在浏览器打开 {{fileName}}，使用浏览器的「打印 → 另存为 PDF」功能保存"
-  },
-
   "inputBar": {
+    "attachData": "添加文件或本地目录",
     "uploadFile": "上传文件（Excel/Word/PDF）",
-    "placeholderWithFile": "添加说明（可选），然后按回车发送...",
+    "placeholderWithFile": "请输入你的问题，然后按回车发送...",
     "placeholder": "随时提问，或上传文件让我分析...",
     "analyzeFile": "请分析这个文件",
     "slashEmpty": "没有匹配的技能",
@@ -93,12 +79,10 @@
     "slashSelect": "选择",
     "slashClose": "关闭"
   },
-
   "chatArea": {
     "fileNotFound": "文件未找到",
     "cannotOpenFile": "无法打开文件 \"{{fileName}}\"，文件可能尚未生成或已被移动。"
   },
-
   "welcome": {
     "greeting": "你好！我是 {{productName}}",
     "greetingWithPersona": "你好！我是 {{productName}} · {{personaName}}",
@@ -106,20 +90,14 @@
     "generalMode": "通用模式",
     "generalModeDesc": "直接对话，不使用专业技能",
     "askAnything": "也可以直接问我任何工作相关问题",
-    "hello": "你好",
-    "mySkills": "我的技能",
-    "builtinSkills": "专业技能",
-    "createSkill": "创建技能",
-    "createSkillTrigger": "帮我创建一个技能"
+    "hello": "你好"
   },
-
   "skillSmith": {
     "banner": {
       "title": "你有 {{count}} 个未完成的技能草稿",
       "title_one": "你有 1 个未完成的技能草稿",
       "unnamed": "未命名",
-      "resume": "重新创建",
-      "resumeHint": "将基于上次的需求重新开始",
+      "resume": "继续",
       "discard": "丢弃",
       "discardTitle": "丢弃技能草稿",
       "discardConfirm": "确定要丢弃草稿「{{name}}」吗？此操作不可撤销。",
@@ -129,7 +107,6 @@
       "daysAgo": "{{n}} 天前"
     }
   },
-
   "aiBubble": {
     "sendFailed": "发送失败",
     "sendFailedDesc": "未能发送回复，请重试。",
@@ -141,11 +118,9 @@
     "confirmAction": "[确认]",
     "rejectAction": "[拒绝]"
   },
-
   "userBubble": {
     "me": "我"
   },
-
   "streaming": {
     "tools": {
       "execute_python": "正在分析数据...",
@@ -165,7 +140,6 @@
       "observe": "正在整理..."
     }
   },
-
   "messageList": {
     "steps": {
       "1": "数据清洗与理解",
@@ -175,7 +149,19 @@
       "5": "行动方案 + 管理层材料"
     }
   },
-
+  "subagent": {
+    "resultCard": {
+      "header": "子代理结果",
+      "iterations": "{{count}} 轮迭代",
+      "filesGenerated": "生成文件"
+    },
+    "transcript": {
+      "expand": "查看执行轨迹",
+      "collapse": "隐藏执行轨迹",
+      "loading": "正在加载执行轨迹...",
+      "error": "加载执行轨迹失败"
+    }
+  },
   "settings": {
     "title": "设置",
     "tabs": {
@@ -185,29 +171,54 @@
       "general": "通用设置",
       "persona": "角色",
       "skills": "技能管理",
-      "dingtalk": "钉钉"
+      "mcp": "MCP"
     },
-    "dingtalk": {
-      "title": "钉钉账号",
-      "description": "连接钉钉后，AI 助手可以操作你的 AI 表格、通讯录、群聊、日历和待办。",
-      "connected": "已连接",
-      "disconnected": "未连接",
-      "expired": "授权已过期",
-      "connectButton": "授权登录",
-      "disconnectButton": "断开连接",
-      "refreshButton": "刷新状态",
-      "connecting": "正在连接...",
-      "connectSuccess": "钉钉连接成功",
-      "connectFailed": "连接失败",
-      "disconnectSuccess": "已断开钉钉连接",
-      "userName": "用户",
-      "corpName": "企业",
-      "capabilities": "连接后可用能力",
-      "capAitable": "AI 表格 — 查询、新增、修改、删除记录",
-      "capContact": "通讯录 — 搜索同事、查看组织架构",
-      "capChat": "群聊 — 列出群组、通过机器人发消息",
-      "capCalendar": "日历 — 查看日程、创建会议、查询忙闲",
-      "capTodo": "待办 — 查看任务、创建待办、标记完成"
+    "mcp": {
+      "title": "MCP 服务器",
+      "description": "MCP（Model Context Protocol）允许 AI 调用外部工具和服务。先在这里配置 MCP server，再按需连接，让它提供的工具进入对话。",
+      "addServer": "添加服务器",
+      "loadFailed": "加载 MCP 服务器失败",
+      "addSuccess": "MCP 服务器已添加",
+      "connectSuccess": "MCP 服务器已连接",
+      "disconnectSuccess": "MCP 服务器已断开",
+      "deleteSuccess": "MCP 服务器已删除",
+      "addFailed": "添加 MCP 服务器失败",
+      "connectFailed": "连接 MCP 服务器失败",
+      "disconnectFailed": "断开 MCP 服务器失败",
+      "deleteFailed": "删除 MCP 服务器失败",
+      "confirmDelete": "确认删除 MCP 服务器「{{name}}」？如已连接会先断开工具连接。",
+      "form": {
+        "name": "服务器名称",
+        "nameDesc": "用于区分不同 MCP server 的唯一标识，建议使用字母、数字和下划线。",
+        "namePlaceholder": "my-mcp-server",
+        "nameNoSpaces": "服务器名称不能包含空格，请改用下划线。",
+        "transportType": "传输类型",
+        "endpoint": "命令 / URL",
+        "endpointDescStdio": "stdio 类型填写可执行命令路径。",
+        "endpointDescHttp": "http / sse 类型填写服务地址 URL。",
+        "endpointPlaceholder": "/path/to/mcp-server 或 http://localhost:3000/mcp",
+        "envVars": "环境变量（可选）",
+        "envVarsDesc": "每行一条，格式为 KEY=VALUE。",
+        "envVarsPlaceholder": "API_KEY=xxx\nSOME_VAR=value",
+        "submit": "添加",
+        "submitting": "正在添加...",
+        "cancel": "取消"
+      },
+      "list": {
+        "empty": "还没有配置 MCP 服务器",
+        "emptyHint": "点击「添加服务器」配置第一个 MCP server。",
+        "statusConfigured": "已配置",
+        "statusConnecting": "连接中",
+        "statusReady": "已就绪",
+        "statusFailed": "连接失败",
+        "statusDisconnected": "未连接",
+        "connect": "连接",
+        "connecting": "连接中...",
+        "disconnect": "断开",
+        "disconnecting": "断开中...",
+        "delete": "删除",
+        "tools": "{{count}} 个工具"
+      }
     },
     "skills": {
       "description": "安装和管理自定义技能包。技能安装后需重启应用生效。",
@@ -215,7 +226,6 @@
       "uninstall": "卸载",
       "selectFolder": "选择技能目录",
       "confirmUninstall": "确定要卸载技能「{{name}}」吗？",
-      "conflictMessage": "已存在同名技能「{{name}}」，是否覆盖？",
       "empty": "暂无自定义技能",
       "emptyHint": "点击「安装技能」添加自定义技能包",
       "createNew": "创建新技能",
@@ -240,11 +250,8 @@
       "downloads": "{{count}} 次安装",
       "byAuthor": "by {{name}}",
       "installing": "安装中...",
-      "installSuccess": "技能「{{name}}」安装成功",
+      "installSuccess": "技能「{{name}}」安装成功，重启生效",
       "installFailed": "安装失败",
-      "restartHint": "部分情况下需要重启应用才能生效",
-      "alreadyInstalled": "已安装",
-      "reinstall": "重新安装",
       "noResults": "没有找到匹配的技能",
       "loginRequired": "登录云端账号后可浏览技能市场",
       "loadFailed": "加载失败，请重试",
@@ -273,7 +280,6 @@
     "keyInvalid": "Key 无效或验证失败",
     "enterApiKey": "请输入 {{provider}} 的 API Key",
     "apiKeyOptional": "API Key（可选，本地模型留空）",
-
     "customModel": {
       "endpointLabel": "API Endpoint",
       "endpointDesc": "OpenAI 兼容的 API 地址（必填，填到 /v1 即可，系统自动拼接 /chat/completions）",
@@ -290,10 +296,8 @@
       "modelLike": "模型如",
       "keyEmpty": "Key 留空"
     },
-
     "availableModels": "可用模型",
     "reasoningRouting": "支持推理模型自动路由",
-
     "search": {
       "tavilyLabel": "Tavily Search API Key",
       "tavilyDesc": "用于联网搜索（可选，备用）",
@@ -301,14 +305,15 @@
       "bochaDesc": "用于联网搜索市场薪酬数据（推荐）",
       "bochaGetKey": "获取 Key →"
     },
-
     "general": {
       "language": "界面语言",
       "languageDesc": "选择应用界面的显示语言",
-      "workspace": "工作目录",
-      "workspaceDesc": "Agent 会在此目录下存放分析文件、报告和临时文件",
-      "selectDir": "选择目录",
-      "openDir": "打开目录",
+      "workspace": "内部沙箱目录",
+      "workspaceDesc": "Lotus 在此目录下存放分析产物、生成报告和临时文件；这不是连接你本地目录的主入口",
+      "workspacePickerTitle": "选择内部沙箱目录",
+      "workspaceHint": "如需让 AI 直接读取你的本地文件夹，请在聊天框左下角点回形针，选择“连接本地目录（不复制）”。",
+      "selectDir": "选择沙箱目录",
+      "openDir": "打开沙箱目录",
       "systemInfo": "系统信息",
       "logs": "运行日志：",
       "openLogs": "打开日志目录",
@@ -323,7 +328,6 @@
       "cleanup": "清理"
     }
   },
-
   "login": {
     "loginSuccess": "登录成功",
     "welcome": "欢迎，{{name}}",
@@ -358,34 +362,6 @@
     "loggingIn": "登录中...",
     "loginButton": "登录"
   },
-
-  "persona": {
-    "description": "选择或自定义你的工作角色,AI 会根据角色调整专业能力和记忆重点",
-    "import": "导入角色",
-    "switched": "已切换角色",
-    "currentPersona": "当前角色：{{name}}",
-    "switchFailed": "切换失败",
-    "saveSuccess": "保存成功",
-    "personaUpdated": "角色已更新",
-    "saveFailed": "保存失败",
-    "cannotDelete": "无法删除",
-    "builtinCannotDelete": "内置角色不能删除",
-    "confirmDelete": "确定删除角色\"{{name}}\"吗？",
-    "deleted": "已删除",
-    "personaDeleted": "角色\"{{name}}\"已删除",
-    "deleteFailed": "删除失败",
-    "featureInDev": "功能开发中",
-    "exportComingSoon": "导出功能即将上线",
-    "importComingSoon": "导入功能即将上线",
-    "current": "当前",
-    "setAsCurrent": "设为当前角色",
-    "editPersona": "编辑角色",
-    "name": "名称",
-    "icon": "图标 (emoji)",
-    "descriptionLabel": "描述",
-    "identity": "角色设定 (注入系统提示词)"
-  },
-
   "onboarding": {
     "welcome": "欢迎使用 {{productName}}",
     "selectPersona": "选择一个角色开始,AI 会根据你的角色调整专业能力和记忆重点",
@@ -393,7 +369,6 @@
     "startUsing": "开始使用",
     "canSwitchLater": "你可以随时在设置中切换或自定义角色"
   },
-
   "updater": {
     "newVersionFound": "发现新版本 v{{version}}，是否立即更新？",
     "downloading": "正在下载更新",
@@ -407,38 +382,12 @@
     "updateLater": "稍后再说",
     "updateAvailableDesc": "有新版本可用，是否现在更新？"
   },
-
-  "changelog": {
-    "whatsNew": "v{{version}} 更新内容",
-    "ok": "好的",
-    "back": "返回",
-    "title": "更新日志",
-    "noChanges": "暂无更新记录"
-  },
-
   "auth": {
-    "expired": "登录已过期",
-    "expiredDesc": "云端服务暂不可用。你可以重新登录或在设置中切换到本地模式。"
-  },
-
-  "streaming": {
-    "tools": {
-      "execute_python": "正在分析数据...",
-      "load_file": "正在加载文件...",
-      "save_analysis_note": "正在保存分析记录...",
-      "update_progress": "正在更新分析进度...",
-      "web_search": "正在搜索相关信息...",
-      "generate_report": "正在生成报告...",
-      "export_data": "正在导出数据...",
-      "hypothesis_test": "正在进行统计检验...",
-      "detect_anomalies": "正在检测异常数据...",
-      "generate_chart": "正在生成图表..."
-    },
-    "phases": {
-      "think": "正在思考...",
-      "act": "正在执行...",
-      "observe": "正在整理..."
-    }
+    "expired": "登录已失效",
+    "expiredDesc": "请重新登录后继续操作。",
+    "login": "登录",
+    "username": "账号",
+    "password": "密码"
   },
   "errors": {
     "streamingError": "响应异常",
@@ -461,7 +410,6 @@
     "monthsAgo": "{{count}} 个月前",
     "yearsAgo": "{{count}} 年前"
   },
-
   "providers": {
     "deepseek-v3": "DeepSeek",
     "qwen-plus": "通义千问",
@@ -477,5 +425,15 @@
       "volcano": "默认: 字节跳动大模型",
       "custom": "自定义 OpenAI 兼容模型"
     }
+  },
+  "turnOutcome": {
+    "maxIterationsTitle": "已达最大迭代次数",
+    "maxIterationsDesc": "Agent 已达到本轮最大迭代次数上限，本轮已停止。如需继续，请发送新消息。",
+    "budgetExceededTitle": "已超出预算上限",
+    "budgetExceededDesc": "本轮 Token 用量已超出预设预算，已自动停止。",
+    "executionErrorTitle": "执行出现错误",
+    "executionErrorDesc": "Agent 执行过程中出现错误，本轮已中止。请重试或检查设置。",
+    "successSummaryTitle": "Turn 完成",
+    "successSummaryDesc": "共消耗 {{tokens}} tokens，估算费用 ${{cost}}。"
   }
 }

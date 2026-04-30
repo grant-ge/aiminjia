@@ -32,10 +32,13 @@ pub(crate) async fn handle_update_progress(ctx: &PluginContext, args: &Value) ->
     )?;
 
     if let Some(ref app) = ctx.app_handle {
-        let _ = app.emit("analysis:step-changed", serde_json::json!({
-            "step": current_step,
-            "status": step_status,
-        }));
+        let _ = app.emit(
+            "analysis:step-changed",
+            serde_json::json!({
+                "step": current_step,
+                "status": step_status,
+            }),
+        );
     }
 
     Ok(json!({
@@ -71,7 +74,10 @@ mod tests {
         assert_eq!(parsed["stepStatus"], "completed");
 
         // Verify via database.
-        let state = ctx.storage.get_analysis_state(&ctx.conversation_id).unwrap();
+        let state = ctx
+            .storage
+            .get_analysis_state(&ctx.conversation_id)
+            .unwrap();
         assert!(state.is_some());
         assert_eq!(state.unwrap()["currentStep"], 3);
     }

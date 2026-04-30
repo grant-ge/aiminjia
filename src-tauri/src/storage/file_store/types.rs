@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 pub struct ConversationMeta {
     pub id: String,
     pub title: String,
-    pub mode: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_override: Option<String>,
 }
 
 /// Lightweight entry in the global `index.json`.
@@ -49,15 +50,46 @@ pub struct GlobalIndex {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredMessage {
-    pub seq: u64,
-    #[serde(rename = "_rev")]
-    pub rev: u32,
+    #[serde(default)]
+    pub seq: Option<u64>,
+    #[serde(rename = "_rev", default)]
+    pub rev: Option<u32>,
     pub id: String,
     pub conversation_id: String,
     pub role: String,
     /// Full message content as a JSON value (not a stringified JSON).
     pub content: serde_json::Value,
     pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
+}
+
+impl StoredMessage {
+    pub fn text(&self) -> &str {
+        self.content
+            .get("text")
+            .and_then(|value| value.as_str())
+            .or_else(|| self.content.as_str())
+            .unwrap_or("")
+    }
+
+    pub fn seq_or(&self, default: u64) -> u64 {
+        self.seq.unwrap_or(default)
+    }
+
+    pub fn rev_or(&self, default: u32) -> u32 {
+        self.rev.unwrap_or(default)
+    }
 }
 
 // ─── Files ───────────────────────────────────────────────────────────────────

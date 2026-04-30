@@ -22,8 +22,8 @@ export function Avatar({ variant, isLoggedIn = false }: AvatarProps) {
         alt={productName}
         className="h-7 w-7 shrink-0 rounded-full"
         onError={(e) => {
-          if (e.currentTarget.src !== window.location.origin + '/app-icon.png') {
-            e.currentTarget.src = '/app-icon.png'
+          if (e.currentTarget.src !== window.location.origin + '/brand-avatar-gold.svg') {
+            e.currentTarget.src = '/brand-avatar-gold.svg'
           }
         }}
       />

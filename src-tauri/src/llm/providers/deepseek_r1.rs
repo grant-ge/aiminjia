@@ -47,15 +47,7 @@ impl LlmProviderTrait for DeepSeekR1Provider {
 
     async fn send(&self, request: LlmRequest) -> Result<LlmResponse> {
         // Never include tools — R1 does not support function calling.
-        send_openai_compat(
-            &self.client,
-            &self.api_key,
-            API_URL,
-            MODEL,
-            &request,
-            false,
-        )
-        .await
+        send_openai_compat(&self.client, &self.api_key, API_URL, MODEL, &request, false).await
     }
 
     async fn stream(&self, request: LlmRequest) -> Result<StreamBox> {

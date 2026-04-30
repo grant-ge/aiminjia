@@ -85,10 +85,7 @@ pub fn finalize_analysis(
 }
 
 /// Reset any analysis_states stuck in "in_progress" to "paused".
-pub fn reset_stuck_analysis_state(
-    base_dir: &Path,
-    conversation_id: &str,
-) -> StorageResult<()> {
+pub fn reset_stuck_analysis_state(base_dir: &Path, conversation_id: &str) -> StorageResult<()> {
     let path = analysis_path(base_dir, conversation_id);
     let mut state: StoredAnalysisState = match read_json_optional(&path)? {
         Some(s) => s,
@@ -116,7 +113,10 @@ fn read_analysis_state_raw(
     base_dir: &Path,
     conversation_id: &str,
 ) -> StorageResult<Option<StoredAnalysisState>> {
-    Ok(read_json_optional(&analysis_path(base_dir, conversation_id))?)
+    Ok(read_json_optional(&analysis_path(
+        base_dir,
+        conversation_id,
+    ))?)
 }
 
 #[cfg(test)]
@@ -138,8 +138,7 @@ mod tests {
 
         assert!(get_analysis_state(&base, "c1").unwrap().is_none());
 
-        upsert_analysis_state(&base, "c1", 2, r#"{"step1":"done"}"#, r#"{"key":"val"}"#)
-            .unwrap();
+        upsert_analysis_state(&base, "c1", 2, r#"{"step1":"done"}"#, r#"{"key":"val"}"#).unwrap();
 
         let state = get_analysis_state(&base, "c1").unwrap().unwrap();
         assert_eq!(state["currentStep"], 2);

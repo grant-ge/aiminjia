@@ -1,6 +1,6 @@
 //! AES-256-GCM encryption for sensitive data (API keys).
 //!
-//! Master encryption key is stored as a file in the app data directory.
+//! Master encryption key is stored as a file in the AIjia crypto directory.
 //! This is more reliable than OS Keychain in development mode, where
 //! binary code signatures change between recompiles causing Keychain
 //! access denials.
@@ -9,20 +9,23 @@
 //! 96-bit nonces. Encrypted output format: "nonce_hex:ciphertext_hex".
 #![allow(dead_code)]
 
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use aes_gcm::aead::rand_core::RngCore;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Name of the master key file within the app data directory.
+/// Name of the master key file within the configured crypto directory.
 const KEY_FILE_NAME: &str = "master.key";
 
 /// Encode a byte slice as a lowercase hex string.
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+    bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
 }
 
 /// Decode a hex string into a byte vector.
@@ -104,6 +107,8 @@ impl SecureStorage {
     /// The key file stores the key as a hex string. If the file doesn't
     /// exist or is corrupted, a new key is generated.
     fn get_or_create_master_key(data_dir: &Path) -> Result<Vec<u8>> {
+        std::fs::create_dir_all(data_dir)
+            .with_context(|| format!("Failed to create key directory {}", data_dir.display()))?;
         let key_path = data_dir.join(KEY_FILE_NAME);
 
         // Try to read existing key
@@ -137,7 +142,10 @@ impl SecureStorage {
             std::fs::set_permissions(&key_path, perms).ok();
         }
 
-        log::info!("Generated new master encryption key at {}", key_path.display());
+        log::info!(
+            "Generated new master encryption key at {}",
+            key_path.display()
+        );
         Ok(key.to_vec())
     }
 
@@ -168,7 +176,10 @@ mod tests {
 
     #[test]
     fn test_hex_decode_known_values() {
-        assert_eq!(hex_decode("00ff0aab").unwrap(), vec![0x00, 0xff, 0x0a, 0xab]);
+        assert_eq!(
+            hex_decode("00ff0aab").unwrap(),
+            vec![0x00, 0xff, 0x0a, 0xab]
+        );
         assert_eq!(hex_decode("").unwrap(), Vec::<u8>::new());
     }
 

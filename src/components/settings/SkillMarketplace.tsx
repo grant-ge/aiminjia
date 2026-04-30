@@ -58,8 +58,11 @@ export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } =
   }, [])
 
   useEffect(() => {
-    loadSkills(1, category, search)
-  }, [category, loadSkills])
+    const timer = setTimeout(() => {
+      void loadSkills(1, category, search)
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [category, loadSkills, search])
 
   const handleSearchChange = (value: string) => {
     setSearch(value)

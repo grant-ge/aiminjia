@@ -1,6 +1,10 @@
 //! extract_table_data — extract table data from current page + report pagination info.
 //! Does NOT auto-paginate. LLM decides how to flip pages using page_execute_js.
 
+// This builtin tool implements the deprecated ToolPlugin trait.
+// It is intentionally in the legacy zone and will be migrated to RuntimeTool.
+#![allow(deprecated)]
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
@@ -12,7 +16,9 @@ pub struct ExtractTableDataTool;
 
 #[async_trait]
 impl ToolPlugin for ExtractTableDataTool {
-    fn name(&self) -> &str { "extract_table_data" }
+    fn name(&self) -> &str {
+        "extract_table_data"
+    }
 
     fn description(&self) -> &str {
         "Extract table data from the current page and save to JSON file. \

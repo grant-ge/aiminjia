@@ -40,12 +40,14 @@ export function isDarkColor(hex: string): boolean {
   return (r * 0.299 + g * 0.587 + b * 0.114) < 128
 }
 
-export function mixColors(hex1: string, hex2: string, weight: number): string {
-  const [r1, g1, b1] = hexToRgb(hex1)
-  const [r2, g2, b2] = hexToRgb(hex2)
+export function mix(hex: string, other: string, weightOfOther: number): string {
+  const [r1, g1, b1] = hexToRgb(hex)
+  const [r2, g2, b2] = hexToRgb(other)
+  const weightOfBase = 1 - weightOfOther
+
   return rgbToHex(
-    r1 * weight + r2 * (1 - weight),
-    g1 * weight + g2 * (1 - weight),
-    b1 * weight + b2 * (1 - weight),
+    r1 * weightOfBase + r2 * weightOfOther,
+    g1 * weightOfBase + g2 * weightOfOther,
+    b1 * weightOfBase + b2 * weightOfOther,
   )
 }
