@@ -343,6 +343,25 @@ pub fn run() {
                 ),
                 disk_skill_registry.clone(),
             );
+
+            // Build agent registry: builtins + user-scope agents/*.md (if logged in).
+            let user_agents_dir = current_user_storage
+                .resolve_paths()
+                .map(|paths| paths.agents_dir());
+            let agent_registry = Arc::new(
+                runtime::agent::registry_loader::load_registry_with_user_dir(
+                    user_agents_dir.as_deref(),
+                    None,
+                )
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "[setup] Failed to load agent registry: {e}; falling back to builtins only"
+                    );
+                    runtime::agent::registry::AgentRegistry::with_builtins()
+                }),
+            );
+            app.manage(agent_registry.clone());
+
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
                 Some(
@@ -611,6 +630,8 @@ pub fn run() {
             commands::plugin::list_tools,
             commands::plugin::list_skills,
             commands::plugin::get_plugin_info,
+            // Agent commands
+            transport::tauri_commands::agents::list_agents,
             // MCP server management commands
             transport::tauri_commands::mcp::list_mcp_servers,
             transport::tauri_commands::mcp::add_mcp_server,
