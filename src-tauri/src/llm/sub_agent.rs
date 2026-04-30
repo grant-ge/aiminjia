@@ -35,7 +35,8 @@ pub struct SubAgentRuntimeDeps {
     pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
@@ -94,8 +95,18 @@ pub struct SubAgentConfig {
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
+    /// Caller-supplied model override (e.g. "haiku"). When `Some(non_empty)`,
+    /// the sub-agent's gateway call uses a per-call AppSettings clone with
+    /// `primary_model` set to this value. `None` or empty string = inherit
+    /// parent's model. Consumed by P2.2 effective_settings_for_subagent.
     pub model_override: Option<String>,
+    /// Optional name for async sub-agent registration in AsyncAgentTaskStore
+    /// (P6.1). When `Some`, parent can SendMessage to this name. `None` =
+    /// anonymous (no SendMessage routing).
     pub agent_name: Option<String>,
+    /// Tool blacklist from the AgentDefinition. Combined with system-level
+    /// `ALL_AGENT_DISALLOWED` and the definition's `allowed_tools` by
+    /// `resolve_agent_tools` (P4.2) to produce the final tool whitelist.
     pub disallowed_tools: Vec<String>,
 }
 

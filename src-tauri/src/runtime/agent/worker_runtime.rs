@@ -29,6 +29,22 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 use crate::llm::sub_agent::{SubAgentConfig, SubAgentResult, SubAgentRuntimeDeps};
 
+/// Compute effective AppSettings for a sub-agent invocation.
+///
+/// If `model_override` is `Some(non_empty)`, returns a clone of `base` with
+/// `primary_model` replaced. Otherwise returns a clone of `base` unchanged.
+/// Empty string is treated as "no override" to defend against bad caller input.
+pub fn effective_settings_for_subagent(
+    base: &AppSettings,
+    model_override: Option<&str>,
+) -> AppSettings {
+    let mut s = base.clone();
+    if let Some(model) = model_override.filter(|m| !m.is_empty()) {
+        s.primary_model = model.to_string();
+    }
+    s
+}
+
 /// 单次 worker turn 所需的 LLM 请求快照。
 pub struct WorkerTurnRequest {
     pub subagent_conversation_id: String,
@@ -49,6 +65,9 @@ pub struct WorkerRunConfig {
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<CancellationToken>,
     pub permission_mode: PermissionMode,
+    /// Caller-supplied model override forwarded from SubAgentConfig.
+    /// Consumed by run_worker_turn to compute effective AppSettings (P2.2).
+    pub model_override: Option<String>,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -92,6 +111,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             app_handle: config.app_handle.clone(),
             cancel_token: config.cancel_token.clone(),
             permission_mode: config.permission_mode,
+            model_override: config.model_override.clone(),
         }
     }
 
@@ -204,6 +224,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
             self.build_query_engine(dispatcher, child_read_file_state, child_run_id.clone());
         let tool_event_bus = RuntimeEventBus::new();
         let allowed_tools = config.allowed_tools.clone();
+        let effective_settings =
+            effective_settings_for_subagent(self.settings, config.model_override.as_deref());
 
         let mut turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id(self.runtime_deps.conversation_id.clone()),
@@ -244,7 +266,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             let stream_result = self
                 .gateway
                 .stream_message(
-                    self.settings,
+                    &effective_settings,
                     request.messages.clone(),
                     MaskingLevel::Relaxed,
                     worker_system_prompt_for_gateway(&request),
