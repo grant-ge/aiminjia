@@ -94,6 +94,9 @@ pub struct SubAgentConfig {
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
+    pub model_override: Option<String>,
+    pub agent_name: Option<String>,
+    pub disallowed_tools: Vec<String>,
 }
 
 /// Result from a sub-agent run.
@@ -129,6 +132,54 @@ mod tests {
     use crate::runtime::tools::permission::{
         default_permission_ask, PermissionDecision, PermissionReason,
     };
+
+    #[test]
+    fn sub_agent_config_carries_model_override_and_agent_name() {
+        use crate::runtime::tools::permission::PermissionMode;
+        let cfg = SubAgentConfig {
+            task: "do".into(),
+            system_prompt: "you are".into(),
+            allowed_tools: vec![],
+            disallowed_tools: vec!["dangerous_tool".into()],
+            max_iterations: 5,
+            dynamic_context: String::new(),
+            conversation_id: "c1".into(),
+            parent_run_id: None,
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: Some("haiku".into()),
+            agent_name: Some("worker1".into()),
+        };
+        assert_eq!(cfg.model_override.as_deref(), Some("haiku"));
+        assert_eq!(cfg.agent_name.as_deref(), Some("worker1"));
+        assert_eq!(cfg.disallowed_tools, vec!["dangerous_tool".to_string()]);
+    }
+
+    #[test]
+    fn sub_agent_config_defaults_omit_overrides() {
+        use crate::runtime::tools::permission::PermissionMode;
+        let cfg = SubAgentConfig {
+            task: "do".into(),
+            system_prompt: "you are".into(),
+            allowed_tools: vec![],
+            disallowed_tools: vec![],
+            max_iterations: 5,
+            dynamic_context: String::new(),
+            conversation_id: "c1".into(),
+            parent_run_id: None,
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: None,
+            agent_name: None,
+        };
+        assert!(cfg.model_override.is_none());
+        assert!(cfg.agent_name.is_none());
+        assert!(cfg.disallowed_tools.is_empty());
+    }
 
     #[test]
     fn take_ask_required_decision_preserves_structured_permission_request() {

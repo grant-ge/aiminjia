@@ -384,6 +384,9 @@ async fn launch_browse_data_with_runtime_deps(
         app_handle: ctx.app_handle.clone(),
         cancel_token,
         permission_mode,
+        model_override: None,
+        agent_name: None,
+        disallowed_tools: vec![],
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(

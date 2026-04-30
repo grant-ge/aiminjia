@@ -852,6 +852,9 @@ mod tests {
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Plan,
+            model_override: None,
+            agent_name: None,
+            disallowed_tools: vec![],
         };
 
         let run_config = SubagentWorkerRuntime::build_run_config(&config);
