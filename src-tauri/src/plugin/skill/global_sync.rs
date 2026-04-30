@@ -71,9 +71,6 @@ impl GlobalSkillsState {
     }
 }
 
-pub fn should_persist_success_state(report: &GlobalSkillInstallReport) -> bool {
-    !report.installed.is_empty() && report.skipped.is_empty()
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalSkillInstallReport {
@@ -409,49 +406,94 @@ async fn install_one_skill_package(
     Ok(())
 }
 
-pub async fn sync_global_skills_from_manifest(
+pub async fn sync_skill_packages_from_server(
     config: GlobalSkillSyncConfig,
+    server_base_url: String,
+    session_key: String,
 ) -> Result<GlobalSkillInstallReport> {
-    let manifest_text = download_text(&config.manifest_url).await?;
-    let manifest = GlobalSkillsManifest::from_json(&manifest_text)?;
-    let existing_state = read_global_skills_state(&config.state_path)?;
-    if should_skip_manifest(existing_state.as_ref(), &manifest) {
-        return Ok(GlobalSkillInstallReport::default());
+    let client = reqwest::Client::new();
+
+    // 1. Fetch the published skill list from lotus-server
+    let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+
+    // 2. Read local installed-version state (None if first run or schema mismatch)
+    let local_state = read_global_skills_state(&config.state_path)?
+        .unwrap_or_default();
+
+    let mut report = GlobalSkillInstallReport::default();
+    let mut new_installed: HashMap<String, String> = local_state.installed.clone();
+    let mut remote_ids: HashSet<String> = HashSet::new();
+
+    fs::create_dir_all(&config.downloads_dir).with_context(|| {
+        format!("create downloads dir '{}'", config.downloads_dir.display())
+    })?;
+    fs::create_dir_all(&config.prepared_dir).with_context(|| {
+        format!("create prepared dir '{}'", config.prepared_dir.display())
+    })?;
+
+    // 3. Install or update remote skills whose version changed (or are missing locally)
+    for item in &list.data {
+        remote_ids.insert(item.plugin_id.clone());
+        let need_install = local_state
+            .installed
+            .get(&item.plugin_id)
+            .map_or(true, |v| v != &item.version);
+        if !need_install {
+            report.skipped.push(item.plugin_id.clone());
+            continue;
+        }
+        match install_one_skill_package(&client, &server_base_url, &session_key, item, &config)
+            .await
+        {
+            Ok(()) => {
+                report.installed.push(item.plugin_id.clone());
+                new_installed.insert(item.plugin_id.clone(), item.version.clone());
+            }
+            Err(error) => {
+                log::warn!(
+                    "[skill-sync] install '{}' v{} failed: {}",
+                    item.plugin_id,
+                    item.version,
+                    error
+                );
+                report.skipped.push(item.plugin_id.clone());
+            }
+        }
     }
 
-    fs::create_dir_all(&config.downloads_dir)
-        .with_context(|| format!("create downloads dir '{}'", config.downloads_dir.display()))?;
-    let archive_path = config.downloads_dir.join(format!(
-        "global-skills-{}.zip",
-        sanitize_filename(&manifest.bundle_version)
-    ));
-    download_file(&manifest.artifact.url, &archive_path).await?;
-
-    let actual_size = fs::metadata(&archive_path)
-        .with_context(|| format!("stat downloaded artifact '{}'", archive_path.display()))?
-        .len();
-    if actual_size != manifest.artifact.size_bytes {
-        bail!(
-            "global skills artifact size mismatch: expected {}, got {}",
-            manifest.artifact.size_bytes,
-            actual_size
-        );
+    // 4. Uninstall any locally-tracked skill no longer present remotely
+    let to_remove: Vec<String> = local_state
+        .installed
+        .keys()
+        .filter(|name| !remote_ids.contains(*name))
+        .cloned()
+        .collect();
+    for name in to_remove {
+        let target = config.global_skills_dir.join(&name);
+        if target.exists() {
+            match fs::remove_dir_all(&target) {
+                Ok(()) => {
+                    new_installed.remove(&name);
+                    log::info!("[skill-sync] uninstalled '{}'", name);
+                }
+                Err(error) => {
+                    log::warn!("[skill-sync] uninstall '{}' failed: {}", name, error);
+                }
+            }
+        } else {
+            new_installed.remove(&name);
+        }
     }
-    verify_sha256(&archive_path, &manifest.artifact.sha256)
-        .map_err(|error| anyhow!("global skills artifact sha256 verification failed: {error}"))?;
 
-    extract_global_skills_zip(&archive_path, &config.prepared_dir)?;
-    let report = install_prepared_global_skills(&config.prepared_dir, &config.global_skills_dir)?;
-    if !should_persist_success_state(&report) {
-        bail!(
-            "global skills artifact installed no valid skills; skipped: {:?}",
-            report.skipped
-        );
-    }
-    write_global_skills_state(
-        &config.state_path,
-        &GlobalSkillsState::from_manifest(&manifest),
-    )?;
+    // 5. Persist updated state
+    let new_state = GlobalSkillsState {
+        installed: new_installed,
+        updated_at_unix_seconds: now_unix_seconds(),
+    };
+    write_global_skills_state(&config.state_path, &new_state)?;
+
+    report.installed.sort();
+    report.skipped.sort();
     Ok(report)
 }
 
