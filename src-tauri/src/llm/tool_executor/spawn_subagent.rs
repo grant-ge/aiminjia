@@ -224,17 +224,25 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         let subagent_type = request.subagent_type.clone();
 
         tokio::spawn(async move {
-            let result = crate::llm::sub_agent::run_sub_agent(
-                &gateway,
-                &tool_registry,
-                &runtime_deps,
-                config,
-                &app_settings,
-            )
-            .await;
+            // catch_unwind protects against panics inside run_sub_agent so
+            // the lifecycle always terminates with state update + notification.
+            // Without this, a panic would drop the JoinHandle silently and
+            // the parent would observe Running forever.
+            use futures::FutureExt;
+            let body = std::panic::AssertUnwindSafe(async {
+                crate::llm::sub_agent::run_sub_agent(
+                    &gateway,
+                    &tool_registry,
+                    &runtime_deps,
+                    config,
+                    &app_settings,
+                )
+                .await
+            });
+            let outcome = body.catch_unwind().await;
 
-            match result {
-                Ok(sub_result) => {
+            match outcome {
+                Ok(Ok(sub_result)) => {
                     task_store.update_state(&id_for_task, AsyncTaskState::Completed);
                     let output_ref = sub_result.envelope.output.as_str();
                     let xml = build_task_notification_xml(
@@ -248,7 +256,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                     );
                     notif_queue.enqueue(id_for_task.as_str(), xml);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                     let err_str = e.to_string();
                     log::warn!(
@@ -263,7 +271,36 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         "",
                         "failed",
                         &format!("Agent '{}' failed", subagent_type),
+                        Some(&err_str),
                         None,
+                    );
+                    notif_queue.enqueue(id_for_task.as_str(), xml);
+                }
+                Err(panic_payload) => {
+                    let panic_msg = panic_payload
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| {
+                            panic_payload
+                                .downcast_ref::<&'static str>()
+                                .map(|s| (*s).to_string())
+                        })
+                        .unwrap_or_else(|| "panic with non-string payload".to_string());
+                    log::error!(
+                        "[spawn_subagent async] agent '{}' ({}) PANICKED: {}",
+                        subagent_type,
+                        id_for_task.as_str(),
+                        panic_msg
+                    );
+                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
+                    let panic_summary = format!("panic: {}", panic_msg);
+                    let xml = build_task_notification_xml(
+                        id_for_task.as_str(),
+                        Some(&parent_tool_use_id),
+                        "",
+                        "failed",
+                        &format!("Agent '{}' panicked", subagent_type),
+                        Some(&panic_summary),
                         None,
                     );
                     notif_queue.enqueue(id_for_task.as_str(), xml);

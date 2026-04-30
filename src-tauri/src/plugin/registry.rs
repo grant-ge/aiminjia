@@ -884,36 +884,60 @@ impl ToolRegistry {
             "spawn_subagent" => {
                 use tauri::Manager;
 
-                let agent_registry = ctx
-                    .app_handle
-                    .as_ref()
-                    .and_then(|app| {
-                        app.try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
-                            .map(|state| state.inner().clone())
-                    })
-                    .unwrap_or_else(|| {
-                        Arc::new(crate::runtime::agent::registry::AgentRegistry::with_builtins())
-                    });
-                let task_store = ctx
-                    .app_handle
-                    .as_ref()
-                    .and_then(|app| {
-                        app.try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>()
-                            .map(|s| s.inner().clone())
-                    })
-                    .unwrap_or_else(|| {
-                        Arc::new(crate::runtime::agent::async_task_store::AsyncAgentTaskStore::new())
-                    });
-                let notif_queue = ctx
-                    .app_handle
-                    .as_ref()
-                    .and_then(|app| {
-                        app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>()
-                            .map(|s| s.inner().clone())
-                    })
-                    .unwrap_or_else(|| {
-                        Arc::new(crate::runtime::agent::task_notification::TaskNotificationQueue::new())
-                    });
+                // Fail-closed: if app state is missing any of the three Arcs,
+                // we MUST NOT silently fall back to fresh instances — async
+                // sub-agent updates would write to orphan stores/queues that
+                // nobody else holds, leaving notifications lost and the
+                // parent observing Running forever. Refuse to register the
+                // tool instead so the failure is observable as
+                // "spawn_subagent missing from catalog".
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] no app_handle in PluginContext — \
+                             cannot resolve AgentRegistry/AsyncAgentTaskStore/TaskNotificationQueue; \
+                             refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let agent_registry = match app
+                    .try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] AgentRegistry not in app state — \
+                             refusing to register tool (call app.manage(Arc<AgentRegistry>) at startup)"
+                        );
+                        return None;
+                    }
+                };
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] AsyncAgentTaskStore not in app state — \
+                             async notifications would be lost; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let notif_queue = match app
+                    .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] TaskNotificationQueue not in app state — \
+                             async notifications would be lost; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
                 Some(Arc::new(
                     builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
                         Arc::new(
