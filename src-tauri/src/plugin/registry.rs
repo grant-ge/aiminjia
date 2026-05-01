@@ -952,6 +952,31 @@ impl ToolRegistry {
                     ),
                 ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
+            "task_output" => {
+                use tauri::Manager;
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[task_output registry] no app_handle in PluginContext — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let resolver = match app
+                    .try_state::<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[task_output registry] UserScopedPathResolver not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             "execute_python" => {
                 use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
 

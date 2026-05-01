@@ -559,6 +559,7 @@ pub fn run() {
             app.manage(secure_storage);
             app.manage(global_store);
             app.manage(current_user_storage.clone());
+            app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
             app.manage(auth_manager);
             app.manage(connector_engine);
             app.manage(dingtalk_bridge);
