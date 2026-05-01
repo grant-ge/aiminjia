@@ -938,6 +938,18 @@ impl ToolRegistry {
                         return None;
                     }
                 };
+                let path_resolver = match app
+                    .try_state::<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] UserScopedPathResolver not in app state — \
+                             transcript writes disabled; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
                 Some(Arc::new(
                     builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
                         Arc::new(
@@ -946,6 +958,7 @@ impl ToolRegistry {
                                 agent_registry.clone(),
                                 task_store,
                                 notif_queue,
+                                path_resolver,
                             ),
                         ),
                         agent_registry,

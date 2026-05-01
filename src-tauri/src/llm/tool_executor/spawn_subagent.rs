@@ -15,12 +15,14 @@ use std::sync::Arc;
 use crate::plugin::registry::RequestScopedRuntimeDeps;
 use crate::runtime::agent::async_task_store::{AsyncAgentTaskStore, AsyncTaskHandle, AsyncTaskState};
 use crate::runtime::agent::definition::AgentPrompt;
+use crate::runtime::agent::output_writer;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::agent::task_notification::{build_task_notification_xml, TaskNotificationQueue};
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
 };
+use crate::storage::user_scoped_paths::UserScopedPathResolver;
 
 /// Deps snapshot captured at request-scope construction time.
 #[derive(Clone)]
@@ -29,6 +31,7 @@ pub(crate) struct DefaultSpawnSubagentLauncher {
     registry: Arc<AgentRegistry>,
     task_store: Arc<AsyncAgentTaskStore>,
     notif_queue: Arc<TaskNotificationQueue>,
+    paths: Arc<dyn UserScopedPathResolver>,
 }
 
 impl DefaultSpawnSubagentLauncher {
@@ -37,8 +40,9 @@ impl DefaultSpawnSubagentLauncher {
         registry: Arc<AgentRegistry>,
         task_store: Arc<AsyncAgentTaskStore>,
         notif_queue: Arc<TaskNotificationQueue>,
+        paths: Arc<dyn UserScopedPathResolver>,
     ) -> Self {
-        Self { deps, registry, task_store, notif_queue }
+        Self { deps, registry, task_store, notif_queue, paths }
     }
 
     /// Extract the fields needed to run the sub-agent from `deps`, returning an error
@@ -205,12 +209,24 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         // Generate a fresh AgentId for this async sub-agent.
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
 
+        let transcript_path = match self.paths.require_paths() {
+            Ok(p) => output_writer::transcript_path(
+                &p.subagent_transcripts_dir(),
+                agent_id.as_str(),
+            ),
+            Err(e) => {
+                log::warn!("[spawn_subagent async] no user scope: {}; transcript disabled", e);
+                std::path::PathBuf::new()
+            }
+        };
+        let transcript_path_for_task = transcript_path.clone();
+
         // If the request has a name, register it in AsyncAgentTaskStore.
         if let Some(ref name) = request.name {
             let handle = AsyncTaskHandle {
                 agent_id: agent_id.clone(),
                 state: AsyncTaskState::Running,
-                output_file: PathBuf::new(),
+                output_file: transcript_path.clone(),
                 description: request.description.clone(),
             };
             self.task_store.register(name, handle);
@@ -245,10 +261,15 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                 Ok(Ok(sub_result)) => {
                     task_store.update_state(&id_for_task, AsyncTaskState::Completed);
                     let output_ref = sub_result.envelope.output.as_str();
+                    let _ = output_writer::append_line(
+                        &transcript_path_for_task,
+                        &output_writer::TranscriptLine::assistant(output_ref),
+                    );
+                    let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
                         Some(&parent_tool_use_id),
-                        "",
+                        &p_str,
                         "completed",
                         &format!("Agent '{}' completed", subagent_type),
                         Some(output_ref),
@@ -265,10 +286,15 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         id_for_task.as_str(),
                         err_str
                     );
+                    let _ = output_writer::append_line(
+                        &transcript_path_for_task,
+                        &output_writer::TranscriptLine::failed(&err_str),
+                    );
+                    let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
                         Some(&parent_tool_use_id),
-                        "",
+                        &p_str,
                         "failed",
                         &format!("Agent '{}' failed", subagent_type),
                         Some(&err_str),
@@ -294,10 +320,15 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                     );
                     task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                     let panic_summary = format!("panic: {}", panic_msg);
+                    let _ = output_writer::append_line(
+                        &transcript_path_for_task,
+                        &output_writer::TranscriptLine::failed(&panic_summary),
+                    );
+                    let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
                         Some(&parent_tool_use_id),
-                        "",
+                        &p_str,
                         "failed",
                         &format!("Agent '{}' panicked", subagent_type),
                         Some(&panic_summary),
