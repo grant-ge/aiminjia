@@ -8,6 +8,7 @@ pub mod file_agent_invocation_store;
 pub mod invocation;
 pub mod markdown_loader;
 pub mod message_bridge;
+pub mod output_writer;
 pub mod python_recovery;
 pub mod registry;
 pub mod registry_loader;

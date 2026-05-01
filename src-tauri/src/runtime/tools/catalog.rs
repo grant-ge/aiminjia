@@ -609,6 +609,36 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "task_output",
+            "【Support 工具】读取异步子 Agent 的 transcript 增量。\
+            \n\n用法：spawn_subagent({run_in_background: true, name: \"w1\"}) 立即返回 agent_id。\
+            子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
+            期间或之后用 task_output(task_id=agent_id, offset=N) 读取产出。\
+            \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true)
+        .with_capability_scope(["read_only"]),
+        json!({
+            "type": "object",
+            "required": ["task_id"],
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "异步 Agent 的 ID（spawn_subagent 返回的 agent_id）"
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "起始行偏移（默认 0）",
+                    "default": 0,
+                    "minimum": 0
+                }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "generate_slides",
             "【Composite 工具】生成演示文稿（多页渲染 + 写文件）。",
         )
@@ -873,6 +903,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "write_memory",
     "search_memory",
     "spawn_subagent",
+    "task_output",
     "load_skill",
     "AskUserQuestion",
     "TaskCreate",
