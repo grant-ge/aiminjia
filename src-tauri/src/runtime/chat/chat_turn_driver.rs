@@ -9,6 +9,7 @@ use std::time::Duration;
 use crate::llm::context_decay::{
     context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
 };
+use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
@@ -63,16 +64,18 @@ pub fn build_user_content_json(
         value["files"] = serde_json::Value::Array(
             attachments
                 .iter()
-                .map(|att| serde_json::json!({
-                    "id": att.id,
-                    "fileName": att.file_name,
-                    "filePath": att.file_path,
-                    "kind": att.kind,
-                    "fileSize": att.file_size,
-                    "fileType": att.file_type,
-                    "mimeType": att.mime_type,
-                    "status": "uploaded"
-                }))
+                .map(|att| {
+                    serde_json::json!({
+                        "id": att.id,
+                        "fileName": att.file_name,
+                        "filePath": att.file_path,
+                        "kind": att.kind,
+                        "fileSize": att.file_size,
+                        "fileType": att.file_type,
+                        "mimeType": att.mime_type,
+                        "status": "uploaded"
+                    })
+                })
                 .collect(),
         );
     }
@@ -352,6 +355,7 @@ pub struct RuntimeChatTurnDriver {
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
     pending_interaction_control_plane: Option<Arc<dyn PendingInteractionControlPlane>>,
+    task_notification_queue: Option<Arc<TaskNotificationQueue>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -368,6 +372,32 @@ fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'stat
         }
         None => "Tool execution was interrupted before completion.",
     }
+}
+
+fn drain_and_inject_task_notifications(
+    queue: &Option<Arc<TaskNotificationQueue>>,
+    messages: &mut Vec<serde_json::Value>,
+) {
+    let Some(queue) = queue.as_ref() else {
+        return;
+    };
+
+    let notifications = queue.drain_all();
+    if notifications.is_empty() {
+        return;
+    }
+
+    let count = notifications.len();
+    for notification in notifications {
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": notification.xml,
+        }));
+    }
+    log::info!(
+        "[chat_turn_driver] injected {} pending task notification(s) into LLM messages",
+        count
+    );
 }
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
@@ -495,6 +525,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: None,
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -509,6 +540,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -524,6 +556,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -540,7 +573,16 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
+            task_notification_queue: None,
         }
+    }
+
+    pub fn with_task_notification_queue(
+        mut self,
+        queue: Arc<TaskNotificationQueue>,
+    ) -> Self {
+        self.task_notification_queue = Some(queue);
+        self
     }
 
     async fn await_permission_resolution(
@@ -1112,6 +1154,7 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(renlijia_md_context_message);
         }
         initial_messages.extend(history);
+        drain_and_inject_task_notifications(&self.task_notification_queue, &mut initial_messages);
         initial_messages.push(user_message);
 
         let mut state = TurnIterationState::new(initial_messages);
@@ -1233,6 +1276,13 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|err| anyhow::anyhow!("{}", err))?;
             state.messages = prepared.messages;
+            // Drain any task notifications that completed since the previous drain and
+            // inject them as synthetic user messages so the parent LLM sees the
+            // completion event on this iteration.
+            drain_and_inject_task_notifications(
+                &self.task_notification_queue,
+                &mut state.messages,
+            );
             if let Some(boundary_record) = prepared.compact_boundary {
                 if let Err(err) = executor.save_compact_boundary(boundary_record).await {
                     log::warn!(
@@ -1942,6 +1992,7 @@ mod tests {
             llm_executor: None,
             pending_permission_control_plane: Some(control_plane.clone()),
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -2207,5 +2258,4 @@ mod tests {
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
     }
-
 }

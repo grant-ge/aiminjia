@@ -369,6 +369,9 @@ pub fn run() {
             app.manage(agent_registry.clone());
             let async_agent_task_store = Arc::new(runtime::agent::async_task_store::AsyncAgentTaskStore::new());
             let task_notification_queue = Arc::new(runtime::agent::task_notification::TaskNotificationQueue::new());
+            // Managed before TauriChatCommandAdapter::new() so the SessionRuntime can
+            // pull it from app state and inject async sub-agent completion notices.
+            app.manage(task_notification_queue.clone());
 
             let skill_registry = Arc::new(plugin::SkillRegistry::new("daily-assistant"));
             let permission_store = Arc::new(runtime::store::PermissionStore::with_layer_files(
@@ -568,7 +571,6 @@ pub fn run() {
             app.manage(agent_runtime);
             app.manage(chat_adapter);
             app.manage(async_agent_task_store);
-            app.manage(task_notification_queue);
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,

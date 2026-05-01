@@ -21,8 +21,8 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor,
-    TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig,
+    TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
@@ -54,41 +54,43 @@ fn attachment_refs_from_json_array(
 ) -> Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> {
     files
         .iter()
-        .map(|file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
-            id: file
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            file_name: file
-                .get("fileName")
-                .or_else(|| file.get("originalName"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            file_path: file
-                .get("filePath")
-                .or_else(|| file.get("path"))
-                .or_else(|| file.get("id"))
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            kind: file
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("file")
-                .to_string(),
-            file_size: file.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0),
-            file_type: file
-                .get("fileType")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            mime_type: file
-                .get("mimeType")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string),
-        })
+        .map(
+            |file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                id: file
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                file_name: file
+                    .get("fileName")
+                    .or_else(|| file.get("originalName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                file_path: file
+                    .get("filePath")
+                    .or_else(|| file.get("path"))
+                    .or_else(|| file.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                kind: file
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("file")
+                    .to_string(),
+                file_size: file.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0),
+                file_type: file
+                    .get("fileType")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                mime_type: file
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+            },
+        )
         .collect()
 }
 
@@ -309,7 +311,6 @@ pub fn load_history_via_runtime_history(
         })
         .collect())
 }
-
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -1677,7 +1678,6 @@ mod tests {
             "worker error text should be preserved for the caller"
         );
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -1932,7 +1932,7 @@ impl TauriChatCommandAdapter {
                 .with_runtime_resolver(services.runtime_resolver.clone()),
             bus,
             llm_executor,
-)
+        )
         .with_permission_store(permission_store);
         if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
             runtime = runtime.with_default_folder(home.default_folder());
@@ -1949,6 +1949,15 @@ impl TauriChatCommandAdapter {
                  chat adapter was constructed. authorized_workspace_store = None. \
                  Check initialization order in lib.rs — facade must be managed before \
                  TauriChatCommandAdapter::new() is called."
+            );
+        }
+        if let Some(queue) = services.app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>() {
+            runtime = runtime.with_task_notification_queue(queue.inner().clone());
+        } else {
+            log::warn!(
+                "[TauriChatCommandAdapter] TaskNotificationQueue not registered when \
+                 chat adapter was constructed. Async sub-agent completions will not be \
+                 surfaced to the parent LLM. Check initialization order in lib.rs."
             );
         }
         Self { runtime, services }
@@ -2461,15 +2470,8 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
             "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
             schedule.title, fire_at, schedule.prompt
         );
-        self.send_message(
-            conversation_id,
-            prompt,
-            Vec::new(),
-            None,
-            None,
-            None,
-        )
-        .await
-        .map_err(anyhow::Error::msg)
+        self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
+            .await
+            .map_err(anyhow::Error::msg)
     }
 }
