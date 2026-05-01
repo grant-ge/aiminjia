@@ -362,21 +362,24 @@ impl SessionRuntime {
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
-        if let Some(ref executor) = self.llm_executor {
+        let mut driver = if let Some(ref executor) = self.llm_executor {
             // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(
-            let mut driver = RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
+            RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
                 query_engine,
                 self.event_bus.clone(),
                 executor.clone(),
                 self.pending_permission_store.clone(),
                 self.pending_interaction_store.clone(),
-            );
-            if let Some(ref queue) = self.task_notification_queue {
-                driver = driver.with_task_notification_queue(queue.clone());
-            }
-            return driver;
+            )
+        } else {
+            RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+        };
+
+        // Both S4 and QueryEngine paths surface task notifications.
+        if let Some(ref queue) = self.task_notification_queue {
+            driver = driver.with_task_notification_queue(queue.clone());
         }
-        RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+        driver
     }
 
     fn persist_resolved_permission(

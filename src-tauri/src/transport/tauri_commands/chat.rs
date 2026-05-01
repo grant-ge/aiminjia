@@ -1954,10 +1954,14 @@ impl TauriChatCommandAdapter {
         if let Some(queue) = services.app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>() {
             runtime = runtime.with_task_notification_queue(queue.inner().clone());
         } else {
-            log::warn!(
-                "[TauriChatCommandAdapter] TaskNotificationQueue not registered when \
-                 chat adapter was constructed. Async sub-agent completions will not be \
-                 surfaced to the parent LLM. Check initialization order in lib.rs."
+            // Fail-closed: log error and leave the queue as None (no notifications this session).
+            // This is symmetric with spawn_subagent's fail-closed path in plugin/registry.rs —
+            // if the queue is missing, spawn_subagent also returns None, so no notifications
+            // can be enqueued either. The system stays consistent without crashing.
+            log::error!(
+                "[chat] TaskNotificationQueue not in app state — async sub-agent notifications \
+                 will not be surfaced this session; cross-check with spawn_subagent registration \
+                 which should also be disabled"
             );
         }
         Self { runtime, services }
