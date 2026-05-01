@@ -50,63 +50,475 @@
 | `1e44160` | P6.2-fix | fail-closed registry + spawn panic catch + propagate err string |
 | `5fc6406` | P7.2 | chat_turn_driver 注入 task notification (3 测试) |
 | `52da194` | P7.2-fix | drain 改 capture-and-re-enqueue + chat.rs fail-closed 一致 |
-| `753a4d1` | **P8.1a + P8.1b** | output_writer 模块 + task_output RuntimeTool (14 测试) |
+| `753a4d1` | P8.1a + P8.1b | output_writer 模块 + task_output RuntimeTool (14 测试) |
 
 ---
 
-## 剩余 task（拆分到可独立交付的小片，每片 prompt 独立、上下文小）
+## 剩余 task（7 片，每片 implementer 拿到即可执行）
 
-> 每个子片均假定从 baseline `d58b3e8..HEAD` 全部 commit 已应用，工作目录是 `/Users/a20250311/.codex/worktrees/4dc8/lotus-app`，分支 main，**禁止开 worktree**。
+> 共同前提：工作目录 `/Users/a20250311/.codex/worktrees/4dc8/lotus-app`，分支 main，禁止开 worktree。
+> 每片实施模板：派 implementer → cargo build --tests → cargo test 指定项 → commit（消息见各片）→ 派 opus reviewer → 据 review 决定是否 follow-up。
+> 每片末尾的「禁止」是为了防止 implementer 超纲。
 
 ### 🟢 立刻可做（无依赖）
 
-#### **片 1 — P8.1c: task_output 工厂注册 + Resolver wiring**
-**单文件改动 + 1 处 lib.rs 微调**。
-- 在 `src-tauri/src/plugin/registry.rs::try_build_request_scoped_tool` 的 match 里加 `"task_output"` 分支：从 `app.try_state::<Arc<dyn UserScopedPathResolver>>()` 拿 resolver；按 P6.2 follow-up 的 fail-closed 模式 — `try_state` miss 直接 `log::error! + return None`。
-- 在 `lib.rs:561` 附近加：`app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);`（**注意**：lib.rs:576 已有相同 cast 给 `schedule_runner`，模式照抄）。
-- 验证：`cargo build --tests`；不写测试。
+#### 片 1 — P8.1c：task_output 工厂注册 + Resolver wiring
 
-#### **片 2 — P8.1d: task_output 集成测试**
+**预估**：≤30 行，2 个文件。
+
+**改动 1**：`src-tauri/src/lib.rs`，在第 561 行 `app.manage(current_user_storage.clone());` 后追加一行：
+```rust
+app.manage(current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>);
+```
+（`schedule_runner` 在 lib.rs:576 已用同样的 cast，模式照抄；不要改其他 manage 行的顺序）
+
+**改动 2**：`src-tauri/src/plugin/registry.rs::try_build_request_scoped_tool` 的 match 里，紧挨 `"spawn_subagent" =>` 分支后加 `"task_output" =>` 分支。完整代码：
+```rust
+"task_output" => {
+    use tauri::Manager;
+    let app = match ctx.app_handle.as_ref() {
+        Some(a) => a,
+        None => {
+            log::error!(
+                "[task_output registry] no app_handle in PluginContext — refusing to register tool"
+            );
+            return None;
+        }
+    };
+    let resolver = match app
+        .try_state::<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>()
+    {
+        Some(s) => s.inner().clone(),
+        None => {
+            log::error!(
+                "[task_output registry] UserScopedPathResolver not in app state — refusing to register tool"
+            );
+            return None;
+        }
+    };
+    Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+        as Arc<dyn crate::runtime::tools::RuntimeTool>)
+}
+```
+
+**验证**：
+```bash
+cd src-tauri && cargo build --tests 2>&1 | tail -10
+cd src-tauri && cargo test --lib runtime::tools::builtin::task_output
+cd src-tauri && cargo test --lib runtime::agent::output_writer
+```
+（不引入新测试；只确保 build clean + 已有 14 单测仍 pass）
+
+**Commit**：`feat(tools): wire task_output factory + UserScopedPathResolver dyn-cast (P8.1c)`
+
+**禁止**：不要动 task_output.rs/output_writer.rs/catalog.rs；不要动 lib.rs 其他 manage 行；不要写新测试（片 2 干这个）。
+
+---
+
+#### 片 2 — P8.1d：task_output 集成测试
+
+**预估**：单文件新建，约 100 行。
+
 新建 `src-tauri/tests/task_output_tool_test.rs`。
-- 用 `TestResolver`（参考 task_output.rs:97 单测里的 `TestResolver { paths: UserScopedPaths }`）+ `TempDir`
-- 4 个测试：nonexistent → 空；offset=0 读 3 行 → 3 lines + new_offset=3；offset=2 → 1 line + new_offset=3；写 3 行后写 1 → offset=3 拿到第 4 行
-- 直接 `tool.execute(json!(...), ToolExecutionContext::for_test(...))`，不必走 dispatcher
 
-#### **片 3 — P8.1e: spawn_subagent::launch_async 接 output_writer**
-改 `src-tauri/src/llm/tool_executor/spawn_subagent.rs::launch_async`：
-- 给 `DefaultSpawnSubagentLauncher` 加字段 `paths: Arc<dyn UserScopedPathResolver>`
-- 更新 `from_runtime_deps` 构造函数（多收一参）
-- 更新 `plugin/registry.rs:884` 调用站点（多传一个 Arc，参考 task_output 工厂的 resolver 解析模式）
-- launch_async 计算 `transcript_path = output_writer::transcript_path(&paths.subagent_transcripts_dir(), agent_id.as_str())`
-- `AsyncTaskHandle::output_file = transcript_path.clone()`（之前是 PathBuf::new()）
-- tokio::spawn body 三个分支（Ok/Err/panic）追加 `output_writer::append_line(&path, &TranscriptLine::xxx).ok()`
-- `build_task_notification_xml` 第 3 参数 `""` 改为 `transcript_path.to_string_lossy().as_ref()`
-- 测试：现有 spawn_subagent_async_test 5 个用 stub launcher 不会触发实际写盘，应不破坏。可选加一个 unit test 验证 transcript_path 被正确填入。
+**Imports**（参考 tests/spawn_subagent_tool_basic_test.rs 顶部）：
+```rust
+use std::sync::Arc;
+use serde_json::{json, Value};
+use tempfile::TempDir;
 
-> 这三片**互相独立**，可任意顺序执行；推荐顺序 1→2→3（先 wiring 让全栈可走，再补测，最后接 lifecycle）
+use app_lib::runtime::agent::output_writer::{self, TranscriptLine};
+use app_lib::runtime::tools::builtin::task_output::TaskOutputRuntimeTool;
+use app_lib::runtime::tools::context::ToolExecutionContext;
+use app_lib::runtime::tools::RuntimeTool;
+use app_lib::storage::user_scoped_paths::{UserScopedPathResolver, UserScopedPaths};
+```
+
+**TestResolver**（拷过来，不要 reuse src/）：
+```rust
+struct TestResolver { paths: UserScopedPaths }
+impl UserScopedPathResolver for TestResolver {
+    fn resolve_paths(&self) -> Option<UserScopedPaths> { Some(self.paths.clone()) }
+}
+fn build_tool(tmp: &TempDir) -> TaskOutputRuntimeTool {
+    let paths = UserScopedPaths::new(tmp.path(), "t_test__u_test");
+    TaskOutputRuntimeTool::new(Arc::new(TestResolver { paths }))
+}
+```
+
+**4 个测试**（每个 `#[tokio::test]`，ctx = `ToolExecutionContext::for_test("c","r","tc")`）：
+
+1. `returns_empty_for_nonexistent_task` — execute({task_id:"never_existed"}) → JSON.lines.len()=0, new_offset=0
+2. `reads_three_lines_with_offset_zero` — `output_writer::append_line` 写 3 条 `assistant("msg-{i}")` 到 `paths.subagent_transcripts_dir().join("agent-x.jsonl")` → execute({task_id:"agent-x", offset:0}) → lines.len()=3, new_offset=3
+3. `reads_tail_with_offset` — 同上写 3 条 → execute({offset:2}) → lines.len()=1, new_offset=3, lines[0] 含 "msg-2"
+4. `incremental_after_append` — 写 3 条 → execute(offset:0) → 写第 4 条 → execute(offset:3) → lines.len()=1, new_offset=4, lines[0] 含 "msg-3"
+
+**验证**：
+```bash
+cd src-tauri && cargo test --test task_output_tool_test
+```
+预期 4/4 pass。
+
+**Commit**：`test(tools): integration tests for task_output tool (P8.1d)`
+
+**禁止**：不动 task_output.rs；不走 dispatcher；不 mock UserScopedPathResolver 的其他 trait 方法。
+
+---
+
+#### 片 3 — P8.1e：spawn_subagent::launch_async 接 output_writer
+
+**预估**：1 主文件 + 1 wiring 文件，约 40 行净增。
+
+**步骤 1**：`src-tauri/src/llm/tool_executor/spawn_subagent.rs` 顶部加 use：
+```rust
+use crate::runtime::agent::output_writer;
+use crate::storage::user_scoped_paths::UserScopedPathResolver;
+```
+
+**步骤 2**：`DefaultSpawnSubagentLauncher` 加字段：
+```rust
+paths: Arc<dyn UserScopedPathResolver>,
+```
+
+**步骤 3**：更新 `from_runtime_deps`，在末尾加 `paths: Arc<dyn UserScopedPathResolver>` 参数，struct literal 里赋值。
+
+**步骤 4**：更新唯一调用站点 `src-tauri/src/plugin/registry.rs` 的 `"spawn_subagent" =>` 分支（commit `1e44160` 改过的那段）— 在 `notif_queue` lookup 后再加一段 resolver lookup（与片 1 工厂分支模式相同），然后传给 `DefaultSpawnSubagentLauncher::from_runtime_deps(...)` 末尾参数。
+
+**步骤 5**：`launch_async` 顶部（在 `let agent_id = ...` 之后）：
+```rust
+let transcript_path = match self.paths.require_paths() {
+    Ok(p) => output_writer::transcript_path(
+        &p.subagent_transcripts_dir(),
+        agent_id.as_str(),
+    ),
+    Err(e) => {
+        log::warn!("[spawn_subagent async] no user scope: {}; transcript disabled", e);
+        std::path::PathBuf::new()  // 兜底：保留旧行为
+    }
+};
+let transcript_path_for_task = transcript_path.clone();
+```
+（注意：launch_async 在 tokio::spawn 内，**不要** fail-closed —— 退化到无 transcript 是合理 best-effort）
+
+**步骤 6**：`AsyncTaskHandle::output_file: PathBuf::new()` 改为 `transcript_path.clone()`。
+
+**步骤 7**：`tokio::spawn` body 三个分支末尾（在各自的 `notif_queue.enqueue` 之前）：
+```rust
+// Ok 分支
+let _ = output_writer::append_line(
+    &transcript_path_for_task,
+    &output_writer::TranscriptLine::assistant(output_ref),
+);
+// Err 分支
+let _ = output_writer::append_line(
+    &transcript_path_for_task,
+    &output_writer::TranscriptLine::failed(&err_str),
+);
+// Panic 分支
+let _ = output_writer::append_line(
+    &transcript_path_for_task,
+    &output_writer::TranscriptLine::failed(&panic_summary),
+);
+```
+
+**步骤 8**：`build_task_notification_xml` 第 3 个参数从 `""` 改为路径字符串。注意临时变量生命周期：
+```rust
+let p_str = transcript_path_for_task.to_string_lossy();
+let xml = build_task_notification_xml(
+    id_for_task.as_str(),
+    Some(&parent_tool_use_id),
+    &p_str,  // ← 这里
+    "completed",
+    ...
+);
+```
+三个分支都改。
+
+**步骤 9**：`grep -rn "from_runtime_deps" src-tauri/src src-tauri/tests` 确认是否只有 plugin/registry.rs 一处构造 `DefaultSpawnSubagentLauncher::from_runtime_deps`。如果有 test 构造，更新调用站点（多传一个 Arc resolver；test 用 `TestResolver` 模式，参考片 2）。
+
+**验证**：
+```bash
+cd src-tauri && cargo build --tests 2>&1 | tail -10
+cd src-tauri && cargo test --test spawn_subagent_async_test --test spawn_subagent_tool_basic_test --test spawn_subagent_parallel_dispatch_test --test e2e_spawn_subagent_explore --test agent_registry_merge_test --test task_notification_injection_test --test task_output_tool_test
+```
+全 pass。
+
+**Commit**：`feat(agent): wire launch_async transcript writer + populate AsyncTaskHandle.output_file (P8.1e)`
+
+**禁止**：不改 task_output.rs/output_writer.rs/catalog.rs；不写新测试（片 4 干这个）；不动 launch_sync 路径。
+
+---
+
+> 三片**强制顺序 1 → 2 → 3**：片 1 完成后 cargo build 必绿；片 2 才能用 task_output；片 3 改 from_runtime_deps 签名前必须确认片 1 的 wiring 范式（resolver dyn-cast）已在主分支。
 
 ### 🟡 中等依赖
 
-#### **片 4 — P10.2: async e2e 测试**
-依赖：片 1+片 3 完成（否则 task_output 在 dispatcher 里不可用、output_file 是空字符串）。
-- 新建 `src-tauri/tests/e2e_spawn_subagent_async.rs`
-- spawn_subagent({run_in_background: true, name: "w1", prompt: "..."}) → 立即返回 agent_id
-- 用 stub launcher 模拟 sub-agent 完成 → 验证 task_store 状态变 Completed、notif_queue 队列非空、若接了 P8.1e 还可验 transcript 文件存在
-- 期望 5–6 个测试
+#### 片 4 — P10.2：async e2e 测试
+
+**前置**：片 1 + 片 3 已 commit。
+
+**预估**：单文件新建，约 200 行。
+
+新建 `src-tauri/tests/e2e_spawn_subagent_async.rs`。
+
+**Imports**（参考 tests/e2e_spawn_subagent_explore.rs）：
+```rust
+use std::sync::Arc;
+use serde_json::{json, Value};
+use async_trait::async_trait;
+
+use app_lib::runtime::agent::async_task_store::{
+    AsyncAgentTaskStore, AsyncTaskHandle, AsyncTaskState,
+};
+use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::agent::task_notification::TaskNotificationQueue;
+use app_lib::runtime::ids::AgentId;
+use app_lib::runtime::tools::builtin::spawn_subagent::{
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnSubagentRuntimeTool,
+};
+use app_lib::runtime::tools::context::ToolExecutionContext;
+use app_lib::runtime::tools::RuntimeTool;
+```
+
+**StubLauncher**（同步完成模拟，不真 tokio::spawn）：
+```rust
+struct StubLauncher {
+    task_store: Arc<AsyncAgentTaskStore>,
+    notif_queue: Arc<TaskNotificationQueue>,
+}
+#[async_trait]
+impl SpawnSubagentLauncher for StubLauncher {
+    async fn launch_sync(&self, _req: SpawnSubagentRequest, _ctx: SpawnSubagentContext)
+        -> anyhow::Result<String> { unreachable!("test only exercises async") }
+    async fn launch_async(&self, req: SpawnSubagentRequest, _ctx: SpawnSubagentContext)
+        -> anyhow::Result<SpawnAsyncOutcome> {
+        let agent_id = AgentId::new(format!("stub-{}", uuid::Uuid::new_v4()));
+        if let Some(name) = &req.name {
+            self.task_store.register(name, AsyncTaskHandle {
+                agent_id: agent_id.clone(),
+                state: AsyncTaskState::Running,
+                output_file: std::path::PathBuf::new(),
+                description: req.description.clone(),
+            });
+        }
+        // 同步模拟完成（避免 tokio::spawn 时序波动）
+        self.task_store.update_state(&agent_id, AsyncTaskState::Completed);
+        let xml = format!("<task-notification><task-id>{}</task-id></task-notification>", agent_id.as_str());
+        self.notif_queue.enqueue(agent_id.as_str(), xml);
+        Ok(SpawnAsyncOutcome { agent_id, name: req.name.clone() })
+    }
+}
+fn build_tool() -> (SpawnSubagentRuntimeTool, Arc<AsyncAgentTaskStore>, Arc<TaskNotificationQueue>) {
+    let task_store = Arc::new(AsyncAgentTaskStore::new());
+    let notif_queue = Arc::new(TaskNotificationQueue::new());
+    let registry = Arc::new(AgentRegistry::with_builtins());
+    let launcher = Arc::new(StubLauncher {
+        task_store: task_store.clone(),
+        notif_queue: notif_queue.clone(),
+    });
+    let tool = SpawnSubagentRuntimeTool::new(launcher, registry);
+    (tool, task_store, notif_queue)
+}
+```
+
+**5 个测试**（每个 `#[tokio::test]`）：
+
+1. `async_path_returns_immediately_with_agent_id` — execute({subagent_type:"explore", prompt:"x", description:"x", run_in_background:true, name:"w1"}) → 解析 result.content JSON → assert status="async_launched", agent_id 非空, name="w1"
+2. `async_path_registers_in_task_store` — 同上 → `task_store.find_by_name("w1").is_some()`，state == Completed
+3. `async_path_enqueues_notification` — 同上 → `notif_queue.drain_all().len() == 1`，xml 含 agent_id
+4. `async_path_without_name_skips_register` — execute(无 name 字段) → `task_store.list_active().is_empty()` 且 `task_store.find_by_name("anything").is_none()`，但 notif 还是发了 1 条
+5. `async_path_state_is_completed_after_stub_finishes` — execute → `find_by_id(agent_id)` state == Completed
+
+**验证**：
+```bash
+cd src-tauri && cargo test --test e2e_spawn_subagent_async
+```
+5/5 pass。
+
+**Commit**：`test(agent): e2e async spawn_subagent + task_store + notif_queue (P10.2)`
+
+**禁止**：不真跑 LLM；不依赖 tokio::spawn 实际跑（stub 同步完成）；不读 transcript 文件（片 3 的责任）。
+
+---
 
 ### 🔴 收尾
 
-#### **片 5 — P10.1 follow-up: Fixed-model + 负向测试**
-review #13 留的两个 minor。新建一个测试 helper 注册一个 `AgentDefinition { model: Fixed("test-id") }` 进 ad-hoc registry，验证 effective_model = Some("test-id")；再加一个 unknown subagent_type 的负向测试。
+#### 片 5 — P10.1 follow-up：Fixed-model + 负向测试
 
-#### **片 6 — P10.3: review_ 架构约束回归**
-新建 `src-tauri/tests/review_agent_b_constraints.rs`：
-- agent 模块不导入 `tauri::*`
-- spawn_subagent.is_concurrency_safe = true
-- async agent 默认 disallow ask_user_question（resolve_agent_tools 边界）
+**预估**：改 `src-tauri/tests/spawn_subagent_tool_basic_test.rs` 既存文件，加 2 个测试 + 1 helper，约 60 行。
 
-#### **片 7 — 收尾 follow-ups #43**
-在 `internal_system.rs:368` 加 SECURITY 注释（标记 browse_data 递归屏障，重构必须保证 list 不含 browse_data）。
+**辅助函数**（加在 module 顶部，已有 imports 之后）：
+```rust
+fn registry_with_fixed_model_agent() -> Arc<AgentRegistry> {
+    use app_lib::runtime::agent::definition::{
+        AgentDefinition, AgentModel, AgentPermissionMode, AgentPrompt, AgentSource,
+    };
+    let mut reg = AgentRegistry::with_builtins();
+    reg.register(AgentDefinition {
+        name: "fixed-model-test-agent".into(),
+        description: "test".into(),
+        allowed_tools: vec![],
+        disallowed_tools: vec![],
+        max_iterations: 5,
+        model: AgentModel::Fixed("test-fixed-model-id".into()),
+        system_prompt: AgentPrompt::Inline("test".into()),
+        source: AgentSource::Builtin,
+        permission_mode: AgentPermissionMode::Bubble,
+        background_default: false,
+    });
+    Arc::new(reg)
+}
+```
+（先 grep 确认 `AgentDefinition` 字段以现行 commit 为准；如有差异按现状改）
+
+**测试 1**：`fixed_model_definition_resolves_when_caller_omits_model`
+- 用 `registry_with_fixed_model_agent()` + 已有 RecordingLauncher pattern 构造 tool
+- execute(`{subagent_type:"fixed-model-test-agent", prompt:"x", description:"x"}`)（**不**传 model）
+- assert recorded_request.effective_model == Some("test-fixed-model-id".to_string())
+
+**测试 2**：`caller_model_overrides_fixed_definition`
+- 同上 registry
+- execute(`{subagent_type:"fixed-model-test-agent", prompt:"x", description:"x", model:"caller-id"}`)
+- assert recorded_request.effective_model == Some("caller-id".to_string())
+
+**测试 3 不必新增** — 现有 `unknown_subagent_type_returns_helpful_error` 已覆盖负向；只需跑 `cargo test --test spawn_subagent_tool_basic_test` 确认所有原有 11 测试 + 新增 2 测试都过。
+
+**验证**：
+```bash
+cd src-tauri && cargo test --test spawn_subagent_tool_basic_test
+```
+13 测试 pass。
+
+**Commit**：`test(tools): cover AgentModel::Fixed branch in spawn_subagent (P10.1 follow-up)`
+
+**禁止**：不改 spawn_subagent.rs 生产代码；不改 RecordingLauncher。
+
+---
+
+#### 片 6 — P10.3：review_ 架构约束回归
+
+**预估**：单文件新建，约 80 行。
+
+新建 `src-tauri/tests/review_agent_b_constraints.rs`。
+
+**测试 1**：`agent_modules_do_not_use_tauri_directly`
+```rust
+#[test]
+fn agent_modules_do_not_use_tauri_directly() {
+    for path in &[
+        "src/runtime/agent/markdown_loader.rs",
+        "src/runtime/agent/registry.rs",
+        "src/runtime/agent/registry_loader.rs",
+        "src/runtime/agent/async_task_store.rs",
+        "src/runtime/agent/task_notification.rs",
+        "src/runtime/agent/output_writer.rs",
+        "src/runtime/agent/tool_whitelist.rs",
+    ] {
+        let src = std::fs::read_to_string(path)
+            .unwrap_or_else(|_| panic!("missing {}", path));
+        assert!(
+            !src.contains("use tauri::") && !src.contains("tauri::Manager"),
+            "{} must not import tauri::* (runtime layer purity)",
+            path
+        );
+    }
+}
+```
+
+**测试 2**：`spawn_subagent_tool_is_concurrency_safe`
+```rust
+use async_trait::async_trait;
+use std::sync::Arc;
+use app_lib::runtime::agent::registry::AgentRegistry;
+use app_lib::runtime::tools::builtin::spawn_subagent::{
+    SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
+    SpawnSubagentRuntimeTool,
+};
+use app_lib::runtime::tools::RuntimeTool;
+
+struct NoopLauncher;
+#[async_trait]
+impl SpawnSubagentLauncher for NoopLauncher {
+    async fn launch_sync(&self, _: SpawnSubagentRequest, _: SpawnSubagentContext) -> anyhow::Result<String> { unreachable!() }
+    async fn launch_async(&self, _: SpawnSubagentRequest, _: SpawnSubagentContext) -> anyhow::Result<SpawnAsyncOutcome> { unreachable!() }
+}
+
+#[test]
+fn spawn_subagent_tool_is_concurrency_safe() {
+    let tool = SpawnSubagentRuntimeTool::new(
+        Arc::new(NoopLauncher),
+        Arc::new(AgentRegistry::with_builtins()),
+    );
+    assert!(tool.is_concurrency_safe(&serde_json::Value::Null));
+}
+```
+
+**测试 3**：`async_agent_default_disallows_ask_user_question`
+- 先 `grep -n "fn resolve_agent_tools" src-tauri/src/runtime/agent/tool_whitelist.rs` 确认 6 参数签名顺序（与 P4.1 commit `d7d31b8` 一致）
+```rust
+#[test]
+fn async_agent_default_disallows_ask_user_question() {
+    use app_lib::runtime::agent::tool_whitelist::resolve_agent_tools;
+    let allowed = resolve_agent_tools(
+        &[],  // def_allowed = empty (= all)
+        &[],  // def_disallowed
+        &["ask_user_question".to_string(), "read_file".to_string()],  // available
+        true,  // is_async
+        false, // allow_recursive_spawn
+    );
+    assert!(
+        !allowed.contains(&"ask_user_question".to_string()),
+        "async agents must never get ask_user_question"
+    );
+}
+```
+
+**验证**：
+```bash
+cd src-tauri && cargo test --test review_agent_b_constraints
+cd src-tauri && cargo test review_ --tests --no-fail-fast
+```
+3 个新测试 pass，所有既有 review_ 测试不破坏。
+
+**Commit**：`test(agent): review_ regression for Mode B architectural constraints (P10.3)`
+
+**禁止**：不改生产代码；不动其他 review_ 测试。
+
+---
+
+#### 片 7 — 收尾 follow-up #43：browse_data SECURITY 注释
+
+**预估**：1 文件 1 处注释，约 10 行。
+
+`src-tauri/src/llm/tool_executor/internal_system.rs:368` 附近。先：
+```bash
+grep -n "allowed_tools\s*[:=]\s*vec!\[" src-tauri/src/llm/tool_executor/internal_system.rs
+```
+找到 browse_data 子 agent 的硬编码 allowed_tools 定义点（commit `5dc0ae8` 删 run_sub_agent 守卫后由这个列表承担递归保护）。
+
+在该 `let allowed_tools: Vec<String> = vec![ ... ];` 上方加注释：
+```rust
+// SECURITY: This list MUST NOT contain "browse_data". browse_data delegates
+// to a sub-agent which would otherwise recursively spawn another browse_data
+// sub-agent on every nested data extraction request — infinite recursion +
+// LLM cost explosion. The historic guard in run_sub_agent that rejected
+// browse_data in allowed_tools was deleted in commit 5dc0ae8 (P4.2) when
+// worker_runtime took over whitelist enforcement. The recursive protection
+// now relies entirely on this hardcoded list. If this list is ever changed
+// to be dynamic, browse_data MUST be added to ALL_AGENT_DISALLOWED in
+// runtime/agent/tool_whitelist.rs to restore the guard.
+```
+
+**验证**：
+```bash
+cd src-tauri && cargo build --tests 2>&1 | tail -3
+```
+build clean（仅注释）。
+
+**Commit**：`docs(llm): SECURITY note on browse_data sub-agent allowed_tools (#43 follow-up)`
+
+**禁止**：不改任何代码；只加注释。
 
 ---
 
@@ -166,22 +578,3 @@ review #13 留的两个 minor。新建一个测试 helper 注册一个 `AgentDef
 | **合计** | **80+ 单测/集成测试，全部 PASS** |
 
 预先存在的 `storage::file_store::messages` 5 个失败与 Mode B 无关，独立 ticket 跟踪。
-
----
-
-## 新会话恢复指令
-
-新会话第一条建议：
-
-```
-继续 lotus-app Mode B subagent 大计划（M2 收尾 + M3）。
-
-读这两份文档恢复上下文：
-- docs/superpowers/plans/2026-04-30-lotus-subagent-mode-b-master-plan.md
-- docs/superpowers/plans/2026-04-30-mode-b-progress-handoff.md
-
-跑 git log --oneline d58b3e8..HEAD 应有 26 个 commit，最新 753a4d1。
-TaskList 看待办；当前可立刻做的是 handoff 文档里的「片 1（P8.1c）」「片 2（P8.1d）」「片 3（P8.1e）」三片中任一。
-
-执行参数：当前 worktree 直接做、subagent-driven、串行不并行、reviewer=opus、implementer 按复杂度选模型。
-```
