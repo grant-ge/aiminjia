@@ -72,6 +72,26 @@ fn build_tool() -> SpawnSubagentRuntimeTool {
     SpawnSubagentRuntimeTool::new(Arc::new(StubLauncher::returning("done")), registry)
 }
 
+fn registry_with_fixed_model_agent() -> Arc<AgentRegistry> {
+    use app_lib::runtime::agent::definition::{
+        AgentDefinition, AgentModel, AgentPermissionMode, AgentPrompt, AgentSource,
+    };
+    let mut reg = AgentRegistry::with_builtins();
+    reg.register(AgentDefinition {
+        name: "fixed-model-test-agent".into(),
+        description: "test".into(),
+        allowed_tools: vec![],
+        disallowed_tools: vec![],
+        max_iterations: 5,
+        model: AgentModel::Fixed("test-fixed-model-id".into()),
+        system_prompt: AgentPrompt::Inline("test".into()),
+        source: AgentSource::Builtin,
+        permission_mode: AgentPermissionMode::Bubble,
+        background_default: false,
+    });
+    Arc::new(reg)
+}
+
 // ─── Structural tests ─────────────────────────────────────────────────────────
 
 #[test]
@@ -415,5 +435,128 @@ async fn empty_model_string_treated_as_inherit() {
         seen.as_ref().and_then(|m| m.as_deref()),
         None,
         "empty caller model must not override (effective_model should be None for Inherit definition)"
+    );
+}
+
+// ─── AgentModel::Fixed resolution ────────────────────────────────────────────
+
+#[tokio::test]
+async fn fixed_model_definition_resolves_when_caller_omits_model() {
+    use std::sync::Mutex;
+
+    struct ModelCapture {
+        model: Arc<Mutex<Option<Option<String>>>>,
+    }
+
+    #[async_trait]
+    impl SpawnSubagentLauncher for ModelCapture {
+        async fn launch_sync(
+            &self,
+            request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<String> {
+            *self.model.lock().unwrap() = Some(request.effective_model.clone());
+            Ok("done".into())
+        }
+
+        async fn launch_async(
+            &self,
+            _request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-id"),
+                name: None,
+            })
+        }
+    }
+
+    let model_seen = Arc::new(Mutex::new(None));
+    let registry = registry_with_fixed_model_agent();
+    let tool = SpawnSubagentRuntimeTool::new(
+        Arc::new(ModelCapture {
+            model: model_seen.clone(),
+        }),
+        registry,
+    );
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+
+    tool.execute(
+        json!({
+            "subagent_type": "fixed-model-test-agent",
+            "prompt": "x",
+            "description": "x"
+        }),
+        ctx,
+    )
+    .await
+    .expect("should succeed");
+
+    let seen = model_seen.lock().unwrap();
+    assert_eq!(
+        *seen,
+        Some(Some("test-fixed-model-id".to_string())),
+        "Fixed definition with no caller model should resolve to the fixed model id"
+    );
+}
+
+#[tokio::test]
+async fn caller_model_overrides_fixed_definition() {
+    use std::sync::Mutex;
+
+    struct ModelCapture {
+        model: Arc<Mutex<Option<Option<String>>>>,
+    }
+
+    #[async_trait]
+    impl SpawnSubagentLauncher for ModelCapture {
+        async fn launch_sync(
+            &self,
+            request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<String> {
+            *self.model.lock().unwrap() = Some(request.effective_model.clone());
+            Ok("done".into())
+        }
+
+        async fn launch_async(
+            &self,
+            _request: SpawnSubagentRequest,
+            _context: SpawnSubagentContext,
+        ) -> Result<SpawnAsyncOutcome> {
+            Ok(SpawnAsyncOutcome {
+                agent_id: AgentId::new("stub-id"),
+                name: None,
+            })
+        }
+    }
+
+    let model_seen = Arc::new(Mutex::new(None));
+    let registry = registry_with_fixed_model_agent();
+    let tool = SpawnSubagentRuntimeTool::new(
+        Arc::new(ModelCapture {
+            model: model_seen.clone(),
+        }),
+        registry,
+    );
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+
+    tool.execute(
+        json!({
+            "subagent_type": "fixed-model-test-agent",
+            "prompt": "x",
+            "description": "x",
+            "model": "caller-id"
+        }),
+        ctx,
+    )
+    .await
+    .expect("should succeed");
+
+    let seen = model_seen.lock().unwrap();
+    assert_eq!(
+        *seen,
+        Some(Some("caller-id".to_string())),
+        "Caller model should override Fixed definition model"
     );
 }
