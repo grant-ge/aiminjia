@@ -97,25 +97,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         &self,
         config: SubAgentConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-        let turn_request = self.build_turn_request(&config).await;
-        let run_config = Self::build_run_config(&config);
-        self.run_worker_turn(turn_request, run_config).await
-    }
-
-    fn build_run_config(config: &SubAgentConfig) -> WorkerRunConfig {
-        WorkerRunConfig {
-            allowed_tools: config.allowed_tools.clone(),
-            conversation_id: config.conversation_id.clone(),
-            parent_run_id: config.parent_run_id.clone(),
-            background: config.background,
-            app_handle: config.app_handle.clone(),
-            cancel_token: config.cancel_token.clone(),
-            permission_mode: config.permission_mode,
-            model_override: config.model_override.clone(),
-        }
-    }
-
-    async fn build_turn_request(&self, config: &SubAgentConfig) -> WorkerTurnRequest {
         let all_schemas = self.tool_registry.get_all_schemas().await;
         let available_names: Vec<String> = all_schemas.iter().map(|s| s.name.clone()).collect();
 
@@ -127,6 +108,33 @@ impl<'a> SubagentWorkerRuntime<'a> {
             false,
         );
 
+        let turn_request =
+            Self::build_turn_request_with_allowed(&config, all_schemas, &final_allowed);
+        let run_config = Self::build_run_config_with_allowed(&config, final_allowed);
+        self.run_worker_turn(turn_request, run_config).await
+    }
+
+    fn build_run_config_with_allowed(
+        config: &SubAgentConfig,
+        final_allowed: Vec<String>,
+    ) -> WorkerRunConfig {
+        WorkerRunConfig {
+            allowed_tools: final_allowed,
+            conversation_id: config.conversation_id.clone(),
+            parent_run_id: config.parent_run_id.clone(),
+            background: config.background,
+            app_handle: config.app_handle.clone(),
+            cancel_token: config.cancel_token.clone(),
+            permission_mode: config.permission_mode,
+            model_override: config.model_override.clone(),
+        }
+    }
+
+    fn build_turn_request_with_allowed(
+        config: &SubAgentConfig,
+        all_schemas: Vec<ToolDefinition>,
+        final_allowed: &[String],
+    ) -> WorkerTurnRequest {
         let tool_defs: Vec<ToolDefinition> = all_schemas
             .into_iter()
             .filter(|schema| final_allowed.contains(&schema.name))
@@ -893,9 +901,78 @@ mod tests {
             disallowed_tools: vec![],
         };
 
-        let run_config = SubagentWorkerRuntime::build_run_config(&config);
+        let final_allowed = vec!["read_page_content".to_string()];
+        let run_config =
+            SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed);
 
         assert_eq!(run_config.permission_mode, PermissionMode::Plan);
+    }
+
+    #[test]
+    fn final_whitelist_is_used_in_run_config_and_turn_request() {
+        fn tool_schema(name: &str) -> ToolDefinition {
+            ToolDefinition {
+                name: name.to_string(),
+                description: format!("{name} schema"),
+                parameters: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        let config = SubAgentConfig {
+            task: "collect data".to_string(),
+            system_prompt: "system".to_string(),
+            allowed_tools: vec![],
+            max_iterations: 3,
+            dynamic_context: String::new(),
+            conversation_id: "conv-worker-whitelist".to_string(),
+            parent_run_id: Some(RunId::new("run-parent-worker-whitelist")),
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: None,
+            agent_name: None,
+            disallowed_tools: vec![],
+        };
+        let all_schemas = vec![
+            tool_schema("read_workspace_file"),
+            tool_schema("spawn_subagent"),
+        ];
+        let available_names: Vec<String> = all_schemas
+            .iter()
+            .map(|schema| schema.name.clone())
+            .collect();
+        let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+            &config.allowed_tools,
+            &config.disallowed_tools,
+            &available_names,
+            config.background,
+            false,
+        );
+
+        let turn_request = SubagentWorkerRuntime::build_turn_request_with_allowed(
+            &config,
+            all_schemas,
+            &final_allowed,
+        );
+        let run_config =
+            SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed.clone());
+
+        assert!(final_allowed.contains(&"read_workspace_file".to_string()));
+        assert!(!final_allowed.contains(&"spawn_subagent".to_string()));
+        assert!(run_config
+            .allowed_tools
+            .contains(&"read_workspace_file".to_string()));
+        assert!(!run_config
+            .allowed_tools
+            .contains(&"spawn_subagent".to_string()));
+        let tool_def_names: Vec<&str> = turn_request
+            .tool_defs
+            .iter()
+            .map(|tool_def| tool_def.name.as_str())
+            .collect();
+        assert!(tool_def_names.contains(&"read_workspace_file"));
+        assert!(!tool_def_names.contains(&"spawn_subagent"));
     }
 
     #[test]
