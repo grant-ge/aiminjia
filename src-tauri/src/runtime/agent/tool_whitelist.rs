@@ -14,10 +14,14 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 
 /// async（后台）subagent 额外允许集：仅以下工具可用
 /// 后台 agent 不应使用阻塞式工具（弹窗确认、user prompt 等）。
+///
+/// 工具名必须与 `runtime/tools/catalog.rs` + `runtime/tools/builtin/*` 暴露的
+/// canonical 名一致；否则 `resolve_agent_tools` 会在 available_names 过滤步骤把
+/// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
-    "read_file", "write_file", "edit_file",
-    "bash", "grep", "glob", "list_directory",
-    "web_search", "web_fetch",
+    "read_workspace_file", "write_file", "edit_file",
+    "bash", "grep_content", "search_files", "list_directory", "get_file_info",
+    "web_search",
     "spawn_subagent",
     "task_output",
     "browse_and_extract", "browse_navigate", "read_page_content",
@@ -121,12 +125,17 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "ask_user_question", "extract_table_data", "unknown_tool"]),
+            &vs(&[
+                "read_workspace_file",
+                "ask_user_question",
+                "extract_table_data",
+                "unknown_tool",
+            ]),
             true,
             false,
         );
         // unknown_tool 不在 ASYNC_AGENT_ALLOWED → 被过滤
-        assert!(allowed.contains(&"read_file".to_string()));
+        assert!(allowed.contains(&"read_workspace_file".to_string()));
         assert!(allowed.contains(&"extract_table_data".to_string()));
         assert!(!allowed.contains(&"ask_user_question".to_string()));
         assert!(!allowed.contains(&"unknown_tool".to_string()));
