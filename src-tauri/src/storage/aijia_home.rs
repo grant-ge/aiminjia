@@ -113,6 +113,10 @@ impl AiJiaHome {
         self.user_dir(scope).join("skills")
     }
 
+    pub fn user_agents_dir(&self, scope: &UserScope) -> PathBuf {
+        self.user_dir(scope).join("agents")
+    }
+
     pub fn user_playwright_profile_dir(&self, scope: &UserScope) -> PathBuf {
         self.user_dir(scope).join("playwright-profile")
     }
@@ -218,6 +222,7 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
         std::fs::create_dir_all(self.user_schedules_dir(scope))?;
         std::fs::create_dir_all(self.user_skills_dir(scope))?;
+        std::fs::create_dir_all(self.user_agents_dir(scope))?;
         std::fs::create_dir_all(self.user_subagent_transcripts_dir(scope))?;
         std::fs::create_dir_all(self.user_playwright_profile_dir(scope))?;
         std::fs::create_dir_all(self.user_api_data_dir(scope))?;
@@ -406,6 +411,7 @@ mod tests {
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());
         assert!(home.user_skills_dir(&scope).exists());
+        assert!(home.user_agents_dir(&scope).exists());
         assert!(home.user_subagent_transcripts_dir(&scope).exists());
         assert!(home.user_playwright_profile_dir(&scope).exists());
         assert!(home.user_api_data_dir(&scope).exists());
