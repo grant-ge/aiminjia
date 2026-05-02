@@ -189,6 +189,11 @@ async fn rejects_absolute_path_separator() {
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
     let res = tool.execute(json!({"task_id": "/etc/passwd"}), ctx).await;
     assert!(res.is_err(), "/etc/passwd should be rejected: {res:?}");
+    let msg = format!("{:?}", res.unwrap_err());
+    assert!(
+        msg.contains("invalid task_id"),
+        "error msg should mention invalid task_id: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -198,4 +203,9 @@ async fn rejects_backslash_separator() {
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
     let res = tool.execute(json!({"task_id": "..\\foo"}), ctx).await;
     assert!(res.is_err(), "..\\foo should be rejected: {res:?}");
+    let msg = format!("{:?}", res.unwrap_err());
+    assert!(
+        msg.contains("invalid task_id"),
+        "error msg should mention invalid task_id: {msg}"
+    );
 }
