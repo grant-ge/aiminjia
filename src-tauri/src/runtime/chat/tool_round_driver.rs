@@ -102,7 +102,8 @@ impl ToolRoundDriver {
     ///
     /// - Blocked calls are resolved immediately (no dispatcher round-trip).
     /// - A single permitted call is dispatched sequentially.
-    /// - Multiple permitted calls are dispatched concurrently via
+    /// - Multiple permitted calls are partitioned by `RuntimeTool::is_concurrency_safe`:
+    ///   unsafe calls run sequentially, safe calls run concurrently via
     ///   `futures::future::join_all`.
     pub async fn execute_round(
         &self,
@@ -135,89 +136,77 @@ impl ToolRoundDriver {
         if permitted.len() <= 1 {
             // Sequential dispatch (single tool or empty).
             for (idx, call) in permitted {
-                let outcome = self
-                    .query_engine
-                    .run_tool_call_with_bus(turn, bus, call)
-                    .await;
-                match outcome {
-                    Ok(o) => results.push((idx, ToolRoundResult::Ok(o))),
-                    Err(e) => {
-                        // Infrastructure error (dispatcher missing, bus failure, etc.).
-                        // Wrap as an error outcome so the LLM receives feedback.
-                        results.push((
-                            idx,
-                            ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
-                                tool_call_id: String::new(),
-                                tool_name: String::new(),
-                                content: format!("Error: {}", e),
-                                is_error: true,
-                                msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
-                                file_meta: None,
-                                is_degraded: false,
-                                degradation_notice: None,
-                                max_result_size_chars: 8_000,
-                                context_modifier_message: None,
-                            }),
-                        ));
-                    }
-                }
+                results.push(self.dispatch_serial_call(turn, bus, idx, call).await);
             }
         } else {
-            // Concurrent dispatch.
-            let sibling_cancel = turn.cancellation().child_token();
-            let futures: Vec<_> = permitted
-                .into_iter()
-                .map(|(idx, call)| {
-                    let engine = self.query_engine.clone();
-                    let turn_clone = turn.clone();
-                    let bus_clone = bus.clone();
-                    let sibling_cancel_clone = sibling_cancel.clone();
-                    let interrupt_behavior =
-                        self.query_engine.tool_interrupt_behavior(&call.tool_name);
-                    async move {
-                        let tool_cancel = match interrupt_behavior {
-                            InterruptBehavior::Cancel => sibling_cancel_clone.child_token(),
-                            InterruptBehavior::Block => sibling_cancel_clone
-                                .child_token_ignoring_reason(CancellationReason::Interrupt),
-                        };
-                        let tool_turn = turn_clone.with_cancellation(tool_cancel);
-                        let outcome = engine
-                            .run_tool_call_with_bus(&tool_turn, &bus_clone, call.clone())
-                            .await;
-                        match outcome {
-                            Ok(o) => {
-                                if o.is_error() {
+            let (safe, unsafe_calls): (Vec<_>, Vec<_>) =
+                permitted.into_iter().partition(|(_, call)| {
+                    self.query_engine
+                        .tool_concurrency_safe(&call.tool_name, &call.args)
+                });
+
+            // Non-concurrency-safe tools must honor the RuntimeTool contract and run serially.
+            for (idx, call) in unsafe_calls {
+                results.push(self.dispatch_serial_call(turn, bus, idx, call).await);
+            }
+
+            // Concurrent dispatch for tools that explicitly report concurrency safety.
+            if !safe.is_empty() {
+                let sibling_cancel = turn.cancellation().child_token();
+                let futures: Vec<_> = safe
+                    .into_iter()
+                    .map(|(idx, call)| {
+                        let engine = self.query_engine.clone();
+                        let turn_clone = turn.clone();
+                        let bus_clone = bus.clone();
+                        let sibling_cancel_clone = sibling_cancel.clone();
+                        let interrupt_behavior =
+                            self.query_engine.tool_interrupt_behavior(&call.tool_name);
+                        async move {
+                            let tool_cancel = match interrupt_behavior {
+                                InterruptBehavior::Cancel => sibling_cancel_clone.child_token(),
+                                InterruptBehavior::Block => sibling_cancel_clone
+                                    .child_token_ignoring_reason(CancellationReason::Interrupt),
+                            };
+                            let tool_turn = turn_clone.with_cancellation(tool_cancel);
+                            let outcome = engine
+                                .run_tool_call_with_bus(&tool_turn, &bus_clone, call.clone())
+                                .await;
+                            match outcome {
+                                Ok(o) => {
+                                    if o.is_error() {
+                                        sibling_cancel_clone
+                                            .cancel_with_reason(CancellationReason::SiblingError);
+                                    }
+                                    (idx, ToolRoundResult::Ok(o))
+                                }
+                                Err(e) => {
                                     sibling_cancel_clone
                                         .cancel_with_reason(CancellationReason::SiblingError);
+                                    (
+                                        idx,
+                                        ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                                            tool_call_id: call.tool_call_id,
+                                            tool_name: call.tool_name,
+                                            content: format!("Error: {}", e),
+                                            is_error: true,
+                                            msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                                            file_meta: None,
+                                            is_degraded: false,
+                                            degradation_notice: None,
+                                            max_result_size_chars: 8_000,
+                                            context_modifier_message: None,
+                                        }),
+                                    )
                                 }
-                                (idx, ToolRoundResult::Ok(o))
-                            }
-                            Err(e) => {
-                                sibling_cancel_clone
-                                    .cancel_with_reason(CancellationReason::SiblingError);
-                                (
-                                    idx,
-                                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
-                                        tool_call_id: call.tool_call_id,
-                                        tool_name: call.tool_name,
-                                        content: format!("Error: {}", e),
-                                        is_error: true,
-                                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
-                                        file_meta: None,
-                                        is_degraded: false,
-                                        degradation_notice: None,
-                                        max_result_size_chars: 8_000,
-                                        context_modifier_message: None,
-                                    }),
-                                )
                             }
                         }
-                    }
-                })
-                .collect();
+                    })
+                    .collect();
 
-            let concurrent_results = futures::future::join_all(futures).await;
-            results.extend(concurrent_results);
+                let concurrent_results = futures::future::join_all(futures).await;
+                results.extend(concurrent_results);
+            }
         }
 
         // Sort by original index to preserve input ordering.
@@ -233,6 +222,41 @@ impl ToolRoundDriver {
             Some(serde_json::json!({ "callCount": final_results.len() })),
         );
         final_results
+    }
+
+    async fn dispatch_serial_call(
+        &self,
+        turn: &TurnState,
+        bus: &RuntimeEventBus,
+        idx: usize,
+        call: RuntimeToolCallRequest,
+    ) -> (usize, ToolRoundResult) {
+        let outcome = self
+            .query_engine
+            .run_tool_call_with_bus(turn, bus, call)
+            .await;
+        match outcome {
+            Ok(o) => (idx, ToolRoundResult::Ok(o)),
+            Err(e) => {
+                // Infrastructure error (dispatcher missing, bus failure, etc.).
+                // Wrap as an error outcome so the LLM receives feedback.
+                (
+                    idx,
+                    ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
+                        tool_call_id: String::new(),
+                        tool_name: String::new(),
+                        content: format!("Error: {}", e),
+                        is_error: true,
+                        msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
+                        file_meta: None,
+                        is_degraded: false,
+                        degradation_notice: None,
+                        max_result_size_chars: 8_000,
+                        context_modifier_message: None,
+                    }),
+                )
+            }
+        }
     }
 
     /// Check whether a call should be blocked by the allowed-tools filter.

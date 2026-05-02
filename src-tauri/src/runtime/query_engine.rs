@@ -191,6 +191,18 @@ impl QueryEngine {
             .unwrap_or(InterruptBehavior::Block)
     }
 
+    /// Returns whether the named tool is concurrency-safe for the given input.
+    /// Defaults to `false` (conservative — serial execution) if tool is not registered
+    /// or no dispatcher is configured.
+    pub fn tool_concurrency_safe(&self, tool_name: &str, input: &serde_json::Value) -> bool {
+        let Some(dispatcher) = self.tool_dispatcher.as_ref() else {
+            return false;
+        };
+        dispatcher
+            .tool_concurrency_safe(tool_name, input)
+            .unwrap_or(false)
+    }
+
     pub fn accumulate_usage(&self, tokens_in: u64, tokens_out: u64) {
         let mut usage = self
             .total_usage
