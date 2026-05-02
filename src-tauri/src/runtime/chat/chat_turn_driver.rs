@@ -1568,6 +1568,10 @@ impl RuntimeChatTurnDriver {
                     // CP-2: check cancellation right after execute_round.
                     if cancel.is_cancelled() {
                         state.append_messages_batch(vec![assistant_history_message.clone()]);
+                        re_enqueue_task_notifications(
+                            &self.task_notification_queue,
+                            std::mem::take(&mut pending_task_notifications),
+                        );
                         mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                         break 'turn;
                     }
@@ -1595,6 +1599,10 @@ impl RuntimeChatTurnDriver {
                         // CP-3: check cancellation after each staged tool result.
                         if cancel.is_cancelled() {
                             state.append_messages_batch(history_batch);
+                            re_enqueue_task_notifications(
+                                &self.task_notification_queue,
+                                std::mem::take(&mut pending_task_notifications),
+                            );
                             mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                             break 'turn;
                         }
