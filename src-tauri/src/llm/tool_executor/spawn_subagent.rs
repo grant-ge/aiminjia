@@ -261,7 +261,6 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
 
             match outcome {
                 Ok(Ok(sub_result)) => {
-                    task_store.update_state(&id_for_task, AsyncTaskState::Completed);
                     let output_ref = sub_result.envelope.output.as_str();
                     let _ = output_writer::append_line(
                         &transcript_path_for_task,
@@ -283,9 +282,14 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         parent_session_id.clone(),
                         parent_run_id.clone(),
                     );
+                    // Terminal state LAST — guarantees that any observer seeing
+                    // AsyncTaskState::Completed can already read the transcript
+                    // and find the notification in the queue. Inverting this
+                    // order would let parents see Completed but get an empty
+                    // task_output / missing notification.
+                    task_store.update_state(&id_for_task, AsyncTaskState::Completed);
                 }
                 Ok(Err(e)) => {
-                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                     let err_str = e.to_string();
                     log::warn!(
                         "[spawn_subagent async] agent '{}' ({}) failed: {}",
@@ -313,6 +317,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         parent_session_id.clone(),
                         parent_run_id.clone(),
                     );
+                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                 }
                 Err(panic_payload) => {
                     let panic_msg = panic_payload
@@ -330,7 +335,6 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         id_for_task.as_str(),
                         panic_msg
                     );
-                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                     let panic_summary = format!("panic: {}", panic_msg);
                     let _ = output_writer::append_line(
                         &transcript_path_for_task,
@@ -352,6 +356,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         parent_session_id.clone(),
                         parent_run_id.clone(),
                     );
+                    task_store.update_state(&id_for_task, AsyncTaskState::Failed);
                 }
             }
         });
