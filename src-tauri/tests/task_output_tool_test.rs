@@ -71,8 +71,7 @@ async fn reads_three_lines_with_offset_zero() {
 
     let path = transcripts_dir(&tmp).join("agent-x.jsonl");
     for i in 0..3 {
-        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}")))
-            .unwrap();
+        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}"))).unwrap();
     }
 
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
@@ -101,8 +100,7 @@ async fn reads_tail_with_offset() {
 
     let path = transcripts_dir(&tmp).join("agent-x.jsonl");
     for i in 0..3 {
-        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}")))
-            .unwrap();
+        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}"))).unwrap();
     }
 
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
@@ -133,8 +131,7 @@ async fn incremental_after_append() {
 
     let path = transcripts_dir(&tmp).join("agent-x.jsonl");
     for i in 0..3 {
-        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}")))
-            .unwrap();
+        output_writer::append_line(&path, &TranscriptLine::assistant(format!("msg-{i}"))).unwrap();
     }
 
     // First read: offset=0 → 3 lines
@@ -159,10 +156,46 @@ async fn incremental_after_append() {
     let b2: Value = serde_json::from_str(&r2.content).unwrap();
     let lines2 = b2["lines"].as_array().unwrap();
     assert_eq!(lines2.len(), 1, "only 1 new line after offset=3");
-    assert_eq!(b2["new_offset"].as_u64().unwrap(), 4, "new_offset should be 4");
+    assert_eq!(
+        b2["new_offset"].as_u64().unwrap(),
+        4,
+        "new_offset should be 4"
+    );
     assert!(
         lines2[0].as_str().unwrap().contains("msg-3"),
         "new line should contain msg-3, got: {}",
         lines2[0]
     );
+}
+
+#[tokio::test]
+async fn rejects_path_traversal_dotdot() {
+    let tmp = TempDir::new().unwrap();
+    let tool = build_tool(&tmp);
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+    let res = tool.execute(json!({"task_id": "../foo"}), ctx).await;
+    assert!(res.is_err(), "../foo should be rejected: {res:?}");
+    let msg = format!("{:?}", res.unwrap_err());
+    assert!(
+        msg.contains("invalid task_id"),
+        "error msg should mention invalid task_id: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn rejects_absolute_path_separator() {
+    let tmp = TempDir::new().unwrap();
+    let tool = build_tool(&tmp);
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+    let res = tool.execute(json!({"task_id": "/etc/passwd"}), ctx).await;
+    assert!(res.is_err(), "/etc/passwd should be rejected: {res:?}");
+}
+
+#[tokio::test]
+async fn rejects_backslash_separator() {
+    let tmp = TempDir::new().unwrap();
+    let tool = build_tool(&tmp);
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+    let res = tool.execute(json!({"task_id": "..\\foo"}), ctx).await;
+    assert!(res.is_err(), "..\\foo should be rejected: {res:?}");
 }

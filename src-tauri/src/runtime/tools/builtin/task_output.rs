@@ -27,6 +27,21 @@ impl TaskOutputRuntimeTool {
     }
 }
 
+fn validate_task_id(s: &str) -> Result<&str, ToolError> {
+    if s.contains('/')
+        || s.contains('\\')
+        || s.contains('\0')
+        || s == "."
+        || s == ".."
+        || s.starts_with('.')
+    {
+        return Err(ToolError::ExecutionFailed(format!(
+            "invalid task_id: {s:?} (must not contain path separators or be a dotfile)"
+        )));
+    }
+    Ok(s)
+}
+
 #[async_trait]
 impl RuntimeTool for TaskOutputRuntimeTool {
     fn definition(&self) -> ToolDefinition {
@@ -46,17 +61,15 @@ impl RuntimeTool for TaskOutputRuntimeTool {
         input: Value,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let task_id = input
+        let task_id_raw = input
             .get("task_id")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| ToolError::ExecutionFailed("missing required field: task_id".into()))?;
+        let task_id = validate_task_id(task_id_raw)?;
 
-        let offset = input
-            .get("offset")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as usize;
+        let offset = input.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
 
         let paths = self
             .paths
@@ -183,10 +196,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
         let resolver_paths = UserScopedPaths::new(tmp.path(), "t_test__u_test");
-        let path = output_writer::transcript_path(
-            &resolver_paths.subagent_transcripts_dir(),
-            "agent-x",
-        );
+        let path =
+            output_writer::transcript_path(&resolver_paths.subagent_transcripts_dir(), "agent-x");
         for i in 0..3 {
             output_writer::append_line(
                 &path,
