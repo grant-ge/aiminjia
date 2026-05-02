@@ -376,13 +376,14 @@ fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'stat
 
 fn drain_and_inject_task_notifications(
     queue: &Option<Arc<TaskNotificationQueue>>,
+    session_id: &SessionId,
     messages: &mut Vec<serde_json::Value>,
 ) -> Vec<QueuedNotification> {
     let Some(queue) = queue.as_ref() else {
         return Vec::new();
     };
 
-    let notifications = queue.drain_all();
+    let notifications = queue.drain_for_session(session_id);
     if notifications.is_empty() {
         return Vec::new();
     }
@@ -416,9 +417,7 @@ fn re_enqueue_task_notifications(
         "[chat_turn_driver] re-enqueueing {} task notification(s) after step failure or cancellation",
         notifications.len()
     );
-    for notification in notifications {
-        queue.enqueue(notification.agent_id, notification.xml);
-    }
+    queue.re_enqueue(notifications);
 }
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
@@ -1175,8 +1174,11 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(renlijia_md_context_message);
         }
         initial_messages.extend(history);
-        let mut pending_task_notifications =
-            drain_and_inject_task_notifications(&self.task_notification_queue, &mut initial_messages);
+        let mut pending_task_notifications = drain_and_inject_task_notifications(
+            &self.task_notification_queue,
+            turn.session_id(),
+            &mut initial_messages,
+        );
         initial_messages.push(user_message);
 
         let mut state = TurnIterationState::new(initial_messages);
@@ -1303,6 +1305,7 @@ impl RuntimeChatTurnDriver {
             // completion event on this iteration.
             let newly_drained_notifications = drain_and_inject_task_notifications(
                 &self.task_notification_queue,
+                turn.session_id(),
                 &mut state.messages,
             );
             // Accumulate this iteration's drained notifications; these have been injected

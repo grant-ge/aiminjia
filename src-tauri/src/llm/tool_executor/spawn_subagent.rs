@@ -237,6 +237,8 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         let notif_queue = self.notif_queue.clone();
         let id_for_task = agent_id.clone();
         let parent_tool_use_id = context.parent_tool_use_id.as_str().to_owned();
+        let parent_session_id = context.session_id.clone();
+        let parent_run_id = context.parent_run_id.clone();
         let subagent_type = request.subagent_type.clone();
 
         tokio::spawn(async move {
@@ -275,7 +277,12 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         Some(output_ref),
                         None,
                     );
-                    notif_queue.enqueue(id_for_task.as_str(), xml);
+                    notif_queue.enqueue(
+                        id_for_task.as_str(),
+                        xml,
+                        parent_session_id.clone(),
+                        parent_run_id.clone(),
+                    );
                 }
                 Ok(Err(e)) => {
                     task_store.update_state(&id_for_task, AsyncTaskState::Failed);
@@ -300,7 +307,12 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         Some(&err_str),
                         None,
                     );
-                    notif_queue.enqueue(id_for_task.as_str(), xml);
+                    notif_queue.enqueue(
+                        id_for_task.as_str(),
+                        xml,
+                        parent_session_id.clone(),
+                        parent_run_id.clone(),
+                    );
                 }
                 Err(panic_payload) => {
                     let panic_msg = panic_payload
@@ -334,7 +346,12 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         Some(&panic_summary),
                         None,
                     );
-                    notif_queue.enqueue(id_for_task.as_str(), xml);
+                    notif_queue.enqueue(
+                        id_for_task.as_str(),
+                        xml,
+                        parent_session_id.clone(),
+                        parent_run_id.clone(),
+                    );
                 }
             }
         });

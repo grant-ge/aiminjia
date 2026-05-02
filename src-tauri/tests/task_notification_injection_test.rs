@@ -17,7 +17,7 @@ use app_lib::runtime::chat::{
 use app_lib::runtime::chat::chat_turn_driver::ChatAttachmentRef;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
-use app_lib::runtime::ids::RunId;
+use app_lib::runtime::ids::{RunId, SessionId};
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 
@@ -36,14 +36,20 @@ struct IterationDrainExecutor {
     seen_messages: Mutex<Vec<Vec<Value>>>,
     queue: Arc<TaskNotificationQueue>,
     xml: String,
+    session_id: SessionId,
 }
 
 impl IterationDrainExecutor {
-    fn new(queue: Arc<TaskNotificationQueue>, xml: impl Into<String>) -> Self {
+    fn new(
+        queue: Arc<TaskNotificationQueue>,
+        xml: impl Into<String>,
+        session_id: SessionId,
+    ) -> Self {
         Self {
             seen_messages: Mutex::new(Vec::new()),
             queue,
             xml: xml.into(),
+            session_id,
         }
     }
 
@@ -109,7 +115,12 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
         drop(seen);
 
         if call_index == 1 {
-            self.queue.enqueue("agent-between-iterations", self.xml.clone());
+            self.queue.enqueue(
+                "agent-between-iterations",
+                self.xml.clone(),
+                self.session_id.clone(),
+                None,
+            );
             return Ok(LlmStepResult::ToolCalls {
                 assistant_content: "checking".to_string(),
                 tool_calls: vec![RuntimeToolCallRequest {
@@ -168,14 +179,15 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
 fn make_turn_and_request() -> (TurnState, ChatTurnRequest) {
     let conversation_id = "task-notification-injection";
     let run_id = RunId::new("run-task-notification-injection");
-    let turn = TurnState::new(
-        IdentityMapping::from_legacy_conversation_id(conversation_id.to_string()),
-        run_id.clone(),
-        "parent turn".to_string(),
-    );
+    let identity = IdentityMapping::from_legacy_conversation_id(conversation_id.to_string());
+    let turn = TurnState::new(identity, run_id.clone(), "parent turn".to_string());
     let mut request = ChatTurnRequest::new(conversation_id, "parent turn", vec![]);
     request.run_id = run_id;
     (turn, request)
+}
+
+fn test_session_id() -> SessionId {
+    SessionId::new("task-notification-injection")
 }
 
 async fn run_turn_with_queue(
@@ -210,7 +222,7 @@ fn task_notification_user_contents(messages: &[Value]) -> Vec<String> {
 async fn queued_task_notification_is_injected_as_user_message() {
     let queue = Arc::new(TaskNotificationQueue::new());
     let xml = "<task-notification><task-id>agent-x</task-id><status>completed</status></task-notification>";
-    queue.enqueue("agent-x", xml);
+    queue.enqueue("agent-x", xml, test_session_id(), None);
 
     let executor = run_turn_with_queue(queue).await;
     let captured = executor.captured_messages();
@@ -237,8 +249,8 @@ async fn multiple_task_notifications_are_injected_in_enqueue_order() {
     let queue = Arc::new(TaskNotificationQueue::new());
     let xml1 = "<task-notification><task-id>agent-1</task-id><status>completed</status></task-notification>";
     let xml2 = "<task-notification><task-id>agent-2</task-id><status>failed</status></task-notification>";
-    queue.enqueue("agent-1", xml1);
-    queue.enqueue("agent-2", xml2);
+    queue.enqueue("agent-1", xml1, test_session_id(), None);
+    queue.enqueue("agent-2", xml2, test_session_id(), None);
 
     let executor = run_turn_with_queue(queue).await;
     let captured = executor.captured_messages();
@@ -252,7 +264,11 @@ async fn multiple_task_notifications_are_injected_in_enqueue_order() {
 async fn iteration_time_drain_injects_notifications() {
     let queue = Arc::new(TaskNotificationQueue::new());
     let xml = "<task-notification><task-id>agent-between-iterations</task-id><status>completed</status></task-notification>";
-    let executor = Arc::new(IterationDrainExecutor::new(queue.clone(), xml));
+    let executor = Arc::new(IterationDrainExecutor::new(
+        queue.clone(),
+        xml,
+        test_session_id(),
+    ));
     let driver = RuntimeChatTurnDriver::with_llm_executor(
         QueryEngine::new(),
         RuntimeEventBus::new(),

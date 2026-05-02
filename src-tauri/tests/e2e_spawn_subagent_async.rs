@@ -22,7 +22,7 @@ use app_lib::runtime::agent::async_task_store::{
 };
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::agent::task_notification::TaskNotificationQueue;
-use app_lib::runtime::ids::AgentId;
+use app_lib::runtime::ids::{AgentId, SessionId};
 use app_lib::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
     SpawnSubagentRuntimeTool,
@@ -53,7 +53,7 @@ impl SpawnSubagentLauncher for StubLauncher {
     async fn launch_async(
         &self,
         req: SpawnSubagentRequest,
-        _ctx: SpawnSubagentContext,
+        ctx: SpawnSubagentContext,
     ) -> anyhow::Result<SpawnAsyncOutcome> {
         // Deterministic agent_id — no real tokio::spawn, no UUIDs that vary.
         let agent_id = AgentId::new(format!("stub-{}", uuid::Uuid::new_v4()));
@@ -80,7 +80,12 @@ impl SpawnSubagentLauncher for StubLauncher {
             "<task-notification><task-id>{}</task-id></task-notification>",
             agent_id.as_str()
         );
-        self.notif_queue.enqueue(agent_id.as_str(), xml);
+        self.notif_queue.enqueue(
+            agent_id.as_str(),
+            xml,
+            ctx.session_id.clone(),
+            ctx.parent_run_id.clone(),
+        );
 
         Ok(SpawnAsyncOutcome {
             agent_id,
@@ -107,13 +112,16 @@ fn build_tool() -> (
     (tool, task_store, notif_queue)
 }
 
+const TEST_SESSION_ID: &str = "sess-async";
+const TEST_RUN_ID: &str = "run-async";
+
 /// Execute the tool with `run_in_background: true` and return the parsed JSON
 /// content from `ToolResult`.
 async fn execute_async(
     tool: &SpawnSubagentRuntimeTool,
     input: Value,
 ) -> Value {
-    let ctx = ToolExecutionContext::for_test("sess-async", "run-async", "tc-async");
+    let ctx = ToolExecutionContext::for_test(TEST_SESSION_ID, TEST_RUN_ID, "tc-async");
     let result = tool
         .execute(input, ctx)
         .await
@@ -219,7 +227,7 @@ async fn async_path_enqueues_notification() {
         .and_then(Value::as_str)
         .expect("agent_id must be present");
 
-    let notifications = queue.drain_all();
+    let notifications = queue.drain_for_session(&SessionId::new(TEST_SESSION_ID));
     assert_eq!(
         notifications.len(),
         1,
@@ -267,7 +275,7 @@ async fn async_path_without_name_skips_register() {
         "find_by_name must return None when no task was registered"
     );
 
-    let notifications = queue.drain_all();
+    let notifications = queue.drain_for_session(&SessionId::new(TEST_SESSION_ID));
     assert_eq!(
         notifications.len(),
         1,

@@ -2,7 +2,7 @@
 //!
 //! 协议参考 Claude Code (claude-code-best 项目)
 //! - subagent 完成时调 `enqueue_completion(...)` → 入队
-//! - 父 chat turn 在 round 之间或下次 turn 开始时 `drain_all()` → 拿到 XML
+//! - 父 chat turn 在 round 之间或下次 turn 开始时 `drain_for_session()` → 拿到 XML
 //! - XML 作为 user message attachment 注入下一个 user turn，让父 LLM 看到 "子 agent 完成了"
 //!
 //! XML 形如：
@@ -19,6 +19,8 @@
 //! ```
 
 use std::sync::{Arc, Mutex};
+
+use crate::runtime::ids::{RunId, SessionId};
 
 /// 构造 `<task-notification>` XML 字符串
 ///
@@ -68,10 +70,10 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// 内存级队列：async subagent 完成时入队，父 chat turn 之间 drain。
+/// 内存级队列：async subagent 完成时入队，父 chat turn 之间按 session drain。
 ///
-/// 当前实现是进程级单例（推荐通过 Arc 共享），未来若需要按 session 隔离，
-/// 调用方需自行按 session_id 维护多个 queue。
+/// 队列是进程级共享实例；每条 notification 携带父 session/run，drain 时只
+/// 消费匹配当前 session 的条目，避免并发会话之间串话。
 #[derive(Clone, Default)]
 pub struct TaskNotificationQueue {
     inner: Arc<Mutex<Vec<QueuedNotification>>>,
@@ -81,6 +83,8 @@ pub struct TaskNotificationQueue {
 pub struct QueuedNotification {
     pub agent_id: String,
     pub xml: String,
+    pub parent_session_id: SessionId,
+    pub parent_run_id: Option<RunId>,
 }
 
 impl TaskNotificationQueue {
@@ -88,23 +92,55 @@ impl TaskNotificationQueue {
         Self::default()
     }
 
-    pub fn enqueue(&self, agent_id: impl Into<String>, xml: impl Into<String>) {
+    pub fn enqueue(
+        &self,
+        agent_id: impl Into<String>,
+        xml: impl Into<String>,
+        parent_session_id: SessionId,
+        parent_run_id: Option<RunId>,
+    ) {
         let mut guard = self.inner.lock().expect("notification queue poisoned");
         guard.push(QueuedNotification {
             agent_id: agent_id.into(),
             xml: xml.into(),
+            parent_session_id,
+            parent_run_id,
         });
     }
 
-    /// Drain all pending notifications. Returns ordered by enqueue order.
-    pub fn drain_all(&self) -> Vec<QueuedNotification> {
+    /// Drain notifications belonging to `session_id`. Other sessions' items remain queued.
+    pub fn drain_for_session(&self, session_id: &SessionId) -> Vec<QueuedNotification> {
         let mut guard = self.inner.lock().expect("notification queue poisoned");
-        std::mem::take(&mut *guard)
+        let all = std::mem::take(&mut *guard);
+        let (matching, keep): (Vec<_>, Vec<_>) = all
+            .into_iter()
+            .partition(|n| &n.parent_session_id == session_id);
+        *guard = keep;
+        matching
+    }
+
+    /// Re-enqueue items in original order (used by cancel paths).
+    pub fn re_enqueue(&self, items: Vec<QueuedNotification>) {
+        if items.is_empty() {
+            return;
+        }
+        let mut guard = self.inner.lock().expect("notification queue poisoned");
+        // Items go to the FRONT to preserve enqueue order across drain/re_enqueue cycles.
+        let mut combined = items;
+        combined.append(&mut *guard);
+        *guard = combined;
     }
 
     /// Peek count without draining (for diagnostics / tests).
     pub fn pending_count(&self) -> usize {
         self.inner.lock().expect("notification queue poisoned").len()
+    }
+
+    /// TEST-ONLY: drain everything regardless of session.
+    #[cfg(test)]
+    pub fn drain_all_for_test(&self) -> Vec<QueuedNotification> {
+        let mut guard = self.inner.lock().expect("notification queue poisoned");
+        std::mem::take(&mut *guard)
     }
 }
 
@@ -169,21 +205,26 @@ mod tests {
         assert!(xml.contains("<task-notification>"));
     }
 
+    fn test_session(id: &str) -> SessionId {
+        SessionId::new(id)
+    }
+
     #[test]
     fn queue_enqueue_drain_in_order() {
         let q = TaskNotificationQueue::new();
-        q.enqueue("agent-1", "xml-1");
-        q.enqueue("agent-2", "xml-2");
+        let session_id = test_session("session-queue-order");
+        q.enqueue("agent-1", "xml-1", session_id.clone(), None);
+        q.enqueue("agent-2", "xml-2", session_id.clone(), None);
         assert_eq!(q.pending_count(), 2);
 
-        let drained = q.drain_all();
+        let drained = q.drain_for_session(&session_id);
         assert_eq!(drained.len(), 2);
         assert_eq!(drained[0].agent_id, "agent-1");
         assert_eq!(drained[0].xml, "xml-1");
         assert_eq!(drained[1].agent_id, "agent-2");
 
         // 第二次 drain 应为空
-        assert!(q.drain_all().is_empty());
+        assert!(q.drain_for_session(&session_id).is_empty());
         assert_eq!(q.pending_count(), 0);
     }
 
@@ -191,12 +232,44 @@ mod tests {
     fn queue_clones_share_state() {
         let q1 = TaskNotificationQueue::new();
         let q2 = q1.clone();
-        q1.enqueue("a", "x");
+        let session_id = test_session("session-clone");
+        q1.enqueue("a", "x", session_id.clone(), None);
         // q2 是 Arc 克隆，应该看到同一份内容
         assert_eq!(q2.pending_count(), 1);
-        let drained = q2.drain_all();
+        let drained = q2.drain_for_session(&session_id);
         assert_eq!(drained.len(), 1);
         // q1 也已被 drain
         assert_eq!(q1.pending_count(), 0);
+    }
+
+    #[test]
+    fn drain_for_session_only_returns_matching() {
+        let q = TaskNotificationQueue::new();
+        let sa = test_session("sess-A");
+        let sb = test_session("sess-B");
+        q.enqueue("a1", "x1", sa.clone(), None);
+        q.enqueue("b1", "y1", sb, None);
+
+        let drained = q.drain_for_session(&sa);
+
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].agent_id, "a1");
+        assert_eq!(q.pending_count(), 1, "B's notification should remain queued");
+    }
+
+    #[test]
+    fn re_enqueue_preserves_order_at_front() {
+        let q = TaskNotificationQueue::new();
+        let s = test_session("session-re-enqueue");
+        q.enqueue("a", "x", s.clone(), None);
+        let drained = q.drain_for_session(&s);
+        q.enqueue("b", "y", s.clone(), None);
+
+        q.re_enqueue(drained);
+
+        let final_drain = q.drain_for_session(&s);
+        assert_eq!(final_drain.len(), 2);
+        assert_eq!(final_drain[0].agent_id, "a", "re-enqueued items should come first");
+        assert_eq!(final_drain[1].agent_id, "b");
     }
 }
