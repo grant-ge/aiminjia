@@ -1,3 +1,10 @@
+// TODO(P-runtime-host-trait): worker_runtime currently holds tauri::AppHandle
+// and emits stream deltas via tauri::Emitter directly. This is the only
+// LEGACY_TAURI_ALLOWED entry in tests/review_agent_b_constraints.rs. To remove
+// it, route stream events through a RuntimeHost / event sink trait and inject
+// from the transport layer (transport/tauri_commands/) instead. Until then
+// this file is the documented exception to the runtime/ purity rule.
+
 use std::sync::Arc;
 
 use futures::StreamExt;
