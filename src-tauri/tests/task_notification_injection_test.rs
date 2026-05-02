@@ -285,5 +285,43 @@ async fn iteration_time_drain_injects_notifications() {
     let captured = executor.captured_messages();
     assert_eq!(captured.len(), 2);
     assert!(task_notification_user_contents(&captured[0]).is_empty());
-    assert_eq!(task_notification_user_contents(&captured[1]), vec![xml.to_string()]);
+    assert_eq!(
+        task_notification_user_contents(&captured[1]),
+        vec![xml.to_string()]
+    );
+}
+
+/// M1.5 / F4: initial-turn injection must place <task-notification> AFTER the
+/// current user message so async sub-agent completions are the most recent
+/// user input. If injected before user_message, the LLM tends to respond to
+/// user_message and ignore the notifications.
+#[tokio::test]
+async fn initial_injection_places_task_notification_after_user_message() {
+    let queue = Arc::new(TaskNotificationQueue::new());
+    let xml = "<task-notification><task-id>agent-prior</task-id><status>completed</status></task-notification>";
+    queue.enqueue("agent-prior", xml, test_session_id(), None);
+
+    let executor = run_turn_with_queue(queue).await;
+    let captured = executor.captured_messages();
+    assert_eq!(captured.len(), 1);
+
+    let messages = &captured[0];
+    // Find indices of the parent's user_message ("parent turn") and the notification.
+    let parent_user_idx = messages.iter().position(|m| {
+        m.get("role").and_then(Value::as_str) == Some("user")
+            && m.get("content").and_then(Value::as_str) == Some("parent turn")
+    });
+    let notif_idx = messages.iter().position(|m| {
+        m.get("role").and_then(Value::as_str) == Some("user")
+            && m.get("content")
+                .and_then(Value::as_str)
+                .map(|c| c.contains("<task-notification>"))
+                .unwrap_or(false)
+    });
+    let parent_user_idx = parent_user_idx.expect("parent user_message must be present");
+    let notif_idx = notif_idx.expect("task-notification user_message must be present");
+    assert!(
+        notif_idx > parent_user_idx,
+        "task-notification (idx {notif_idx}) must come AFTER parent user_message (idx {parent_user_idx})"
+    );
 }

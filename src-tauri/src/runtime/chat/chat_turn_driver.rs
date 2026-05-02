@@ -1174,12 +1174,16 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(renlijia_md_context_message);
         }
         initial_messages.extend(history);
+        initial_messages.push(user_message);
+        // Inject pending <task-notification> messages AFTER the current user
+        // message so that async sub-agent completions appear as the most recent
+        // user input. If injected before user_message, the LLM tends to respond
+        // to user_message and ignore the notifications.
         let mut pending_task_notifications = drain_and_inject_task_notifications(
             &self.task_notification_queue,
             turn.session_id(),
             &mut initial_messages,
         );
-        initial_messages.push(user_message);
 
         let mut state = TurnIterationState::new(initial_messages);
         record_turn_diagnostic(
