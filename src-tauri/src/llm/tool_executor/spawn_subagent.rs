@@ -262,10 +262,16 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
             match outcome {
                 Ok(Ok(sub_result)) => {
                     let output_ref = sub_result.envelope.output.as_str();
-                    let _ = output_writer::append_line(
+                    if let Err(e) = output_writer::append_line(
                         &transcript_path_for_task,
                         &output_writer::TranscriptLine::assistant(output_ref),
-                    );
+                    ) {
+                        log::warn!(
+                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                            id_for_task.as_str(),
+                            e
+                        );
+                    }
                     let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
@@ -297,10 +303,16 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         id_for_task.as_str(),
                         err_str
                     );
-                    let _ = output_writer::append_line(
+                    if let Err(append_err) = output_writer::append_line(
                         &transcript_path_for_task,
                         &output_writer::TranscriptLine::failed(&err_str),
-                    );
+                    ) {
+                        log::warn!(
+                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                            id_for_task.as_str(),
+                            append_err
+                        );
+                    }
                     let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
@@ -336,10 +348,16 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
                         panic_msg
                     );
                     let panic_summary = format!("panic: {}", panic_msg);
-                    let _ = output_writer::append_line(
+                    if let Err(append_err) = output_writer::append_line(
                         &transcript_path_for_task,
                         &output_writer::TranscriptLine::failed(&panic_summary),
-                    );
+                    ) {
+                        log::warn!(
+                            "[spawn_subagent async {}] transcript append failed: {}; downstream task_output may be empty",
+                            id_for_task.as_str(),
+                            append_err
+                        );
+                    }
                     let p_str = transcript_path_for_task.to_string_lossy();
                     let xml = build_task_notification_xml(
                         id_for_task.as_str(),
