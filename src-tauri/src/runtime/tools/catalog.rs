@@ -567,10 +567,10 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "spawn_subagent",
-            "【Composite 工具】启动一个子 Agent 执行聚焦任务，返回子 Agent 的最终输出文本。\
-            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'browse_data_agent'）或不同模型。\
-            \n\n同步路径（run_in_background=false 或省略）：等待子 Agent 完成并返回输出。\
-            \n\n异步路径（run_in_background=true）：暂未实现，返回 not_implemented_yet 占位符（P6.x 实现）。",
+            "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
+            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'、'browse_data_agent'）或不同模型。\
+            \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
+            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 task_output(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
@@ -596,7 +596,7 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "run_in_background": {
                     "type": "boolean",
-                    "description": "若为 true，异步运行并立即返回（P6.x 功能；当前返回 not_implemented_yet 占位符）。",
+                    "description": "若为 true，异步运行并立即返回 agent_id；后续用 task_output 增量读 transcript，完成时父的下一轮收到 <task-notification>。",
                     "default": false
                 },
                 "name": {

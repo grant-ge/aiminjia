@@ -195,7 +195,7 @@ async fn unknown_subagent_type_returns_helpful_error() {
 // ─── Async path ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn run_in_background_true_returns_not_implemented_placeholder() {
+async fn run_in_background_true_returns_async_launched() {
     let tool = build_tool();
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
     let result = tool
