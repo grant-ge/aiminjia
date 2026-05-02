@@ -63,6 +63,33 @@ pub fn load_agent_from_markdown(path: &Path) -> Result<AgentDefinition> {
         .deserialize()
         .with_context(|| format!("parse frontmatter {}", path.display()))?;
 
+    // Reject blank/whitespace-only required string fields. serde only
+    // enforces presence; empty agent names break registry lookups, and an
+    // empty system prompt body produces an unusable agent.
+    let name = fm.name.trim();
+    if name.is_empty() {
+        anyhow::bail!("empty `name` in {}", path.display());
+    }
+    let description = fm.description.trim();
+    if description.is_empty() {
+        anyhow::bail!("empty `description` in {}", path.display());
+    }
+    let body = parsed.content.trim();
+    if body.is_empty() {
+        anyhow::bail!(
+            "empty system prompt body in {} (markdown body after frontmatter is required)",
+            path.display()
+        );
+    }
+    for tool in fm.allowed_tools.iter().chain(fm.disallowed_tools.iter()) {
+        if tool.trim().is_empty() {
+            anyhow::bail!(
+                "blank tool name in allowed_tools/disallowed_tools of {}",
+                path.display()
+            );
+        }
+    }
+
     let permission_mode = match fm.permission_mode.as_str() {
         "auto_deny" => AgentPermissionMode::AutoDeny,
         "bubble" => AgentPermissionMode::Bubble,
@@ -75,20 +102,84 @@ pub fn load_agent_from_markdown(path: &Path) -> Result<AgentDefinition> {
     };
 
     let model = match fm.model {
-        Some(m) if !m.is_empty() => AgentModel::Fixed(m),
+        Some(m) if !m.trim().is_empty() => AgentModel::Fixed(m.trim().to_string()),
         _ => AgentModel::Inherit,
     };
 
     Ok(AgentDefinition {
-        name: fm.name,
-        description: fm.description,
-        allowed_tools: fm.allowed_tools,
-        disallowed_tools: fm.disallowed_tools,
+        name: name.to_string(),
+        description: description.to_string(),
+        allowed_tools: fm
+            .allowed_tools
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .collect(),
+        disallowed_tools: fm
+            .disallowed_tools
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .collect(),
         max_iterations: fm.max_iterations,
         model,
-        system_prompt: AgentPrompt::Inline(parsed.content.trim().to_string()),
+        system_prompt: AgentPrompt::Inline(body.to_string()),
         source: AgentSource::User,
         permission_mode,
         background_default: fm.background_default,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn write_md(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        f.flush().unwrap();
+        f
+    }
+
+    #[test]
+    fn rejects_empty_name() {
+        let f = write_md("---\nname: ''\ndescription: x\n---\nbody\n");
+        let err = load_agent_from_markdown(f.path()).unwrap_err().to_string();
+        assert!(err.contains("empty `name`"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_whitespace_only_description() {
+        let f = write_md("---\nname: foo\ndescription: '   '\n---\nbody\n");
+        let err = load_agent_from_markdown(f.path()).unwrap_err().to_string();
+        assert!(err.contains("empty `description`"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_empty_system_prompt_body() {
+        let f = write_md("---\nname: foo\ndescription: x\n---\n\n   \n");
+        let err = load_agent_from_markdown(f.path()).unwrap_err().to_string();
+        assert!(err.contains("empty system prompt body"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_blank_tool_in_allowed_tools() {
+        let f = write_md(
+            "---\nname: foo\ndescription: x\nallowed_tools: ['read_workspace_file', '   ']\n---\nbody\n",
+        );
+        let err = load_agent_from_markdown(f.path()).unwrap_err().to_string();
+        assert!(err.contains("blank tool name"), "got: {err}");
+    }
+
+    #[test]
+    fn accepts_valid_definition() {
+        let f = write_md(
+            "---\nname: foo\ndescription: A test agent\nallowed_tools: ['read_workspace_file']\n---\n\nYou are a test agent.\n",
+        );
+        let def = load_agent_from_markdown(f.path()).expect("valid def must parse");
+        assert_eq!(def.name, "foo");
+        assert_eq!(def.description, "A test agent");
+        assert_eq!(def.allowed_tools, vec!["read_workspace_file".to_string()]);
+        assert!(matches!(def.system_prompt, AgentPrompt::Inline(ref s) if s == "You are a test agent."));
+    }
 }
