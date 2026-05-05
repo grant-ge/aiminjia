@@ -1,16 +1,15 @@
 ---
 name: sales-followup-rules
 description: >
-  按规则判定每日应跟进的客户：从钉钉 AI 表格读取在谈客户，按"上次联系/阶段停滞/next_action 到期"判断今日跟进列表，可选拉取群聊与外部信号补充上下文，最后生成 Markdown 跟进提醒。所有写表操作必须经用户在对话中明示确认。
+  按规则判定每日应跟进的客户：通过钉钉 dws CLI 读取 AI 表格中的在谈客户，按"上次联系/阶段停滞/next_action 到期"判断今日跟进列表，可选拉取群聊与外部信号补充上下文，最后生成 Markdown 跟进提醒。所有写表操作必须经用户在对话中明示确认。
 when_to_use: >
   数字员工"小销"或类似客户跟进角色被派活时；resource_config 必须包含 tableId 和 fieldMapping。
 allowed-tools:
-  - dingtalk_query_records
-  - dingtalk_update_record
-  - dingtalk_search_chat
+  - bash
   - web_search
   - memory_save
   - memory_search
+  - load_skill
   - generate_report
 model: sonnet
 effort: high
@@ -26,9 +25,15 @@ metadata:
 
 ## 硬性约束（开工前先复读一遍）
 
-- **写表必须用户确认**：调用 `dingtalk_update_record` 之前必须在对话中清楚说明"将要把字段 X 从 A 改为 B"，等待用户回 "确认 / 同意 / 是" 之后才执行。
-- 不主动给客户发消息或代回邮件——你不接 IM/Email 输出工具，只做"提醒该跟谁、该说什么"。
+- **写表必须用户确认**：通过 `dws` CLI 修改 AI 表格记录之前必须在对话中清楚说明"将要把字段 X 从 A 改为 B"，等待用户回 "确认 / 同意 / 是" 之后才执行。
+- 不主动给客户发消息或代回邮件——你只做"提醒该跟谁、该说什么"。
 - 不预测成交概率、不打分。规则判定输出"是否进入今日跟进列表"，不输出"赢率"。
+
+## 工具约定
+
+- **所有钉钉能力（AI 表格 / 群聊 / 通讯录 / 待办 / 日历）必须通过 `dws` CLI 完成**：先 `load_skill('dingtalk-workspace')` 获取 dws 命令清单、登录方式、参数约定，再用 `bash` 调用具体命令。
+- 不要绕过 dws 直接调 HTTP / 浏览器 / curl 钉钉接口。
+- 不要假设 baseId / tableId / recordId 等标识符——必须先用 `dws` 查询拿到真实 ID 再使用。
 
 ## 输入约定
 
@@ -54,15 +59,32 @@ metadata:
 
 ## 工作流程
 
+### 0. 加载钉钉技能
+
+第一步：`load_skill('dingtalk-workspace')` —— 学习 dws 的环境检查、登录验证、命令发现规则。
+
+随后通过 dws 验证已登录，并定位真实 base：
+
+```bash
+dws auth status --format json
+dws table list --format json
+```
+
 ### 1. 拉取客户列表
 
-调用 `dingtalk_query_records({ tableId })`。按 scope 过滤：
-- `self`：仅当前用户为 owner
+通过 dws 读取 AI 表格中的在谈客户（实际命令以 `dws table --help` 或 dingtalk-workspace SKILL 中的命令清单为准）：
+
+```bash
+dws table records list --base-id <baseId> --table-id <tableId> --format json
+```
+
+按 scope 过滤：
+- `self`：仅当前用户为 owner（owner 字段名取自 fieldMapping.owner）
 - `department`：当前用户所在部门所有 owner
 
 ### 2. 规则判定
 
-对每条记录按下列规则判断是否进入"今日跟进":
+对每条记录按 fieldMapping 提取核心字段，判断是否进入"今日跟进":
 
 - **R1: 上次联系超过 7 天** —— `now - lastContact >= 7d`
 - **R2: 阶段停滞** —— `stage` 字段连续 ≥ 14 天未变化（用 `memory_search` 拉上次记录的 stage 比对）
@@ -75,7 +97,7 @@ metadata:
 对入选客户：
 
 1. `memory_search` 拉最近 3 次跟进笔记（namespace `sales:<customerName>`）
-2. 可选 `dingtalk_search_chat`：在客户群里搜最近 7 天关键词（金额、合同、技术问题等）
+2. 可选用 dws 在客户群里搜最近 7 天关键词（金额、合同、技术问题等）—— 命令以 dingtalk-workspace SKILL 中的 chat search 段为准
 3. 可选 `web_search`：搜索"<客户公司> 最近动态"，找 0-1 条公开信号
 
 ### 4. 生成今日跟进提醒
@@ -110,5 +132,5 @@ metadata:
 
 1. 解析意图，识别要更新的字段（lastContact / nextAction / notes / stage）
 2. 在对话中明示："我将把『{客户名}』的 lastContact 更新为今天，nextAction 更新为'签合同'，nextActionDate 更新为下周一。请确认。"
-3. 等用户确认后调用 `dingtalk_update_record`
+3. 等用户确认后通过 dws 调用对应的 record update 命令（实际命令以 dingtalk-workspace SKILL 为准）
 4. 同步 `memory_save` 当次跟进笔记
