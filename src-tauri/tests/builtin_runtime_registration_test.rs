@@ -45,6 +45,7 @@ fn build_test_plugin_ctx(
         session_manager,
         auth_manager: None,
         connector_engine: None,
+        dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
         gateway: None,

@@ -25,6 +25,8 @@ fn ad1_estimate_tokens_counts_text_and_tool_calls() {
                 name: "grep".to_string(),
                 arguments: json!({"pattern": "needle", "limit": 3}),
             }],
+            None,
+            None,
         ),
     ];
 

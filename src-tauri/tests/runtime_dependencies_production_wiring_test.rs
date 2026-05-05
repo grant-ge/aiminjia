@@ -79,6 +79,7 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         session_manager: request.session_manager,
         auth_manager: request.auth_manager,
         connector_engine: request.connector_engine,
+        dingtalk_bridge: None,
         use_cloud: request.use_cloud,
         model: request.model,
         gateway: request.gateway,

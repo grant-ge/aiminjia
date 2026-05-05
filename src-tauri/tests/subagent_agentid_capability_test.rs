@@ -80,6 +80,7 @@ fn make_plugin_ctx(workspace: &Path, agent_id: Option<AgentId>) -> PluginContext
         session_manager,
         auth_manager: None,
         connector_engine: None,
+        dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
         gateway: None,

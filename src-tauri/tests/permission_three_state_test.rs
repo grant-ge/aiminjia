@@ -296,6 +296,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         session_manager,
         auth_manager: None,
         connector_engine: None,
+        dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
         gateway: None,

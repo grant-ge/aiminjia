@@ -87,6 +87,7 @@ fn make_plugin_ctx(workspace: &Path, cache: Option<Arc<FileStateCache>>) -> Plug
         session_manager,
         auth_manager: None,
         connector_engine: None,
+        dingtalk_bridge: None,
         use_cloud: false,
         model: String::new(),
         gateway: None,
