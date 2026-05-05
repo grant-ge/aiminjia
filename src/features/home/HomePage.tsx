@@ -1,8 +1,6 @@
 import { useState } from 'react'
-import { Inbox } from 'lucide-react'
 
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
-import { Button } from '@/components/ui/button'
 import { useUiStore } from '@/stores/uiStore'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
@@ -53,7 +51,7 @@ function greeting(): string {
 export function HomePage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const { employees, loading: empLoading, refresh: refreshEmp } = useEmployees()
-  const { entries, unreadCount, refresh: refreshInbox, markRead } = useInbox()
+  const { entries, refresh: refreshInbox, markRead } = useInbox()
 
   const [selectedEmp, setSelectedEmp] = useState<EmployeeRecord | null>(null)
   const [hireOpen, setHireOpen] = useState(false)
@@ -83,28 +81,12 @@ export function HomePage() {
       maxWidthClass="max-w-[900px]"
     >
       {/* ── 顶部 greeting ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{greeting()}，今天</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {runningCount > 0 ? `${runningCount} 位员工工作中 · ` : ''}
-            {reportCount > 0 ? `${reportCount} 份汇报` : '所有员工空闲'}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setRoute({ kind: 'inbox' })}
-        >
-          <Inbox className="h-3.5 w-3.5" />
-          汇报中心
-          {unreadCount > 0 && (
-            <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
-        </Button>
+      <div>
+        <h1 className="text-xl font-bold text-foreground">{greeting()}，今天</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {runningCount > 0 ? `${runningCount} 位员工工作中 · ` : ''}
+          {reportCount > 0 ? `${reportCount} 份汇报` : '所有员工空闲'}
+        </p>
       </div>
 
       {/* ── 员工卡片栏 ── */}
