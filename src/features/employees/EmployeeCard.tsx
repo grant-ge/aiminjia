@@ -3,6 +3,7 @@ import { Play, Pause, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { employeeTrigger, employeeUpdate, type EmployeeRecord, type InboxEntry } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
+import { findTemplate } from './templates'
 
 // ─── status derivation ───────────────────────────────────────────────────────
 
@@ -33,6 +34,21 @@ export function deriveStatus(
   // Has report: unread Report or Signal
   const hasUnread = empEntries.some((e) => !e.read && (e.kind === 'report' || e.kind === 'signal'))
   if (hasUnread) return 'has-report'
+
+  // Template-aware needs-setup check (after working/has-report so recent activity wins)
+  const template = findTemplate(emp.templateId)
+  if (template) {
+    if (template.resourceConfigKind === 'sales-table') {
+      // Stub kind: never considered configured.
+      return 'needs-setup'
+    }
+    if (template.resourceConfigKind === 'monitoring-urls') {
+      const cfg = emp.resourceConfig as { monitoringTargets?: unknown[] } | null
+      if (!cfg || !Array.isArray(cfg.monitoringTargets) || cfg.monitoringTargets.length === 0) {
+        return 'needs-setup'
+      }
+    }
+  }
 
   // Scheduled
   if (emp.cron && emp.enabled && emp.nextRunAt) return 'scheduled'
