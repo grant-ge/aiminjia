@@ -1652,7 +1652,8 @@ export interface EmployeeRecord {
   toolWhitelist: string[]
   cron: string | null
   timezone: string
-  enabled: boolean
+  lifecycle: 'active' | 'paused' | 'archived'
+  cronEnabled: boolean
   resourceConfig: Record<string, unknown>
   systemPromptExtra: string | null
   defaultSkillId: string | null
@@ -1671,7 +1672,8 @@ export interface CreateEmployeeRequest {
   toolWhitelist?: string[]
   cron?: string
   timezone?: string
-  enabled?: boolean
+  lifecycle?: 'active' | 'paused' | 'archived'
+  cronEnabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string
   defaultSkillId?: string | null
@@ -1686,7 +1688,8 @@ export interface UpdateEmployeeRequest {
   /** Pass null explicitly to clear cron; omit to leave unchanged. */
   cron?: string | null
   timezone?: string
-  enabled?: boolean
+  lifecycle?: 'active' | 'paused' | 'archived'
+  cronEnabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string | null
   defaultSkillId?: string | null

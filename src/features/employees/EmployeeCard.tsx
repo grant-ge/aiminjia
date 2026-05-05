@@ -48,7 +48,7 @@ export function deriveStatus(
   }
 
   // Scheduled
-  if (emp.cron && emp.enabled && emp.nextRunAt) return 'scheduled'
+  if (emp.cron && emp.lifecycle === 'active' && emp.cronEnabled && emp.nextRunAt) return 'scheduled'
 
   return 'idle'
 }
@@ -107,7 +107,7 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
     e.stopPropagation()
     setBusy(true)
     try {
-      await employeeUpdate(emp.id, { enabled: !emp.enabled })
+      await employeeUpdate(emp.id, { cronEnabled: !emp.cronEnabled })
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeCard] toggle error:', err)
@@ -167,9 +167,9 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
               className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
-              title={emp.enabled ? '暂停' : '恢复'}
+              title={emp.cronEnabled ? '暂停' : '恢复'}
             >
-              {emp.enabled
+              {emp.cronEnabled
                 ? <Pause className="h-3 w-3" />
                 : <Play className="h-3 w-3" />
               }

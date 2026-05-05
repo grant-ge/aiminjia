@@ -175,10 +175,10 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
     // still returns false.
   }
 
-  const handleToggle = async () => {
+  const handleToggleCron = async () => {
     setBusy(true)
     try {
-      await employeeUpdate(emp.id, { enabled: !emp.enabled })
+      await employeeUpdate(emp.id, { cronEnabled: !emp.cronEnabled })
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] toggle error:', err)
@@ -253,15 +253,15 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
                     </div>
                     <button
                       type="button"
-                      onClick={handleToggle}
+                      onClick={handleToggleCron}
                       disabled={busy}
                       className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                        emp.enabled
+                        emp.cronEnabled
                           ? 'bg-green-100 text-green-700 hover:bg-green-200'
                           : 'bg-muted text-muted-foreground hover:bg-accent'
                       }`}
                     >
-                      {emp.enabled ? '已启用' : '已暂停'}
+                      {emp.cronEnabled ? '已启用' : '已暂停'}
                     </button>
                   </div>
                 ) : (
@@ -350,8 +350,8 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
             现在派活
           </Button>
           {emp.cron && (
-            <Button variant="outline" disabled={busy} onClick={handleToggle}>
-              {emp.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            <Button variant="outline" disabled={busy} onClick={handleToggleCron}>
+              {emp.cronEnabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
           )}
           {template && template.resourceConfigKind !== 'none' && (

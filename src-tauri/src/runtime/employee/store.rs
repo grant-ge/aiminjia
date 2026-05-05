@@ -9,6 +9,25 @@ use uuid::Uuid;
 
 use crate::runtime::schedule::{compute_next_cron_run, parse_cron_expression};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmployeeLifecycle {
+    /// Default after hiring; can be dispatched on-demand and via cron.
+    Active,
+    /// User explicitly paused this employee. on-demand dispatch blocked,
+    /// cron is automatically blocked too. UI shows ⏸ with "恢复" action.
+    Paused,
+    /// Soft-deleted; hidden from main grid but recoverable for 7 days.
+    /// scheduler ignores; on-demand dispatch returns error.
+    Archived,
+}
+
+impl Default for EmployeeLifecycle {
+    fn default() -> Self {
+        Self::Active
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeRecord {
@@ -23,7 +42,15 @@ pub struct EmployeeRecord {
     /// Standard cron expression (5 fields). None = on-demand only.
     pub cron: Option<String>,
     pub timezone: String,
-    pub enabled: bool,
+    /// Employment lifecycle. Replaces the legacy boolean `enabled` field.
+    /// Old records without this field deserialize to `Active` (see migration test).
+    #[serde(default)]
+    pub lifecycle: EmployeeLifecycle,
+    /// Whether the cron schedule (if any) fires. Independent of lifecycle so
+    /// users can pause cron without pausing the whole employee.
+    /// `serde(alias = "enabled")` migrates the legacy field name transparently.
+    #[serde(default = "default_true", alias = "enabled")]
+    pub cron_enabled: bool,
     /// Employee-specific resource config (monitoring URLs, table IDs, field mappings, etc.)
     pub resource_config: serde_json::Value,
     /// Prepended to the system prompt to establish the employee's identity.
@@ -49,7 +76,8 @@ pub struct CreateEmployeeRequest {
     pub tool_whitelist: Option<Vec<String>>,
     pub cron: Option<String>,
     pub timezone: Option<String>,
-    pub enabled: Option<bool>,
+    pub lifecycle: Option<EmployeeLifecycle>,
+    pub cron_enabled: Option<bool>,
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<String>,
     pub default_skill_id: Option<String>,
@@ -65,7 +93,8 @@ pub struct UpdateEmployeeRequest {
     pub tool_whitelist: Option<Vec<String>>,
     pub cron: Option<Option<String>>,
     pub timezone: Option<String>,
-    pub enabled: Option<bool>,
+    pub lifecycle: Option<EmployeeLifecycle>,
+    pub cron_enabled: Option<bool>,
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<Option<String>>,
     pub default_skill_id: Option<Option<String>>,
@@ -114,10 +143,11 @@ impl EmployeeStore {
         let _guard = self.lock.lock().unwrap();
         fs::create_dir_all(&self.root)?;
 
-        let enabled = req.enabled.unwrap_or(true);
+        let lifecycle = req.lifecycle.unwrap_or(EmployeeLifecycle::Active);
+        let cron_enabled = req.cron_enabled.unwrap_or(true);
         let timezone = req.timezone.unwrap_or_else(|| "Asia/Shanghai".to_string());
 
-        let next_run_at = if enabled {
+        let next_run_at = if lifecycle == EmployeeLifecycle::Active && cron_enabled {
             req.cron.as_deref().and_then(|cron| {
                 let fields = parse_cron_expression(cron)?;
                 compute_next_cron_run(&fields, Local::now()).map(|d| d.with_timezone(&Utc))
@@ -136,7 +166,8 @@ impl EmployeeStore {
             tool_whitelist: req.tool_whitelist.unwrap_or_default(),
             cron: req.cron,
             timezone,
-            enabled,
+            lifecycle,
+            cron_enabled,
             resource_config: req.resource_config.unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
             default_skill_id: req.default_skill_id,
@@ -198,13 +229,14 @@ impl EmployeeStore {
         if let Some(v) = req.tool_whitelist { record.tool_whitelist = v; }
         if let Some(v) = req.cron { record.cron = v; }
         if let Some(v) = req.timezone { record.timezone = v; }
-        if let Some(v) = req.enabled { record.enabled = v; }
+        if let Some(v) = req.lifecycle { record.lifecycle = v; }
+        if let Some(v) = req.cron_enabled { record.cron_enabled = v; }
         if let Some(v) = req.resource_config { record.resource_config = v; }
         if let Some(v) = req.system_prompt_extra { record.system_prompt_extra = v; }
         if let Some(v) = req.default_skill_id { record.default_skill_id = v; }
 
-        // Recompute next_run_at based on updated cron/enabled
-        record.next_run_at = if record.enabled {
+        // Recompute next_run_at based on updated cron/lifecycle/cron_enabled
+        record.next_run_at = if record.lifecycle == EmployeeLifecycle::Active && record.cron_enabled {
             record.cron.as_deref().and_then(|cron| {
                 let fields = parse_cron_expression(cron)?;
                 compute_next_cron_run(&fields, Local::now()).map(|d| d.with_timezone(&Utc))
@@ -252,7 +284,7 @@ impl EmployeeStore {
                 }
             };
 
-            if !record.enabled {
+            if record.lifecycle != EmployeeLifecycle::Active || !record.cron_enabled {
                 continue;
             }
             let cron = match record.cron.as_deref() {
@@ -335,7 +367,8 @@ mod tests {
             tool_whitelist: Some(vec!["web_search".to_string()]),
             cron: None,
             timezone: None,
-            enabled: Some(true),
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
@@ -362,7 +395,8 @@ mod tests {
             tool_whitelist: Some(vec!["web_search".to_string()]),
             cron: None,
             timezone: None,
-            enabled: Some(true),
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: Some("competitive-intelligence".to_string()),
@@ -395,7 +429,8 @@ mod tests {
                 tool_whitelist: None,
                 cron: None,
                 timezone: None,
-                enabled: Some(true),
+                lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
                 resource_config: None,
                 system_prompt_extra: None,
             default_skill_id: None,
@@ -405,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn update_enabled_false_clears_next_run() {
+    fn update_cron_enabled_false_clears_next_run() {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
@@ -418,7 +453,8 @@ mod tests {
             tool_whitelist: None,
             cron: Some("30 9 * * 1-5".to_string()),
             timezone: None,
-            enabled: Some(true),
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
@@ -426,7 +462,7 @@ mod tests {
         assert!(created.next_run_at.is_some());
 
         let updated = store.update(&created.id, UpdateEmployeeRequest {
-            enabled: Some(false),
+            cron_enabled: Some(false),
             ..Default::default()
         }).unwrap();
         assert!(updated.next_run_at.is_none());
@@ -446,7 +482,8 @@ mod tests {
             tool_whitelist: None,
             cron: None,
             timezone: None,
-            enabled: Some(true),
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
@@ -470,7 +507,8 @@ mod tests {
             tool_whitelist: None,
             cron: Some("* * * * *".to_string()),
             timezone: None,
-            enabled: Some(true),
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
             default_skill_id: None,
@@ -484,4 +522,68 @@ mod tests {
         let listed = store.list().unwrap();
         assert!(listed[0].next_run_at.unwrap() > future);
     }
+
+    #[test]
+    fn legacy_employee_json_migrates_enabled_to_lifecycle() {
+        use std::fs;
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        let emp_dir = dir.path().join("emp-legacy");
+        fs::create_dir_all(&emp_dir).unwrap();
+        let legacy = serde_json::json!({
+            "id": "emp-legacy",
+            "name": "L",
+            "role": "r",
+            "description": "d",
+            "avatar": "ð¤",
+            "templateId": null,
+            "toolWhitelist": [],
+            "cron": "0 9 * * 1",
+            "timezone": "Asia/Shanghai",
+            "enabled": true,
+            "resourceConfig": {},
+            "systemPromptExtra": null,
+            "defaultSkillId": null,
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "lastRunAt": null,
+            "nextRunAt": null,
+        });
+        fs::write(emp_dir.join("employee.json"), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let record = store.get("emp-legacy").unwrap();
+        assert_eq!(record.lifecycle, EmployeeLifecycle::Active);
+        assert!(record.cron_enabled, "legacy enabled=true â cron_enabled=true");
+    }
+
+    #[test]
+    fn legacy_disabled_employee_migrates_to_active_with_cron_off() {
+        use std::fs;
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        let emp_dir = dir.path().join("emp-paused");
+        fs::create_dir_all(&emp_dir).unwrap();
+        let legacy = serde_json::json!({
+            "id": "emp-paused", "name": "P", "role": "r", "description": "d",
+            "avatar": "ð¤", "templateId": null, "toolWhitelist": [],
+            "cron": "0 9 * * 1", "timezone": "Asia/Shanghai",
+            "enabled": false,
+            "resourceConfig": {}, "systemPromptExtra": null,
+            "defaultSkillId": null,
+            "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z",
+            "lastRunAt": null, "nextRunAt": null,
+        });
+        fs::write(emp_dir.join("employee.json"), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let record = store.get("emp-paused").unwrap();
+        assert_eq!(record.lifecycle, EmployeeLifecycle::Active);
+        assert!(!record.cron_enabled, "legacy enabled=false â cron_enabled=false");
+    }
 }
+
+fn default_true() -> bool {
+    true
+}
+
