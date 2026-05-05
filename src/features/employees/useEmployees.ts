@@ -21,7 +21,14 @@ export function useEmployees() {
     // Probe active run for each employee in parallel; cheap (in-memory mutex
     // lookup on the backend, no network).
     const probes = await Promise.all(
-      list.map(async (e) => [e.id, await employeeActiveRun(e.id)] as const),
+      list.map(async (e) => {
+        try {
+          return [e.id, await employeeActiveRun(e.id)] as const
+        } catch (err) {
+          console.warn(`[useEmployees] employeeActiveRun(${e.id}) failed:`, err)
+          return [e.id, null] as const
+        }
+      }),
     )
     const next: Record<string, EmployeeActiveRunInfo> = {}
     for (const [id, run] of probes) {
