@@ -1714,7 +1714,7 @@ export function employeeTrigger(
   return invoke<string>('employee_trigger', {
     id,
     promptOverride: promptOverride ?? null,
-    attachments: attachments ?? null,
+    attachments: attachments ?? [],
   })
 }
 

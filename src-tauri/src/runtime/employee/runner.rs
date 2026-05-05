@@ -171,6 +171,6 @@ mod runner_tests {
             .await
             .unwrap();
         let captured = dispatcher.captured.lock().await.clone();
-        assert_eq!(captured.unwrap().len(), 1);
+        assert_eq!(captured.unwrap(), attachments);
     }
 }
