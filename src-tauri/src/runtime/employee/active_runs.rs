@@ -2,12 +2,30 @@
 //!
 //! `dispatch_employee_run` registers (employee_id → conversation_id) when it
 //! spawns the agent loop. The detached task removes the entry on completion
-//! (success or failure). UI calls `lookup` (via the Tauri command added in
-//! Task 3) to know whether to render the "stop running" button vs. the
-//! "dispatch" button.
+//! (success, failure, or panic) via the `ActiveRunGuard` RAII pattern. UI
+//! calls `lookup` (via the Tauri command added in Task 3) to know whether
+//! to render the "stop running" button vs. the "dispatch" button.
 //!
 //! This is the single source of truth for the Activity dimension of the
 //! state machine (vs. the time-windowed inbox heuristic in EmployeeCard).
+//!
+//! ## Relationship to `EmployeeRunOverrides`
+//!
+//! Distinct from `EmployeeRunOverrides` (conversation-scoped, holds
+//! per-run tool whitelist + iteration cap; defined in
+//! `transport/tauri_commands/chat.rs`). This map is **employee-scoped**
+//! and exists purely to answer "is this employee busy right now?". An
+//! employee has at most one active dispatch at any time; if a second
+//! dispatch is initiated before the first completes, `register` overwrites
+//! the prior entry — the older spawned task's `Drop` will then no-op
+//! against an entry that does not match. UI gating in Task 4 should call
+//! `lookup` before allowing manual dispatch to avoid this race in normal
+//! operation.
+//!
+//! ## Mutex poisoning
+//!
+//! All ops use `lock().ok()` and silently no-op on poisoning, matching
+//! `OverrideGuard`'s convention. Do not change one without the other.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -68,6 +86,36 @@ impl EmployeeActiveRuns {
             .ok()
             .map(|g| g.values().cloned().collect())
             .unwrap_or_default()
+    }
+}
+
+use std::sync::Arc;
+
+/// RAII guard that registers an `ActiveRun` on construction and unregisters
+/// on `Drop`. Use this in the spawned dispatch task so a panic in the agent
+/// loop cannot strand an employee in "running" state forever (which would
+/// defeat the whole purpose of moving Activity off the inbox heuristic).
+///
+/// Mirrors the `OverrideGuard` pattern in `transport/tauri_commands/chat.rs`.
+pub struct ActiveRunGuard {
+    active_runs: Arc<EmployeeActiveRuns>,
+    employee_id: String,
+}
+
+impl ActiveRunGuard {
+    pub fn install(active_runs: Arc<EmployeeActiveRuns>, run: ActiveRun) -> Self {
+        let employee_id = run.employee_id.clone();
+        active_runs.register(run);
+        Self {
+            active_runs,
+            employee_id,
+        }
+    }
+}
+
+impl Drop for ActiveRunGuard {
+    fn drop(&mut self) {
+        self.active_runs.unregister(&self.employee_id);
     }
 }
 
