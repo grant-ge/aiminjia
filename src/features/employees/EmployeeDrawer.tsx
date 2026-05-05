@@ -1,10 +1,31 @@
 import { useState } from 'react'
-import { X, Play, Pause, MessageSquare } from 'lucide-react'
-import { employeeTrigger, employeeUpdate, type EmployeeRecord, type InboxEntry } from '@/lib/tauri'
+import { X, Play, Pause, MessageSquare, Settings } from 'lucide-react'
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
+import {
+  dingtalkStatus,
+  employeeTrigger,
+  employeeUpdate,
+  type ChatAttachmentPayload,
+  type EmployeeRecord,
+  type InboxEntry,
+} from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
 import { useUiStore } from '@/stores/uiStore'
+import { findTemplate } from './templates'
+import { ResourceConfigForm } from './ResourceConfigForm'
+import { runTriggerPrechecks } from './triggerPrechecks'
+
+function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  if (['xlsx', 'xls'].includes(ext)) return 'excel'
+  if (ext === 'csv') return 'csv'
+  if (['docx', 'doc'].includes(ext)) return 'word'
+  if (ext === 'pdf') return 'pdf'
+  if (ext === 'json') return 'json'
+  return 'pdf'
+}
 
 function statusBadgeClass(status: EmployeeStatus): string {
   switch (status) {
@@ -54,23 +75,94 @@ interface EmployeeDrawerProps {
 
 export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh }: EmployeeDrawerProps) {
   const [busy, setBusy] = useState(false)
+  const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const setRoute = useUiStore((s) => s.setRoute)
 
   if (!emp) return null
 
+  const template = findTemplate(emp.templateId)
   const status = deriveStatus(emp, inboxEntries)
 
+  const triggerNow = async (attachments: ChatAttachmentPayload[]) => {
+    const convId = await employeeTrigger(emp.id, undefined, attachments)
+    await onRefresh()
+    onClose()
+    setRoute({ kind: 'chat', conversationId: convId })
+  }
+
   const handleTrigger = async () => {
+    if (!template) {
+      // Custom (non-builtin) employees — fall back to F1 behaviour: dispatch immediately.
+      setBusy(true)
+      try {
+        await triggerNow([])
+      } catch (err) {
+        console.error('[EmployeeDrawer] trigger error:', err)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     setBusy(true)
     try {
-      const convId = await employeeTrigger(emp.id)
-      await onRefresh()
-      onClose()
-      setRoute({ kind: 'chat', conversationId: convId })
+      const dt = template.requiresDingtalk ? await dingtalkStatus() : { connected: false }
+      const result = runTriggerPrechecks({
+        template,
+        employee: emp,
+        dingtalkConnected: !!dt.connected,
+      })
+
+      switch (result.kind) {
+        case 'ready':
+          await triggerNow([])
+          return
+        case 'attachments': {
+          const exts = result.spec.accept.split(',').map((s) => s.trim().replace(/^\./, ''))
+          const picked = await openFileDialog({
+            multiple: result.spec.max > 1,
+            filters: [{ name: '允许的文件', extensions: exts }],
+          })
+          if (!picked) return  // user cancelled
+          const paths = Array.isArray(picked) ? picked : [picked]
+          if (paths.length < result.spec.min || paths.length > result.spec.max) {
+            alert(`请选择 ${result.spec.min}-${result.spec.max} 个文件`)
+            return
+          }
+          const attachments: ChatAttachmentPayload[] = paths.map((p, i) => ({
+            id: `picker-${Date.now()}-${i}`,
+            fileName: p.split(/[\\/]/).pop() ?? p,
+            filePath: p,
+            kind: 'file',
+            fileSize: 0,  // unknown without an extra stat call; backend re-reads from disk
+            fileType: detectFileType(p),
+          }))
+          await triggerNow(attachments)
+          return
+        }
+        case 'resource':
+          setResourceModalOpen(true)
+          return
+        case 'dingtalk':
+          alert('该员工需要钉钉账号授权，请前往 设置 → 钉钉账号 完成授权后再试。')
+          return
+      }
     } catch (err) {
       console.error('[EmployeeDrawer] trigger error:', err)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const handleResourceSubmit = async (next: Record<string, unknown>) => {
+    setResourceModalOpen(false)
+    try {
+      await employeeUpdate(emp.id, { resourceConfig: next })
+      await onRefresh()
+      // After persisting, re-run trigger so we now reach 'ready'.
+      void handleTrigger()
+    } catch (err) {
+      console.error('[EmployeeDrawer] resource save error:', err)
     }
   }
 
@@ -236,7 +328,25 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
               {emp.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
           )}
+          {template && template.resourceConfigKind !== 'none' && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setResourceModalOpen(true)}
+              title="配置资源"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
         </div>
+
+        <ResourceConfigForm
+          open={resourceModalOpen}
+          kind={template?.resourceConfigKind ?? 'none'}
+          initial={(emp.resourceConfig as Record<string, unknown>) ?? {}}
+          onSubmit={handleResourceSubmit}
+          onCancel={() => setResourceModalOpen(false)}
+        />
       </SheetContent>
     </Sheet>
   )

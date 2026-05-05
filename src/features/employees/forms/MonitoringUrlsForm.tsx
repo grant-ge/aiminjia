@@ -1,0 +1,135 @@
+import { useMemo, useState } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+
+interface Row {
+  name: string
+  url: string
+  tagsRaw: string  // comma-separated input; normalized on submit
+}
+
+interface MonitoringTarget {
+  name: string
+  url: string
+  tags: string[]
+}
+
+interface MonitoringUrlsFormProps {
+  initial: Record<string, unknown>
+  onSubmit: (next: { monitoringTargets: MonitoringTarget[] }) => void
+  onCancel: () => void
+}
+
+function isValidUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function rowsFromInitial(initial: Record<string, unknown>): Row[] {
+  const arr = initial.monitoringTargets
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return [{ name: '', url: '', tagsRaw: '' }]
+  }
+  return arr.map((it) => {
+    const item = it as { name?: string; url?: string; tags?: string[] }
+    return {
+      name: item.name ?? '',
+      url: item.url ?? '',
+      tagsRaw: (item.tags ?? []).join(', '),
+    }
+  })
+}
+
+export function MonitoringUrlsForm({ initial, onSubmit, onCancel }: MonitoringUrlsFormProps) {
+  const [rows, setRows] = useState<Row[]>(() => rowsFromInitial(initial))
+
+  const valid = useMemo(
+    () => rows.length > 0 && rows.every((r) => r.name.trim() && isValidUrl(r.url.trim())),
+    [rows],
+  )
+
+  function update(i: number, patch: Partial<Row>) {
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+
+  function addRow() {
+    setRows((rs) => [...rs, { name: '', url: '', tagsRaw: '' }])
+  }
+
+  function removeRow(i: number) {
+    setRows((rs) => (rs.length <= 1 ? rs : rs.filter((_, idx) => idx !== i)))
+  }
+
+  function handleSave() {
+    if (!valid) return
+    const monitoringTargets: MonitoringTarget[] = rows.map((r) => ({
+      name: r.name.trim(),
+      url: r.url.trim(),
+      tags: r.tagsRaw
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    }))
+    onSubmit({ monitoringTargets })
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <Input
+              placeholder="监测对象名称（如 Anthropic）"
+              value={r.name}
+              onChange={(e) => update(i, { name: e.target.value })}
+              className="w-40"
+            />
+            <Input
+              placeholder="https://example.com/news"
+              value={r.url}
+              onChange={(e) => update(i, { url: e.target.value })}
+              className="flex-1 font-mono text-xs"
+            />
+            <Input
+              placeholder="标签（逗号分隔，可选）"
+              value={r.tagsRaw}
+              onChange={(e) => update(i, { tagsRaw: e.target.value })}
+              className="w-44"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              disabled={rows.length <= 1}
+              className="p-2 text-muted-foreground hover:text-destructive disabled:opacity-30"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addRow}
+        className="flex items-center gap-1 self-start text-xs text-primary hover:underline"
+      >
+        <Plus className="h-3 w-3" /> 添加监测对象
+      </button>
+
+      <div className="flex items-center justify-end gap-2 pt-2">
+        <Button variant="ghost" onClick={onCancel}>
+          取消
+        </Button>
+        <Button onClick={handleSave} disabled={!valid}>
+          保存
+        </Button>
+      </div>
+    </div>
+  )
+}

@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { BUILTIN_TEMPLATES, type EmployeeTemplate } from './templates'
+import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
+import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 
 // ─── wizard ───────────────────────────────────────────────────────────────────
 
@@ -14,11 +16,12 @@ interface HireWizardProps {
 }
 
 export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
   const [name, setName] = useState('')
   const [enableCron, setEnableCron] = useState(true)
   const [cron, setCron] = useState('')
+  const [resourceConfig, setResourceConfig] = useState<Record<string, unknown>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,6 +31,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setName('')
     setEnableCron(true)
     setCron('')
+    setResourceConfig({})
     setError(null)
     onClose()
   }
@@ -37,10 +41,11 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     setName(t.name)
     setEnableCron(!!t.cron)
     setCron(t.cron ?? '')
+    setResourceConfig({})
     setStep(2)
   }
 
-  async function handleHire() {
+  async function hireWithConfig(cfg: Record<string, unknown>) {
     if (!selected || !name.trim()) return
     setBusy(true)
     setError(null)
@@ -57,6 +62,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         enabled: true,
         systemPromptExtra: selected.systemPromptExtra,
         defaultSkillId: selected.defaultSkillId ?? undefined,
+        resourceConfig: cfg,
       })
       await onHired()
       handleClose()
@@ -67,18 +73,38 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
     }
   }
 
+  function handleStep2Next() {
+    if (!selected) return
+    if (selected.resourceConfigKind === 'none') {
+      void hireWithConfig(resourceConfig)
+    } else {
+      setStep(3)
+    }
+  }
+
+  async function handleResourceSubmit(next: Record<string, unknown>) {
+    setResourceConfig(next)
+    await hireWithConfig(next)
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
       <DialogContent className="max-w-2xl p-0">
         <DialogHeader className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-base">
-              {step === 1 ? '选择员工模板' : '配置员工'}
+              {step === 1 ? '选择员工模板' : step === 2 ? '配置员工' : '配置资源'}
             </DialogTitle>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={step === 1 ? 'text-foreground font-medium' : ''}>1 选模板</span>
               <span>→</span>
               <span className={step === 2 ? 'text-foreground font-medium' : ''}>2 配置</span>
+              {selected?.resourceConfigKind !== 'none' && (
+                <>
+                  <span>→</span>
+                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>3 资源</span>
+                </>
+              )}
             </div>
           </div>
         </DialogHeader>
@@ -171,10 +197,33 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
               <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
                 ← 返回
               </Button>
-              <Button onClick={handleHire} disabled={busy || !name.trim()}>
-                {busy ? '雇佣中…' : '✅ 确认雇佣'}
+              <Button onClick={handleStep2Next} disabled={busy || !name.trim()}>
+                {busy ? '雇佣中…' : selected.resourceConfigKind === 'none' ? '✅ 确认雇佣' : '下一步 →'}
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Step 3: resource config (inline — HireWizard already uses a Dialog) */}
+        {step === 3 && selected && (
+          <div className="p-6">
+            {selected.resourceConfigKind === 'monitoring-urls' && (
+              <MonitoringUrlsForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'sales-table' && (
+              <SalesTableConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {error && (
+              <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+            )}
           </div>
         )}
       </DialogContent>
