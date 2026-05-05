@@ -300,19 +300,53 @@ impl EmployeeStore {
         Ok(true)
     }
 
+    /// Hard-delete an employee directory IFF it is still archived AND its
+    /// updated_at is still older than `threshold`. Both checks happen under
+    /// the same lock as the directory removal — protects against the race
+    /// where a user calls `employee_restore` between the purge sweep's
+    /// list() and the per-record purge() call.
+    ///
+    /// Returns Ok(true) if purged, Ok(false) if the precondition no longer
+    /// holds (employee is now Active/Paused, or was just touched).
+    pub fn purge_if_archived_older_than(
+        &self,
+        id: &str,
+        threshold: chrono::Duration,
+    ) -> Result<bool> {
+        let _guard = self.lock.lock().unwrap();
+        let path = self.record_path(id);
+        if !path.exists() {
+            return Ok(false);
+        }
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("employee not found: {id}"))?;
+        let record: EmployeeRecord = serde_json::from_str(&content)?;
+
+        if record.lifecycle != EmployeeLifecycle::Archived {
+            return Ok(false);
+        }
+        if Utc::now().signed_duration_since(record.updated_at) <= threshold {
+            return Ok(false);
+        }
+
+        let dir = self.record_dir(id);
+        fs::remove_dir_all(dir)?;
+        Ok(true)
+    }
+
     /// Purge any employees that have been archived for longer than `threshold`.
     /// Returns the number of records hard-deleted.
+    ///
+    /// The per-record check is atomic (see `purge_if_archived_older_than`):
+    /// if the user calls `employee_restore` between this method's `list()`
+    /// snapshot and the per-record purge call, the restored record is
+    /// preserved.
     pub fn purge_old_archived(&self, threshold: chrono::Duration) -> Result<usize> {
-        let now = Utc::now();
         let mut purged = 0;
-        // `list` locks internally and releases before we iterate; `purge` then
-        // re-acquires the lock per-record. Safe because new archived records
-        // appearing during iteration are simply not considered this round.
         let records = self.list()?;
         for record in records {
             if record.lifecycle == EmployeeLifecycle::Archived
-                && now.signed_duration_since(record.updated_at) > threshold
-                && self.purge(&record.id)?
+                && self.purge_if_archived_older_than(&record.id, threshold)?
             {
                 purged += 1;
             }
@@ -648,6 +682,60 @@ mod tests {
         assert!(ids.contains(&recent_archived.id.as_str()));
         assert!(ids.contains(&active.id.as_str()));
         assert!(!ids.contains(&old_archived.id.as_str()));
+    }
+
+    #[test]
+    fn purge_if_archived_older_than_skips_active_record() {
+        use chrono::Duration;
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        // Create an Active employee
+        let active = store.create(CreateEmployeeRequest {
+            name: "active".into(), role: "r".into(), description: "d".into(),
+            avatar: "🤖".into(), template_id: None, tool_whitelist: None,
+            cron: None, timezone: None,
+            lifecycle: Some(EmployeeLifecycle::Active),
+            cron_enabled: Some(true), resource_config: None,
+            system_prompt_extra: None, default_skill_id: None,
+        }).unwrap();
+
+        // Even if we lie about it being old, the lifecycle check should reject
+        let path = dir.path().join(&active.id).join("employee.json");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        value["updatedAt"] = serde_json::json!(
+            (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339()
+        );
+        std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let purged = store
+            .purge_if_archived_older_than(&active.id, Duration::days(7))
+            .unwrap();
+        assert!(!purged, "Active employee should never be purged regardless of age");
+        assert!(store.get(&active.id).is_ok(), "directory should still exist");
+    }
+
+    #[test]
+    fn purge_if_archived_older_than_skips_recently_archived() {
+        use chrono::Duration;
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        let recent = store.create(CreateEmployeeRequest {
+            name: "recent".into(), role: "r".into(), description: "d".into(),
+            avatar: "🤖".into(), template_id: None, tool_whitelist: None,
+            cron: None, timezone: None,
+            lifecycle: Some(EmployeeLifecycle::Archived),
+            cron_enabled: Some(true), resource_config: None,
+            system_prompt_extra: None, default_skill_id: None,
+        }).unwrap();
+
+        let purged = store
+            .purge_if_archived_older_than(&recent.id, Duration::days(7))
+            .unwrap();
+        assert!(!purged, "Recently archived employee should not be purged");
+        assert!(store.get(&recent.id).is_ok());
     }
 
     #[test]

@@ -58,9 +58,17 @@ pub async fn employee_update(
 /// Soft-delete: set lifecycle = Archived. The employee is hidden from the
 /// main grid but recoverable via `employee_restore` for 7 days. After 7
 /// days, the scheduler's purge sweep hard-deletes the directory.
+///
+/// Returns Ok(true) if the lifecycle transitioned to Archived, Ok(false)
+/// if the record was already Archived (no-op).
 #[tauri::command]
 pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String> {
-    employee_store(&app)?
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle == EmployeeLifecycle::Archived {
+        return Ok(false);
+    }
+    store
         .update(
             &id,
             UpdateEmployeeRequest {
@@ -73,9 +81,17 @@ pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String>
 }
 
 /// Restore an archived employee: lifecycle Archived -> Active.
+///
+/// Returns Ok(true) if the lifecycle transitioned to Active, Ok(false)
+/// if the record was not Archived (no-op).
 #[tauri::command]
 pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String> {
-    employee_store(&app)?
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle != EmployeeLifecycle::Archived {
+        return Ok(false);
+    }
+    store
         .update(
             &id,
             UpdateEmployeeRequest {
