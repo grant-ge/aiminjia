@@ -24,6 +24,11 @@ function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
   if (['docx', 'doc'].includes(ext)) return 'word'
   if (ext === 'pdf') return 'pdf'
   if (ext === 'json') return 'json'
+  // Should never reach here — picker filters constrain extensions.
+  // Log for diagnostics; default to 'pdf' as a reasonable best effort
+  // for arbitrary bytes (the LLM will see the file content via load_file
+  // regardless of fileType hint).
+  console.warn('[EmployeeDrawer] detectFileType: unknown extension', { path, ext })
   return 'pdf'
 }
 
@@ -159,11 +164,14 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
     try {
       await employeeUpdate(emp.id, { resourceConfig: next })
       await onRefresh()
-      // After persisting, re-run trigger so we now reach 'ready'.
-      void handleTrigger()
     } catch (err) {
-      console.error('[EmployeeDrawer] resource save error:', err)
+      console.error('[EmployeeDrawer] resource submit error:', err)
+      alert(`保存配置失败：${String(err)}`)
     }
+    // Do NOT auto re-trigger — user clicks 现在派活 again to dispatch.
+    // This prevents an infinite save→retrigger loop if a future
+    // resourceConfigKind has a Form that submits but isResourceConfigured
+    // still returns false.
   }
 
   const handleToggle = async () => {
