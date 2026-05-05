@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { X, Play, Pause, MessageSquare, Settings, Trash2 } from 'lucide-react'
+import { X, MessageSquare, Square, Clock } from 'lucide-react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import {
   dingtalkStatus,
   employeeDelete,
+  employeeStopRun,
   employeeTrigger,
   employeeUpdate,
   type ChatAttachmentPayload,
@@ -18,6 +19,8 @@ import { useUiStore } from '@/stores/uiStore'
 import { findTemplate } from './templates'
 import { ResourceConfigForm } from './ResourceConfigForm'
 import { runTriggerPrechecks } from './triggerPrechecks'
+import { CronEditDialog } from './CronEditDialog'
+import { formatRelativeNextRun } from './timeFormat'
 
 function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
@@ -89,9 +92,19 @@ interface EmployeeDrawerProps {
   onRefresh: () => Promise<void>
 }
 
+function formatElapsed(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}m ${r}s`
+}
+
 export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, onClose, onRefresh }: EmployeeDrawerProps) {
   const [busy, setBusy] = useState(false)
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
+  const [cronModalOpen, setCronModalOpen] = useState(false)
   const setRoute = useUiStore((s) => s.setRoute)
 
   if (!emp) return null
@@ -194,6 +207,41 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
       console.error('[EmployeeDrawer] toggle error:', err)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const handleStop = async () => {
+    setBusy(true)
+    try {
+      await employeeStopRun(emp.id)
+      await onRefresh()
+    } catch (err) {
+      console.error('[EmployeeDrawer] stop error:', err)
+      alert(`停止失败：${String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleCronSubmit = async (cron: string | null) => {
+    setCronModalOpen(false)
+    try {
+      await employeeUpdate(emp.id, { cron, cronEnabled: cron !== null })
+      await onRefresh()
+    } catch (err) {
+      console.error('[EmployeeDrawer] cron edit error:', err)
+      alert(`修改失败：${String(err)}`)
+    }
+  }
+
+  const handlePauseEmployee = async () => {
+    const next: 'active' | 'paused' = emp.lifecycle === 'paused' ? 'active' : 'paused'
+    try {
+      await employeeUpdate(emp.id, { lifecycle: next })
+      await onRefresh()
+    } catch (err) {
+      console.error('[EmployeeDrawer] pause error:', err)
+      alert(`操作失败：${String(err)}`)
     }
   }
 
@@ -350,40 +398,135 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
         </div>
 
         {/* Footer actions */}
-        <div className="flex items-center gap-2 border-t border-border p-4">
-          <Button
-            className="flex-1 gap-1.5"
-            disabled={busy || status === 'running'}
-            onClick={handleTrigger}
-          >
-            <MessageSquare className="h-4 w-4" />
-            现在派活
-          </Button>
-          {emp.cron && (
-            <Button variant="outline" disabled={busy} onClick={handleToggleCron}>
-              {emp.cronEnabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </Button>
+        <div className="border-t border-border p-4 flex flex-col gap-3">
+          {activeRun ? (
+            /* Running state — replaces all idle controls */
+            <div className="flex flex-col gap-2">
+              <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+                ⚡ 运行中 · 已跑 {formatElapsed(activeRun.startedAt)}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5"
+                  onClick={() => {
+                    onClose()
+                    setRoute({ kind: 'chat', conversationId: activeRun.conversationId })
+                  }}
+                >
+                  <MessageSquare className="h-4 w-4" /> 跳到对话
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5 text-destructive hover:bg-destructive/10"
+                  disabled={busy}
+                  onClick={handleStop}
+                >
+                  <Square className="h-4 w-4 fill-current" /> 停止
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Idle / scheduled / paused — primary + secondary hierarchy */
+            <div className="flex flex-col gap-3">
+              <Button
+                className="w-full gap-1.5"
+                size="lg"
+                disabled={busy || emp.lifecycle === 'paused' || emp.lifecycle === 'archived'}
+                onClick={handleTrigger}
+              >
+                <MessageSquare className="h-4 w-4" />
+                {emp.lifecycle === 'paused'
+                  ? '员工已暂停 — 先恢复才能派活'
+                  : emp.lifecycle === 'archived'
+                    ? '员工已解雇'
+                    : '现在派活'}
+              </Button>
+
+              {/* Cron management row */}
+              {emp.cron ? (
+                <div className="flex items-center justify-between rounded-md bg-accent/40 px-3 py-2 text-xs">
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground">
+                    <Clock className="h-3 w-3 shrink-0" />
+                    <span className="truncate">定时 {cronToHuman(emp.cron)}</span>
+                    {emp.nextRunAt && emp.cronEnabled && emp.lifecycle === 'active' && (
+                      <span className="shrink-0 text-muted-foreground/60">
+                        · {formatRelativeNextRun(emp.nextRunAt)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCronModalOpen(true)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      修改
+                    </button>
+                    <span className="text-muted-foreground/40">·</span>
+                    <button
+                      type="button"
+                      onClick={handleToggleCron}
+                      className={
+                        emp.cronEnabled
+                          ? 'text-muted-foreground hover:text-foreground'
+                          : 'text-amber-600 hover:text-amber-700'
+                      }
+                      disabled={busy}
+                    >
+                      {emp.cronEnabled ? '关闭' : '开启'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCronModalOpen(true)}
+                  className="flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Clock className="h-3 w-3" /> 添加定时触发
+                </button>
+              )}
+
+              {/* Tertiary actions */}
+              <div className="flex items-center justify-between border-t border-border/50 pt-2 text-xs">
+                <button
+                  type="button"
+                  onClick={handlePauseEmployee}
+                  disabled={busy}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {emp.lifecycle === 'paused' ? '▶ 恢复员工' : '⏸ 暂停员工'}
+                </button>
+                <div className="flex items-center gap-3">
+                  {template && template.resourceConfigKind !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => setResourceModalOpen(true)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      ⚙️ 配置资源
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleDismiss}
+                    disabled={busy}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    🗑 解雇
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
-          {template && template.resourceConfigKind !== 'none' && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setResourceModalOpen(true)}
-              title="配置资源"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={busy}
-            onClick={handleDismiss}
-            title="解雇"
-            className="text-muted-foreground hover:text-destructive hover:border-destructive/50"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+
+          <CronEditDialog
+            open={cronModalOpen}
+            initial={emp.cron}
+            onSubmit={handleCronSubmit}
+            onCancel={() => setCronModalOpen(false)}
+          />
         </div>
 
         <ResourceConfigForm
