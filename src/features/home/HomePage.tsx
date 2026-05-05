@@ -50,7 +50,7 @@ function greeting(): string {
 
 export function HomePage() {
   const setRoute = useUiStore((s) => s.setRoute)
-  const { employees, loading: empLoading, refresh: refreshEmp } = useEmployees()
+  const { employees, activeRuns, loading: empLoading, refresh: refreshEmp } = useEmployees()
   const { entries, refresh: refreshInbox, markRead } = useInbox()
 
   const [selectedEmp, setSelectedEmp] = useState<EmployeeRecord | null>(null)
@@ -115,6 +115,7 @@ export function HomePage() {
                 key={emp.id}
                 employee={emp}
                 inboxEntries={entries}
+                activeRun={activeRuns[emp.id] ?? null}
                 onClick={() => setSelectedEmp(emp)}
                 onRefresh={handleRefreshAll}
               />
@@ -195,6 +196,7 @@ export function HomePage() {
       <EmployeeDrawer
         employee={selectedEmp}
         inboxEntries={entries}
+        activeRun={selectedEmp ? activeRuns[selectedEmp.id] ?? null : null}
         onClose={() => setSelectedEmp(null)}
         onRefresh={handleRefreshAll}
       />

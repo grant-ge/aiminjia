@@ -7,6 +7,7 @@ import {
   employeeTrigger,
   employeeUpdate,
   type ChatAttachmentPayload,
+  type EmployeeActiveRunInfo,
   type EmployeeRecord,
   type InboxEntry,
 } from '@/lib/tauri'
@@ -35,21 +36,29 @@ function detectFileType(path: string): ChatAttachmentPayload['fileType'] {
 
 function statusBadgeClass(status: EmployeeStatus): string {
   switch (status) {
-    case 'working': return 'bg-blue-100 text-blue-700'
+    case 'running': return 'bg-blue-100 text-blue-700 animate-pulse'
     case 'has-report': return 'bg-green-100 text-green-700'
-    case 'scheduled': return 'bg-amber-100 text-amber-700'
+    case 'paused': return 'bg-slate-200 text-slate-600'
     case 'needs-setup': return 'bg-orange-100 text-orange-700'
-    default: return 'bg-muted text-muted-foreground'
+    case 'scheduled': return 'bg-amber-100 text-amber-800'
+    case 'archived': return 'bg-slate-200 text-slate-400'
+    case 'idle':
+    default:
+      return 'bg-muted text-muted-foreground'
   }
 }
 
 function statusText(status: EmployeeStatus): string {
   switch (status) {
-    case 'working': return '🔵 工作中'
-    case 'has-report': return '🟢 有新汇报'
-    case 'scheduled': return '🟡 定时驻场'
+    case 'running': return '🔵 运行中'
+    case 'has-report': return '🟢 有汇报'
+    case 'paused': return '⏸ 已暂停'
     case 'needs-setup': return '🟠 需要配置'
-    default: return '⚪ 空闲'
+    case 'scheduled': return '🟡 定时待发'
+    case 'archived': return '🗑 已解雇'
+    case 'idle':
+    default:
+      return '⚪ 空闲'
   }
 }
 
@@ -75,11 +84,12 @@ function cronToHuman(cron: string): string {
 interface EmployeeDrawerProps {
   employee: EmployeeRecord | null
   inboxEntries: InboxEntry[]
+  activeRun?: EmployeeActiveRunInfo | null
   onClose: () => void
   onRefresh: () => Promise<void>
 }
 
-export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh }: EmployeeDrawerProps) {
+export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, onClose, onRefresh }: EmployeeDrawerProps) {
   const [busy, setBusy] = useState(false)
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const setRoute = useUiStore((s) => s.setRoute)
@@ -87,7 +97,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
   if (!emp) return null
 
   const template = findTemplate(emp.templateId)
-  const status = deriveStatus(emp, inboxEntries)
+  const status = deriveStatus(emp, inboxEntries, activeRun)
 
   const triggerNow = async (attachments: ChatAttachmentPayload[]) => {
     const convId = await employeeTrigger(emp.id, undefined, attachments)
@@ -343,7 +353,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
         <div className="flex items-center gap-2 border-t border-border p-4">
           <Button
             className="flex-1 gap-1.5"
-            disabled={busy || status === 'working'}
+            disabled={busy || status === 'running'}
             onClick={handleTrigger}
           >
             <MessageSquare className="h-4 w-4" />
