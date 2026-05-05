@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { X, Play, Pause, MessageSquare, Settings } from 'lucide-react'
+import { X, Play, Pause, MessageSquare, Settings, Trash2 } from 'lucide-react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import {
   dingtalkStatus,
+  employeeDelete,
   employeeTrigger,
   employeeUpdate,
   type ChatAttachmentPayload,
@@ -186,6 +187,23 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
     }
   }
 
+  const handleDismiss = async () => {
+    if (!confirm(`确定解雇「${emp.name}」吗？该员工的所有汇报记录将被一并移除，此操作不可撤销。`)) {
+      return
+    }
+    setBusy(true)
+    try {
+      await employeeDelete(emp.id)
+      await onRefresh()
+      onClose()
+    } catch (err) {
+      console.error('[EmployeeDrawer] dismiss error:', err)
+      alert(`解雇失败：${String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const empInbox = inboxEntries.filter((e) => e.employeeId === emp.id).slice(0, 5)
 
   return (
@@ -346,6 +364,16 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, onClose, onRefresh
               <Settings className="h-4 w-4" />
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={busy}
+            onClick={handleDismiss}
+            title="解雇"
+            className="text-muted-foreground hover:text-destructive hover:border-destructive/50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
 
         <ResourceConfigForm

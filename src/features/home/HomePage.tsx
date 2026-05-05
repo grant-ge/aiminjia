@@ -53,7 +53,7 @@ function greeting(): string {
 export function HomePage() {
   const setRoute = useUiStore((s) => s.setRoute)
   const { employees, loading: empLoading, refresh: refreshEmp } = useEmployees()
-  const { entries, unreadCount, refresh: refreshInbox } = useInbox()
+  const { entries, unreadCount, refresh: refreshInbox, markRead } = useInbox()
 
   const [selectedEmp, setSelectedEmp] = useState<EmployeeRecord | null>(null)
   const [hireOpen, setHireOpen] = useState(false)
@@ -165,8 +165,23 @@ export function HomePage() {
           <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border">
             {todayEntries.slice(0, 8).map((entry) => {
               const emp = employees.find((e) => e.id === entry.employeeId)
+              const clickable = !!entry.conversationId
+              const handleClick = () => {
+                if (!entry.read) {
+                  void markRead(entry.employeeId, entry.id)
+                }
+                if (entry.conversationId) {
+                  setRoute({ kind: 'chat', conversationId: entry.conversationId })
+                }
+              }
               return (
-                <div key={entry.id} className="flex items-start gap-3 px-4 py-3">
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={handleClick}
+                  disabled={!clickable}
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30 disabled:cursor-default disabled:hover:bg-transparent"
+                >
                   <span className="mt-0.5 text-base">{kindIcon(entry.kind)}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
@@ -187,7 +202,7 @@ export function HomePage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                     )}
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
