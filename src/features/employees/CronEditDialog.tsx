@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
 interface CronEditDialogProps {
@@ -22,11 +22,21 @@ const PRESETS: { label: string; cron: string }[] = [
 export function CronEditDialog({ open, initial, onSubmit, onCancel }: CronEditDialogProps) {
   const [value, setValue] = useState<string>(initial ?? '')
 
+  // Sync state when the parent reopens with different initial.
+  // Radix currently unmounts content on close, but this guards against
+  // future config changes (e.g. forceMount) without changing behavior today.
+  useEffect(() => {
+    if (open) setValue(initial ?? '')
+  }, [open, initial])
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onCancel() }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base">修改触发时间</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            选择常用预设或自定义 cron 表达式。留空可清除定时。
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">

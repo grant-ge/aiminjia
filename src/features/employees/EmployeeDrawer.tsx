@@ -225,23 +225,29 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
 
   const handleCronSubmit = async (cron: string | null) => {
     setCronModalOpen(false)
+    setBusy(true)
     try {
       await employeeUpdate(emp.id, { cron, cronEnabled: cron !== null })
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] cron edit error:', err)
       alert(`修改失败：${String(err)}`)
+    } finally {
+      setBusy(false)
     }
   }
 
   const handlePauseEmployee = async () => {
     const next: 'active' | 'paused' = emp.lifecycle === 'paused' ? 'active' : 'paused'
+    setBusy(true)
     try {
       await employeeUpdate(emp.id, { lifecycle: next })
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeDrawer] pause error:', err)
       alert(`操作失败：${String(err)}`)
+    } finally {
+      setBusy(false)
     }
   }
 
