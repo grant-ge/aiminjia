@@ -16,9 +16,16 @@ export interface RunTriggerPrechecksParams {
 
 /**
  * Decide what (if anything) the user must complete before we can call
- * employee_trigger. Order: attachments first (per-trigger, cheapest),
- * then resource_config (per-employee, persisted), then dingtalk auth
- * (per-app, persisted).
+ * employee_trigger.
+ *
+ * Order:
+ *   attachments (per-trigger) → resource_config (only when REQUIRED) → dingtalk auth
+ *
+ * Note on resource_config: only `monitoring-urls` is a HARD requirement (小研
+ * needs at least one URL to do anything). `sales-table` is a SOFT requirement
+ * — the employee can fall back to asking the user inside the chat (path A) and
+ * persisting the answers to memory; the ResourceConfigForm at ⚙️ is a faster
+ * path B that pre-fills the same shape.
  *
  * Returns `{ kind: 'ready' }` when no precheck is required.
  */
@@ -29,7 +36,11 @@ export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerP
     return { kind: 'attachments', spec: template.requiresAttachment }
   }
 
-  if (template.resourceConfigKind !== 'none' && !isResourceConfigured(template, employee)) {
+  if (
+    template.resourceConfigKind !== 'none' &&
+    isResourceConfigRequired(template) &&
+    !isResourceConfigured(template, employee)
+  ) {
     return { kind: 'resource', resourceConfigKind: template.resourceConfigKind }
   }
 
@@ -38,6 +49,20 @@ export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerP
   }
 
   return { kind: 'ready' }
+}
+
+/** Whether the resource_config is mandatory before dispatch. */
+function isResourceConfigRequired(template: EmployeeTemplate): boolean {
+  switch (template.resourceConfigKind) {
+    case 'monitoring-urls':
+      return true
+    case 'sales-table':
+      // Soft requirement: employee can ask the user inside chat and persist
+      // to memory (path A). The form is a convenience.
+      return false
+    case 'none':
+      return false
+  }
 }
 
 function isResourceConfigured(template: EmployeeTemplate, employee: EmployeeRecord): boolean {
@@ -50,8 +75,12 @@ function isResourceConfigured(template: EmployeeTemplate, employee: EmployeeReco
       return Array.isArray(targets) && targets.length > 0
     }
     case 'sales-table': {
-      // Stub: never considered configured in this MVP — keeps 小销 in 🟠 state.
-      return false
+      // Configured = at least the table identifier is set. Field mapping is
+      // optional at this gate; the SKILL completes whatever's missing.
+      const baseId = cfg.baseId
+      const tableId = cfg.tableId
+      return typeof baseId === 'string' && baseId.length > 0
+        && typeof tableId === 'string' && tableId.length > 0
     }
     case 'none':
       return true

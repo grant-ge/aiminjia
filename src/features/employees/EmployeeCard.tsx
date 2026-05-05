@@ -28,8 +28,16 @@ export function deriveStatus(
   const template = findTemplate(emp.templateId)
   if (template) {
     if (template.resourceConfigKind === 'sales-table') {
-      // Stub kind: never considered configured.
-      return 'needs-setup'
+      // Soft requirement: show 🟠 only when neither baseId nor tableId is set.
+      // Configured employees fall through to 'scheduled' / 'idle'.
+      const cfg = emp.resourceConfig as { baseId?: unknown; tableId?: unknown } | null
+      const baseId = cfg?.baseId
+      const tableId = cfg?.tableId
+      const configured = typeof baseId === 'string' && baseId.length > 0
+        && typeof tableId === 'string' && tableId.length > 0
+      if (!configured) {
+        return 'needs-setup'
+      }
     }
     if (template.resourceConfigKind === 'monitoring-urls') {
       const cfg = emp.resourceConfig as { monitoringTargets?: unknown[] } | null

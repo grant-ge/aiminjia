@@ -37,11 +37,17 @@ metadata:
 
 ## 输入约定
 
-派活时通过 prompt 的"资源配置"段传入：
+配置可以来自两条路径：
+
+- **路径 B（用户在 EmployeeDrawer ⚙️ 配置资源里填好的）**：派活 prompt 的"资源配置"段会带上完整的 `{ baseId, tableId, fieldMapping, scope }`。
+- **路径 A（首次派活，用户没在表单里填）**：prompt 没有"资源配置"段，需要在对话中向用户引导取值，然后用 `memory_save` 持久化（namespace `sales:config`），下次直接从 memory 读，不再问用户。
+
+需要的字段：
 
 ```json
 {
-  "tableId": "<钉钉 base id>",
+  "baseId": "<钉钉 base id>",
+  "tableId": "<table id>",
   "fieldMapping": {
     "customerName": "<列名>",
     "stage": "<列名>",
@@ -55,20 +61,29 @@ metadata:
 }
 ```
 
-如缺失：礼貌提示用户在 EmployeeDrawer ⚙️ 完成配置后再派活。
-
 ## 工作流程
 
-### 0. 加载钉钉技能
+### 0. 加载钉钉技能 + 拉取配置
 
-第一步：`load_skill('dingtalk-workspace')` —— 学习 dws 的环境检查、登录验证、命令发现规则。
+1. `load_skill('dingtalk-workspace')` — 学习 dws 的环境检查、登录验证、命令发现规则。
+2. 通过 dws 验证已登录：`dws auth status --format json`
+3. **配置加载优先级**：
+   - **(a)** 派活 prompt 的"资源配置"段如果有 `baseId / tableId / fieldMapping / scope` —— 直接用，进入步骤 1。同时 `memory_save` 一份到 `sales:config`，作为后续 fallback。
+   - **(b)** 否则 `memory_search` 关键词 `sales:config`。找到 → 用它，进入步骤 1。
+   - **(c)** 都没有（首次派活且未在表单填过）→ 进入步骤 0a 引导用户配置。
 
-随后通过 dws 验证已登录，并定位真实 base：
+### 0a. 首次配置流程（仅当 (a)(b) 都没有时）
 
-```bash
-dws auth status --format json
-dws table list --format json
-```
+逐个问用户，每问一个等用户回答再进下一个：
+
+1. 列出当前用户能看到的表格：`dws table list --format json`，向用户展示候选并请求选择 baseId（用名字让 ta 选）。
+2. 列出该 base 下的 tables：`dws table tables --base-id <baseId> --format json`，请求用户选择 tableId。
+3. 拉表的字段：`dws table schema --base-id <baseId> --table-id <tableId> --format json`，向用户展示所有列，逐项让 ta 把 customerName / stage / lastContact / nextAction / nextActionDate / owner / notes 七个语义字段映射到具体的列名（缺失的字段映射为 null 也行，运行时跳过相关规则）。
+4. 询问 scope：`self`（仅自己负责的）或 `department`（整个部门）。
+5. 拼好整个 config JSON，复述给用户，等用户回 "确认"。
+6. `memory_save` namespace=`sales:config`，把整个对象存进去。
+
+之后每次派活都从 memory 直接读。如果用户想修改配置，可以在对话里说"重新配置"，员工就 `memory_save` 覆写；或在 EmployeeDrawer ⚙️ 配置资源里直接改（路径 B 优先级最高）。
 
 ### 1. 拉取客户列表
 

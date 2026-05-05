@@ -102,7 +102,42 @@ describe('runTriggerPrechecks', () => {
     ).toEqual({ kind: 'ready' })
   })
 
-  it('precedence: attachments > resource > dingtalk', () => {
+  it('precedence: attachments > (hard) resource > dingtalk', () => {
+    // monitoring-urls is a hard requirement; with no targets and no dingtalk
+    // connection, resource still wins.
+    expect(
+      runTriggerPrechecks({
+        template: {
+          ...baseTemplate,
+          resourceConfigKind: 'monitoring-urls',
+          requiresDingtalk: true,
+          requiresAttachment: null,
+        },
+        employee: baseEmployee,
+        dingtalkConnected: false,
+      }),
+    ).toEqual({ kind: 'resource', resourceConfigKind: 'monitoring-urls' })
+  })
+
+  it('sales-table is a soft requirement: unconfigured does NOT block dispatch', () => {
+    // 小销-shaped: needs dingtalk + sales-table. With sales-table empty AND
+    // dingtalk OK, prechecks should return 'ready' — the SKILL handles the
+    // missing config inside the chat (path A).
+    expect(
+      runTriggerPrechecks({
+        template: {
+          ...baseTemplate,
+          resourceConfigKind: 'sales-table',
+          requiresDingtalk: true,
+          requiresAttachment: null,
+        },
+        employee: baseEmployee,
+        dingtalkConnected: true,
+      }),
+    ).toEqual({ kind: 'ready' })
+  })
+
+  it('sales-table soft requirement still defers to dingtalk gate', () => {
     expect(
       runTriggerPrechecks({
         template: {
@@ -114,6 +149,23 @@ describe('runTriggerPrechecks', () => {
         employee: baseEmployee,
         dingtalkConnected: false,
       }),
-    ).toEqual({ kind: 'resource', resourceConfigKind: 'sales-table' })
+    ).toEqual({ kind: 'dingtalk' })
+  })
+
+  it('sales-table is treated as configured when baseId+tableId present', () => {
+    expect(
+      runTriggerPrechecks({
+        template: {
+          ...baseTemplate,
+          resourceConfigKind: 'sales-table',
+          requiresDingtalk: true,
+        },
+        employee: {
+          ...baseEmployee,
+          resourceConfig: { baseId: 'b1', tableId: 't1' },
+        },
+        dingtalkConnected: true,
+      }),
+    ).toEqual({ kind: 'ready' })
   })
 })
