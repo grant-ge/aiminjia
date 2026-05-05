@@ -574,6 +574,9 @@ pub fn run() {
             app.manage(agent_runtime);
             app.manage(chat_adapter);
             app.manage(async_agent_task_store);
+            app.manage(std::sync::Arc::new(
+                crate::runtime::employee::EmployeeActiveRuns::new(),
+            ));
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,

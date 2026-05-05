@@ -2641,12 +2641,32 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
 
         // ─── Async phase: run the agent loop in a detached task ────────────
 
+        // Resolve the EmployeeActiveRuns state once, clone the Arc, and use
+        // it both here (sync register) and in the spawned task (unregister).
+        let active_runs = self
+            .services
+            .app
+            .try_state::<std::sync::Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+            .map(|s| s.inner().clone());
+        if let Some(ar) = active_runs.as_ref() {
+            ar.register(crate::runtime::employee::ActiveRun {
+                employee_id: employee.id.clone(),
+                conversation_id: conversation_id.clone(),
+                started_at: chrono::Utc::now(),
+                trigger_kind: match trigger_kind {
+                    TriggerKind::OnDemand => crate::runtime::employee::TriggerKindLabel::OnDemand,
+                    TriggerKind::Cron => crate::runtime::employee::TriggerKindLabel::Cron,
+                },
+            });
+        }
+
         let adapter = self.clone();
         let employee_clone = employee.clone();
         let conv_id = conversation_id.clone();
         let employees_dir_async = employees_dir.clone();
         let running_entry_id = running_entry.as_ref().map(|e| e.id.clone());
         let attachments_for_run = attachments;
+        let active_runs_for_spawn = active_runs.clone();
 
         tauri::async_runtime::spawn(async move {
             let _guard = OverrideGuard::install(
@@ -2718,6 +2738,10 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                     &employee_clone.id,
                     fire_at,
                 );
+            }
+
+            if let Some(ar) = active_runs_for_spawn {
+                ar.unregister(&employee_clone.id);
             }
         });
 
