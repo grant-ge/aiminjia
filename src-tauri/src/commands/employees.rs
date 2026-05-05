@@ -153,3 +153,48 @@ pub async fn inbox_unread_count(
         .unread_count(employee_id.as_deref())
         .map_err(|e| e.to_string())
 }
+
+// ─── active run / stop ───────────────────────────────────────────────────────
+
+/// Stop an employee's currently running dispatch (if any).
+/// Returns Ok(true) if a run was found and cancellation was requested,
+/// Ok(false) if no active run exists for this employee.
+#[tauri::command]
+pub async fn employee_stop_run(app: AppHandle, id: String) -> Result<bool, String> {
+    use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
+
+    let active_runs = app
+        .state::<Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+        .inner()
+        .clone();
+    let Some(run) = active_runs.lookup(&id) else {
+        return Ok(false);
+    };
+
+    let adapter = app
+        .state::<Arc<TauriChatCommandAdapter>>()
+        .inner()
+        .clone();
+    adapter
+        .stop_streaming(run.conversation_id.clone())
+        .await
+        .map_err(|e| format!("stop_streaming failed: {e}"))?;
+    // The active_runs entry is cleaned up by the dispatch's spawn block (via
+    // ActiveRunGuard's Drop) when the agent loop terminates; we don't
+    // unregister here to avoid double-frees and racing the natural cleanup.
+    Ok(true)
+}
+
+/// Returns the current ActiveRun for the employee (if any).
+/// Polled by the UI to drive Activity-dimension state derivation.
+#[tauri::command]
+pub async fn employee_active_run(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<crate::runtime::employee::ActiveRun>, String> {
+    let active_runs = app
+        .state::<Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+        .inner()
+        .clone();
+    Ok(active_runs.lookup(&id))
+}
