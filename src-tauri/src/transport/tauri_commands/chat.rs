@@ -2658,16 +2658,20 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
 
             match &result {
                 Ok(()) => {
-                    // Title may have been generated asynchronously by send_message;
-                    // best-effort lookup via DB skipped here — keep summary empty
-                    // for now and rely on the conversation_id link.
+                    // Flush any pending assistant-message writes, then read the
+                    // conversation to build a useful title + summary for the inbox.
+                    let _ = adapter.services.assistant_write_queue.flush();
+                    let (title, summary) = extract_report_title_summary(
+                        adapter.services.db.as_ref(),
+                        &conv_id,
+                    );
                     if let Err(e) = inbox_writer::push_report(
                         employees_dir_async.clone(),
                         &employee_clone.id,
                         &employee_clone.name,
                         &conv_id,
-                        None,
-                        None,
+                        title,
+                        summary,
                         running_entry_id.as_deref(),
                     ) {
                         log::warn!(
@@ -2706,6 +2710,47 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
 
         Ok(conversation_id)
     }
+}
+
+/// Best-effort extraction of (title, summary) for an employee inbox Report
+/// entry, given the conversation_id of a just-completed agent run.
+///
+/// - title: from conv.json's `title` field if auto-title finished, else None
+///   (push_report falls back to "{employee_name} 已完成任务").
+/// - summary: first 200 chars of the last assistant message's text content.
+///
+/// Both are returned as None on read failure — never panics, never blocks the
+/// inbox write path.
+fn extract_report_title_summary(
+    db: &crate::storage::file_store::AppStorage,
+    conversation_id: &str,
+) -> (Option<String>, Option<String>) {
+    let title = db
+        .get_conversation(conversation_id)
+        .ok()
+        .map(|meta| meta.title)
+        .filter(|t| !t.trim().is_empty() && !t.starts_with("新对话"));
+
+    let summary = db
+        .get_messages_v2(conversation_id)
+        .ok()
+        .and_then(|msgs| {
+            msgs.into_iter()
+                .rev()
+                .find(|m| m.role == "assistant")
+                .map(|m| {
+                    let text = m.text().to_string();
+                    let trimmed: String = text.chars().take(200).collect();
+                    if text.chars().count() > 200 {
+                        format!("{trimmed}…")
+                    } else {
+                        trimmed
+                    }
+                })
+        })
+        .filter(|s| !s.trim().is_empty());
+
+    (title, summary)
 }
 
 impl TauriChatCommandAdapter {

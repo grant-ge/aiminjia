@@ -6,6 +6,7 @@ import { PageTopBar } from '@/components/shell/PageTopBar'
 import { Button } from '@/components/ui/button'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
+import { useUiStore } from '@/stores/uiStore'
 import type { InboxKind } from '@/lib/tauri'
 
 type KindFilter = 'all' | InboxKind
@@ -42,7 +43,8 @@ function timeLabel(iso: string): string {
 
 export function InboxPage() {
   const { employees } = useEmployees()
-  const { entries, markAllRead } = useInbox()
+  const { entries, markAllRead, markRead } = useInbox()
+  const setRoute = useUiStore((s) => s.setRoute)
 
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [empFilter, setEmpFilter] = useState<string>('all')
@@ -139,10 +141,22 @@ export function InboxPage() {
         <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border">
           {filtered.map((entry) => {
             const emp = employees.find((e) => e.id === entry.employeeId)
+            const clickable = !!entry.conversationId
+            const handleClick = async () => {
+              if (!entry.read) {
+                void markRead(entry.employeeId, entry.id)
+              }
+              if (entry.conversationId) {
+                setRoute({ kind: 'chat', conversationId: entry.conversationId })
+              }
+            }
             return (
-              <div
+              <button
                 key={entry.id}
-                className={`flex items-start gap-3 px-5 py-4 transition-colors hover:bg-accent/30 ${
+                type="button"
+                onClick={handleClick}
+                disabled={!clickable}
+                className={`flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/30 disabled:cursor-default disabled:hover:bg-transparent ${
                   !entry.read ? 'bg-blue-50/20' : ''
                 }`}
               >
@@ -169,7 +183,7 @@ export function InboxPage() {
                     <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                   )}
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
