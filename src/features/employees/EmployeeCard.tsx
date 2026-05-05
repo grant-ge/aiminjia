@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Play, Pause, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { employeeTrigger, employeeUpdate, type EmployeeRecord, type InboxEntry } from '@/lib/tauri'
+import { employeeUpdate, type EmployeeRecord, type InboxEntry } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { findTemplate } from './templates'
 
@@ -9,22 +9,11 @@ import { findTemplate } from './templates'
 
 export type EmployeeStatus = 'working' | 'has-report' | 'scheduled' | 'idle' | 'needs-setup'
 
-const DINGTALK_TEMPLATES = new Set(['builtin:xiaoxiao', 'builtin:xiaoding'])
-
 export function deriveStatus(
   emp: EmployeeRecord,
   inboxEntries: InboxEntry[],
 ): EmployeeStatus {
   const empEntries = inboxEntries.filter((e) => e.employeeId === emp.id)
-
-  // Needs auth: dingtalk templates with empty resource config
-  if (
-    emp.templateId &&
-    DINGTALK_TEMPLATES.has(emp.templateId) &&
-    Object.keys(emp.resourceConfig).length === 0
-  ) {
-    return 'needs-setup'
-  }
 
   // Working: Running entry in the last 10 min
   const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
@@ -106,19 +95,6 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
   const [busy, setBusy] = useState(false)
   const status = deriveStatus(emp, inboxEntries)
 
-  const handleTrigger = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setBusy(true)
-    try {
-      await employeeTrigger(emp.id)
-      await onRefresh()
-    } catch (err) {
-      console.error('[EmployeeCard] trigger error:', err)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const handleTogglePause = async (e: React.MouseEvent) => {
     e.stopPropagation()
     setBusy(true)
@@ -191,15 +167,6 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
               }
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            disabled={busy || status === 'working'}
-            onClick={handleTrigger}
-          >
-            派活
-          </Button>
         </div>
       </div>
     </button>
