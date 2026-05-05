@@ -83,6 +83,9 @@ impl UserScopedPaths {
     pub fn downloads_dir(&self) -> PathBuf {
         self.base.join("downloads")
     }
+    pub fn employees_dir(&self) -> PathBuf {
+        self.base.join("employees")
+    }
 }
 
 /// Trait for services that need user-scoped paths.

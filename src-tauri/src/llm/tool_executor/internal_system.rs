@@ -773,6 +773,7 @@ mod tests {
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+            dingtalk_bridge: None,
         }
     }
 

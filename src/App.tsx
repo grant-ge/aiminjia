@@ -12,6 +12,7 @@ import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
 import { HomePage } from '@/features/home/HomePage'
+import { InboxPage } from '@/features/inbox/InboxPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
 import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
@@ -53,6 +54,8 @@ function RouteSwitch() {
       return <SkillDetailPage skillId={route.skillId} />
     case 'schedules':
       return <SchedulesPage />
+    case 'inbox':
+      return <InboxPage />
     case 'chat':
       return <ChatPage conversationId={route.conversationId} />
   }

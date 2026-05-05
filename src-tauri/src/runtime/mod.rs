@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod cancellation;
 pub mod chat;
+pub mod employee;
 pub mod conversation_service;
 pub mod dependencies;
 pub mod event_bus;

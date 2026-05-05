@@ -5,6 +5,7 @@ export type Route =
   | { kind: 'skill-center' }
   | { kind: 'skill-detail'; skillId: string }
   | { kind: 'schedules' }
+  | { kind: 'inbox' }
   | { kind: 'chat'; conversationId: string }
 
 export type SettingsModalKey =
@@ -48,6 +49,7 @@ function isRoute(value: unknown): value is Route {
     case 'home':
     case 'skill-center':
     case 'schedules':
+    case 'inbox':
       return true
     case 'skill-detail':
       return typeof route.skillId === 'string' && route.skillId.length > 0

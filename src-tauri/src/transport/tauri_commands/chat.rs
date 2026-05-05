@@ -311,6 +311,16 @@ pub fn load_history_via_runtime_history(
 }
 
 
+/// Per-conversation overrides injected by `dispatch_employee_run`.
+/// Stored by conversation_id so concurrent employee runs do not interfere.
+#[derive(Clone)]
+struct EmployeeRunOverrides {
+    /// Only these tool names are permitted for this run. Empty = allow all.
+    tool_whitelist: std::collections::HashSet<String>,
+    /// Max LLM iterations (steps) for this run.
+    max_iterations: usize,
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 struct TauriChatServices {
@@ -325,6 +335,8 @@ struct TauriChatServices {
     app: tauri::AppHandle,
     skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    /// Shared map for injecting employee-run tool whitelists per conversation.
+    employee_run_overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
 }
 
 struct TauriLegacyTurnExecutor {
@@ -1283,6 +1295,14 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         request: &ChatTurnRequest,
     ) -> Result<TurnConfigOverrides, TurnError> {
+        // Check for employee-run overrides injected by dispatch_employee_run.
+        let employee_overrides = self
+            .services
+            .employee_run_overrides
+            .lock()
+            .ok()
+            .and_then(|map| map.get(request.conversation_id.as_str()).cloned());
+
         let all_tools = self
             .services
             .tool_registry
@@ -1291,10 +1311,21 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .into_iter()
             .map(|def| def.name)
             .collect::<Vec<_>>();
-        let allowed_tools = all_tools
-            .iter()
-            .cloned()
-            .collect::<std::collections::HashSet<_>>();
+
+        // Apply employee whitelist: intersect full tool set with allowed list.
+        let allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
+            Some(ov) if !ov.tool_whitelist.is_empty() => all_tools
+                .iter()
+                .filter(|name| ov.tool_whitelist.contains(name.as_str()))
+                .cloned()
+                .collect(),
+            _ => all_tools.iter().cloned().collect(),
+        };
+
+        let max_iterations = employee_overrides
+            .as_ref()
+            .map(|ov| ov.max_iterations)
+            .unwrap_or(30);
 
         let authorized_workspace = chat_runtime_impl::load_authorized_workspace(
             &self.services.app,
@@ -1315,7 +1346,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             system_prompt: Some(crate::runtime::chat::base_prompt::DAILY_BASE_PROMPT.to_string()),
             tool_defs: Some(json_defs),
             allowed_tools: Some(allowed_tools),
-            max_iterations: Some(30),
+            max_iterations: Some(max_iterations),
             token_budget: Some(4096),
         })
     }
@@ -1912,6 +1943,7 @@ impl TauriChatCommandAdapter {
             app,
             skill_registry,
             runtime_resolver,
+            employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(TauriEventAdapter::new(host));
@@ -2471,5 +2503,129 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
         )
         .await
         .map_err(anyhow::Error::msg)
+    }
+}
+
+#[async_trait]
+impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatCommandAdapter {
+    async fn dispatch_employee_run(
+        &self,
+        employee: crate::runtime::employee::store::EmployeeRecord,
+        fire_at: DateTime<Utc>,
+        prompt_override: Option<String>,
+        catchup_info: Option<String>,
+    ) -> anyhow::Result<String> {
+        let conversation_id = conversation_service::create_conversation(
+            self.services.db.clone() as Arc<dyn ConversationStore>
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+
+        // Build the system identity prefix
+        let identity_block = format!(
+            "你现在是「{}」（{}）。\n{}\n",
+            employee.name, employee.role, employee.description
+        );
+        let extra = employee.system_prompt_extra.as_deref().unwrap_or("");
+
+        let trigger_label = match prompt_override.as_deref() {
+            Some(_) => "[按需派活]".to_string(),
+            None => format!("[定时触发] 触发时间：{}", fire_at.format("%Y-%m-%d %H:%M UTC")),
+        };
+
+        let catchup = catchup_info
+            .map(|s| format!("\n{s}"))
+            .unwrap_or_default();
+
+        let prompt = match prompt_override {
+            Some(p) => format!("{identity_block}{extra}\n{trigger_label}\n\n{p}{catchup}"),
+            None => format!("{identity_block}{extra}\n{trigger_label}{catchup}\n\n请按职责执行本次工作。"),
+        };
+
+        // P3: Inject tool whitelist + step limit for this employee run.
+        // The shared map is keyed by conversation_id so concurrent runs don't collide.
+        let whitelist: std::collections::HashSet<String> =
+            employee.tool_whitelist.iter().cloned().collect();
+        if let Ok(mut map) = self.services.employee_run_overrides.lock() {
+            map.insert(
+                conversation_id.clone(),
+                EmployeeRunOverrides {
+                    tool_whitelist: whitelist,
+                    max_iterations: 30,
+                },
+            );
+        }
+
+        let result = self
+            .send_message(
+                conversation_id.clone(),
+                prompt,
+                Vec::new(),
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        // Always clean up the override entry, even on error.
+        if let Ok(mut map) = self.services.employee_run_overrides.lock() {
+            map.remove(&conversation_id);
+        }
+
+        result.map_err(anyhow::Error::msg)?;
+
+        // P6: Desktop notification for new inbox entries created during this run.
+        self.notify_employee_run_complete(
+            &employee.name,
+            &employee.id,
+            fire_at,
+        );
+
+        Ok(conversation_id)
+    }
+}
+
+impl TauriChatCommandAdapter {
+    /// Send macOS notifications for inbox entries created during an employee run.
+    fn notify_employee_run_complete(
+        &self,
+        employee_name: &str,
+        employee_id: &str,
+        since: chrono::DateTime<chrono::Utc>,
+    ) {
+        use tauri::Manager;
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+        use crate::runtime::employee::inbox::InboxStore;
+        use tauri_plugin_notification::NotificationExt;
+
+        let app = self.services.app.clone();
+        let employee_name = employee_name.to_string();
+        let employee_id = employee_id.to_string();
+
+        tauri::async_runtime::spawn(async move {
+            let Ok(cus) = app.try_state::<std::sync::Arc<CurrentUserStorage>>()
+                .ok_or_else(|| "no CurrentUserStorage".to_string())
+            else {
+                return;
+            };
+            let Ok(paths) = cus.require_paths() else { return };
+            let inbox = InboxStore::new(paths.employees_dir());
+            let entries = match inbox.list_for(&employee_id, 50) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            for entry in entries {
+                if entry.created_at < since {
+                    continue;
+                }
+                let body = entry.summary.unwrap_or_default();
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(&format!("{} · {}", employee_name, entry.title))
+                    .body(&body)
+                    .show();
+            }
+        });
     }
 }

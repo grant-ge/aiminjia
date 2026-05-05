@@ -28,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Keep the legacy app data dir only as migration input; runtime data lives in ~/.renlijia/.
             let app_data_dir = app.path().app_data_dir()?;
@@ -549,6 +550,13 @@ pub fn run() {
                     .clone(),
             );
 
+            runtime::employee::runner::spawn_employee_scheduler(
+                current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
+                app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                    .inner()
+                    .clone(),
+            );
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -639,6 +647,17 @@ pub fn run() {
             commands::schedules::list_schedules,
             commands::schedules::create_schedule,
             commands::schedules::delete_schedule,
+            // Employee commands
+            commands::employees::employee_list,
+            commands::employees::employee_get,
+            commands::employees::employee_create,
+            commands::employees::employee_update,
+            commands::employees::employee_delete,
+            commands::employees::employee_trigger,
+            commands::employees::inbox_list,
+            commands::employees::inbox_mark_read,
+            commands::employees::inbox_mark_all_read,
+            commands::employees::inbox_unread_count,
             // DingTalk commands
             commands::dingtalk::dingtalk_login,
             commands::dingtalk::dingtalk_logout,

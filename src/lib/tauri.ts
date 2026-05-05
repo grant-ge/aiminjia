@@ -1631,3 +1631,116 @@ export interface SyncBuiltinSkillsResult {
 export async function syncBuiltinSkills(): Promise<SyncBuiltinSkillsResult> {
   return invoke<SyncBuiltinSkillsResult>('sync_builtin_skills')
 }
+
+// ---------------------------------------------------------------------------
+// Employee Commands
+// ---------------------------------------------------------------------------
+
+export interface EmployeeRecord {
+  id: string
+  name: string
+  role: string
+  description: string
+  avatar: string
+  templateId: string | null
+  toolWhitelist: string[]
+  cron: string | null
+  timezone: string
+  enabled: boolean
+  resourceConfig: Record<string, unknown>
+  systemPromptExtra: string | null
+  createdAt: string
+  updatedAt: string
+  lastRunAt: string | null
+  nextRunAt: string | null
+}
+
+export interface CreateEmployeeRequest {
+  name: string
+  role: string
+  description: string
+  avatar: string
+  templateId?: string
+  toolWhitelist?: string[]
+  cron?: string
+  timezone?: string
+  enabled?: boolean
+  resourceConfig?: Record<string, unknown>
+  systemPromptExtra?: string
+}
+
+export interface UpdateEmployeeRequest {
+  name?: string
+  role?: string
+  description?: string
+  avatar?: string
+  toolWhitelist?: string[]
+  /** Pass null explicitly to clear cron; omit to leave unchanged. */
+  cron?: string | null
+  timezone?: string
+  enabled?: boolean
+  resourceConfig?: Record<string, unknown>
+  systemPromptExtra?: string | null
+}
+
+export function employeeList(): Promise<EmployeeRecord[]> {
+  return invoke<EmployeeRecord[]>('employee_list')
+}
+
+export function employeeGet(id: string): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>('employee_get', { id })
+}
+
+export function employeeCreate(request: CreateEmployeeRequest): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>('employee_create', { request })
+}
+
+export function employeeUpdate(id: string, request: UpdateEmployeeRequest): Promise<EmployeeRecord> {
+  return invoke<EmployeeRecord>('employee_update', { id, request })
+}
+
+export function employeeDelete(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_delete', { id })
+}
+
+export function employeeTrigger(id: string, promptOverride?: string): Promise<string> {
+  return invoke<string>('employee_trigger', { id, promptOverride: promptOverride ?? null })
+}
+
+// ---------------------------------------------------------------------------
+// Inbox Commands
+// ---------------------------------------------------------------------------
+
+export type InboxKind = 'report' | 'signal' | 'running' | 'error'
+
+export interface InboxEntry {
+  id: string
+  employeeId: string
+  kind: InboxKind
+  title: string
+  summary: string | null
+  reportPath: string | null
+  conversationId: string | null
+  read: boolean
+  catchupInfo: string | null
+  createdAt: string
+}
+
+export function inboxList(employeeId?: string, limit?: number): Promise<InboxEntry[]> {
+  return invoke<InboxEntry[]>('inbox_list', {
+    employeeId: employeeId ?? null,
+    limit: limit ?? null,
+  })
+}
+
+export function inboxMarkRead(employeeId: string, entryId: string): Promise<boolean> {
+  return invoke<boolean>('inbox_mark_read', { employeeId, entryId })
+}
+
+export function inboxMarkAllRead(employeeId: string): Promise<number> {
+  return invoke<number>('inbox_mark_all_read', { employeeId })
+}
+
+export function inboxUnreadCount(employeeId?: string): Promise<number> {
+  return invoke<number>('inbox_unread_count', { employeeId: employeeId ?? null })
+}

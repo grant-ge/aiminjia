@@ -66,9 +66,11 @@ export function AppSidebar() {
       ? 'skill-center'
       : route.kind === 'schedules'
         ? 'schedules'
-        : route.kind === 'home'
-          ? 'home'
-          : null
+        : route.kind === 'inbox'
+          ? 'inbox'
+          : route.kind === 'home'
+            ? 'home'
+            : null
 
   const tenantDisplay = tenant?.name ?? productName
 

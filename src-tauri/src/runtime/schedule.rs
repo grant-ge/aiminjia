@@ -200,15 +200,15 @@ fn sanitize_id(id: &str) -> String {
 }
 
 #[derive(Clone, Debug)]
-struct CronFields {
-    minute: BTreeSet<u32>,
-    hour: BTreeSet<u32>,
-    day_of_month: BTreeSet<u32>,
-    month: BTreeSet<u32>,
-    day_of_week: BTreeSet<u32>,
+pub(crate) struct CronFields {
+    pub(crate) minute: BTreeSet<u32>,
+    pub(crate) hour: BTreeSet<u32>,
+    pub(crate) day_of_month: BTreeSet<u32>,
+    pub(crate) month: BTreeSet<u32>,
+    pub(crate) day_of_week: BTreeSet<u32>,
 }
 
-fn parse_cron_expression(expr: &str) -> Option<CronFields> {
+pub(crate) fn parse_cron_expression(expr: &str) -> Option<CronFields> {
     let parts: Vec<&str> = expr.split_whitespace().collect();
     if parts.len() != 5 {
         return None;
@@ -275,7 +275,7 @@ fn normalize_value(value: u32, dow: bool) -> Option<u32> {
     }
 }
 
-fn compute_next_cron_run(fields: &CronFields, from: DateTime<Local>) -> Option<DateTime<Local>> {
+pub(crate) fn compute_next_cron_run(fields: &CronFields, from: DateTime<Local>) -> Option<DateTime<Local>> {
     let mut t = from + Duration::minutes(1);
     t = t.with_second(0)?.with_nanosecond(0)?;
     let dom_wild = fields.day_of_month.len() == 31;
