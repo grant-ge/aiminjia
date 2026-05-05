@@ -103,6 +103,12 @@ export interface ToolExecutingPayload {
   toolId: string
   purpose?: string
   input?: unknown  // 完整入参 JSON 对象
+  /**
+   * 'child' 表示这是子 agent 内部的工具执行；前端在主对话工具轨迹里应过滤掉，
+   * 这些事件留作"子 agent 详情"等未来用途。缺省（undefined / 'primary'）
+   * 视为主 agent 自己的工具，正常渲染。
+   */
+  scope?: 'primary' | 'child'
 }
 
 /** @deprecated tool:completed 现在直接推完整 Message，保留此类型仅供旧引用过渡 */

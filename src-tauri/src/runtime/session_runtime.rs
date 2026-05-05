@@ -6,6 +6,7 @@ use anyhow::Result;
 
 // Import and re-export from chat module.  Types were previously defined here;
 // they now live in `runtime::chat` to avoid circular imports.
+use crate::runtime::agent::task_notification::TaskNotificationQueue;
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 pub use crate::runtime::chat::ChatTurnRequest;
 use crate::runtime::chat::{RuntimeChatTurnDriver, RuntimeLlmExecutor};
@@ -40,6 +41,7 @@ pub struct SessionRuntime {
     pending_interaction_store: Arc<InMemoryInteractionControlPlane>,
     permission_store: Option<Arc<PermissionStore>>,
     default_folder: Option<PathBuf>,
+    task_notification_queue: Option<Arc<TaskNotificationQueue>>,
 }
 
 impl SessionRuntime {
@@ -55,6 +57,7 @@ impl SessionRuntime {
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
             default_folder: None,
+            task_notification_queue: None,
         }
     }
 
@@ -79,6 +82,7 @@ impl SessionRuntime {
             pending_interaction_store: Arc::new(InMemoryInteractionControlPlane::new()),
             permission_store: None,
             default_folder: None,
+            task_notification_queue: None,
         }
     }
 
@@ -116,6 +120,14 @@ impl SessionRuntime {
         self
     }
 
+    pub fn with_task_notification_queue(
+        mut self,
+        queue: Arc<TaskNotificationQueue>,
+    ) -> Self {
+        self.task_notification_queue = Some(queue);
+        self
+    }
+
     /// Replace the base `QueryEngine` (and clear any cached per-session engines).
     /// Used by the transport layer to inject a per-request ToolDispatcher without
     /// calling `block_on` inside a sync constructor.
@@ -138,7 +150,10 @@ impl SessionRuntime {
         query_engine.run(turn, &self.event_bus).await
     }
 
-    pub async fn run_chat_request(&self, request: ChatTurnRequest) -> std::result::Result<(), String> {
+    pub async fn run_chat_request(
+        &self,
+        request: ChatTurnRequest,
+    ) -> std::result::Result<(), String> {
         log::info!(
             "[session_runtime] run_chat_request enter conv={} run={}",
             request.conversation_id.as_str(),
@@ -299,15 +314,14 @@ impl SessionRuntime {
                 display_name: aw.display_name,
             })
             .or_else(|| {
-                let default_path = self
-                    .default_folder
-                    .clone()
-                    .unwrap_or_else(|| {
-                        log::warn!("[session_runtime] default_folder not injected, using hardcoded fallback");
-                        dirs::home_dir()
-                            .map(|h| h.join(".renlijia").join("defaultFolder"))
-                            .expect("Cannot determine home directory")
-                    });
+                let default_path = self.default_folder.clone().unwrap_or_else(|| {
+                    log::warn!(
+                        "[session_runtime] default_folder not injected, using hardcoded fallback"
+                    );
+                    dirs::home_dir()
+                        .map(|h| h.join(".renlijia").join("defaultFolder"))
+                        .expect("Cannot determine home directory")
+                });
                 log::info!(
                     "[session_runtime] query_engine_for_session defaultFolder path={} exists={}",
                     default_path.display(),
@@ -329,7 +343,10 @@ impl SessionRuntime {
             });
         log::info!(
             "[session_runtime] query_engine_for_session authorized_workspace={}",
-            authorized_workspace.as_ref().map(|aw| aw.root_path.to_string_lossy().into_owned()).unwrap_or_else(|| "(none)".to_string())
+            authorized_workspace
+                .as_ref()
+                .map(|aw| aw.root_path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "(none)".to_string())
         );
         let mut engines = self
             .session_query_engines
@@ -345,17 +362,24 @@ impl SessionRuntime {
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
     fn build_driver_for_turn(&self, turn: &TurnState) -> RuntimeChatTurnDriver {
         let query_engine = self.query_engine_for_session(turn.session_id());
-        if let Some(ref executor) = self.llm_executor {
+        let mut driver = if let Some(ref executor) = self.llm_executor {
             // Compatibility marker for review tests: with_llm_executor_and_permission_control_plane(
-            return RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
+            RuntimeChatTurnDriver::with_llm_executor_and_control_planes(
                 query_engine,
                 self.event_bus.clone(),
                 executor.clone(),
                 self.pending_permission_store.clone(),
                 self.pending_interaction_store.clone(),
-            );
+            )
+        } else {
+            RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+        };
+
+        // Both S4 and QueryEngine paths surface task notifications.
+        if let Some(ref queue) = self.task_notification_queue {
+            driver = driver.with_task_notification_queue(queue.clone());
         }
-        RuntimeChatTurnDriver::new(query_engine, self.event_bus.clone())
+        driver
     }
 
     fn persist_resolved_permission(

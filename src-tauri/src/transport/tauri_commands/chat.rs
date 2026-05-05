@@ -21,8 +21,8 @@ use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
 use crate::runtime::chat::{
-    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor,
-    TurnConfig, TurnConfigOverrides, TurnError, TurnIterationState,
+    LlmStepInput, LlmStepResult, ResolvedLlmSettings, RuntimeLlmExecutor, TurnConfig,
+    TurnConfigOverrides, TurnError, TurnIterationState,
 };
 use crate::runtime::conversation_service;
 use crate::runtime::ids::{SessionId, ToolCallId};
@@ -54,41 +54,43 @@ fn attachment_refs_from_json_array(
 ) -> Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef> {
     files
         .iter()
-        .map(|file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
-            id: file
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            file_name: file
-                .get("fileName")
-                .or_else(|| file.get("originalName"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            file_path: file
-                .get("filePath")
-                .or_else(|| file.get("path"))
-                .or_else(|| file.get("id"))
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            kind: file
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("file")
-                .to_string(),
-            file_size: file.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0),
-            file_type: file
-                .get("fileType")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            mime_type: file
-                .get("mimeType")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string),
-        })
+        .map(
+            |file| crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
+                id: file
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                file_name: file
+                    .get("fileName")
+                    .or_else(|| file.get("originalName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                file_path: file
+                    .get("filePath")
+                    .or_else(|| file.get("path"))
+                    .or_else(|| file.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                kind: file
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("file")
+                    .to_string(),
+                file_size: file.get("fileSize").and_then(|v| v.as_u64()).unwrap_or(0),
+                file_type: file
+                    .get("fileType")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                mime_type: file
+                    .get("mimeType")
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
+            },
+        )
         .collect()
 }
 
@@ -309,6 +311,7 @@ pub fn load_history_via_runtime_history(
         })
         .collect())
 }
+
 
 
 /// Per-conversation overrides injected by `dispatch_employee_run`.
@@ -1708,7 +1711,6 @@ mod tests {
             "worker error text should be preserved for the caller"
         );
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -1964,7 +1966,7 @@ impl TauriChatCommandAdapter {
                 .with_runtime_resolver(services.runtime_resolver.clone()),
             bus,
             llm_executor,
-)
+        )
         .with_permission_store(permission_store);
         if let Some(home) = services.app.try_state::<Arc<crate::storage::AiJiaHome>>() {
             runtime = runtime.with_default_folder(home.default_folder());
@@ -1981,6 +1983,19 @@ impl TauriChatCommandAdapter {
                  chat adapter was constructed. authorized_workspace_store = None. \
                  Check initialization order in lib.rs — facade must be managed before \
                  TauriChatCommandAdapter::new() is called."
+            );
+        }
+        if let Some(queue) = services.app.try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>() {
+            runtime = runtime.with_task_notification_queue(queue.inner().clone());
+        } else {
+            // Fail-closed: log error and leave the queue as None (no notifications this session).
+            // This is symmetric with spawn_subagent's fail-closed path in plugin/registry.rs —
+            // if the queue is missing, spawn_subagent also returns None, so no notifications
+            // can be enqueued either. The system stays consistent without crashing.
+            log::error!(
+                "[chat] TaskNotificationQueue not in app state — async sub-agent notifications \
+                 will not be surfaced this session; cross-check with spawn_subagent registration \
+                 which should also be disabled"
             );
         }
         Self { runtime, services }
@@ -2068,7 +2083,7 @@ impl TauriChatCommandAdapter {
             "[send_message] loading settings for api-keys conv={}",
             conversation_id
         );
-        let (tavily_api_key, bocha_api_key, use_cloud) = {
+        let (tavily_api_key, bocha_api_key, use_cloud, app_settings_arc) = {
             let map = self.services.db.get_all_settings().unwrap_or_default();
             let mut s = if map.is_empty() {
                 AppSettings::default()
@@ -2078,18 +2093,20 @@ impl TauriChatCommandAdapter {
             if let Some(ss) = self.services.crypto.as_ref() {
                 s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
                 s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
+                s.primary_api_key = decrypt_api_key(ss, &s.primary_api_key);
             }
             let tavily = if s.tavily_api_key.is_empty() {
                 None
             } else {
-                Some(s.tavily_api_key)
+                Some(s.tavily_api_key.clone())
             };
             let bocha = if s.bocha_api_key.is_empty() {
                 None
             } else {
-                Some(s.bocha_api_key)
+                Some(s.bocha_api_key.clone())
             };
-            (tavily, bocha, s.use_cloud)
+            let use_cloud = s.use_cloud;
+            (tavily, bocha, use_cloud, Arc::new(s))
         };
         log::info!(
             "[send_message] settings loaded use_cloud={} tavily={} bocha={} conv={}",
@@ -2123,11 +2140,14 @@ impl TauriChatCommandAdapter {
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
             tool_registry: Some(self.services.tool_registry.clone()),
-            app_settings: Some(Arc::new(AppSettings::default())),
+            app_settings: Some(app_settings_arc),
             agent_runtime,
             event_bus: None,
             skill_registry: Some(self.services.skill_registry.clone()),
-            authorized_workspace: None,
+            authorized_workspace: chat_runtime_impl::load_authorized_workspace(
+                &self.services.app,
+                &conversation_id,
+            ),
             read_file_state: None,
             cancellation: None,
             permission_mode: request.permission_mode,
@@ -2493,16 +2513,9 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
             "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
             schedule.title, fire_at, schedule.prompt
         );
-        self.send_message(
-            conversation_id,
-            prompt,
-            Vec::new(),
-            None,
-            None,
-            None,
-        )
-        .await
-        .map_err(anyhow::Error::msg)
+        self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
+            .await
+            .map_err(anyhow::Error::msg)
     }
 }
 

@@ -567,11 +567,11 @@ mod auto_capture_tests {
         ChatMessage {
             role: "tool".into(),
             content: content.into(),
+            thinking: None,
+            thinking_blocks: None,
             tool_calls: None,
             tool_call_id: Some("tc-1".into()),
             name: Some(name.into()),
-            thinking: None,
-            thinking_blocks: None,
         }
     }
 

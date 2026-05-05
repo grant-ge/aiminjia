@@ -1,3 +1,10 @@
+// TODO(P-runtime-host-trait): worker_runtime currently holds tauri::AppHandle
+// and emits stream deltas via tauri::Emitter directly. This is the only
+// LEGACY_TAURI_ALLOWED entry in tests/review_agent_b_constraints.rs. To remove
+// it, route stream events through a RuntimeHost / event sink trait and inject
+// from the transport layer (transport/tauri_commands/) instead. Until then
+// this file is the documented exception to the runtime/ purity rule.
+
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -29,6 +36,22 @@ use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
 use crate::llm::sub_agent::{SubAgentConfig, SubAgentResult, SubAgentRuntimeDeps};
 
+/// Compute effective AppSettings for a sub-agent invocation.
+///
+/// If `model_override` is `Some(non_empty)`, returns a clone of `base` with
+/// `primary_model` replaced. Otherwise returns a clone of `base` unchanged.
+/// Empty string is treated as "no override" to defend against bad caller input.
+pub fn effective_settings_for_subagent(
+    base: &AppSettings,
+    model_override: Option<&str>,
+) -> AppSettings {
+    let mut s = base.clone();
+    if let Some(model) = model_override.filter(|m| !m.is_empty()) {
+        s.primary_model = model.to_string();
+    }
+    s
+}
+
 /// 单次 worker turn 所需的 LLM 请求快照。
 pub struct WorkerTurnRequest {
     pub subagent_conversation_id: String,
@@ -49,6 +72,14 @@ pub struct WorkerRunConfig {
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<CancellationToken>,
     pub permission_mode: PermissionMode,
+    /// Caller-supplied model override forwarded from SubAgentConfig.
+    /// Consumed by run_worker_turn to compute effective AppSettings (P2.2).
+    pub model_override: Option<String>,
+    /// The parent's spawn_subagent tool_call_id, forwarded from SubAgentConfig.
+    /// Stamped onto every emitted `tool:executing` / `tool:completed` event so
+    /// downstream UI can fold sub-agent tool history under the originating
+    /// spawn step (claude-code-best parity).
+    pub parent_tool_use_id: Option<String>,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -78,31 +109,55 @@ impl<'a> SubagentWorkerRuntime<'a> {
         &self,
         config: SubAgentConfig,
     ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-        let turn_request = self.build_turn_request(&config).await;
-        let run_config = Self::build_run_config(&config);
+        let all_schemas = self.tool_registry.get_all_schemas().await;
+        let available_names: Vec<String> = all_schemas.iter().map(|s| s.name.clone()).collect();
+
+        let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+            &config.allowed_tools,
+            &config.disallowed_tools,
+            &available_names,
+            config.background,
+            false,
+        );
+
+        let turn_request =
+            Self::build_turn_request_with_allowed(&config, all_schemas, &final_allowed);
+        let run_config = Self::build_run_config_with_allowed(&config, final_allowed);
         self.run_worker_turn(turn_request, run_config).await
     }
 
-    fn build_run_config(config: &SubAgentConfig) -> WorkerRunConfig {
+    fn build_run_config_with_allowed(
+        config: &SubAgentConfig,
+        final_allowed: Vec<String>,
+    ) -> WorkerRunConfig {
         WorkerRunConfig {
-            allowed_tools: config.allowed_tools.clone(),
+            allowed_tools: final_allowed,
             conversation_id: config.conversation_id.clone(),
             parent_run_id: config.parent_run_id.clone(),
             background: config.background,
             app_handle: config.app_handle.clone(),
             cancel_token: config.cancel_token.clone(),
             permission_mode: config.permission_mode,
+            model_override: config.model_override.clone(),
+            parent_tool_use_id: config.parent_tool_use_id.clone(),
         }
     }
 
-    async fn build_turn_request(&self, config: &SubAgentConfig) -> WorkerTurnRequest {
-        let all_schemas = self.tool_registry.get_all_schemas().await;
+    fn build_turn_request_with_allowed(
+        config: &SubAgentConfig,
+        all_schemas: Vec<ToolDefinition>,
+        final_allowed: &[String],
+    ) -> WorkerTurnRequest {
         let tool_defs: Vec<ToolDefinition> = all_schemas
             .into_iter()
-            .filter(|schema| config.allowed_tools.contains(&schema.name))
+            .filter(|schema| final_allowed.contains(&schema.name))
             .collect();
 
-        info!("[SubAgent] Tool schemas loaded: {}", tool_defs.len());
+        info!(
+            "[SubAgent] Tool schemas after whitelist: {} (was {} available)",
+            tool_defs.len(),
+            final_allowed.len()
+        );
 
         WorkerTurnRequest {
             subagent_conversation_id: String::new(),
@@ -204,6 +259,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
             self.build_query_engine(dispatcher, child_read_file_state, child_run_id.clone());
         let tool_event_bus = RuntimeEventBus::new();
         let allowed_tools = config.allowed_tools.clone();
+        let effective_settings =
+            effective_settings_for_subagent(self.settings, config.model_override.as_deref());
 
         let mut turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id(self.runtime_deps.conversation_id.clone()),
@@ -244,7 +301,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             let stream_result = self
                 .gateway
                 .stream_message(
-                    self.settings,
+                    &effective_settings,
                     request.messages.clone(),
                     MaskingLevel::Relaxed,
                     worker_system_prompt_for_gateway(&request),
@@ -357,6 +414,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     &tool_call.tool_name,
                     &tool_call.tool_call_id,
                     tool_call.purpose.as_deref(),
+                    config.parent_tool_use_id.as_deref(),
                 );
             }
 
@@ -382,6 +440,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &blocked.tool_call_id,
                             false,
                             Some(blocked.reason.as_str()),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &blocked.tool_call_id,
@@ -421,6 +480,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             !is_error,
                             Some(frontend_summary.as_str()),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         files.extend(generated_files);
                         request.messages.push(ChatMessage::tool_result(
@@ -456,6 +516,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             false,
                             Some("Permission Ask required"),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &tool_call_id,
@@ -487,6 +548,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             false,
                             Some("User interaction required"),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &tool_call_id,
@@ -681,8 +743,13 @@ fn emit_tool_executing(
     tool_name: &str,
     tool_call_id: &str,
     purpose: Option<&str>,
+    parent_tool_use_id: Option<&str>,
 ) {
     if let Some(app) = app_handle {
+        log::info!(
+            "[SubAgent-emit] tool:executing conv={} tool={} id={} parent_tool_use_id={:?}",
+            conversation_id, tool_name, tool_call_id, parent_tool_use_id
+        );
         let _ = tauri::Emitter::emit(
             app,
             "tool:executing",
@@ -691,6 +758,16 @@ fn emit_tool_executing(
                 "toolName": tool_name,
                 "toolId": tool_call_id,
                 "purpose": purpose,
+                // Sub-agent internal tool calls. Frontend filters these out of
+                // the parent conversation's tool-execution panel — they belong
+                // logically to the sub-agent's own run, not to the parent's
+                // visible work. Kept on the wire so a future "sub-agent detail
+                // pane" can subscribe and show them.
+                "scope": "child",
+                // claude-code-best parity: stamp the spawn_subagent tool_call_id
+                // so the future detail pane can fold sub-agent tool history
+                // under the originating spawn step.
+                "parentToolUseId": parent_tool_use_id,
             }),
         );
     }
@@ -702,8 +779,13 @@ fn emit_tool_completed(
     tool_call_id: &str,
     success: bool,
     summary: Option<&str>,
+    parent_tool_use_id: Option<&str>,
 ) {
     if let Some(app) = app_handle {
+        log::info!(
+            "[SubAgent-emit] tool:completed conv={} id={} success={} parent_tool_use_id={:?}",
+            conversation_id, tool_call_id, success, parent_tool_use_id
+        );
         let _ = tauri::Emitter::emit(
             app,
             "tool:completed",
@@ -712,6 +794,10 @@ fn emit_tool_completed(
                 "toolId": tool_call_id,
                 "success": success,
                 "summary": summary,
+                // Same rationale as emit_tool_executing — front-end filters
+                // by `scope:'child'`.
+                "scope": "child",
+                "parentToolUseId": parent_tool_use_id,
             }),
         );
     }
@@ -852,11 +938,85 @@ mod tests {
             app_handle: None,
             cancel_token: None,
             permission_mode: PermissionMode::Plan,
+            model_override: None,
+            agent_name: None,
+            parent_tool_use_id: None,
+            disallowed_tools: vec![],
         };
 
-        let run_config = SubagentWorkerRuntime::build_run_config(&config);
+        let final_allowed = vec!["read_page_content".to_string()];
+        let run_config =
+            SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed);
 
         assert_eq!(run_config.permission_mode, PermissionMode::Plan);
+    }
+
+    #[test]
+    fn final_whitelist_is_used_in_run_config_and_turn_request() {
+        fn tool_schema(name: &str) -> ToolDefinition {
+            ToolDefinition {
+                name: name.to_string(),
+                description: format!("{name} schema"),
+                parameters: serde_json::json!({"type": "object"}),
+            }
+        }
+
+        let config = SubAgentConfig {
+            task: "collect data".to_string(),
+            system_prompt: "system".to_string(),
+            allowed_tools: vec![],
+            max_iterations: 3,
+            dynamic_context: String::new(),
+            conversation_id: "conv-worker-whitelist".to_string(),
+            parent_run_id: Some(RunId::new("run-parent-worker-whitelist")),
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: None,
+            agent_name: None,
+            parent_tool_use_id: None,
+            disallowed_tools: vec![],
+        };
+        let all_schemas = vec![
+            tool_schema("read_workspace_file"),
+            tool_schema("spawn_subagent"),
+        ];
+        let available_names: Vec<String> = all_schemas
+            .iter()
+            .map(|schema| schema.name.clone())
+            .collect();
+        let final_allowed = crate::runtime::agent::tool_whitelist::resolve_agent_tools(
+            &config.allowed_tools,
+            &config.disallowed_tools,
+            &available_names,
+            config.background,
+            false,
+        );
+
+        let turn_request = SubagentWorkerRuntime::build_turn_request_with_allowed(
+            &config,
+            all_schemas,
+            &final_allowed,
+        );
+        let run_config =
+            SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed.clone());
+
+        assert!(final_allowed.contains(&"read_workspace_file".to_string()));
+        assert!(!final_allowed.contains(&"spawn_subagent".to_string()));
+        assert!(run_config
+            .allowed_tools
+            .contains(&"read_workspace_file".to_string()));
+        assert!(!run_config
+            .allowed_tools
+            .contains(&"spawn_subagent".to_string()));
+        let tool_def_names: Vec<&str> = turn_request
+            .tool_defs
+            .iter()
+            .map(|tool_def| tool_def.name.as_str())
+            .collect();
+        assert!(tool_def_names.contains(&"read_workspace_file"));
+        assert!(!tool_def_names.contains(&"spawn_subagent"));
     }
 
     #[test]

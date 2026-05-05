@@ -6,6 +6,17 @@
 //! This module also exposes `pub(super)` helpers that other OpenAI-compatible
 //! providers (DeepSeek V3, DeepSeek R1, Volcano) reuse for request building,
 //! response parsing, and SSE stream process.
+//!
+//! ## ⚠ 部分 DEPRECATED
+//! `OpenAiProvider` 本身（直连 api.openai.com）是死代码：产品仅对外暴露
+//! lotus 网关 + custom 端点。`new(api_key)` 不收 model 参数，请求 body 写死
+//! `DEFAULT_MODEL = "gpt-4o"`，settings 里的 model id 丢失。删除计划：
+//! 专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
+//!
+//! **保留**本文件中的 `send_openai_compat` / `stream_openai_compat` /
+//! `validate_key_openai_compat` 等 `pub(super)` 共享函数 —— 它们被 `lotus.rs`
+//! 和 `custom.rs` 复用，是 OpenAI 协议的核心实现，不能删。删除时只去掉
+//! `OpenAiProvider` 本身的 struct/impl，保留共享 helper。
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Result};
@@ -396,6 +407,11 @@ struct SseState<S> {
     tool_id: Option<String>,
     tool_name: Option<String>,
     tool_args: String,
+    /// OpenAI streaming distinguishes parallel tool_calls by `index` (0, 1, 2…).
+    /// Continuation chunks for tool_call[N] usually omit `id`, only carrying
+    /// `index` and `arguments`. We must switch buffers on index change to avoid
+    /// concatenating tool_call[1]'s args onto tool_call[0]'s buffer.
+    tool_index: Option<u64>,
     /// The actual finish_reason from the API (e.g. "tool_calls" → ToolUse).
     /// Stored when we see `finish_reason` in a chunk, used when emitting Done.
     final_stop_reason: Option<StopReason>,
@@ -421,6 +437,7 @@ fn sse_bytes_to_events(
         tool_id: None,
         tool_name: None,
         tool_args: String::new(),
+        tool_index: None,
         final_stop_reason: None,
     };
 
@@ -576,15 +593,17 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
     // from Anthropic thinking mode even for non-R1 providers.
     if let Some(thinking) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
         if !thinking.is_empty() {
-            st.pending_events
-                .push(StreamEvent::ThinkingDelta { delta: thinking.to_string() });
+            st.pending_events.push(StreamEvent::ThinkingDelta {
+                delta: thinking.to_string(),
+            });
         }
     }
 
     // Full thinking block with signature (from gateway Anthropic adapter).
     if let Some(block) = delta.get("_thinking_block") {
-        st.pending_events
-            .push(StreamEvent::ThinkingBlock { block: block.clone() });
+        st.pending_events.push(StreamEvent::ThinkingBlock {
+            block: block.clone(),
+        });
     }
 
     // Text content delta.
@@ -599,16 +618,30 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
     // Tool call deltas.
     if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
         for tc in tool_calls {
+            // OpenAI streaming uses `index` (0, 1, 2…) as the authoritative key
+            // for parallel tool_calls. Continuation chunks may omit `id`, so we
+            // must switch buffers when `index` changes — otherwise tool_call[1]'s
+            // arguments get concatenated onto tool_call[0]'s buffer, producing
+            // `{...}{...}` and a JSON parse error (missing `subagent_type` etc.).
+            let chunk_index = tc.get("index").and_then(|v| v.as_u64());
+            if let Some(idx) = chunk_index {
+                let is_new = st.tool_index != Some(idx);
+                if is_new {
+                    flush_pending_tool(st);
+                    st.tool_index = Some(idx);
+                }
+            }
+
             if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
                 if !id.is_empty() {
-                    // Check if this is truly a NEW tool call or a continuation
-                    // of the current one. Some providers (e.g. Qwen) send the same
-                    // tool call id on every continuation chunk, not just the first.
-                    let is_new = st.tool_id.as_deref() != Some(id);
-                    if is_new {
-                        // Flush the previous tool call (if any) before starting a new one.
+                    // Fallback for providers that don't send `index`: rely on id
+                    // change to detect a new tool call.
+                    let is_new_by_id = st.tool_id.as_deref() != Some(id);
+                    if is_new_by_id && chunk_index.is_none() {
                         flush_pending_tool(st);
-                        st.tool_id = Some(id.to_string());
+                    }
+                    st.tool_id = Some(id.to_string());
+                    if is_new_by_id {
                         log::info!("[SSE] New tool call: id={}", id);
                     }
                 }
@@ -658,6 +691,9 @@ fn process_sse_chunk<S>(chunk: &Value, st: &mut SseState<S>) {
 /// If there is an in-progress tool call being accumulated, finalize it and
 /// push a `ToolCallStart` event.
 fn flush_pending_tool<S>(st: &mut SseState<S>) {
+    // Reset index on flush so the next tool_call's index change is detected
+    // as new even if it happens to be 0.
+    st.tool_index = None;
     if let Some(id) = st.tool_id.take() {
         let name = st.tool_name.take().unwrap_or_default();
         let args_preview: String = st.tool_args.chars().take(200).collect();
@@ -687,6 +723,38 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
         let arguments = match serde_json::from_str(&st.tool_args) {
             Ok(v) => v,
             Err(e) => {
+                // Lotus / Anthropic-via-OpenAI gateways sometimes pack multiple
+                // parallel tool_calls into ONE chunk with a single id and
+                // index, with the args field being two-or-more concatenated
+                // JSON objects: `{...}{...}{...}`. Detect this and split into
+                // independent tool_calls — emit one ToolCallStart per object.
+                if let Some(parts) = split_concatenated_json_objects(&st.tool_args) {
+                    log::warn!(
+                        "[SSE] Detected {} concatenated JSON objects in single tool_call args (gateway flatten bug); splitting into independent tool_calls",
+                        parts.len()
+                    );
+                    let normalized_name = if name.starts_with("mcp_") {
+                        name.strip_prefix("mcp_").unwrap().to_string()
+                    } else {
+                        name.clone()
+                    };
+                    for (i, part) in parts.into_iter().enumerate() {
+                        let part_id = if i == 0 {
+                            id.clone()
+                        } else {
+                            format!("{}_split_{}", id, i)
+                        };
+                        let tc = ToolCall {
+                            id: part_id,
+                            name: normalized_name.clone(),
+                            arguments: part,
+                        };
+                        st.pending_events
+                            .push(StreamEvent::ToolCallStart { tool_call: tc });
+                    }
+                    st.tool_args.clear();
+                    return;
+                }
                 let tail: String = st
                     .tool_args
                     .chars()
@@ -796,6 +864,34 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
 /// followed (after optional whitespace) by a JSON structural character
 /// (`,` `}` `]` `:`) or EOF is treated as a structural close-quote; otherwise
 /// it is escaped as `\"`.
+/// Try to split `{...}{...}{...}` (concatenated independent JSON objects, no
+/// separators) into a Vec of parsed Values. Returns Some(parts) only when:
+/// - input parses as 2+ valid JSON objects end-to-end (no trailing junk)
+/// - all parts are JSON objects (not arrays/scalars)
+///
+/// Handles the lotus-tenant gateway bug where N parallel Anthropic tool_use
+/// blocks get serialized as a single OpenAI tool_call whose `arguments` string
+/// is the concatenation of N separate argument JSONs.
+fn split_concatenated_json_objects(input: &str) -> Option<Vec<Value>> {
+    let trimmed = input.trim();
+    if !trimmed.starts_with('{') {
+        return None;
+    }
+    let stream = serde_json::Deserializer::from_str(trimmed).into_iter::<Value>();
+    let mut parts: Vec<Value> = Vec::new();
+    for item in stream {
+        match item {
+            Ok(v) if v.is_object() => parts.push(v),
+            _ => return None,
+        }
+    }
+    if parts.len() >= 2 {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
 fn sanitize_json_control_chars(input: &str) -> String {
     let chars: Vec<char> = input.chars().collect();
     let len = chars.len();
@@ -936,6 +1032,7 @@ mod tests {
             tool_id: None,
             tool_name: None,
             tool_args: String::new(),
+            tool_index: None,
             final_stop_reason: None,
         }
     }
@@ -1377,5 +1474,123 @@ mod tests {
                 "content should contain decoded newline"
             );
         }
+    }
+
+    /// Lotus / Anthropic-via-OpenAI gateway sometimes flattens N parallel
+    /// tool_use blocks into a SINGLE tool_call whose `arguments` field is the
+    /// concatenation of N separate JSON objects (no separator). We must split
+    /// them and emit one ToolCallStart per object — otherwise serde_json fails
+    /// with "trailing characters" and the LLM call appears to be a single
+    /// malformed tool_call missing its required fields.
+    #[test]
+    fn flush_pending_tool_splits_concatenated_json_objects_into_independent_tool_calls() {
+        let mut st = test_state();
+        st.tool_id = Some("toolu_lotus_combined".to_string());
+        st.tool_name = Some("read_workspace_file".to_string());
+        st.tool_args = String::from(
+            r#"{"path": "README.md", "max_bytes": 5000}{"path": "AGENTS.md"}{"path": "Makefile"}"#,
+        );
+
+        flush_pending_tool(&mut st);
+
+        let tool_events: Vec<&StreamEvent> = st
+            .pending_events
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
+            .collect();
+        assert_eq!(
+            tool_events.len(),
+            3,
+            "3 concatenated JSON objects must produce 3 independent tool_call events"
+        );
+
+        let calls: Vec<&ToolCall> = tool_events
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::ToolCallStart { tool_call } => Some(tool_call),
+                _ => None,
+            })
+            .collect();
+
+        // All three must share the original tool name (gateway only flattened args).
+        for tc in &calls {
+            assert_eq!(tc.name, "read_workspace_file");
+        }
+        // First reuses the original id; subsequent ones get derived ids so they
+        // are unique downstream (executor maps id -> tool_call).
+        assert_eq!(calls[0].id, "toolu_lotus_combined");
+        assert_eq!(calls[1].id, "toolu_lotus_combined_split_1");
+        assert_eq!(calls[2].id, "toolu_lotus_combined_split_2");
+        // Each call must carry exactly its own arguments, not the concatenation.
+        assert_eq!(
+            calls[0].arguments.get("path").and_then(|v| v.as_str()),
+            Some("README.md")
+        );
+        assert_eq!(
+            calls[0].arguments.get("max_bytes").and_then(|v| v.as_i64()),
+            Some(5000)
+        );
+        assert_eq!(
+            calls[1].arguments.get("path").and_then(|v| v.as_str()),
+            Some("AGENTS.md")
+        );
+        assert_eq!(
+            calls[2].arguments.get("path").and_then(|v| v.as_str()),
+            Some("Makefile")
+        );
+        // After flush the args buffer must be cleared so the next tool_call
+        // starts from empty.
+        assert!(st.tool_args.is_empty());
+        assert!(st.tool_id.is_none());
+    }
+
+    /// Single well-formed JSON args must continue to flow through normally,
+    /// not be misclassified as a multi-object split.
+    #[test]
+    fn flush_pending_tool_single_object_is_not_split() {
+        let mut st = test_state();
+        st.tool_id = Some("toolu_normal".to_string());
+        st.tool_name = Some("list_directory".to_string());
+        st.tool_args = String::from(r#"{"path": "/tmp"}"#);
+
+        flush_pending_tool(&mut st);
+
+        let tool_events: Vec<&StreamEvent> = st
+            .pending_events
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::ToolCallStart { .. }))
+            .collect();
+        assert_eq!(tool_events.len(), 1);
+        if let StreamEvent::ToolCallStart { tool_call } = tool_events[0] {
+            assert_eq!(tool_call.id, "toolu_normal");
+            assert_eq!(tool_call.name, "list_directory");
+            assert_eq!(
+                tool_call.arguments.get("path").and_then(|v| v.as_str()),
+                Some("/tmp")
+            );
+        }
+    }
+
+    /// The split helper itself: 2+ objects → Some, single → None (so the
+    /// regular parse path stays intact), trailing junk after objects → None.
+    #[test]
+    fn split_concatenated_json_objects_behaviour() {
+        // Two valid objects → split.
+        let parts =
+            split_concatenated_json_objects(r#"{"a":1}{"b":2}"#).expect("must split 2 objects");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0]["a"], 1);
+        assert_eq!(parts[1]["b"], 2);
+
+        // Single object → don't pretend it's a split.
+        assert!(split_concatenated_json_objects(r#"{"only":true}"#).is_none());
+
+        // Garbage after objects → reject so the caller falls through to the
+        // existing sanitize/repair pipeline.
+        assert!(split_concatenated_json_objects(r#"{"a":1}{"b":2}garbage"#).is_none());
+
+        // Non-object first char → reject.
+        assert!(split_concatenated_json_objects(r#"[1,2,3]"#).is_none());
+        assert!(split_concatenated_json_objects("").is_none());
     }
 }

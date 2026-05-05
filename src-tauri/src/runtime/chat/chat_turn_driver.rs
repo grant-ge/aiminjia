@@ -9,6 +9,7 @@ use std::time::Duration;
 use crate::llm::context_decay::{
     context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
 };
+use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
 use crate::runtime::chat::post_process;
@@ -63,16 +64,18 @@ pub fn build_user_content_json(
         value["files"] = serde_json::Value::Array(
             attachments
                 .iter()
-                .map(|att| serde_json::json!({
-                    "id": att.id,
-                    "fileName": att.file_name,
-                    "filePath": att.file_path,
-                    "kind": att.kind,
-                    "fileSize": att.file_size,
-                    "fileType": att.file_type,
-                    "mimeType": att.mime_type,
-                    "status": "uploaded"
-                }))
+                .map(|att| {
+                    serde_json::json!({
+                        "id": att.id,
+                        "fileName": att.file_name,
+                        "filePath": att.file_path,
+                        "kind": att.kind,
+                        "fileSize": att.file_size,
+                        "fileType": att.file_type,
+                        "mimeType": att.mime_type,
+                        "status": "uploaded"
+                    })
+                })
                 .collect(),
         );
     }
@@ -352,6 +355,7 @@ pub struct RuntimeChatTurnDriver {
     llm_executor: Option<Arc<dyn RuntimeLlmExecutor>>,
     pending_permission_control_plane: Option<Arc<dyn PendingPermissionControlPlane>>,
     pending_interaction_control_plane: Option<Arc<dyn PendingInteractionControlPlane>>,
+    task_notification_queue: Option<Arc<TaskNotificationQueue>>,
 }
 
 fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'static str {
@@ -368,6 +372,52 @@ fn synthetic_cancelled_tool_result(reason: Option<CancellationReason>) -> &'stat
         }
         None => "Tool execution was interrupted before completion.",
     }
+}
+
+fn drain_and_inject_task_notifications(
+    queue: &Option<Arc<TaskNotificationQueue>>,
+    session_id: &SessionId,
+    messages: &mut Vec<serde_json::Value>,
+) -> Vec<QueuedNotification> {
+    let Some(queue) = queue.as_ref() else {
+        return Vec::new();
+    };
+
+    let notifications = queue.drain_for_session(session_id);
+    if notifications.is_empty() {
+        return Vec::new();
+    }
+
+    let count = notifications.len();
+    for notification in &notifications {
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": notification.xml.clone(),
+        }));
+    }
+    log::info!(
+        "[chat_turn_driver] injected {} pending task notification(s) into LLM messages",
+        count
+    );
+    notifications
+}
+
+fn re_enqueue_task_notifications(
+    queue: &Option<Arc<TaskNotificationQueue>>,
+    notifications: Vec<QueuedNotification>,
+) {
+    if notifications.is_empty() {
+        return;
+    }
+    let Some(queue) = queue.as_ref() else {
+        return;
+    };
+
+    log::warn!(
+        "[chat_turn_driver] re-enqueueing {} task notification(s) after step failure or cancellation",
+        notifications.len()
+    );
+    queue.re_enqueue(notifications);
 }
 
 /// Inject synthetic tool results for assistant tool calls that have no matching
@@ -495,6 +545,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: None,
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -509,6 +560,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: None,
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -524,6 +576,7 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         }
     }
 
@@ -540,7 +593,16 @@ impl RuntimeChatTurnDriver {
             llm_executor: Some(executor),
             pending_permission_control_plane: Some(pending_permission_control_plane),
             pending_interaction_control_plane: Some(pending_interaction_control_plane),
+            task_notification_queue: None,
         }
+    }
+
+    pub fn with_task_notification_queue(
+        mut self,
+        queue: Arc<TaskNotificationQueue>,
+    ) -> Self {
+        self.task_notification_queue = Some(queue);
+        self
     }
 
     async fn await_permission_resolution(
@@ -1075,14 +1137,27 @@ impl RuntimeChatTurnDriver {
             });
         let renlijia_md_context_message = build_renlijia_md_context_message(&renlijia_md_files);
 
-        let llm_user_content = executor
-            .build_user_message_content(
-                request.conversation_id.as_str(),
-                &request.content,
-                &request.attachments,
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        // Sentinel content sent by the frontend when a background sub-agent
+        // completes — we want to wake the parent up so it drains pending
+        // task-notifications, but we must NOT persist or surface a fake user
+        // turn. The drain step below will inject the actual notification XML
+        // as the user-role message that the LLM responds to.
+        let is_resume_for_task_notification =
+            request.content == "__resume_from_task_notification__"
+                && request.attachments.is_empty();
+
+        let llm_user_content = if is_resume_for_task_notification {
+            String::new()
+        } else {
+            executor
+                .build_user_message_content(
+                    request.conversation_id.as_str(),
+                    &request.content,
+                    &request.attachments,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+        };
 
         // 加载历史对话；失败时直接返回错误，避免静默丢失上下文。
         let history = executor
@@ -1112,7 +1187,30 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(renlijia_md_context_message);
         }
         initial_messages.extend(history);
-        initial_messages.push(user_message);
+        if !is_resume_for_task_notification {
+            initial_messages.push(user_message);
+        }
+        // Inject pending <task-notification> messages AFTER the current user
+        // message so that async sub-agent completions appear as the most recent
+        // user input. If injected before user_message, the LLM tends to respond
+        // to user_message and ignore the notifications.
+        let mut pending_task_notifications = drain_and_inject_task_notifications(
+            &self.task_notification_queue,
+            turn.session_id(),
+            &mut initial_messages,
+        );
+
+        // Guard: if this turn was triggered purely to resume from a task
+        // notification but the queue is now empty (race: another turn drained
+        // it first), there is no useful work to do — exit cleanly without
+        // calling the LLM, which would otherwise see no user message and fail.
+        if is_resume_for_task_notification && pending_task_notifications.is_empty() {
+            log::info!(
+                "[chat_turn_driver] resume-from-task-notification turn skipped: queue empty session={}",
+                turn.session_id().as_str()
+            );
+            return Ok(());
+        }
 
         let mut state = TurnIterationState::new(initial_messages);
         record_turn_diagnostic(
@@ -1131,15 +1229,21 @@ impl RuntimeChatTurnDriver {
         // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
         // Legacy path wrote the user message to DB before spawning agent_loop.
         // The driver must do the same so the frontend message list is durable.
-        let _user_msg_id = executor
-            .persist_user_message(
-                request.conversation_id.as_str(),
-                &request.content,
-                &request.attachments,
-                request.client_message_id.as_deref(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        // Skip when this turn was triggered by a task-notification resume:
+        // there is no real user input to persist.
+        let _user_msg_id = if is_resume_for_task_notification {
+            String::new()
+        } else {
+            executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &request.content,
+                    &request.attachments,
+                    request.client_message_id.as_deref(),
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+        };
         let pending_user_msg_id = _user_msg_id;
         let pending_client_msg_id = request.client_message_id.clone();
 
@@ -1233,6 +1337,18 @@ impl RuntimeChatTurnDriver {
             .await
             .map_err(|err| anyhow::anyhow!("{}", err))?;
             state.messages = prepared.messages;
+            // Drain any task notifications that completed since the previous drain and
+            // inject them as synthetic user messages so the parent LLM sees the
+            // completion event on this iteration.
+            let newly_drained_notifications = drain_and_inject_task_notifications(
+                &self.task_notification_queue,
+                turn.session_id(),
+                &mut state.messages,
+            );
+            // Accumulate this iteration's drained notifications; these have been injected
+            // into state.messages but not yet seen by the LLM. Track them so we can
+            // re-enqueue them if the step fails before the LLM consumes them.
+            pending_task_notifications.extend(newly_drained_notifications);
             if let Some(boundary_record) = prepared.compact_boundary {
                 if let Err(err) = executor.save_compact_boundary(boundary_record).await {
                     log::warn!(
@@ -1289,6 +1405,7 @@ impl RuntimeChatTurnDriver {
 
             // CP-1: check cancellation before invoking provider.
             if cancel.is_cancelled() {
+                re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
                 mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                 break 'turn;
             }
@@ -1329,9 +1446,12 @@ impl RuntimeChatTurnDriver {
                         }
                     }
                     if prepared.retry == PreprocessRetryAction::RetryTurn {
+                        // Re-enqueue so the notifications are tried again on retry.
+                        re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
                         continue 'turn;
                     }
 
+                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
                     self.event_bus
                         .emit(RuntimeEvent::new(
                             session_id.clone(),
@@ -1349,6 +1469,7 @@ impl RuntimeChatTurnDriver {
                     return Err(anyhow::anyhow!(message));
                 }
                 Err(err) => {
+                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
                     inject_synthetic_tool_results_for_missing_calls(
                         &mut state.messages,
                         cancel.reason(),
@@ -1383,6 +1504,8 @@ impl RuntimeChatTurnDriver {
                                 "content": "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.",
                                 "isMeta": true,
                             }));
+                            // LLM consumed this iteration's notifications; clear before retry.
+                            pending_task_notifications.clear();
                             continue 'turn;
                         }
 
@@ -1420,6 +1543,8 @@ impl RuntimeChatTurnDriver {
                                                 "isMeta": true,
                                             }));
                                         }
+                                        // LLM consumed this iteration's notifications; clear before retry.
+                                        pending_task_notifications.clear();
                                         continue 'turn;
                                     }
                                     if state.stop_hook_prevent_continuation {
@@ -1437,6 +1562,7 @@ impl RuntimeChatTurnDriver {
 
                 // ── 5d: user / token cancellation ────────────────────────────
                 LlmStepResult::Cancelled => {
+                    re_enqueue_task_notifications(&self.task_notification_queue, std::mem::take(&mut pending_task_notifications));
                     mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                     break 'turn;
                 }
@@ -1479,6 +1605,10 @@ impl RuntimeChatTurnDriver {
                     // CP-2: check cancellation right after execute_round.
                     if cancel.is_cancelled() {
                         state.append_messages_batch(vec![assistant_history_message.clone()]);
+                        re_enqueue_task_notifications(
+                            &self.task_notification_queue,
+                            std::mem::take(&mut pending_task_notifications),
+                        );
                         mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                         break 'turn;
                     }
@@ -1506,6 +1636,10 @@ impl RuntimeChatTurnDriver {
                         // CP-3: check cancellation after each staged tool result.
                         if cancel.is_cancelled() {
                             state.append_messages_batch(history_batch);
+                            re_enqueue_task_notifications(
+                                &self.task_notification_queue,
+                                std::mem::take(&mut pending_task_notifications),
+                            );
                             mark_turn_cancelled_with_synthetic_results(&mut state, cancel.reason());
                             break 'turn;
                         }
@@ -1588,6 +1722,10 @@ impl RuntimeChatTurnDriver {
                     }
                 }
             }
+
+            // LLM step returned successfully and consumed this iteration's injected
+            // task notifications. Do not re-enqueue them on later iteration failures.
+            pending_task_notifications.clear();
 
             // ── 5f: per-iteration cancel check ───────────────────────────────
             if cancel.is_cancelled() {
@@ -1942,6 +2080,7 @@ mod tests {
             llm_executor: None,
             pending_permission_control_plane: Some(control_plane.clone()),
             pending_interaction_control_plane: None,
+            task_notification_queue: None,
         };
         let turn = TurnState::new(
             IdentityMapping::from_legacy_conversation_id("conv-ask-mode".to_string()),
@@ -2207,5 +2346,4 @@ mod tests {
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
     }
-
 }

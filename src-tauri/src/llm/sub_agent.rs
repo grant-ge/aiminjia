@@ -35,7 +35,8 @@ pub struct SubAgentRuntimeDeps {
     pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
@@ -94,6 +95,27 @@ pub struct SubAgentConfig {
     pub app_handle: Option<tauri::AppHandle>,
     pub cancel_token: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
+    /// Caller-supplied model override (e.g. "haiku"). When `Some(non_empty)`,
+    /// the sub-agent's gateway call uses a per-call AppSettings clone with
+    /// `primary_model` set to this value. `None` or empty string = inherit
+    /// parent's model. Consumed by P2.2 effective_settings_for_subagent.
+    pub model_override: Option<String>,
+    /// Optional name for async sub-agent registration in AsyncAgentTaskStore
+    /// (P6.1). When `Some`, parent can SendMessage to this name. `None` =
+    /// anonymous (no SendMessage routing).
+    pub agent_name: Option<String>,
+    /// The parent agent's `tool_call_id` for the spawn_subagent call that
+    /// created this sub-agent. Stamped onto every `tool:executing` /
+    /// `tool:completed` event the sub-agent emits, so a future "sub-agent
+    /// detail panel" can fold sub-agent tool history under the originating
+    /// spawn_subagent step (mirrors claude-code-best's `parent_tool_use_id`
+    /// single-track design). `None` when caller didn't supply one (legacy /
+    /// internal callers).
+    pub parent_tool_use_id: Option<String>,
+    /// Tool blacklist from the AgentDefinition. Combined with system-level
+    /// `ALL_AGENT_DISALLOWED` and the definition's `allowed_tools` by
+    /// `resolve_agent_tools` (P4.2) to produce the final tool whitelist.
+    pub disallowed_tools: Vec<String>,
 }
 
 /// Result from a sub-agent run.
@@ -111,13 +133,6 @@ pub async fn run_sub_agent(
     config: SubAgentConfig,
     settings: &AppSettings,
 ) -> std::result::Result<SubAgentResult, LegacyToolError> {
-    if config.allowed_tools.contains(&"browse_data".to_string()) {
-        return Err(anyhow::anyhow!(
-            "Sub-agent must not include 'browse_data' in allowed_tools (recursion guard)"
-        )
-        .into());
-    }
-
     let runtime = SubagentWorkerRuntime::new(gateway, tool_registry, runtime_deps, settings);
     runtime.run(config).await
 }
@@ -129,6 +144,58 @@ mod tests {
     use crate::runtime::tools::permission::{
         default_permission_ask, PermissionDecision, PermissionReason,
     };
+
+    #[test]
+    fn sub_agent_config_carries_model_override_and_agent_name() {
+        use crate::runtime::tools::permission::PermissionMode;
+        let cfg = SubAgentConfig {
+            task: "do".into(),
+            system_prompt: "you are".into(),
+            allowed_tools: vec![],
+            disallowed_tools: vec!["dangerous_tool".into()],
+            max_iterations: 5,
+            dynamic_context: String::new(),
+            conversation_id: "c1".into(),
+            parent_run_id: None,
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: Some("haiku".into()),
+            agent_name: Some("worker1".into()),
+            parent_tool_use_id: Some("toolu_parent_abc".into()),
+        };
+        assert_eq!(cfg.model_override.as_deref(), Some("haiku"));
+        assert_eq!(cfg.agent_name.as_deref(), Some("worker1"));
+        assert_eq!(cfg.parent_tool_use_id.as_deref(), Some("toolu_parent_abc"));
+        assert_eq!(cfg.disallowed_tools, vec!["dangerous_tool".to_string()]);
+    }
+
+    #[test]
+    fn sub_agent_config_defaults_omit_overrides() {
+        use crate::runtime::tools::permission::PermissionMode;
+        let cfg = SubAgentConfig {
+            task: "do".into(),
+            system_prompt: "you are".into(),
+            allowed_tools: vec![],
+            disallowed_tools: vec![],
+            max_iterations: 5,
+            dynamic_context: String::new(),
+            conversation_id: "c1".into(),
+            parent_run_id: None,
+            background: false,
+            app_handle: None,
+            cancel_token: None,
+            permission_mode: PermissionMode::Default,
+            model_override: None,
+            agent_name: None,
+            parent_tool_use_id: None,
+        };
+        assert!(cfg.model_override.is_none());
+        assert!(cfg.agent_name.is_none());
+        assert!(cfg.parent_tool_use_id.is_none());
+        assert!(cfg.disallowed_tools.is_empty());
+    }
 
     #[test]
     fn take_ask_required_decision_preserves_structured_permission_request() {

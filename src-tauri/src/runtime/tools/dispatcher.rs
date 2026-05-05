@@ -109,6 +109,16 @@ impl ToolDispatcher {
             .map(|tool| tool.interrupt_behavior())
     }
 
+    /// Returns whether the named tool reports `is_concurrency_safe` for the given input.
+    /// `None` if tool is not registered.
+    pub fn tool_concurrency_safe(&self, tool_name: &str, input: &Value) -> Option<bool> {
+        self.tools
+            .read()
+            .unwrap()
+            .get(tool_name)
+            .map(|tool| tool.is_concurrency_safe(input))
+    }
+
     pub fn tool_definition(&self, tool_name: &str) -> Option<ToolDefinition> {
         self.tools
             .read()

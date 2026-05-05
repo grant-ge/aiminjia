@@ -52,7 +52,7 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-        runtime_resolver: None,
+            runtime_resolver: None,
     }
 }
 

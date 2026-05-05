@@ -410,7 +410,14 @@ export function useStreaming() {
 
   // --- tool:executing ---------------------------------------------------
   useTauriEvent(() =>
-    onToolExecuting(({ conversationId, toolName, toolId, purpose, input }: ToolExecutingPayload) => {
+    onToolExecuting(({ conversationId, toolName, toolId, purpose, input, scope }: ToolExecutingPayload) => {
+      // Sub-agent internal tool calls are emitted with scope:'child' purely
+      // for downstream visibility (e.g. a future sub-agent detail pane).
+      // Filter them out of the parent conversation's tool-execution panel —
+      // they would otherwise pile up as never-completing rows.
+      if (scope === 'child') {
+        return
+      }
       console.log('[tool:executing]', conversationId, toolName, toolId)
       touchActivity(conversationId)
       recordDiagnostic({
@@ -432,6 +439,12 @@ export function useStreaming() {
   // --- tool:completed ---------------------------------------------------
   useTauriEvent(() =>
     onToolCompleted((message: Message) => {
+      // Filter sub-agent completions for the same reason as tool:executing.
+      // Backend tags these with `scope:'child'` (not part of the strict
+      // Message type, hence the cast).
+      if ((message as { scope?: string }).scope === 'child') {
+        return
+      }
       console.log('[tool:completed]', message.conversationId, message.toolResult?.name)
       touchActivity(message.conversationId)
       recordDiagnostic({
@@ -529,6 +542,25 @@ export function useStreaming() {
       // Child/background agent idle should not clear parent conversation state
       if (effectiveScope === 'child') {
         console.log('[agent:idle] child agent idle for conversationId:', conversationId, '— skipping parent state clear')
+        // Auto-resume the parent: a background sub-agent finished, so its
+        // <task-notification> is now sitting in the queue. Trigger a sentinel
+        // send_message so the parent's chat_turn_driver drains the notification
+        // and the LLM continues.
+        const parentBusy = useStreamingStore.getState().busyConversations.has(conversationId)
+        console.log('[agent:idle] auto-resume parent: conversationId=', conversationId, 'parentBusy=', parentBusy)
+        if (parentBusy) {
+          // Parent's current turn will drain the queue at its next iteration —
+          // no need to fire a sentinel turn (would just collide).
+          console.log('[agent:idle] parent busy — skipping sentinel; current turn will drain')
+        } else {
+          import('@/lib/tauri')
+            .then(({ sendMessage }) => {
+              console.log('[agent:idle] firing sentinel sendMessage for', conversationId)
+              return sendMessage(conversationId, '__resume_from_task_notification__')
+            })
+            .then(() => console.log('[agent:idle] sentinel sendMessage returned'))
+            .catch((err) => console.warn('[agent:idle] resume sendMessage failed:', err))
+        }
         return
       }
 

@@ -1,17 +1,23 @@
 pub mod agent_runtime;
+pub mod async_task_store;
 pub mod background;
 pub mod builtin;
 pub mod child_run;
 pub mod definition;
 pub mod file_agent_invocation_store;
 pub mod invocation;
+pub mod markdown_loader;
 pub mod message_bridge;
+pub mod output_writer;
 pub mod python_recovery;
 pub mod registry;
+pub mod registry_loader;
 pub mod resume;
 pub mod subagent_result_envelope;
 pub mod subagent_transcript_store;
+pub mod task_notification;
 pub mod team;
+pub mod tool_whitelist;
 pub mod worker_runtime;
 pub mod worktree;
 

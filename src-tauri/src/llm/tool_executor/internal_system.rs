@@ -368,6 +368,15 @@ async fn launch_browse_data_with_runtime_deps(
     let config = crate::llm::sub_agent::SubAgentConfig {
         task: task_msg,
         system_prompt,
+        // SECURITY: This list MUST NOT contain "browse_data". browse_data delegates
+        // to a sub-agent which would otherwise recursively spawn another browse_data
+        // sub-agent on every nested data extraction request — infinite recursion +
+        // LLM cost explosion. The historic guard in run_sub_agent that rejected
+        // browse_data in allowed_tools was deleted in commit 5dc0ae8 (P4.2) when
+        // worker_runtime took over whitelist enforcement. The recursive protection
+        // now relies entirely on this hardcoded list. If this list is ever changed
+        // to be dynamic, browse_data MUST be added to ALL_AGENT_DISALLOWED in
+        // runtime/agent/tool_whitelist.rs to restore the guard.
         allowed_tools: vec![
             "browse_and_extract".to_string(),
             "browse_navigate".to_string(),
@@ -384,6 +393,10 @@ async fn launch_browse_data_with_runtime_deps(
         app_handle: ctx.app_handle.clone(),
         cancel_token,
         permission_mode,
+        model_override: None,
+        agent_name: None,
+        parent_tool_use_id: None,
+        disallowed_tools: vec![],
     };
 
     let result = crate::llm::sub_agent::run_sub_agent(
@@ -759,6 +772,7 @@ mod tests {
             app_handle: None,
             session_manager,
             auth_manager: None,
+            dingtalk_bridge: None,
             connector_engine: None,
             use_cloud: false,
             model: String::new(),
@@ -773,7 +787,6 @@ mod tests {
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
-            dingtalk_bridge: None,
         }
     }
 

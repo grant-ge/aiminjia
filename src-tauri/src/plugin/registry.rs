@@ -45,7 +45,8 @@ pub struct RequestScopedRuntimeDeps {
     pub app_settings: Option<Arc<crate::models::settings::AppSettings>>,
     pub agent_runtime: Option<Arc<crate::runtime::agent::AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
-    pub skill_registry: Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
+    pub skill_registry:
+        Option<Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>>,
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
@@ -134,6 +135,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "browse_and_extract",
     "load_file",
     "browse_data",
+    "spawn_subagent",
     "execute_python",
     "generate_report",
     "generate_chart",
@@ -879,6 +881,115 @@ impl ToolRegistry {
                     ),
                 )),
             ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
+            "spawn_subagent" => {
+                use tauri::Manager;
+
+                // Fail-closed: if app state is missing any of the three Arcs,
+                // we MUST NOT silently fall back to fresh instances — async
+                // sub-agent updates would write to orphan stores/queues that
+                // nobody else holds, leaving notifications lost and the
+                // parent observing Running forever. Refuse to register the
+                // tool instead so the failure is observable as
+                // "spawn_subagent missing from catalog".
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] no app_handle in PluginContext — \
+                             cannot resolve AgentRegistry/AsyncAgentTaskStore/TaskNotificationQueue; \
+                             refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let agent_registry = match app
+                    .try_state::<Arc<crate::runtime::agent::registry::AgentRegistry>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] AgentRegistry not in app state — \
+                             refusing to register tool (call app.manage(Arc<AgentRegistry>) at startup)"
+                        );
+                        return None;
+                    }
+                };
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] AsyncAgentTaskStore not in app state — \
+                             async notifications would be lost; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let notif_queue = match app
+                    .try_state::<Arc<crate::runtime::agent::task_notification::TaskNotificationQueue>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] TaskNotificationQueue not in app state — \
+                             async notifications would be lost; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let path_resolver = match app
+                    .try_state::<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[spawn_subagent registry] UserScopedPathResolver not in app state — \
+                             transcript writes disabled; refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(Arc::new(
+                    builtin::spawn_subagent::SpawnSubagentRuntimeTool::new(
+                        Arc::new(
+                            crate::llm::tool_executor::DefaultSpawnSubagentLauncher::from_runtime_deps(
+                                ctx.clone(),
+                                agent_registry.clone(),
+                                task_store,
+                                notif_queue,
+                                path_resolver,
+                            ),
+                        ),
+                        agent_registry,
+                    ),
+                ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
+            "task_output" => {
+                use tauri::Manager;
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[task_output registry] no app_handle in PluginContext — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let resolver = match app
+                    .try_state::<Arc<dyn crate::storage::user_scoped_paths::UserScopedPathResolver>>()
+                {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[task_output registry] UserScopedPathResolver not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+            }
             "execute_python" => {
                 use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
 
@@ -965,8 +1076,10 @@ impl ToolRegistry {
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "load_skill" => {
                 let registry = ctx.skill_registry.clone()?;
-                Some(Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
+                Some(
+                    Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
+                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
+                )
             }
             _ => None,
         }

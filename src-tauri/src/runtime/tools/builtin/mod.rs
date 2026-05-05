@@ -23,5 +23,7 @@ pub mod python_execution;
 pub mod report;
 pub mod report_capability;
 pub mod shell_common;
+pub mod spawn_subagent;
 pub mod task_tools;
+pub mod task_output;
 pub mod workspace;
