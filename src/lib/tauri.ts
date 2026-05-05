@@ -1649,6 +1649,7 @@ export interface EmployeeRecord {
   enabled: boolean
   resourceConfig: Record<string, unknown>
   systemPromptExtra: string | null
+  defaultSkillId: string | null
   createdAt: string
   updatedAt: string
   lastRunAt: string | null
@@ -1667,6 +1668,7 @@ export interface CreateEmployeeRequest {
   enabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string
+  defaultSkillId?: string
 }
 
 export interface UpdateEmployeeRequest {
@@ -1681,6 +1683,7 @@ export interface UpdateEmployeeRequest {
   enabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string | null
+  defaultSkillId?: string | null
 }
 
 export function employeeList(): Promise<EmployeeRecord[]> {

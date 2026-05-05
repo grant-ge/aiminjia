@@ -2562,7 +2562,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         .await
         .map_err(anyhow::Error::msg)?;
 
-        // Build prompt parts.
+        // ─── Build prompt (new layout, see plan §10) ─────────────────────
         let identity_block = format!(
             "你现在是「{}」（{}）。\n{}\n",
             employee.name, employee.role, employee.description
@@ -2582,12 +2582,41 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
             .map(|s| format!("\n{s}"))
             .unwrap_or_default();
 
-        let prompt = match prompt_override {
-            Some(p) => format!("{identity_block}{extra}\n{trigger_label}\n\n{p}{catchup}"),
-            None => format!(
-                "{identity_block}{extra}\n{trigger_label}{catchup}\n\n请按职责执行本次工作。"
-            ),
+        // Optional config blocks — each is omitted (no header line) when empty.
+        let mut config_lines: Vec<String> = Vec::new();
+        if let Some(skill_id) = employee.default_skill_id.as_deref() {
+            if !skill_id.is_empty() {
+                config_lines.push(format!(
+                    "- 默认技能：{skill_id} —— 请第一步调用 load_skill('{skill_id}') 加载工作流"
+                ));
+            }
+        }
+        let resource_config_is_empty = match &employee.resource_config {
+            serde_json::Value::Null => true,
+            serde_json::Value::Object(map) => map.is_empty(),
+            _ => false,
         };
+        if !resource_config_is_empty {
+            let json = serde_json::to_string(&employee.resource_config)
+                .unwrap_or_else(|_| "{}".to_string());
+            config_lines.push(format!("- 资源配置：{json}"));
+        }
+        let config_block = if config_lines.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n【本次工作配置】\n{}", config_lines.join("\n"))
+        };
+
+        let user_request = prompt_override.as_deref().unwrap_or("").trim();
+        let user_block = if user_request.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{user_request}")
+        };
+
+        let prompt = format!(
+            "{identity_block}{extra}\n{trigger_label}{catchup}{user_block}{config_block}\n\n请立即开始按职责执行，不要等待用户额外指示。"
+        );
 
         // Resolve employees_dir for inbox + record_run. If the user is not
         // logged in we cannot persist anything, so bail out before spawning.

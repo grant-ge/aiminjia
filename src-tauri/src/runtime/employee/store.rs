@@ -28,6 +28,10 @@ pub struct EmployeeRecord {
     pub resource_config: serde_json::Value,
     /// Prepended to the system prompt to establish the employee's identity.
     pub system_prompt_extra: Option<String>,
+    /// Skill id (matching `~/.renlijia/skills/<id>/SKILL.md`) the LLM should
+    /// `load_skill` as the first action when the employee is dispatched.
+    /// `None` means no skill hint is injected.
+    pub default_skill_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_run_at: Option<DateTime<Utc>>,
@@ -48,6 +52,7 @@ pub struct CreateEmployeeRequest {
     pub enabled: Option<bool>,
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<String>,
+    pub default_skill_id: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -63,6 +68,7 @@ pub struct UpdateEmployeeRequest {
     pub enabled: Option<bool>,
     pub resource_config: Option<serde_json::Value>,
     pub system_prompt_extra: Option<Option<String>>,
+    pub default_skill_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +139,7 @@ impl EmployeeStore {
             enabled,
             resource_config: req.resource_config.unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
+            default_skill_id: req.default_skill_id,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_run_at: None,
@@ -194,6 +201,7 @@ impl EmployeeStore {
         if let Some(v) = req.enabled { record.enabled = v; }
         if let Some(v) = req.resource_config { record.resource_config = v; }
         if let Some(v) = req.system_prompt_extra { record.system_prompt_extra = v; }
+        if let Some(v) = req.default_skill_id { record.default_skill_id = v; }
 
         // Recompute next_run_at based on updated cron/enabled
         record.next_run_at = if record.enabled {
@@ -330,6 +338,7 @@ mod tests {
             enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
+            default_skill_id: None,
         };
         let created = store.create(req).unwrap();
         assert!(created.id.starts_with("emp-"));
@@ -337,6 +346,38 @@ mod tests {
 
         let fetched = store.get(&created.id).unwrap();
         assert_eq!(fetched.id, created.id);
+    }
+
+    #[test]
+    fn create_and_get_with_default_skill_id() {
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        let req = CreateEmployeeRequest {
+            name: "小研".to_string(),
+            role: "竞品调研员".to_string(),
+            description: "每周汇总竞品动态".to_string(),
+            avatar: "🔍".to_string(),
+            template_id: Some("builtin:xiaoyuan".to_string()),
+            tool_whitelist: Some(vec!["web_search".to_string()]),
+            cron: None,
+            timezone: None,
+            enabled: Some(true),
+            resource_config: None,
+            system_prompt_extra: None,
+            default_skill_id: Some("competitive-intelligence".to_string()),
+        };
+        let created = store.create(req).unwrap();
+        assert_eq!(
+            created.default_skill_id.as_deref(),
+            Some("competitive-intelligence")
+        );
+
+        let fetched = store.get(&created.id).unwrap();
+        assert_eq!(
+            fetched.default_skill_id.as_deref(),
+            Some("competitive-intelligence")
+        );
     }
 
     #[test]
@@ -357,6 +398,7 @@ mod tests {
                 enabled: Some(true),
                 resource_config: None,
                 system_prompt_extra: None,
+            default_skill_id: None,
             }).unwrap();
         }
         assert_eq!(store.list().unwrap().len(), 3);
@@ -379,6 +421,7 @@ mod tests {
             enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
+            default_skill_id: None,
         }).unwrap();
         assert!(created.next_run_at.is_some());
 
@@ -406,6 +449,7 @@ mod tests {
             enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
+            default_skill_id: None,
         }).unwrap();
 
         assert!(store.delete(&created.id).unwrap());
@@ -429,6 +473,7 @@ mod tests {
             enabled: Some(true),
             resource_config: None,
             system_prompt_extra: None,
+            default_skill_id: None,
         }).unwrap();
 
         let future = Utc::now() + chrono::Duration::minutes(2);
