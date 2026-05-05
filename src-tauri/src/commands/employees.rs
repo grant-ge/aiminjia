@@ -73,6 +73,7 @@ pub async fn employee_trigger(
     app: AppHandle,
     id: String,
     prompt_override: Option<String>,
+    attachments: Option<Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>>,
 ) -> Result<String, String> {
     use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
     use crate::runtime::employee::runner::{EmployeeRunDispatcher, TriggerKind};
@@ -87,7 +88,14 @@ pub async fn employee_trigger(
         .clone();
 
     let conversation_id = adapter
-        .dispatch_employee_run(record, Utc::now(), prompt_override, None, TriggerKind::OnDemand)
+        .dispatch_employee_run(
+            record,
+            Utc::now(),
+            prompt_override,
+            None,
+            TriggerKind::OnDemand,
+            attachments.unwrap_or_default(),
+        )
         .await
         .map_err(|e| e.to_string())?;
 

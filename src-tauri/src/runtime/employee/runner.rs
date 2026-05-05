@@ -35,6 +35,7 @@ pub trait EmployeeRunDispatcher: Send + Sync {
         prompt_override: Option<String>,
         catchup_info: Option<String>,
         trigger_kind: TriggerKind,
+        attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
     ) -> anyhow::Result<String>;
 }
 
@@ -80,7 +81,14 @@ pub async fn run_due_employees_once(
         let fire_at = due.fire_at;
 
         match dispatcher
-            .dispatch_employee_run(due.record, fire_at, None, catchup_info, TriggerKind::Cron)
+            .dispatch_employee_run(
+                due.record,
+                fire_at,
+                None,
+                catchup_info,
+                TriggerKind::Cron,
+                Vec::new(),
+            )
             .await
         {
             Ok(_conversation_id) => {
@@ -92,4 +100,77 @@ pub async fn run_due_employees_once(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod runner_tests {
+    use super::*;
+    use crate::runtime::chat::chat_turn_driver::ChatAttachmentRef;
+
+    #[derive(Default)]
+    struct CapturingDispatcher {
+        captured: tokio::sync::Mutex<Option<Vec<ChatAttachmentRef>>>,
+    }
+
+    #[async_trait]
+    impl EmployeeRunDispatcher for CapturingDispatcher {
+        async fn dispatch_employee_run(
+            &self,
+            _employee: EmployeeRecord,
+            _fire_at: DateTime<Utc>,
+            _prompt_override: Option<String>,
+            _catchup_info: Option<String>,
+            _trigger_kind: TriggerKind,
+            attachments: Vec<ChatAttachmentRef>,
+        ) -> anyhow::Result<String> {
+            *self.captured.lock().await = Some(attachments);
+            Ok("conv-test".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatcher_receives_attachments() {
+        let dispatcher = CapturingDispatcher::default();
+        let employee = EmployeeRecord {
+            id: "emp-test".into(),
+            name: "T".into(),
+            role: "test".into(),
+            description: "x".into(),
+            avatar: "🤖".into(),
+            template_id: None,
+            tool_whitelist: vec![],
+            cron: None,
+            timezone: "Asia/Shanghai".into(),
+            enabled: true,
+            resource_config: serde_json::json!({}),
+            system_prompt_extra: None,
+            default_skill_id: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_run_at: None,
+            next_run_at: None,
+        };
+        let attachments = vec![ChatAttachmentRef {
+            id: "att-1".into(),
+            file_name: "a.pdf".into(),
+            file_path: "/tmp/a.pdf".into(),
+            kind: "file".into(),
+            file_size: 100,
+            file_type: "pdf".into(),
+            mime_type: Some("application/pdf".into()),
+        }];
+        dispatcher
+            .dispatch_employee_run(
+                employee,
+                Utc::now(),
+                None,
+                None,
+                TriggerKind::OnDemand,
+                attachments.clone(),
+            )
+            .await
+            .unwrap();
+        let captured = dispatcher.captured.lock().await.clone();
+        assert_eq!(captured.unwrap().len(), 1);
+    }
 }

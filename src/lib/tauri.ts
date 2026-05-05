@@ -1706,8 +1706,16 @@ export function employeeDelete(id: string): Promise<boolean> {
   return invoke<boolean>('employee_delete', { id })
 }
 
-export function employeeTrigger(id: string, promptOverride?: string): Promise<string> {
-  return invoke<string>('employee_trigger', { id, promptOverride: promptOverride ?? null })
+export function employeeTrigger(
+  id: string,
+  promptOverride?: string,
+  attachments?: ChatAttachmentPayload[],
+): Promise<string> {
+  return invoke<string>('employee_trigger', {
+    id,
+    promptOverride: promptOverride ?? null,
+    attachments: attachments ?? null,
+  })
 }
 
 // ---------------------------------------------------------------------------

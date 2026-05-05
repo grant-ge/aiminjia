@@ -2547,6 +2547,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         prompt_override: Option<String>,
         catchup_info: Option<String>,
         trigger_kind: crate::runtime::employee::runner::TriggerKind,
+        attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
     ) -> anyhow::Result<String> {
         use crate::runtime::employee::inbox_writer;
         use crate::runtime::employee::runner::TriggerKind;
@@ -2632,6 +2633,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         let conv_id = conversation_id.clone();
         let employees_dir_async = employees_dir.clone();
         let running_entry_id = running_entry.as_ref().map(|e| e.id.clone());
+        let attachments_for_run = attachments;
 
         tauri::async_runtime::spawn(async move {
             let _guard = OverrideGuard::install(
@@ -2647,7 +2649,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                 .send_message(
                     conv_id.clone(),
                     prompt,
-                    Vec::new(),
+                    attachments_for_run,
                     None,
                     None,
                     None,
