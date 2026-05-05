@@ -12,6 +12,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: hr
 metadata:
   label: 绩效体系设计向导
 ---

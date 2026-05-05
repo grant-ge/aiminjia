@@ -16,6 +16,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: finance
 metadata:
   label: 财务数据分析
 ---

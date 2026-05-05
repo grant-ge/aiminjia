@@ -17,6 +17,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.1"
+category: legal
 metadata:
   label: 合同风险审查
 ---

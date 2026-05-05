@@ -14,6 +14,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: general
 metadata:
   label: 商业方案撰写
 ---

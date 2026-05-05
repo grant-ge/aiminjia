@@ -16,6 +16,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: legal
 metadata:
   label: 规章制度合规审查
 ---

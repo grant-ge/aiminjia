@@ -128,7 +128,7 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
                     .unwrap_or_else(|| skill.frontmatter.name.clone()),
                 description: skill.frontmatter.description.clone(),
                 icon: None,
-                category: None,
+                category: skill.frontmatter.category.clone(),
             })
         })
         .collect()

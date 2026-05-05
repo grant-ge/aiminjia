@@ -103,6 +103,7 @@ mod replace_all_tests {
                 paths: vec![],
                 hooks: Default::default(),
                 shell: None,
+                category: None,
                 metadata: SkillMetadata::default(),
             },
             body: String::new(),

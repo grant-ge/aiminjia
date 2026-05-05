@@ -16,6 +16,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: ops
 metadata:
   label: 用户行为分析
 ---

@@ -12,6 +12,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: hr
 metadata:
   label: HR数据分析成熟度评估
 ---

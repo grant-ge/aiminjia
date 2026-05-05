@@ -14,6 +14,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: hr
 metadata:
   label: 招聘漏斗分析
 ---

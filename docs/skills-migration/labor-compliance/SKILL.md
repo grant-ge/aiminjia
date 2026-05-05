@@ -14,6 +14,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: legal
 metadata:
   label: 劳动合规风险检查
 ---

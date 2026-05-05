@@ -19,6 +19,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: ops
 metadata:
   label: 行业/竞品调研
 ---

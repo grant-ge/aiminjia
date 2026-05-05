@@ -16,6 +16,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: sales
 metadata:
   label: 销售数据分析
 ---

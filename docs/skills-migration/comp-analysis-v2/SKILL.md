@@ -14,6 +14,7 @@ context: inline
 user-invocable: true
 disable-model-invocation: false
 version: "1.0"
+category: hr
 metadata:
   label: 薪酬公平性分析 v2
 ---
