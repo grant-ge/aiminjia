@@ -1668,7 +1668,7 @@ export interface CreateEmployeeRequest {
   enabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string
-  defaultSkillId?: string
+  defaultSkillId?: string | null
 }
 
 export interface UpdateEmployeeRequest {
