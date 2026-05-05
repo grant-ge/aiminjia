@@ -252,7 +252,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   }
 
   const handleDismiss = async () => {
-    if (!confirm(`确定解雇「${emp.name}」吗？该员工的所有汇报记录将被一并移除，此操作不可撤销。`)) {
+    if (!confirm(`确定解雇「${emp.name}」吗？\n\n该员工将在 7 天后从系统中清除，期间可在首页"已解雇"区一键恢复。`)) {
       return
     }
     setBusy(true)

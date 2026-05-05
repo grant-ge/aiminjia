@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { useEmployees } from '@/features/employees/useEmployees'
 import { useInbox } from '@/features/employees/useInbox'
 import { EmployeeCard, AddEmployeeCard } from '@/features/employees/EmployeeCard'
+import { ArchivedEmployeeCard } from '@/features/employees/ArchivedEmployeeCard'
 import { EmployeeDrawer } from '@/features/employees/EmployeeDrawer'
 import { HireWizard } from '@/features/employees/HireWizard'
 import type { EmployeeRecord } from '@/lib/tauri'
@@ -73,6 +74,9 @@ export function HomePage() {
   const runningCount = entries.filter((e) => e.kind === 'running').length
   const reportCount = entries.filter((e) => e.kind === 'report').length
 
+  const activeEmployees = employees.filter((e) => e.lifecycle !== 'archived')
+  const archivedEmployees = employees.filter((e) => e.lifecycle === 'archived')
+
   return (
     <PageSectionShell
       topBar={<div data-tauri-drag-region className="h-8 shrink-0" />}
@@ -110,7 +114,7 @@ export function HomePage() {
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-3">
-            {employees.map((emp) => (
+            {activeEmployees.map((emp) => (
               <EmployeeCard
                 key={emp.id}
                 employee={emp}
@@ -122,6 +126,19 @@ export function HomePage() {
             ))}
             <AddEmployeeCard onClick={() => setHireOpen(true)} />
           </div>
+        )}
+
+        {archivedEmployees.length > 0 && (
+          <details className="mt-6">
+            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+              已解雇（{archivedEmployees.length}） — 7 天内可恢复
+            </summary>
+            <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+              {archivedEmployees.map((emp) => (
+                <ArchivedEmployeeCard key={emp.id} emp={emp} onChanged={refreshEmp} />
+              ))}
+            </div>
+          </details>
         )}
       </section>
 

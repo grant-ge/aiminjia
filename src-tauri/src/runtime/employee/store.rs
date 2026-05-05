@@ -286,7 +286,11 @@ impl EmployeeStore {
         Ok(record)
     }
 
-    pub fn delete(&self, id: &str) -> Result<bool> {
+    /// Hard-delete an employee directory. The escape hatch behind the soft-delete
+    /// model: used by `purge_old_archived` (auto-cleanup after retention) and by
+    /// the "永久删除" UI action. Normal user delete should set lifecycle=Archived
+    /// via `update` instead, so the record can be recovered for 7 days.
+    pub fn purge(&self, id: &str) -> Result<bool> {
         let _guard = self.lock.lock().unwrap();
         let dir = self.record_dir(id);
         if !dir.exists() {
@@ -294,6 +298,26 @@ impl EmployeeStore {
         }
         fs::remove_dir_all(dir)?;
         Ok(true)
+    }
+
+    /// Purge any employees that have been archived for longer than `threshold`.
+    /// Returns the number of records hard-deleted.
+    pub fn purge_old_archived(&self, threshold: chrono::Duration) -> Result<usize> {
+        let now = Utc::now();
+        let mut purged = 0;
+        // `list` locks internally and releases before we iterate; `purge` then
+        // re-acquires the lock per-record. Safe because new archived records
+        // appearing during iteration are simply not considered this round.
+        let records = self.list()?;
+        for record in records {
+            if record.lifecycle == EmployeeLifecycle::Archived
+                && now.signed_duration_since(record.updated_at) > threshold
+                && self.purge(&record.id)?
+            {
+                purged += 1;
+            }
+        }
+        Ok(purged)
     }
 
     /// Returns employees whose cron is due at or before `now`, and advances next_run_at.
@@ -544,8 +568,86 @@ mod tests {
             })
             .unwrap();
 
-        assert!(store.delete(&created.id).unwrap());
-        assert!(!store.delete(&created.id).unwrap());
+        assert!(store.purge(&created.id).unwrap());
+        assert!(!store.purge(&created.id).unwrap());
+    }
+
+    #[test]
+    fn purge_old_archived_removes_only_old_archived() {
+        use chrono::Duration;
+        let dir = TempDir::new().unwrap();
+        let store = EmployeeStore::new(dir.path().to_path_buf());
+
+        let recent_archived = store
+            .create(CreateEmployeeRequest {
+                name: "recent".into(),
+                role: "r".into(),
+                description: "d".into(),
+                avatar: "🤖".into(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Archived),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
+
+        let old_archived = store
+            .create(CreateEmployeeRequest {
+                name: "old".into(),
+                role: "r".into(),
+                description: "d".into(),
+                avatar: "🤖".into(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Archived),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
+
+        let active = store
+            .create(CreateEmployeeRequest {
+                name: "active".into(),
+                role: "r".into(),
+                description: "d".into(),
+                avatar: "🤖".into(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Active),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
+
+        // Backdate `old_archived.updated_at` to 8 days ago by writing the JSON directly.
+        let path = dir.path().join(&old_archived.id).join("employee.json");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        value["updatedAt"] =
+            serde_json::json!((chrono::Utc::now() - chrono::Duration::days(8)).to_rfc3339());
+        std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let purged = store.purge_old_archived(Duration::days(7)).unwrap();
+        assert_eq!(purged, 1);
+
+        let remaining = store.list().unwrap();
+        let ids: Vec<&str> = remaining.iter().map(|r| r.id.as_str()).collect();
+        assert!(ids.contains(&recent_archived.id.as_str()));
+        assert!(ids.contains(&active.id.as_str()));
+        assert!(!ids.contains(&old_archived.id.as_str()));
     }
 
     #[test]

@@ -1715,6 +1715,16 @@ export function employeeDelete(id: string): Promise<boolean> {
   return invoke<boolean>('employee_delete', { id })
 }
 
+/** Restore an archived employee to Active. */
+export function employeeRestore(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_restore', { id })
+}
+
+/** Hard-delete an employee, bypassing the 7-day recovery window. */
+export function employeePurge(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_purge', { id })
+}
+
 export function employeeTrigger(
   id: string,
   promptOverride?: string,

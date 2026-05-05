@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::runtime::employee::inbox::{InboxEntry, InboxStore};
 use crate::runtime::employee::store::{
-    CreateEmployeeRequest, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
+    CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 
@@ -55,11 +55,43 @@ pub async fn employee_update(
         .map_err(|e| e.to_string())
 }
 
+/// Soft-delete: set lifecycle = Archived. The employee is hidden from the
+/// main grid but recoverable via `employee_restore` for 7 days. After 7
+/// days, the scheduler's purge sweep hard-deletes the directory.
 #[tauri::command]
 pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String> {
     employee_store(&app)?
-        .delete(&id)
+        .update(
+            &id,
+            UpdateEmployeeRequest {
+                lifecycle: Some(EmployeeLifecycle::Archived),
+                ..Default::default()
+            },
+        )
+        .map(|_| true)
         .map_err(|e| e.to_string())
+}
+
+/// Restore an archived employee: lifecycle Archived -> Active.
+#[tauri::command]
+pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String> {
+    employee_store(&app)?
+        .update(
+            &id,
+            UpdateEmployeeRequest {
+                lifecycle: Some(EmployeeLifecycle::Active),
+                ..Default::default()
+            },
+        )
+        .map(|_| true)
+        .map_err(|e| e.to_string())
+}
+
+/// Hard-delete an employee directory. Skips the 7-day recovery window —
+/// used for the "永久删除" UI action and by the scheduler's auto-purge.
+#[tauri::command]
+pub async fn employee_purge(app: AppHandle, id: String) -> Result<bool, String> {
+    employee_store(&app)?.purge(&id).map_err(|e| e.to_string())
 }
 
 // ─── trigger ─────────────────────────────────────────────────────────────────
