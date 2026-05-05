@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -48,7 +48,12 @@ pub struct EmployeeRecord {
     pub lifecycle: EmployeeLifecycle,
     /// Whether the cron schedule (if any) fires. Independent of lifecycle so
     /// users can pause cron without pausing the whole employee.
-    /// `serde(alias = "enabled")` migrates the legacy field name transparently.
+    ///
+    /// `serde(alias = "enabled")` lets legacy employee.json files (which
+    /// only have the old `enabled` field) deserialize transparently. If a
+    /// JSON object happens to contain BOTH `cron_enabled` and `enabled`,
+    /// serde's behavior is last-one-wins — undefined for our purposes.
+    /// New writers must emit only `cron_enabled`.
     #[serde(default = "default_true", alias = "enabled")]
     pub cron_enabled: bool,
     /// Employee-specific resource config (monitoring URLs, table IDs, field mappings, etc.)
@@ -168,7 +173,9 @@ impl EmployeeStore {
             timezone,
             lifecycle,
             cron_enabled,
-            resource_config: req.resource_config.unwrap_or(serde_json::Value::Object(Default::default())),
+            resource_config: req
+                .resource_config
+                .unwrap_or(serde_json::Value::Object(Default::default())),
             system_prompt_extra: req.system_prompt_extra,
             default_skill_id: req.default_skill_id,
             created_at: Utc::now(),
@@ -184,8 +191,8 @@ impl EmployeeStore {
     pub fn get(&self, id: &str) -> Result<EmployeeRecord> {
         let _guard = self.lock.lock().unwrap();
         let path = self.record_path(id);
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("employee not found: {id}"))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
         Ok(serde_json::from_str(&content)?)
     }
 
@@ -211,32 +218,61 @@ impl EmployeeStore {
                 Err(e) => log::warn!("[EmployeeStore] failed to parse {}: {e}", path.display()),
             }
         }
-        records.sort_by(|a, b| a.created_at.cmp(&b.created_at).then_with(|| a.id.cmp(&b.id)));
+        records.sort_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(records)
     }
 
     pub fn update(&self, id: &str, req: UpdateEmployeeRequest) -> Result<EmployeeRecord> {
         let _guard = self.lock.lock().unwrap();
         let path = self.record_path(id);
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("employee not found: {id}"))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
         let mut record: EmployeeRecord = serde_json::from_str(&content)?;
 
-        if let Some(v) = req.name { record.name = v.trim().to_string(); }
-        if let Some(v) = req.role { record.role = v.trim().to_string(); }
-        if let Some(v) = req.description { record.description = v.trim().to_string(); }
-        if let Some(v) = req.avatar { record.avatar = v; }
-        if let Some(v) = req.tool_whitelist { record.tool_whitelist = v; }
-        if let Some(v) = req.cron { record.cron = v; }
-        if let Some(v) = req.timezone { record.timezone = v; }
-        if let Some(v) = req.lifecycle { record.lifecycle = v; }
-        if let Some(v) = req.cron_enabled { record.cron_enabled = v; }
-        if let Some(v) = req.resource_config { record.resource_config = v; }
-        if let Some(v) = req.system_prompt_extra { record.system_prompt_extra = v; }
-        if let Some(v) = req.default_skill_id { record.default_skill_id = v; }
+        if let Some(v) = req.name {
+            record.name = v.trim().to_string();
+        }
+        if let Some(v) = req.role {
+            record.role = v.trim().to_string();
+        }
+        if let Some(v) = req.description {
+            record.description = v.trim().to_string();
+        }
+        if let Some(v) = req.avatar {
+            record.avatar = v;
+        }
+        if let Some(v) = req.tool_whitelist {
+            record.tool_whitelist = v;
+        }
+        if let Some(v) = req.cron {
+            record.cron = v;
+        }
+        if let Some(v) = req.timezone {
+            record.timezone = v;
+        }
+        if let Some(v) = req.lifecycle {
+            record.lifecycle = v;
+        }
+        if let Some(v) = req.cron_enabled {
+            record.cron_enabled = v;
+        }
+        if let Some(v) = req.resource_config {
+            record.resource_config = v;
+        }
+        if let Some(v) = req.system_prompt_extra {
+            record.system_prompt_extra = v;
+        }
+        if let Some(v) = req.default_skill_id {
+            record.default_skill_id = v;
+        }
 
         // Recompute next_run_at based on updated cron/lifecycle/cron_enabled
-        record.next_run_at = if record.lifecycle == EmployeeLifecycle::Active && record.cron_enabled {
+        record.next_run_at = if record.lifecycle == EmployeeLifecycle::Active && record.cron_enabled
+        {
             record.cron.as_deref().and_then(|cron| {
                 let fields = parse_cron_expression(cron)?;
                 compute_next_cron_run(&fields, Local::now()).map(|d| d.with_timezone(&Utc))
@@ -308,8 +344,12 @@ impl EmployeeStore {
             let mut missed_count = 1u32;
             let mut cursor = next_run_at.with_timezone(&Local);
             loop {
-                let Some(next) = compute_next_cron_run(&fields, cursor) else { break };
-                if next.with_timezone(&Utc) > now { break; }
+                let Some(next) = compute_next_cron_run(&fields, cursor) else {
+                    break;
+                };
+                if next.with_timezone(&Utc) > now {
+                    break;
+                }
                 missed_count += 1;
                 cursor = next;
             }
@@ -323,7 +363,11 @@ impl EmployeeStore {
             let json = serde_json::to_string_pretty(&record)?;
             fs::write(entry.path().join("employee.json"), json)?;
 
-            due.push(DueEmployee { record, fire_at, missed_count });
+            due.push(DueEmployee {
+                record,
+                fire_at,
+                missed_count,
+            });
         }
         Ok(due)
     }
@@ -332,8 +376,8 @@ impl EmployeeStore {
     pub fn record_run(&self, id: &str, ran_at: DateTime<Utc>) -> Result<()> {
         let _guard = self.lock.lock().unwrap();
         let path = self.record_path(id);
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("employee not found: {id}"))?;
+        let content =
+            fs::read_to_string(&path).with_context(|| format!("employee not found: {id}"))?;
         let mut record: EmployeeRecord = serde_json::from_str(&content)?;
         record.last_run_at = Some(ran_at);
         record.updated_at = Utc::now();
@@ -420,21 +464,23 @@ mod tests {
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
         for name in ["小研", "小法", "小算"] {
-            store.create(CreateEmployeeRequest {
-                name: name.to_string(),
-                role: "test".to_string(),
-                description: "desc".to_string(),
-                avatar: "🤖".to_string(),
-                template_id: None,
-                tool_whitelist: None,
-                cron: None,
-                timezone: None,
-                lifecycle: Some(EmployeeLifecycle::Active),
-            cron_enabled: Some(true),
-                resource_config: None,
-                system_prompt_extra: None,
-            default_skill_id: None,
-            }).unwrap();
+            store
+                .create(CreateEmployeeRequest {
+                    name: name.to_string(),
+                    role: "test".to_string(),
+                    description: "desc".to_string(),
+                    avatar: "🤖".to_string(),
+                    template_id: None,
+                    tool_whitelist: None,
+                    cron: None,
+                    timezone: None,
+                    lifecycle: Some(EmployeeLifecycle::Active),
+                    cron_enabled: Some(true),
+                    resource_config: None,
+                    system_prompt_extra: None,
+                    default_skill_id: None,
+                })
+                .unwrap();
         }
         assert_eq!(store.list().unwrap().len(), 3);
     }
@@ -444,27 +490,34 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
-        let created = store.create(CreateEmployeeRequest {
-            name: "小钉".to_string(),
-            role: "钉办助理".to_string(),
-            description: "每天早上汇总".to_string(),
-            avatar: "📌".to_string(),
-            template_id: None,
-            tool_whitelist: None,
-            cron: Some("30 9 * * 1-5".to_string()),
-            timezone: None,
-            lifecycle: Some(EmployeeLifecycle::Active),
-            cron_enabled: Some(true),
-            resource_config: None,
-            system_prompt_extra: None,
-            default_skill_id: None,
-        }).unwrap();
+        let created = store
+            .create(CreateEmployeeRequest {
+                name: "小钉".to_string(),
+                role: "钉办助理".to_string(),
+                description: "每天早上汇总".to_string(),
+                avatar: "📌".to_string(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: Some("30 9 * * 1-5".to_string()),
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Active),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
         assert!(created.next_run_at.is_some());
 
-        let updated = store.update(&created.id, UpdateEmployeeRequest {
-            cron_enabled: Some(false),
-            ..Default::default()
-        }).unwrap();
+        let updated = store
+            .update(
+                &created.id,
+                UpdateEmployeeRequest {
+                    cron_enabled: Some(false),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         assert!(updated.next_run_at.is_none());
     }
 
@@ -473,21 +526,23 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
-        let created = store.create(CreateEmployeeRequest {
-            name: "小法".to_string(),
-            role: "合同审阅员".to_string(),
-            description: "审阅合同".to_string(),
-            avatar: "⚖️".to_string(),
-            template_id: None,
-            tool_whitelist: None,
-            cron: None,
-            timezone: None,
-            lifecycle: Some(EmployeeLifecycle::Active),
-            cron_enabled: Some(true),
-            resource_config: None,
-            system_prompt_extra: None,
-            default_skill_id: None,
-        }).unwrap();
+        let created = store
+            .create(CreateEmployeeRequest {
+                name: "小法".to_string(),
+                role: "合同审阅员".to_string(),
+                description: "审阅合同".to_string(),
+                avatar: "⚖️".to_string(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: None,
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Active),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
 
         assert!(store.delete(&created.id).unwrap());
         assert!(!store.delete(&created.id).unwrap());
@@ -498,21 +553,23 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = EmployeeStore::new(dir.path().to_path_buf());
 
-        let created = store.create(CreateEmployeeRequest {
-            name: "小销".to_string(),
-            role: "客户跟进员".to_string(),
-            description: "跟进客户".to_string(),
-            avatar: "💼".to_string(),
-            template_id: None,
-            tool_whitelist: None,
-            cron: Some("* * * * *".to_string()),
-            timezone: None,
-            lifecycle: Some(EmployeeLifecycle::Active),
-            cron_enabled: Some(true),
-            resource_config: None,
-            system_prompt_extra: None,
-            default_skill_id: None,
-        }).unwrap();
+        let created = store
+            .create(CreateEmployeeRequest {
+                name: "小销".to_string(),
+                role: "客户跟进员".to_string(),
+                description: "跟进客户".to_string(),
+                avatar: "💼".to_string(),
+                template_id: None,
+                tool_whitelist: None,
+                cron: Some("* * * * *".to_string()),
+                timezone: None,
+                lifecycle: Some(EmployeeLifecycle::Active),
+                cron_enabled: Some(true),
+                resource_config: None,
+                system_prompt_extra: None,
+                default_skill_id: None,
+            })
+            .unwrap();
 
         let future = Utc::now() + chrono::Duration::minutes(2);
         let due = store.take_due(future).unwrap();
@@ -550,11 +607,18 @@ mod tests {
             "lastRunAt": null,
             "nextRunAt": null,
         });
-        fs::write(emp_dir.join("employee.json"), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+        fs::write(
+            emp_dir.join("employee.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
 
         let record = store.get("emp-legacy").unwrap();
         assert_eq!(record.lifecycle, EmployeeLifecycle::Active);
-        assert!(record.cron_enabled, "legacy enabled=true â cron_enabled=true");
+        assert!(
+            record.cron_enabled,
+            "legacy enabled=true â cron_enabled=true"
+        );
     }
 
     #[test]
@@ -575,15 +639,21 @@ mod tests {
             "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z",
             "lastRunAt": null, "nextRunAt": null,
         });
-        fs::write(emp_dir.join("employee.json"), serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+        fs::write(
+            emp_dir.join("employee.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
 
         let record = store.get("emp-paused").unwrap();
         assert_eq!(record.lifecycle, EmployeeLifecycle::Active);
-        assert!(!record.cron_enabled, "legacy enabled=false â cron_enabled=false");
+        assert!(
+            !record.cron_enabled,
+            "legacy enabled=false â cron_enabled=false"
+        );
     }
 }
 
 fn default_true() -> bool {
     true
 }
-

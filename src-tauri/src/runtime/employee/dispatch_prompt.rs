@@ -34,9 +34,7 @@ pub fn build_dispatch_prompt(
     );
     let extra = employee.system_prompt_extra.as_deref().unwrap_or("");
 
-    let catchup = catchup_info
-        .map(|s| format!("\n{s}"))
-        .unwrap_or_default();
+    let catchup = catchup_info.map(|s| format!("\n{s}")).unwrap_or_default();
 
     let mut config_lines: Vec<String> = Vec::new();
     if let Some(skill_id) = employee.default_skill_id.as_deref() {
@@ -52,8 +50,8 @@ pub fn build_dispatch_prompt(
         _ => false,
     };
     if !resource_config_is_empty {
-        let json = serde_json::to_string(&employee.resource_config)
-            .unwrap_or_else(|_| "{}".to_string());
+        let json =
+            serde_json::to_string(&employee.resource_config).unwrap_or_else(|_| "{}".to_string());
         config_lines.push(format!("- 资源配置：{json}"));
     }
     let config_block = if config_lines.is_empty() {
@@ -116,21 +114,30 @@ mod tests {
     fn omits_skill_line_when_default_skill_id_is_none() {
         let e = employee(None, serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
-        assert!(!p.contains("默认技能"), "prompt unexpectedly mentioned 默认技能: {p}");
+        assert!(
+            !p.contains("默认技能"),
+            "prompt unexpectedly mentioned 默认技能: {p}"
+        );
     }
 
     #[test]
     fn omits_skill_line_when_default_skill_id_is_empty_string() {
         let e = employee(Some(""), serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
-        assert!(!p.contains("默认技能"), "prompt unexpectedly mentioned 默认技能: {p}");
+        assert!(
+            !p.contains("默认技能"),
+            "prompt unexpectedly mentioned 默认技能: {p}"
+        );
     }
 
     #[test]
     fn includes_skill_line_when_default_skill_id_is_set() {
         let e = employee(Some("competitive-intelligence"), serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
-        assert!(p.contains("load_skill('competitive-intelligence')"), "missing skill hint: {p}");
+        assert!(
+            p.contains("load_skill('competitive-intelligence')"),
+            "missing skill hint: {p}"
+        );
     }
 
     #[test]
@@ -151,14 +158,20 @@ mod tests {
         );
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
         assert!(p.contains("资源配置"), "missing resource line: {p}");
-        assert!(p.contains("monitoringTargets"), "resource JSON missing field: {p}");
+        assert!(
+            p.contains("monitoringTargets"),
+            "resource JSON missing field: {p}"
+        );
     }
 
     #[test]
     fn omits_config_block_entirely_when_no_lines() {
         let e = employee(None, serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[按需派活]", None, None);
-        assert!(!p.contains("【本次工作配置】"), "config block should be omitted: {p}");
+        assert!(
+            !p.contains("【本次工作配置】"),
+            "config block should be omitted: {p}"
+        );
     }
 
     #[test]
@@ -168,20 +181,34 @@ mod tests {
         // The prompt should not contain the (whitespace-only) override anywhere.
         // The cheapest check: there should be exactly one "\n\n" separator between
         // the trigger label and the suffix (no extra blank lines for an empty user block).
-        assert!(p.contains("[按需派活]\n\n请立即"), "expected immediate suffix after trigger label: {p}");
+        assert!(
+            p.contains("[按需派活]\n\n请立即"),
+            "expected immediate suffix after trigger label: {p}"
+        );
     }
 
     #[test]
     fn user_block_included_when_prompt_override_has_content() {
         let e = employee(None, serde_json::json!({}));
-        let p = build_dispatch_prompt(&e, "[按需派活]", None, Some("帮我查一下 Anthropic 的最新动态"));
-        assert!(p.contains("帮我查一下 Anthropic"), "user request not included: {p}");
+        let p = build_dispatch_prompt(
+            &e,
+            "[按需派活]",
+            None,
+            Some("帮我查一下 Anthropic 的最新动态"),
+        );
+        assert!(
+            p.contains("帮我查一下 Anthropic"),
+            "user request not included: {p}"
+        );
     }
 
     #[test]
     fn catchup_appended_to_trigger_label_with_newline() {
         let e = employee(None, serde_json::json!({}));
         let p = build_dispatch_prompt(&e, "[定时触发]", Some("（补跑，跳过了 2 次）"), None);
-        assert!(p.contains("[定时触发]\n（补跑，跳过了 2 次）"), "catchup not properly joined: {p}");
+        assert!(
+            p.contains("[定时触发]\n（补跑，跳过了 2 次）"),
+            "catchup not properly joined: {p}"
+        );
     }
 }
