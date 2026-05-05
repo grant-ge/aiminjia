@@ -15,7 +15,7 @@ effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.0"
+version: "1.1"
 category: legal
 metadata:
   label: 规章制度合规审查
