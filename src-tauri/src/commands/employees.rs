@@ -65,7 +65,9 @@ pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String>
 // ─── trigger ─────────────────────────────────────────────────────────────────
 
 /// Manually trigger an employee run (on-demand dispatch).
-/// Returns the conversation_id created for this run.
+/// Returns the conversation_id created for this run. The agent loop runs in a
+/// detached background task; the caller should immediately route to the chat
+/// view to observe streaming output.
 #[tauri::command]
 pub async fn employee_trigger(
     app: AppHandle,
@@ -73,7 +75,7 @@ pub async fn employee_trigger(
     prompt_override: Option<String>,
 ) -> Result<String, String> {
     use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
-    use crate::runtime::employee::runner::EmployeeRunDispatcher;
+    use crate::runtime::employee::runner::{EmployeeRunDispatcher, TriggerKind};
     use chrono::Utc;
 
     let store = employee_store(&app)?;
@@ -85,11 +87,12 @@ pub async fn employee_trigger(
         .clone();
 
     let conversation_id = adapter
-        .dispatch_employee_run(record, Utc::now(), prompt_override, None)
+        .dispatch_employee_run(record, Utc::now(), prompt_override, None, TriggerKind::OnDemand)
         .await
         .map_err(|e| e.to_string())?;
 
-    store.record_run(&id, Utc::now()).map_err(|e| e.to_string())?;
+    // record_run is called synchronously inside dispatch_employee_run before
+    // the detached agent task starts, so we do not call it here.
 
     Ok(conversation_id)
 }

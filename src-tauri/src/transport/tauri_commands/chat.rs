@@ -2506,6 +2506,38 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
     }
 }
 
+/// RAII guard for `employee_run_overrides`. Inserts on construction, removes
+/// on drop, so a panic / cancellation / early return in the agent loop cannot
+/// leak override entries.
+struct OverrideGuard {
+    overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
+    conversation_id: String,
+}
+
+impl OverrideGuard {
+    fn install(
+        overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
+        conversation_id: String,
+        ov: EmployeeRunOverrides,
+    ) -> Self {
+        if let Ok(mut map) = overrides.lock() {
+            map.insert(conversation_id.clone(), ov);
+        }
+        Self {
+            overrides,
+            conversation_id,
+        }
+    }
+}
+
+impl Drop for OverrideGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.overrides.lock() {
+            map.remove(&self.conversation_id);
+        }
+    }
+}
+
 #[async_trait]
 impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatCommandAdapter {
     async fn dispatch_employee_run(
@@ -2514,72 +2546,170 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         fire_at: DateTime<Utc>,
         prompt_override: Option<String>,
         catchup_info: Option<String>,
+        trigger_kind: crate::runtime::employee::runner::TriggerKind,
     ) -> anyhow::Result<String> {
+        use crate::runtime::employee::inbox_writer;
+        use crate::runtime::employee::runner::TriggerKind;
+        use crate::runtime::employee::store::EmployeeStore;
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+        use tauri::Manager;
+
+        // ─── Sync phase: create conversation, persist Running entry, return id ───
+
         let conversation_id = conversation_service::create_conversation(
             self.services.db.clone() as Arc<dyn ConversationStore>
         )
         .await
         .map_err(anyhow::Error::msg)?;
 
-        // Build the system identity prefix
+        // Build prompt parts.
         let identity_block = format!(
             "你现在是「{}」（{}）。\n{}\n",
             employee.name, employee.role, employee.description
         );
         let extra = employee.system_prompt_extra.as_deref().unwrap_or("");
 
-        let trigger_label = match prompt_override.as_deref() {
-            Some(_) => "[按需派活]".to_string(),
-            None => format!("[定时触发] 触发时间：{}", fire_at.format("%Y-%m-%d %H:%M UTC")),
+        let trigger_label = match trigger_kind {
+            TriggerKind::OnDemand => "[按需派活]".to_string(),
+            TriggerKind::Cron => format!(
+                "[定时触发] 触发时间：{}",
+                fire_at.format("%Y-%m-%d %H:%M UTC")
+            ),
         };
 
         let catchup = catchup_info
+            .clone()
             .map(|s| format!("\n{s}"))
             .unwrap_or_default();
 
         let prompt = match prompt_override {
             Some(p) => format!("{identity_block}{extra}\n{trigger_label}\n\n{p}{catchup}"),
-            None => format!("{identity_block}{extra}\n{trigger_label}{catchup}\n\n请按职责执行本次工作。"),
+            None => format!(
+                "{identity_block}{extra}\n{trigger_label}{catchup}\n\n请按职责执行本次工作。"
+            ),
         };
 
-        // P3: Inject tool whitelist + step limit for this employee run.
-        // The shared map is keyed by conversation_id so concurrent runs don't collide.
-        let whitelist: std::collections::HashSet<String> =
-            employee.tool_whitelist.iter().cloned().collect();
-        if let Ok(mut map) = self.services.employee_run_overrides.lock() {
-            map.insert(
-                conversation_id.clone(),
+        // Resolve employees_dir for inbox + record_run. If the user is not
+        // logged in we cannot persist anything, so bail out before spawning.
+        let employees_dir = {
+            let cus = self
+                .services
+                .app
+                .try_state::<Arc<CurrentUserStorage>>()
+                .ok_or_else(|| anyhow::anyhow!("CurrentUserStorage not registered"))?;
+            let paths = cus
+                .require_paths()
+                .map_err(|e| anyhow::anyhow!("paths unavailable: {e}"))?;
+            paths.employees_dir()
+        };
+
+        // record_run synchronously: last_run_at represents "last dispatched at"
+        // for both on-demand and cron paths.
+        {
+            let store = EmployeeStore::new(employees_dir.clone());
+            if let Err(e) = store.record_run(&employee.id, fire_at) {
+                log::warn!(
+                    "[dispatch_employee_run] record_run failed for {}: {e}",
+                    employee.id
+                );
+            }
+        }
+
+        // Persist the Running entry. Failure here is non-fatal — we still want
+        // the chat view to open.
+        let running_entry = match inbox_writer::push_running(
+            employees_dir.clone(),
+            &employee.id,
+            &employee.name,
+            &conversation_id,
+            catchup_info.clone(),
+        ) {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                log::warn!(
+                    "[dispatch_employee_run] failed to write Running inbox for {}: {e}",
+                    employee.id
+                );
+                None
+            }
+        };
+
+        // ─── Async phase: run the agent loop in a detached task ────────────
+
+        let adapter = self.clone();
+        let employee_clone = employee.clone();
+        let conv_id = conversation_id.clone();
+        let employees_dir_async = employees_dir.clone();
+        let running_entry_id = running_entry.as_ref().map(|e| e.id.clone());
+
+        tauri::async_runtime::spawn(async move {
+            let _guard = OverrideGuard::install(
+                adapter.services.employee_run_overrides.clone(),
+                conv_id.clone(),
                 EmployeeRunOverrides {
-                    tool_whitelist: whitelist,
+                    tool_whitelist: employee_clone.tool_whitelist.iter().cloned().collect(),
                     max_iterations: 30,
                 },
             );
-        }
 
-        let result = self
-            .send_message(
-                conversation_id.clone(),
-                prompt,
-                Vec::new(),
-                None,
-                None,
-                None,
-            )
-            .await;
+            let result = adapter
+                .send_message(
+                    conv_id.clone(),
+                    prompt,
+                    Vec::new(),
+                    None,
+                    None,
+                    None,
+                )
+                .await;
 
-        // Always clean up the override entry, even on error.
-        if let Ok(mut map) = self.services.employee_run_overrides.lock() {
-            map.remove(&conversation_id);
-        }
+            match &result {
+                Ok(()) => {
+                    // Title may have been generated asynchronously by send_message;
+                    // best-effort lookup via DB skipped here — keep summary empty
+                    // for now and rely on the conversation_id link.
+                    if let Err(e) = inbox_writer::push_report(
+                        employees_dir_async.clone(),
+                        &employee_clone.id,
+                        &employee_clone.name,
+                        &conv_id,
+                        None,
+                        None,
+                        running_entry_id.as_deref(),
+                    ) {
+                        log::warn!(
+                            "[dispatch_employee_run] push_report failed for {}: {e}",
+                            employee_clone.id
+                        );
+                    }
+                }
+                Err(err) => {
+                    if let Err(e) = inbox_writer::push_error(
+                        employees_dir_async.clone(),
+                        &employee_clone.id,
+                        &employee_clone.name,
+                        &conv_id,
+                        err,
+                        running_entry_id.as_deref(),
+                    ) {
+                        log::warn!(
+                            "[dispatch_employee_run] push_error failed for {}: {e}",
+                            employee_clone.id
+                        );
+                    }
+                }
+            }
 
-        result.map_err(anyhow::Error::msg)?;
-
-        // P6: Desktop notification for new inbox entries created during this run.
-        self.notify_employee_run_complete(
-            &employee.name,
-            &employee.id,
-            fire_at,
-        );
+            // Desktop notification: only for cron triggers. On-demand users are
+            // already watching the chat view; notifying them is noise.
+            if matches!(trigger_kind, TriggerKind::Cron) && result.is_ok() {
+                adapter.notify_employee_run_complete(
+                    &employee_clone.name,
+                    &employee_clone.id,
+                    fire_at,
+                );
+            }
+        });
 
         Ok(conversation_id)
     }

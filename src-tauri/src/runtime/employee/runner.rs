@@ -7,8 +7,25 @@ use tokio::time::{self, Duration};
 use crate::runtime::employee::store::{DueEmployee, EmployeeRecord, EmployeeStore};
 use crate::storage::UserScopedPathResolver;
 
+/// Source of an employee run trigger.
+///
+/// Used to control side effects that should differ between user-initiated and
+/// scheduler-initiated runs (e.g. desktop notifications, missed-tick catchup
+/// labels).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerKind {
+    /// User clicked "现在派活" — they are watching the chat view.
+    OnDemand,
+    /// Cron scheduler fired the run (real-time or catchup).
+    Cron,
+}
+
 /// Implemented by the transport layer (TauriChatCommandAdapter) to actually
 /// dispatch an employee run into a new conversation.
+///
+/// Returns the `conversation_id` synchronously after creating the conversation
+/// and writing a `Running` inbox entry; the agent loop runs in a detached task
+/// so the caller (UI or scheduler) can return to the event loop immediately.
 #[async_trait]
 pub trait EmployeeRunDispatcher: Send + Sync {
     async fn dispatch_employee_run(
@@ -17,7 +34,8 @@ pub trait EmployeeRunDispatcher: Send + Sync {
         fire_at: DateTime<Utc>,
         prompt_override: Option<String>,
         catchup_info: Option<String>,
-    ) -> anyhow::Result<String>; // returns conversation_id
+        trigger_kind: TriggerKind,
+    ) -> anyhow::Result<String>;
 }
 
 /// Spawns a background task that checks for due employees every 60 seconds.
@@ -62,13 +80,11 @@ pub async fn run_due_employees_once(
         let fire_at = due.fire_at;
 
         match dispatcher
-            .dispatch_employee_run(due.record, fire_at, None, catchup_info)
+            .dispatch_employee_run(due.record, fire_at, None, catchup_info, TriggerKind::Cron)
             .await
         {
             Ok(_conversation_id) => {
-                if let Err(e) = store.record_run(&employee_id, fire_at) {
-                    log::warn!("[EmployeeScheduler] failed to record run for {employee_id}: {e}");
-                }
+                // record_run is called synchronously inside dispatch_employee_run.
             }
             Err(err) => {
                 log::warn!("[EmployeeScheduler] dispatch failed for {employee_id}: {err}");
