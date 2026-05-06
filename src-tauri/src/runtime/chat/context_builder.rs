@@ -122,6 +122,8 @@ pub async fn build_env_info(
         .unwrap_or_else(|| workspace_path.clone());
 
     if let Ok(output) = tokio::process::Command::new("git")
+        .arg("-c")
+        .arg("core.quotepath=false")
         .arg("-C")
         .arg(&effective_path)
         .arg("status")
