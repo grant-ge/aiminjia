@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,96 +12,64 @@ use serde_json::Value;
 use crate::plugin::skill::frontmatter::parse_skill_md;
 use crate::plugin::skill::loader::{is_valid_skill_id, load_skill_roots};
 use crate::plugin::skill::registry::SkillRegistry;
-use crate::runtime::dependencies::verify_sha256;
 
-pub const DEFAULT_GLOBAL_SKILLS_MANIFEST_URL: &str =
-    "https://rlj-cdn.oss-cn-hangzhou.aliyuncs.com/lotus/skills/global-skills-manifest.json";
-const GLOBAL_SKILLS_MANIFEST_ENV: &str = "RENLIJIA_GLOBAL_SKILLS_MANIFEST_URL";
 const MAX_EXTRACTED_BYTES: u64 = 50 * 1024 * 1024;
 const MANIFEST_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const ARTIFACT_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
-pub fn configured_global_skills_manifest_url() -> String {
-    std::env::var(GLOBAL_SKILLS_MANIFEST_ENV)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_GLOBAL_SKILLS_MANIFEST_URL.to_string())
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillPackageItem {
+    pub id: u64,
+    pub plugin_id: String,
+    pub name: String,
+    pub version: String,
+    pub package_url: String,
+    #[serde(default)]
+    pub package_size: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GlobalSkillsManifest {
-    pub bundle_version: String,
-    pub artifact: GlobalSkillsArtifact,
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillListResponse {
+    pub data: Vec<SkillPackageItem>,
+    #[serde(default)]
+    pub total: i64,
 }
 
-impl GlobalSkillsManifest {
-    pub fn from_json(input: &str) -> Result<Self> {
-        let manifest: Self = serde_json::from_str(input).context("parse global skills manifest")?;
-        if manifest.artifact.archive_format != "zip" {
-            bail!(
-                "unsupported global skills artifact archiveFormat: {}",
-                manifest.artifact.archive_format
-            );
-        }
-        Ok(manifest)
-    }
+#[derive(Debug, Clone, Deserialize)]
+pub struct DownloadResponseEnvelope {
+    pub data: DownloadResponseData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GlobalSkillsArtifact {
+#[derive(Debug, Clone, Deserialize)]
+pub struct DownloadResponseData {
     pub url: String,
-    pub sha256: String,
-    pub size_bytes: u64,
-    pub archive_format: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSkillsState {
-    pub bundle_version: String,
-    pub artifact_sha256: String,
-    pub installed_at_unix_seconds: u64,
+    #[serde(default)]
+    pub installed: HashMap<String, String>, // plugin_id -> version
+    #[serde(default)]
+    pub updated_at_unix_seconds: u64,
 }
 
 impl GlobalSkillsState {
-    pub fn from_manifest(manifest: &GlobalSkillsManifest) -> Self {
-        Self {
-            bundle_version: manifest.bundle_version.clone(),
-            artifact_sha256: manifest.artifact.sha256.clone(),
-            installed_at_unix_seconds: now_unix_seconds(),
-        }
-    }
-
     pub fn from_global_state_json(input: &str) -> Result<Option<Self>> {
         let value: Value = serde_json::from_str(input).context("parse global state json")?;
         match value.get("globalSkills") {
             Some(global_skills) => {
-                let state = serde_json::from_value(global_skills.clone())
-                    .context("parse globalSkills state")?;
-                Ok(Some(state))
+                // Best-effort parse; if old single-bundle format, return None to trigger full re-install.
+                match serde_json::from_value::<GlobalSkillsState>(global_skills.clone()) {
+                    Ok(state) if !state.installed.is_empty() => Ok(Some(state)),
+                    _ => Ok(None),
+                }
             }
             None => Ok(None),
         }
     }
-
-    pub fn matches(&self, manifest: &GlobalSkillsManifest) -> bool {
-        self.bundle_version == manifest.bundle_version
-    }
 }
 
-pub fn should_skip_manifest(
-    current: Option<&GlobalSkillsState>,
-    manifest: &GlobalSkillsManifest,
-) -> bool {
-    current.map_or(false, |state| state.matches(manifest))
-}
-
-pub fn should_persist_success_state(report: &GlobalSkillInstallReport) -> bool {
-    !report.installed.is_empty() && report.skipped.is_empty()
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GlobalSkillInstallReport {
@@ -110,7 +79,6 @@ pub struct GlobalSkillInstallReport {
 
 #[derive(Debug, Clone)]
 pub struct GlobalSkillSyncConfig {
-    pub manifest_url: String,
     pub state_path: PathBuf,
     pub downloads_dir: PathBuf,
     pub prepared_dir: PathBuf,
@@ -122,7 +90,6 @@ impl GlobalSkillSyncConfig {
     pub fn for_home(root: &Path, skill_roots_for_reload: Vec<PathBuf>) -> Self {
         let global_dir = root.join("global");
         Self {
-            manifest_url: configured_global_skills_manifest_url(),
             state_path: global_dir.join("state.json"),
             downloads_dir: global_dir.join("downloads").join("skills"),
             prepared_dir: global_dir.join("prepared").join("skills"),
@@ -339,82 +306,248 @@ fn is_zip_symlink(entry: &zip::read::ZipFile<'_>) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn sync_global_skills_from_manifest(
-    config: GlobalSkillSyncConfig,
-) -> Result<GlobalSkillInstallReport> {
-    let manifest_text = download_text(&config.manifest_url).await?;
-    let manifest = GlobalSkillsManifest::from_json(&manifest_text)?;
-    let existing_state = read_global_skills_state(&config.state_path)?;
-    if should_skip_manifest(existing_state.as_ref(), &manifest) {
-        return Ok(GlobalSkillInstallReport::default());
+async fn fetch_skill_list(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+) -> Result<SkillListResponse> {
+    let url = format!(
+        "{}/v1/skill-packages?scope=public&page=1&size=100",
+        server_base_url.trim_end_matches('/')
+    );
+    let response = client
+        .get(&url)
+        .bearer_auth(session_key)
+        .timeout(MANIFEST_DOWNLOAD_TIMEOUT)
+        .send()
+        .await
+        .with_context(|| format!("fetch skill list '{}'", url))?
+        .error_for_status()
+        .with_context(|| format!("skill list status '{}'", url))?;
+    let body: SkillListResponse = response
+        .json()
+        .await
+        .with_context(|| format!("parse skill list body '{}'", url))?;
+    Ok(body)
+}
+
+async fn fetch_download_url(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+    skill_id: u64,
+) -> Result<String> {
+    let url = format!(
+        "{}/v1/skill-packages/{}/download",
+        server_base_url.trim_end_matches('/'),
+        skill_id
+    );
+    let response = client
+        .post(&url)
+        .bearer_auth(session_key)
+        .timeout(MANIFEST_DOWNLOAD_TIMEOUT)
+        .send()
+        .await
+        .with_context(|| format!("fetch download url '{}'", url))?
+        .error_for_status()
+        .with_context(|| format!("download url status '{}'", url))?;
+    let body: DownloadResponseEnvelope = response
+        .json()
+        .await
+        .with_context(|| format!("parse download url body '{}'", url))?;
+    if body.data.url.is_empty() {
+        bail!("server returned empty download url for skill {}", skill_id);
+    }
+    Ok(body.data.url)
+}
+
+async fn install_one_skill_package(
+    client: &reqwest::Client,
+    server_base_url: &str,
+    session_key: &str,
+    item: &SkillPackageItem,
+    config: &GlobalSkillSyncConfig,
+) -> Result<()> {
+    if !is_valid_skill_id(&item.plugin_id) {
+        bail!("invalid skill id from server: {}", item.plugin_id);
     }
 
-    fs::create_dir_all(&config.downloads_dir)
-        .with_context(|| format!("create downloads dir '{}'", config.downloads_dir.display()))?;
-    let archive_path = config.downloads_dir.join(format!(
-        "global-skills-{}.zip",
-        sanitize_filename(&manifest.bundle_version)
+    // 1. Get a fresh signed download URL from server
+    let download_url = fetch_download_url(client, server_base_url, session_key, item.id).await?;
+
+    // 2. Download zip into downloads/{plugin_id}-{version}.zip
+    let archive = config.downloads_dir.join(format!(
+        "{}-{}.zip",
+        sanitize_filename(&item.plugin_id),
+        sanitize_filename(&item.version)
     ));
-    download_file(&manifest.artifact.url, &archive_path).await?;
+    download_file(&download_url, &archive).await?;
 
-    let actual_size = fs::metadata(&archive_path)
-        .with_context(|| format!("stat downloaded artifact '{}'", archive_path.display()))?
-        .len();
-    if actual_size != manifest.artifact.size_bytes {
-        bail!(
-            "global skills artifact size mismatch: expected {}, got {}",
-            manifest.artifact.size_bytes,
-            actual_size
-        );
-    }
-    verify_sha256(&archive_path, &manifest.artifact.sha256)
-        .map_err(|error| anyhow!("global skills artifact sha256 verification failed: {error}"))?;
+    // 3. Extract into prepared/{plugin_id}/  (clears any prior content)
+    let prepared = config.prepared_dir.join(&item.plugin_id);
+    extract_global_skills_zip(&archive, &prepared)?;
 
-    extract_global_skills_zip(&archive_path, &config.prepared_dir)?;
-    let report = install_prepared_global_skills(&config.prepared_dir, &config.global_skills_dir)?;
-    if !should_persist_success_state(&report) {
+    // 4. Locate SKILL.md (compatible with both layouts)
+    let source = if prepared.join("SKILL.md").exists() {
+        prepared.clone()
+    } else if prepared.join(&item.plugin_id).join("SKILL.md").exists() {
+        prepared.join(&item.plugin_id)
+    } else {
         bail!(
-            "global skills artifact installed no valid skills; skipped: {:?}",
-            report.skipped
+            "skill package '{}' v{} missing SKILL.md after extraction",
+            item.plugin_id,
+            item.version
         );
+    };
+
+    // 5. Atomically install into global_skills_dir/{plugin_id}/
+    install_one_prepared_skill(&source, &config.global_skills_dir, &item.plugin_id)?;
+    Ok(())
+}
+
+pub async fn sync_skill_packages_from_server(
+    config: GlobalSkillSyncConfig,
+    server_base_url: String,
+    session_key: String,
+) -> Result<GlobalSkillInstallReport> {
+    let client = reqwest::Client::new();
+
+    log::info!("[skill-sync] start sync from {}", server_base_url);
+
+    // 1. Fetch the published skill list from lotus-server
+    let list = fetch_skill_list(&client, &server_base_url, &session_key).await?;
+    log::info!(
+        "[skill-sync] fetched {} skills from server: {:?}",
+        list.data.len(),
+        list.data
+            .iter()
+            .map(|i| format!("{}@{}", i.plugin_id, i.version))
+            .collect::<Vec<_>>()
+    );
+
+    // 2. Read local installed-version state (None if first run or schema mismatch)
+    let local_state = read_global_skills_state(&config.state_path)?
+        .unwrap_or_default();
+    log::info!(
+        "[skill-sync] local state has {} installed skills: {:?}",
+        local_state.installed.len(),
+        local_state.installed
+    );
+
+    let mut report = GlobalSkillInstallReport::default();
+    let mut new_installed: HashMap<String, String> = local_state.installed.clone();
+    let mut remote_ids: HashSet<String> = HashSet::new();
+
+    fs::create_dir_all(&config.downloads_dir).with_context(|| {
+        format!("create downloads dir '{}'", config.downloads_dir.display())
+    })?;
+    fs::create_dir_all(&config.prepared_dir).with_context(|| {
+        format!("create prepared dir '{}'", config.prepared_dir.display())
+    })?;
+
+    // 3. Install or update remote skills whose version changed (or are missing locally)
+    for item in &list.data {
+        remote_ids.insert(item.plugin_id.clone());
+        let need_install = local_state
+            .installed
+            .get(&item.plugin_id)
+            .map_or(true, |v| v != &item.version);
+        if !need_install {
+            report.skipped.push(item.plugin_id.clone());
+            log::info!(
+                "[skill-sync] skip '{}' v{} (already installed)",
+                item.plugin_id,
+                item.version
+            );
+            continue;
+        }
+        log::info!(
+            "[skill-sync] installing '{}' v{} ...",
+            item.plugin_id,
+            item.version
+        );
+        match install_one_skill_package(&client, &server_base_url, &session_key, item, &config)
+            .await
+        {
+            Ok(()) => {
+                report.installed.push(item.plugin_id.clone());
+                new_installed.insert(item.plugin_id.clone(), item.version.clone());
+                log::info!(
+                    "[skill-sync] installed '{}' v{}",
+                    item.plugin_id,
+                    item.version
+                );
+            }
+            Err(error) => {
+                log::warn!(
+                    "[skill-sync] install '{}' v{} failed: {}",
+                    item.plugin_id,
+                    item.version,
+                    error
+                );
+                report.skipped.push(item.plugin_id.clone());
+            }
+        }
     }
-    write_global_skills_state(
-        &config.state_path,
-        &GlobalSkillsState::from_manifest(&manifest),
-    )?;
+
+    // 4. Uninstall any locally-tracked skill no longer present remotely
+    let to_remove: Vec<String> = local_state
+        .installed
+        .keys()
+        .filter(|name| !remote_ids.contains(*name))
+        .cloned()
+        .collect();
+    for name in to_remove {
+        let target = config.global_skills_dir.join(&name);
+        if target.exists() {
+            match fs::remove_dir_all(&target) {
+                Ok(()) => {
+                    new_installed.remove(&name);
+                    log::info!("[skill-sync] uninstalled '{}'", name);
+                }
+                Err(error) => {
+                    log::warn!("[skill-sync] uninstall '{}' failed: {}", name, error);
+                }
+            }
+        } else {
+            new_installed.remove(&name);
+        }
+    }
+
+    // 5. Persist updated state
+    let new_state = GlobalSkillsState {
+        installed: new_installed,
+        updated_at_unix_seconds: now_unix_seconds(),
+    };
+    write_global_skills_state(&config.state_path, &new_state)?;
+
+    report.installed.sort();
+    report.skipped.sort();
+    log::info!(
+        "[skill-sync] done: installed={:?}, skipped={:?}",
+        report.installed,
+        report.skipped
+    );
     Ok(report)
 }
 
-pub fn spawn_global_skill_sync(
-    config: GlobalSkillSyncConfig,
-    registry: Arc<Mutex<SkillRegistry>>,
-) -> tauri::async_runtime::JoinHandle<()> {
-    tauri::async_runtime::spawn(async move {
-        let skill_roots_for_reload = config.skill_roots_for_reload.clone();
-        match sync_global_skills_from_manifest(config).await {
-            Ok(report) => {
-                if report.installed.is_empty() {
-                    return;
-                }
-                match load_skill_roots(&skill_roots_for_reload) {
-                    Ok(skills) => match registry.lock() {
-                        Ok(mut guard) => {
-                            *guard = SkillRegistry::from_skills(skills.into_values().collect());
-                        }
-                        Err(error) => {
-                            log::warn!("[global-skill-sync] registry lock poisoned: {}", error);
-                        }
-                    },
-                    Err(error) => {
-                        log::warn!("[global-skill-sync] reload skill roots failed: {}", error);
-                    }
-                }
+pub fn reload_skill_registry(
+    skill_roots: &[PathBuf],
+    registry: &Arc<Mutex<SkillRegistry>>,
+) {
+    match load_skill_roots(skill_roots) {
+        Ok(skills) => match registry.lock() {
+            Ok(mut guard) => {
+                *guard = SkillRegistry::from_skills(skills.into_values().collect());
             }
             Err(error) => {
-                log::warn!("[global-skill-sync] sync failed: {}", error);
+                log::warn!("[skill-sync] registry lock poisoned: {}", error);
             }
+        },
+        Err(error) => {
+            log::warn!("[skill-sync] reload skill roots failed: {}", error);
         }
-    })
+    }
 }
 
 pub fn read_global_skills_state(state_path: &Path) -> Result<Option<GlobalSkillsState>> {

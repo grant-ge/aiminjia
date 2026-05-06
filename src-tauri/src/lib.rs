@@ -348,13 +348,14 @@ pub fn run() {
                 ),
             ));
             app.manage(disk_skill_registry.clone());
-            plugin::skill::global_sync::spawn_global_skill_sync(
+            // Builtin skill sync moved to AuthGate post-login (see sync_builtin_skills command).
+            // Persist the sync config so the IPC command can rebuild it.
+            let global_skill_sync_config =
                 plugin::skill::global_sync::GlobalSkillSyncConfig::for_home(
                     aijia_home.root(),
                     skill_roots.clone(),
-                ),
-                disk_skill_registry.clone(),
-            );
+                );
+            app.manage(global_skill_sync_config);
 
             // Build agent registry: builtins + user-scope agents/*.md (if logged in).
             let user_agents_dir = current_user_storage
@@ -693,6 +694,7 @@ pub fn run() {
             commands::skill_management::reload_skill,
             commands::skill_management::start_skill_watch,
             commands::skill_management::stop_skill_watch,
+            crate::plugin::skill::sync_command::sync_builtin_skills,
             // Marketplace commands
             commands::skill_management::list_marketplace_skills,
             commands::skill_management::install_marketplace_skill,
