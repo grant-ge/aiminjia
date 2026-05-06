@@ -59,6 +59,16 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
             return Ok(result);
         };
         let cmd = &after[..end];
+        // Windows: route through PowerShell since `bash` is not present unless
+        // Git Bash is on PATH. -NoProfile keeps startup snappy.
+        #[cfg(target_os = "windows")]
+        let output = std::process::Command::new("powershell.exe")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(cmd)
+            .output()
+            .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;
+        #[cfg(not(target_os = "windows"))]
         let output = std::process::Command::new("bash")
             .arg("-lc")
             .arg(cmd)
@@ -67,10 +77,12 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
         if !output.status.success() {
             anyhow::bail!(
                 "Skill body shell command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                crate::storage::console_decode::decode_console_bytes(&output.stderr)
             );
         }
-        result.push_str(&String::from_utf8_lossy(&output.stdout));
+        result.push_str(&crate::storage::console_decode::decode_console_bytes(
+            &output.stdout,
+        ));
         rest = &after[end + 1..];
     }
     result.push_str(rest);

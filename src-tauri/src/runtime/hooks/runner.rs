@@ -108,10 +108,22 @@ impl HookRunner {
         let cwd = resolve_hook_cwd(workspace_root);
 
         let timed = tokio::time::timeout(timeout, async move {
-            let mut command = tokio::process::Command::new("sh");
+            // Windows: route through PowerShell since `sh` is not present unless
+            // Git Bash is on PATH. -NoProfile avoids loading user $PROFILE which
+            // can take seconds and pollute hook stdout.
+            #[cfg(target_os = "windows")]
+            let mut command = {
+                let mut c = tokio::process::Command::new("powershell.exe");
+                c.arg("-NoProfile").arg("-Command").arg(&config.command);
+                c
+            };
+            #[cfg(not(target_os = "windows"))]
+            let mut command = {
+                let mut c = tokio::process::Command::new("sh");
+                c.arg("-c").arg(&config.command);
+                c
+            };
             command
-                .arg("-c")
-                .arg(&config.command)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -152,8 +164,12 @@ impl HookRunner {
             }
         };
 
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = crate::storage::console_decode::decode_console_bytes(&output.stdout)
+            .trim()
+            .to_string();
+        let stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr)
+            .trim()
+            .to_string();
         let exit_code = output.status.code();
 
         if exit_code == Some(2) {
