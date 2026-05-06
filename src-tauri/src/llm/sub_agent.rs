@@ -104,6 +104,14 @@ pub struct SubAgentConfig {
     /// (P6.1). When `Some`, parent can SendMessage to this name. `None` =
     /// anonymous (no SendMessage routing).
     pub agent_name: Option<String>,
+    /// The parent agent's `tool_call_id` for the spawn_subagent call that
+    /// created this sub-agent. Stamped onto every `tool:executing` /
+    /// `tool:completed` event the sub-agent emits, so a future "sub-agent
+    /// detail panel" can fold sub-agent tool history under the originating
+    /// spawn_subagent step (mirrors claude-code-best's `parent_tool_use_id`
+    /// single-track design). `None` when caller didn't supply one (legacy /
+    /// internal callers).
+    pub parent_tool_use_id: Option<String>,
     /// Tool blacklist from the AgentDefinition. Combined with system-level
     /// `ALL_AGENT_DISALLOWED` and the definition's `allowed_tools` by
     /// `resolve_agent_tools` (P4.2) to produce the final tool whitelist.
@@ -155,9 +163,11 @@ mod tests {
             permission_mode: PermissionMode::Default,
             model_override: Some("haiku".into()),
             agent_name: Some("worker1".into()),
+            parent_tool_use_id: Some("toolu_parent_abc".into()),
         };
         assert_eq!(cfg.model_override.as_deref(), Some("haiku"));
         assert_eq!(cfg.agent_name.as_deref(), Some("worker1"));
+        assert_eq!(cfg.parent_tool_use_id.as_deref(), Some("toolu_parent_abc"));
         assert_eq!(cfg.disallowed_tools, vec!["dangerous_tool".to_string()]);
     }
 
@@ -179,9 +189,11 @@ mod tests {
             permission_mode: PermissionMode::Default,
             model_override: None,
             agent_name: None,
+            parent_tool_use_id: None,
         };
         assert!(cfg.model_override.is_none());
         assert!(cfg.agent_name.is_none());
+        assert!(cfg.parent_tool_use_id.is_none());
         assert!(cfg.disallowed_tools.is_empty());
     }
 

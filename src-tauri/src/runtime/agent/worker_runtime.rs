@@ -75,6 +75,11 @@ pub struct WorkerRunConfig {
     /// Caller-supplied model override forwarded from SubAgentConfig.
     /// Consumed by run_worker_turn to compute effective AppSettings (P2.2).
     pub model_override: Option<String>,
+    /// The parent's spawn_subagent tool_call_id, forwarded from SubAgentConfig.
+    /// Stamped onto every emitted `tool:executing` / `tool:completed` event so
+    /// downstream UI can fold sub-agent tool history under the originating
+    /// spawn step (claude-code-best parity).
+    pub parent_tool_use_id: Option<String>,
 }
 
 /// 一等 subagent worker runtime：拥有 LLM loop、tool round、转录与 completion。
@@ -134,6 +139,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
             cancel_token: config.cancel_token.clone(),
             permission_mode: config.permission_mode,
             model_override: config.model_override.clone(),
+            parent_tool_use_id: config.parent_tool_use_id.clone(),
         }
     }
 
@@ -408,6 +414,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     &tool_call.tool_name,
                     &tool_call.tool_call_id,
                     tool_call.purpose.as_deref(),
+                    config.parent_tool_use_id.as_deref(),
                 );
             }
 
@@ -433,6 +440,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &blocked.tool_call_id,
                             false,
                             Some(blocked.reason.as_str()),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &blocked.tool_call_id,
@@ -472,6 +480,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             !is_error,
                             Some(frontend_summary.as_str()),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         files.extend(generated_files);
                         request.messages.push(ChatMessage::tool_result(
@@ -507,6 +516,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             false,
                             Some("Permission Ask required"),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &tool_call_id,
@@ -538,6 +548,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                             &tool_call_id,
                             false,
                             Some("User interaction required"),
+                            config.parent_tool_use_id.as_deref(),
                         );
                         request.messages.push(ChatMessage::tool_result(
                             &tool_call_id,
@@ -732,8 +743,13 @@ fn emit_tool_executing(
     tool_name: &str,
     tool_call_id: &str,
     purpose: Option<&str>,
+    parent_tool_use_id: Option<&str>,
 ) {
     if let Some(app) = app_handle {
+        log::info!(
+            "[SubAgent-emit] tool:executing conv={} tool={} id={} parent_tool_use_id={:?}",
+            conversation_id, tool_name, tool_call_id, parent_tool_use_id
+        );
         let _ = tauri::Emitter::emit(
             app,
             "tool:executing",
@@ -742,6 +758,16 @@ fn emit_tool_executing(
                 "toolName": tool_name,
                 "toolId": tool_call_id,
                 "purpose": purpose,
+                // Sub-agent internal tool calls. Frontend filters these out of
+                // the parent conversation's tool-execution panel — they belong
+                // logically to the sub-agent's own run, not to the parent's
+                // visible work. Kept on the wire so a future "sub-agent detail
+                // pane" can subscribe and show them.
+                "scope": "child",
+                // claude-code-best parity: stamp the spawn_subagent tool_call_id
+                // so the future detail pane can fold sub-agent tool history
+                // under the originating spawn step.
+                "parentToolUseId": parent_tool_use_id,
             }),
         );
     }
@@ -753,8 +779,13 @@ fn emit_tool_completed(
     tool_call_id: &str,
     success: bool,
     summary: Option<&str>,
+    parent_tool_use_id: Option<&str>,
 ) {
     if let Some(app) = app_handle {
+        log::info!(
+            "[SubAgent-emit] tool:completed conv={} id={} success={} parent_tool_use_id={:?}",
+            conversation_id, tool_call_id, success, parent_tool_use_id
+        );
         let _ = tauri::Emitter::emit(
             app,
             "tool:completed",
@@ -763,6 +794,10 @@ fn emit_tool_completed(
                 "toolId": tool_call_id,
                 "success": success,
                 "summary": summary,
+                // Same rationale as emit_tool_executing — front-end filters
+                // by `scope:'child'`.
+                "scope": "child",
+                "parentToolUseId": parent_tool_use_id,
             }),
         );
     }
@@ -905,6 +940,7 @@ mod tests {
             permission_mode: PermissionMode::Plan,
             model_override: None,
             agent_name: None,
+            parent_tool_use_id: None,
             disallowed_tools: vec![],
         };
 
@@ -939,6 +975,7 @@ mod tests {
             permission_mode: PermissionMode::Default,
             model_override: None,
             agent_name: None,
+            parent_tool_use_id: None,
             disallowed_tools: vec![],
         };
         let all_schemas = vec![

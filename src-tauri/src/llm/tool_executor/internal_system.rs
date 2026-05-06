@@ -395,6 +395,7 @@ async fn launch_browse_data_with_runtime_deps(
         permission_mode,
         model_override: None,
         agent_name: None,
+        parent_tool_use_id: None,
         disallowed_tools: vec![],
     };
 
