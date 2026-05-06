@@ -62,12 +62,21 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
         };
         let cmd = &after[..end];
         // Windows: route through PowerShell since `bash` is not present unless
-        // Git Bash is on PATH. -NoProfile keeps startup snappy.
+        // Git Bash is on PATH. -NoProfile keeps startup snappy. The UTF-8
+        // prologue is required so Chinese / non-ASCII output isn't reduced to
+        // `?` by the default CP936 console encoding.
+        #[cfg(target_os = "windows")]
+        let wrapped_cmd = format!(
+            "chcp 65001 > $null; \
+             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
+             $OutputEncoding = [System.Text.Encoding]::UTF8; \
+             {cmd}"
+        );
         #[cfg(target_os = "windows")]
         let output = std::process::Command::new("powershell.exe")
             .arg("-NoProfile")
             .arg("-Command")
-            .arg(cmd)
+            .arg(&wrapped_cmd)
             .no_window()
             .output()
             .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;

@@ -198,11 +198,29 @@ impl RuntimeTool for PowerShellTool {
             )
         })?;
 
+        // Force UTF-8 stdout / stderr before running the user command.
+        // - `chcp 65001` switches the active console code page to UTF-8 so any
+        //   native binaries the user pipes (e.g. `git status`, `cat`) emit UTF-8.
+        // - `[Console]::OutputEncoding` is what `Write-Output` and the PS
+        //   formatter use; default on PowerShell 5.1 is CP936 on zh-CN systems
+        //   and unrepresentable Unicode → `?` in our captured stdout.
+        // - `$OutputEncoding` controls what PS sends down the pipeline, also
+        //   defaulting to ASCII pre-7.0 — same `?` story for non-ASCII text.
+        // PowerShell 7+ already defaults to UTF-8 but the prologue is harmless.
+        // `> $null` swallows chcp's "Active code page: 65001" status line so the
+        // user's actual output isn't polluted.
+        let wrapped_command = format!(
+            "chcp 65001 > $null; \
+             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
+             $OutputEncoding = [System.Text.Encoding]::UTF8; \
+             {command}"
+        );
+
         let mut child = Command::new(&location.path)
             .arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
-            .arg(&command)
+            .arg(&wrapped_command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

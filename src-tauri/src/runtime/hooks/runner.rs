@@ -111,11 +111,19 @@ impl HookRunner {
         let timed = tokio::time::timeout(timeout, async move {
             // Windows: route through PowerShell since `sh` is not present unless
             // Git Bash is on PATH. -NoProfile avoids loading user $PROFILE which
-            // can take seconds and pollute hook stdout.
+            // can take seconds and pollute hook stdout. The prologue forces
+            // UTF-8 stdio so Chinese / non-ASCII output is not mangled to `?`.
             #[cfg(target_os = "windows")]
             let mut command = {
+                let wrapped = format!(
+                    "chcp 65001 > $null; \
+                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
+                     $OutputEncoding = [System.Text.Encoding]::UTF8; \
+                     {}",
+                    config.command,
+                );
                 let mut c = tokio::process::Command::new("powershell.exe");
-                c.arg("-NoProfile").arg("-Command").arg(&config.command);
+                c.arg("-NoProfile").arg("-Command").arg(wrapped);
                 c
             };
             #[cfg(not(target_os = "windows"))]
