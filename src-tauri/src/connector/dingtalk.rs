@@ -14,6 +14,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 
+use crate::storage::process_ext::NoWindowExt;
+
 /// Authentication status for DingTalk connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +85,11 @@ impl DingtalkBridge {
         }
 
         // 3. System PATH fallback
-        if let Ok(output) = std::process::Command::new("which").arg("dws").output() {
+        if let Ok(output) = std::process::Command::new("which")
+            .arg("dws")
+            .no_window()
+            .output()
+        {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {
@@ -94,7 +100,11 @@ impl DingtalkBridge {
 
         // Windows: check where.exe
         #[cfg(target_os = "windows")]
-        if let Ok(output) = std::process::Command::new("where.exe").arg("dws").output() {
+        if let Ok(output) = std::process::Command::new("where.exe")
+            .arg("dws")
+            .no_window()
+            .output()
+        {
             if output.status.success() {
                 let path = crate::storage::console_decode::decode_console_bytes(&output.stdout)
                     .lines().next().unwrap_or("").trim().to_string();

@@ -9,6 +9,7 @@ pub mod mcp_config_store;
 pub mod message_write_queue;
 pub mod migration;
 pub mod migration_user_scope;
+pub mod process_ext;
 pub mod safe_filename;
 pub mod text_io;
 pub mod user_scope;

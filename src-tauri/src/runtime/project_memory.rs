@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::storage::process_ext::NoWindowExt;
+
 const ENTRYPOINT_NAME: &str = "MEMORY.md";
 const ENTRIES_DIR: &str = "entries";
 const LEGACY_CORE_MEMORY_REL_PATH: &str = "shared/cognitive/mem.md";
@@ -424,6 +426,7 @@ fn resolve_git_toplevel(workspace_path: &Path) -> Option<PathBuf> {
         .arg(workspace_path)
         .arg("rev-parse")
         .arg("--show-toplevel")
+        .no_window()
         .output()
         .ok()?;
     if !output.status.success() {

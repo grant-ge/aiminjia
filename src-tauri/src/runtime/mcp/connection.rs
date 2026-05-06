@@ -323,6 +323,7 @@ impl McpConnection for StdioMcpConnection {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        crate::storage::process_ext::NoWindowExt::no_window(&mut command);
 
         // Prepend the bundle bin dir to PATH so shebang scripts (npx → node, etc.) find
         // the bundled node interpreter rather than failing on systems without system node.

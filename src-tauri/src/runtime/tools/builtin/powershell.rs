@@ -12,6 +12,7 @@ use tokio::process::Command;
 
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
+use crate::storage::process_ext::NoWindowExt;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
@@ -205,6 +206,7 @@ impl RuntimeTool for PowerShellTool {
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_window()
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
 

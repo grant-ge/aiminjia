@@ -174,7 +174,7 @@ impl Default for LlmRequest {
         Self {
             messages: Vec::new(),
             tools: Vec::new(),
-            max_tokens: 100_000,
+            max_tokens: 8192,
             temperature: 0.7,
             stream: true,
             thinking_config: None,

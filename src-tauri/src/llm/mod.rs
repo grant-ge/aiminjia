@@ -3,6 +3,7 @@ pub mod content_filter;
 pub mod context_decay;
 pub mod gateway;
 pub mod masking;
+pub mod max_tokens;
 pub mod prompt_guard;
 pub mod prompts;
 pub mod providers;

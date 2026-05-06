@@ -8,6 +8,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
 use crate::runtime::hooks::config::{HookConfig, HookEvent};
+use crate::storage::process_ext::NoWindowExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookDecision {
@@ -126,7 +127,8 @@ impl HookRunner {
             command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+                .stderr(Stdio::piped())
+                .no_window();
 
             if let Some(cwd) = cwd.as_ref() {
                 command.current_dir(cwd);

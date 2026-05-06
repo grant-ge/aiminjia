@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
+use crate::storage::process_ext::NoWindowExt;
+
 pub struct SkillSubstitutionContext {
     pub skill_dir: PathBuf,
     pub session_id: String,
@@ -66,6 +68,7 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
             .arg("-NoProfile")
             .arg("-Command")
             .arg(cmd)
+            .no_window()
             .output()
             .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;
         #[cfg(not(target_os = "windows"))]

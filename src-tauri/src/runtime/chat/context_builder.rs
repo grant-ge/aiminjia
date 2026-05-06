@@ -6,6 +6,7 @@
 /// The concatenation order and separators intentionally mirror Block 13 of `chat_runtime_impl.rs`
 /// (lines ~2230-2291) so that the LLM sees an identical context layout regardless of which code
 /// path produces the string.
+use crate::storage::process_ext::NoWindowExt;
 pub fn build_iteration_context(
     core_memory: &str,
     project_memory: &str,
@@ -129,6 +130,7 @@ pub async fn build_env_info(
         .arg("status")
         .arg("--short")
         .arg("--branch")
+        .no_window()
         .output()
         .await
     {

@@ -1350,7 +1350,9 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             tool_defs: Some(json_defs),
             allowed_tools: Some(allowed_tools),
             max_iterations: Some(max_iterations),
-            token_budget: Some(100000),
+            // Leave token_budget = None so chat_turn_driver picks the
+            // model-aware default (`max_tokens::default_max_tokens_for_model`).
+            token_budget: None,
         })
     }
 
