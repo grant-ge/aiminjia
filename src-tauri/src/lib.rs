@@ -648,6 +648,7 @@ pub fn run() {
             workspace::get_authorized_workspace,
             workspace::revoke_authorized_workspace,
             workspace::get_default_folder,
+            commands::diagnostics::upload_diagnostic_logs,
             // Plugin commands
             commands::plugin::list_tools,
             commands::plugin::list_skills,

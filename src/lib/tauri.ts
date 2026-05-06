@@ -787,6 +787,24 @@ export function openLogsDirectory(): Promise<void> {
   return invoke<void>('open_logs_directory')
 }
 
+export interface UploadDiagnosticsResult {
+  session_id: string
+  chunks_uploaded: number
+  chunks_total: number
+  events_uploaded: number
+  app_log_lines_uploaded: number
+  bad_metrics_lines: number
+}
+
+/**
+ * Read local diagnostic logs (renlijia.log + metrics.jsonl) and upload them
+ * in chunks to the gateway for support investigation. Returns a summary used
+ * by the settings panel to show a confirmation toast.
+ */
+export function uploadDiagnosticLogs(): Promise<UploadDiagnosticsResult> {
+  return invoke<UploadDiagnosticsResult>('upload_diagnostic_logs')
+}
+
 /**
  * Open the workspace root directory in the system file manager.
  */

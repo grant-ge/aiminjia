@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/ui/button', () => ({
@@ -68,16 +68,28 @@ describe('AboutPanel', () => {
     expect(baseProps.onCheckUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('disables the help, feedback, log-upload, and reset entries pending implementation', () => {
+  it('disables the help, feedback, and reset entries pending implementation', () => {
     render(<AboutPanel {...baseProps} />)
 
     expect(screen.getByRole('switch', { name: '用户体验改进计划' })).toBeDisabled()
     expect(screen.getByRole('button', { name: /在线客服/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: /产品建议/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: /服务条款/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '上传日志' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '重置' })).toBeDisabled()
     expect(screen.getAllByText('即将支持').length).toBeGreaterThan(0)
+  })
+
+  it('enables the log-upload button and invokes the handler when clicked', async () => {
+    render(<AboutPanel {...baseProps} />)
+
+    const button = screen.getByRole('button', { name: '上传日志' })
+    expect(button).not.toBeDisabled()
+
+    await act(async () => {
+      fireEvent.click(button)
+    })
+
+    expect(baseProps.onUploadLogs).toHaveBeenCalledTimes(1)
   })
 
   it('defaults the user experience improvement opt-in to ON', () => {

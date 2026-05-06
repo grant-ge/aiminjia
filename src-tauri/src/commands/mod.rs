@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod chat;
+pub mod diagnostics;
 pub mod employees;
 pub mod dingtalk;
 pub mod file;
