@@ -61,7 +61,11 @@ export function InboxPage() {
   const handleMarkAll = async () => {
     setMarkingAll(true)
     try {
-      const ids = [...new Set(entries.map((e) => e.employeeId))]
+      // Mark only the currently visible (filtered) entries' employees, not
+      // every employee that has ever produced an inbox entry. The button label
+      // is "全部已读" within the current filter scope (e.g. when viewing one
+      // employee, only their inbox should be touched).
+      const ids = [...new Set(filtered.map((e) => e.employeeId))]
       await Promise.all(ids.map((id) => markAllRead(id)))
     } finally {
       setMarkingAll(false)
@@ -118,11 +122,13 @@ export function InboxPage() {
           className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground"
         >
           <option value="all">所有员工</option>
-          {employees.map((emp) => (
-            <option key={emp.id} value={emp.id}>
-              {emp.avatar} {emp.name}
-            </option>
-          ))}
+          {employees
+            .filter((emp) => emp.lifecycle !== 'archived')
+            .map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.avatar} {emp.name}
+              </option>
+            ))}
         </select>
 
         {unread > 0 && (

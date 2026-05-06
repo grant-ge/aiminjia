@@ -59,14 +59,14 @@ pub async fn employee_update(
 /// main grid but recoverable via `employee_restore` for 7 days. After 7
 /// days, the scheduler's purge sweep hard-deletes the directory.
 ///
-/// Returns Ok(true) if the lifecycle transitioned to Archived, Ok(false)
-/// if the record was already Archived (no-op).
+/// Errors when the record is already Archived so the caller can surface a
+/// clear "员工已处于解雇状态" message instead of silently no-op'ing.
 #[tauri::command]
 pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String> {
     let store = employee_store(&app)?;
     let current = store.get(&id).map_err(|e| e.to_string())?;
     if current.lifecycle == EmployeeLifecycle::Archived {
-        return Ok(false);
+        return Err("员工已处于解雇状态".to_string());
     }
     store
         .update(
@@ -82,14 +82,14 @@ pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String>
 
 /// Restore an archived employee: lifecycle Archived -> Active.
 ///
-/// Returns Ok(true) if the lifecycle transitioned to Active, Ok(false)
-/// if the record was not Archived (no-op).
+/// Errors when the record is not Archived so the caller doesn't silently
+/// no-op (e.g. a stale UI button click).
 #[tauri::command]
 pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String> {
     let store = employee_store(&app)?;
     let current = store.get(&id).map_err(|e| e.to_string())?;
     if current.lifecycle != EmployeeLifecycle::Archived {
-        return Ok(false);
+        return Err("员工未处于解雇状态，无需恢复".to_string());
     }
     store
         .update(
@@ -105,9 +105,18 @@ pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String
 
 /// Hard-delete an employee directory. Skips the 7-day recovery window —
 /// used for the "永久删除" UI action and by the scheduler's auto-purge.
+///
+/// Refuses to purge a non-Archived employee — the only legitimate path to
+/// permanent deletion is via the recycle bin (or the scheduler's age sweep,
+/// which uses `purge_if_archived_older_than` directly on the store).
 #[tauri::command]
 pub async fn employee_purge(app: AppHandle, id: String) -> Result<bool, String> {
-    employee_store(&app)?.purge(&id).map_err(|e| e.to_string())
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle != EmployeeLifecycle::Archived {
+        return Err("只能永久删除已解雇的员工".to_string());
+    }
+    store.purge(&id).map_err(|e| e.to_string())
 }
 
 // ─── trigger ─────────────────────────────────────────────────────────────────
@@ -129,6 +138,19 @@ pub async fn employee_trigger(
 
     let store = employee_store(&app)?;
     let record = store.get(&id).map_err(|e| e.to_string())?;
+
+    // Authoritative lifecycle gate. The drawer disables this button for
+    // paused / archived, but the command must enforce it independently —
+    // skills, scripts, and stale UI clicks can all reach this entry point.
+    match record.lifecycle {
+        EmployeeLifecycle::Archived => {
+            return Err("员工已解雇，恢复后才能派活".to_string());
+        }
+        EmployeeLifecycle::Paused => {
+            return Err("员工已暂停，恢复员工后才能派活".to_string());
+        }
+        EmployeeLifecycle::Active => {}
+    }
 
     let adapter = app
         .state::<Arc<TauriChatCommandAdapter>>()

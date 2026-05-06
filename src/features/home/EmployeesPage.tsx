@@ -71,11 +71,19 @@ export function EmployeesPage() {
     )
   })
 
-  const runningCount = entries.filter((e) => e.kind === 'running').length
-  const reportCount = entries.filter((e) => e.kind === 'report').length
-
   const activeEmployees = employees.filter((e) => e.lifecycle !== 'archived')
   const archivedEmployees = employees.filter((e) => e.lifecycle === 'archived')
+  const archivedIds = new Set(archivedEmployees.map((e) => e.id))
+
+  // Count distinct *active* employees that the backend says are mid-dispatch.
+  // Previous logic counted "running" inbox entries which (a) double-counted on
+  // multi-step runs and (b) included archived employees with stale entries.
+  const runningCount = Object.keys(activeRuns).filter((id) => !archivedIds.has(id)).length
+  // Reports / signals from archived employees are now filtered server-side
+  // (inbox::list_all skips archived dirs) but defend in depth here too.
+  const reportCount = entries.filter(
+    (e) => e.kind === 'report' && !archivedIds.has(e.employeeId),
+  ).length
 
   return (
     <PageSectionShell
