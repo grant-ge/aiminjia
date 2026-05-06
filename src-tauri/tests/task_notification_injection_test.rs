@@ -58,6 +58,18 @@ impl IterationDrainExecutor {
     }
 }
 
+struct CancelingExecutor {
+    seen_messages: Mutex<Vec<Vec<Value>>>,
+}
+
+impl CancelingExecutor {
+    fn new() -> Self {
+        Self {
+            seen_messages: Mutex::new(Vec::new()),
+        }
+    }
+}
+
 #[async_trait]
 impl RuntimeLlmExecutor for RecordingExecutor {
     async fn run_llm_step(
@@ -73,6 +85,44 @@ impl RuntimeLlmExecutor for RecordingExecutor {
             tokens_out: 0,
             stop_reason: Some("end_turn".to_string()),
         })
+    }
+
+    async fn persist_assistant_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _tool_calls: &[Value],
+        _generated_file_ids: &[String],
+        _file_metas: &[Value],
+    ) -> Result<String, TurnError> {
+        Ok("assistant-msg".to_string())
+    }
+
+    async fn persist_user_message(
+        &self,
+        _conversation_id: &str,
+        _content: &str,
+        _attachments: &[ChatAttachmentRef],
+        _client_message_id: Option<&str>,
+    ) -> Result<String, TurnError> {
+        Ok("user-msg".to_string())
+    }
+
+    async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
+        Ok(std::env::temp_dir())
+    }
+}
+
+#[async_trait]
+impl RuntimeLlmExecutor for CancelingExecutor {
+    async fn run_llm_step(
+        &self,
+        input: &LlmStepInput<'_>,
+        _bus: &RuntimeEventBus,
+        _cancel: &CancellationToken,
+    ) -> Result<LlmStepResult, TurnError> {
+        self.seen_messages.lock().unwrap().push(input.messages.clone());
+        Ok(LlmStepResult::Cancelled)
     }
 
     async fn persist_assistant_message(
@@ -323,5 +373,118 @@ async fn initial_injection_places_task_notification_after_user_message() {
     assert!(
         notif_idx > parent_user_idx,
         "task-notification (idx {notif_idx}) must come AFTER parent user_message (idx {parent_user_idx})"
+    );
+}
+
+#[tokio::test]
+async fn notifications_for_other_sessions_remain_queued() {
+    let queue = Arc::new(TaskNotificationQueue::new());
+    let xml_a = "<task-notification><task-id>agent-a</task-id><status>completed</status></task-notification>";
+    let xml_b = "<task-notification><task-id>agent-b</task-id><status>completed</status></task-notification>";
+    let session_a = SessionId::new("task-notification-session-a");
+    let session_b = SessionId::new("task-notification-session-b");
+    queue.enqueue("agent-a", xml_a, session_a.clone(), None);
+    queue.enqueue("agent-b", xml_b, session_b.clone(), None);
+
+    let executor = Arc::new(RecordingExecutor::default());
+    let driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::new(),
+        RuntimeEventBus::new(),
+        executor.clone(),
+    )
+    .with_task_notification_queue(queue.clone());
+
+    let run_a = RunId::new("run-a");
+    let mut turn_a = TurnState::new(
+        IdentityMapping::direct(session_a.clone()),
+        run_a.clone(),
+        "parent turn".to_string(),
+    );
+    let mut request_a = ChatTurnRequest::new(session_a.clone(), "parent turn", vec![]);
+    request_a.run_id = run_a;
+
+    driver
+        .run_chat_turn(&mut turn_a, &request_a)
+        .await
+        .expect("chat turn for session A should complete");
+
+    let captured = executor.captured_messages();
+    assert_eq!(captured.len(), 1);
+    let notifications_a = task_notification_user_contents(&captured[0]);
+    assert_eq!(notifications_a, vec![xml_a.to_string()]);
+
+    let remaining = queue.drain_for_session(&session_b);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].xml, xml_b);
+}
+
+#[tokio::test]
+async fn cancelled_turn_re_enqueues_injected_task_notification() {
+    let queue = Arc::new(TaskNotificationQueue::new());
+    let xml = "<task-notification><task-id>agent-cancel</task-id><status>completed</status></task-notification>";
+    let session = test_session_id();
+    queue.enqueue("agent-cancel", xml, session.clone(), None);
+
+    let canceling = Arc::new(CancelingExecutor::new());
+    let cancel_driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::new(),
+        RuntimeEventBus::new(),
+        canceling.clone(),
+    )
+    .with_task_notification_queue(queue.clone());
+
+    let run_id_cancel = RunId::new("run-cancel");
+    let mut cancel_turn = TurnState::new(
+        IdentityMapping::direct(session.clone()),
+        run_id_cancel.clone(),
+        "parent turn".to_string(),
+    );
+    let mut cancel_request = ChatTurnRequest::new(session.clone(), "parent turn", vec![]);
+    cancel_request.run_id = run_id_cancel;
+
+    cancel_driver
+        .run_chat_turn(&mut cancel_turn, &cancel_request)
+        .await
+        .expect("cancelled chat turn should still complete");
+
+    assert_eq!(
+        queue.pending_count(),
+        1,
+        "cancelled turn must re-enqueue the drained notification"
+    );
+
+    let finisher = Arc::new(RecordingExecutor::default());
+    let finish_driver = RuntimeChatTurnDriver::with_llm_executor(
+        QueryEngine::new(),
+        RuntimeEventBus::new(),
+        finisher.clone(),
+    )
+    .with_task_notification_queue(queue.clone());
+
+    let run_id_finish = RunId::new("run-finish");
+    let mut finish_turn = TurnState::new(
+        IdentityMapping::direct(session.clone()),
+        run_id_finish.clone(),
+        "parent turn".to_string(),
+    );
+    let mut finish_request = ChatTurnRequest::new(session.clone(), "parent turn", vec![]);
+    finish_request.run_id = run_id_finish;
+
+    finish_driver
+        .run_chat_turn(&mut finish_turn, &finish_request)
+        .await
+        .expect("follow-up chat turn should complete");
+
+    let captured = finisher.captured_messages();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        task_notification_user_contents(&captured[0]),
+        vec![xml.to_string()],
+        "follow-up turn must receive the re-enqueued notification"
+    );
+    assert_eq!(
+        queue.pending_count(),
+        0,
+        "follow-up turn must drain the re-enqueued notification"
     );
 }

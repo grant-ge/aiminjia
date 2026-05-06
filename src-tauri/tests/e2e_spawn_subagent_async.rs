@@ -16,19 +16,23 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use tempfile::TempDir;
 
 use app_lib::runtime::agent::async_task_store::{
     AsyncAgentTaskStore, AsyncTaskHandle, AsyncTaskState,
 };
+use app_lib::runtime::agent::output_writer;
 use app_lib::runtime::agent::registry::AgentRegistry;
 use app_lib::runtime::agent::task_notification::TaskNotificationQueue;
-use app_lib::runtime::ids::{AgentId, SessionId};
+use app_lib::runtime::ids::{AgentId, RunId, SessionId};
 use app_lib::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
     SpawnSubagentRuntimeTool,
 };
+use app_lib::runtime::tools::builtin::task_output::TaskOutputRuntimeTool;
 use app_lib::runtime::tools::context::ToolExecutionContext;
 use app_lib::runtime::tools::RuntimeTool;
+use app_lib::storage::user_scoped_paths::{UserScopedPathResolver, UserScopedPaths};
 
 // ─── StubLauncher ─────────────────────────────────────────────────────────────
 
@@ -38,6 +42,7 @@ use app_lib::runtime::tools::RuntimeTool;
 struct StubLauncher {
     task_store: Arc<AsyncAgentTaskStore>,
     notif_queue: Arc<TaskNotificationQueue>,
+    transcripts_dir: Option<std::path::PathBuf>,
 }
 
 #[async_trait]
@@ -57,6 +62,12 @@ impl SpawnSubagentLauncher for StubLauncher {
     ) -> anyhow::Result<SpawnAsyncOutcome> {
         // Deterministic agent_id — no real tokio::spawn, no UUIDs that vary.
         let agent_id = AgentId::new(format!("stub-{}", uuid::Uuid::new_v4()));
+        let transcript_path = self.transcripts_dir.as_ref().map(|root| {
+            output_writer::transcript_path(
+                &UserScopedPaths::new(root, "t_test__u_test").subagent_transcripts_dir(),
+                agent_id.as_str(),
+            )
+        });
 
         // Register named tasks (mirrors DefaultSpawnSubagentLauncher behavior).
         if let Some(name) = &req.name {
@@ -65,7 +76,7 @@ impl SpawnSubagentLauncher for StubLauncher {
                 AsyncTaskHandle {
                     agent_id: agent_id.clone(),
                     state: AsyncTaskState::Running,
-                    output_file: std::path::PathBuf::new(),
+                    output_file: transcript_path.clone().unwrap_or_default(),
                     description: req.description.clone(),
                 },
             );
@@ -75,10 +86,26 @@ impl SpawnSubagentLauncher for StubLauncher {
         self.task_store
             .update_state(&agent_id, AsyncTaskState::Completed);
 
+        // Write a deterministic transcript line so task_output can read it
+        // immediately after Completed becomes visible.
+        if let Some(path) = transcript_path.as_ref() {
+            let _ = output_writer::append_line(
+                path,
+                &output_writer::TranscriptLine::assistant(&format!(
+                    "done: {}",
+                    agent_id.as_str()
+                )),
+            );
+        }
+
         // Enqueue task-notification XML so parent LLM can observe completion.
         let xml = format!(
-            "<task-notification><task-id>{}</task-id></task-notification>",
-            agent_id.as_str()
+            "<task-notification><task-id>{}</task-id><output-file>{}</output-file><status>completed</status></task-notification>",
+            agent_id.as_str(),
+            transcript_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_default()
         );
         self.notif_queue.enqueue(
             agent_id.as_str(),
@@ -100,16 +127,19 @@ fn build_tool() -> (
     SpawnSubagentRuntimeTool,
     Arc<AsyncAgentTaskStore>,
     Arc<TaskNotificationQueue>,
+    TempDir,
 ) {
     let task_store = Arc::new(AsyncAgentTaskStore::new());
     let notif_queue = Arc::new(TaskNotificationQueue::new());
     let registry = Arc::new(AgentRegistry::with_builtins());
+    let tmp = TempDir::new().expect("tempdir");
     let launcher = Arc::new(StubLauncher {
         task_store: task_store.clone(),
         notif_queue: notif_queue.clone(),
+        transcripts_dir: Some(tmp.path().to_path_buf()),
     });
     let tool = SpawnSubagentRuntimeTool::new(launcher, registry);
-    (tool, task_store, notif_queue)
+    (tool, task_store, notif_queue, tmp)
 }
 
 const TEST_SESSION_ID: &str = "sess-async";
@@ -136,7 +166,7 @@ async fn execute_async(
 /// completion) containing `status`, `agent_id`, and `name`.
 #[tokio::test]
 async fn async_path_returns_immediately_with_agent_id() {
-    let (tool, _store, _queue) = build_tool();
+    let (tool, _store, _queue, _tmp) = build_tool();
 
     let parsed = execute_async(
         &tool,
@@ -176,7 +206,7 @@ async fn async_path_returns_immediately_with_agent_id() {
 /// name, and the state is `Completed` (the stub transitions synchronously).
 #[tokio::test]
 async fn async_path_registers_in_task_store() {
-    let (tool, store, _queue) = build_tool();
+    let (tool, store, _queue, _tmp) = build_tool();
 
     execute_async(
         &tool,
@@ -208,7 +238,7 @@ async fn async_path_registers_in_task_store() {
 /// contains the `agent_id` returned in the tool result.
 #[tokio::test]
 async fn async_path_enqueues_notification() {
-    let (tool, _store, queue) = build_tool();
+    let (tool, _store, queue, _tmp) = build_tool();
 
     let parsed = execute_async(
         &tool,
@@ -249,7 +279,7 @@ async fn async_path_enqueues_notification() {
 /// but the notification is still enqueued (the launcher always enqueues).
 #[tokio::test]
 async fn async_path_without_name_skips_register() {
-    let (tool, store, queue) = build_tool();
+    let (tool, store, queue, _tmp) = build_tool();
 
     execute_async(
         &tool,
@@ -290,7 +320,7 @@ async fn async_path_without_name_skips_register() {
 /// JSON response) returns a handle with state `Completed`.
 #[tokio::test]
 async fn async_path_state_is_completed_after_stub_finishes() {
-    let (tool, store, _queue) = build_tool();
+    let (tool, store, _queue, _tmp) = build_tool();
 
     let parsed = execute_async(
         &tool,
@@ -319,5 +349,125 @@ async fn async_path_state_is_completed_after_stub_finishes() {
         AsyncTaskState::Completed,
         "stub transitions to Completed synchronously; state must be Completed, got: {:?}",
         handle.state
+    );
+}
+
+struct TestResolver {
+    paths: UserScopedPaths,
+}
+
+impl UserScopedPathResolver for TestResolver {
+    fn resolve_paths(&self) -> Option<UserScopedPaths> {
+        Some(self.paths.clone())
+    }
+}
+
+#[tokio::test]
+async fn completed_state_can_be_read_by_task_output_immediately() {
+    let (tool, store, queue, tmp) = build_tool();
+
+    let parsed = execute_async(
+        &tool,
+        json!({
+            "subagent_type": "explore",
+            "prompt": "x",
+            "description": "x",
+            "run_in_background": true,
+            "name": "w1",
+        }),
+    )
+    .await;
+
+    let agent_id = parsed
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .expect("agent_id must be present");
+    let agent_id = AgentId::new(agent_id);
+
+    let handle = store.find_by_id(&agent_id).expect("handle must exist");
+    assert_eq!(handle.state, AsyncTaskState::Completed);
+    assert_eq!(
+        handle.output_file,
+        output_writer::transcript_path(
+            &UserScopedPaths::new(tmp.path(), "t_test__u_test").subagent_transcripts_dir(),
+            agent_id.as_str()
+        )
+    );
+
+    let xmls = queue.drain_for_session(&SessionId::new(TEST_SESSION_ID));
+    assert_eq!(xmls.len(), 1);
+    assert!(
+        xmls[0].xml.contains(agent_id.as_str()),
+        "notification must contain agent_id"
+    );
+
+    let resolver = TaskOutputRuntimeTool::new(Arc::new(TestResolver {
+        paths: UserScopedPaths::new(tmp.path(), "t_test__u_test"),
+    }));
+    let ctx = ToolExecutionContext::for_test(TEST_SESSION_ID, TEST_RUN_ID, "tc-task-output");
+    let result = resolver
+        .execute(json!({"task_id": agent_id.as_str(), "offset": 0}), ctx)
+        .await
+        .expect("task_output must succeed immediately after Completed");
+    let body: Value = serde_json::from_str(&result.content).expect("valid json body");
+    assert_eq!(body["new_offset"].as_u64().unwrap(), 1);
+    assert_eq!(body["lines"].as_array().unwrap().len(), 1);
+    assert!(
+        body["lines"][0]
+            .as_str()
+            .expect("line must be a string")
+            .contains(agent_id.as_str()),
+        "task_output should include the agent_id written by the stub"
+    );
+}
+
+#[tokio::test]
+async fn async_path_without_user_scope_still_launches_and_enqueues_notification() {
+    let task_store = Arc::new(AsyncAgentTaskStore::new());
+    let notif_queue = Arc::new(TaskNotificationQueue::new());
+    let registry = Arc::new(AgentRegistry::with_builtins());
+    let launcher = Arc::new(StubLauncher {
+        task_store: task_store.clone(),
+        notif_queue: notif_queue.clone(),
+        transcripts_dir: None,
+    });
+    let tool = SpawnSubagentRuntimeTool::new(launcher, registry);
+
+    let ctx = ToolExecutionContext::new(
+        SessionId::new(TEST_SESSION_ID),
+        RunId::new(TEST_RUN_ID),
+        None,
+        "tc-no-scope",
+        app_lib::runtime::cancellation::CancellationToken::new(),
+    );
+    let result = tool
+        .execute(
+            json!({
+                "subagent_type": "explore",
+                "prompt": "x",
+                "description": "x",
+                "run_in_background": true,
+                "name": "w1",
+            }),
+            ctx,
+        )
+        .await
+        .expect("async launch without user scope should still succeed");
+    let body: Value = serde_json::from_str(&result.content).expect("json body");
+    let agent_id = body["agent_id"]
+        .as_str()
+        .expect("agent_id must be present");
+    assert!(!agent_id.is_empty());
+
+    let handle = task_store
+        .find_by_name("w1")
+        .expect("named task should still be registered");
+    assert_eq!(handle.output_file, std::path::PathBuf::new());
+
+    let notifications = notif_queue.drain_for_session(&SessionId::new(TEST_SESSION_ID));
+    assert_eq!(notifications.len(), 1);
+    assert!(
+        notifications[0].xml.contains(agent_id),
+        "notification must still be enqueued even without user scope"
     );
 }

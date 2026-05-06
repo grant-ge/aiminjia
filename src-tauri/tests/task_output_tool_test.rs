@@ -209,3 +209,17 @@ async fn rejects_backslash_separator() {
         "error msg should mention invalid task_id: {msg}"
     );
 }
+
+#[tokio::test]
+async fn rejects_dotfile_task_id() {
+    let tmp = TempDir::new().unwrap();
+    let tool = build_tool(&tmp);
+    let ctx = ToolExecutionContext::for_test("c", "r", "tc");
+    let res = tool.execute(json!({"task_id": ".hidden"}), ctx).await;
+    assert!(res.is_err(), ".hidden should be rejected: {res:?}");
+    let msg = format!("{:?}", res.unwrap_err());
+    assert!(
+        msg.contains("invalid task_id"),
+        "error msg should mention invalid task_id: {msg}"
+    );
+}
