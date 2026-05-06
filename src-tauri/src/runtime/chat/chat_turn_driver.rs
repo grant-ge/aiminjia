@@ -1081,7 +1081,7 @@ impl RuntimeChatTurnDriver {
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(30),
-            token_budget: overrides.token_budget.unwrap_or(4096),
+            token_budget: overrides.token_budget.unwrap_or(100000),
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),

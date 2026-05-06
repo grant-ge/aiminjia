@@ -24,7 +24,7 @@ interface AboutPanelProps {
   copyright: string
   logoUrl: string
   onCheckUpdate: () => void
-  onUploadLogs: () => void
+  onUploadLogs: () => void | Promise<void>
   onResetData: () => void
   dataMaskingLevel: DataMaskingLevel
   onDataMaskingChange: (level: DataMaskingLevel) => void
@@ -126,6 +126,7 @@ export function AboutPanel({
   links,
 }: AboutPanelProps) {
   const [experienceProgramEnabled, setExperienceProgramEnabled] = useState(readExperienceProgramDefault)
+  const [uploadingLogs, setUploadingLogs] = useState(false)
 
   const toggleExperienceProgram = () => {
     setExperienceProgramEnabled((enabled) => {
@@ -133,6 +134,16 @@ export function AboutPanel({
       writeExperienceProgram(nextEnabled)
       return nextEnabled
     })
+  }
+
+  const handleUploadLogs = async () => {
+    if (uploadingLogs) return
+    setUploadingLogs(true)
+    try {
+      await onUploadLogs()
+    } finally {
+      setUploadingLogs(false)
+    }
   }
 
   return (
@@ -218,15 +229,14 @@ export function AboutPanel({
       <section className="flex flex-col gap-3 pb-2">
         <div className="text-xl font-bold tracking-tight text-foreground">开发者模式</div>
 
-        <div className="flex items-center justify-between gap-6 opacity-60">
+        <div className="flex items-center justify-between gap-6">
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="text-base font-semibold text-foreground">日志上传</span>
-              <ComingSoonBadge />
-            </div>
+            <span className="text-base font-semibold text-foreground">日志上传</span>
             <div className="text-sm text-muted-foreground">上传诊断日志以协助排查问题</div>
           </div>
-          <PillButton onClick={onUploadLogs} disabled>上传日志</PillButton>
+          <PillButton onClick={handleUploadLogs} disabled={uploadingLogs}>
+            {uploadingLogs ? '上传中…' : '上传日志'}
+          </PillButton>
         </div>
 
         <div className="flex items-center justify-between gap-6 opacity-60">

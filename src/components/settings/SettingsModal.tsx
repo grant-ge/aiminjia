@@ -108,8 +108,15 @@ export function SettingsModal() {
 
   const onUploadLogs = async () => {
     try {
-      const { openLogsDirectory } = await import('@/lib/tauri')
-      await openLogsDirectory()
+      const { uploadDiagnosticLogs } = await import('@/lib/tauri')
+      const result = await uploadDiagnosticLogs()
+      const badNote = result.bad_metrics_lines > 0
+        ? `\n损坏行数: ${result.bad_metrics_lines}（已作为文本上传）`
+        : ''
+      await message(
+        `日志已上传\n上传 ID: ${result.session_id}\n分块: ${result.chunks_uploaded}/${result.chunks_total}\n应用日志行数: ${result.app_log_lines_uploaded}\n诊断事件数: ${result.events_uploaded}${badNote}`,
+        { title: productName, kind: 'info' },
+      )
     } catch (e) {
       await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
     }

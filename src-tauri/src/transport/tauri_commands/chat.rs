@@ -1350,7 +1350,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             tool_defs: Some(json_defs),
             allowed_tools: Some(allowed_tools),
             max_iterations: Some(max_iterations),
-            token_budget: Some(4096),
+            token_budget: Some(100000),
         })
     }
 
