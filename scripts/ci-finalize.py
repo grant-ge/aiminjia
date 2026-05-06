@@ -32,7 +32,7 @@ OSS_PREFIX = "aijia"
 # fresh checkout so we fall back to fetching the same URL directly when the
 # local file is missing.
 CHANGELOG_PATH = Path(__file__).resolve().parent.parent / "src-tauri" / "changelog.json"
-CHANGELOG_URL = "https://lotus.renlijia.com/changelog.json"
+CHANGELOG_URL = "https://ai.renlijia.com/changelog.json"
 
 # Platforms uploaded by CI: (bundle oss key template, sig oss key template)
 PLATFORMS = {
@@ -59,7 +59,7 @@ def load_release_notes(version: str) -> str:
 
     Tries `src-tauri/changelog.json` (only present after `npm prebuild`); if
     missing (e.g. the finalize job's fresh checkout), fetches the live
-    `lotus.renlijia.com/changelog.json` instead. Returns the `zh` list joined
+    `ai.renlijia.com/changelog.json` instead. Returns the `zh` list joined
     with newlines so the desktop updater dialog can split it back into bullets.
     Falls back to a generic line if no entry matches, which keeps the old
     behavior."""
