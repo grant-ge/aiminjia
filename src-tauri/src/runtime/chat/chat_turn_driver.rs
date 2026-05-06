@@ -1137,14 +1137,27 @@ impl RuntimeChatTurnDriver {
             });
         let renlijia_md_context_message = build_renlijia_md_context_message(&renlijia_md_files);
 
-        let llm_user_content = executor
-            .build_user_message_content(
-                request.conversation_id.as_str(),
-                &request.content,
-                &request.attachments,
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        // Sentinel content sent by the frontend when a background sub-agent
+        // completes — we want to wake the parent up so it drains pending
+        // task-notifications, but we must NOT persist or surface a fake user
+        // turn. The drain step below will inject the actual notification XML
+        // as the user-role message that the LLM responds to.
+        let is_resume_for_task_notification =
+            request.content == "__resume_from_task_notification__"
+                && request.attachments.is_empty();
+
+        let llm_user_content = if is_resume_for_task_notification {
+            String::new()
+        } else {
+            executor
+                .build_user_message_content(
+                    request.conversation_id.as_str(),
+                    &request.content,
+                    &request.attachments,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+        };
 
         // 加载历史对话；失败时直接返回错误，避免静默丢失上下文。
         let history = executor
@@ -1174,7 +1187,9 @@ impl RuntimeChatTurnDriver {
             initial_messages.push(renlijia_md_context_message);
         }
         initial_messages.extend(history);
-        initial_messages.push(user_message);
+        if !is_resume_for_task_notification {
+            initial_messages.push(user_message);
+        }
         // Inject pending <task-notification> messages AFTER the current user
         // message so that async sub-agent completions appear as the most recent
         // user input. If injected before user_message, the LLM tends to respond
@@ -1184,6 +1199,18 @@ impl RuntimeChatTurnDriver {
             turn.session_id(),
             &mut initial_messages,
         );
+
+        // Guard: if this turn was triggered purely to resume from a task
+        // notification but the queue is now empty (race: another turn drained
+        // it first), there is no useful work to do — exit cleanly without
+        // calling the LLM, which would otherwise see no user message and fail.
+        if is_resume_for_task_notification && pending_task_notifications.is_empty() {
+            log::info!(
+                "[chat_turn_driver] resume-from-task-notification turn skipped: queue empty session={}",
+                turn.session_id().as_str()
+            );
+            return Ok(());
+        }
 
         let mut state = TurnIterationState::new(initial_messages);
         record_turn_diagnostic(
@@ -1202,15 +1229,21 @@ impl RuntimeChatTurnDriver {
         // ── Step 2b: Persist user message (mirrors legacy_send_message_impl) ──
         // Legacy path wrote the user message to DB before spawning agent_loop.
         // The driver must do the same so the frontend message list is durable.
-        let _user_msg_id = executor
-            .persist_user_message(
-                request.conversation_id.as_str(),
-                &request.content,
-                &request.attachments,
-                request.client_message_id.as_deref(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        // Skip when this turn was triggered by a task-notification resume:
+        // there is no real user input to persist.
+        let _user_msg_id = if is_resume_for_task_notification {
+            String::new()
+        } else {
+            executor
+                .persist_user_message(
+                    request.conversation_id.as_str(),
+                    &request.content,
+                    &request.attachments,
+                    request.client_message_id.as_deref(),
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+        };
         let pending_user_msg_id = _user_msg_id;
         let pending_client_msg_id = request.client_message_id.clone();
 
