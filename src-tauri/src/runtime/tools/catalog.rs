@@ -198,23 +198,30 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("write_file", "在授权工作目录中创建或覆盖写入文本文件")
+        ToolDefinition::new("write_file", "在授权工作目录中创建或完整覆盖写入文本文件")
             .with_kind(ToolKind::Primitive)
             .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
             "required": ["path", "content"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的目标文件路径" },
-                "content": { "type": "string", "description": "要写入的文件内容（UTF-8 文本）" }
-            }
+                "path": {
+                    "type": "string",
+                    "description": "相对于授权工作目录的目标文件路径"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "要写入的文件完整内容（UTF-8 文本）。必须在同一次调用中提供全部内容，不得分步调用或省略任何部分。"
+                }
+            },
+            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 read_workspace_file 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 edit_file 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
         }),
     ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "edit_file",
-            "基于 old_string/new_string 精确替换编辑授权工作目录中的文件（要求 old_string 在文件中唯一存在）",
+            "对授权工作目录中的文件执行精确的 old_string → new_string 替换（优先于 write_file 用于修改现有文件）",
         )
         .with_kind(ToolKind::Primitive)
         .with_capability_scope(["workspace:read", "workspace:write"]),
@@ -225,10 +232,11 @@ fn build_default_catalog() -> ToolCatalog {
                 "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
                 "old_string": {
                     "type": "string",
-                    "description": "要替换的原始字符串，必须在文件中唯一存在。若为空字符串，则视为向空文件追加内容（文件必须为空或不存在）"
+                    "description": "要替换的原始字符串。必须在文件中唯一存在，否则工具报错；若匹配不唯一，请增加更多上下文行使其唯一。若为空字符串，则视为向空文件写入内容（文件必须为空或不存在）。"
                 },
                 "new_string": { "type": "string", "description": "替换后的新字符串" }
-            }
+            },
+            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 read_workspace_file 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 write_file（本工具只传输差异，更安全高效）。\n- old_string 在文件中必须唯一；若不唯一，请扩大 old_string 的上下文范围直到唯一匹配。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
         }),
     ));
 
