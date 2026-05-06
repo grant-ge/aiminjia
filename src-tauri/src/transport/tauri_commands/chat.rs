@@ -2641,6 +2641,14 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
 
         // ─── Async phase: run the agent loop in a detached task ────────────
 
+        // Resolve the EmployeeActiveRuns state once; the spawned task installs
+        // an `ActiveRunGuard` so registration is panic-safe.
+        let active_runs_for_spawn = self
+            .services
+            .app
+            .try_state::<std::sync::Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+            .map(|s| s.inner().clone());
+
         let adapter = self.clone();
         let employee_clone = employee.clone();
         let conv_id = conversation_id.clone();
@@ -2649,6 +2657,25 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         let attachments_for_run = attachments;
 
         tauri::async_runtime::spawn(async move {
+            // RAII guard ensures the active-runs entry is unregistered on
+            // drop, including panic paths. Mirrors OverrideGuard above.
+            let _active_run_guard = active_runs_for_spawn.map(|ar| {
+                crate::runtime::employee::ActiveRunGuard::install(
+                    ar,
+                    crate::runtime::employee::ActiveRun {
+                        employee_id: employee_clone.id.clone(),
+                        conversation_id: conv_id.clone(),
+                        started_at: chrono::Utc::now(),
+                        trigger_kind: match trigger_kind {
+                            TriggerKind::OnDemand => {
+                                crate::runtime::employee::TriggerKindLabel::OnDemand
+                            }
+                            TriggerKind::Cron => crate::runtime::employee::TriggerKindLabel::Cron,
+                        },
+                    },
+                )
+            });
+
             let _guard = OverrideGuard::install(
                 adapter.services.employee_run_overrides.clone(),
                 conv_id.clone(),

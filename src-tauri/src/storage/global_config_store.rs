@@ -5,6 +5,8 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use crate::storage::text_io::read_to_string_strip_bom;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct SettingsMap(HashMap<String, String>);
 
@@ -37,7 +39,7 @@ impl GlobalConfigStore {
             if !path.exists() {
                 return Ok(None);
             }
-            return Ok(Some(fs::read_to_string(path)?));
+            return Ok(Some(read_to_string_strip_bom(path)?));
         }
         let map = self.read_map()?;
         Ok(map.0.get(key).cloned())
@@ -77,7 +79,7 @@ impl GlobalConfigStore {
         if !path.exists() {
             return Ok(SettingsMap::default());
         }
-        let text = fs::read_to_string(&path)?;
+        let text = read_to_string_strip_bom(&path)?;
         Ok(serde_json::from_str(&text).unwrap_or_default())
     }
 

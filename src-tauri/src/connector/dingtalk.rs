@@ -96,7 +96,7 @@ impl DingtalkBridge {
         #[cfg(target_os = "windows")]
         if let Ok(output) = std::process::Command::new("where.exe").arg("dws").output() {
             if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout)
+                let path = crate::storage::console_decode::decode_console_bytes(&output.stdout)
                     .lines().next().unwrap_or("").trim().to_string();
                 if !path.is_empty() {
                     return Ok(PathBuf::from(path));
@@ -142,8 +142,8 @@ impl DingtalkBridge {
             .map_err(|_| anyhow!("dws command timed out after {}s", timeout_secs))?
             .context("dws process failed")?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::storage::console_decode::decode_console_bytes(&output.stdout);
+        let stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr);
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(-1);
@@ -265,7 +265,7 @@ impl DingtalkBridge {
             .context("dws auth login failed")?;
 
         if !output.status.success() {
-            let all_stderr = String::from_utf8_lossy(&output.stderr);
+            let all_stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr);
             return Err(anyhow!("Login failed: {}", all_stderr.trim()));
         }
 

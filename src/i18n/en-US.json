@@ -370,7 +370,8 @@
     "canSwitchLater": "You can switch or customize your persona anytime in Settings"
   },
   "updater": {
-    "newVersionFound": "New version v{{version}} available. Update now?\n\n",
+    "newVersionFound": "New version v{{version}} available",
+    "releaseNotesHeader": "What's new",
     "downloading": "Downloading update",
     "downloadingDesc": "Downloading v{{version}}, please wait...",
     "downloadingProgress": "Downloading v{{version}}, {{pct}}%...",

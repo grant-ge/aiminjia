@@ -370,7 +370,8 @@
     "canSwitchLater": "你可以随时在设置中切换或自定义角色"
   },
   "updater": {
-    "newVersionFound": "发现新版本 v{{version}}，是否立即更新？",
+    "newVersionFound": "发现新版本 v{{version}}",
+    "releaseNotesHeader": "本次更新内容",
     "downloading": "正在下载更新",
     "downloadingDesc": "正在下载 v{{version}}，请稍候...",
     "downloadingProgress": "正在下载 v{{version}}，{{pct}}%...",

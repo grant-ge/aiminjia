@@ -18,6 +18,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import oss2
 
@@ -25,6 +26,13 @@ BUCKET_NAME = "lotus-releases"
 ENDPOINT = "https://oss-cn-beijing.aliyuncs.com"
 CDN_BASE = "https://lotus.renlijia.com"
 OSS_PREFIX = "aijia"
+
+# Local changelog kept in sync with the public lotus website. The build job's
+# `npm prebuild` curls it from the CDN; this finalize job runs in a separate
+# fresh checkout so we fall back to fetching the same URL directly when the
+# local file is missing.
+CHANGELOG_PATH = Path(__file__).resolve().parent.parent / "src-tauri" / "changelog.json"
+CHANGELOG_URL = "https://ai.renlijia.com/changelog.json"
 
 # Platforms uploaded by CI: (bundle oss key template, sig oss key template)
 PLATFORMS = {
@@ -44,6 +52,41 @@ def fetch_sig(bucket, key):
         return bucket.get_object(key).read().decode().strip()
     except oss2.exceptions.NoSuchKey:
         return None
+
+
+def load_release_notes(version: str) -> str:
+    """Read the bullet list for `version` from the website changelog.
+
+    Tries `src-tauri/changelog.json` (only present after `npm prebuild`); if
+    missing (e.g. the finalize job's fresh checkout), fetches the live
+    `ai.renlijia.com/changelog.json` instead. Returns the `zh` list joined
+    with newlines so the desktop updater dialog can split it back into bullets.
+    Falls back to a generic line if no entry matches, which keeps the old
+    behavior."""
+    data = None
+    if CHANGELOG_PATH.exists():
+        try:
+            data = json.loads(CHANGELOG_PATH.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[warn] failed to parse {CHANGELOG_PATH}: {e}")
+    if data is None:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(CHANGELOG_URL, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            print(f"[warn] failed to fetch {CHANGELOG_URL}: {e}")
+            return f"AIjia v{version}"
+    for entry in data.get("versions", []):
+        if entry.get("product") != "desktop":
+            continue
+        if entry.get("version") != version:
+            continue
+        bullets = entry.get("changes", {}).get("zh") or entry.get("changes", {}).get("en") or []
+        if bullets:
+            return "\n".join(bullets)
+    print(f"[warn] no changelog entry for desktop v{version}")
+    return f"AIjia v{version}"
 
 
 def main():
@@ -93,7 +136,7 @@ def main():
 
     update_json = {
         "version": version,
-        "notes": f"AIjia v{version}",
+        "notes": load_release_notes(version),
         "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "platforms": platforms,
     }

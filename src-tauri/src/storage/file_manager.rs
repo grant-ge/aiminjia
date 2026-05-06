@@ -122,6 +122,7 @@ impl FileManager {
 
     /// Write content to a file in the workspace. Returns the stored_path relative to workspace.
     pub fn write_file(&self, subdir: &str, file_name: &str, content: &[u8]) -> Result<FileInfo> {
+        crate::storage::safe_filename::ensure_safe_filename(file_name)?;
         let dest_dir = self.workspace_path().join(subdir);
         fs::create_dir_all(&dest_dir)?;
         let dest_path = dest_dir.join(file_name);
@@ -154,7 +155,10 @@ impl FileManager {
 
         Ok(FileInfo {
             file_name: file_name.to_string(),
-            stored_path: format!("{}/{}", subdir, file_name),
+            stored_path: Path::new(subdir)
+                .join(file_name)
+                .to_string_lossy()
+                .replace('\\', "/"),
             file_size: content.len() as u64,
             file_type,
         })

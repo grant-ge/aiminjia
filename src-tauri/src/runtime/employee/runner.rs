@@ -65,6 +65,13 @@ pub async fn run_due_employees_once(
     dispatcher: &dyn EmployeeRunDispatcher,
     now: DateTime<Utc>,
 ) -> anyhow::Result<()> {
+    // Sweep archived employees whose retention window has expired.
+    // Runs once per tick — cheap (just a list + comparison).
+    const ARCHIVE_RETENTION_DAYS: i64 = 7;
+    if let Err(err) = store.purge_old_archived(chrono::Duration::days(ARCHIVE_RETENTION_DAYS)) {
+        log::warn!("[EmployeeScheduler] purge_old_archived failed: {err}");
+    }
+
     let due_list = store.take_due(now)?;
     for due in due_list {
         let catchup_info = if due.missed_count > 1 {
@@ -141,7 +148,8 @@ mod runner_tests {
             tool_whitelist: vec![],
             cron: None,
             timezone: "Asia/Shanghai".into(),
-            enabled: true,
+            lifecycle: crate::runtime::employee::store::EmployeeLifecycle::Active,
+            cron_enabled: true,
             resource_config: serde_json::json!({}),
             system_prompt_extra: None,
             default_skill_id: None,
