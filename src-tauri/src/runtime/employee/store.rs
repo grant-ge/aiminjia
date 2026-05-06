@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -140,8 +140,7 @@ impl EmployeeStore {
         fs::create_dir_all(&dir)?;
         let path = dir.join("employee.json");
         let json = serde_json::to_string_pretty(record)?;
-        fs::write(path, json)?;
-        Ok(())
+        write_atomic(&path, json.as_bytes())
     }
 
     pub fn create(&self, req: CreateEmployeeRequest) -> Result<EmployeeRecord> {
@@ -296,7 +295,7 @@ impl EmployeeStore {
         if !dir.exists() {
             return Ok(false);
         }
-        fs::remove_dir_all(dir)?;
+        remove_dir_all_retry(&dir)?;
         Ok(true)
     }
 
@@ -330,7 +329,7 @@ impl EmployeeStore {
         }
 
         let dir = self.record_dir(id);
-        fs::remove_dir_all(dir)?;
+        remove_dir_all_retry(&dir)?;
         Ok(true)
     }
 
@@ -341,14 +340,25 @@ impl EmployeeStore {
     /// if the user calls `employee_restore` between this method's `list()`
     /// snapshot and the per-record purge call, the restored record is
     /// preserved.
+    ///
+    /// Per-record errors are logged and skipped, not bubbled — Windows AV /
+    /// Indexer can briefly hold handles to a directory we want to delete, and
+    /// one stuck record should not abort the whole sweep.
     pub fn purge_old_archived(&self, threshold: chrono::Duration) -> Result<usize> {
         let mut purged = 0;
         let records = self.list()?;
         for record in records {
-            if record.lifecycle == EmployeeLifecycle::Archived
-                && self.purge_if_archived_older_than(&record.id, threshold)?
-            {
-                purged += 1;
+            if record.lifecycle != EmployeeLifecycle::Archived {
+                continue;
+            }
+            match self.purge_if_archived_older_than(&record.id, threshold) {
+                Ok(true) => purged += 1,
+                Ok(false) => {}
+                Err(e) => log::warn!(
+                    "[EmployeeStore] purge of {} failed: {} — will retry next tick",
+                    record.id,
+                    e
+                ),
             }
         }
         Ok(purged)
@@ -419,7 +429,7 @@ impl EmployeeStore {
             record.updated_at = Utc::now();
 
             let json = serde_json::to_string_pretty(&record)?;
-            fs::write(entry.path().join("employee.json"), json)?;
+            write_atomic(&entry.path().join("employee.json"), json.as_bytes())?;
 
             due.push(DueEmployee {
                 record,
@@ -440,8 +450,7 @@ impl EmployeeStore {
         record.last_run_at = Some(ran_at);
         record.updated_at = Utc::now();
         let json = serde_json::to_string_pretty(&record)?;
-        fs::write(path, json)?;
-        Ok(())
+        write_atomic(&path, json.as_bytes())
     }
 
     /// Returns the directory for an employee's reports.
@@ -846,4 +855,40 @@ mod tests {
 
 fn default_true() -> bool {
     true
+}
+
+/// Atomic write: tmp file + rename. On crash mid-write, the original file is
+/// left intact instead of becoming a 0-byte stub. Especially important on
+/// Windows where AV briefly holds open handles to written files; an
+/// unfortunately-timed panic with `fs::write` can corrupt employee.json,
+/// after which `list_unlocked` silently drops the record from `list()` /
+/// `take_due` forever.
+fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, bytes)
+        .with_context(|| format!("write tmp: {}", tmp.display()))?;
+    fs::rename(&tmp, path)
+        .with_context(|| format!("rename tmp → {}", path.display()))?;
+    Ok(())
+}
+
+/// `fs::remove_dir_all` with Windows-friendly retry. AV / Indexer / Explorer
+/// can briefly hold handles to a directory we want to delete; a single retry
+/// after a short backoff clears the vast majority of those cases. No-op delay
+/// on Unix where the first call almost always succeeds.
+fn remove_dir_all_retry(dir: &std::path::Path) -> Result<()> {
+    let mut last_err = None;
+    for attempt in 0..3 {
+        match fs::remove_dir_all(dir) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(150 * (attempt + 1)));
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap().into())
 }
