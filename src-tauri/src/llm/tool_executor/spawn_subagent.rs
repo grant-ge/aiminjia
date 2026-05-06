@@ -76,7 +76,7 @@ impl DefaultSpawnSubagentLauncher {
     }
 
     /// Build `SubAgentConfig` and `SubAgentRuntimeDeps` from the request + context.
-    fn build_sub_agent_args(
+    async fn build_sub_agent_args(
         &self,
         request: &SpawnSubagentRequest,
         context: &SpawnSubagentContext,
@@ -98,7 +98,7 @@ impl DefaultSpawnSubagentLauncher {
             .clone();
 
         // Build system prompt string from definition.
-        let system_prompt = match &definition.system_prompt {
+        let mut system_prompt = match &definition.system_prompt {
             AgentPrompt::Inline(s) => s.clone(),
             AgentPrompt::File(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
                 log::warn!(
@@ -121,6 +121,28 @@ impl DefaultSpawnSubagentLauncher {
                 .map(|cache| cache.clone_for_child()),
         );
 
+        // Inject env block so the sub-agent knows the parent's authorized workspace
+        // and current working directory. Reuses the same `build_env_info` that the
+        // parent uses, so sub-agent and parent see identical environment context.
+        let authorized_pair = scoped_deps
+            .authorized_workspace
+            .as_ref()
+            .map(|aw| (aw.root_path.to_string_lossy().to_string(), aw.display_name.clone()));
+        let env_info = crate::runtime::chat::context_builder::build_env_info(
+            &scoped_deps.workspace_path,
+            authorized_pair
+                .as_ref()
+                .map(|(root, name)| (root.as_str(), name.as_str())),
+            None,
+        )
+        .await;
+        if !env_info.is_empty() {
+            if !system_prompt.is_empty() {
+                system_prompt.push_str("\n\n");
+            }
+            system_prompt.push_str(&env_info);
+        }
+
         let config = crate::llm::sub_agent::SubAgentConfig {
             task: request.prompt.clone(),
             system_prompt,
@@ -136,6 +158,7 @@ impl DefaultSpawnSubagentLauncher {
             permission_mode: context.permission_mode,
             model_override: request.effective_model.clone(),
             agent_name: request.name.clone(),
+            parent_tool_use_id: Some(context.parent_tool_use_id.as_str().to_owned()),
         };
 
         let runtime_deps = crate::llm::sub_agent::SubAgentRuntimeDeps {
@@ -169,7 +192,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         context: SpawnSubagentContext,
     ) -> Result<String> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, false)?;
+        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, false).await?;
 
         let result = crate::llm::sub_agent::run_sub_agent(
             &gateway,
@@ -204,7 +227,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, true)?;
+        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, true).await?;
 
         // Generate a fresh AgentId for this async sub-agent.
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
