@@ -181,7 +181,11 @@ function ArtifactSection({
     const result: GeneratedFile[] = []
     for (const msg of messages) {
       if (msg.conversationId !== conversationId) continue
-      for (const f of msg.content.generatedFiles ?? []) {
+      const generated =
+        msg.content && typeof msg.content === 'object'
+          ? (msg.content as { generatedFiles?: GeneratedFile[] }).generatedFiles
+          : undefined
+      for (const f of generated ?? []) {
         if (!seen.has(f.id) && f.isLatest) {
           seen.add(f.id)
           result.push(f)
