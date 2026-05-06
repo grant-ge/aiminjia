@@ -11,6 +11,7 @@ import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useComposerPaste } from '@/hooks/useComposerPaste'
 import { useChatStore } from '@/stores/chatStore'
+import { useDropInbox } from '@/stores/dropInbox'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -143,6 +144,16 @@ export function ChatBottomArea() {
     })
   }, [])
   const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
+
+  // Drain native drag-drop inbox while ChatBottomArea is mounted (Chat route).
+  // Inbox is filled by `useDragDropListener` in App; only one composer is
+  // visible at a time so a single consumer is correct.
+  const dropPending = useDropInbox((s) => s.pending)
+  const consumeDropInbox = useDropInbox((s) => s.consume)
+  useEffect(() => {
+    if (dropPending.length === 0) return
+    appendPendingFiles(consumeDropInbox())
+  }, [dropPending.length, appendPendingFiles, consumeDropInbox])
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending

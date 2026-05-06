@@ -22,6 +22,7 @@ import {
   type AuthorizedWorkspaceRef,
 } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
+import { useDropInbox } from '@/stores/dropInbox'
 import { useHomeStore } from '@/stores/homeStore'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -43,6 +44,16 @@ export function HomeTaskComposerCard() {
   }, [])
 
   const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
+
+  // Drain native drag-drop inbox on mount and whenever new items arrive while
+  // this composer is the visible one (Home route). The dropInbox is a shared
+  // pull queue populated by `useDragDropListener` in App.
+  const dropPending = useDropInbox((s) => s.pending)
+  const consumeDropInbox = useDropInbox((s) => s.consume)
+  useEffect(() => {
+    if (dropPending.length === 0) return
+    appendPendingFiles(consumeDropInbox())
+  }, [dropPending.length, appendPendingFiles, consumeDropInbox])
 
   const { selectedWorkspace, setSelectedWorkspace } = useHomeStore()
   const [displayWorkspace, setDisplayWorkspace] = useState<AuthorizedWorkspaceRef | null>(
