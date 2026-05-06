@@ -391,7 +391,10 @@ pub fn process_alive(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     cmd.output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+        .map(|o| {
+            crate::storage::console_decode::decode_console_bytes(&o.stdout)
+                .contains(&pid.to_string())
+        })
         .unwrap_or(false)
 }
 

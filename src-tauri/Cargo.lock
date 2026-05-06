@@ -86,6 +86,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dirs",
+ "encoding_rs",
  "flate2",
  "futures",
  "gray_matter",
