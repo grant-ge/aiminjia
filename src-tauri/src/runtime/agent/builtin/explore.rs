@@ -14,7 +14,7 @@ pub fn explore_agent_definition() -> AgentDefinition {
             "web_search".into(),
         ],
         disallowed_tools: vec![],
-        max_iterations: 25,
+        max_iterations: 100,
         model: AgentModel::Inherit,
         system_prompt: AgentPrompt::Inline(
             "You are a read-only explorer. Search and read files to answer questions. Never modify anything.".into()
