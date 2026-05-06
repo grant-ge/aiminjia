@@ -32,7 +32,7 @@ export function HomeTaskComposerCard() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { sendUserMessage } = useChat()
-  const { isPickingAttachments, pickAttachments } = useChatAttachments()
+  const { isPickingAttachments, pickAttachments, saveClipboardImage } = useChatAttachments()
 
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([])
 
@@ -44,7 +44,7 @@ export function HomeTaskComposerCard() {
     })
   }, [])
 
-  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
+  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles, saveClipboardImage })
 
   // Drain native drag-drop inbox on mount and whenever new items arrive while
   // this composer is the visible one (Home route). The dropInbox is a shared
