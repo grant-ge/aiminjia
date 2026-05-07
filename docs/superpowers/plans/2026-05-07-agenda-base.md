@@ -1252,6 +1252,28 @@ fn read_occurrences_returns_last_state_per_id() {
     assert_eq!(occs[0].status, OccurrenceStatus::Succeeded);
     assert!(occs[0].finished_at.is_some());
 }
+
+#[test]
+fn append_occurrence_rejects_path_traversal_item_id_without_writing_outside_dir() {
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let unsafe_id = super::super::item::AgendaItemId("../outside".into());
+    let occ = make_running_occurrence(&unsafe_id);
+
+    let err = store.append_occurrence(&occ).unwrap_err();
+    assert!(err.to_string().contains("invalid agenda item id"));
+    assert!(!store.root.join("outside").exists());
+}
+
+#[test]
+fn list_occurrences_rejects_path_traversal_item_id() {
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let unsafe_id = super::super::item::AgendaItemId("../outside".into());
+
+    let err = store.list_occurrences(&unsafe_id, 10).unwrap_err();
+    assert!(err.to_string().contains("invalid agenda item id"));
+}
 ```
 
 - [ ] **Step 2：跑测试看失败**
@@ -1270,6 +1292,7 @@ use std::io::Write;
 impl AgendaStore {
     pub fn append_occurrence(&self, occ: &Occurrence) -> anyhow::Result<()> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(&occ.agenda_item_id)?;
         let path = self.occurrence_shard_path(&occ.agenda_item_id, occ.fired_at);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -1289,6 +1312,7 @@ impl AgendaStore {
         limit: usize,
     ) -> anyhow::Result<Vec<Occurrence>> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(item_id)?;
         let dir = self.occurrence_dir_for(item_id);
         if !dir.exists() {
             return Ok(vec![]);
