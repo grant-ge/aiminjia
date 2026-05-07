@@ -340,11 +340,24 @@ struct TauriChatServices {
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     /// Shared map for injecting employee-run tool whitelists per conversation.
     employee_run_overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
+    /// Per-turn requests, keyed by conversation_id, so prompt builders can see
+    /// request-scoped fields without changing the shared runtime trait.
+    turn_requests: Arc<std::sync::Mutex<std::collections::HashMap<String, ChatTurnRequest>>>,
 }
 
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
     renlijia_md_loader: Arc<tokio::sync::Mutex<crate::runtime::renlijia_md::RenlijiaMdLoader>>,
+}
+
+impl TauriLegacyTurnExecutor {
+    fn request_for_conversation(&self, conversation_id: &str) -> Option<ChatTurnRequest> {
+        self.services
+            .turn_requests
+            .lock()
+            .ok()
+            .and_then(|requests| requests.get(conversation_id).cloned())
+    }
 }
 
 async fn wait_for_message_write_completion(
@@ -1177,8 +1190,20 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     /// 精确移植 agent_loop Block 4 的逻辑：
     ///   - 从 DB 读取 active persona
     ///   - 从 auth_manager 获取 product_name（租户品牌名）
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
-        let persona = self.services.db.get_active_persona().ok();
+    async fn build_system_prompt(&self, conversation_id: &str) -> Result<String, TurnError> {
+        let request = self.request_for_conversation(conversation_id);
+        let persona = match request
+            .as_ref()
+            .and_then(|request| request.persona_id_override.as_deref())
+        {
+            Some(id) => self
+                .services
+                .db
+                .get_persona(id)
+                .ok()
+                .or_else(|| self.services.db.get_active_persona().ok()),
+            None => self.services.db.get_active_persona().ok(),
+        };
 
         let product_name: Option<String> = self
             .services
@@ -1214,9 +1239,21 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn build_prompt_snapshot(
         &self,
-        _conversation_id: &str,
+        conversation_id: &str,
     ) -> Result<Option<TurnPromptSnapshot>, TurnError> {
-        let persona = self.services.db.get_active_persona().ok();
+        let request = self.request_for_conversation(conversation_id);
+        let persona = match request
+            .as_ref()
+            .and_then(|request| request.persona_id_override.as_deref())
+        {
+            Some(id) => self
+                .services
+                .db
+                .get_persona(id)
+                .ok()
+                .or_else(|| self.services.db.get_active_persona().ok()),
+            None => self.services.db.get_active_persona().ok(),
+        };
 
         let product_name: Option<String> = self
             .services
@@ -1946,6 +1983,7 @@ impl TauriChatCommandAdapter {
             skill_registry,
             runtime_resolver,
             employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            turn_requests: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
         let adapter = Arc::new(TauriEventAdapter::new(host));
@@ -2187,7 +2225,14 @@ impl TauriChatCommandAdapter {
             conversation_id
         );
         // Compatibility marker for review tests: self.runtime.run_chat_request(request)
+        let request_key = request.conversation_id.as_str().to_string();
+        if let Ok(mut requests) = self.services.turn_requests.lock() {
+            requests.insert(request_key.clone(), request.clone());
+        }
         let result = runtime.run_chat_request(request).await;
+        if let Ok(mut requests) = self.services.turn_requests.lock() {
+            requests.remove(&request_key);
+        }
         // Release the stream-cancel bridge for this turn before any post-turn work
         // can start, otherwise a stopped turn leaves a stale cancelled slot behind.
         self.services
