@@ -16,7 +16,7 @@ use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
-use crate::plugin::{SkillRegistry, ToolRegistry};
+use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
@@ -2122,17 +2122,6 @@ impl TauriChatCommandAdapter {
             );
         }
         Self { runtime, services }
-    }
-
-    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
-        TauriLegacyTurnExecutor {
-            services: self.services.clone(),
-            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
-            )),
-        }
-        .load_llm_settings()
-        .await
     }
 
     async fn load_llm_settings_for_turn(

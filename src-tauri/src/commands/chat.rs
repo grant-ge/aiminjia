@@ -534,6 +534,7 @@ pub mod testsupport {
     }
 }
 
+#[cfg(test)]
 const FILE_GEN_TOOLS: &[&str] = &[
     "generate_report",
     "generate_chart",
@@ -543,6 +544,7 @@ const FILE_GEN_TOOLS: &[&str] = &[
 
 /// Returns true iff the most recent tool message in `messages` was produced
 /// by one of the file-generating tools.
+#[cfg(test)]
 fn is_last_tool_file_generation(messages: &[crate::llm::streaming::ChatMessage]) -> bool {
     messages
         .iter()
