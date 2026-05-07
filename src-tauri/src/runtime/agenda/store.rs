@@ -251,6 +251,49 @@ impl AgendaStore {
         atomic_write_json(&path, &item)?;
         Ok(item)
     }
+
+    pub fn set_skip(
+        &self,
+        id: &super::item::AgendaItemId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<AgendaItem> {
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
+        let path = self.item_path(id);
+        if !path.exists() {
+            anyhow::bail!("agenda item not found: {}", id.as_str());
+        }
+        let mut item: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
+        if item.rule.is_none() {
+            anyhow::bail!("skip_dates only valid when rule is Some");
+        }
+        if !item.skip_dates.contains(&at) {
+            item.skip_dates.push(at);
+        }
+        item.next_fire_at = compute_next_fire_at(&item, chrono::Utc::now());
+        item.updated_at = chrono::Utc::now();
+        atomic_write_json(&path, &item)?;
+        Ok(item)
+    }
+
+    pub fn unset_skip(
+        &self,
+        id: &super::item::AgendaItemId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<AgendaItem> {
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
+        let path = self.item_path(id);
+        if !path.exists() {
+            anyhow::bail!("agenda item not found: {}", id.as_str());
+        }
+        let mut item: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
+        item.skip_dates.retain(|d| d != &at);
+        item.next_fire_at = compute_next_fire_at(&item, chrono::Utc::now());
+        item.updated_at = chrono::Utc::now();
+        atomic_write_json(&path, &item)?;
+        Ok(item)
+    }
 }
 
 fn validate_item_id_for_path(id: &AgendaItemId) -> anyhow::Result<()> {
@@ -786,6 +829,51 @@ mod tests {
         assert_eq!(stored.occurrence_count, 0);
         assert_eq!(stored.next_fire_at, Some(start));
         assert_eq!(stored.status, ItemStatus::Paused);
+    }
+
+    #[test]
+    fn set_skip_adds_to_skip_dates() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::*;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.rule = Some(RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        });
+        store.create(item.clone()).unwrap();
+        let when = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
+        let updated = store.set_skip(&item.id, when).unwrap();
+        assert!(updated.skip_dates.contains(&when));
+    }
+
+    #[test]
+    fn unset_skip_removes_from_skip_dates() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::*;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.rule = Some(RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        });
+        let when = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
+        item.skip_dates.push(when);
+        store.create(item.clone()).unwrap();
+        let updated = store.unset_skip(&item.id, when).unwrap();
+        assert!(!updated.skip_dates.contains(&when));
+    }
+
+    #[test]
+    fn set_skip_rejects_one_shot() {
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let item = store.create(make_valid_item("p1")).unwrap();
+        let err = store.set_skip(&item.id, Utc::now()).unwrap_err();
+        assert!(err.to_string().contains("rule"));
     }
 
 }
