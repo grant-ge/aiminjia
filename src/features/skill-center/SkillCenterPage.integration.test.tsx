@@ -73,19 +73,10 @@ describe('SkillCenterPage', () => {
     }
   })
 
-  it('热门推荐始终渲染，切换分类后也可见', () => {
+  it('不再渲染热门推荐区块', () => {
     render(<SkillCenterPage />)
-    expect(screen.getByText('热门推荐')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'HR' }))
-    expect(screen.getByText('热门推荐')).toBeInTheDocument()
-  })
-
-  it('热门推荐显示 4 个推荐技能', () => {
-    render(<SkillCenterPage />)
-    expect(screen.getByText('推荐1')).toBeInTheDocument()
-    expect(screen.getByText('推荐2')).toBeInTheDocument()
-    expect(screen.getByText('推荐3')).toBeInTheDocument()
-    expect(screen.getByText('推荐4')).toBeInTheDocument()
+    expect(screen.queryByText('热门推荐')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无热门技能')).not.toBeInTheDocument()
   })
 
   it('切换到 HR 分类后卡片点击进入详情', async () => {

@@ -34,7 +34,7 @@ vi.mock('@/stores/chatStore', () => ({
 
 vi.mock('@/stores/uiStore', () => ({
   useUiStore: {
-    getState: () => ({ setRoute: vi.fn() }),
+    getState: () => ({ setRoute: vi.fn(), consumePrefillText: vi.fn(() => null) }),
   },
 }))
 

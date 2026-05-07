@@ -62,7 +62,9 @@ export function AppSidebar() {
   )
 
   const activeKey: SidebarNavKey | null =
-    route.kind === 'skill-center'
+    route.kind === 'employees'
+      ? 'employees'
+      : route.kind === 'skill-center'
       ? 'skill-center'
       : route.kind === 'schedules'
         ? 'schedules'
