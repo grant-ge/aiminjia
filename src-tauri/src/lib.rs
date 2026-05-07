@@ -685,6 +685,9 @@ pub fn run() {
             // Project memory commands
             commands::project_memory::save_project_memory,
             commands::project_memory::distill_project_memory,
+            // Agenda commands
+            transport::tauri_commands::agenda::list_agenda_items,
+            transport::tauri_commands::agenda::get_agenda_item,
             // Schedule commands
             commands::schedules::list_schedules,
             commands::schedules::create_schedule,

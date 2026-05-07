@@ -3031,7 +3031,7 @@ pub async fn get_agenda_item(
 cd src-tauri && grep -n "Schedule commands" src/lib.rs
 ```
 
-把那段 schedule commands 注册改为：
+在那段 schedule commands 上方追加：
 
 ```rust
 // Agenda commands
