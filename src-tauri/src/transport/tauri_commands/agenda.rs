@@ -238,7 +238,7 @@ pub async fn run_agenda_item_now(
     let item = store.get(&AgendaItemId(id)).map_err(|e| e.to_string())?;
     let now = Utc::now();
     dispatcher
-        .dispatch(item.clone(), now, TriggerSource::ManualRunNow, now)
+        .dispatch(item, now, TriggerSource::ManualRunNow, now)
         .await
         .map_err(|e| e.to_string())
 }
