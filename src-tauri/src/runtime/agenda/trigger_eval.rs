@@ -339,4 +339,17 @@ mod tests {
         let expected = Utc.with_ymd_and_hms(2026, 5, 9, 9, 0, 0).unwrap();
         assert_eq!(compute_next_fire_at(&item, now), Some(expected));
     }
+
+    #[test]
+    fn count_does_not_consume_missed_scheduled_slots() {
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 10, 12, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Count { n: 3 },
+            by_day: vec![], by_month_day: vec![],
+        }, 1);
+        let expected = Utc.with_ymd_and_hms(2026, 5, 11, 9, 0, 0).unwrap();
+        assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+    }
+
 }
