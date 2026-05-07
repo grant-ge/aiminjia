@@ -318,7 +318,7 @@ mod tests {
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         let err = tool
             .execute(
-                json!({ "subagent_type": "browse_data_agent", "description": "test" }),
+                json!({ "subagent_type": "explore", "description": "test" }),
                 ctx,
             )
             .await
@@ -369,7 +369,7 @@ mod tests {
         let result = tool
             .execute(
                 json!({
-                    "subagent_type": "browse_data_agent",
+                    "subagent_type": "explore",
                     "prompt": "scrape some data",
                     "description": "test background",
                     "run_in_background": true,
@@ -399,10 +399,10 @@ mod tests {
         let tool = build_tool_with_recorder(seen.clone());
         let ctx = ToolExecutionContext::for_test("conv-perm", "run-perm", "tc-perm")
             .with_permission_mode(PermissionMode::DontAsk);
-        // browse_data_agent is a builtin in AgentRegistry::with_builtins()
+        // explore is a builtin in AgentRegistry::with_builtins()
         tool.execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "extract table",
                 "description": "sync perm test"
             }),
@@ -412,7 +412,7 @@ mod tests {
         .expect("sync path should succeed with stub launcher");
         let reqs = seen.lock().unwrap();
         assert_eq!(reqs.len(), 1);
-        assert_eq!(reqs[0].subagent_type, "browse_data_agent");
+        assert_eq!(reqs[0].subagent_type, "explore");
     }
 
     #[tokio::test]
@@ -422,7 +422,7 @@ mod tests {
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         tool.execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "test",
                 "description": "empty model",
                 "model": ""

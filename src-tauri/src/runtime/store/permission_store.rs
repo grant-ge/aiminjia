@@ -566,8 +566,8 @@ mod tests {
             &user_path,
             serde_json::to_string(&PermissionStoreSnapshot {
                 rules: vec![PermissionRule::simple(
-                    "execute_python",
-                    PermissionScope::Scope("python:exec".to_string()),
+                    "web_search",
+                    PermissionScope::Scope("network".to_string()),
                     PolicyDecision::AlwaysAllow,
                     PermissionSource::User,
                 )],
@@ -583,7 +583,7 @@ mod tests {
             Some(PolicyDecision::AlwaysDeny)
         );
         assert_eq!(
-            store.get_for_scope("execute_python", "python:exec"),
+            store.get_for_scope("web_search", "network"),
             Some(PolicyDecision::AlwaysAllow)
         );
     }

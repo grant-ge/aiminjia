@@ -30,9 +30,7 @@ pub struct QueryEngine {
     /// Injected from `connector_engine.is_some()` on the production path so that
     /// browser-scope tools pass `CapabilityPermissionPipeline` checks.
     browser_available: bool,
-    /// File operations accessor injected from the transport layer.
-    /// When present, `load_file` runtime tool uses this to load files
-    /// instead of bridging through `PluginContext`.
+    /// File operations accessor injected from the transport layer (stub, retained for compatibility).
     file_ops: Option<Arc<dyn FileOperations>>,
     /// Session-scoped cache shared by all read-file tool calls in this engine.
     read_file_state: Arc<FileStateCache>,
@@ -121,8 +119,7 @@ impl QueryEngine {
         self
     }
 
-    /// Attach a file operations accessor so that `load_file` runtime tool can
-    /// operate through `CapabilityContext.file_ops` without a `PluginContext`.
+    /// Attach a file operations accessor (stub, retained for compile compatibility).
     pub fn with_file_ops(mut self, file_ops: Arc<dyn FileOperations>) -> Self {
         self.file_ops = Some(file_ops);
         self

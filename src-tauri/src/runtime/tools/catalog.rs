@@ -169,20 +169,6 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("get_file_info", "获取授权工作目录中文件或目录的元数据")
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(true)
-            .with_capability_scope(["workspace:read"]),
-        json!({
-            "type": "object",
-            "required": ["path"],
-            "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的路径" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
         ToolDefinition::new("write_file", "在授权工作目录中创建或完整覆盖写入文本文件")
             .with_kind(ToolKind::Primitive)
             .with_capability_scope(["workspace:write"]),
@@ -318,28 +304,6 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("load_file",
-            "加载已上传文件，使数据可在 execute_python 中以变量形式使用。\
-            \n\n加载结果：单文件 → _df（DataFrame）或 _text（字符串）；\
-            多文件场景下所有数据在 _dfs 字典（按 file_id 索引）或 _texts 字典中，_df/_text 指向最后加载的文件。\
-            在 execute_python 中直接使用这些变量即可，禁止猜测文件路径。\
-            \n\n_df 包含完整数据（非 sampleData 样本），分析时先用 len(_df) 确认规模，基于全量数据统计。\
-            \n\n注意：Power 工具，执行 Python 解析、PII 脱敏、session 缓存写入等副作用。")
-            .with_kind(ToolKind::Power)
-            .with_default_timeout_secs(120)
-            .with_capability_scope(["workspace:read", "workspace:write", "python:exec"]),
-        json!({
-            "type": "object",
-            "required": ["file_id"],
-            "properties": {
-                "file_id": { "type": "string", "description": "已上传文件的 ID" },
-                "sheet": { "type": "string", "description": "Excel 工作表名（可选）" },
-                "nrows": { "type": "integer", "description": "最多加载行数（可选）" }
-            }
-        }),
-    ));
-
     // ── Primitive: network ────────────────────────────────────────
     c.insert(CatalogEntry::new(
         ToolDefinition::new("web_search", "搜索互联网获取最新信息")
@@ -355,193 +319,12 @@ fn build_default_catalog() -> ToolCatalog {
         }),
     ));
 
-    // ── Primitive: browser ────────────────────────────────────────
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("browse_navigate", "导航浏览器到指定 URL")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": ["url"],
-            "properties": {
-                "url": { "type": "string", "description": "目标 URL" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("read_page_content", "读取当前浏览器页面的文本内容")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": [],
-            "properties": {
-                "selector": { "type": "string", "description": "CSS 选择器（可选，默认读取全页）" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("page_execute_js", "在当前浏览器页面执行 JavaScript")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": ["code"],
-            "properties": {
-                "code": { "type": "string", "description": "JavaScript 代码" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("extract_table_data", "从当前浏览器页面抽取表格数据")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": [],
-            "properties": {
-                "selector": { "type": "string", "description": "表格 CSS 选择器" },
-                "max_rows": { "type": "integer", "description": "最多抽取行数" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("extract_with_pagination", "分页抽取浏览器表格数据")
-            .with_kind(ToolKind::Primitive)
-            .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": ["next_selector"],
-            "properties": {
-                "next_selector": { "type": "string", "description": "下一页按钮 CSS 选择器" },
-                "max_pages": { "type": "integer", "description": "最多翻页数", "default": 10 }
-            }
-        }),
-    ));
-
-    // ── Power: execute_python ─────────────────────────────────────
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("execute_python",
-            "执行 Python 代码进行数据分析和文件处理。\
-            \n\n【Python 环境】pandas(pd)、numpy(np)、scipy.stats 已预导入。\
-            辅助函数：_print_table(headers, rows, title) 输出 Markdown 表格；\
-            _export_detail(df, filename, title) 导出 Excel 并预览前 15 行；\
-            _smart_read_csv(path) 自动检测编码。\
-            工作目录为工作区根目录，各子目录：uploads/（上传文件）、exports/（导出数据）、reports/（报告）、charts/（图表）。\
-            \n\n【数据来源】已上传文件先调用 load_file 加载，数据以 _df（单文件 DataFrame）/ _dfs（多文件 dict）/ _text / _texts 变量形式注入。\
-            已连接本地目录先用 bash 或 search_files / read_workspace_file 读取后再传入本工具处理。\
-            \n\n【文件管理函数】_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件。\
-            \n\n注意：Power 工具，有 session 状态和文件写出副作用。代码执行出错时直接修正重试。")
-            .with_kind(ToolKind::Power)
-            .with_max_result_size_chars(32_000)
-            .with_preserve_tool_use_results(true)
-            .with_default_timeout_secs(600)
-            .with_capability_scope(["python:exec", "workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["code"],
-            "properties": {
-                "code": { "type": "string", "description": "Python 代码" },
-                "purpose": { "type": "string", "description": "简要说明代码用途" }
-            }
-        }),
-    ));
-
-    // ── Composite tools ───────────────────────────────────────────
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
-            "browse_data",
-            "【Composite 工具】从内部业务系统抽取数据。\
-            \n\n内部固定三步流程：\
-            1. browse_and_extract(url) — 打开数据页面，查看表格和菜单；\
-            2. extract_with_pagination() — 自动翻页提取全量数据并保存为 JSON；\
-            3. 报告文件路径、总行数、列名。\
-            \n\n返回文件路径，请用 execute_python 进一步处理。\
-            ACCESS DENIED 时立即停止。一次只提取一个数据表。",
-        )
-        .with_kind(ToolKind::Composite)
-        .with_capability_scope(["browser", "network", "workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["task"],
-            "properties": {
-                "task": { "type": "string", "description": "需要抽取的数据描述" },
-                "url": { "type": "string", "description": "目标系统 URL（可选）" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
-            "browse_and_extract",
-            "【Composite 工具】导航到 URL 并抽取结构化数据（navigate + read + extract 三步合一）。\
-            \n\n用于一次性提取页面数据。\
-            如需分页全量抽取，改用 extract_with_pagination()，它自动处理分页且无需手动翻页参数。\
-            禁止用 page_execute_js 提取表格数据——用本工具或 extract_table_data 替代。",
-        )
-        .with_kind(ToolKind::Composite)
-        .with_capability_scope(["browser"]),
-        json!({
-            "type": "object",
-            "required": ["url"],
-            "properties": {
-                "url": { "type": "string", "description": "目标 URL" },
-                "selector": { "type": "string", "description": "数据选择器" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("generate_report",
-            "【Composite 工具】生成专业分析报告（HTML/Markdown/PDF/DOCX）。\
-            \n\n【数据传递规则】sections 参数禁止直接写入大段文本数据。\
-            正确做法：先用 execute_python 从 _df 生成报告 sections 数据并写入 JSON 文件，\
-            再调用 generate_report(source=\"文件路径\")。\
-            \n\n内部包含：渲染 → 写文件 → 按需格式转换，多阶段操作。\
-            用于分析末尾生成最终报告，不适合中间步骤。")
-            .with_kind(ToolKind::Composite)
-            .with_preserve_tool_use_results(true)
-            .with_default_timeout_secs(300)
-            .with_capability_scope(["workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["title"],
-            "properties": {
-                "title": { "type": "string" },
-                "sections": { "type": "array", "items": { "type": "object" } },
-                "format": { "type": "string", "enum": ["html","markdown","pdf","docx"], "default": "html" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("generate_chart",
-            "【Composite 工具】生成交互式数据可视化图表（计算 + 渲染 + 写文件）。\
-            \n\n【数据传递规则】数据点超过 50 个时必须使用 data_file 参数（先用 execute_python 准备数据并写入 JSON 文件，再传入文件路径），\
-            不得在 data 参数中直接内联大量数据点。")
-            .with_kind(ToolKind::Composite)
-            .with_default_timeout_secs(300)
-            .with_capability_scope(["workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["chart_type","title","data"],
-            "properties": {
-                "chart_type": { "type": "string", "enum": ["bar","line","scatter","box","heatmap","pie","histogram"] },
-                "title": { "type": "string" },
-                "data": { "type": "object" }
-            }
-        }),
-    ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "spawn_subagent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
-            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'、'browse_data_agent'）或不同模型。\
+            \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'）或不同模型。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
             \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 task_output(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
         )
@@ -553,7 +336,7 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'、'browse_data_agent'）。"
+                    "description": "Agent 类型名称，来自注册表（如 'general-purpose'、'explore'）。"
                 },
                 "prompt": {
                     "type": "string",
@@ -786,20 +569,10 @@ fn build_default_catalog() -> ToolCatalog {
     c
 }
 
-/// daily 模式允许 LLM 直接调用的工具集。
+/// daily 模式允许 LLM 直接调用的工具集（Primitive + 必要 Support 工具）。
 ///
-/// 包含所有 Primitive + Power 工具，以及少数 daily 场景常用的 Composite 工具
-/// （browse_data、generate_report、generate_chart）。
-/// 不包含 browse_and_extract 等纯分析流程专属的 Composite 工具。
-///
-/// 对齐 claude-code-best 原子工具模型：主要包含 register_runtime 工具；
-/// `load_skill` 是例外，它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
-///
-/// 以下工具已移除（无 register_runtime 注册，或 ToolPlugin 路径已关闭）：
-///   - web_search, browse_navigate, read_page_content（request-scoped，非 daily 默认工具）
-///   - load_file, execute_python（request-scoped，未全局注册）
-///   - browse_data, generate_report, generate_chart（request-scoped，未全局注册）
-///   - save_memory, load_core_memory, distill_memories（legacy memory ToolPlugin 已关闭）
+/// 对齐原子工具模型；register_runtime 注册的工具默认走 ToolDispatcher。
+/// `load_skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
@@ -809,7 +582,6 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "write_file",
     "edit_file",
     "search_files",
-    "get_file_info",
     "grep_content",
     "write_memory",
     "search_memory",

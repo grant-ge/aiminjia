@@ -929,7 +929,7 @@ mod tests {
         let config = SubAgentConfig {
             task: "collect data".to_string(),
             system_prompt: "system".to_string(),
-            allowed_tools: vec!["read_page_content".to_string()],
+            allowed_tools: vec!["read_workspace_file".to_string()],
             max_iterations: 3,
             dynamic_context: String::new(),
             conversation_id: "conv-worker-mode".to_string(),
@@ -944,7 +944,7 @@ mod tests {
             disallowed_tools: vec![],
         };
 
-        let final_allowed = vec!["read_page_content".to_string()];
+        let final_allowed = vec!["read_workspace_file".to_string()];
         let run_config =
             SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed);
 

@@ -22,7 +22,6 @@ const FINGERPRINTS: &[&str] = &[
     "requires_confirmation",
     "确认卡点",
     // Internal configuration labels
-    "execute_python 环境",
     "排除人员展示规则",
 ];
 
@@ -107,7 +106,7 @@ mod tests {
     #[test]
     fn test_many_fingerprints_triggers_leak() {
         let content = "SYSTEM_PROMPT 包含了 数据真实性铁律 和 确认卡点 以及 前序分析记录。\
-                        execute_python 环境 中有 _load_data 和 _smart_read_csv。";
+                        排除人员展示规则 中有 _load_data 和 _smart_read_csv。";
         match check_for_leak(content) {
             LeakCheckResult::Leaked { matched_count, .. } => {
                 assert!(
@@ -139,7 +138,7 @@ mod tests {
     #[test]
     fn test_normal_tool_usage_no_false_positive() {
         // Typical LLM output mentioning tools it's using — should NOT trigger
-        let content = "我先用 load_file 加载文件数据，然后用 execute_python 进行分析。\
+        let content = "我先用 read_workspace_file 读取文件数据，然后用 bash 进行分析。\
                         接下来我会用 web_search 搜索行业基准数据。\
                         数据显示 Compa-Ratio 中位数为 95%，CV 为 18%。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));

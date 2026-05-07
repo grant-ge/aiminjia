@@ -1,27 +1,7 @@
-//! 验证 daily 模式不再默认暴露所有工具，composite 工具不能是 Primitive。
+//! 验证 daily 模式工具集合的约束。
 
 use app_lib::runtime::tools::catalog::{ToolCatalog, DAILY_ALLOWED_TOOLS};
 use app_lib::runtime::tools::definition::ToolKind;
-
-#[test]
-fn composite_tools_are_not_primitive() {
-    let catalog = ToolCatalog::default_catalog();
-    let composite_ids = [
-        "browse_data",
-        "generate_report",
-        "generate_chart",
-    ];
-    for id in &composite_ids {
-        let def = catalog
-            .get(id)
-            .unwrap_or_else(|| panic!("{} must be in catalog", id));
-        assert!(
-            !matches!(def.kind, ToolKind::Primitive),
-            "Composite tool '{}' must NOT be Primitive kind",
-            id
-        );
-    }
-}
 
 #[test]
 fn all_catalog_tools_have_valid_kind() {

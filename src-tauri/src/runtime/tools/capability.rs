@@ -116,28 +116,23 @@ pub trait NotificationSink: Send + Sync + std::fmt::Debug {
 
 // ── FileOperations trait ─────────────────────────────────────────────────────
 
-/// Result returned by [`FileOperations::load_file`].
+/// Result returned by a file-loading operation (retained for compile compatibility).
 #[derive(Clone, Debug)]
 pub struct LoadedFileResult {
     /// User-visible JSON payload returned to the LLM/runtime.
     pub content: String,
 }
 
-/// Narrow file-loading capability exposed to runtime tools.
+/// Narrow file-loading capability exposed to runtime tools (stub interface).
 ///
-/// This trait decouples `LoadFileRuntimeTool` from `PluginContext` and
-/// `handle_load_file`'s raw infrastructure dependencies (`AppStorage`,
-/// `FileManager`, `PythonSessionManager`).  The runtime tool calls methods
-/// on this trait instead of rebuilding a `PluginContext`.
-///
-/// `DefaultFileOperations` is the production implementation; tests can
-/// substitute a mock.
+/// This trait was used by `LoadFileRuntimeTool` to decouple it from
+/// `PluginContext`. The `load_file` tool has been removed in Phase 3 of the
+/// tool cleanup, but the trait is retained because `CapabilityContext` and
+/// `QueryEngine` still carry an `Option<Arc<dyn FileOperations>>` field.
+/// A future cleanup pass should remove those fields and this trait entirely.
 #[async_trait]
 pub trait FileOperations: Send + Sync + std::fmt::Debug {
-    /// Load a file using the raw tool arguments.
-    ///
-    /// This preserves the current `load_file` surface (`file_id`, optional
-    /// `sheet`, optional `nrows`) without widening `ToolExecutionContext`.
+    /// Load a file using the raw tool arguments (stub — always returns error).
     async fn load_file(&self, args: &serde_json::Value) -> anyhow::Result<LoadedFileResult>;
 
     /// Return whether this file is already loaded for the given scope.
@@ -157,7 +152,7 @@ pub trait FileOperations: Send + Sync + std::fmt::Debug {
 /// | `storage`           | Workspace path and scoped file-I/O helpers       |
 /// | `workspace_id`      | Logical workspace identifier for key-scoping     |
 /// | `browser_available` | Whether a browser connector is active            |
-/// | `file_ops`          | File loading operations (load_file)              |
+/// | `file_ops`          | File operations stub (retained for compile compat) |
 ///
 /// Fields that are *not* present here (e.g. `gateway`, `auth_manager`,
 /// `agent_runtime`) must be accessed via dedicated orchestration APIs, not
@@ -294,16 +289,11 @@ pub type SharedCapabilityContext = Arc<CapabilityContext>;
 
 // ── DefaultFileOperations ────────────────────────────────────────────────────
 
-/// Production [`FileOperations`] implementation.
+/// Production [`FileOperations`] stub implementation.
 ///
-/// Wraps the concrete infrastructure deps (`AppStorage`, `FileManager`,
-/// `PythonSessionManager`) and delegates to
-/// [`crate::llm::tool_executor::file_load::handle_load_file_core`].
-///
-/// `app_handle` is `None` because `runtime/` must not import `tauri::` — this
-/// is identical to the previous `build_plugin_ctx` bridge behaviour.  When
-/// `RuntimeHost` trait injection is implemented, the app handle can be threaded
-/// through that mechanism instead.
+/// The `load_file` tool has been removed in Phase 3 of the tool cleanup.
+/// This struct is retained as a no-op stub so that existing construction sites
+/// (worker_runtime.rs, legacy registry) continue to compile.
 pub struct DefaultFileOperations {
     pub(crate) storage: Arc<crate::storage::file_store::AppStorage>,
     pub(crate) file_manager: Arc<crate::storage::file_manager::FileManager>,
@@ -315,13 +305,6 @@ pub struct DefaultFileOperations {
 }
 
 impl DefaultFileOperations {
-    /// Construct a `DefaultFileOperations` from its constituent parts.
-    ///
-    /// This constructor is the canonical way to build a `DefaultFileOperations`
-    /// outside of `runtime/` (e.g. in integration tests or transport glue code).
-    /// Fields are `pub(crate)` so that internal modules can read them, but external
-    /// callers must go through this constructor to ensure all dependencies are
-    /// wired correctly.
     pub fn new(
         storage: Arc<crate::storage::file_store::AppStorage>,
         file_manager: Arc<crate::storage::file_manager::FileManager>,
@@ -355,20 +338,10 @@ impl std::fmt::Debug for DefaultFileOperations {
 
 #[async_trait]
 impl FileOperations for DefaultFileOperations {
-    async fn load_file(&self, args: &serde_json::Value) -> anyhow::Result<LoadedFileResult> {
-        use crate::llm::tool_executor::file_load::{handle_load_file_core, LoadFileParams};
-
-        let params = LoadFileParams {
-            storage: &self.storage,
-            file_manager: &self.file_manager,
-            workspace_path: &self.workspace_path,
-            conversation_id: &self.conversation_id,
-            run_id: self.run_id.as_ref(),
-            python_binary: self.python_binary.clone(),
-            python_home: self.python_home.clone(),
-        };
-        let content = handle_load_file_core(&params, args).await?;
-        Ok(LoadedFileResult { content })
+    async fn load_file(&self, _args: &serde_json::Value) -> anyhow::Result<LoadedFileResult> {
+        Err(anyhow::anyhow!(
+            "load_file has been removed in Phase 3 of the tool cleanup"
+        ))
     }
 
     fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool {

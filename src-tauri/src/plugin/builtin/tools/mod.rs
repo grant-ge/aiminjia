@@ -25,7 +25,7 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
     };
     use crate::runtime::tools::builtin::workspace::{
-        EditFileRuntimeTool, GetFileInfoRuntimeTool,
+        EditFileRuntimeTool,
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
     };
     registry
@@ -33,9 +33,6 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(SearchFilesRuntimeTool))
-        .await;
-    registry
-        .register_runtime(Arc::new(GetFileInfoRuntimeTool))
         .await;
     registry
         .register_runtime(Arc::new(WriteFileRuntimeTool))

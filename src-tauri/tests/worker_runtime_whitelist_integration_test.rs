@@ -47,7 +47,7 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
     let available = vec![
         "read_file".to_string(),
         "ask_user_question".to_string(),
-        "browse_data".to_string(), // not in ASYNC_AGENT_ALLOWED
+        "custom_tool_x".to_string(), // not in ASYNC_AGENT_ALLOWED
     ];
     let allowed = resolve_agent_tools(
         &[],
@@ -58,8 +58,8 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
     );
     assert!(allowed.contains(&"read_file".to_string()));
     assert!(!allowed.contains(&"ask_user_question".to_string()));
-    // browse_data is NOT in ASYNC_AGENT_ALLOWED list
-    assert!(!allowed.contains(&"browse_data".to_string()));
+    // custom_tool_x is NOT in ASYNC_AGENT_ALLOWED list
+    assert!(!allowed.contains(&"custom_tool_x".to_string()));
 }
 
 #[test]

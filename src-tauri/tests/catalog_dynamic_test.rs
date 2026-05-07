@@ -17,8 +17,8 @@ async fn catalog_supports_dynamic_registration() {
 
 #[tokio::test]
 async fn builtin_tools_present_after_dynamic_catalog_init() {
-    assert!(TOOL_CATALOG.get("execute_python").is_some());
-    assert!(TOOL_CATALOG.get("browse_navigate").is_some());
+    assert!(TOOL_CATALOG.get("bash").is_some());
+    assert!(TOOL_CATALOG.get("web_search").is_some());
 }
 
 #[tokio::test]

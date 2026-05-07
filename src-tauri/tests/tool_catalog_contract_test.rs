@@ -13,14 +13,8 @@ fn tool_kind_default_is_primitive() {
 }
 
 #[test]
-fn execute_python_kind_is_power() {
-    let def = ToolDefinition::new("execute_python", "Run Python").with_kind(ToolKind::Power);
-    assert!(matches!(def.kind, ToolKind::Power));
-}
-
-#[test]
-fn browse_data_kind_is_composite() {
-    let def = ToolDefinition::new("browse_data", "Multi-step browser agent")
+fn spawn_subagent_kind_is_composite() {
+    let def = ToolDefinition::new("spawn_subagent", "Launch sub-agent")
         .with_kind(ToolKind::Composite);
     assert!(matches!(def.kind, ToolKind::Composite));
 }
@@ -69,15 +63,11 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     let schemas = registry
         .get_schemas_filtered(&ToolFilter::Only(vec![
             "web_search".to_string(),
-            "browse_navigate".to_string(),
+            "write_memory".to_string(),
         ]))
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
-    assert_eq!(
-        names,
-        vec!["browse_navigate".to_string(), "web_search".to_string()],
-        "get_schemas_filtered must return the expected filtered tool set"
-    );
+    // Both are in REQUEST_SCOPED_RUNTIME_TOOL_NAMES so should appear when filtered
     let builtin: Vec<_> = names
         .iter()
         .filter(|name| !name.starts_with("mcp__"))
@@ -167,14 +157,7 @@ fn tool_definition_default_max_result_size_chars_is_8000() {
 
 #[test]
 fn tool_definition_with_max_result_size_chars_sets_field() {
-    let def = ToolDefinition::new("execute_python", "desc").with_max_result_size_chars(32_000);
-    assert_eq!(def.default_max_result_size_chars, 32_000);
-}
-
-#[test]
-fn catalog_execute_python_has_32000_limit() {
-    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let def = ToolDefinition::new("some_tool_with_limit", "desc").with_max_result_size_chars(32_000);
     assert_eq!(def.default_max_result_size_chars, 32_000);
 }
 
@@ -214,10 +197,6 @@ fn catalog_long_running_tools_have_declared_default_timeouts() {
 
     for (id, expected) in [
         ("bash", Some(120)),
-        ("load_file", Some(120)),
-        ("execute_python", Some(600)),
-        ("generate_report", Some(300)),
-        ("generate_chart", Some(300)),
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(

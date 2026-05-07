@@ -16,7 +16,7 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
         generated_files: vec!["/tmp/a.json".to_string(), "/tmp/b.json".to_string()],
         terminal_tool_results: vec![SubAgentTerminalToolResult {
             tool_call_id: "call-1".to_string(),
-            tool_name: "extract_table_data".to_string(),
+            tool_name: "bash".to_string(),
             success: true,
             summary: "saved 128 rows".to_string(),
             generated_files: vec!["/tmp/a.json".to_string()],
@@ -32,7 +32,7 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
                 role: "tool".to_string(),
                 content: "已导出 /tmp/a.json".to_string(),
                 tool_call_id: Some("call-1".to_string()),
-                tool_name: Some("extract_table_data".to_string()),
+                tool_name: Some("bash".to_string()),
             },
         ],
         transcript_ref: Some(build_subagent_transcript_ref("run-child-1")),
@@ -46,7 +46,7 @@ fn envelope_roundtrip_keeps_core_sidechain_fields() {
     assert_eq!(decoded.terminal_tool_results.len(), 1);
     assert_eq!(
         decoded.terminal_tool_results[0].tool_name,
-        "extract_table_data"
+        "bash"
     );
     assert_eq!(decoded.transcript_snapshot.len(), 2);
     assert_eq!(
@@ -64,7 +64,7 @@ fn message_bridge_formats_envelope_summary_payload() {
         generated_files: vec!["/tmp/output.json".to_string()],
         terminal_tool_results: vec![SubAgentTerminalToolResult {
             tool_call_id: "call-2".to_string(),
-            tool_name: "browse_and_extract".to_string(),
+            tool_name: "web_search".to_string(),
             success: false,
             summary: "ACCESS DENIED".to_string(),
             generated_files: Vec::new(),
@@ -109,7 +109,7 @@ async fn background_run_persists_decodable_envelope_summary() {
         generated_files: vec!["/tmp/h7.json".to_string()],
         terminal_tool_results: vec![SubAgentTerminalToolResult {
             tool_call_id: "call-h7".to_string(),
-            tool_name: "extract_table_data".to_string(),
+            tool_name: "bash".to_string(),
             success: true,
             summary: "saved 42 rows".to_string(),
             generated_files: vec!["/tmp/h7.json".to_string()],

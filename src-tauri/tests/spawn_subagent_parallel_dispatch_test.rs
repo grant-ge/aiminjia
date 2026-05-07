@@ -92,7 +92,7 @@ async fn parallel_spawn_subagent_calls_run_concurrently() {
     let inputs: Vec<serde_json::Value> = (0..4)
         .map(|i| {
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": format!("task-{i}"),
                 "description": format!("desc-{i}"),
             })
@@ -123,7 +123,7 @@ async fn parallel_spawn_subagent_calls_run_concurrently() {
     assert_eq!(results.len(), 4);
     for r in &results {
         assert!(
-            r.content.contains("done: browse_data_agent"),
+            r.content.contains("done: explore"),
             "unexpected launcher output: {}",
             r.content
         );
@@ -165,7 +165,7 @@ async fn dispatch_batch_runs_concurrency_safe_tools_in_parallel() {
                 format!("tc-batch-{i}"),
             );
             let input = json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": format!("batch-task-{i}"),
                 "description": format!("batch-desc-{i}"),
             });

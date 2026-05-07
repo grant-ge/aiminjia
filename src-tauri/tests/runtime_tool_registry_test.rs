@@ -1,6 +1,5 @@
 use app_lib::runtime::tools::builtin::workspace::{
-    GetFileInfoRuntimeTool, ReadWorkspaceFileRuntimeTool,
-    SearchFilesRuntimeTool,
+    ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool,
 };
 use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
@@ -48,7 +47,6 @@ async fn workspace_runtime_tools_have_correct_kind() {
     let tools: Vec<Box<dyn RuntimeTool>> = vec![
         Box::new(ReadWorkspaceFileRuntimeTool),
         Box::new(SearchFilesRuntimeTool),
-        Box::new(GetFileInfoRuntimeTool),
     ];
     for tool in &tools {
         let def = tool.definition();

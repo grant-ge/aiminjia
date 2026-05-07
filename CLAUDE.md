@@ -111,7 +111,7 @@ invoke('send_message')
 
 - **RuntimeTool**（新）：在 `runtime/tools/dispatcher.rs` 注册，通过 `ToolExecutionContext` + `CapabilityContext` 获取能力，是长期目标路径
 - **LegacyToolAdapter**（旧）：将 `plugin/tool_trait.rs` 的 `ToolPlugin` 适配为 `RuntimeTool`，桥接层，不应新增
-- 工具实现主体在 `llm/tool_executor/`（upload/load/execute_python/report/chart 等）和 `plugin/builtin/tools/`（browse/extract 等）
+- 工具实现主体在 `llm/tool_executor/`（upload/dingtalk/search 等）和 `plugin/builtin/tools/`（echo_runtime 等）
 - **MCP 工具**（新）：位于 `runtime/mcp/`，通过 `McpConnection -> McpRuntimeTool -> ToolRegistry` 动态注册；对外工具名必须是 `mcp__<server>__<tool>`，disconnect / refresh 时必须同步清理 runtime tool pool 与 `TOOL_CATALOG`
 
 ### 事件协议
@@ -137,12 +137,6 @@ invoke('send_message')
 - `src-tauri/src/runtime/mcp/manager.rs`：管理 server 注册 / connect / refresh / disconnect / unregister 生命周期
 - Tauri 启动时会在 `src-tauri/src/lib.rs` 中 `app.manage(Arc<McpServerManager>)`
 - 当前仓库已具备 runtime 层 MCP 支持，但**还没有** end-user 配置加载器和前端管理面板
-
-### Python 沙箱
-
-- 配置入口：`python/sandbox.rs` — `SandboxConfig::for_workspace()` 设置允许路径（写死为 workspace 的 7 个子目录）
-- 执行入口：`python/runner.rs` — `PythonRunner`
-- 沙箱通过 `_safe_open` 限制写路径，通过 `validate_code()` 静态检查危险模式
 
 ### Skill 系统（新）
 

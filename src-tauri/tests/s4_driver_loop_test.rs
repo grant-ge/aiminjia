@@ -249,7 +249,7 @@ fn collect_results_keeps_content_within_declared_limit() {
     let content_5k = "p".repeat(5_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "execute_python".to_string(),
+        tool_name: "bash".to_string(),
         content: content_5k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),

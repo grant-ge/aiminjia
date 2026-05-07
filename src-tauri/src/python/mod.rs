@@ -1,50 +1,11 @@
-pub mod analysis_utils;
-pub mod parser;
-pub mod runner;
-pub mod sandbox;
+//! Python session management stub.
+//!
+//! This stub preserves the PythonSessionManager type for the compilation boundary while
+//! providing no-op implementations. Callers that reference session_manager fields will
+//! continue to compile; the manager simply does nothing.
+//!
+//! TODO: Remove remaining session_manager references from non-Python code paths
+//! (transport/tauri_commands/chat.rs, runtime/conversation_service.rs, plugin/registry.rs,
+//! llm/sub_agent.rs) in a follow-up cleanup pass, then delete this module entirely.
+
 pub mod session;
-
-use std::path::Path;
-use tokio::process::Command;
-
-/// Configure shared Python environment variables on a Command.
-///
-/// Sets UTF-8 encoding, unbuffered output, and optional PYTHONHOME isolation.
-/// Also strips known sensitive environment variables so that user-supplied
-/// Python code cannot read API keys from the parent process environment.
-/// Used by both `PythonRunner` (one-shot) and `PythonSession` (persistent REPL)
-/// to ensure identical Python process configuration.
-pub(crate) fn configure_python_env(cmd: &mut Command, python_home: Option<&Path>) {
-    cmd.env("PYTHONIOENCODING", "utf-8")
-        .env("PYTHONLEGACYWINDOWSSTDIO", "0")
-        .env("PYTHONUTF8", "1")
-        .kill_on_drop(true);
-
-    // Prevent CMD window flash on Windows
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    if let Some(home) = python_home {
-        cmd.env("PYTHONHOME", home);
-        cmd.env_remove("PYTHONPATH");
-    }
-
-    // Strip sensitive environment variables so user Python code cannot read
-    // API keys or credentials from the parent process environment.
-    // Use env_remove (not env_clear) to preserve variables Python needs to run.
-    let sensitive_vars = [
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "TAVILY_API_KEY",
-        "BOCHA_API_KEY",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_ACCESS_KEY_ID",
-    ];
-    for var in &sensitive_vars {
-        cmd.env_remove(var);
-    }
-}

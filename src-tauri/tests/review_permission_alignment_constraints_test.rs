@@ -56,8 +56,8 @@ fn review_permission_workspace_overrides_user_layer() {
     store.record_to(
         PermissionDestination::User,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".into()),
+            "bash",
+            PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::User,
         ),
@@ -65,14 +65,14 @@ fn review_permission_workspace_overrides_user_layer() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".into()),
+            "bash",
+            PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
         ),
     );
     assert_eq!(
-        store.get_for_scope("execute_python", "python:exec"),
+        store.get_for_scope("bash", "workspace:write"),
         Some(PolicyDecision::AlwaysDeny),
         "workspace layer must override user layer"
     );

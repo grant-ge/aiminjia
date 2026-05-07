@@ -18,16 +18,6 @@ use crate::runtime::state::TurnState;
 use crate::runtime::tools::InterruptBehavior;
 use crate::telemetry::{record_diagnostic, DiagnosticEvent, DiagnosticSource};
 
-/// Browser tool names that receive a special guidance message when blocked.
-const BROWSER_TOOLS: &[&str] = &[
-    "browse_navigate",
-    "browse_and_extract",
-    "read_page_content",
-    "page_execute_js",
-    "extract_table_data",
-    "extract_with_pagination",
-];
-
 /// Unified result for a single tool call within a round.
 #[derive(Debug, Clone)]
 pub enum ToolRoundResult {
@@ -273,25 +263,12 @@ impl ToolRoundDriver {
             call.tool_call_id
         );
 
-        // Browser tools blocked in daily mode get a special guidance message
-        // pointing to the browse_data sub-agent.
-        let reason = if BROWSER_TOOLS.contains(&call.tool_name.as_str())
-            && allowed.iter().any(|t| t == "browse_data")
-        {
-            format!(
-                "Error: Tool '{}' is not directly available. \
-                 Use `browse_data(task, url?)` instead — it delegates to a browser \
-                 sub-agent that handles navigation, reading, and extraction automatically.",
-                call.tool_name
-            )
-        } else {
-            format!(
-                "Error: Tool '{}' is not available in the current analysis step. \
-                 Available tools: {}",
-                call.tool_name,
-                allowed.join(", ")
-            )
-        };
+        let reason = format!(
+            "Error: Tool '{}' is not available in the current analysis step. \
+             Available tools: {}",
+            call.tool_name,
+            allowed.join(", ")
+        );
 
         Some(BlockedToolOutcome {
             tool_call_id: call.tool_call_id.clone(),
@@ -404,43 +381,6 @@ mod tests {
             ToolRoundResult::Blocked(b) => {
                 assert_eq!(b.tool_name, "forbidden_tool");
                 assert!(b.reason.contains("not available"));
-            }
-            other => panic!("expected Blocked, got {:?}", other),
-        }
-    }
-
-    #[tokio::test]
-    async fn browser_tool_blocked_with_browse_data_available_gives_guidance() {
-        let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
-        let engine = QueryEngine::with_dispatcher(dispatcher);
-        let driver = ToolRoundDriver::new(engine).with_allowed_tools(vec![
-            "browse_data".to_string(),
-            "execute_python".to_string(),
-        ]);
-        let bus = RuntimeEventBus::new();
-        let turn = make_turn();
-
-        let results = driver
-            .execute_round(
-                &turn,
-                &bus,
-                vec![RuntimeToolCallRequest {
-                    tool_call_id: "tc-browser".into(),
-                    tool_name: "browse_navigate".into(),
-                    args: json!({}),
-                    purpose: None,
-                }],
-            )
-            .await;
-
-        assert_eq!(results.len(), 1);
-        match &results[0] {
-            ToolRoundResult::Blocked(b) => {
-                assert!(
-                    b.reason.contains("browse_data"),
-                    "blocked browser tool should mention browse_data; got: {}",
-                    b.reason
-                );
             }
             other => panic!("expected Blocked, got {:?}", other),
         }

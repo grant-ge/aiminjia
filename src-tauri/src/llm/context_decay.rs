@@ -1,7 +1,7 @@
 //! P1: Intra-step context decay — reduce older tool outputs to save LLM context.
 //!
 //! During long tool-using turns, the agent may iterate 10+ times, producing tool results
-//! (execute_python stdout, etc.) that accumulate in the message history. Older results
+//! (bash stdout, web_search results, etc.) that accumulate in the message history. Older results
 //! are less relevant to the current iteration, so we apply progressive truncation:
 //!
 //! - Most recent iteration: full content preserved
@@ -213,7 +213,7 @@ mod tests {
             content.to_string(),
             vec![ToolCall {
                 id: "tc_1".to_string(),
-                name: "execute_python".to_string(),
+                name: "bash".to_string(),
                 arguments: serde_json::json!({}),
             }],
             None,
@@ -222,7 +222,7 @@ mod tests {
     }
 
     fn make_tool_result(content: &str) -> ChatMessage {
-        ChatMessage::tool_result("tc_1", "execute_python", content.to_string())
+        ChatMessage::tool_result("tc_1", "bash", content.to_string())
     }
 
     fn make_user(content: &str) -> ChatMessage {

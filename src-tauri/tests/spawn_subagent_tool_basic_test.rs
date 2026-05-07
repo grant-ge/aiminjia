@@ -133,7 +133,7 @@ async fn missing_prompt_returns_execution_failed() {
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
     let err = tool
         .execute(
-            json!({ "subagent_type": "browse_data_agent", "description": "test" }),
+            json!({ "subagent_type": "explore", "description": "test" }),
             ctx,
         )
         .await
@@ -151,7 +151,7 @@ async fn missing_description_returns_execution_failed() {
     let ctx = ToolExecutionContext::for_test("c", "r", "tc");
     let err = tool
         .execute(
-            json!({ "subagent_type": "browse_data_agent", "prompt": "do it" }),
+            json!({ "subagent_type": "explore", "prompt": "do it" }),
             ctx,
         )
         .await
@@ -201,7 +201,7 @@ async fn run_in_background_true_returns_async_launched() {
     let result = tool
         .execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "extract data",
                 "description": "async test",
                 "run_in_background": true
@@ -234,7 +234,7 @@ async fn sync_path_returns_launcher_output() {
     let result = tool
         .execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "extract rows",
                 "description": "sync test"
             }),
@@ -295,7 +295,7 @@ async fn permission_mode_is_forwarded_to_launch_context() {
 
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "run",
             "description": "perm test"
         }),
@@ -357,7 +357,7 @@ async fn caller_model_overrides_definition() {
 
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "run",
             "description": "model test",
             "model": "haiku"
@@ -418,7 +418,7 @@ async fn empty_model_string_treated_as_inherit() {
 
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "run",
             "description": "empty model test",
             "model": ""
@@ -429,7 +429,7 @@ async fn empty_model_string_treated_as_inherit() {
     .expect("should succeed");
 
     let seen = model_seen.lock().unwrap();
-    // browse_data_agent definition uses AgentModel::Inherit → None
+    // explore agent definition uses AgentModel::Inherit → None
     // empty caller model → treated as inherit → definition.model=Inherit → None
     assert_eq!(
         seen.as_ref().and_then(|m| m.as_deref()),

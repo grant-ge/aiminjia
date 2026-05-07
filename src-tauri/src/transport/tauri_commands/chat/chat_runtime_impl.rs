@@ -19,7 +19,6 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 const WORKSPACE_TOOL_NAMES: &[&str] = &[
     "read_workspace_file",
     "search_files",
-    "get_file_info",
     "write_file",
     "edit_file",
     "bash",
@@ -140,9 +139,9 @@ pub(crate) fn build_llm_content(
         .collect();
 
     let hint = if has_authorized_workspace {
-        "提示：对这些显式附加路径请优先使用 read_workspace_file / search_files / get_file_info；对已连接本地目录也优先使用工作区文件工具，需要计算或生成文件时再结合 execute_python。"
+        "提示：对这些显式附加路径请优先使用 read_workspace_file / search_files；对已连接本地目录也优先使用工作区文件工具，需要计算时再结合 bash 等 shell 工具。"
     } else {
-        "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时再结合 execute_python 处理内容。"
+        "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时结合 bash 处理内容。"
     };
 
     format!(
@@ -195,8 +194,15 @@ mod tests {
         }
 
         assert!(
-            names.contains(&"execute_python"),
-            "non-workspace tools should remain visible without authorization"
+            !names.is_empty(),
+            "non-workspace tools should remain visible without authorization, got empty list"
+        );
+        // ask_user_question is a non-workspace tool registered in register_builtin_tools
+        // and should remain visible even without an authorized workspace
+        assert!(
+            names.iter().any(|n| !WORKSPACE_TOOL_NAMES.contains(n)),
+            "at least one non-workspace tool should remain visible, got {:?}",
+            names
         );
     }
 
@@ -205,18 +211,20 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
         let allowed = std::collections::HashSet::from([
-            "execute_python".to_string(),
+            "grep_content".to_string(),
             "read_workspace_file".to_string(),
         ]);
 
         let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
-        assert_eq!(names, vec!["execute_python"]);
+        // read_workspace_file is in WORKSPACE_TOOL_NAMES so it gets filtered out first;
+        // grep_content is also a workspace tool so both are excluded without auth.
+        assert!(names.is_empty(), "all allowed tools are workspace-scoped, expect empty after double filter; got {:?}", names);
     }
 
     #[test]
-    fn test_build_llm_content_with_authorized_workspace_scopes_load_file_to_uploads() {
+    fn test_build_llm_content_with_authorized_workspace_uses_workspace_tools_hint() {
         let attachments = vec![crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
             id: "attachment-1".to_string(),
             file_name: "sales.xlsx".to_string(),
@@ -231,9 +239,6 @@ mod tests {
 
         assert!(content.contains("[当前消息附件]"));
         assert!(content.contains("这些显式附加路径"));
-        assert!(content.contains(
-            "对已连接本地目录也优先使用工作区文件工具"
-        ));
-        assert!(!content.contains("load_file(file_id)"));
+        assert!(content.contains("对已连接本地目录也优先使用工作区文件工具"));
     }
 }

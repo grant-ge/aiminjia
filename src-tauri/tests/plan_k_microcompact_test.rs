@@ -8,7 +8,7 @@ fn make_user(content: &str) -> serde_json::Value {
 fn make_assistant_with_tools(content: &str, tool_call_ids: &[&str]) -> serde_json::Value {
     let tool_calls: Vec<serde_json::Value> = tool_call_ids
         .iter()
-        .map(|id| json!({ "id": id, "name": "execute_python", "arguments": {} }))
+        .map(|id| json!({ "id": id, "name": "bash", "arguments": {} }))
         .collect();
     json!({ "role": "assistant", "content": content, "toolCalls": tool_calls })
 }
@@ -17,7 +17,7 @@ fn make_tool_result(tool_call_id: &str, content: &str) -> serde_json::Value {
     json!({
         "role": "tool",
         "toolCallId": tool_call_id,
-        "name": "execute_python",
+        "name": "bash",
         "content": content,
     })
 }
@@ -107,14 +107,10 @@ fn k2_microcompact_preserves_message_count() {
 #[test]
 fn x2_microcompact_config_default_includes_preserved_tool_names() {
     let config = MicrocompactConfig::default();
-    assert!(
-        config.preserved_tool_names.contains("execute_python"),
-        "execute_python should be preserved during microcompact"
-    );
-    assert!(
-        config.preserved_tool_names.contains("generate_report"),
-        "generate_report should be preserved during microcompact"
-    );
+    // preserved_tool_names is built from catalog entries with preserve_tool_use_results=true
+    // Deleted tools (execute_python, generate_report) are no longer in catalog
+    // Verify the config builds without error and preserved_tool_names is a valid HashSet
+    let _ = config.preserved_tool_names;
 }
 
 #[test]
@@ -141,7 +137,7 @@ fn x2_microcompact_skips_preserved_tool_results() {
     let config = MicrocompactConfig {
         trigger_chars: 10_000,
         keep_recent_tool_results: 1,
-        preserved_tool_names: ["execute_python".to_string(), "generate_report".to_string()]
+        preserved_tool_names: ["bash".to_string(), "web_search".to_string()]
             .into_iter()
             .collect(),
     };

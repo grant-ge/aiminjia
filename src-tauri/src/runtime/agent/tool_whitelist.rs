@@ -19,12 +19,10 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 /// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
     "read_workspace_file", "write_file", "edit_file",
-    "bash", "grep_content", "search_files", "get_file_info",
+    "bash", "grep_content", "search_files",
     "web_search",
     "spawn_subagent",
     "task_output",
-    "browse_and_extract", "browse_navigate", "read_page_content",
-    "page_execute_js", "extract_table_data", "extract_with_pagination",
 ];
 
 /// 解析 subagent 最终可用工具集
@@ -131,7 +129,7 @@ mod tests {
             &vs(&[
                 "read_workspace_file",
                 "AskUserQuestion",
-                "extract_table_data",
+                "web_search",
                 "unknown_tool",
             ]),
             true,
@@ -139,7 +137,7 @@ mod tests {
         );
         // unknown_tool 不在 ASYNC_AGENT_ALLOWED → 被过滤
         assert!(allowed.contains(&"read_workspace_file".to_string()));
-        assert!(allowed.contains(&"extract_table_data".to_string()));
+        assert!(allowed.contains(&"web_search".to_string()));
         assert!(!allowed.contains(&"AskUserQuestion".to_string()));
         assert!(!allowed.contains(&"unknown_tool".to_string()));
     }

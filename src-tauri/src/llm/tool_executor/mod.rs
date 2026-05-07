@@ -1,4 +1,4 @@
-//! Tool handler implementations for the 10 registered tools.
+//! Tool handler implementations.
 //!
 //! Each tool has a dedicated `handle_*` async function called by its
 //! corresponding `ToolPlugin` wrapper in `plugin/builtin/tools/`.
@@ -13,12 +13,7 @@
 // Legacy tool handlers: PluginContext is intentionally used here.
 #![allow(deprecated)]
 
-mod chart;
 mod dingtalk;
-pub(crate) mod file_load;
-mod internal_system;
-mod python;
-mod report;
 mod search;
 pub(crate) mod spawn_subagent;
 mod util;
@@ -32,7 +27,8 @@ use crate::plugin::tool_trait::FileMeta;
 // Public types
 // ─────────────────────────────────────────────────
 
-/// Result from file-generating tool handlers (generate_report, generate_chart).
+/// Result from file-generating tool handlers (retained for compile compatibility
+/// with plugin/tool_trait.rs conversion implementations).
 pub struct FileGenResult {
     pub content: String,
     pub file_meta: FileMeta,
@@ -42,28 +38,8 @@ pub struct FileGenResult {
 
 // ─────────────────────────────────────────────────
 // Re-exports — preserve external import paths
-// ─────────────────────────────────────────────────
+// ───────────────────────────────────────────��─────
 
-pub(crate) use chart::build_chart_python;
-pub(crate) use chart::handle_generate_chart;
-pub(crate) use chart::handle_generate_chart_core;
-pub(crate) use chart::ChartCoreParams;
-pub(crate) use file_load::handle_load_file;
-pub(crate) use internal_system::execute_browse_data;
-pub(crate) use internal_system::handle_browse_and_extract;
-pub(crate) use internal_system::handle_browse_navigate;
-pub(crate) use internal_system::handle_extract_table_data;
-pub(crate) use internal_system::handle_extract_with_pagination;
-pub(crate) use internal_system::handle_page_execute_js;
-pub(crate) use internal_system::handle_read_page_content;
-pub(crate) use internal_system::DefaultBrowseDataLauncher;
-pub(crate) use python::handle_execute_python;
-pub(crate) use python::handle_execute_python_core;
-pub(crate) use python::ExecutePythonCoreParams;
-pub(crate) use report::generate_report_bytes_core;
-pub(crate) use report::handle_generate_report;
-pub(crate) use report::handle_generate_report_core;
-pub(crate) use report::ReportCoreParams;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
 pub(crate) use spawn_subagent::DefaultSpawnSubagentLauncher;
@@ -126,58 +102,7 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::plugin::context::PluginContext;
-    use crate::storage::file_manager::FileManager;
-    use crate::storage::file_store::AppStorage;
     use serde_json::json;
-    use std::sync::Arc;
-
-    // ── Test helpers ─────────────────────────────
-
-    pub fn create_test_db() -> (Arc<AppStorage>, tempfile::TempDir) {
-        let dir = tempfile::TempDir::new().unwrap();
-        let db = Arc::new(AppStorage::new(dir.path()).unwrap());
-        // Create a conversation for testing.
-        db.create_conversation("test_conv_1", "Test Conversation")
-            .unwrap();
-        (db, dir)
-    }
-
-    pub fn create_test_context(db: Arc<AppStorage>) -> PluginContext {
-        let workspace = std::env::temp_dir().join("tool_executor_test");
-        std::fs::create_dir_all(&workspace).ok();
-        PluginContext {
-            storage: db,
-            file_manager: Arc::new(FileManager::new(&workspace)),
-            workspace_path: workspace.clone(),
-            conversation_id: "test_conv_1".to_string(),
-            session_id: crate::runtime::ids::SessionId::new("test_conv_1"),
-            run_id: Some(crate::runtime::ids::RunId::new("run-test-1")),
-            agent_id: None,
-            tavily_api_key: None,
-            bocha_api_key: None,
-            app_handle: None,
-            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(
-                workspace, None,
-            )),
-            auth_manager: None,
-            connector_engine: None,
-            dingtalk_bridge: None,
-            use_cloud: false,
-            model: "test-model".to_string(),
-            gateway: None,
-            tool_registry: None,
-            app_settings: None,
-            agent_runtime: None,
-            event_bus: None,
-            skill_registry: None,
-            authorized_workspace: None,
-            read_file_state: None,
-            cancellation: None,
-            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
-            runtime_resolver: None,
-        }
-    }
 
     // ── Argument extraction tests ────────────────
 

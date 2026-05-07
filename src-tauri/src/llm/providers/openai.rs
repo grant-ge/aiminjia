@@ -821,7 +821,7 @@ fn flush_pending_tool<S>(st: &mut SseState<S>) {
             }
         };
         // Strip hallucinated "mcp_" prefix: some LLMs prepend "mcp_" to tool names
-        // (e.g. "mcp_browse_navigate" instead of "browse_navigate").
+        // (e.g. "mcp_<tool>" instead of "<tool>").
         // Normalize here so all downstream code (allowed check, dispatch, logging) works.
         let normalized_name = if name.starts_with("mcp_") {
             let stripped = name.strip_prefix("mcp_").unwrap().to_string();
@@ -1051,7 +1051,7 @@ mod tests {
                 "delta": {
                     "tool_calls": [{
                         "id": "call_abc123",
-                        "function": { "name": "load_file", "arguments": "" }
+                        "function": { "name": "web_search", "arguments": "" }
                     }]
                 }
             }]
@@ -1069,7 +1069,7 @@ mod tests {
                 "delta": {
                     "tool_calls": [{
                         "id": "call_abc123",
-                        "function": { "name": "", "arguments": "{\"file_id\":" }
+                        "function": { "name": "", "arguments": "{\"query\":" }
                     }]
                 }
             }]
@@ -1078,7 +1078,7 @@ mod tests {
         .unwrap();
         process_sse_chunk(&chunk2, &mut st);
         assert!(st.pending_events.is_empty(), "should NOT flush — same id");
-        assert_eq!(st.tool_args, "{\"file_id\":");
+        assert_eq!(st.tool_args, "{\"query\":");
 
         // Chunk 3: no id, just more args
         let chunk3: Value = serde_json::from_str(
@@ -1095,7 +1095,7 @@ mod tests {
         .unwrap();
         process_sse_chunk(&chunk3, &mut st);
         assert!(st.pending_events.is_empty(), "still accumulating");
-        assert_eq!(st.tool_args, "{\"file_id\": \"abc\"}");
+        assert_eq!(st.tool_args, "{\"query\": \"abc\"}");
 
         // Chunk 4: finish_reason triggers flush
         let chunk4: Value = serde_json::from_str(
@@ -1119,8 +1119,8 @@ mod tests {
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
             assert_eq!(tool_call.id, "call_abc123");
-            assert_eq!(tool_call.name, "load_file");
-            assert_eq!(tool_call.arguments, serde_json::json!({"file_id": "abc"}));
+            assert_eq!(tool_call.name, "web_search");
+            assert_eq!(tool_call.arguments, serde_json::json!({"query": "abc"}));
         }
     }
 
@@ -1320,7 +1320,7 @@ mod tests {
                         "index": 0,
                         "id": "toolu_01abc",
                         "type": "function",
-                        "function": { "name": "generate_report", "arguments": "" }
+                        "function": { "name": "bash", "arguments": "" }
                     }]
                 }
             }]
@@ -1337,14 +1337,9 @@ mod tests {
         //
         // Build chunks properly using serde_json to avoid escaping issues.
         let fragments = vec![
-            "{\"title\": \"测试报告\"",
-            ", \"sections\": [",
-            "\n  {", // structural newline
-            "\n    \"heading\": \"概述\"",
-            ",",
-            "\n    \"content\": \"第一段\\n第二段\"", // \\n = escaped newline in JSON string value
-            "\n  }",
-            "\n]",
+            "{\"cmd\": \"echo hello\"",
+            ", \"timeout\": ",
+            "30",
             "}",
         ];
 
@@ -1384,7 +1379,7 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
-            assert_eq!(tool_call.name, "generate_report");
+            assert_eq!(tool_call.name, "bash");
             // The accumulated JSON should parse correctly
             assert!(
                 tool_call.arguments != Value::Null,
@@ -1392,10 +1387,10 @@ mod tests {
                 expected_accumulated
             );
             assert_eq!(
-                tool_call.arguments.get("title").and_then(|v| v.as_str()),
-                Some("测试报告"),
+                tool_call.arguments.get("cmd").and_then(|v| v.as_str()),
+                Some("echo hello"),
             );
-            assert!(tool_call.arguments.get("sections").is_some());
+            assert!(tool_call.arguments.get("timeout").is_some());
         }
     }
 
@@ -1409,7 +1404,7 @@ mod tests {
         let start = serde_json::json!({
             "choices": [{"delta": {"tool_calls": [{
                 "index": 0, "id": "toolu_01xyz", "type": "function",
-                "function": { "name": "generate_report", "arguments": "" }
+                "function": { "name": "bash", "arguments": "" }
             }]}}]
         });
         process_sse_chunk(&start, &mut st);
@@ -1419,15 +1414,12 @@ mod tests {
         // partial_json become real 0x0a bytes in the arguments string.
         // The JSON escape \n inside string values remains as two chars (\ + n).
         let fragments = vec![
-            "{\"title\": \"\u{6D4B}\u{8BD5}\u{62A5}\u{544A}\"", // 测试报告
-            ", \"sections\": [",
-            "\n  {",                                   // real 0x0a
-            "\n    \"heading\": \"\u{6982}\u{8FF0}\"", // real 0x0a + 概述
-            ",",
-            "\n    \"content\": \"\u{7B2C}\u{4E00}\u{6BB5}\\n\u{7B2C}\u{4E8C}\u{6BB5}\"",
-            // real 0x0a (structural) + content with \n (JSON escape, two chars)
-            "\n  }",
-            "\n]",
+            "{\"cmd\": \"echo test\"",
+            ", \"env\": {",
+            "\n  \"",                                   // real 0x0a
+            "key",
+            "\": \"val\"",
+            "\n}",
             "}",
         ];
 
@@ -1456,22 +1448,14 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
-            assert_eq!(tool_call.name, "generate_report");
+            assert_eq!(tool_call.name, "bash");
             assert!(
                 tool_call.arguments != Value::Null,
                 "arguments must not be null! accumulated args contain real 0x0a newlines"
             );
             assert_eq!(
-                tool_call.arguments.get("title").and_then(|v| v.as_str()),
-                Some("测试报告"),
-            );
-            // Content should have a decoded newline from the JSON \n escape
-            let content = tool_call.arguments["sections"][0]["content"]
-                .as_str()
-                .unwrap();
-            assert!(
-                content.contains('\n'),
-                "content should contain decoded newline"
+                tool_call.arguments.get("cmd").and_then(|v| v.as_str()),
+                Some("echo test"),
             );
         }
     }

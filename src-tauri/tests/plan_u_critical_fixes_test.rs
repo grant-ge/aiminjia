@@ -166,7 +166,7 @@ async fn u2_turnerror_path_injects_synthetic_results_before_returning_error() {
         "role": "assistant",
         "content": "",
         "toolCalls": [
-            {"id": "call_abc", "name": "execute_python", "arguments": {}}
+            {"id": "call_abc", "name": "bash", "arguments": {}}
         ]
     })];
     let executor = Arc::new(ErrorAfterHistoryExecutor { history });
@@ -187,7 +187,7 @@ fn u2_inject_synthetic_results_repairs_orphan_tool_calls() {
         "role": "assistant",
         "content": "",
         "toolCalls": [
-            {"id": "call_abc", "name": "execute_python", "arguments": {}},
+            {"id": "call_abc", "name": "bash", "arguments": {}},
             {"id": "call_def", "name": "read_file", "arguments": {}}
         ]
     })];

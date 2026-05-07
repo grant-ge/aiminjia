@@ -58,17 +58,11 @@ fn review_registered_workspace_and_request_scoped_tools_all_in_catalog() {
     for id in &[
         "read_workspace_file",
         "search_files",
-        "get_file_info",
         "write_file",
         "edit_file",
         "bash",
         "grep_content",
         "web_search",
-        "load_file",
-        "browse_data",
-        "execute_python",
-        "generate_report",
-        "generate_chart",
     ] {
         assert!(
             TOOL_CATALOG.get_entry(id).is_some(),

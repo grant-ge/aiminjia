@@ -345,66 +345,6 @@ impl RuntimeTool for SearchFilesRuntimeTool {
     }
 }
 
-// ── GetFileInfoRuntimeTool ────────────────────────────────────────────────
-
-pub struct GetFileInfoRuntimeTool;
-
-#[async_trait]
-impl RuntimeTool for GetFileInfoRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("get_file_info")
-            .unwrap_or_else(|| ToolDefinition::new("get_file_info", "Get file info"))
-    }
-
-    fn is_concurrency_safe(&self, _input: &Value) -> bool {
-        true
-    }
-
-    async fn execute(
-        &self,
-        input: Value,
-        ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
-        let rel = input
-            .get("path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
-        let resolved = resolve_path(&root, rel)?;
-        if !resolved.exists() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "Path does not exist: {rel}"
-            )));
-        }
-        let meta =
-            std::fs::metadata(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let is_dir = meta.is_dir();
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs());
-        let mut info = json!({
-            "path": rel,
-            "name": resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-            "type": if is_dir { "directory" } else { "file" },
-            "size": meta.len(),
-        });
-        if let Some(ts) = modified {
-            info["modified_unix"] = json!(ts);
-        }
-        if !is_dir {
-            let ext = resolved
-                .extension()
-                .map(|e| e.to_string_lossy().to_string())
-                .unwrap_or_default();
-            info["extension"] = json!(ext);
-        }
-        Ok(tool_result("get_file_info", info))
-    }
-}
-
 // ── WriteFileRuntimeTool ──────────────────────────────────────────────────
 
 pub struct WriteFileRuntimeTool;

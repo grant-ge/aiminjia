@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::runtime::agent::builtin::{
-    browse_data_agent::browse_data_agent_definition,
     daily_assistant_agent::daily_assistant_agent_definition, explore::explore_agent_definition,
     general_purpose::general_purpose_agent_definition,
 };
@@ -16,7 +15,6 @@ impl AgentRegistry {
         let mut registry = Self {
             agents: HashMap::new(),
         };
-        registry.register(browse_data_agent_definition());
         registry.register(daily_assistant_agent_definition());
         registry.register(general_purpose_agent_definition());
         registry.register(explore_agent_definition());

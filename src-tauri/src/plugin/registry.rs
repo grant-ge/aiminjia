@@ -106,39 +106,11 @@ impl RequestScopedRuntimeDeps {
         self
     }
 
-    fn python_runtime(
-        &self,
-    ) -> crate::runtime::dependencies::RuntimeDependencyResult<(
-        std::path::PathBuf,
-        Option<std::path::PathBuf>,
-    )> {
-        if let Some(resolver) = &self.runtime_resolver {
-            let deps = resolver.workspace_dependencies()?;
-            return Ok((deps.python, None));
-        }
-
-        Err(
-            crate::runtime::dependencies::RuntimeDependencyError::ResolverUnavailable(
-                "RequestScopedRuntimeDeps has no RuntimeResolver".to_string(),
-            ),
-        )
-    }
 }
 
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "web_search",
-    "browse_navigate",
-    "read_page_content",
-    "page_execute_js",
-    "extract_table_data",
-    "extract_with_pagination",
-    "browse_and_extract",
-    "load_file",
-    "browse_data",
     "spawn_subagent",
-    "execute_python",
-    "generate_report",
-    "generate_chart",
     "write_memory",
     "search_memory",
     "load_skill",
@@ -505,31 +477,11 @@ impl ToolRegistry {
                     workspace_path: ctx.workspace_path.clone(),
                     authorized_workspace: ctx.authorized_workspace.clone(),
                 };
-                let browser_available = ctx.connector_engine.is_some();
-                let file_ops = if name == "load_file" {
-                    let (python_binary, python_home) = ctx
-                        .python_runtime()
-                        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
-                    Some(
-                        Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
-                            storage: ctx.storage.clone(),
-                            file_manager: ctx.file_manager.clone(),
-                            workspace_path: ctx.workspace_path.clone(),
-                            conversation_id: ctx.conversation_id.clone(),
-                            run_id: ctx.run_id.clone(),
-                            python_binary: Some(python_binary),
-                            python_home,
-                        })
-                            as Arc<dyn crate::runtime::tools::capability::FileOperations>,
-                    )
-                } else {
-                    None
-                };
                 let cap = CapabilityContext {
                     storage: Some(storage),
                     workspace_id: Some(ctx.conversation_id.clone()),
-                    browser_available,
-                    file_ops,
+                    browser_available: false,
+                    file_ops: None,
                     read_file_state: ctx.read_file_state.clone(),
                     file_reading_limits: Some(
                         crate::runtime::tools::capability::FileReadingLimits::default(),
@@ -795,93 +747,6 @@ impl ToolRegistry {
                 };
                 Some(Arc::new(builtin::network::WebSearchRuntimeTool::new(deps)))
             }
-            "browse_navigate" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "read_page_content" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "page_execute_js" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "extract_table_data" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "extract_with_pagination" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(
-                        deps,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "browse_and_extract" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::BrowseAndExtractRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
-            "browse_data" => Some(Arc::new(
-                builtin::browse_data::BrowseDataRuntimeTool::with_launcher(Arc::new(
-                    crate::llm::tool_executor::DefaultBrowseDataLauncher::from_runtime_deps(
-                        ctx.clone(),
-                    ),
-                )),
-            ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
             "spawn_subagent" => {
                 use tauri::Manager;
 
@@ -990,76 +855,6 @@ impl ToolRegistry {
                 };
                 Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
-            }
-            "execute_python" => {
-                use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(err) => {
-                        return Some(Arc::new(builtin::python::ExecutePythonRuntimeTool::error(
-                            err.to_string(),
-                        ))
-                            as Arc<dyn crate::runtime::tools::RuntimeTool>);
-                    }
-                };
-                let python = Arc::new(DefaultPythonExecution::new(
-                    ctx.session_manager.clone(),
-                    python_binary.clone(),
-                    python_home.clone(),
-                ));
-                Some(Arc::new(
-                    builtin::python::ExecutePythonRuntimeTool::with_runtime_deps(
-                        python,
-                        ctx.storage.clone(),
-                        ctx.file_manager.clone(),
-                        ctx.run_id.clone(),
-                        ctx.model.clone(),
-                        python_binary,
-                        python_home,
-                    ),
-                )
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
-            }
-            "generate_report" => {
-                use crate::runtime::tools::builtin::report_capability::DefaultReportCapability;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(_) => return None,
-                };
-                let capability = Arc::new(DefaultReportCapability {
-                    storage: ctx.storage.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    auth_manager: ctx.auth_manager.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    python_binary,
-                    python_home,
-                });
-                Some(
-                    Arc::new(builtin::report::GenerateReportRuntimeTool::with_capability(
-                        capability,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "generate_chart" => {
-                use crate::runtime::tools::builtin::chart_capability::DefaultChartCapability;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(_) => return None,
-                };
-                let capability = Arc::new(DefaultChartCapability {
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    python_binary,
-                    python_home,
-                });
-                Some(
-                    Arc::new(builtin::chart::GenerateChartRuntimeTool::with_capability(
-                        capability,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
             }
             "write_memory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {

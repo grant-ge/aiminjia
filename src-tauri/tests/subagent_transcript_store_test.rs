@@ -33,11 +33,11 @@ fn file_backed_transcript_store_roundtrips_entries_by_ref() {
                 role: "tool".to_string(),
                 content: "saved /tmp/a.json".to_string(),
                 tool_call_id: Some("call-1".to_string()),
-                tool_name: Some("extract_table_data".to_string()),
+                tool_name: Some("bash".to_string()),
             }],
         )
         .unwrap();
 
     let loaded = store.get(transcript_ref).unwrap().unwrap();
-    assert_eq!(loaded[0].tool_name.as_deref(), Some("extract_table_data"));
+    assert_eq!(loaded[0].tool_name.as_deref(), Some("bash"));
 }

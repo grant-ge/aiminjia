@@ -4,10 +4,6 @@ use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 fn review_long_running_tools_declare_timeout() {
     for id in [
         "bash",
-        "load_file",
-        "execute_python",
-        "generate_report",
-        "generate_chart",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert!(

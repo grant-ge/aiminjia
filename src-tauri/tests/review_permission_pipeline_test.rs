@@ -87,10 +87,10 @@ fn workspace_write_tool_is_allowed_with_workspace_capability() {
 }
 
 #[test]
-fn python_exec_scope_is_denied_without_workspace_capability() {
+fn workspace_write_scope_is_denied_without_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
     let result = pipeline.authorize(
-        &def("execute_python", &["python:exec"]),
+        &def("bash", &["workspace:write"]),
         &json!({}),
         &ctx_no_capability(),
     );

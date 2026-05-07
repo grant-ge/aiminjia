@@ -84,10 +84,10 @@ fn u3_budget_preserves_recent_error_and_generated_file_results() {
             "content": "command failed".repeat(30),
             "isError": true
         }),
-        assistant_tool_call("tc-file", "generate_report"),
+        assistant_tool_call("tc-file", "bash"),
         tool_message(
             "tc-file",
-            "generate_report",
+            "bash",
             format!(
                 "report generated\nfileId: {}\n{}",
                 uuid::Uuid::new_v4(),

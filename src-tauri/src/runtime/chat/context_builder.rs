@@ -51,10 +51,6 @@ pub fn build_iteration_context(
     // 6. Internal connector context (browsing sessions / legacy app integrations)
     if let Some(connector) = connector_context {
         ctx.push_str("\n\n[内部系统浏览]\n");
-        ctx.push_str(
-            "你可以通过 browse_navigate 工具直接打开浏览器访问任意内部系统 URL，\
-             用户在 Chrome 中登录后即可读取数据。\n\n",
-        );
         ctx.push_str(connector);
         ctx.push_str("\n[/内部系统浏览]");
     }
