@@ -11,7 +11,12 @@
 //! `LegacyToolAdapter`.  Migrate individual handlers to `RuntimeTool` +
 //! `CapabilityContext` when touching them; do not add new handlers here.
 // Legacy tool handlers: PluginContext is intentionally used here.
-#![allow(deprecated)]
+// dead_code / unused_imports allowed module-wide because the entire
+// module is being phased out in favour of `runtime/tools/builtin/`.
+// Re-exports below preserve the public crate API for any straggler
+// callers; both the lints and these handlers will be removed together
+// once migration finishes.
+#![allow(deprecated, dead_code, unused_imports)]
 
 mod chart;
 mod dingtalk;
