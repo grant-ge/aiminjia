@@ -1,8 +1,49 @@
 # Lotus 工具系统清理与对标设计
 
 日期：2026-05-07
-状态：待审批
+状态：实施中（Phase 1 ✅ / Phase 2 ✅ / Phase 3 主体完成，剩余 40 处残留待清）
 基线：`docs/2026-05-07-tool-inventory-and-claude-code-best-comparison.md`
+
+---
+
+## 0bis. 当前实施进度（断点续做用，2026-05-07）
+
+### 已完成的 commit（按时间顺序）
+
+| Commit | 内容 |
+|---|---|
+| `4c288a6` | Phase 1：4 个运行时 bug 修复 + 设计/调研文档 |
+| `56bd875` | 数字员工 5 个内置模板 toolWhitelist 重写 |
+| `41ffbae` | Phase 2A + 2B：删 list_directory + 7 僵尸 + 1 孤儿（约 -1942 行） |
+| `3b724b2` | Phase 3 主体（WIP）：删 12 业务工具 + Python 整目录 + browse_data_agent（约 -19056 行） |
+
+### Phase 3 剩余工作（40 处残留）— 下次会话先做
+
+**高优先级（影响实际语义）**
+- `src-tauri/src/commands/chat.rs:536-622` — `FILE_GEN_TOOLS` + `is_last_tool_file_generation` + 4 个相关测试，整段 dead code 删除
+- `src-tauri/src/commands/chat.rs:631, 638` — XML 剥离测试 fixture 中的 `load_file` / `execute_python` 替换为 `bash`
+- `src-tauri/tests/registry_tool_sync_test.rs:56, 67` — 过时断言 `execute_python must exist`，改成断言 `bash` 仍存在
+- `src-tauri/tests/workspace_first_agent_golden_path_test.rs:27` — 期望工具清单里删 `"get_file_info"`
+- `src-tauri/tests/plan_k_microcompact_test.rs:111` — 注释行删除
+
+**中优先级（注释 / 死代码）**
+- `src-tauri/src/runtime/tools/capability.rs:119-141, 294-343` — `LoadedFileResult` + `FileOperations::load_file` trait + `DefaultFileOperations` stub。grep 确认无外部 caller 后整体删
+- `src-tauri/src/connector/engine.rs:111-132, 175` — `browser_extract_*` wrapper 方法 + 提示文本里 `browse_data(task, url?)` 引用
+- `src-tauri/src/connector/playwright_browser.rs:458-516` — Playwright 协议层 `extract_*` 方法。如果 engine.rs 那两个 wrapper 删了，这两个也成孤儿可删
+
+### 后续阶段（未开始）
+
+| 阶段 | 内容 | 工作量 |
+|---|---|---|
+| **Phase 4** | 13 对工具硬改名（`read_workspace_file → Read` 等） | 大（~1000 处引用） |
+| **Phase 5** | 新增 TaskGet / TaskStop；i18n 清理；SKILL.md 重写 | 中 |
+
+### 实施过程中的关键经验（给下次会话）
+
+- **prompt 太长 / 改动太大时 implementer 会 stall**：拆成多个 batch（每个 batch 改 2-3 个文件）效果最好
+- **subagent stall 不一定是失败**：watchdog 超时前往往主体已做完，stop 后看 git diff 经常发现工作完成了，只是没报告
+- **跑 cargo build 验证比让 agent 自己跑更可靠**：每个 implementer 完成后主线程独立 build 一次确认
+- **review_ 测试中 `review_send_message_clears_gateway_busy_after_runtime_returns` 和 `review_sub_agent_should_not_hardcode_foreground_child_runs` 是 pre-existing 失败**：用 `git stash` 验证过，跟本期改动无关，可以忽略
 
 ---
 
