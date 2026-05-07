@@ -4128,6 +4128,44 @@ git commit -m "feat(agenda): useAgendaItems hook"
 
 ---
 
+### 任务 29 Review 修复：useAgendaItems 生命周期语义
+
+**Files:**
+- Create: `src/hooks/useAgendaItems.test.ts`
+- Modify: `src/hooks/useAgendaItems.ts`
+
+- [ ] **Step R1：写失败测试**
+  - 覆盖初始加载期间 `loading=true`，请求完成后 `loading=false` 且写入 items。
+  - 覆盖多次请求乱序返回时，只接受最后一次请求结果。
+
+- [ ] **Step R2：跑测试看失败**
+
+```bash
+pnpm exec vitest run src/hooks/useAgendaItems.test.ts
+```
+
+- [ ] **Step R3：实现最小修复**
+  - 统一 `refresh` 与初始 effect 的请求生命周期。
+  - 用 request sequence 防止旧请求覆盖新结果。
+  - effect cleanup 后不再提交该 effect 请求的结果。
+  - 初始 effect 也维护 `loading`。
+
+- [ ] **Step R4：跑测试和 tsc**
+
+```bash
+pnpm exec vitest run src/hooks/useAgendaItems.test.ts
+pnpm exec tsc --noEmit
+```
+
+- [ ] **Step R5：Commit**
+
+```bash
+git add docs/superpowers/plans/2026-05-07-agenda-base.md src/hooks/useAgendaItems.ts src/hooks/useAgendaItems.test.ts
+git commit -m "fix(agenda): harden useAgendaItems loading and request ordering"
+```
+
+---
+
 ## 任务 30：删除前端 schedule 类型与函数（保持 SchedulesPage 暂不动）
 
 > 实际操作：PR-2 不删旧的 `ScheduleRecord` / `listSchedules`，让 SchedulesPage 仍能跑（虽然命令已不存在）。**这一步先跳过**，跳到任务 31。

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AgendaItem, ItemFilter, listAgendaItems } from '@/lib/tauri'
 
@@ -6,34 +6,49 @@ export function useAgendaItems(filter?: ItemFilter) {
   const [items, setItems] = useState<AgendaItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const mountedRef = useRef(true)
+  const requestSeqRef = useRef(0)
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const load = useCallback(async (shouldCommit: () => boolean = () => true) => {
+    if (!mountedRef.current) return
+    const requestSeq = requestSeqRef.current + 1
+    requestSeqRef.current = requestSeq
     setLoading(true)
     setError(null)
     try {
       const next = await listAgendaItems(filter)
-      setItems(next)
+      if (mountedRef.current && shouldCommit() && requestSeq === requestSeqRef.current) {
+        setItems(next)
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (mountedRef.current && shouldCommit() && requestSeq === requestSeqRef.current) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
     } finally {
-      setLoading(false)
+      if (mountedRef.current && shouldCommit() && requestSeq === requestSeqRef.current) {
+        setLoading(false)
+      }
     }
   }, [filter])
 
+  const refresh = useCallback(async () => {
+    await load()
+  }, [load])
+
   useEffect(() => {
     let cancelled = false
-    void (async () => {
-      try {
-        const next = await listAgendaItems(filter)
-        if (!cancelled) setItems(next)
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      }
-    })()
+    void load(() => !cancelled)
     return () => {
       cancelled = true
     }
-  }, [filter])
+  }, [load])
 
   return { items, loading, error, refresh }
 }
