@@ -413,6 +413,8 @@ mod tests {
         assert!(user_dir.join("shared").join("cache").exists());
         assert!(home.user_audit_dir(&scope).exists());
         assert!(home.user_schedules_dir(&scope).exists());
+        assert!(user_dir.join("agenda").join("items").exists());
+        assert!(user_dir.join("agenda").join("occurrences").exists());
         assert!(home.user_skills_dir(&scope).exists());
         assert!(home.user_agents_dir(&scope).exists());
         assert!(home.user_subagent_transcripts_dir(&scope).exists());
