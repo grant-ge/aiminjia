@@ -44,6 +44,9 @@ impl UserScopedPaths {
     pub fn schedules_dir(&self) -> PathBuf {
         self.base.join("schedules")
     }
+    pub fn agenda_dir(&self) -> PathBuf {
+        self.base.join("agenda")
+    }
     pub fn permissions_path(&self) -> PathBuf {
         self.base.join("permissions.json")
     }
@@ -165,4 +168,13 @@ mod tests {
         assert_eq!(paths.logs_dir(), base.join("logs"));
         assert_eq!(paths.downloads_dir(), base.join("downloads"));
     }
+
+    #[test]
+    fn agenda_dir_under_base() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let paths = UserScopedPaths::new(dir.path(), "t_1__u_2");
+        assert_eq!(paths.agenda_dir(), dir.path().join("users/t_1__u_2/agenda"));
+    }
+
 }

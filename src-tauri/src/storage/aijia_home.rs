@@ -221,6 +221,9 @@ impl AiJiaHome {
         std::fs::create_dir_all(user_dir.join("shared").join("cache"))?;
         std::fs::create_dir_all(self.user_audit_dir(scope))?;
         std::fs::create_dir_all(self.user_schedules_dir(scope))?;
+        let agenda_dir = self.user_dir(scope).join("agenda");
+        std::fs::create_dir_all(agenda_dir.join("items"))?;
+        std::fs::create_dir_all(agenda_dir.join("occurrences"))?;
         std::fs::create_dir_all(self.user_skills_dir(scope))?;
         std::fs::create_dir_all(self.user_agents_dir(scope))?;
         std::fs::create_dir_all(self.user_subagent_transcripts_dir(scope))?;
