@@ -187,6 +187,7 @@ git commit -m "build(agenda): add chrono-tz 0.9 for IANA timezone support"
 - Modify: `src-tauri/src/storage/user_scoped_paths.rs`
 - Modify: `src-tauri/src/storage/aijia_home.rs`
 - Test: `src-tauri/src/storage/user_scoped_paths.rs`（同文件 #[cfg(test)]）
+- Test: `src-tauri/src/storage/aijia_home.rs`（同文件 #[cfg(test)]）
 
 - [ ] **Step 1：写失败的测试**
 
@@ -236,7 +237,22 @@ std::fs::create_dir_all(agenda_dir.join("items"))?;
 std::fs::create_dir_all(agenda_dir.join("occurrences"))?;
 ```
 
-- [ ] **Step 6：Commit**
+- [ ] **Step 6：补 `ensure_user_dirs` 回归断言（质量审查修正）**
+
+在 `test_ensure_user_dirs_creates_user_subdirs` 中，紧挨 `schedules` 目录断言后追加：
+
+```rust
+assert!(user_dir.join("agenda").join("items").exists());
+assert!(user_dir.join("agenda").join("occurrences").exists());
+```
+
+执行：
+
+```bash
+cd src-tauri && cargo test --lib storage::aijia_home::tests::test_ensure_user_dirs_creates_user_subdirs
+```
+
+- [ ] **Step 7：Commit**
 
 ```bash
 git add src-tauri/src/storage/user_scoped_paths.rs src-tauri/src/storage/aijia_home.rs
