@@ -3,8 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useHomeStore } from '@/stores/homeStore'
+import type { PendingAttachment } from '@/hooks/useChatAttachments'
 
 import { HomeTaskComposerCard } from '../HomeTaskComposerCard'
+
+const sendUserMessageMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const pickAttachmentsMock = vi.hoisted(() => vi.fn(async (): Promise<PendingAttachment[]> => []))
 
 vi.mock('@/lib/tauri', () => ({
   getDefaultFolder: vi.fn().mockResolvedValue({
@@ -18,8 +22,21 @@ vi.mock('@/lib/tauri', () => ({
 }))
 
 vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({ sendUserMessage: vi.fn().mockResolvedValue(undefined) }),
+  useChat: () => ({ sendUserMessage: sendUserMessageMock }),
 }))
+
+vi.mock('@/hooks/useChatAttachments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useChatAttachments')>()
+  return {
+    ...actual,
+    useChatAttachments: () => ({
+      isPickingAttachments: false,
+      pickAttachments: pickAttachmentsMock,
+      resolvePastedPaths: vi.fn(async () => []),
+      saveClipboardImage: vi.fn(),
+    }),
+  }
+})
 
 vi.mock('@/stores/chatStore', () => ({
   useChatStore: {
@@ -55,6 +72,7 @@ describe('HomeTaskComposerCard', () => {
       selectedWorkspace: null,
       setSelectedWorkspace: vi.fn(),
     })
+    pickAttachmentsMock.mockResolvedValue([])
   })
 
   it('shows 测试默认项目 after loading default folder', async () => {
@@ -98,6 +116,78 @@ describe('HomeTaskComposerCard', () => {
         rootPath: '/Users/test/myproject',
         displayName: 'myproject',
       })
+    })
+  })
+
+  it('uses the attachment button to attach a local path and sends that path without uploading', async () => {
+    pickAttachmentsMock.mockResolvedValueOnce([
+      {
+        id: '/Users/test/report.csv',
+        fileName: 'report.csv',
+        path: '/Users/test/report.csv',
+        kind: 'file',
+        fileType: 'csv',
+        fileSize: 0,
+        source: 'picker',
+      },
+    ])
+
+    render(<HomeTaskComposerCard />)
+
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+
+    await waitFor(() => {
+      expect(pickAttachmentsMock).toHaveBeenCalledOnce()
+    })
+    expect(await screen.findByText('report.csv')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '请分析' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => {
+      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析', [
+        {
+          id: '/Users/test/report.csv',
+          fileName: 'report.csv',
+          filePath: '/Users/test/report.csv',
+          kind: 'file',
+          fileSize: 0,
+          fileType: 'csv',
+          mimeType: undefined,
+        },
+      ])
+    })
+  })
+
+  it('sends attachment-only home tasks with the local path payload', async () => {
+    pickAttachmentsMock.mockResolvedValueOnce([
+      {
+        id: '/Users/test/only.csv',
+        fileName: 'only.csv',
+        path: '/Users/test/only.csv',
+        kind: 'file',
+        fileType: 'csv',
+        fileSize: 0,
+        source: 'picker',
+      },
+    ])
+
+    render(<HomeTaskComposerCard />)
+
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    expect(await screen.findByText('only.csv')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => {
+      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析附件', [
+        expect.objectContaining({
+          id: '/Users/test/only.csv',
+          filePath: '/Users/test/only.csv',
+        }),
+      ])
     })
   })
 })

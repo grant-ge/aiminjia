@@ -61,7 +61,6 @@ export function ChatBottomArea() {
     if (prefill) {
       setInput(prefill)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -190,6 +189,7 @@ export function ChatBottomArea() {
               isStreaming={isStreaming}
               onStop={stopCurrentStream}
               onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
+              allowAttachmentOnlySubmit={pendingFiles.length > 0}
               pendingFilesSlot={pendingFiles.length > 0 ? (
                 <PendingAttachmentChips
                   pendingFiles={pendingFiles}

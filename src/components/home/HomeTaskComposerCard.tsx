@@ -12,7 +12,7 @@ import { SkillPopover } from '@/components/chat/SkillPopover'
 import { PendingAttachmentChips } from '@/components/chat/PendingAttachmentChips'
 import { ChatComposerCompact } from '@/components/chat-scene/ChatComposerCompact'
 import { useChat, type PendingFileInfo } from '@/hooks/useChat'
-import { type PendingAttachment } from '@/hooks/useChatAttachments'
+import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useComposerPaste } from '@/hooks/useComposerPaste'
 import {
   authorizeLocalDirectory,
@@ -32,6 +32,7 @@ export function HomeTaskComposerCard() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { sendUserMessage } = useChat()
+  const { isPickingAttachments, pickAttachments } = useChatAttachments()
 
   const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([])
 
@@ -73,7 +74,6 @@ export function HomeTaskComposerCard() {
         el.setSelectionRange(prefill.length, prefill.length)
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleSkillPick = useCallback((skillId: string) => {
@@ -116,8 +116,14 @@ export function HomeTaskComposerCard() {
     setDisplayWorkspace(ws)
   }
 
+  const handlePickAttachments = useCallback(async () => {
+    const results = await pickAttachments()
+    appendPendingFiles(results)
+  }, [appendPendingFiles, pickAttachments])
+
   const handleSubmit = async (text: string) => {
-    if (!text.trim() || isSubmitting) return
+    const trimmed = text.trim()
+    if ((!trimmed && pendingFiles.length === 0) || isSubmitting) return
     setIsSubmitting(true)
     try {
       // Create conversation first so we have an ID to authorize against
@@ -169,7 +175,7 @@ export function HomeTaskComposerCard() {
         fileType: f.fileType,
         mimeType: f.mimeType,
       }))
-      await sendUserMessage(text, fileInfos)
+      await sendUserMessage(trimmed || '请分析附件', fileInfos)
       setPendingFiles([])
     } finally {
       setIsSubmitting(false)
@@ -196,6 +202,8 @@ export function HomeTaskComposerCard() {
         projectLabel={displayWorkspace?.displayName ?? '默认项目'}
         textareaRef={textareaRef}
         submitDisabled={isSubmitting}
+        onOpenAttachment={isPickingAttachments ? undefined : () => void handlePickAttachments()}
+        allowAttachmentOnlySubmit={pendingFiles.length > 0}
         onPaste={handlePaste}
         pendingFilesSlot={pendingFiles.length > 0 ? (
           <PendingAttachmentChips
