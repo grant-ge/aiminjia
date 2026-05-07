@@ -2191,6 +2191,7 @@ impl AgendaStore {
         at: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<AgendaItem> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
         let path = self.item_path(id);
         if !path.exists() {
             anyhow::bail!("agenda item not found: {}", id.as_str());
@@ -2214,6 +2215,7 @@ impl AgendaStore {
         at: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<AgendaItem> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
         let path = self.item_path(id);
         if !path.exists() {
             anyhow::bail!("agenda item not found: {}", id.as_str());
