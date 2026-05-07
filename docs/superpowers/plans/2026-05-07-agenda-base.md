@@ -1702,12 +1702,12 @@ fn recurring_next(
     let mut cursor = item.start_at;
 
     if cursor <= now {
-        cursor = advance_after_now(cursor, rule.freq, interval, now)?;
+        cursor = advance_after_now(cursor, &rule.freq, interval, now)?;
     }
 
     let mut skip_steps: u32 = 0;
     while item.skip_dates.contains(&cursor) {
-        cursor = advance_once(cursor, rule.freq, interval)?;
+        cursor = advance_once(cursor, &rule.freq, interval)?;
         skip_steps += 1;
         if skip_steps > 10_000 {
             return None;
@@ -1736,7 +1736,7 @@ fn recurring_next(
 
 fn advance_after_now(
     cursor: DateTime<Utc>,
-    freq: Freq,
+    freq: &Freq,
     interval: i64,
     now: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
@@ -1769,7 +1769,7 @@ fn advance_by_fixed_days_after_now(
     cursor.checked_add_signed(chrono::Duration::days(days_to_add))
 }
 
-fn advance_once(dt: DateTime<Utc>, freq: Freq, interval: i64) -> Option<DateTime<Utc>> {
+fn advance_once(dt: DateTime<Utc>, freq: &Freq, interval: i64) -> Option<DateTime<Utc>> {
     match freq {
         Freq::Daily => dt.checked_add_signed(chrono::Duration::days(interval)),
         Freq::Weekly => dt.checked_add_signed(chrono::Duration::weeks(interval)),
