@@ -142,6 +142,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "write_memory",
     "search_memory",
     "load_skill",
+    "task_output",
 ];
 
 /// Info about a registered tool (for management UI).

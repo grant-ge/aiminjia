@@ -24,6 +24,7 @@ const WORKSPACE_TOOL_NAMES: &[&str] = &[
     "write_file",
     "edit_file",
     "bash",
+    "powershell",
     "grep_content",
 ];
 

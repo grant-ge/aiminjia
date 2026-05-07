@@ -899,6 +899,7 @@ fn build_default_catalog() -> ToolCatalog {
 ///   - save_memory, load_core_memory, distill_memories（legacy memory ToolPlugin 已关闭）
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
+    // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
     "bash",
     "powershell",
     "read_workspace_file",
