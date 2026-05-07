@@ -255,6 +255,26 @@ pub async fn list_agenda_occurrences(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn skip_occurrence(
+    id: String,
+    at: DateTime<Utc>,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<AgendaItem, String> {
+    let store = store_for(&resolver)?;
+    store.set_skip(&AgendaItemId(id), at).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unskip_occurrence(
+    id: String,
+    at: DateTime<Utc>,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<AgendaItem, String> {
+    let store = store_for(&resolver)?;
+    store.unset_skip(&AgendaItemId(id), at).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
