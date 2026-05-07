@@ -670,8 +670,13 @@ fn create_persists_item() {
     let store = AgendaStore::new(dir.path());
     let item = make_valid_item("p1");
     let saved = store.create(item.clone()).unwrap();
+    assert_eq!(saved, item);
     assert_eq!(saved.id, item.id);
     assert!(store.item_path(&item.id).exists());
+    let persisted: super::super::item::AgendaItem =
+        serde_json::from_str(&std::fs::read_to_string(store.item_path(&item.id)).unwrap())
+            .unwrap();
+    assert_eq!(persisted, item);
 }
 
 #[test]
@@ -726,6 +731,23 @@ fn rejects_rule_with_by_day() {
     });
     let err = store.create(item).unwrap_err();
     assert!(err.to_string().contains("by_day"));
+}
+
+#[test]
+fn rejects_rule_with_by_month_day() {
+    use super::super::item::*;
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let mut item = make_valid_item("p1");
+    item.rule = Some(RecurrenceRule {
+        freq: Freq::Monthly,
+        interval: 1,
+        end_condition: EndCondition::Never,
+        by_day: vec![],
+        by_month_day: vec![7],
+    });
+    let err = store.create(item).unwrap_err();
+    assert!(err.to_string().contains("by_month_day"));
 }
 
 #[test]
