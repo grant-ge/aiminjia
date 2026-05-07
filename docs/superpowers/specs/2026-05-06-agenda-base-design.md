@@ -421,12 +421,17 @@ fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTim
 | `create_agenda_item` | `CreateAgendaItemRequest` | `AgendaItem` |
 | `update_agenda_item` | `(id, UpdateAgendaItemRequest)` | `AgendaItem` |
 | `delete_agenda_item` | `(id: String)` | `bool` |
-| `run_agenda_item_now` | `(id: String)` | `Occurrence` |
+| `run_agenda_item_now` | `(id: String)` | `String`（occurrence_id，见下注） |
 | `skip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
 | `unskip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
-| `list_agenda_occurrences` | `(item_id, limit, before)` | `Vec<Occurrence>` |
+| `list_agenda_occurrences` | `(item_id, limit)`（见下注） | `Vec<Occurrence>` |
 
 `ItemFilter` 含 `status_in / persona_id / search`，本期前端默认全部传 None。
+
+**本期签名收窄说明：**
+
+- `run_agenda_item_now` 出参为 `String`（occurrence_id），前端需要完整 `Occurrence` 时再调 `list_agenda_occurrences` 取最新一行。延后到二期再考虑直接返回 `Occurrence`。
+- `list_agenda_occurrences` 暂不实现 `before` 游标分页参数，本期仅按 `limit` 取最近 N 条。二期接入分页时再加 `before: Option<DateTime<Utc>>`。
 
 ---
 
