@@ -49,6 +49,43 @@ impl AgendaStore {
         atomic_write_json(&self.item_path(&item.id), &item)?;
         Ok(item)
     }
+
+    pub fn get(&self, id: &AgendaItemId) -> anyhow::Result<AgendaItem> {
+        let _guard = self.lock.lock().unwrap();
+        let path = self.item_path(id);
+        if !path.exists() {
+            anyhow::bail!("agenda item not found: {}", id.as_str());
+        }
+        let bytes = std::fs::read(&path)?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    pub fn list(&self) -> anyhow::Result<Vec<AgendaItem>> {
+        let _guard = self.lock.lock().unwrap();
+        if !self.items_dir().exists() {
+            return Ok(vec![]);
+        }
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(self.items_dir())? {
+            let path = entry?.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = std::fs::read(&path)?;
+            out.push(serde_json::from_slice(&bytes)?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete(&self, id: &AgendaItemId) -> anyhow::Result<bool> {
+        let _guard = self.lock.lock().unwrap();
+        let path = self.item_path(id);
+        if !path.exists() {
+            return Ok(false);
+        }
+        std::fs::remove_file(&path)?;
+        Ok(true)
+    }
 }
 
 pub(crate) fn validate_phase1_constraints(item: &AgendaItem) -> anyhow::Result<()> {
@@ -236,5 +273,51 @@ mod tests {
         item.skip_dates.push(Utc::now());
         let err = store.create(item).unwrap_err();
         assert!(err.to_string().contains("skip_dates"));
+    }
+
+    #[test]
+    fn get_returns_saved_item() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let saved = store.create(make_valid_item("p1")).unwrap();
+        let fetched = store.get(&saved.id).unwrap();
+        assert_eq!(fetched.id, saved.id);
+    }
+
+    #[test]
+    fn get_missing_returns_err() {
+        use super::super::item::AgendaItemId;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let result = store.get(&AgendaItemId("missing".into()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_returns_all() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        store.create(make_valid_item("p1")).unwrap();
+        store.create(make_valid_item("p2")).unwrap();
+        let all = store.list().unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn delete_removes_file_returns_true() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let saved = store.create(make_valid_item("p1")).unwrap();
+        assert!(store.delete(&saved.id).unwrap());
+        assert!(!store.item_path(&saved.id).exists());
+    }
+
+    #[test]
+    fn delete_missing_returns_false() {
+        use super::super::item::AgendaItemId;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let result = store.delete(&AgendaItemId("missing".into())).unwrap();
+        assert!(!result);
     }
 }
