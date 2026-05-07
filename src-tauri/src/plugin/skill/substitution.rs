@@ -65,11 +65,14 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
         // Git Bash is on PATH. -NoProfile keeps startup snappy. The UTF-8
         // prologue is required so Chinese / non-ASCII output isn't reduced to
         // `?` by the default CP936 console encoding.
+        // Silently swallow encoding-setup failures (e.g. ConstrainedLanguage
+        // mode forbids property setters on .NET types). See powershell.rs for
+        // the same pattern.
         #[cfg(target_os = "windows")]
         let wrapped_cmd = format!(
-            "chcp 65001 > $null; \
-             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
-             $OutputEncoding = [System.Text.Encoding]::UTF8; \
+            "chcp 65001 > $null 2>$null; \
+             & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
              {cmd}"
         );
         #[cfg(target_os = "windows")]
