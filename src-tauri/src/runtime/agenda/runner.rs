@@ -53,6 +53,7 @@ mod tests {
 
     struct RecordingDispatcher {
         calls: std::sync::Mutex<Vec<String>>,
+        triggers: std::sync::Mutex<Vec<TriggerSource>>,
     }
 
     #[async_trait::async_trait]
@@ -61,10 +62,11 @@ mod tests {
             &self,
             item: super::super::item::AgendaItem,
             _planned: DateTime<Utc>,
-            _src: TriggerSource,
+            src: TriggerSource,
             _now: DateTime<Utc>,
         ) -> anyhow::Result<String> {
             self.calls.lock().unwrap().push(item.id.as_str().to_string());
+            self.triggers.lock().unwrap().push(src);
             Ok("occ-test".into())
         }
     }
@@ -97,7 +99,10 @@ mod tests {
         let due_at = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
         store.create(make_active_due_item("p1", due_at)).unwrap();
 
-        let dispatcher = RecordingDispatcher { calls: Default::default() };
+        let dispatcher = RecordingDispatcher {
+            calls: Default::default(),
+            triggers: Default::default(),
+        };
         let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
         run_due_once(&store, &dispatcher, now).await.unwrap();
         assert_eq!(dispatcher.calls.lock().unwrap().len(), 1);
@@ -107,9 +112,32 @@ mod tests {
     async fn run_due_once_skips_when_no_due() {
         let dir = TempDir::new().unwrap();
         let store = AgendaStore::new(dir.path());
-        let dispatcher = RecordingDispatcher { calls: Default::default() };
+        let dispatcher = RecordingDispatcher {
+            calls: Default::default(),
+            triggers: Default::default(),
+        };
         let now = Utc::now();
         run_due_once(&store, &dispatcher, now).await.unwrap();
         assert_eq!(dispatcher.calls.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn run_due_once_marks_dispatch_with_scheduled_trigger_source() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let due_at = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+        store.create(make_active_due_item("p1", due_at)).unwrap();
+
+        let dispatcher = RecordingDispatcher {
+            calls: Default::default(),
+            triggers: Default::default(),
+        };
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        run_due_once(&store, &dispatcher, now).await.unwrap();
+
+        let triggers = dispatcher.triggers.lock().unwrap();
+        assert_eq!(triggers.len(), 1);
+        let serialized = serde_json::to_string(&triggers[0]).unwrap();
+        assert_eq!(serialized, "\"scheduled\"");
     }
 }
