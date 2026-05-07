@@ -20,6 +20,7 @@ use crate::runtime::tools::RuntimeTool;
 pub struct TaskCreateRuntimeTool;
 pub struct TaskUpdateRuntimeTool;
 pub struct TaskListRuntimeTool;
+pub struct TaskGetRuntimeTool;
 
 fn task_list_id(ctx: &ToolExecutionContext) -> String {
     ctx.session_id.as_str().to_string()
@@ -340,5 +341,47 @@ impl RuntimeTool for TaskUpdateRuntimeTool {
                 "task": task_to_json(&task),
             })),
         ))
+    }
+}
+
+#[async_trait]
+impl RuntimeTool for TaskGetRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        TOOL_CATALOG
+            .get("TaskGet")
+            .unwrap_or_else(|| ToolDefinition::new("TaskGet", "获取单条任务"))
+    }
+
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        true
+    }
+
+    fn is_read_only(&self, _input: &Value) -> bool {
+        true
+    }
+
+    async fn execute(
+        &self,
+        input: Value,
+        ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        let task_id = required_str(&input, "taskId", "TaskGet")?.to_string();
+        let store = store_for(&ctx)?;
+        let list_id = task_list_id(&ctx);
+        let task = store
+            .get(&list_id, &task_id)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        match task {
+            Some(task) => Ok(ToolResult::new(
+                "TaskGet",
+                format_task_line(&task),
+                Some(json!({ "task": task_to_json(&task) })),
+            )),
+            None => Ok(ToolResult::new(
+                "TaskGet",
+                format!("Task #{} not found", task_id),
+                Some(json!({ "task": null, "error": "Task not found" })),
+            )),
+        }
     }
 }

@@ -518,6 +518,22 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TaskGet",
+            "按 taskId 获取单条任务的完整记录（含 metadata / blocks / blockedBy）。",
+        )
+        .with_kind(ToolKind::Support)
+        .with_read_only(true),
+        json!({
+            "type": "object",
+            "required": ["taskId"],
+            "properties": {
+                "taskId": { "type": "string" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "WriteMemory",
             "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
         )
@@ -592,6 +608,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskCreate",
     "TaskUpdate",
     "TaskList",
+    "TaskGet",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

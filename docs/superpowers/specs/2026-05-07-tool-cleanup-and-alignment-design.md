@@ -1,12 +1,12 @@
 # Lotus 工具系统清理与对标设计
 
 日期：2026-05-07
-状态：实施中（Phase 1 ✅ / Phase 2 ✅ / Phase 3 主体完成，剩余 40 处残留待清）
+状态：实施中（Phase 1 ✅ / Phase 2 ✅ / Phase 3 ✅ / Phase 4 ✅ / Phase 5 进行中：TaskGet 实施中，TaskStop 推迟，SKILL.md 重写推迟）
 基线：`docs/2026-05-07-tool-inventory-and-claude-code-best-comparison.md`
 
 ---
 
-## 0bis. 当前实施进度（断点续做用，2026-05-07）
+## 0bis. 当前实施进度（断点续做用，最后更新 2026-05-07）
 
 ### 已完成的 commit（按时间顺序）
 
@@ -16,27 +16,17 @@
 | `56bd875` | 数字员工 5 个内置模板 toolWhitelist 重写 |
 | `41ffbae` | Phase 2A + 2B：删 list_directory + 7 僵尸 + 1 孤儿（约 -1942 行） |
 | `3b724b2` | Phase 3 主体（WIP）：删 12 业务工具 + Python 整目录 + browse_data_agent（约 -19056 行） |
+| `7b7448c` | Phase 3 收尾：8 处残留清理（-203 行） |
+| `cdcc375` | Phase 4：13 对工具硬改名（81 文件，+400/-400） |
 
-### Phase 3 剩余工作（40 处残留）— 下次会话先做
+### Phase 5 范围调整（基于实施时发现的差距）
 
-**高优先级（影响实际语义）**
-- `src-tauri/src/commands/chat.rs:536-622` — `FILE_GEN_TOOLS` + `is_last_tool_file_generation` + 4 个相关测试，整段 dead code 删除
-- `src-tauri/src/commands/chat.rs:631, 638` — XML 剥离测试 fixture 中的 `load_file` / `execute_python` 替换为 `bash`
-- `src-tauri/tests/registry_tool_sync_test.rs:56, 67` — 过时断言 `execute_python must exist`，改成断言 `bash` 仍存在
-- `src-tauri/tests/workspace_first_agent_golden_path_test.rs:27` — 期望工具清单里删 `"get_file_info"`
-- `src-tauri/tests/plan_k_microcompact_test.rs:111` — 注释行删除
+**做**：
+- §7.1 新增 TaskGet 工具（read-only，依赖已有 task store，零阻塞）
 
-**中优先级（注释 / 死代码）**
-- `src-tauri/src/runtime/tools/capability.rs:119-141, 294-343` — `LoadedFileResult` + `FileOperations::load_file` trait + `DefaultFileOperations` stub。grep 确认无外部 caller 后整体删
-- `src-tauri/src/connector/engine.rs:111-132, 175` — `browser_extract_*` wrapper 方法 + 提示文本里 `browse_data(task, url?)` 引用
-- `src-tauri/src/connector/playwright_browser.rs:458-516` — Playwright 协议层 `extract_*` 方法。如果 engine.rs 那两个 wrapper 删了，这两个也成孤儿可删
-
-### 后续阶段（未开始）
-
-| 阶段 | 内容 | 工作量 |
-|---|---|---|
-| **Phase 4** | 13 对工具硬改名（`read_workspace_file → Read` 等） | 大（~1000 处引用） |
-| **Phase 5** | 新增 TaskGet / TaskStop；i18n 清理；SKILL.md 重写 | 中 |
+**推迟**：
+- §7.2 新增 TaskStop —— **见 §7.2 现状记录**：CancellationToken 类型已可用，但 `agent_runtime.cancel_run` 没真正调 `.cancel()`，且没有 `task_id -> RunId` 映射，前置缺三块
+- §9.2 30+ SKILL.md 正文重写 —— A 类（24/27 个 SKILL）依赖被删工具的产品流程，单纯 sed 改名不足以恢复语义；正文逻辑重写工作量超出本期负担。改名 sed 脚本本身保留在 §9.2 待用
 
 ### 实施过程中的关键经验（给下次会话）
 
@@ -44,6 +34,8 @@
 - **subagent stall 不一定是失败**：watchdog 超时前往往主体已做完，stop 后看 git diff 经常发现工作完成了，只是没报告
 - **跑 cargo build 验证比让 agent 自己跑更可靠**：每个 implementer 完成后主线程独立 build 一次确认
 - **review_ 测试中 `review_send_message_clears_gateway_busy_after_runtime_returns` 和 `review_sub_agent_should_not_hardcode_foreground_child_runs` 是 pre-existing 失败**：用 `git stash` 验证过，跟本期改动无关，可以忽略
+- **Phase 4 改名能并行**：按"src 源码 vs tests 目录"切两个 subagent 完全文件不重叠，可真并行；同一文件 13 对改名内部不能并行（共享 catalog 数组）
+- **SKILL.md 推迟决策**：A 类 SKILL（24/27 个）正文里写"用 execute_python 计算..."这种产品流程描述，工具被删后正文整段失语义；机械 sed 改名解决不了这种"语义性失效"，必须人工逐个 SKILL 重写产品流程，工作量与产品定位最终决策耦合（哪些场景留 / 哪些下线），不适合在工具清理这一期里捎带
 
 ---
 
@@ -420,15 +412,26 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
 
 **返回**：完整 Task JSON。
 
-### 7.2 TaskStop
+### 7.2 TaskStop —— 推迟到下一期
 
-**用途**：终止异步子任务。
+**结论（2026-05-07 实施时确认）**：缺三个前置条件，本期不实施。
 
-**前置确认**：grep `runtime/agent/worker_runtime.rs` 是否已使用 `tokio::sync::CancellationToken`。如果没接通则**推迟到下一期**。
+**实际现状（grep 后）**：
+- `runtime/cancellation::CancellationToken` 类型完整可用，含 `BackgroundStop` reason 和 parent/child 级联取消（`runtime/cancellation.rs`）。
+- `worker_runtime.rs:73` 的 `WorkerConfig` 含 `cancel_token: Option<CancellationToken>`，token 已往下传。
+- **缺口 1**：`agent_runtime::cancel_run(child_run_id)`（agent_runtime.rs:75-83）只更新 `AgentInvocationStore` 的状态字段（Cancelled），**没有调用对应 worker token 的 `.cancel()`** —— 也就是 worker 不会真停。
+- **缺口 2**：没有 `task_id -> CancellationToken` 的全局 registry。`TaskCreate` 创建的 task 与 `spawn_subagent` 启动的 child run 是两套 ID（taskId vs RunId/AgentId），TaskStop 接哪一头都需要新的关联存储。
+- **缺口 3**：���步子 agent（`spawn_subagent run_in_background=true`）的 launcher 把 `agent_id` 返回给 LLM，但没有把 `agent_id ↔ task_id` 的双向映射落盘 —— TaskStop 收到 task_id 也找不到对应运行体。
 
-**实现**：
+**下一期需要先做**（不在本设计范围）：
+1. 给 `agent_runtime.cancel_run` 加上真正的 token-stop 路径（保留 invocation_store 状态写入，再调被取消运行体的 `.cancel_with_reason(BackgroundStop)`）。这意味着 invocation_store 要持有 token Arc 或 worker_runtime 维护一个 `RunId -> CancellationToken` 的 Mutex<HashMap>。
+2. 把 `spawn_subagent` async path 输出的 metadata 里加 task_id（从 ToolExecutionContext 的 caller chain 提取），并把 `task_id -> RunId` 写到 task store 的 metadata 字段上。
+3. `TaskStop` 工具的实现（schema / catalog / register / disallow 列表）见下文存档，等前置补齐后直接用。
+
+**已存档的 TaskStop 设计（前置补齐后实施用）**：
+
 - 新文件：`src-tauri/src/runtime/tools/builtin/task_stop.rs`
-- 路径：request-scoped（依赖 app state）
+- 路径：request-scoped（依赖 app state 拿 agent_runtime / worker_runtime registry）
 - 添加：catalog entry + `REQUEST_SCOPED_RUNTIME_TOOL_NAMES` + `try_build_request_scoped_tool` match arm
 - DAILY_ALLOWED_TOOLS 加 `"TaskStop"`
 - `ALL_AGENT_DISALLOWED` 加 `"TaskStop"`（§8.2）
