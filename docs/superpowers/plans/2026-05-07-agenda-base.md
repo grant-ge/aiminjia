@@ -3926,9 +3926,9 @@ git commit -m "test(agenda): integration test for store CRUD + skip + occurrence
 grep -n "schedule\|Schedule" src/lib/tauri.ts
 ```
 
-- [ ] **Step 2：替换整段为 agenda 类型 + 9 个 invoke**
+- [ ] **Step 2：追加 agenda 类型 + 9 个 invoke，保留旧 schedule 类型/函数**
 
-定位到 `export type ScheduleStatus` 起始行，整段（含 ScheduleRecord / CreateScheduleRequest / 3 个函数）替换为：
+定位到旧 schedule 类型/函数后，在其后追加以下 agenda 类型和 invoke 封装；不要删除 `ScheduleStatus` / `ScheduleRecord` / `CreateScheduleRequest` / `listSchedules` / `createSchedule` / `deleteSchedule`，因为 PR-2 内 `SchedulesPage` 仍保持调用旧 invoke，等 PR-3 切换完成再删。
 
 ```typescript
 export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned'
@@ -4045,8 +4045,6 @@ export function unskipOccurrence(id: string, at: string): Promise<AgendaItem> {
   return invoke<AgendaItem>('unskip_occurrence', { id, at })
 }
 ```
-
-> **保留旧 schedule 类型/函数**：暂不删，PR-2 内不动 SchedulesPage（保持调旧 invoke），等 PR-3 切换完成再删。
 
 - [ ] **Step 3：tsc 检查**
 
