@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use super::item::{AgendaItem, AgendaItemId};
+use super::occurrence::Occurrence;
 use crate::storage::file_store::io::atomic_write_json;
+use std::io::Write;
 
 pub struct AgendaStore {
     pub(crate) root: PathBuf,
@@ -136,6 +138,54 @@ impl AgendaStore {
         }
         Ok(count)
     }
+
+    pub fn append_occurrence(&self, occ: &Occurrence) -> anyhow::Result<()> {
+        let _guard = self.lock.lock().unwrap();
+        let path = self.occurrence_shard_path(&occ.agenda_item_id, occ.fired_at);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)?;
+        let line = serde_json::to_string(occ)?;
+        writeln!(file, "{}", line)?;
+        Ok(())
+    }
+
+    pub fn list_occurrences(
+        &self,
+        item_id: &super::item::AgendaItemId,
+        limit: usize,
+    ) -> anyhow::Result<Vec<Occurrence>> {
+        let _guard = self.lock.lock().unwrap();
+        let dir = self.occurrence_dir_for(item_id);
+        if !dir.exists() {
+            return Ok(vec![]);
+        }
+        let mut latest: std::collections::HashMap<String, Occurrence> = Default::default();
+        let mut shards: Vec<_> = std::fs::read_dir(&dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("jsonl"))
+            .collect();
+        shards.sort();
+        for shard in shards {
+            let bytes = std::fs::read(&shard)?;
+            for line in bytes.split(|b| *b == b'\n') {
+                if line.is_empty() {
+                    continue;
+                }
+                let occ: Occurrence = serde_json::from_slice(line)?;
+                latest.insert(occ.id.clone(), occ);
+            }
+        }
+        let mut out: Vec<Occurrence> = latest.into_values().collect();
+        out.sort_by(|a, b| b.fired_at.cmp(&a.fired_at));
+        out.truncate(limit);
+        Ok(out)
+    }
 }
 
 fn validate_item_id_for_path(id: &AgendaItemId) -> anyhow::Result<()> {
@@ -231,6 +281,60 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn make_running_occurrence(item_id: &super::super::item::AgendaItemId) -> super::super::occurrence::Occurrence {
+        use chrono::Utc;
+        use super::super::occurrence::*;
+        use crate::runtime::ids::{RunId, SessionId};
+        let now = Utc::now();
+        Occurrence {
+            id: Occurrence::new_id(),
+            agenda_item_id: item_id.clone(),
+            fired_at: now,
+            planned_fire_at: now,
+            started_at: now,
+            finished_at: None,
+            primary_persona_id: "p1".into(),
+            conversation_id: "conv-x".into(),
+            session_id: SessionId::new("conv-x"),
+            run_id: RunId::new("run-y"),
+            status: OccurrenceStatus::Running,
+            error_summary: None,
+            trigger_source: TriggerSource::Scheduled,
+        }
+    }
+
+    #[test]
+    fn append_occurrence_creates_jsonl_shard() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let item = store.create(make_valid_item("p1")).unwrap();
+        let occ = make_running_occurrence(&item.id);
+        store.append_occurrence(&occ).unwrap();
+        assert!(store.occurrence_shard_path(&item.id, occ.fired_at).exists());
+    }
+
+    #[test]
+    fn read_occurrences_returns_last_state_per_id() {
+        use super::super::occurrence::OccurrenceStatus;
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let item = store.create(make_valid_item("p1")).unwrap();
+
+        let running = make_running_occurrence(&item.id);
+        store.append_occurrence(&running).unwrap();
+
+        let mut completed = running.clone();
+        completed.status = OccurrenceStatus::Succeeded;
+        completed.finished_at = Some(Utc::now());
+        store.append_occurrence(&completed).unwrap();
+
+        let occs = store.list_occurrences(&item.id, 10).unwrap();
+        assert_eq!(occs.len(), 1);
+        assert_eq!(occs[0].status, OccurrenceStatus::Succeeded);
+        assert!(occs[0].finished_at.is_some());
     }
 
     #[test]
