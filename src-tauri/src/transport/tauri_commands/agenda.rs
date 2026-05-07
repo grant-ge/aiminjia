@@ -58,3 +58,47 @@ pub async fn get_agenda_item(
     let store = store_for(&resolver)?;
     store.get(&AgendaItemId(id)).map_err(|e| e.to_string())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAgendaItemRequest {
+    pub title: String,
+    pub prompt: String,
+    pub organizer_persona_id: String,
+    pub start_at: DateTime<Utc>,
+    pub timezone: Option<String>,
+    pub rule: Option<crate::runtime::agenda::RecurrenceRule>,
+}
+
+#[tauri::command]
+pub async fn create_agenda_item(
+    request: CreateAgendaItemRequest,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<AgendaItem, String> {
+    use crate::runtime::agenda::{Participant, ItemStatus};
+    let store = store_for(&resolver)?;
+    let now = Utc::now();
+    let mut item = AgendaItem {
+        id: AgendaItemId::new(),
+        title: request.title,
+        prompt: request.prompt,
+        organizer_persona_id: request.organizer_persona_id.clone(),
+        participants: vec![Participant {
+            persona_id: request.organizer_persona_id,
+            joined_at: now,
+        }],
+        start_at: request.start_at,
+        timezone: request.timezone.unwrap_or_else(|| "Asia/Shanghai".into()),
+        rule: request.rule,
+        skip_dates: vec![],
+        next_fire_at: None,
+        occurrence_count: 0,
+        status: ItemStatus::Active,
+        override_of: None,
+        created_at: now,
+        updated_at: now,
+    };
+    item.next_fire_at =
+        crate::runtime::agenda::compute_next_fire_at(&item, now);
+    store.create(item).map_err(|e| e.to_string())
+}
