@@ -3333,11 +3333,145 @@ git commit -m "fix(agenda): validate create command input"
 
 ## 任务 24：Tauri 命令 update / delete
 
+**Plan 修正说明：**普通 `update_agenda_item` 不暴露 `organizer_persona_id`，因为 spec 规定 organizer 创建后不可改，只有 Orphaned 复活流程例外；本任务仅实现 title / prompt / start_at / timezone / rule / status 的普通更新。
+
 **Files:**
-- Modify: `src-tauri/src/transport/tauri_commands/agenda.rs`
+- Modify/Test: `src-tauri/src/transport/tauri_commands/agenda.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1：在 agenda.rs 末尾追加**
+- [ ] **Step 1：写失败的测试**
+
+在 `agenda.rs` 的 `#[cfg(test)] mod tests` 末尾追加：
+
+```rust
+fn make_item_for_update(now: DateTime<Utc>) -> AgendaItem {
+    AgendaItem {
+        id: AgendaItemId("agenda-update-test".into()),
+        title: "Old".into(),
+        prompt: "Old prompt".into(),
+        organizer_persona_id: "p1".into(),
+        participants: vec![Participant {
+            persona_id: "p1".into(),
+            joined_at: now,
+        }],
+        start_at: Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap(),
+        timezone: "Asia/Shanghai".into(),
+        rule: None,
+        skip_dates: vec![],
+        next_fire_at: None,
+        occurrence_count: 0,
+        status: ItemStatus::Active,
+        override_of: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+#[test]
+fn apply_update_trims_fields_and_recomputes_next_fire() {
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+    let mut item = make_item_for_update(now);
+    let original_organizer = item.organizer_persona_id.clone();
+    let updated = apply_update_agenda_item_request(
+        &mut item,
+        UpdateAgendaItemRequest {
+            title: Some("  New title  ".into()),
+            prompt: Some("  New prompt  ".into()),
+            start_at: Some(Utc.with_ymd_and_hms(2026, 5, 7, 10, 0, 0).unwrap()),
+            timezone: Some("  UTC  ".into()),
+            rule: Some(None),
+            status: Some(ItemStatus::Paused),
+        },
+        now,
+    )
+    .unwrap();
+
+    assert_eq!(updated.title, "New title");
+    assert_eq!(updated.prompt, "New prompt");
+    assert_eq!(updated.timezone, "UTC");
+    assert_eq!(updated.status, ItemStatus::Paused);
+    assert_eq!(updated.organizer_persona_id, original_organizer);
+    assert_eq!(updated.participants[0].persona_id, original_organizer);
+    assert_eq!(updated.updated_at, now);
+    assert_eq!(updated.next_fire_at, Some(updated.start_at));
+}
+
+#[test]
+fn apply_update_rejects_blank_title() {
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+    let mut item = make_item_for_update(now);
+    let err = apply_update_agenda_item_request(
+        &mut item,
+        UpdateAgendaItemRequest {
+            title: Some("   ".into()),
+            ..Default::default()
+        },
+        now,
+    )
+    .unwrap_err();
+    assert_eq!(err, "title is required");
+}
+
+#[test]
+fn apply_update_rejects_blank_prompt() {
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+    let mut item = make_item_for_update(now);
+    let err = apply_update_agenda_item_request(
+        &mut item,
+        UpdateAgendaItemRequest {
+            prompt: Some("   ".into()),
+            ..Default::default()
+        },
+        now,
+    )
+    .unwrap_err();
+    assert_eq!(err, "prompt is required");
+}
+
+#[test]
+fn apply_update_rejects_blank_timezone() {
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+    let mut item = make_item_for_update(now);
+    let err = apply_update_agenda_item_request(
+        &mut item,
+        UpdateAgendaItemRequest {
+            timezone: Some("   ".into()),
+            ..Default::default()
+        },
+        now,
+    )
+    .unwrap_err();
+    assert_eq!(err, "timezone is required");
+}
+
+#[test]
+fn apply_update_rejects_invalid_timezone() {
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+    let mut item = make_item_for_update(now);
+    let err = apply_update_agenda_item_request(
+        &mut item,
+        UpdateAgendaItemRequest {
+            timezone: Some("Not/AZone".into()),
+            ..Default::default()
+        },
+        now,
+    )
+    .unwrap_err();
+    assert_eq!(err, "timezone must be a valid IANA timezone");
+}
+```
+
+- [ ] **Step 2：跑测试看失败**
+
+```bash
+cd src-tauri && cargo test --lib transport::tauri_commands::agenda::tests::apply_update
+```
+
+期望：FAIL，提示 `UpdateAgendaItemRequest` 或 `apply_update_agenda_item_request` 未定义。
+
+- [ ] **Step 3：实现 update / delete**
+
+在 `agenda.rs` 的 create 命令后追加：
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -3349,7 +3483,49 @@ pub struct UpdateAgendaItemRequest {
     pub timezone: Option<String>,
     pub rule: Option<Option<crate::runtime::agenda::RecurrenceRule>>,
     pub status: Option<ItemStatus>,
-    pub organizer_persona_id: Option<String>,
+}
+
+fn apply_update_agenda_item_request(
+    item: &mut AgendaItem,
+    request: UpdateAgendaItemRequest,
+    now: DateTime<Utc>,
+) -> Result<AgendaItem, String> {
+    if let Some(t) = request.title {
+        let title = t.trim().to_string();
+        if title.is_empty() {
+            return Err("title is required".into());
+        }
+        item.title = title;
+    }
+    if let Some(p) = request.prompt {
+        let prompt = p.trim().to_string();
+        if prompt.is_empty() {
+            return Err("prompt is required".into());
+        }
+        item.prompt = prompt;
+    }
+    if let Some(s) = request.start_at {
+        item.start_at = s;
+    }
+    if let Some(tz) = request.timezone {
+        let timezone = tz.trim().to_string();
+        if timezone.is_empty() {
+            return Err("timezone is required".into());
+        }
+        if timezone.parse::<chrono_tz::Tz>().is_err() {
+            return Err("timezone must be a valid IANA timezone".into());
+        }
+        item.timezone = timezone;
+    }
+    if let Some(r) = request.rule {
+        item.rule = r;
+    }
+    if let Some(st) = request.status {
+        item.status = st;
+    }
+    item.updated_at = now;
+    item.next_fire_at = crate::runtime::agenda::compute_next_fire_at(item, now);
+    Ok(item.clone())
 }
 
 #[tauri::command]
@@ -3361,23 +3537,7 @@ pub async fn update_agenda_item(
     let store = store_for(&resolver)?;
     let item_id = AgendaItemId(id);
     let mut item = store.get(&item_id).map_err(|e| e.to_string())?;
-    if let Some(t) = request.title { item.title = t; }
-    if let Some(p) = request.prompt { item.prompt = p; }
-    if let Some(s) = request.start_at { item.start_at = s; }
-    if let Some(tz) = request.timezone { item.timezone = tz; }
-    if let Some(r) = request.rule { item.rule = r; }
-    if let Some(st) = request.status { item.status = st; }
-    if let Some(o) = request.organizer_persona_id {
-        use crate::runtime::agenda::Participant;
-        item.organizer_persona_id = o.clone();
-        item.participants = vec![Participant {
-            persona_id: o,
-            joined_at: Utc::now(),
-        }];
-    }
-    item.updated_at = Utc::now();
-    item.next_fire_at =
-        crate::runtime::agenda::compute_next_fire_at(&item, Utc::now());
+    let item = apply_update_agenda_item_request(&mut item, request, Utc::now())?;
     store.update(item).map_err(|e| e.to_string())
 }
 
@@ -3391,28 +3551,33 @@ pub async fn delete_agenda_item(
 }
 ```
 
-- [ ] **Step 2：注册 invoke**
+- [ ] **Step 4：跑测试看通过**
+
+```bash
+cd src-tauri && cargo test --lib transport::tauri_commands::agenda::tests::apply_update
+```
+
+- [ ] **Step 5：注册 invoke**
 
 ```rust
 transport::tauri_commands::agenda::update_agenda_item,
 transport::tauri_commands::agenda::delete_agenda_item,
 ```
 
-- [ ] **Step 3：cargo check**
+- [ ] **Step 6：cargo check**
 
 ```bash
 cd src-tauri && cargo check
 ```
 
-- [ ] **Step 4：Commit**
+- [ ] **Step 7：Commit**
 
 ```bash
-git add src-tauri/src/transport/tauri_commands/agenda.rs src-tauri/src/lib.rs
+git add docs/superpowers/plans/2026-05-07-agenda-base.md src-tauri/src/transport/tauri_commands/agenda.rs src-tauri/src/lib.rs
 git commit -m "feat(agenda): tauri commands update_agenda_item / delete_agenda_item"
 ```
 
 ---
-
 ## 任务 25：Tauri 命令 run_now / list_occurrences
 
 **Files:**
@@ -3768,7 +3933,6 @@ export interface UpdateAgendaItemRequest {
   timezone?: string
   rule?: RecurrenceRule | null
   status?: ItemStatus
-  organizerPersonaId?: string
 }
 
 export function listAgendaItems(filter?: ItemFilter): Promise<AgendaItem[]> {

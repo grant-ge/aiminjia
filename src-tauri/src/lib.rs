@@ -689,6 +689,8 @@ pub fn run() {
             transport::tauri_commands::agenda::list_agenda_items,
             transport::tauri_commands::agenda::create_agenda_item,
             transport::tauri_commands::agenda::get_agenda_item,
+            transport::tauri_commands::agenda::update_agenda_item,
+            transport::tauri_commands::agenda::delete_agenda_item,
             // Schedule commands
             commands::schedules::list_schedules,
             commands::schedules::create_schedule,
