@@ -2360,6 +2360,7 @@ git commit -m "feat(chat): ChatTurnRequest.persona_id_override field"
 **Files:**
 - Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
 - Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+- Modify: `src-tauri/src/runtime/session_runtime.rs`（仅同步测试 mock executor 的 trait 签名）
 
 > 修正：当前架构中 `build_system_prompt` / `build_prompt_snapshot` 是 `RuntimeLlmExecutor` trait 方法，调用点在 `chat_turn_driver.rs`。只改 `chat.rs` 会迫使使用 conversation_id -> request 的 side-channel，并且 `load_turn_config_overrides.system_prompt = DAILY_BASE_PROMPT` 会覆盖 persona-aware prompt。任务 17 必须把 `ChatTurnRequest` 直接传给 prompt builders，并让 snapshot prompt 优先于 `system_prompt` override。
 
@@ -2465,7 +2466,7 @@ cd src-tauri && cargo check
 - [ ] **Step 7：Commit**
 
 ```bash
-git add src-tauri/src/transport/tauri_commands/chat.rs src-tauri/src/runtime/chat/chat_turn_driver.rs
+git add src-tauri/src/transport/tauri_commands/chat.rs src-tauri/src/runtime/chat/chat_turn_driver.rs src-tauri/src/runtime/session_runtime.rs
 git commit -m "fix(chat): pass ChatTurnRequest into prompt builders"
 ```
 
