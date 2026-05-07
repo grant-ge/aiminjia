@@ -224,13 +224,13 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 构建 Turn 级的 system prompt。
     /// 由 executor 从 DB / settings / persona / product_name 合成。
     /// 默认 no-op（返回空字符串），生产 executor 必须 override。
-    async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+    async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
         Ok(String::new())
     }
 
     async fn build_prompt_snapshot(
         &self,
-        _conversation_id: &str,
+        _request: &ChatTurnRequest,
     ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
         Ok(None)
     }
@@ -1055,32 +1055,24 @@ impl RuntimeChatTurnDriver {
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let prompt_snapshot = match executor
-            .build_prompt_snapshot(request.conversation_id.as_str())
+            .build_prompt_snapshot(request)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?
         {
             Some(snapshot) => snapshot,
             None => {
-                let system_prompt = executor
-                    .build_system_prompt(request.conversation_id.as_str())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let system_prompt = match overrides.system_prompt.clone() {
+                    Some(prompt) => prompt,
+                    None => executor
+                        .build_system_prompt(request)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{}", e))?,
+                };
                 single_dynamic_prompt_snapshot("legacy_system_prompt", system_prompt)
             }
         };
-        let system_prompt = prompt_snapshot.compat_system_prompt();
-        let effective_system_prompt = overrides
-            .system_prompt
-            .clone()
-            .unwrap_or_else(|| system_prompt.clone());
-        let effective_prompt_snapshot = if overrides.system_prompt.is_some() {
-            single_dynamic_prompt_snapshot(
-                "override_system_prompt",
-                effective_system_prompt.clone(),
-            )
-        } else {
-            prompt_snapshot
-        };
+        let effective_system_prompt = prompt_snapshot.compat_system_prompt();
+        let effective_prompt_snapshot = prompt_snapshot;
 
         let config = TurnConfig {
             system_prompt: effective_system_prompt,
@@ -2204,6 +2196,7 @@ mod tests {
         seen_system_prompts: Mutex<Vec<String>>,
         seen_dynamic_contexts: Mutex<Vec<String>>,
         skill_catalog: Option<String>,
+        override_system_prompt: Option<String>,
     }
 
     impl SnapshotPromptExecutor {
@@ -2213,6 +2206,7 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: None,
+                override_system_prompt: None,
             }
         }
 
@@ -2222,7 +2216,13 @@ mod tests {
                 seen_system_prompts: Mutex::new(Vec::new()),
                 seen_dynamic_contexts: Mutex::new(Vec::new()),
                 skill_catalog: Some(skill_catalog.into()),
+                override_system_prompt: None,
             }
+        }
+
+        fn with_override_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
+            self.override_system_prompt = Some(system_prompt.into());
+            self
         }
     }
 
@@ -2273,7 +2273,7 @@ mod tests {
 
         async fn build_prompt_snapshot(
             &self,
-            _conversation_id: &str,
+            _request: &ChatTurnRequest,
         ) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError> {
             Ok(Some(crate::runtime::chat::prompt::TurnPromptSnapshot::new(
                 crate::runtime::chat::prompt::PromptAssembly::new(vec![
@@ -2290,7 +2290,7 @@ mod tests {
             )))
         }
 
-        async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
+        async fn build_system_prompt(&self, _request: &ChatTurnRequest) -> Result<String, TurnError> {
             self.legacy_calls.fetch_add(1, Ordering::SeqCst);
             Ok("legacy prompt should not be used".to_string())
         }
@@ -2301,6 +2301,16 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn load_turn_config_overrides(
+            &self,
+            _request: &ChatTurnRequest,
+        ) -> Result<TurnConfigOverrides, TurnError> {
+            Ok(TurnConfigOverrides {
+                system_prompt: self.override_system_prompt.clone(),
+                ..TurnConfigOverrides::default()
+            })
         }
     }
 
@@ -2326,6 +2336,36 @@ mod tests {
         let prompts = executor.seen_system_prompts.lock().unwrap().clone();
         assert_eq!(prompts, vec![expected_snapshot_prompt]);
         assert_eq!(executor.legacy_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn driver_keeps_prompt_snapshot_when_system_prompt_override_is_set() {
+        let executor = Arc::new(
+            SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"),
+        );
+        let bus = RuntimeEventBus::new();
+        let driver =
+            RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+        let mut turn = TurnState::new(
+            IdentityMapping::from_legacy_conversation_id(
+                "conv-driver-snapshot-override".to_string(),
+            ),
+            RunId::new("run-driver-snapshot-override"),
+            "use snapshot".to_string(),
+        );
+        let request =
+            ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
+
+        driver
+            .run_chat_turn(&mut turn, &request)
+            .await
+            .expect("driver should run with prompt snapshot");
+
+        let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+        assert_eq!(
+            prompts,
+            vec!["snapshot static\n\nsnapshot dynamic".to_string()]
+        );
     }
 
     #[tokio::test]
