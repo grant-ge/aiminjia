@@ -2359,13 +2359,17 @@ git commit -m "feat(chat): ChatTurnRequest.persona_id_override field"
 
 **Files:**
 - Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+
+> 修正：当前架构中 `build_system_prompt` / `build_prompt_snapshot` 是 `RuntimeLlmExecutor` trait 方法，调用点在 `chat_turn_driver.rs`。只改 `chat.rs` 会迫使使用 conversation_id -> request 的 side-channel，并且 `load_turn_config_overrides.system_prompt = DAILY_BASE_PROMPT` 会覆盖 persona-aware prompt。任务 17 必须把 `ChatTurnRequest` 直接传给 prompt builders，并让 snapshot prompt 优先于 `system_prompt` override。
 
 - [ ] **Step 1：grep build_system_prompt**
 
 ```bash
 cd src-tauri && grep -n "fn build_system_prompt" src/transport/tauri_commands/chat.rs
+cd src-tauri && grep -n "build_system_prompt" src/runtime/chat/chat_turn_driver.rs
 ```
-应有一处，约在 chat.rs:1181 附近。
+应看到生产实现和 trait / driver 调用点。
 
 - [ ] **Step 2：找到读 active_persona 的位置**
 
@@ -2373,45 +2377,96 @@ cd src-tauri && grep -n "fn build_system_prompt" src/transport/tauri_commands/ch
 cd src-tauri && grep -n "get_active_persona" src/transport/tauri_commands/chat.rs
 ```
 
-应该在 `build_system_prompt` 内：`let persona = self.services.db.get_active_persona().ok();`
+应该在 `build_system_prompt` / `build_prompt_snapshot` 内。
 
-- [ ] **Step 3：改成优先用 override**
+- [ ] **Step 3：写失败的 driver 测试，证明 system_prompt override 不覆盖 snapshot**
 
-把这一行替换为：
+在 `src-tauri/src/runtime/chat/chat_turn_driver.rs` 的 `#[cfg(test)] mod tests` 中给 `SnapshotPromptExecutor` 加一个可选 `override_system_prompt: Option<String>` 字段，并让 `load_turn_config_overrides` 返回它。新增测试：
+
+```rust
+#[tokio::test]
+async fn driver_keeps_prompt_snapshot_when_system_prompt_override_is_set() {
+    let executor = Arc::new(
+        SnapshotPromptExecutor::new().with_override_system_prompt("override prompt"),
+    );
+    let bus = RuntimeEventBus::new();
+    let driver =
+        RuntimeChatTurnDriver::with_llm_executor(QueryEngine::new(), bus, executor.clone());
+    let mut turn = TurnState::new(
+        IdentityMapping::from_legacy_conversation_id("conv-driver-snapshot-override".to_string()),
+        RunId::new("run-driver-snapshot-override"),
+        "use snapshot".to_string(),
+    );
+    let request = ChatTurnRequest::new("conv-driver-snapshot-override", "use snapshot", vec![]);
+
+    driver
+        .run_chat_turn(&mut turn, &request)
+        .await
+        .expect("driver should run with prompt snapshot");
+
+    let prompts = executor.seen_system_prompts.lock().unwrap().clone();
+    assert_eq!(prompts, vec!["snapshot static\n\nsnapshot dynamic".to_string()]);
+}
+```
+
+- [ ] **Step 4：跑测试看失败**
+
+```bash
+cd src-tauri && cargo test --lib runtime::chat::chat_turn_driver::tests::driver_keeps_prompt_snapshot_when_system_prompt_override_is_set
+```
+预期：FAIL，实际收到 `override prompt`。
+
+- [ ] **Step 5：改成 request 直传 + snapshot 优先**
+
+在 `src-tauri/src/runtime/chat/chat_turn_driver.rs`：
+
+- `RuntimeLlmExecutor::build_system_prompt` 签名改为：
+
+```rust
+async fn build_system_prompt(&self, request: &ChatTurnRequest) -> Result<String, TurnError>
+```
+
+- `RuntimeLlmExecutor::build_prompt_snapshot` 签名改为：
+
+```rust
+async fn build_prompt_snapshot(
+    &self,
+    request: &ChatTurnRequest,
+) -> Result<Option<crate::runtime::chat::prompt::TurnPromptSnapshot>, TurnError>
+```
+
+- driver 调用改为 `build_prompt_snapshot(request)` 和 `build_system_prompt(request)`。
+- 计算 effective prompt 时改为：如果 `prompt_snapshot` 存在，使用 snapshot；只有 legacy fallback 或 snapshot 不存在时才允许 `overrides.system_prompt` 覆盖。
+
+在 `src-tauri/src/transport/tauri_commands/chat.rs`：
+
+- 删除 `turn_requests` map 和 `request_for_conversation` side-channel。
+- `build_system_prompt(&self, request: &ChatTurnRequest)` 和 `build_prompt_snapshot(&self, request: &ChatTurnRequest)` 直接使用 `request.persona_id_override.as_deref()`。
+- persona 查询逻辑使用 `get_persona` fallback：
 
 ```rust
 let persona = match request.persona_id_override.as_deref() {
-    Some(id) => self.services.db.get_persona_by_id(id).ok().or_else(|| {
+    Some(id) => self.services.db.get_persona(id).ok().or_else(|| {
         self.services.db.get_active_persona().ok()
     }),
     None => self.services.db.get_active_persona().ok(),
 };
 ```
 
-> 注意：`get_persona_by_id` 是已有方法。若 grep `fn get_persona_by_id` 不存在，则改用 `PersonaStore::get_persona(id)`：
-> ```rust
-> Some(id) => self.services.db.get_persona(id).ok().or_else(|| self.services.db.get_active_persona().ok()),
-> ```
-
-- [ ] **Step 4：找到 build_system_prompt 的调用处确保 request 可见**
+- [ ] **Step 6：cargo check + 相关测试通过**
 
 ```bash
-cd src-tauri && grep -n "build_system_prompt" src/transport/tauri_commands/chat.rs
-```
-确保所有调用点都把 `request: &ChatTurnRequest` 传到了内部。如果原签名不接受 request，需要扩展签名加 `request: &ChatTurnRequest` 参数，并把所有 caller 同步更新。
-
-- [ ] **Step 5：cargo check**
-
-```bash
+cd src-tauri && cargo test --lib runtime::chat::chat_turn_driver::tests::driver_keeps_prompt_snapshot_when_system_prompt_override_is_set
+cd src-tauri && cargo test --lib runtime::chat::chat_turn_driver::tests
 cd src-tauri && cargo check
 ```
 预期：PASS。
 
-- [ ] **Step 6：Commit**
+- [ ] **Step 7：Commit**
 
 ```bash
-git add src-tauri/src/transport/tauri_commands/chat.rs
-git commit -m "feat(chat): build_system_prompt prefers ChatTurnRequest.persona_id_override"
+git add src-tauri/src/transport/tauri_commands/chat.rs src-tauri/src/runtime/chat/chat_turn_driver.rs
+git commit -m "fix(chat): pass ChatTurnRequest into prompt builders"
 ```
 
 ---
