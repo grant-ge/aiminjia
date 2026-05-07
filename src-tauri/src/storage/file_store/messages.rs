@@ -202,6 +202,9 @@ pub fn get_messages_v2(
 ) -> StorageResult<Vec<StoredMessage>> {
     let path = messages_path(base_dir, conversation_id);
     let all: Vec<StoredMessage> = read_jsonl(&path)?;
+    if all.is_empty() {
+        return get_legacy_shard_messages(base_dir, conversation_id);
+    }
     let mut by_id: HashMap<String, StoredMessage> = HashMap::new();
 
     for msg in all {
@@ -220,6 +223,24 @@ pub fn get_messages_v2(
             .then_with(|| a.id.cmp(&b.id)),
     });
     Ok(result)
+}
+
+fn get_legacy_shard_messages(
+    base_dir: &Path,
+    conversation_id: &str,
+) -> StorageResult<Vec<StoredMessage>> {
+    let meta = read_shard_meta(base_dir, conversation_id);
+    let mut all_records: Vec<StoredMessage> = Vec::new();
+
+    for shard_num in 1..=meta.shard {
+        let path = shard_path(base_dir, conversation_id, shard_num);
+        match read_jsonl(&path) {
+            Ok(records) => all_records.extend(records),
+            Err(_) => continue,
+        }
+    }
+
+    Ok(dedup_messages(all_records))
 }
 
 /// Get the most recent N messages for a conversation.
@@ -563,6 +584,21 @@ mod tests {
 
         let msgs = get_messages(&base, "c1").unwrap();
         assert_eq!(msgs.len(), 150);
+    }
+
+    #[test]
+    fn get_messages_v2_falls_back_to_legacy_shards_when_single_file_is_empty() {
+        let (base, _dir) = setup();
+
+        insert_message(&base, "m1", "c1", "user", r#"{"text":"hello"}"#).unwrap();
+        fs::write(messages_path(&base, "c1"), "").unwrap();
+
+        let msgs = get_messages_v2(&base, "c1").unwrap();
+
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].id, "m1");
+        assert_eq!(msgs[0].role, "user");
+        assert_eq!(msgs[0].content["text"], "hello");
     }
 
     #[test]

@@ -15,6 +15,19 @@ use app_lib::storage::file_store::AppStorage;
 use serde_json::json;
 use tempfile::TempDir;
 
+fn managed_runtime_resolver(python: std::path::PathBuf) -> Arc<StaticRuntimeResolver> {
+    Arc::new(StaticRuntimeResolver::new(
+        python,
+        std::path::PathBuf::from("/tmp/managed-node/bin/node"),
+        std::path::PathBuf::from("/tmp/managed-node/bin/npm"),
+        std::path::PathBuf::from("/tmp/managed-node/bin/npx"),
+        std::path::PathBuf::from("/tmp/managed-uv/bin/uv"),
+        std::path::PathBuf::from("/tmp/managed-uv/bin/uvx"),
+        std::path::PathBuf::from("/tmp/managed-node/node_modules"),
+        std::path::PathBuf::from("/tmp/managed-python/lib/python3.12/site-packages"),
+    ))
+}
+
 #[test]
 fn python_sessions_are_scoped_by_run_id_and_legacy_loaded_keys_are_migrated() {
     let parent_key = session_key_for_run(&RunId::new("run-parent"));
@@ -30,15 +43,8 @@ fn python_runner_uses_managed_python_from_runtime_resolver() {
     let workspace = TempDir::new().expect("TempDir::new should succeed");
     let workspace_path = workspace.path().to_path_buf();
     let sandbox = SandboxConfig::for_workspace(&workspace_path);
-    let resolver = Arc::new(StaticRuntimeResolver::new(
-        std::path::PathBuf::from("/tmp/managed-python/bin/python3"),
-        std::path::PathBuf::from("/tmp/managed-node/bin/node"),
-        std::path::PathBuf::from("/tmp/managed-node/bin/npm"),
-        std::path::PathBuf::from("/tmp/managed-node/bin/npx"),
-        std::path::PathBuf::from("/tmp/managed-uv/bin/uv"),
-        std::path::PathBuf::from("/tmp/managed-uv/bin/uvx"),
-        std::path::PathBuf::from("/tmp/managed-node/node_modules"),
-        std::path::PathBuf::from("/tmp/managed-python/lib/python3.12/site-packages"),
+    let resolver = managed_runtime_resolver(std::path::PathBuf::from(
+        "/tmp/managed-python/bin/python3",
     ));
 
     let runner = PythonRunner::with_runtime_resolver(workspace_path, sandbox, resolver)
@@ -91,15 +97,18 @@ fn build_test_plugin_ctx(
         read_file_state: None,
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
-            runtime_resolver: None,
+        runtime_resolver: None,
     }
 }
 
 #[tokio::test]
-async fn analysis_execute_python_requires_run_id() {
+async fn execute_python_ignores_legacy_analysis_state_without_run_id() {
     let tmp = TempDir::new().expect("TempDir::new should succeed");
     let conversation_id = "conv-analysis-missing-run";
-    let ctx = build_test_plugin_ctx(tmp.path().to_path_buf(), conversation_id, None);
+    let mut ctx = build_test_plugin_ctx(tmp.path().to_path_buf(), conversation_id, None);
+    ctx.runtime_resolver = Some(managed_runtime_resolver(std::path::PathBuf::from(
+        "/usr/bin/python3",
+    )));
     ctx.storage
         .upsert_analysis_state(
             conversation_id,
@@ -121,11 +130,10 @@ async fn analysis_execute_python_requires_run_id() {
         )
         .await;
 
-    let err = result.expect_err("analysis execute_python without run_id must fail");
-    let message = err.to_string();
+    let output = result.expect("legacy analysis state should not require run_id");
     assert!(
-        message.contains("run_id"),
-        "error must mention missing run_id, got: {}",
-        message
+        output.content.contains("hello from analysis"),
+        "execute_python should run through the unified one-shot path, got: {}",
+        output.content
     );
 }

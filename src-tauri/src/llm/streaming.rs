@@ -250,7 +250,7 @@ mod tests {
         let req = LlmRequest::default();
         assert!(req.messages.is_empty());
         assert!(req.tools.is_empty());
-        assert_eq!(req.max_tokens, 4096);
+        assert_eq!(req.max_tokens, 100_000);
         assert!((req.temperature - 0.7).abs() < f32::EPSILON);
         assert!(req.stream);
     }

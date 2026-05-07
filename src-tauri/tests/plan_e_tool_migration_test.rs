@@ -170,7 +170,7 @@ async fn execute_python_runtime_tool_with_mock_returns_stdout_without_plugin_con
 }
 
 #[tokio::test]
-async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
+async fn execute_python_runtime_tool_ignores_legacy_analysis_state_without_run_id() {
     let tmp = TempDir::new().expect("TempDir::new should succeed");
     let storage = Arc::new(AppStorage::new(tmp.path()).expect("AppStorage::new should succeed"));
     storage
@@ -200,22 +200,18 @@ async fn execute_python_runtime_tool_preserves_missing_run_id_analysis_error() {
         None,
     );
 
-    let err = tool
+    let result = tool
         .execute(
             json!({"code": "print('analysis')"}),
             build_exec_ctx(tmp.path()),
         )
         .await
-        .expect_err("analysis runtime path without requested run_id must fail");
+        .expect("legacy analysis state should not force run-scoped execution");
 
     assert!(
-        matches!(err, ToolError::ExecutionFailed(_)),
-        "analysis failure should surface as execution failure: {err:?}"
-    );
-    assert!(
-        err.to_string().contains("run_id"),
-        "analysis error should mention missing run_id, got: {}",
-        err
+        result.content.contains("[Purpose: code execution]"),
+        "runtime tool should execute via the unified one-shot path: {}",
+        result.content
     );
 }
 
