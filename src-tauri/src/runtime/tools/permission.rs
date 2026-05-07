@@ -52,6 +52,7 @@ pub enum PermissionMode {
     Default,
     Plan,
     DontAsk,
+    AcceptEdits,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

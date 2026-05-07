@@ -66,6 +66,7 @@ once_cell = "1"
 bytes = "1"
 sha2 = "0.10"
 shell-words = "1.1"
+globset = "0.4"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
