@@ -1651,6 +1651,166 @@ git add src-tauri/src/runtime/agenda/trigger_eval.rs
 git commit -m "feat(agenda): trigger_eval recurring step (Daily/Weekly/Monthly/Yearly + interval)"
 ```
 
+- [ ] **Step 6：写 code quality review 回归失败测试**
+
+在 `mod tests` 末尾追加：
+
+```rust
+#[test]
+fn yearly_leap_day_skips_invalid_years() {
+    let start = Utc.with_ymd_and_hms(2024, 2, 29, 9, 0, 0).unwrap();
+    let now = Utc.with_ymd_and_hms(2024, 3, 1, 0, 0, 0).unwrap();
+    let item = make_recurring(start, RecurrenceRule {
+        freq: Freq::Yearly, interval: 1, end_condition: EndCondition::Never,
+        by_day: vec![], by_month_day: vec![],
+    }, 1);
+    let expected = Utc.with_ymd_and_hms(2028, 2, 29, 9, 0, 0).unwrap();
+    assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+}
+
+#[test]
+fn daily_long_catch_up_returns_next_future_occurrence() {
+    let start = Utc.with_ymd_and_hms(1990, 1, 1, 9, 0, 0).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap();
+    let item = make_recurring(start, RecurrenceRule {
+        freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+        by_day: vec![], by_month_day: vec![],
+    }, 1);
+    let expected = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
+    assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+}
+```
+
+- [ ] **Step 7：跑新增回归测试看失败**
+
+```bash
+cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
+```
+预期：FAIL，新增的 `yearly_leap_day_skips_invalid_years` 和 `daily_long_catch_up_returns_next_future_occurrence` 失败。
+
+- [ ] **Step 8：修正闰日 yearly 与长跨度 fixed-interval catch-up**
+
+替换 `recurring_next`、`add_years`，并新增辅助函数：
+
+```rust
+fn recurring_next(
+    item: &AgendaItem,
+    rule: &RecurrenceRule,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let interval = rule.interval.max(1) as i64;
+    let mut cursor = item.start_at;
+
+    if cursor <= now {
+        cursor = advance_after_now(cursor, rule.freq, interval, now)?;
+    }
+
+    let mut skip_steps: u32 = 0;
+    while item.skip_dates.contains(&cursor) {
+        cursor = advance_once(cursor, rule.freq, interval)?;
+        skip_steps += 1;
+        if skip_steps > 10_000 {
+            return None;
+        }
+    }
+
+    let total_occurrences = item.occurrence_count + 1;
+    match &rule.end_condition {
+        EndCondition::Never => Some(cursor),
+        EndCondition::Count { n } => {
+            if total_occurrences > *n {
+                None
+            } else {
+                Some(cursor)
+            }
+        }
+        EndCondition::Until { at } => {
+            if cursor > *at {
+                None
+            } else {
+                Some(cursor)
+            }
+        }
+    }
+}
+
+fn advance_after_now(
+    cursor: DateTime<Utc>,
+    freq: Freq,
+    interval: i64,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    match freq {
+        Freq::Daily => advance_by_fixed_days_after_now(cursor, interval, now),
+        Freq::Weekly => advance_by_fixed_days_after_now(cursor, interval * 7, now),
+        Freq::Monthly | Freq::Yearly => {
+            let mut cursor = cursor;
+            let mut steps_taken: u32 = 0;
+            while cursor <= now {
+                cursor = advance_once(cursor, freq, interval)?;
+                steps_taken += 1;
+                if steps_taken > 10_000 {
+                    return None;
+                }
+            }
+            Some(cursor)
+        }
+    }
+}
+
+fn advance_by_fixed_days_after_now(
+    cursor: DateTime<Utc>,
+    step_days: i64,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let elapsed_days = (now - cursor).num_days();
+    let steps = elapsed_days / step_days + 1;
+    let days_to_add = step_days.checked_mul(steps)?;
+    cursor.checked_add_signed(chrono::Duration::days(days_to_add))
+}
+
+fn advance_once(dt: DateTime<Utc>, freq: Freq, interval: i64) -> Option<DateTime<Utc>> {
+    match freq {
+        Freq::Daily => dt.checked_add_signed(chrono::Duration::days(interval)),
+        Freq::Weekly => dt.checked_add_signed(chrono::Duration::weeks(interval)),
+        Freq::Monthly => add_months(dt, interval as u32),
+        Freq::Yearly => add_years(dt, interval as u32),
+    }
+}
+
+fn add_years(dt: DateTime<Utc>, years: u32) -> Option<DateTime<Utc>> {
+    let years = i32::try_from(years.max(1)).ok()?;
+    let mut target_year = dt.year().checked_add(years)?;
+    let mut attempts: u32 = 0;
+
+    loop {
+        if let Some(next) = dt.with_year(target_year) {
+            return Some(next);
+        }
+
+        attempts += 1;
+        if attempts > 10_000 {
+            return None;
+        }
+        target_year = target_year.checked_add(years)?;
+    }
+}
+```
+
+- [ ] **Step 9：跑测试看通过**
+
+```bash
+cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
+```
+预期：11 个测试全部 PASS。
+
+- [ ] **Step 10：Commit**
+
+```bash
+git add src-tauri/src/runtime/agenda/trigger_eval.rs
+git commit -m "fix(agenda): handle recurring leap-day and long catch-up"
+```
+
 ---
 
 ## 任务 13：trigger_eval EndCondition Count/Until + skip_dates
@@ -1716,7 +1876,7 @@ fn skip_dates_skips_to_next() {
 ```bash
 cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
 ```
-预期：13 个测试全部 PASS（因为 EndCondition / skip_dates 的逻辑在任务 12 已经写进去了）。
+预期：15 个测试全部 PASS（因为 EndCondition / skip_dates 的逻辑在任务 12 已经写进去了）。
 
 - [ ] **Step 3：Commit**
 
