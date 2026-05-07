@@ -33,6 +33,21 @@ describe('ChatComposerCompact', () => {
     expect(onSubmit).toHaveBeenCalledWith('hello')
   })
 
+  it('can submit without text when attachment-only submit is explicitly allowed', () => {
+    const onSubmit = vi.fn()
+    render(
+      <ChatComposerCompact
+        value=""
+        onChange={() => {}}
+        onSubmit={onSubmit}
+        allowAttachmentOnlySubmit
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(onSubmit).toHaveBeenCalledWith('')
+  })
+
   it('supports optional controls and tips content', () => {
     render(
       <ChatComposerCompact

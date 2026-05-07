@@ -58,7 +58,6 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
           </div>
           <TaskSection conversationId={conversationId} />
           <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
-          <SkillMcpSection />
         </div>
       </div>
     )
@@ -74,7 +73,6 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
       </div>
       <TaskSection conversationId={conversationId} />
       <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
-      <SkillMcpSection />
     </div>
   )
 }
@@ -298,33 +296,4 @@ function ArtifactFileIcon({ fileType }: { fileType?: string }) {
     default:
       return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
   }
-}
-
-// ─── SkillMcpSection ──────────────────────────────────────────────────────────
-
-function SkillMcpSection() {
-  const [open, setOpen] = useState(true)
-
-  return (
-    <div className="border-b border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="text-[0.8125rem] font-semibold text-foreground">技能与 MCP</span>
-        <ChevronDown
-          className={cn(
-            'h-4 w-4 text-muted-foreground transition-transform duration-150',
-            !open && '-rotate-90',
-          )}
-        />
-      </button>
-      {open && (
-        <div className="px-4 pb-3">
-          <p className="text-xs text-muted-foreground">暂无调用</p>
-        </div>
-      )}
-    </div>
-  )
 }

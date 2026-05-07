@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 export type Route =
   | { kind: 'home' }
+  | { kind: 'employees' }
   | { kind: 'skill-center' }
   | { kind: 'skill-detail'; skillId: string }
   | { kind: 'schedules' }
@@ -47,6 +48,7 @@ function isRoute(value: unknown): value is Route {
   const route = value as Partial<Route>
   switch (route.kind) {
     case 'home':
+    case 'employees':
     case 'skill-center':
     case 'schedules':
     case 'inbox':

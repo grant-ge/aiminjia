@@ -8,7 +8,7 @@ const chatState = vi.hoisted(() => ({
 
 const sendUserMessageMock = vi.hoisted(() => vi.fn(async () => true))
 const stopCurrentStreamMock = vi.hoisted(() => vi.fn())
-const selectAndPickAttachmentsMock = vi.hoisted(() => vi.fn(async () => []))
+const selectAndPickAttachmentsMock = vi.hoisted(() => vi.fn(async (): Promise<PendingAttachment[]> => []))
 const resolvePastedPathsMock = vi.hoisted(() => vi.fn(async (paths: string[]) => paths.map((path) => ({
   id: path,
   fileName: path.split('/').pop() ?? path,
@@ -77,6 +77,7 @@ vi.mock('react-i18next', () => ({
 
 import { useChatStore } from '@/stores/chatStore'
 import { useSkillStore } from '@/stores/skillStore'
+import type { PendingAttachment } from '@/hooks/useChatAttachments'
 import { ChatBottomArea } from '../ChatBottomArea'
 
 describe('ChatBottomArea', () => {
@@ -277,6 +278,41 @@ describe('ChatBottomArea', () => {
 
     expect(screen.queryByText('连接本地目录（不复制）')).not.toBeInTheDocument()
     expect(screen.queryByText('继续使用复制上传模式')).not.toBeInTheDocument()
+  })
+
+  it('sends picker attachments as local file paths without text', async () => {
+    selectAndPickAttachmentsMock.mockResolvedValueOnce([
+      {
+        id: '/tmp/chat-report.csv',
+        fileName: 'chat-report.csv',
+        path: '/tmp/chat-report.csv',
+        kind: 'file',
+        fileType: 'csv',
+        fileSize: 0,
+        source: 'picker',
+      },
+    ])
+
+    render(<ChatBottomArea />)
+
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    expect(await screen.findByText('chat-report.csv')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => {
+      expect(sendUserMessageMock).toHaveBeenCalledWith('请分析附件', [
+        {
+          id: '/tmp/chat-report.csv',
+          fileName: 'chat-report.csv',
+          filePath: '/tmp/chat-report.csv',
+          kind: 'file',
+          fileType: 'csv',
+          fileSize: 0,
+          mimeType: undefined,
+        },
+      ])
+    })
   })
 
   it('sends message on Enter', async () => {

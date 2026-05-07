@@ -48,25 +48,31 @@ impl AuthManager {
     pub async fn restore(&self) {
         match self.load_persisted_auth() {
             Ok(Some(auth)) => {
-                // Check if refresh_token is still valid
-                if auth.refresh_expires_at > Utc::now() {
-                    log::info!(
-                        "Restored cloud auth for user '{}' (session_key expires: {})",
-                        auth.user.username,
-                        auth.session_key_expires_at
-                    );
-                    *self.state.write().await = Some(auth);
-                } else {
-                    log::info!("Persisted cloud auth expired (refresh_token), clearing");
-                    self.clear_persisted_auth();
-                }
+                // Keep the state even if refresh_token is expired — session_key
+                // may still be valid, and even if not, `refresh_auth_info` will
+                // make a best-effort network call before giving up. Clearing
+                // persisted auth here based purely on refresh_token age loses
+                // valid session credentials on system clock skew or a stale
+                // cached refresh_expires_at.
+                log::info!(
+                    "Restored cloud auth for user '{}' (access_expires_at={}, refresh_expires_at={}, session_key_expires_at={})",
+                    auth.user.username,
+                    auth.access_expires_at,
+                    auth.refresh_expires_at,
+                    auth.session_key_expires_at
+                );
+                *self.state.write().await = Some(auth);
             }
             Ok(None) => {
                 log::debug!("No persisted cloud auth found");
             }
             Err(e) => {
-                log::warn!("Failed to restore cloud auth: {}", e);
-                self.clear_persisted_auth();
+                log::warn!("Failed to restore cloud auth (preserving file, will retry next launch): {}", e);
+                // Do NOT clear the persisted file on a transient read / parse
+                // error. A corrupted file keeps the user stuck; a valid file
+                // with a format mismatch (e.g. a field added in a newer
+                // version) would silently destroy their login state. Prefer
+                // to log and let the next launch retry.
             }
         }
     }
@@ -161,26 +167,19 @@ impl AuthManager {
         let state = self.state.read().await;
         match state.as_ref() {
             Some(auth) => {
-                // Check if refresh token has expired
-                if auth.refresh_expires_at <= Utc::now() {
-                    drop(state);
-                    // Re-check under write lock to avoid clobbering a concurrent fresh login
-                    let mut wstate = self.state.write().await;
-                    if let Some(current) = wstate.as_ref() {
-                        if current.refresh_expires_at <= Utc::now() {
-                            *wstate = None;
-                            drop(wstate);
-                            self.clear_persisted_auth();
-                            log::info!("Cloud auth refresh token expired, auto-logged out");
-                        }
-                    }
-                    return CloudAuthInfo {
-                        logged_in: false,
-                        user: None,
-                        tenant: None,
-                        models: vec![],
-                    };
-                }
+                // We previously cleared state here when `refresh_expires_at <= now`
+                // and called this an auto-logout. That's wrong: the refresh
+                // token expiry is just one of three credentials we hold, and
+                // session_key may still be valid for hours. Even when all
+                // three timestamps are stale, an offline / network-limited
+                // user opening the app should not be silently logged out —
+                // we should still surface their identity from the persisted
+                // record so the UI can show "you" and let an explicit network
+                // call (chat send, etc.) trigger renewal or failure.
+                //
+                // Renewal logic for stale credentials lives in
+                // `get_session_key` and `refresh_auth_info`, which are the
+                // only paths that should ever clear state.
                 CloudAuthInfo {
                     logged_in: true,
                     user: Some(auth.user.clone()),

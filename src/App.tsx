@@ -12,6 +12,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
+import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
@@ -50,6 +51,8 @@ function RouteSwitch() {
   switch (route.kind) {
     case 'home':
       return <HomePage />
+    case 'employees':
+      return <EmployeesPage />
     case 'skill-center':
       return <SkillCenterPage />
     case 'skill-detail':
