@@ -48,8 +48,23 @@ pub(crate) fn require_workspace_root(
 }
 
 fn resolve_path(root: &Path, rel: &str) -> Result<std::path::PathBuf, ToolError> {
-    file_manager::resolve_local_reference(root, rel)
-        .map_err(|e| ToolError::PermissionDenied(e.to_string()))
+    file_manager::resolve_local_reference(root, rel).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("escapes") {
+            let shell_hint = if cfg!(target_os = "windows") {
+                format!("powershell（Get-Content '{}'）", rel)
+            } else {
+                format!("bash（cat '{}'）", rel)
+            };
+            ToolError::ExecutionFailed(format!(
+                "路径 '{}' 在授权工作目录之外，工作区文件工具无法访问。\
+                 如需读取该路径，请改用 {} 工具直接访问。",
+                rel, shell_hint
+            ))
+        } else {
+            ToolError::PermissionDenied(msg)
+        }
+    })
 }
 
 fn tool_result(tool_name: &str, value: Value) -> ToolResult {
