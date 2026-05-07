@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use super::item::{AgendaItem, AgendaItemId};
 use super::occurrence::Occurrence;
+use super::trigger_eval::compute_next_fire_at;
 use crate::storage::file_store::io::atomic_write_json;
 use std::io::Write;
 
@@ -187,6 +188,64 @@ impl AgendaStore {
         out.sort_by(|a, b| b.fired_at.cmp(&a.fired_at));
         out.truncate(limit);
         Ok(out)
+    }
+
+    pub fn take_due(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Vec<AgendaItem>> {
+        use super::item::ItemStatus;
+        let _guard = self.lock.lock().unwrap();
+        let mut out = Vec::new();
+        if !self.items_dir().exists() {
+            return Ok(vec![]);
+        }
+        for entry in std::fs::read_dir(self.items_dir())? {
+            let path = entry?.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = std::fs::read(&path)?;
+            let item: AgendaItem = serde_json::from_slice(&bytes)?;
+            if !matches!(item.status, ItemStatus::Active) {
+                continue;
+            }
+            if item.override_of.is_some() {
+                continue;
+            }
+            if validate_phase1_constraints(&item).is_err() {
+                continue;
+            }
+            if let Some(next) = item.next_fire_at {
+                if next <= now {
+                    out.push(item);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn advance_after_fire(
+        &self,
+        id: &super::item::AgendaItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<AgendaItem> {
+        use super::item::ItemStatus;
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
+        let path = self.item_path(id);
+        if !path.exists() {
+            anyhow::bail!("agenda item not found: {}", id.as_str());
+        }
+        let mut item: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
+        item.occurrence_count += 1;
+        item.next_fire_at = compute_next_fire_at(&item, now);
+        if item.next_fire_at.is_none() {
+            item.status = ItemStatus::Completed;
+        }
+        item.updated_at = chrono::Utc::now();
+        atomic_write_json(&path, &item)?;
+        Ok(item)
     }
 }
 
@@ -622,4 +681,85 @@ mod tests {
         let err = store.list_occurrences(&unsafe_id, 10).unwrap_err();
         assert!(err.to_string().contains("invalid agenda item id"));
     }
+
+    #[test]
+    fn take_due_returns_active_items_with_past_next_fire_at() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.next_fire_at = Some(Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap());
+        item.status = ItemStatus::Active;
+        store.create(item.clone()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let due = store.take_due(now).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, item.id);
+    }
+
+    #[test]
+    fn take_due_skips_paused_completed_orphaned() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let past = Utc.with_ymd_and_hms(2026, 5, 7, 8, 0, 0).unwrap();
+        for status in [ItemStatus::Paused, ItemStatus::Completed, ItemStatus::Orphaned] {
+            let mut item = make_valid_item("p1");
+            item.next_fire_at = Some(past);
+            item.status = status;
+            store.create(item).unwrap();
+        }
+        let due = store.take_due(now).unwrap();
+        assert_eq!(due.len(), 0);
+    }
+
+    #[test]
+    fn advance_after_fire_increments_count_and_recomputes() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::*;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let mut item = make_valid_item("p1");
+        item.start_at = start;
+        item.next_fire_at = Some(start);
+        item.rule = Some(RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        });
+        store.create(item.clone()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 1).unwrap();
+        let updated = store.advance_after_fire(&item.id, now).unwrap();
+        assert_eq!(updated.occurrence_count, 1);
+        assert_eq!(
+            updated.next_fire_at,
+            Some(Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap())
+        );
+        assert_eq!(updated.status, ItemStatus::Active);
+    }
+
+    #[test]
+    fn advance_after_fire_one_shot_marks_completed() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let mut item = make_valid_item("p1");
+        item.start_at = start;
+        item.next_fire_at = Some(start);
+        store.create(item.clone()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 1).unwrap();
+        let updated = store.advance_after_fire(&item.id, now).unwrap();
+        assert_eq!(updated.occurrence_count, 1);
+        assert_eq!(updated.next_fire_at, None);
+        assert_eq!(updated.status, ItemStatus::Completed);
+    }
+
 }
