@@ -238,6 +238,10 @@ impl AgendaStore {
             anyhow::bail!("agenda item not found: {}", id.as_str());
         }
         let mut item: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
+        if !matches!(item.status, ItemStatus::Active) {
+            anyhow::bail!("agenda item not active: {}", id.as_str());
+        }
+        validate_phase1_constraints(&item)?;
         item.occurrence_count += 1;
         item.next_fire_at = compute_next_fire_at(&item, now);
         if item.next_fire_at.is_none() {
@@ -760,6 +764,28 @@ mod tests {
         assert_eq!(updated.occurrence_count, 1);
         assert_eq!(updated.next_fire_at, None);
         assert_eq!(updated.status, ItemStatus::Completed);
+    }
+
+    #[test]
+    fn advance_after_fire_rejects_non_active_without_mutating() {
+        use chrono::{TimeZone, Utc};
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let mut item = make_valid_item("p1");
+        item.start_at = start;
+        item.next_fire_at = Some(start);
+        item.status = ItemStatus::Paused;
+        store.create(item.clone()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 1).unwrap();
+        let err = store.advance_after_fire(&item.id, now).unwrap_err();
+        assert!(err.to_string().contains("not active"));
+        let stored = store.get(&item.id).unwrap();
+        assert_eq!(stored.occurrence_count, 0);
+        assert_eq!(stored.next_fire_at, Some(start));
+        assert_eq!(stored.status, ItemStatus::Paused);
     }
 
 }
