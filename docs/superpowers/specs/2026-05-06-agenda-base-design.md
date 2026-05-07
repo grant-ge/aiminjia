@@ -117,6 +117,8 @@ pub enum EndCondition {
 pub enum Weekday { Mon, Tue, Wed, Thu, Fri, Sat, Sun }
 ```
 
+`Count { n }` 按实际成功触发次数计数，对应 `AgendaItem.occurrence_count`。休眠/重启期间错过的计划时刻不补跑，也不消耗 Count 额度；runner 只在真正触发后递增 `occurrence_count`。
+
 ### 1.6 `OverrideRef`（二期留口子）
 
 ```rust

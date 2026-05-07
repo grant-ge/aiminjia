@@ -393,6 +393,8 @@ pub struct AgendaItem {
 }
 ```
 
+`Count { n }` 按实际成功触发次数计数，对应 `AgendaItem.occurrence_count`。休眠/重启期间错过的计划时刻不补跑，也不消耗 Count 额度；runner 只在真正触发后递增 `occurrence_count`。
+
 - [ ] **Step 4：创建 `occurrence.rs` stub**
 
 ```rust
