@@ -895,6 +895,18 @@ fn get_rejects_path_traversal_id() {
 }
 
 #[test]
+fn create_rejects_path_traversal_id_without_writing_outside_file() {
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let mut item = make_valid_item("p1");
+    item.id = super::super::item::AgendaItemId("../outside".into());
+
+    let err = store.create(item).unwrap_err();
+    assert!(err.to_string().contains("invalid agenda item id"));
+    assert!(!store.root.join("outside.json").exists());
+}
+
+#[test]
 fn delete_rejects_path_traversal_id_without_removing_outside_file() {
     use super::super::item::AgendaItemId;
     let dir = TempDir::new().unwrap();
