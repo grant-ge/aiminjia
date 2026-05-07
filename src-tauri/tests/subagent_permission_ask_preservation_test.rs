@@ -38,6 +38,7 @@ impl BrowseDataLauncher for AskingBrowseDataLauncher {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::Other("subagent_inner_tool".to_string()),
+            path_auth_scope: None,
         }))
     }
 }

@@ -2165,6 +2165,7 @@ impl TauriChatCommandAdapter {
             cancellation: None,
             permission_mode: request.permission_mode,
             runtime_resolver: self.services.runtime_resolver.clone(),
+            permission_ctx: None,
         };
         log::info!(
             "[send_message] building runtime_dispatcher conv={}",

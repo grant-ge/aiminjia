@@ -10,6 +10,7 @@ use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::ids::RunId;
+use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::permission::PermissionMode;
 
 #[cfg(test)]
@@ -41,6 +42,13 @@ pub struct SubAgentRuntimeDeps {
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
     pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    /// Phase 5 path-auth inheritance: snapshot of the parent turn's merged
+    /// ToolPermissionContext (UserSettings working dirs + allow_rules + session
+    /// attachment dirs already merged in at spawn time).  When `Some`, the child's
+    /// QueryEngine is seeded with this as its base_permission_ctx so all path tools
+    /// run by the sub-agent respect the parent's authorized paths.  `None` for test
+    /// and legacy paths that haven't yet been wired.
+    pub permission_ctx: Option<Arc<ToolPermissionContext>>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -78,6 +86,7 @@ impl SubAgentRuntimeDeps {
             cancellation,
             permission_mode: PermissionMode::Default,
             runtime_resolver: self.runtime_resolver.clone(),
+            permission_ctx: self.permission_ctx.clone(),
         }
     }
 }

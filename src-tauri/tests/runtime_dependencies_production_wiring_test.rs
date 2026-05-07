@@ -60,6 +60,7 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         cancellation: None,
         permission_mode: PermissionMode::Default,
         runtime_resolver: Some(managed_runtime_resolver()),
+        permission_ctx: None,
     }
 }
 
@@ -93,6 +94,7 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         cancellation: request.cancellation,
         permission_mode: request.permission_mode,
         runtime_resolver: request.runtime_resolver,
+        permission_ctx: None,
     }
 }
 
@@ -118,6 +120,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         app_handle: parent.app_handle.clone(),
         runtime_resolver: parent.runtime_resolver.clone(),
         skill_registry: None,
+        permission_ctx: None,
     };
 
     let child = subagent_deps.request_scoped_tool_deps(RunId::new("child-run"), None, None, None);

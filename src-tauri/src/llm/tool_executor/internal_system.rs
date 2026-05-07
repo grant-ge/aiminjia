@@ -38,6 +38,8 @@ pub(crate) struct BrowseDataLauncherDeps {
     cancellation: Option<CancellationToken>,
     app_handle: Option<tauri::AppHandle>,
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    pub(crate) permission_ctx:
+        Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
 }
 
 impl BrowseDataLauncherDeps {
@@ -63,6 +65,7 @@ impl BrowseDataLauncherDeps {
             cancellation: ctx.cancellation.clone(),
             app_handle: ctx.app_handle.clone(),
             runtime_resolver: ctx.runtime_resolver.clone(),
+            permission_ctx: ctx.permission_ctx.clone(),
         }
     }
 
@@ -94,6 +97,7 @@ impl BrowseDataLauncherDeps {
             cancellation: self.cancellation,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: self.runtime_resolver,
+            permission_ctx: self.permission_ctx.clone(),
         }
     }
 }
@@ -419,6 +423,7 @@ async fn launch_browse_data_with_runtime_deps(
             read_file_state: ctx.read_file_state.clone(),
             app_handle: ctx.app_handle.clone(),
             runtime_resolver: ctx.runtime_resolver.clone(),
+            permission_ctx: ctx.permission_ctx.clone(),
         },
         config,
         app_settings,
@@ -787,6 +792,7 @@ mod tests {
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+            permission_ctx: None,
         }
     }
 

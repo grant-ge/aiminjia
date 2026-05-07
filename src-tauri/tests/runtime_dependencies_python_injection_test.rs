@@ -60,6 +60,7 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         cancellation: None,
         permission_mode: PermissionMode::Default,
         runtime_resolver: Some(managed_runtime_resolver()),
+        permission_ctx: None,
     }
 }
 
