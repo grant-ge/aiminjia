@@ -416,6 +416,120 @@ export function deleteSchedule(id: string): Promise<boolean> {
   return invoke<boolean>('delete_schedule', { id })
 }
 
+export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned'
+export type OccurrenceStatus = 'running' | 'succeeded' | 'failed'
+export type Freq = 'daily' | 'weekly' | 'monthly' | 'yearly'
+
+export interface Participant {
+  personaId: string
+  joinedAt: string
+}
+
+export interface RecurrenceRule {
+  freq: Freq
+  interval: number
+  endCondition:
+    | { kind: 'never' }
+    | { kind: 'count'; n: number }
+    | { kind: 'until'; at: string }
+  byDay?: string[]
+  byMonthDay?: number[]
+}
+
+export interface OverrideRef {
+  seriesItemId: string
+  originalAt: string
+}
+
+export interface AgendaItem {
+  id: string
+  title: string
+  prompt: string
+  organizerPersonaId: string
+  participants: Participant[]
+  startAt: string
+  timezone: string
+  rule: RecurrenceRule | null
+  skipDates: string[]
+  nextFireAt: string | null
+  occurrenceCount: number
+  status: ItemStatus
+  overrideOf: OverrideRef | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Occurrence {
+  id: string
+  agendaItemId: string
+  firedAt: string
+  plannedFireAt: string
+  startedAt: string
+  finishedAt: string | null
+  primaryPersonaId: string
+  conversationId: string
+  sessionId: string
+  runId: string
+  status: OccurrenceStatus
+  errorSummary: string | null
+  triggerSource: 'scheduled' | 'manual_run_now'
+}
+
+export interface ItemFilter {
+  statusIn?: ItemStatus[]
+  personaId?: string
+  search?: string
+}
+
+export interface CreateAgendaItemRequest {
+  title: string
+  prompt: string
+  organizerPersonaId: string
+  startAt: string
+  timezone?: string
+  rule?: RecurrenceRule | null
+}
+
+export interface UpdateAgendaItemRequest {
+  title?: string
+  prompt?: string
+  startAt?: string
+  timezone?: string
+  rule?: RecurrenceRule | null
+  status?: ItemStatus
+}
+
+export function listAgendaItems(filter?: ItemFilter): Promise<AgendaItem[]> {
+  return invoke<AgendaItem[]>('list_agenda_items', { filter })
+}
+export function getAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('get_agenda_item', { id })
+}
+export function createAgendaItem(request: CreateAgendaItemRequest): Promise<AgendaItem> {
+  return invoke<AgendaItem>('create_agenda_item', { request })
+}
+export function updateAgendaItem(
+  id: string,
+  request: UpdateAgendaItemRequest,
+): Promise<AgendaItem> {
+  return invoke<AgendaItem>('update_agenda_item', { id, request })
+}
+export function deleteAgendaItem(id: string): Promise<boolean> {
+  return invoke<boolean>('delete_agenda_item', { id })
+}
+export function runAgendaItemNow(id: string): Promise<string> {
+  return invoke<string>('run_agenda_item_now', { id })
+}
+export function listAgendaOccurrences(itemId: string, limit?: number): Promise<Occurrence[]> {
+  return invoke<Occurrence[]>('list_agenda_occurrences', { itemId, limit })
+}
+export function skipOccurrence(id: string, at: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('skip_occurrence', { id, at })
+}
+export function unskipOccurrence(id: string, at: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('unskip_occurrence', { id, at })
+}
+
 export function getSubagentTranscript(
   transcriptRef: string,
 ): Promise<SubAgentTranscriptEntry[]> {
