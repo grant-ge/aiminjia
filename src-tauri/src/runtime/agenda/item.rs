@@ -15,6 +15,12 @@ impl AgendaItemId {
     }
 }
 
+impl Default for AgendaItemId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemStatus {
