@@ -81,6 +81,13 @@ describe('RightPanel preview workspace', () => {
     expect(screen.queryByText('选择一个产物进行预览')).not.toBeInTheDocument()
   })
 
+  it('hides the skills and MCP section in task monitor', () => {
+    render(<RightPanel conversationId="conv-1" />)
+
+    expect(screen.queryByText('技能与 MCP')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无调用')).not.toBeInTheDocument()
+  })
+
   it('renders preview mode when the target belongs to the conversation', () => {
     useGeneratedFilePreviewStore.getState().openPreview({
       fileId: 'gf-1',
