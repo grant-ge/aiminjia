@@ -2051,18 +2051,48 @@ impl TauriChatCommandAdapter {
         agent_name: Option<String>,
         client_message_id: Option<String>,
     ) -> Result<(), String> {
-        log::info!(
-            "[send_message] trace_id={:?} conversation_id={} content_len={}",
-            client_message_id.as_deref(),
-            conversation_id,
-            content.len()
-        );
-        let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
+        let mut request = ChatTurnRequest::new(conversation_id, content, attachments);
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
         if let Some(permission_mode) = permission_mode {
             request.permission_mode = permission_mode;
         }
+        self.run_chat_request_internal(request).await
+    }
+
+    pub async fn send_message_with_overrides(
+        &self,
+        conversation_id: String,
+        content: String,
+        attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
+        permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
+        agent_name: Option<String>,
+        client_message_id: Option<String>,
+        persona_id_override: Option<String>,
+        run_id: Option<crate::runtime::ids::RunId>,
+    ) -> Result<crate::runtime::ids::RunId, String> {
+        let mut request = crate::runtime::chat::chat_turn_driver::ChatTurnRequest::new(
+            conversation_id.clone(),
+            content,
+            attachments,
+        );
+        if let Some(id) = run_id {
+            request.run_id = id;
+        }
+        request.agent_name = agent_name;
+        request.persona_id_override = persona_id_override;
+        request.permission_mode = permission_mode.unwrap_or_default();
+        request.client_message_id = client_message_id;
+
+        let captured_run_id = request.run_id.clone();
+
+        self.run_chat_request_internal(request).await?;
+
+        Ok(captured_run_id)
+    }
+
+    async fn run_chat_request_internal(&self, request: ChatTurnRequest) -> Result<(), String> {
+        let conversation_id = request.conversation_id.as_str().to_string();
         let run_id = request.run_id.clone();
         log::info!(
             "[send_message] calling set_busy_for_run conv={} run={}",
