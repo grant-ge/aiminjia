@@ -2654,7 +2654,14 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
 
         // 3. 推进 item next_fire_at + occurrence_count
         if matches!(trigger_source, crate::runtime::agenda::TriggerSource::Scheduled) {
-            store.advance_after_fire(&item.id, now)?;
+            if let Err(e) = store.advance_after_fire(&item.id, now) {
+                let mut final_occ = occ.clone();
+                final_occ.finished_at = Some(chrono::Utc::now());
+                final_occ.status = OccurrenceStatus::Failed;
+                final_occ.error_summary = Some(e.to_string());
+                let _ = store.append_occurrence(&final_occ);
+                return Err(e);
+            }
         }
 
         // 4. 构造 prompt 并触发 agent
