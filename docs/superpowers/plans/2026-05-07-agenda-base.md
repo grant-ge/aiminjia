@@ -1887,6 +1887,38 @@ git add src-tauri/src/runtime/agenda/trigger_eval.rs
 git commit -m "test(agenda): trigger_eval end_condition (Count/Until) + skip_dates coverage"
 ```
 
+- [ ] **Step 4：写 Count 语义回归测试**
+
+`Count { n }` 按实际成功触发次数计数，错过的计划点不消耗额度。在 `mod tests` 末尾追加：
+
+```rust
+#[test]
+fn count_does_not_consume_missed_scheduled_slots() {
+    let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 5, 10, 12, 0, 0).unwrap();
+    let item = make_recurring(start, RecurrenceRule {
+        freq: Freq::Daily, interval: 1, end_condition: EndCondition::Count { n: 3 },
+        by_day: vec![], by_month_day: vec![],
+    }, 1);
+    let expected = Utc.with_ymd_and_hms(2026, 5, 11, 9, 0, 0).unwrap();
+    assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+}
+```
+
+- [ ] **Step 5：跑测试看通过**
+
+```bash
+cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
+```
+预期：16 个测试全部 PASS。
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add src-tauri/src/runtime/agenda/trigger_eval.rs
+git commit -m "test(agenda): cover count missed-slot semantics"
+```
+
 ---
 
 ## 任务 14：Store::take_due 推进 + 状态转换
