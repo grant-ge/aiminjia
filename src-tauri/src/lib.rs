@@ -582,6 +582,13 @@ pub fn run() {
                     .clone(),
             );
 
+            runtime::agenda::spawn_agenda_runner(
+                current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
+                app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
+                    .inner()
+                    .clone() as Arc<dyn runtime::agenda::AgendaRunDispatcher>,
+            );
+
             runtime::employee::runner::spawn_employee_scheduler(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()

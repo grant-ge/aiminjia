@@ -2890,9 +2890,9 @@ cd src-tauri && grep -n "spawn_schedule_runner" src/lib.rs
 ```
 应有一处（约 line 578-583）。
 
-- [ ] **Step 2：替换 spawn 调用**
+- [ ] **Step 2：追加 agenda spawn 调用**
 
-把：
+保留现有 schedule runner：
 
 ```rust
 runtime::schedule_runner::spawn_schedule_runner(
@@ -2903,7 +2903,7 @@ runtime::schedule_runner::spawn_schedule_runner(
 );
 ```
 
-替换为：
+紧接其后追加：
 
 ```rust
 runtime::agenda::spawn_agenda_runner(
@@ -2928,6 +2928,14 @@ cd src-tauri && cargo check
 pnpm tauri:dev
 ```
 预期：启动无 panic，控制台无 error 关于 agenda。Ctrl+C 停。
+
+若当前机器已有 Vite 占用 `127.0.0.1:5173`，不要杀用户进程；先确认该端口已有可访问 dev server，再用现有 devUrl 跳过 beforeDevCommand 验证后端启动：
+
+```bash
+pnpm tauri dev --config '{"build":{"beforeDevCommand":""}}'
+```
+
+预期同上：Rust/Tauri 启动无 panic，控制台无 error 关于 agenda。Ctrl+C 停。
 
 - [ ] **Step 5：Commit**
 
