@@ -1579,7 +1579,7 @@ pub fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<Dat
 }
 
 fn one_shot_next(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-    if item.occurrence_count == 0 && item.start_at > now {
+    if item.occurrence_count == 0 && item.start_at >= now {
         Some(item.start_at)
     } else {
         None
@@ -1642,7 +1642,7 @@ fn add_years(dt: DateTime<Utc>, years: u32) -> Option<DateTime<Utc>> {
 ```bash
 cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
 ```
-预期：8 个测试全部 PASS。
+预期：9 个测试全部 PASS。
 
 - [ ] **Step 5：Commit**
 
@@ -1716,7 +1716,7 @@ fn skip_dates_skips_to_next() {
 ```bash
 cd src-tauri && cargo test --lib runtime::agenda::trigger_eval::tests
 ```
-预期：12 个测试全部 PASS（因为 EndCondition / skip_dates 的逻辑在任务 12 已经写进去了）。
+预期：13 个测试全部 PASS（因为 EndCondition / skip_dates 的逻辑在任务 12 已经写进去了）。
 
 - [ ] **Step 3：Commit**
 
