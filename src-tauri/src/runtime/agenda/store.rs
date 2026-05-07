@@ -109,6 +109,33 @@ impl AgendaStore {
         std::fs::remove_file(&path)?;
         Ok(true)
     }
+
+    pub fn mark_orphaned_by_organizer(&self, persona_id: &str) -> anyhow::Result<usize> {
+        use super::item::ItemStatus;
+        let _guard = self.lock.lock().unwrap();
+        let mut count = 0;
+        if !self.items_dir().exists() {
+            return Ok(0);
+        }
+        for entry in std::fs::read_dir(self.items_dir())? {
+            let path = entry?.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = std::fs::read(&path)?;
+            let mut item: AgendaItem = serde_json::from_slice(&bytes)?;
+            if item.organizer_persona_id != persona_id {
+                continue;
+            }
+            if matches!(item.status, ItemStatus::Active | ItemStatus::Paused) {
+                item.status = ItemStatus::Orphaned;
+                item.updated_at = chrono::Utc::now();
+                atomic_write_json(&path, &item)?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
 }
 
 fn validate_item_id_for_path(id: &AgendaItemId) -> anyhow::Result<()> {
@@ -400,6 +427,32 @@ mod tests {
         let store = AgendaStore::new(dir.path());
         let result = store.delete(&AgendaItemId("missing".into())).unwrap();
         assert!(!result);
+    }
+
+    #[test]
+    fn mark_orphaned_flips_status_for_matching_organizer() {
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let i1 = store.create(make_valid_item("alice")).unwrap();
+        let i2 = store.create(make_valid_item("bob")).unwrap();
+        let count = store.mark_orphaned_by_organizer("alice").unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(store.get(&i1.id).unwrap().status, ItemStatus::Orphaned);
+        assert_eq!(store.get(&i2.id).unwrap().status, ItemStatus::Active);
+    }
+
+    #[test]
+    fn mark_orphaned_skips_already_completed() {
+        use super::super::item::ItemStatus;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("alice");
+        item.status = ItemStatus::Completed;
+        store.create(item.clone()).unwrap();
+        let count = store.mark_orphaned_by_organizer("alice").unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(store.get(&item.id).unwrap().status, ItemStatus::Completed);
     }
 
     #[test]
