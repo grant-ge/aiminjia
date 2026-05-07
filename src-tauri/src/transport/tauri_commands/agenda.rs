@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::runtime::agenda::{
-    AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Participant,
+    AgendaItem, AgendaItemId, AgendaStore, ItemStatus, Occurrence, Participant,
 };
 use crate::storage::UserScopedPathResolver;
 
@@ -225,6 +225,34 @@ pub async fn delete_agenda_item(
 ) -> Result<bool, String> {
     let store = store_for(&resolver)?;
     store.delete(&AgendaItemId(id)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_agenda_item_now(
+    id: String,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+    dispatcher: State<'_, Arc<crate::transport::tauri_commands::chat::TauriChatCommandAdapter>>,
+) -> Result<String, String> {
+    use crate::runtime::agenda::{AgendaRunDispatcher, TriggerSource};
+    let store = store_for(&resolver)?;
+    let item = store.get(&AgendaItemId(id)).map_err(|e| e.to_string())?;
+    let now = Utc::now();
+    dispatcher
+        .dispatch(item.clone(), now, TriggerSource::ManualRunNow, now)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_agenda_occurrences(
+    item_id: String,
+    limit: Option<usize>,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<Vec<Occurrence>, String> {
+    let store = store_for(&resolver)?;
+    store
+        .list_occurrences(&AgendaItemId(item_id), limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
