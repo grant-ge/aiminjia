@@ -131,7 +131,7 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
     // which is enough to satisfy the CapabilityPermissionPipeline check.
     let result = registry
         .execute(
-            "read_workspace_file",
+            "Read",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"path": "test.csv"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -162,12 +162,12 @@ async fn all_workspace_runtime_tools_are_registered() {
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
 
     for tool_name in &[
-        "read_workspace_file",
-        "search_files",
-        "write_file",
-        "edit_file",
-        "bash",
-        "grep_content",
+        "Read",
+        "Glob",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
     ] {
         assert!(
             names.contains(tool_name),
@@ -185,7 +185,7 @@ async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
 
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
-    for tool_name in &["write_memory", "search_memory"] {
+    for tool_name in &["WriteMemory", "SearchMemory"] {
         assert!(
             names.contains(tool_name),
             "Expected '{}' in schemas, got: {:?}",
@@ -199,7 +199,7 @@ async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
 
     let write_result = registry
         .execute(
-            "write_memory",
+            "WriteMemory",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({
                 "name": "user-prefers-boxplot",
@@ -220,7 +220,7 @@ async fn request_scoped_memory_runtime_tools_are_visible_and_executable() {
 
     let search_result = registry
         .execute(
-            "search_memory",
+            "SearchMemory",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({
                 "query": "boxplot 箱型图"
@@ -247,7 +247,7 @@ async fn bash_runtime_tool_executes_via_registry() {
 
     let result = registry
         .execute(
-            "bash",
+            "Bash",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"command": "echo hi"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -273,7 +273,7 @@ async fn grep_runtime_tool_executes_via_registry() {
 
     let result = registry
         .execute(
-            "grep_content",
+            "Grep",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"pattern": "hello", "output_mode": "files_with_matches"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -304,7 +304,7 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
 
     let result = registry
         .execute(
-            "search_files",
+            "Glob",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"pattern": "*.txt"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -347,7 +347,7 @@ async fn workspace_runtime_tool_uses_authorized_workspace_when_present() {
 
     let result = registry
         .execute(
-            "search_files",
+            "Glob",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"pattern": "*"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -385,7 +385,7 @@ async fn web_search_routes_to_runtime_tool_via_factory() {
     // The critical assertion is that it does NOT return "Unknown tool: web_search".
     let result = registry
         .execute(
-            "web_search",
+            "WebSearch",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"query": "test"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
@@ -490,7 +490,7 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
         app_lib::runtime::tools::ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     // No capability attached → permission denied
     let outcome = dispatcher
-        .dispatch("read_workspace_file", serde_json::json!({"path": "x.txt"}), exec_ctx)
+        .dispatch("Read", serde_json::json!({"path": "x.txt"}), exec_ctx)
         .await;
     assert!(
         outcome.is_err(),
@@ -505,7 +505,7 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
 
     let schemas = registry.get_all_schemas().await;
     assert!(
-        schemas.iter().any(|schema| schema.name == "load_skill"),
+        schemas.iter().any(|schema| schema.name == "Skill"),
         "load_skill schema must be visible to the LLM"
     );
     let daily_filter = ToolFilter::Only(
@@ -518,7 +518,7 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
     assert!(
         daily_schemas
             .iter()
-            .any(|schema| schema.name == "load_skill"),
+            .any(|schema| schema.name == "Skill"),
         "load_skill schema must remain visible after daily tool filtering"
     );
 
@@ -545,7 +545,7 @@ async fn load_skill_routes_through_request_scoped_runtime_factory() {
 
     let output = registry
         .execute(
-            "load_skill",
+            "Skill",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
             serde_json::json!({"skill_id": "biz-writing"}),
             app_lib::runtime::cancellation::CancellationToken::new(),

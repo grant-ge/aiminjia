@@ -27,7 +27,7 @@ async fn review_write_file_path_glob_deny_blocks_matching_path() {
     store.record_to(
         PermissionDestination::User,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob(format!("{}/blocked/**", tmp.path().display())),
             PolicyDecision::AlwaysDeny,
             PermissionSource::User,
@@ -67,7 +67,7 @@ async fn review_edit_file_path_glob_deny_blocks_matching_path() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "edit_file",
+            "Edit",
             PermissionScope::PathGlob(format!("{}/secret/**", tmp.path().display())),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Session,

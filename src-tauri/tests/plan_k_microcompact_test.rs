@@ -8,7 +8,7 @@ fn make_user(content: &str) -> serde_json::Value {
 fn make_assistant_with_tools(content: &str, tool_call_ids: &[&str]) -> serde_json::Value {
     let tool_calls: Vec<serde_json::Value> = tool_call_ids
         .iter()
-        .map(|id| json!({ "id": id, "name": "bash", "arguments": {} }))
+        .map(|id| json!({ "id": id, "name": "Bash", "arguments": {} }))
         .collect();
     json!({ "role": "assistant", "content": content, "toolCalls": tool_calls })
 }
@@ -17,7 +17,7 @@ fn make_tool_result(tool_call_id: &str, content: &str) -> serde_json::Value {
     json!({
         "role": "tool",
         "toolCallId": tool_call_id,
-        "name": "bash",
+        "name": "Bash",
         "content": content,
     })
 }
@@ -122,12 +122,12 @@ fn x2_microcompact_skips_preserved_tool_results() {
         json!({
             "role": "assistant",
             "content": "iter1",
-            "toolCalls": [{ "id": "tc-non-preserved", "name": "web_search", "arguments": {} }]
+            "toolCalls": [{ "id": "tc-non-preserved", "name": "WebSearch", "arguments": {} }]
         }),
         json!({
             "role": "tool",
             "toolCallId": "tc-non-preserved",
-            "name": "web_search",
+            "name": "WebSearch",
             "content": big_content,
         }),
         make_assistant_with_tools("iter2", &["tc-new"]),
@@ -136,7 +136,7 @@ fn x2_microcompact_skips_preserved_tool_results() {
     let config = MicrocompactConfig {
         trigger_chars: 10_000,
         keep_recent_tool_results: 1,
-        preserved_tool_names: ["bash".to_string(), "web_search".to_string()]
+        preserved_tool_names: ["Bash".to_string(), "WebSearch".to_string()]
             .into_iter()
             .collect(),
     };

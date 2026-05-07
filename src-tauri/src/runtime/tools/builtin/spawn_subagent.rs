@@ -110,8 +110,8 @@ impl SpawnSubagentRuntimeTool {
 impl RuntimeTool for SpawnSubagentRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("spawn_subagent")
-            .unwrap_or_else(|| ToolDefinition::new("spawn_subagent", "Spawn sub-agent"))
+            .get("Agent")
+            .unwrap_or_else(|| ToolDefinition::new("Agent", "Spawn sub-agent"))
     }
 
     /// Parallel spawn_subagent calls are independent — safe to run concurrently.
@@ -204,7 +204,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 "name": outcome.name,
             });
             return Ok(ToolResult::new(
-                "spawn_subagent",
+                "Agent",
                 json.to_string(),
                 None,
             ));
@@ -217,7 +217,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("sub-agent launch failed: {e}")))?;
 
-        Ok(ToolResult::new("spawn_subagent", output, None))
+        Ok(ToolResult::new("Agent", output, None))
     }
 }
 
@@ -286,7 +286,7 @@ mod tests {
         let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
         // Definition returned even without catalog pre-init in unit tests.
         let def = tool.definition();
-        assert_eq!(def.id, "spawn_subagent");
+        assert_eq!(def.id, "Agent");
     }
 
     #[tokio::test]

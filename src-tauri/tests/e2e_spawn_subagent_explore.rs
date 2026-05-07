@@ -132,7 +132,7 @@ async fn explore_agent_e2e_through_dispatcher() {
     });
 
     let outcome = dispatcher
-        .dispatch("spawn_subagent", input, ctx)
+        .dispatch("Agent", input, ctx)
         .await
         .expect("dispatch must succeed");
 
@@ -202,7 +202,7 @@ async fn caller_model_overrides_inherit_definition() {
     });
 
     dispatcher
-        .dispatch("spawn_subagent", input, ctx)
+        .dispatch("Agent", input, ctx)
         .await
         .expect("dispatch must succeed");
 
@@ -235,7 +235,7 @@ async fn general_purpose_agent_resolves_through_registry() {
     });
 
     let outcome = dispatcher
-        .dispatch("spawn_subagent", input, ctx)
+        .dispatch("Agent", input, ctx)
         .await
         .expect("dispatch must succeed for general-purpose");
 

@@ -52,18 +52,18 @@ async fn register_runtime_syncs_to_catalog() {
 async fn register_runtime_does_not_overwrite_builtin_schema() {
     let registry = ToolRegistry::new();
     let original_schema = TOOL_CATALOG
-        .get_entry("bash")
+        .get_entry("Bash")
         .expect("bash must exist in TOOL_CATALOG")
         .json_schema;
 
     registry
         .register_runtime(Arc::new(MockRuntimeTool {
-            def: ToolDefinition::new("bash", "Override attempt"),
+            def: ToolDefinition::new("Bash", "Override attempt"),
         }))
         .await;
 
     let new_schema = TOOL_CATALOG
-        .get_entry("bash")
+        .get_entry("Bash")
         .expect("bash should remain in TOOL_CATALOG")
         .json_schema;
     assert_eq!(

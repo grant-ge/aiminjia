@@ -128,8 +128,8 @@ pub struct ReadWorkspaceFileRuntimeTool;
 impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("read_workspace_file")
-            .unwrap_or_else(|| ToolDefinition::new("read_workspace_file", "Read workspace file"))
+            .get("Read")
+            .unwrap_or_else(|| ToolDefinition::new("Read", "Read workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -197,7 +197,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                         if truncated {
                             result["truncated"] = json!(true);
                         }
-                        return Ok(tool_result("read_workspace_file", result));
+                        return Ok(tool_result("Read", result));
                     }
                 }
             }
@@ -224,7 +224,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         if truncated {
             result["truncated"] = json!(true);
         }
-        Ok(tool_result("read_workspace_file", result))
+        Ok(tool_result("Read", result))
     }
 }
 
@@ -307,8 +307,8 @@ fn walk_dir_collect(
 impl RuntimeTool for SearchFilesRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("search_files")
-            .unwrap_or_else(|| ToolDefinition::new("search_files", "Search files"))
+            .get("Glob")
+            .unwrap_or_else(|| ToolDefinition::new("Glob", "Search files"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -339,7 +339,7 @@ impl RuntimeTool for SearchFilesRuntimeTool {
         walk_dir_collect(&base, &file_pattern, &root, &mut matches, max);
         let count = matches.len();
         Ok(tool_result(
-            "search_files",
+            "Glob",
             json!({ "pattern": pattern, "path": sub, "matches": matches, "count": count }),
         ))
     }
@@ -353,8 +353,8 @@ pub struct WriteFileRuntimeTool;
 impl RuntimeTool for WriteFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("write_file")
-            .unwrap_or_else(|| ToolDefinition::new("write_file", "Write workspace file"))
+            .get("Write")
+            .unwrap_or_else(|| ToolDefinition::new("Write", "Write workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -383,7 +383,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
             root.join(path).to_string_lossy().into_owned()
         };
 
-        match store.get_for_path("write_file", &lookup_path) {
+        match store.get_for_path("Write", &lookup_path) {
             Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                 Some(PermissionDecision::Deny {
                     message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
@@ -427,7 +427,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         update_file_state_cache(&ctx, &resolved, content);
 
         Ok(tool_result(
-            "write_file",
+            "Write",
             json!({
                 "path": rel,
                 "size": content.len(),
@@ -445,8 +445,8 @@ pub struct EditFileRuntimeTool;
 impl RuntimeTool for EditFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("edit_file")
-            .unwrap_or_else(|| ToolDefinition::new("edit_file", "Edit workspace file"))
+            .get("Edit")
+            .unwrap_or_else(|| ToolDefinition::new("Edit", "Edit workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -475,7 +475,7 @@ impl RuntimeTool for EditFileRuntimeTool {
             root.join(path).to_string_lossy().into_owned()
         };
 
-        match store.get_for_path("edit_file", &lookup_path) {
+        match store.get_for_path("Edit", &lookup_path) {
             Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                 Some(PermissionDecision::Deny {
                     message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
@@ -539,7 +539,7 @@ impl RuntimeTool for EditFileRuntimeTool {
                 .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
             update_file_state_cache(&ctx, &resolved, new_string);
             return Ok(tool_result(
-                "edit_file",
+                "Edit",
                 json!({
                     "path": rel,
                     "operation": "create",
@@ -566,7 +566,7 @@ impl RuntimeTool for EditFileRuntimeTool {
         update_file_state_cache(&ctx, &resolved, &updated_content);
 
         Ok(tool_result(
-            "edit_file",
+            "Edit",
             json!({
                 "path": rel,
                 "operation": "edit",

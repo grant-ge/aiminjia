@@ -17,13 +17,13 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 /// 有授权目录：暴露所有工具（含 workspace 工具）。
 /// 无授权目录：排除 workspace 工具，避免 LLM 看到不可用工具。
 const WORKSPACE_TOOL_NAMES: &[&str] = &[
-    "read_workspace_file",
-    "search_files",
-    "write_file",
-    "edit_file",
-    "bash",
-    "powershell",
-    "grep_content",
+    "Read",
+    "Glob",
+    "Write",
+    "Edit",
+    "Bash",
+    "PowerShell",
+    "Grep",
 ];
 
 pub(crate) async fn build_visible_tool_defs(
@@ -211,8 +211,8 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
         let allowed = std::collections::HashSet::from([
-            "grep_content".to_string(),
-            "read_workspace_file".to_string(),
+            "Grep".to_string(),
+            "Read".to_string(),
         ]);
 
         let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;

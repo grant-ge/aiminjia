@@ -19,7 +19,7 @@ fn review_permission_session_overrides_all_layers() {
     store.record_to(
         PermissionDestination::User,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::User,
@@ -28,7 +28,7 @@ fn review_permission_session_overrides_all_layers() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
@@ -37,14 +37,14 @@ fn review_permission_session_overrides_all_layers() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::Allow,
             PermissionSource::Session,
         ),
     );
     assert_eq!(
-        store.get_for_scope("bash", "workspace:write"),
+        store.get_for_scope("Bash", "workspace:write"),
         Some(PolicyDecision::Allow),
         "session layer must override workspace and user"
     );
@@ -56,7 +56,7 @@ fn review_permission_workspace_overrides_user_layer() {
     store.record_to(
         PermissionDestination::User,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::User,
@@ -65,14 +65,14 @@ fn review_permission_workspace_overrides_user_layer() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::Scope("workspace:write".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
         ),
     );
     assert_eq!(
-        store.get_for_scope("bash", "workspace:write"),
+        store.get_for_scope("Bash", "workspace:write"),
         Some(PolicyDecision::AlwaysDeny),
         "workspace layer must override user layer"
     );
@@ -139,17 +139,17 @@ fn review_path_glob_wildcard_matching() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob("/workspace/**".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Session,
         ),
     );
     assert_eq!(
-        store.get_for_path("write_file", "/workspace/reports/2026/q1.csv"),
+        store.get_for_path("Write", "/workspace/reports/2026/q1.csv"),
         Some(PolicyDecision::AlwaysAllow)
     );
-    assert_eq!(store.get_for_path("write_file", "/etc/shadow"), None);
+    assert_eq!(store.get_for_path("Write", "/etc/shadow"), None);
 }
 
 // P-4: CommandPattern 匹配
@@ -160,17 +160,17 @@ fn review_command_pattern_prefix_matching() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::CommandPattern("npm ".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Workspace,
         ),
     );
     assert_eq!(
-        store.get_for_command("bash", "npm install --save-dev"),
+        store.get_for_command("Bash", "npm install --save-dev"),
         Some(PolicyDecision::AlwaysAllow)
     );
-    assert_eq!(store.get_for_command("bash", "pip install requests"), None);
+    assert_eq!(store.get_for_command("Bash", "pip install requests"), None);
 }
 
 // P-5: MCP scope 走 Ask 路径

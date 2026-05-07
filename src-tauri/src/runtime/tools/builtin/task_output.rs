@@ -45,8 +45,8 @@ fn validate_task_id(s: &str) -> Result<&str, ToolError> {
 #[async_trait]
 impl RuntimeTool for TaskOutputRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG.get("task_output").unwrap_or_else(|| {
-            ToolDefinition::new("task_output", "Read async sub-agent transcript")
+        TOOL_CATALOG.get("TaskOutput").unwrap_or_else(|| {
+            ToolDefinition::new("TaskOutput", "Read async sub-agent transcript")
                 .with_kind(ToolKind::Support)
                 .with_read_only(true)
         })
@@ -84,7 +84,7 @@ impl RuntimeTool for TaskOutputRuntimeTool {
             "lines": lines,
             "new_offset": new_offset,
         });
-        Ok(ToolResult::new("task_output", body.to_string(), None))
+        Ok(ToolResult::new("TaskOutput", body.to_string(), None))
     }
 }
 
@@ -129,7 +129,7 @@ mod tests {
     fn definition_id_is_task_output() {
         let tmp = TempDir::new().unwrap();
         let tool = build_tool(&tmp);
-        assert_eq!(tool.definition().id, "task_output");
+        assert_eq!(tool.definition().id, "TaskOutput");
     }
 
     #[test]

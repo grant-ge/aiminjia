@@ -3,12 +3,12 @@ fn l1_input_validation_error_formats_tool_name_and_message() {
     use app_lib::runtime::tools::executor::ToolError;
 
     let err = ToolError::InputValidationError {
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         message: "Missing required field: command".to_string(),
     };
 
     let display = err.to_string();
-    assert!(display.contains("bash"), "got: {display}");
+    assert!(display.contains("Bash"), "got: {display}");
     assert!(
         display.contains("Missing required field: command"),
         "got: {display}"
@@ -20,7 +20,7 @@ fn l1_input_validation_error_is_retriable_distinguishable_from_execution_failed(
     use app_lib::runtime::tools::executor::ToolError;
 
     let validation_err = ToolError::InputValidationError {
-        tool_name: "write_file".to_string(),
+        tool_name: "Write".to_string(),
         message: "field path is required".to_string(),
     };
     let exec_err = ToolError::ExecutionFailed("disk full".to_string());

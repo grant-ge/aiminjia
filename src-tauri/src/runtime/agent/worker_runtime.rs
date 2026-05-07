@@ -929,7 +929,7 @@ mod tests {
         let config = SubAgentConfig {
             task: "collect data".to_string(),
             system_prompt: "system".to_string(),
-            allowed_tools: vec!["read_workspace_file".to_string()],
+            allowed_tools: vec!["Read".to_string()],
             max_iterations: 3,
             dynamic_context: String::new(),
             conversation_id: "conv-worker-mode".to_string(),
@@ -944,7 +944,7 @@ mod tests {
             disallowed_tools: vec![],
         };
 
-        let final_allowed = vec!["read_workspace_file".to_string()];
+        let final_allowed = vec!["Read".to_string()];
         let run_config =
             SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed);
 
@@ -979,8 +979,8 @@ mod tests {
             disallowed_tools: vec![],
         };
         let all_schemas = vec![
-            tool_schema("read_workspace_file"),
-            tool_schema("spawn_subagent"),
+            tool_schema("Read"),
+            tool_schema("Agent"),
         ];
         let available_names: Vec<String> = all_schemas
             .iter()
@@ -1002,21 +1002,21 @@ mod tests {
         let run_config =
             SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed.clone());
 
-        assert!(final_allowed.contains(&"read_workspace_file".to_string()));
-        assert!(!final_allowed.contains(&"spawn_subagent".to_string()));
+        assert!(final_allowed.contains(&"Read".to_string()));
+        assert!(!final_allowed.contains(&"Agent".to_string()));
         assert!(run_config
             .allowed_tools
-            .contains(&"read_workspace_file".to_string()));
+            .contains(&"Read".to_string()));
         assert!(!run_config
             .allowed_tools
-            .contains(&"spawn_subagent".to_string()));
+            .contains(&"Agent".to_string()));
         let tool_def_names: Vec<&str> = turn_request
             .tool_defs
             .iter()
             .map(|tool_def| tool_def.name.as_str())
             .collect();
-        assert!(tool_def_names.contains(&"read_workspace_file"));
-        assert!(!tool_def_names.contains(&"spawn_subagent"));
+        assert!(tool_def_names.contains(&"Read"));
+        assert!(!tool_def_names.contains(&"Agent"));
     }
 
     #[test]

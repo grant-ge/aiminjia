@@ -82,7 +82,7 @@ fn review_mcp_always_allow_bypasses_ask() {
 #[test]
 fn review_network_scope_still_passes_without_ask() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("web_search", &["network"]);
+    let def = def_with_scope("WebSearch", &["network"]);
 
     let decision = pipeline.authorize(&def, &json!({"query": "hi"}), &make_ctx());
 

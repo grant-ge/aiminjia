@@ -13,8 +13,8 @@ async fn shell_tool_registered_matches_current_os() {
 
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
-    let has_bash = names.contains(&"bash");
-    let has_powershell = names.contains(&"powershell");
+    let has_bash = names.contains(&"Bash");
+    let has_powershell = names.contains(&"PowerShell");
 
     if cfg!(windows) {
         assert!(

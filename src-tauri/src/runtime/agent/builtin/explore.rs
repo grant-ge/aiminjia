@@ -7,10 +7,10 @@ pub fn explore_agent_definition() -> AgentDefinition {
         name: "explore".into(),
         description: "只读探索：搜索/读取文件，不修改".into(),
         allowed_tools: vec![
-            "read_workspace_file".into(),
-            "grep_content".into(),
-            "search_files".into(),
-            "web_search".into(),
+            "Read".into(),
+            "Grep".into(),
+            "Glob".into(),
+            "WebSearch".into(),
         ],
         disallowed_tools: vec![],
         max_iterations: 100,
@@ -38,12 +38,12 @@ mod tests {
         let def = explore_agent_definition();
         // Names actually exposed by the runtime tool catalog.
         let available: Vec<String> = [
-            "read_workspace_file",
-            "grep_content",
-            "search_files",
-            "web_search",
-            "write_file", // not requested → must not appear
-            "bash",       // not requested → must not appear
+            "Read",
+            "Grep",
+            "Glob",
+            "WebSearch",
+            "Write", // not requested → must not appear
+            "Bash",       // not requested → must not appear
         ]
         .iter()
         .map(|s| s.to_string())
@@ -58,10 +58,10 @@ mod tests {
         );
 
         for required in [
-            "read_workspace_file",
-            "grep_content",
-            "search_files",
-            "web_search",
+            "Read",
+            "Grep",
+            "Glob",
+            "WebSearch",
         ] {
             assert!(
                 resolved.contains(&required.to_string()),
@@ -69,11 +69,11 @@ mod tests {
             );
         }
         assert!(
-            !resolved.contains(&"write_file".to_string()),
+            !resolved.contains(&"Write".to_string()),
             "explore must not gain write_file"
         );
         assert!(
-            !resolved.contains(&"bash".to_string()),
+            !resolved.contains(&"Bash".to_string()),
             "explore must not gain bash"
         );
     }

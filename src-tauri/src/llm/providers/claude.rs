@@ -751,7 +751,7 @@ mod tests {
                     {
                         "type": "tool_use",
                         "id": "toolu_abc123",
-                        "name": "web_search",
+                        "name": "WebSearch",
                         "input": {"query": "rust async"}
                     }
                 ],
@@ -766,7 +766,7 @@ mod tests {
         assert_eq!(resp.stop_reason, StopReason::ToolUse);
         assert_eq!(resp.tool_calls.len(), 1);
         assert_eq!(resp.tool_calls[0].id, "toolu_abc123");
-        assert_eq!(resp.tool_calls[0].name, "web_search");
+        assert_eq!(resp.tool_calls[0].name, "WebSearch");
         assert_eq!(resp.tool_calls[0].arguments["query"], "rust async");
     }
 
@@ -817,7 +817,7 @@ mod tests {
         let request = LlmRequest {
             messages: vec![ChatMessage::text("user", "Search")],
             tools: vec![ToolDefinition {
-                name: "web_search".to_string(),
+                name: "WebSearch".to_string(),
                 description: "Search the web".to_string(),
                 parameters: json!({"type": "object", "properties": {"q": {"type": "string"}}}),
             }],
@@ -838,7 +838,7 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert!(tools[0].get("input_schema").is_some());
         assert!(tools[0].get("parameters").is_none());
-        assert_eq!(tools[0]["name"], "web_search");
+        assert_eq!(tools[0]["name"], "WebSearch");
     }
 
     #[test]

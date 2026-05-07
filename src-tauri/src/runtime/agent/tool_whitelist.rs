@@ -8,7 +8,7 @@
 /// 子 agent 调用会破坏控制流（如反向问父之外的人，或操纵 plan mode）。
 pub const ALL_AGENT_DISALLOWED: &[&str] = &[
     "AskUserQuestion",
-    "spawn_subagent",  // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
+    "Agent",  // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
 ];
 
 /// async（后台）subagent 额外允许集：仅以下工具可用
@@ -18,11 +18,11 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 /// canonical 名一致；否则 `resolve_agent_tools` 会在 available_names 过滤步骤把
 /// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
-    "read_workspace_file", "write_file", "edit_file",
-    "bash", "grep_content", "search_files",
-    "web_search",
-    "spawn_subagent",
-    "task_output",
+    "Read", "Write", "Edit",
+    "Bash", "Grep", "Glob",
+    "WebSearch",
+    "Agent",
+    "TaskOutput",
 ];
 
 /// 解析 subagent 最终可用工具集
@@ -57,7 +57,7 @@ pub fn resolve_agent_tools(
     // ALL_AGENT_DISALLOWED removes it earlier. Either remove the parameter or
     // move spawn_subagent out of ALL_AGENT_DISALLOWED if recursive spawn must work.
     if !allow_recursive_spawn {
-        out.retain(|t| t != "spawn_subagent");
+        out.retain(|t| t != "Agent");
     }
 
     out
@@ -76,7 +76,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "bash"]),
+            &vs(&["read_file", "Bash"]),
             false,
             false,
         );
@@ -89,7 +89,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &vs(&["read_file"]),
             &[],
-            &vs(&["read_file", "bash"]),
+            &vs(&["read_file", "Bash"]),
             false,
             false,
         );
@@ -99,9 +99,9 @@ mod tests {
     #[test]
     fn def_disallowed_overrides_def_allowed() {
         let allowed = resolve_agent_tools(
-            &vs(&["read_file", "write_file"]),
-            &vs(&["write_file"]),
-            &vs(&["read_file", "write_file"]),
+            &vs(&["read_file", "Write"]),
+            &vs(&["Write"]),
+            &vs(&["read_file", "Write"]),
             false,
             false,
         );
@@ -127,17 +127,17 @@ mod tests {
             &[],
             &[],
             &vs(&[
-                "read_workspace_file",
+                "Read",
                 "AskUserQuestion",
-                "web_search",
+                "WebSearch",
                 "unknown_tool",
             ]),
             true,
             false,
         );
         // unknown_tool 不在 ASYNC_AGENT_ALLOWED → 被过滤
-        assert!(allowed.contains(&"read_workspace_file".to_string()));
-        assert!(allowed.contains(&"web_search".to_string()));
+        assert!(allowed.contains(&"Read".to_string()));
+        assert!(allowed.contains(&"WebSearch".to_string()));
         assert!(!allowed.contains(&"AskUserQuestion".to_string()));
         assert!(!allowed.contains(&"unknown_tool".to_string()));
     }
@@ -147,12 +147,12 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "spawn_subagent"]),
+            &vs(&["read_file", "Agent"]),
             false,
             false,
         );
         assert!(allowed.contains(&"read_file".to_string()));
-        assert!(!allowed.contains(&"spawn_subagent".to_string()));
+        assert!(!allowed.contains(&"Agent".to_string()));
     }
 
     #[test]
@@ -161,12 +161,12 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "spawn_subagent"]),
+            &vs(&["read_file", "Agent"]),
             false,
             true,
         );
         assert!(allowed.contains(&"read_file".to_string()));
-        assert!(!allowed.contains(&"spawn_subagent".to_string()));
+        assert!(!allowed.contains(&"Agent".to_string()));
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["spawn_subagent"]),
+            &vs(&["Agent"]),
             true,
             true,
         );

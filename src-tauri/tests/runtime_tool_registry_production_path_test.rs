@@ -186,7 +186,7 @@ async fn get_all_schemas_includes_runtime_tool_schema() {
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        names.contains(&"read_workspace_file"),
+        names.contains(&"Read"),
         "Schema should include read_workspace_file, got: {:?}",
         names
     );

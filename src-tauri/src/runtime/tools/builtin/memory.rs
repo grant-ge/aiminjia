@@ -41,8 +41,8 @@ impl WriteMemoryRuntimeTool {
 impl RuntimeTool for WriteMemoryRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("write_memory")
-            .unwrap_or_else(|| ToolDefinition::new("write_memory", "保存项目记忆"))
+            .get("WriteMemory")
+            .unwrap_or_else(|| ToolDefinition::new("WriteMemory", "保存项目记忆"))
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {
@@ -76,7 +76,7 @@ impl RuntimeTool for WriteMemoryRuntimeTool {
             "path": saved.relative_path.display().to_string(),
         });
         Ok(ToolResult::new(
-            "write_memory",
+            "WriteMemory",
             serde_json::to_string_pretty(&result).unwrap_or_default(),
             Some(result),
         ))
@@ -99,8 +99,8 @@ impl SearchMemoryRuntimeTool {
 impl RuntimeTool for SearchMemoryRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("search_memory")
-            .unwrap_or_else(|| ToolDefinition::new("search_memory", "搜索项目记忆"))
+            .get("SearchMemory")
+            .unwrap_or_else(|| ToolDefinition::new("SearchMemory", "搜索项目记忆"))
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {
@@ -137,7 +137,7 @@ impl RuntimeTool for SearchMemoryRuntimeTool {
             "results": results,
         });
         Ok(ToolResult::new(
-            "search_memory",
+            "SearchMemory",
             serde_json::to_string_pretty(&result).unwrap_or_default(),
             Some(result),
         ))

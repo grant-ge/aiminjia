@@ -127,7 +127,7 @@
       "load_file": "正在加载文件...",
       "save_analysis_note": "正在保存分析记录...",
       "update_progress": "正在更新分析进度...",
-      "web_search": "正在搜索相关信息...",
+      "WebSearch": "正在搜索相关信息...",
       "generate_report": "正在生成报告...",
       "export_data": "正在导出数据...",
       "hypothesis_test": "正在进行统计检验...",

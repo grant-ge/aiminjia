@@ -136,7 +136,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Primitive: workspace tools ──────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("read_workspace_file", "读取授权工作目录中的文本文件内容")
+        ToolDefinition::new("Read", "读取授权工作目录中的文本文件内容")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(16_000)
@@ -152,7 +152,7 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("search_files", "在授权工作目录中搜索匹配 glob 模式的文件")
+        ToolDefinition::new("Glob", "在授权工作目录中搜索匹配 glob 模式的文件")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(4_000)
@@ -169,7 +169,7 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("write_file", "在授权工作目录中创建或完整覆盖写入文本文件")
+        ToolDefinition::new("Write", "在授权工作目录中创建或完整覆盖写入文本文件")
             .with_kind(ToolKind::Primitive)
             .with_capability_scope(["workspace:write"]),
         json!({
@@ -191,7 +191,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "edit_file",
+            "Edit",
             "对授权工作目录中的文件执行精确的 old_string → new_string 替换（优先于 write_file 用于修改现有文件）",
         )
         .with_kind(ToolKind::Primitive)
@@ -213,7 +213,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "bash",
+            "Bash",
             "在授权工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
@@ -238,7 +238,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "powershell",
+            "PowerShell",
             "在授权工作目录中执行 PowerShell 命令（Windows 平台专用）。\
             优先使用 pwsh.exe（PowerShell 7+，支持 `&&` `||`），否则回退 powershell.exe（5.1，**不支持 `&&`/`||`**，请用 `;` 分隔或显式判断 `$LASTEXITCODE`）。\
             \n\n用法说明：\
@@ -270,7 +270,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "grep_content",
+            "Grep",
             "在授权工作目录中搜索文件内容。当前 Phase 1 对标 claude-code-best 的 GrepTool 核心模式：\
             \n- `output_mode=files_with_matches`：返回命中文件路径\
             \n- `output_mode=content`：返回 `path:line:content` 文本\
@@ -306,7 +306,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Primitive: network ────────────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("web_search", "搜索互联网获取最新信息")
+        ToolDefinition::new("WebSearch", "搜索互联网获取最新信息")
             .with_kind(ToolKind::Primitive)
             .with_capability_scope(["network"]),
         json!({
@@ -322,7 +322,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "spawn_subagent",
+            "Agent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'）或不同模型。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
@@ -365,7 +365,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "task_output",
+            "TaskOutput",
             "【Support 工具】读取异步子 Agent 的 transcript 增量。\
             \n\n用法：spawn_subagent({run_in_background: true, name: \"w1\"}) 立即返回 agent_id。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
@@ -395,7 +395,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "load_skill",
+            "Skill",
             "加载一个专项技能的详细指令到当前对话。无副作用：不改变系统提示、不限制工具、不持久化。",
         )
         .with_kind(ToolKind::Support)
@@ -518,7 +518,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "write_memory",
+            "WriteMemory",
             "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
         )
         .with_kind(ToolKind::Support),
@@ -549,7 +549,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "search_memory",
+            "SearchMemory",
             "在本地记忆库中按关键词搜索相关记忆条目，返回最多 5 条最相关结果。",
         )
         .with_kind(ToolKind::Support)
@@ -576,18 +576,18 @@ fn build_default_catalog() -> ToolCatalog {
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个
-    "bash",
-    "powershell",
-    "read_workspace_file",
-    "write_file",
-    "edit_file",
-    "search_files",
-    "grep_content",
-    "write_memory",
-    "search_memory",
-    "spawn_subagent",
-    "task_output",
-    "load_skill",
+    "Bash",
+    "PowerShell",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WriteMemory",
+    "SearchMemory",
+    "Agent",
+    "TaskOutput",
+    "Skill",
     "AskUserQuestion",
     "TaskCreate",
     "TaskUpdate",

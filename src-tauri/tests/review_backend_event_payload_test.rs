@@ -26,7 +26,7 @@ async fn review_tool_executing_payload_includes_input() {
         run_id.clone(),
         RuntimeEventKind::ToolCallExecuting {
             tool_call_id: ToolCallId::new("tc-1"),
-            tool_name: "bash".to_string(),
+            tool_name: "Bash".to_string(),
             input: serde_json::json!({"url": "https://example.com"}),
         },
     ))
@@ -40,7 +40,7 @@ async fn review_tool_executing_payload_includes_input() {
         .find(|e| e.name == "tool:executing")
         .expect("tool:executing must be emitted");
 
-    assert_eq!(event.payload["toolName"].as_str(), Some("bash"),);
+    assert_eq!(event.payload["toolName"].as_str(), Some("Bash"),);
     assert_eq!(
         event.payload["input"]["url"].as_str(),
         Some("https://example.com"),
@@ -59,7 +59,7 @@ async fn review_tool_completed_payload_is_full_message() {
         run_id.clone(),
         RuntimeEventKind::ToolCallCompleted {
             tool_call_id: ToolCallId::new("tc-2"),
-            tool_name: "bash".to_string(),
+            tool_name: "Bash".to_string(),
             is_error: false,
             content: "Page ready: https://example.com".to_string(),
             msg_id: "tool-abc-123".to_string(),

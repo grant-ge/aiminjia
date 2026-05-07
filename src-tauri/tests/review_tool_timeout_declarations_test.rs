@@ -3,7 +3,7 @@ use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 #[test]
 fn review_long_running_tools_declare_timeout() {
     for id in [
-        "bash",
+        "Bash",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert!(
@@ -15,6 +15,6 @@ fn review_long_running_tools_declare_timeout() {
 
 #[test]
 fn review_bash_timeout_in_catalog_matches_tool_constant() {
-    let def = TOOL_CATALOG.get("bash").unwrap();
+    let def = TOOL_CATALOG.get("Bash").unwrap();
     assert_eq!(def.default_timeout_secs, Some(120));
 }

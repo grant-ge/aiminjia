@@ -44,7 +44,7 @@ fn deny_message(decision: &PermissionDecision) -> &str {
 #[test]
 fn no_capability_scope_tool_is_allowed_with_or_without_capability_context() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = ToolDefinition::new("write_memory", "memory helper");
+    let def = ToolDefinition::new("WriteMemory", "memory helper");
     let no_capability = ctx_no_capability();
     let tmp = TempDir::new().expect("tempdir");
     let with_workspace = ctx_with_workspace(&tmp);
@@ -90,7 +90,7 @@ fn workspace_write_tool_is_allowed_with_workspace_capability() {
 fn workspace_write_scope_is_denied_without_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
     let result = pipeline.authorize(
-        &def("bash", &["workspace:write"]),
+        &def("Bash", &["workspace:write"]),
         &json!({}),
         &ctx_no_capability(),
     );

@@ -67,7 +67,7 @@ impl RuntimeTool for LoadSkillRuntimeTool {
             available
         );
 
-        ToolDefinition::new("load_skill", description)
+        ToolDefinition::new("Skill", description)
             .with_kind(ToolKind::Support)
             .with_read_only(true)
             .with_max_result_size_chars(16_000)
@@ -115,7 +115,7 @@ impl RuntimeTool for LoadSkillRuntimeTool {
                 "fork mode: subagent dispatch will be wired in a follow-up task. Returning a placeholder body so the call doesn't fail.",
             );
             return Ok(ToolResult::new(
-                "load_skill",
+                "Skill",
                 placeholder,
                 Some(json!({
                     "skill_id": skill_id,
@@ -155,7 +155,7 @@ impl RuntimeTool for LoadSkillRuntimeTool {
         }
 
         Ok(ToolResult::new(
-            "load_skill",
+            "Skill",
             content,
             Some(json!({
                 "skill_id": skill_id,

@@ -1051,7 +1051,7 @@ mod tests {
                 "delta": {
                     "tool_calls": [{
                         "id": "call_abc123",
-                        "function": { "name": "web_search", "arguments": "" }
+                        "function": { "name": "WebSearch", "arguments": "" }
                     }]
                 }
             }]
@@ -1119,7 +1119,7 @@ mod tests {
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
             assert_eq!(tool_call.id, "call_abc123");
-            assert_eq!(tool_call.name, "web_search");
+            assert_eq!(tool_call.name, "WebSearch");
             assert_eq!(tool_call.arguments, serde_json::json!({"query": "abc"}));
         }
     }
@@ -1320,7 +1320,7 @@ mod tests {
                         "index": 0,
                         "id": "toolu_01abc",
                         "type": "function",
-                        "function": { "name": "bash", "arguments": "" }
+                        "function": { "name": "Bash", "arguments": "" }
                     }]
                 }
             }]
@@ -1379,7 +1379,7 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
-            assert_eq!(tool_call.name, "bash");
+            assert_eq!(tool_call.name, "Bash");
             // The accumulated JSON should parse correctly
             assert!(
                 tool_call.arguments != Value::Null,
@@ -1404,7 +1404,7 @@ mod tests {
         let start = serde_json::json!({
             "choices": [{"delta": {"tool_calls": [{
                 "index": 0, "id": "toolu_01xyz", "type": "function",
-                "function": { "name": "bash", "arguments": "" }
+                "function": { "name": "Bash", "arguments": "" }
             }]}}]
         });
         process_sse_chunk(&start, &mut st);
@@ -1448,7 +1448,7 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
 
         if let StreamEvent::ToolCallStart { tool_call } = &tool_events[0] {
-            assert_eq!(tool_call.name, "bash");
+            assert_eq!(tool_call.name, "Bash");
             assert!(
                 tool_call.arguments != Value::Null,
                 "arguments must not be null! accumulated args contain real 0x0a newlines"
@@ -1470,7 +1470,7 @@ mod tests {
     fn flush_pending_tool_splits_concatenated_json_objects_into_independent_tool_calls() {
         let mut st = test_state();
         st.tool_id = Some("toolu_lotus_combined".to_string());
-        st.tool_name = Some("read_workspace_file".to_string());
+        st.tool_name = Some("Read".to_string());
         st.tool_args = String::from(
             r#"{"path": "README.md", "max_bytes": 5000}{"path": "AGENTS.md"}{"path": "Makefile"}"#,
         );
@@ -1498,7 +1498,7 @@ mod tests {
 
         // All three must share the original tool name (gateway only flattened args).
         for tc in &calls {
-            assert_eq!(tc.name, "read_workspace_file");
+            assert_eq!(tc.name, "Read");
         }
         // First reuses the original id; subsequent ones get derived ids so they
         // are unique downstream (executor maps id -> tool_call).
@@ -1534,7 +1534,7 @@ mod tests {
     fn flush_pending_tool_single_object_is_not_split() {
         let mut st = test_state();
         st.tool_id = Some("toolu_normal".to_string());
-        st.tool_name = Some("read_workspace_file".to_string());
+        st.tool_name = Some("Read".to_string());
         st.tool_args = String::from(r#"{"path": "/tmp"}"#);
 
         flush_pending_tool(&mut st);
@@ -1547,7 +1547,7 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
         if let StreamEvent::ToolCallStart { tool_call } = tool_events[0] {
             assert_eq!(tool_call.id, "toolu_normal");
-            assert_eq!(tool_call.name, "read_workspace_file");
+            assert_eq!(tool_call.name, "Read");
             assert_eq!(
                 tool_call.arguments.get("path").and_then(|v| v.as_str()),
                 Some("/tmp")

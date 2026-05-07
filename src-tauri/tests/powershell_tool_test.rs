@@ -269,5 +269,5 @@ async fn powershell_validate_input_rejects_non_string_command() {
 #[tokio::test]
 async fn powershell_definition_returns_powershell_name() {
     let def = PowerShellTool.definition();
-    assert_eq!(def.name, "powershell");
+    assert_eq!(def.name, "PowerShell");
 }

@@ -111,7 +111,7 @@ async fn get_subagent_transcript_returns_frontend_entries_without_tool_call_id()
                     role: "tool".to_string(),
                     content: "Saved report.xlsx".to_string(),
                     tool_call_id: Some("tool-call-1".to_string()),
-                    tool_name: Some("bash".to_string()),
+                    tool_name: Some("Bash".to_string()),
                 },
             ],
         )
@@ -122,7 +122,7 @@ async fn get_subagent_transcript_returns_frontend_entries_without_tool_call_id()
         .unwrap();
 
     assert_eq!(entries.len(), 2);
-    assert_eq!(entries[1].tool_name.as_deref(), Some("bash"));
+    assert_eq!(entries[1].tool_name.as_deref(), Some("Bash"));
 
     let serialized = serde_json::to_value(&entries).unwrap();
     assert!(

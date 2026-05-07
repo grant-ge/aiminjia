@@ -22,7 +22,7 @@ fn review_assistant_tool_calls_round_trip() {
     let content_json = serde_json::json!({
         "text": "我来帮你打开页面",
         "toolCalls": [
-            {"id": "tc-001", "name": "bash", "arguments": {"url": "https://example.com"}}
+            {"id": "tc-001", "name": "Bash", "arguments": {"url": "https://example.com"}}
         ]
     })
     .to_string();
@@ -36,7 +36,7 @@ fn review_assistant_tool_calls_round_trip() {
     let content = &msgs[0]["content"];
     assert_eq!(
         content["toolCalls"][0]["name"].as_str().unwrap(),
-        "bash",
+        "Bash",
         "toolCalls must survive storage round-trip"
     );
     assert_eq!(
@@ -56,7 +56,7 @@ fn review_tool_message_round_trip() {
 
     let content_json = serde_json::json!({
         "toolCallId": "tc-001",
-        "name": "bash",
+        "name": "Bash",
         "content": "Page ready: https://example.com"
     })
     .to_string();
@@ -76,7 +76,7 @@ fn review_tool_message_round_trip() {
     );
     assert_eq!(
         tool_msg["toolResult"]["name"].as_str().unwrap(),
-        "bash"
+        "Bash"
     );
     assert_eq!(
         tool_msg["toolResult"]["content"].as_str().unwrap(),
@@ -101,7 +101,7 @@ fn review_load_history_restores_tool_messages() {
             "role": "assistant",
             "content": {
                 "text": "",
-                "toolCalls": [{"id": "tc-1", "name": "bash", "arguments": {"url": "https://baidu.com"}}]
+                "toolCalls": [{"id": "tc-1", "name": "Bash", "arguments": {"url": "https://baidu.com"}}]
             },
         }),
         serde_json::json!({
@@ -109,7 +109,7 @@ fn review_load_history_restores_tool_messages() {
             "role": "tool",
             "content": {
                 "toolCallId": "tc-1",
-                "name": "bash",
+                "name": "Bash",
                 "content": "Page ready: https://baidu.com"
             },
         }),
@@ -122,11 +122,11 @@ fn review_load_history_restores_tool_messages() {
     assert_eq!(history[0]["content"], "帮我打开百度");
 
     assert_eq!(history[1]["role"], "assistant");
-    assert_eq!(history[1]["toolCalls"][0]["name"], "bash");
+    assert_eq!(history[1]["toolCalls"][0]["name"], "Bash");
 
     assert_eq!(history[2]["role"], "tool");
     assert_eq!(history[2]["toolCallId"], "tc-1");
-    assert_eq!(history[2]["name"], "bash");
+    assert_eq!(history[2]["name"], "Bash");
     assert_eq!(history[2]["content"], "Page ready: https://baidu.com");
 }
 
@@ -140,7 +140,7 @@ fn review_load_history_restores_legacy_tool_messages() {
         "role": "tool",
         "content": {
             "toolCallId": "tc-legacy",
-            "toolName": "bash",
+            "toolName": "Bash",
             "isError": false,
             "result": "Page ready: https://baidu.com",
         },
@@ -151,6 +151,6 @@ fn review_load_history_restores_legacy_tool_messages() {
     assert_eq!(history.len(), 1);
     assert_eq!(history[0]["role"], "tool");
     assert_eq!(history[0]["toolCallId"], "tc-legacy");
-    assert_eq!(history[0]["name"], "bash");
+    assert_eq!(history[0]["name"], "Bash");
     assert_eq!(history[0]["content"], "Page ready: https://baidu.com");
 }

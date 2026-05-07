@@ -48,11 +48,11 @@ fn o1_chat_turn_outcome_variants_compile() {
     assert!(matches!(exec_err, ChatTurnOutcome::ExecutionError { .. }));
 
     let record = PermissionDenialRecord {
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         tool_call_id: "tc-001".to_string(),
         reason: "dangerous_pattern".to_string(),
     };
-    assert_eq!(record.tool_name, "bash");
+    assert_eq!(record.tool_name, "Bash");
 }
 
 #[test]

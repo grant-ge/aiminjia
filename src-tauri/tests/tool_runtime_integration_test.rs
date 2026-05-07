@@ -59,7 +59,7 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     let bus_neg = RuntimeEventBus::new();
     let call_neg = RuntimeToolCallRequest {
         tool_call_id: "tc-neg-1".to_string(),
-        tool_name: "search_files".to_string(),
+        tool_name: "Glob".to_string(),
         args: serde_json::json!({ "pattern": "*" }),
         purpose: None,
     };
@@ -92,7 +92,7 @@ async fn query_engine_injects_capability_context_for_workspace_tool() {
     let bus = RuntimeEventBus::new();
     let call = RuntimeToolCallRequest {
         tool_call_id: "tc-1".to_string(),
-        tool_name: "search_files".to_string(),
+        tool_name: "Glob".to_string(),
         args: serde_json::json!({ "pattern": "*" }),
         purpose: None,
     };

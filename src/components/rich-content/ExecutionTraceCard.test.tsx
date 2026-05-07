@@ -49,7 +49,7 @@ describe('ExecutionTraceCard', () => {
       <ExecutionTraceCard
         title="工具执行轨迹"
         badge="已完成 2 步"
-        sections={[{ title: '工具步骤', items: ['read_workspace_file'] }]}
+        sections={[{ title: '工具步骤', items: ['Read'] }]}
         expandLabel="查看执行详情"
         expandedContent={<div>details</div>}
       />,

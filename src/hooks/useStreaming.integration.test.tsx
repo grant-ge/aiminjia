@@ -522,7 +522,7 @@ describe('useStreaming integration review', () => {
     })
   })
 
-  it('adds load_skill tool events to streaming bubbles', async () => {
+  it('adds Skill tool events to streaming bubbles', async () => {
     render(<HookHarness />)
     await waitForListeners()
 
@@ -531,7 +531,7 @@ describe('useStreaming integration review', () => {
       handler?.({
         payload: {
           conversationId: 'conv-load-skill',
-          toolName: 'load_skill',
+          toolName: 'Skill',
           toolId: 'tool-load-skill-1',
           purpose: 'Load salary query skill',
           input: { skill_name: 'salary-query' },
@@ -541,7 +541,7 @@ describe('useStreaming integration review', () => {
 
     expect(useChatStore.getState().streamStates['conv-load-skill']?.toolExecutions).toContainEqual(
       expect.objectContaining({
-        toolName: 'load_skill',
+        toolName: 'Skill',
         toolId: 'tool-load-skill-1',
         status: 'executing',
         summary: 'Load salary query skill',

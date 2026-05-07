@@ -213,7 +213,7 @@ mod tests {
             content.to_string(),
             vec![ToolCall {
                 id: "tc_1".to_string(),
-                name: "bash".to_string(),
+                name: "Bash".to_string(),
                 arguments: serde_json::json!({}),
             }],
             None,
@@ -222,7 +222,7 @@ mod tests {
     }
 
     fn make_tool_result(content: &str) -> ChatMessage {
-        ChatMessage::tool_result("tc_1", "bash", content.to_string())
+        ChatMessage::tool_result("tc_1", "Bash", content.to_string())
     }
 
     fn make_user(content: &str) -> ChatMessage {

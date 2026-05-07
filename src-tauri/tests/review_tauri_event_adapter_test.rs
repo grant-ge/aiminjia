@@ -92,7 +92,7 @@ fn tool_call_completed_success_maps_to_full_tool_completed_payload() {
 fn tool_call_completed_failure_reverses_is_error_and_success_fields() {
     let legacy = mapped(RuntimeEventKind::ToolCallCompleted {
         tool_call_id: ToolCallId::new("tc-002"),
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         is_error: true,
         content: "语法错误：第 3 行".to_string(),
         msg_id: "msg-999".to_string(),

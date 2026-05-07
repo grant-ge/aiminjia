@@ -206,7 +206,7 @@ fn collect_results_truncation_message_includes_guidance() {
     let long = "x".repeat(10_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "search_files".to_string(),
+        tool_name: "Glob".to_string(),
         content: long,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -228,7 +228,7 @@ fn collect_results_uses_per_result_limit_not_global_default() {
     let content_6k = "d".repeat(6_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "read_workspace_file".to_string(),
+        tool_name: "Read".to_string(),
         content: content_6k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -249,7 +249,7 @@ fn collect_results_keeps_content_within_declared_limit() {
     let content_5k = "p".repeat(5_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         content: content_5k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),

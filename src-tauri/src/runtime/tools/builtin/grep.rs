@@ -38,7 +38,7 @@ pub struct GrepContentTool;
 
 fn tool_result_grep(content: String, value: Value) -> ToolResult {
     ToolResult {
-        tool_name: "grep_content".to_string(),
+        tool_name: "Grep".to_string(),
         content,
         data: Some(value),
         file_meta: None,
@@ -171,8 +171,8 @@ fn walk_path(path: &Path, root: &Path, regex: &Regex, glob: &str, results: &mut 
 impl RuntimeTool for GrepContentTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("grep_content")
-            .unwrap_or_else(|| ToolDefinition::new("grep_content", "Search file content"))
+            .get("Grep")
+            .unwrap_or_else(|| ToolDefinition::new("Grep", "Search file content"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -186,11 +186,11 @@ impl RuntimeTool for GrepContentTool {
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("pattern") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "grep_content".to_string(),
+                tool_name: "Grep".to_string(),
                 message: "Missing required field: pattern (string regex)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "grep_content".to_string(),
+                tool_name: "Grep".to_string(),
                 message: "Field 'pattern' must be a string".to_string(),
             }),
             _ => None,

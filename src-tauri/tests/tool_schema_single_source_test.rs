@@ -4,18 +4,18 @@ use app_lib::runtime::tools::definition::ToolKind;
 #[test]
 fn catalog_contains_all_registered_tools() {
     let required = vec![
-        "read_workspace_file",
-        "search_files",
-        "write_file",
-        "edit_file",
-        "bash",
-        "grep_content",
-        "web_search",
-        "spawn_subagent",
-        "task_output",
-        "load_skill",
-        "write_memory",
-        "search_memory",
+        "Read",
+        "Glob",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "WebSearch",
+        "Agent",
+        "TaskOutput",
+        "Skill",
+        "WriteMemory",
+        "SearchMemory",
     ];
     let catalog = ToolCatalog::default_catalog();
     for name in &required {
@@ -31,7 +31,7 @@ fn catalog_contains_all_registered_tools() {
 fn spawn_subagent_is_composite_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
     let def = catalog
-        .get("spawn_subagent")
+        .get("Agent")
         .expect("spawn_subagent must be in catalog");
     assert!(
         matches!(def.kind, ToolKind::Composite),
@@ -43,12 +43,12 @@ fn spawn_subagent_is_composite_in_catalog() {
 fn workspace_tools_are_primitive_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
     for name in &[
-        "read_workspace_file",
-        "search_files",
-        "write_file",
-        "edit_file",
-        "bash",
-        "grep_content",
+        "Read",
+        "Glob",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
     ] {
         let def = catalog
             .get(name)

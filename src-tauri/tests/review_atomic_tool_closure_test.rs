@@ -96,10 +96,10 @@ async fn request_scoped_web_search_schema_should_come_from_catalog() {
         .get_all_schemas()
         .await
         .into_iter()
-        .find(|s| s.name == "web_search")
+        .find(|s| s.name == "WebSearch")
         .expect("web_search schema missing");
     let catalog = TOOL_CATALOG
-        .get_entry("web_search")
+        .get_entry("WebSearch")
         .expect("web_search missing from TOOL_CATALOG");
 
     assert_eq!(

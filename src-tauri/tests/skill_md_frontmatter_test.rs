@@ -46,7 +46,7 @@ description: Review code
 when_to_use: user asks for code review
 allowed-tools:
   - read_file
-  - bash
+  - Bash
 argument-hint: <path>
 arguments: path severity
 model: opus
@@ -70,7 +70,7 @@ body
 "#;
     let parsed = parse_skill_md(input).expect("all supported fields should parse");
     assert_eq!(parsed.frontmatter.context.as_deref(), Some("fork"));
-    assert_eq!(parsed.frontmatter.allowed_tools, vec!["read_file", "bash"]);
+    assert_eq!(parsed.frontmatter.allowed_tools, vec!["read_file", "Bash"]);
     assert_eq!(parsed.frontmatter.arguments, vec!["path", "severity"]);
     assert!(parsed.frontmatter.disable_model_invocation);
 }

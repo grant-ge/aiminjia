@@ -39,7 +39,7 @@ fn shard_path(
 
 #[test]
 fn new_fields_serialize_correctly() {
-    let mut msg = common::make_tool_result("1", "tc_1", "bash", "done");
+    let mut msg = common::make_tool_result("1", "tc_1", "Bash", "done");
     msg.seq = Some(7);
     msg.rev = Some(3);
     msg.run_id = Some("run_1".into());
@@ -48,7 +48,7 @@ fn new_fields_serialize_correctly() {
     let json = serde_json::to_value(&msg).expect("serialize stored message");
 
     assert_eq!(json["toolCallId"], "tc_1");
-    assert_eq!(json["name"], "bash");
+    assert_eq!(json["name"], "Bash");
     assert_eq!(json["runId"], "run_1");
     assert_eq!(json["sequence"], 42);
     assert_eq!(json["schemaVersion"], 2);
@@ -60,7 +60,7 @@ fn new_fields_serialize_correctly() {
 
 #[test]
 fn assistant_tool_calls_serialize_with_camel_case_field_names() {
-    let msg = common::make_assistant_with_tc("2", "tc_2", "bash");
+    let msg = common::make_assistant_with_tc("2", "tc_2", "Bash");
     let json = serde_json::to_value(&msg).expect("serialize assistant tool call message");
 
     assert_eq!(json["toolCalls"][0]["id"], "tc_2");
@@ -197,7 +197,7 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         tool_calls: Some(vec![serde_json::json!({
             "id": "tc-top",
             "type": "function",
-            "function": {"name": "bash", "arguments": "{}"}
+            "function": {"name": "Bash", "arguments": "{}"}
         })]),
         tool_call_id: None,
         name: None,
@@ -215,7 +215,7 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
         created_at: "2026-04-24T00:00:02Z".into(),
         tool_calls: None,
         tool_call_id: Some("tc-top".into()),
-        name: Some("bash".into()),
+        name: Some("Bash".into()),
         run_id: None,
         schema_version: Some(2),
         sequence: Some(2),
@@ -238,7 +238,7 @@ fn top_level_tool_fields_survive_get_messages_read_path() {
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["toolCalls"][0]["id"], "tc-top");
     assert_eq!(messages[1]["toolResult"]["toolCallId"], "tc-top");
-    assert_eq!(messages[1]["toolResult"]["name"], "bash");
+    assert_eq!(messages[1]["toolResult"]["name"], "Bash");
     assert_eq!(messages[1]["toolResult"]["content"], "tool result");
 }
 

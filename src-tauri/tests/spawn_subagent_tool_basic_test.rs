@@ -107,7 +107,7 @@ fn is_concurrency_safe_returns_true() {
 fn definition_id_is_spawn_subagent() {
     let tool = build_tool();
     let def = tool.definition();
-    assert_eq!(def.id, "spawn_subagent");
+    assert_eq!(def.id, "Agent");
 }
 
 // ─── Required-field validation ────────────────────────────────────────────────

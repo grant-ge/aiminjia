@@ -76,18 +76,18 @@ fn u3_budget_preserves_recent_error_and_generated_file_results() {
     let messages = vec![
         assistant_tool_call("tc-old", "read_file"),
         tool_message("tc-old", "read_file", "A".repeat(240)),
-        assistant_tool_call("tc-error", "search_files"),
+        assistant_tool_call("tc-error", "Glob"),
         json!({
             "role": "tool",
             "toolCallId": "tc-error",
-            "name": "search_files",
+            "name": "Glob",
             "content": "command failed".repeat(30),
             "isError": true
         }),
-        assistant_tool_call("tc-file", "bash"),
+        assistant_tool_call("tc-file", "Bash"),
         tool_message(
             "tc-file",
-            "bash",
+            "Bash",
             format!(
                 "report generated\nfileId: {}\n{}",
                 uuid::Uuid::new_v4(),

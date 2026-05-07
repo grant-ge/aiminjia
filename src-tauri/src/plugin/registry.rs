@@ -109,12 +109,12 @@ impl RequestScopedRuntimeDeps {
 }
 
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
-    "web_search",
-    "spawn_subagent",
-    "write_memory",
-    "search_memory",
-    "load_skill",
-    "task_output",
+    "WebSearch",
+    "Agent",
+    "WriteMemory",
+    "SearchMemory",
+    "Skill",
+    "TaskOutput",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -738,7 +738,7 @@ impl ToolRegistry {
         use std::sync::Arc;
 
         match name {
-            "web_search" => {
+            "WebSearch" => {
                 let deps = builtin::network::SearchDeps {
                     tavily_api_key: ctx.tavily_api_key.clone(),
                     bocha_api_key: ctx.bocha_api_key.clone(),
@@ -747,7 +747,7 @@ impl ToolRegistry {
                 };
                 Some(Arc::new(builtin::network::WebSearchRuntimeTool::new(deps)))
             }
-            "spawn_subagent" => {
+            "Agent" => {
                 use tauri::Manager;
 
                 // Fail-closed: if app state is missing any of the three Arcs,
@@ -831,7 +831,7 @@ impl ToolRegistry {
                     ),
                 ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
-            "task_output" => {
+            "TaskOutput" => {
                 use tauri::Manager;
                 let app = match ctx.app_handle.as_ref() {
                     Some(a) => a,
@@ -856,21 +856,21 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
-            "write_memory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
+            "WriteMemory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "search_memory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
+            "SearchMemory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "load_skill" => {
+            "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
                 Some(
                     Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))

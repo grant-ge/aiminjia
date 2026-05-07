@@ -173,7 +173,7 @@ fn user_history_with_authorized_workspace_uses_workspace_hint() {
     };
     let history = build_chat_history(&[user], None, &config).expect("build history");
     assert_eq!(history.len(), 1);
-    assert!(history[0].content.contains("read_workspace_file"));
+    assert!(history[0].content.contains("Read"));
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn load_history_via_runtime_history_preserves_authorized_workspace_file_hints() 
     let history = load_history_via_runtime_history(&storage, "c1", true).expect("load history");
     assert_eq!(history.len(), 1);
     let content = history[0]["content"].as_str().unwrap_or("");
-    assert!(content.contains("read_workspace_file"));
+    assert!(content.contains("Read"));
 }
 
 #[test]

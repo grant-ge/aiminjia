@@ -30,7 +30,7 @@ fn retired_memory_tools_are_not_in_daily_catalog() {
 fn runtime_memory_tools_are_in_catalog_and_daily_allowlist() {
     let catalog = ToolCatalog::default_catalog();
 
-    for id in ["write_memory", "search_memory"] {
+    for id in ["WriteMemory", "SearchMemory"] {
         assert!(
             catalog.get(id).is_some(),
             "runtime memory tool '{}' should be present in TOOL_CATALOG",
@@ -39,11 +39,11 @@ fn runtime_memory_tools_are_in_catalog_and_daily_allowlist() {
     }
 
     assert!(
-        DAILY_ALLOWED_TOOLS.contains(&"write_memory"),
+        DAILY_ALLOWED_TOOLS.contains(&"WriteMemory"),
         "write_memory should be available in DAILY_ALLOWED_TOOLS"
     );
     assert!(
-        DAILY_ALLOWED_TOOLS.contains(&"search_memory"),
+        DAILY_ALLOWED_TOOLS.contains(&"SearchMemory"),
         "search_memory should be available in DAILY_ALLOWED_TOOLS"
     );
 }

@@ -30,7 +30,7 @@ async fn review_bash_command_pattern_deny_blocks_matching_command() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::CommandPattern("curl ".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Session,
@@ -53,7 +53,7 @@ async fn review_bash_command_pattern_allow_returns_allow_or_none() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::CommandPattern("git ".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Workspace,

@@ -739,11 +739,11 @@ mod tests {
 
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
         assert!(
-            parts.static_section.contains("write_memory"),
+            parts.static_section.contains("WriteMemory"),
             "static section must mention write_memory guidance"
         );
         assert!(
-            parts.static_section.contains("search_memory"),
+            parts.static_section.contains("SearchMemory"),
             "static section must mention search_memory guidance"
         );
         assert!(

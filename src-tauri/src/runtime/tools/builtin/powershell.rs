@@ -81,7 +81,7 @@ pub struct PowerShellTool;
 
 fn default_powershell_timeout_secs() -> u64 {
     TOOL_CATALOG
-        .get("powershell")
+        .get("PowerShell")
         .and_then(|def| def.default_timeout_secs)
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
@@ -96,7 +96,7 @@ fn resolve_timeout_secs(input: &Value) -> u64 {
 
 fn tool_result_powershell(content: String, data: Value) -> ToolResult {
     ToolResult {
-        tool_name: "powershell".to_string(),
+        tool_name: "PowerShell".to_string(),
         content,
         data: Some(data),
         file_meta: None,
@@ -109,8 +109,8 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
 impl RuntimeTool for PowerShellTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("powershell")
-            .unwrap_or_else(|| ToolDefinition::new("powershell", "Execute PowerShell command"))
+            .get("PowerShell")
+            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -124,11 +124,11 @@ impl RuntimeTool for PowerShellTool {
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("command") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "powershell".to_string(),
+                tool_name: "PowerShell".to_string(),
                 message: "Missing required field: command (string)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "powershell".to_string(),
+                tool_name: "PowerShell".to_string(),
                 message: format!(
                     "Field 'command' must be a string, got: {}",
                     value.to_string().chars().take(40).collect::<String>()
@@ -157,7 +157,7 @@ impl RuntimeTool for PowerShellTool {
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
-            match store.get_for_command("powershell", command) {
+            match store.get_for_command("PowerShell", command) {
                 Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                     return Some(PermissionDecision::Deny {
                         message: format!(
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn resolve_timeout_secs_falls_back_to_catalog_default() {
         let expected = TOOL_CATALOG
-            .get("powershell")
+            .get("PowerShell")
             .and_then(|def| def.default_timeout_secs)
             .unwrap_or(DEFAULT_TIMEOUT_SECS);
         assert_eq!(resolve_timeout_secs(&json!({})), expected);

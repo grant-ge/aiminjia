@@ -179,7 +179,7 @@ mod tests {
         let def = load_agent_from_markdown(f.path()).expect("valid def must parse");
         assert_eq!(def.name, "foo");
         assert_eq!(def.description, "A test agent");
-        assert_eq!(def.allowed_tools, vec!["read_workspace_file".to_string()]);
+        assert_eq!(def.allowed_tools, vec!["Read".to_string()]);
         assert!(matches!(def.system_prompt, AgentPrompt::Inline(ref s) if s == "You are a test agent."));
     }
 }

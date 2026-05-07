@@ -169,7 +169,7 @@ async fn dispatch_batch_runs_concurrency_safe_tools_in_parallel() {
                 "prompt": format!("batch-task-{i}"),
                 "description": format!("batch-desc-{i}"),
             });
-            ("spawn_subagent".to_string(), input, ctx)
+            ("Agent".to_string(), input, ctx)
         })
         .collect();
 

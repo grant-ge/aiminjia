@@ -15,15 +15,15 @@ async fn authorized_session_exposes_workspace_tools_and_searches_workspace() {
     let trace = run_workspace_tool_with_authorized_session(
         "conv-workspace",
         authorized_root.path(),
-        "search_files",
+        "Glob",
         json!({ "pattern": "*" }),
     )
     .await
     .unwrap();
 
     for tool_name in &[
-        "read_workspace_file",
-        "search_files",
+        "Read",
+        "Glob",
     ] {
         assert!(
             trace
@@ -60,7 +60,7 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
     let trace = run_workspace_tool_with_authorized_session(
         "conv-workspace-read",
         authorized_root.path(),
-        "read_workspace_file",
+        "Read",
         json!({ "path": "sales_2026.csv" }),
     )
     .await
@@ -70,7 +70,7 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
         trace
             .visible_tool_names
             .iter()
-            .any(|name| name == "read_workspace_file"),
+            .any(|name| name == "Read"),
         "authorized session should expose read_workspace_file, got {:?}",
         trace.visible_tool_names
     );

@@ -2,7 +2,7 @@ use app_lib::runtime::tools::definition::{ToolDefinition, ToolKind};
 
 #[test]
 fn tool_definition_has_kind_field() {
-    let def = ToolDefinition::new("web_search", "Search the web").with_kind(ToolKind::Primitive);
+    let def = ToolDefinition::new("WebSearch", "Search the web").with_kind(ToolKind::Primitive);
     assert!(matches!(def.kind, ToolKind::Primitive));
 }
 
@@ -14,7 +14,7 @@ fn tool_kind_default_is_primitive() {
 
 #[test]
 fn spawn_subagent_kind_is_composite() {
-    let def = ToolDefinition::new("spawn_subagent", "Launch sub-agent")
+    let def = ToolDefinition::new("Agent", "Launch sub-agent")
         .with_kind(ToolKind::Composite);
     assert!(matches!(def.kind, ToolKind::Composite));
 }
@@ -23,7 +23,7 @@ fn spawn_subagent_kind_is_composite() {
 fn all_new_plan_c_tools_are_in_catalog() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
-    for id in &["write_file", "edit_file", "bash", "grep_content"] {
+    for id in &["Write", "Edit", "Bash", "Grep"] {
         assert!(
             TOOL_CATALOG.get(id).is_some(),
             "Tool '{id}' should be registered in TOOL_CATALOG"
@@ -62,8 +62,8 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
     let registry = ToolRegistry::new();
     let schemas = registry
         .get_schemas_filtered(&ToolFilter::Only(vec![
-            "web_search".to_string(),
-            "write_memory".to_string(),
+            "WebSearch".to_string(),
+            "WriteMemory".to_string(),
         ]))
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
@@ -164,14 +164,14 @@ fn tool_definition_with_max_result_size_chars_sets_field() {
 #[test]
 fn catalog_read_workspace_file_has_16000_limit() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-    let def = TOOL_CATALOG.get("read_workspace_file").unwrap();
+    let def = TOOL_CATALOG.get("Read").unwrap();
     assert_eq!(def.default_max_result_size_chars, 16_000);
 }
 
 #[test]
 fn catalog_search_files_has_4000_limit() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-    let def = TOOL_CATALOG.get("search_files").unwrap();
+    let def = TOOL_CATALOG.get("Glob").unwrap();
     assert_eq!(def.default_max_result_size_chars, 4_000);
 }
 
@@ -180,7 +180,7 @@ fn catalog_other_tools_default_to_8000_when_not_overridden() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     for id in [
-        "web_search",
+        "WebSearch",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
@@ -196,7 +196,7 @@ fn catalog_long_running_tools_have_declared_default_timeouts() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     for (id, expected) in [
-        ("bash", Some(120)),
+        ("Bash", Some(120)),
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
@@ -211,8 +211,8 @@ fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     for id in [
-        "read_workspace_file",
-        "web_search",
+        "Read",
+        "WebSearch",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(

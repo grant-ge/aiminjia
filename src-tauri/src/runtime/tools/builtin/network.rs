@@ -49,8 +49,8 @@ impl WebSearchRuntimeTool {
 impl RuntimeTool for WebSearchRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("web_search")
-            .unwrap_or_else(|| ToolDefinition::new("web_search", "搜索互联网获取最新信息"))
+            .get("WebSearch")
+            .unwrap_or_else(|| ToolDefinition::new("WebSearch", "搜索互联网获取最新信息"))
     }
 
     async fn execute(
@@ -79,7 +79,7 @@ impl RuntimeTool for WebSearchRuntimeTool {
         .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         Ok(ToolResult {
-            tool_name: "web_search".to_string(),
+            tool_name: "WebSearch".to_string(),
             content: result.clone(),
             data: Some(Value::String(result)),
             file_meta: None,
