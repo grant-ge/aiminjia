@@ -412,39 +412,125 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
 
 **返回**：完整 Task JSON。
 
-### 7.2 TaskStop —— 推迟到下一期
+### 7.2 TaskStop —— 本期实施（设计已收敛）
 
-**结论（2026-05-07 实施时确认）**：缺三个前置条件，本期不实施。
+**初次结论已修订**：原计划写"前置确认 cancellation token 是否接通，否则推迟"。再次调研（含 claude-code-best 源码对比）后发现**真实差距比原描述小**，本期可以做完。
 
-**实际现状（grep 后）**：
-- `runtime/cancellation::CancellationToken` 类型完整可用，含 `BackgroundStop` reason 和 parent/child 级联取消（`runtime/cancellation.rs`）。
-- `worker_runtime.rs:73` 的 `WorkerConfig` 含 `cancel_token: Option<CancellationToken>`，token 已往下传。
-- **缺口 1**：`agent_runtime::cancel_run(child_run_id)`（agent_runtime.rs:75-83）只更新 `AgentInvocationStore` 的状态字段（Cancelled），**没有调用对应 worker token 的 `.cancel()`** —— 也就是 worker 不会真停。
-- **缺口 2**：没有 `task_id -> CancellationToken` 的全局 registry。`TaskCreate` 创建的 task 与 `spawn_subagent` 启动的 child run 是两套 ID（taskId vs RunId/AgentId），TaskStop 接哪一头都需要新的关联存储。
-- **缺口 3**：���步子 agent（`spawn_subagent run_in_background=true`）的 launcher 把 `agent_id` 返回给 LLM，但没有把 `agent_id ↔ task_id` 的双向映射落盘 —— TaskStop 收到 task_id 也找不到对应运行体。
+#### 7.2.1 真实差距（修订自原"三缺口"）
 
-**下一期需要先做**（不在本设计范围）：
-1. 给 `agent_runtime.cancel_run` 加上真正的 token-stop 路径（保留 invocation_store 状态写入，再调被取消运行体的 `.cancel_with_reason(BackgroundStop)`）。这意味着 invocation_store 要持有 token Arc 或 worker_runtime 维护一个 `RunId -> CancellationToken` 的 Mutex<HashMap>。
-2. 把 `spawn_subagent` async path 输出的 metadata 里加 task_id（从 ToolExecutionContext 的 caller chain 提取），并把 `task_id -> RunId` 写到 task store 的 metadata 字段上。
-3. `TaskStop` 工具的实现（schema / catalog / register / disallow 列表）见下文存档，等前置补齐后直接用。
+读完 `src-tauri/src/llm/tool_executor/spawn_subagent.rs::launch_async` + `src-tauri/src/runtime/agent/worker_runtime.rs` 后确认：
 
-**已存档的 TaskStop 设计（前置补齐后实施用）**：
+- `runtime/cancellation::CancellationToken` 完整可用，含 `BackgroundStop` reason 和 parent/child 级联取消。
+- `WorkerRunConfig.cancel_token: Option<CancellationToken>` 已存在，worker_runtime 内部已经处理 token（前台 chat turn 走通）。
+- **真正缺的只有**：
+  1. `AsyncTaskHandle`（`AsyncAgentTaskStore` 的 value）**没有 `cancel_token` 字段** —— 即使有 token 也无处存。
+  2. `launch_async` 的 `tokio::spawn` 块**没创建 token，也没塞进 sub-agent 的 `SubAgentConfig.cancel_token`**（实际传的是 `None`）。所以 sub-agent worker 即使收到取消信号也是 None，根本接不上。
+  3. 没有"按 task_id 查取 token 并 cancel"的工具入口。
 
-- 新文件：`src-tauri/src/runtime/tools/builtin/task_stop.rs`
-- 路径：request-scoped（依赖 app state 拿 agent_runtime / worker_runtime registry）
-- 添加：catalog entry + `REQUEST_SCOPED_RUNTIME_TOOL_NAMES` + `try_build_request_scoped_tool` match arm
-- DAILY_ALLOWED_TOOLS 加 `"TaskStop"`
-- `ALL_AGENT_DISALLOWED` 加 `"TaskStop"`（§8.2）
+`agent_runtime::cancel_run` **不在 TaskStop 路径上**——它是同步 child-run 失败兜底用的，TaskStop 走的是 `AsyncAgentTaskStore` 这条独立链路。原计划把它当成阻塞点是误判。
 
-**Schema**：
+#### 7.2.2 ID 模型（与 claude-code-best 对照定案）
+
+claude-code-best 源码确认：
+- `Agent(run_in_background=true)` 工具返回 `{"status":"async_launched","agentId":"<uuid>","outputFile":"...",...}`，**字段名是 `agentId`**。
+- `appState.tasks` 是统一运行体注册表，**key 就是 agentId**（`appState.tasks[agentId]`）。
+- `TaskStop` 工具入参 schema 是 `{ task_id }`，但 `task_id` 实际就当 agentId 用：`appState.tasks[task_id]` 直接查到。
+- 也就是：**LLM 看到 `agentId` 字段，但调 TaskStop 时用 `task_id` 入参传同一个值**。LLM 靠 prompt 描述脑补对应。
+
+**lotus 决策（用户拍板）**：返回值**双字段共存**避免 LLM 脑补：
+
+```json
+{"status":"async_launched","agent_id":"<uuid>","task_id":"<uuid>","name":"..."}
+```
+
+`task_id` 与 `agent_id` 是同一值（都来自 launcher 生成的 `AgentId`）。后端 Rust 类型保持 `AgentId`，仅 JSON 序列化时多写一个 `task_id` 字段。前端 / 现有测试读 `agent_id` 的代码不动。
+
+不引入 alias / 不兼容历史名字（lotus 没 `KillShell` / `shell_id` 包袱）。
+
+#### 7.2.3 实施清单（本期落地）
+
+**改动 1：`AsyncTaskHandle` 加 `cancel_token` 字段**
+
+`src-tauri/src/llm/tool_executor/async_task_store.rs`（位置近似，根据 grep `AsyncTaskHandle` 实际行）：
+
+```rust
+pub struct AsyncTaskHandle {
+    pub agent_id: AgentId,
+    pub state: AsyncTaskState,
+    pub output_file: PathBuf,
+    pub description: Option<String>,
+    pub cancel_token: CancellationToken,  // 新增
+}
+```
+
+如果 `AsyncAgentTaskStore::register` / `update_state` 等方法签名需要相应调整，照改。
+
+**改动 2：`launch_async` 创建 token 并接通**
+
+`src-tauri/src/llm/tool_executor/spawn_subagent.rs::launch_async`：
+
+- 在生成 `agent_id` 后立即建 token：`let cancel_token = CancellationToken::new();`
+- 把 token 写进 `AsyncTaskHandle`：`AsyncTaskHandle { ..., cancel_token: cancel_token.clone() }`
+- 把 token 写进 sub-agent config：构造 `SubAgentConfig` 时填 `cancel_token: Some(cancel_token.clone())` 或在 `build_sub_agent_args` 路径上注入。
+- `tokio::spawn` 内部 `run_sub_agent(...)` 调用要拿到这份 config，使得 worker 内部 cancel 检查能命中真 token。
+- 返回 JSON 加 `task_id` 字段：
+
+```rust
+serde_json::json!({
+    "status": "async_launched",
+    "agent_id": outcome.agent_id.to_string(),
+    "task_id":  outcome.agent_id.to_string(),  // 与 agent_id 同值
+    "name": outcome.name,
+})
+```
+
+**改动 3：新建 `TaskStopRuntimeTool`**
+
+新文件：`src-tauri/src/runtime/tools/builtin/task_stop.rs`
+
+- struct: `pub struct TaskStopRuntimeTool { store: Arc<AsyncAgentTaskStore> }`（request-scoped，从 app state 拿 store）
+- `is_concurrency_safe -> true`，`is_read_only -> false`，`shouldDefer` 视情况
+- `execute(input, ctx)`：
+  - `task_id = required_str(&input, "task_id", "TaskStop")?` —— 注意计划原写 `taskId`，本期统一用 snake_case `task_id` 与 claude-code-best 对齐。
+  - `let agent_id = AgentId::new(task_id);`
+  - `let handle = self.store.get(&agent_id).ok_or(ToolError::ExecutionFailed("No task found with ID: ..."))?;`
+  - 校验 `handle.state == AsyncTaskState::Running`，否则 `Err(NotRunning)`
+  - `handle.cancel_token.cancel_with_reason(CancellationReason::BackgroundStop);`
+  - `self.store.update_state(&agent_id, AsyncTaskState::Cancelled)` （或 Killed，看现有枚举有没有；没有则加）
+  - 返回：
+
+```json
+{
+  "message": "Successfully stopped task: <task_id>",
+  "task_id": "<task_id>",
+  "task_type": "local_agent",
+  "command": "<description from handle>"
+}
+```
+
+**改动 4：catalog + 注册 + 白名单**
+
+- `runtime/tools/catalog.rs`：插入 TaskStop entry（在 TaskGet 后）。description: "终止一个正在后台运行的 Agent 任务（按 task_id，即 Agent run_in_background 返回的 agent_id）"。schema:
 
 ```json
 {
   "type": "object",
   "required": ["task_id"],
-  "properties": { "task_id": { "type": "string" } }
+  "properties": { "task_id": { "type": "string", "description": "The ID of the background task to stop (same value as agent_id returned by Agent(run_in_background=true))" } }
 }
 ```
+
+- `DAILY_ALLOWED_TOOLS` 加 `"TaskStop"`（在 `"TaskGet"` 后或合适位置）。
+- `plugin/registry.rs::REQUEST_SCOPED_RUNTIME_TOOL_NAMES` 加 `"TaskStop"`。
+- `plugin/registry.rs::try_build_request_scoped_tool` 加 `"TaskStop" =>` match arm，从 `RequestScopedRuntimeDeps` 拿 `Arc<AsyncAgentTaskStore>` 注入。`RequestScopedRuntimeDeps` 必要时加该字段。
+- `runtime/agent/tool_whitelist.rs::ALL_AGENT_DISALLOWED` 加 `"TaskStop"`（子 agent 不能 stop 同辈或父任务）。
+
+#### 7.2.4 不做的事
+
+- 不动 `agent_runtime::cancel_run`（与 TaskStop 不相干，留给同步 child-run 路径）。
+- 不引入 `KillShell` / `shell_id` 等向后兼容名。
+- 不实现"task list 视图"（现有 `AsyncAgentTaskStore::list` 已够，TaskList todo 工具与之无关）。
+- 不把 `AsyncTaskHandle` 改成 share via `Arc<Mutex<...>>`（现有 store 内部并发模型沿用）。
 
 ---
 
