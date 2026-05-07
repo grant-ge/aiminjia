@@ -2474,7 +2474,7 @@ git commit -m "fix(chat): pass ChatTurnRequest into prompt builders"
 
 ---
 
-## 任务 18：send_message_with_run_id 变体（让 dispatcher 拿 run_id）
+## 任务 18：send_message_with_overrides 变体（让 dispatcher 拿 run_id）
 
 **Files:**
 - Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
@@ -2485,7 +2485,40 @@ git commit -m "fix(chat): pass ChatTurnRequest into prompt builders"
 cd src-tauri && grep -n "pub async fn send_message" src/transport/tauri_commands/chat.rs
 ```
 
-- [ ] **Step 2：在 send_message 旁边加新变体**
+- [ ] **Step 2：grep 内部 request 执行封装和 permission_mode 字段**
+
+```bash
+cd src-tauri && grep -n "fn.*run_chat_request" src/transport/tauri_commands/chat.rs || true
+cd src-tauri && grep -n "permission_mode" src/runtime/chat/chat_turn_driver.rs
+```
+
+若找不到内部封装，先从现有 `send_message` 抽出 `run_chat_request_internal(&self, request: ChatTurnRequest) -> Result<(), String>`：只搬运现有 `send_message` 中从 `let run_id = request.run_id.clone();` 到 `result` 返回的执行逻辑，不改 dispatcher 构造、title generation、clear/destroy 顺序。
+
+- [ ] **Step 3：把 send_message 改成 request 构造 wrapper**
+
+`send_message` 保留原签名，只构造 `ChatTurnRequest` 并调用内部封装：
+
+```rust
+pub async fn send_message(
+    &self,
+    conversation_id: String,
+    content: String,
+    attachments: Vec<crate::runtime::chat::chat_turn_driver::ChatAttachmentRef>,
+    permission_mode: Option<crate::runtime::tools::permission::PermissionMode>,
+    agent_name: Option<String>,
+    client_message_id: Option<String>,
+) -> Result<(), String> {
+    let mut request = ChatTurnRequest::new(conversation_id, content, attachments);
+    request.agent_name = agent_name;
+    request.client_message_id = client_message_id;
+    if let Some(permission_mode) = permission_mode {
+        request.permission_mode = permission_mode;
+    }
+    self.run_chat_request_internal(request).await
+}
+```
+
+- [ ] **Step 4：在 send_message 旁边加新变体**
 
 紧挨 `send_message` 添加：
 
@@ -2522,16 +2555,16 @@ pub async fn send_message_with_overrides(
 }
 ```
 
-> 注：`run_chat_request_internal` 是 `send_message` 现有内部函数。若名字不一样，grep `fn.*run_chat_request` 找到对应封装。如果只能调 `self.run_chat_request(request)` 公开函数，改成那个即可。
+> 注：当前架构没有公开的 `self.run_chat_request(request)`；必须使用本任务 Step 2 抽出的内部封装，避免复制整段 dispatcher 构造逻辑。
 > `request.permission_mode = ...` 行只在 ChatTurnRequest 有该字段时保留，否则删除（grep `permission_mode` 在 ChatTurnRequest 里检查）。
 
-- [ ] **Step 3：cargo check**
+- [ ] **Step 5：cargo check**
 
 ```bash
 cd src-tauri && cargo check
 ```
 
-- [ ] **Step 4：Commit**
+- [ ] **Step 6：Commit**
 
 ```bash
 git add src-tauri/src/transport/tauri_commands/chat.rs
