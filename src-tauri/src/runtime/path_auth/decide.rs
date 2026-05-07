@@ -69,7 +69,7 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
     for rule in &ctx.deny_rules {
         if op_matches(rule.op, op) && glob_matches(&rule.pattern, &canonical) {
             return Decision::Deny(format!(
-                "denied by deny_rule: pattern={} path={}",
+                "拒绝规则命中：模式={}，路径={}",
                 rule.pattern,
                 canonical.display()
             ));
@@ -80,7 +80,7 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
     let primary_root_ref = ctx.primary_root.as_deref();
     if is_lotus_internal(&canonical, primary_root_ref) {
         return Decision::Deny(format!(
-            "denied by lotus-internal protection: path={}",
+            "拒绝访问 Lotus 内部目录（~/.renlijia/）：路径={}",
             canonical.display()
         ));
     }
@@ -115,7 +115,7 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
                 }
                 return Decision::Ask {
                     reason: format!(
-                        "write to additional_working_dir requires confirmation: path={}",
+                        "需要确认：在已授权目录内写入文件，路径={}",
                         canonical.display()
                     ),
                 };
@@ -134,16 +134,16 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
     match ctx.mode {
         PermissionMode::Default | PermissionMode::AcceptEdits => Decision::Ask {
             reason: format!(
-                "path not in any authorized directory: path={}",
+                "该路径未授权，需要用户确认：路径={}",
                 canonical.display()
             ),
         },
         PermissionMode::Plan => Decision::Deny(format!(
-            "denied by mode=Plan: path={}",
+            "Plan 模式禁止访问未授权路径：路径={}",
             canonical.display()
         )),
         PermissionMode::DontAsk => Decision::Deny(format!(
-            "denied by mode=DontAsk: path={}",
+            "DontAsk 模式禁止访问未授权路径：路径={}",
             canonical.display()
         )),
     }

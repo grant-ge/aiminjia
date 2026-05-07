@@ -2038,11 +2038,18 @@ impl TauriChatCommandAdapter {
         client_message_id: Option<String>,
     ) -> Result<(), String> {
         log::info!(
-            "[send_message] trace_id={:?} conversation_id={} content_len={}",
+            "[send_message] trace_id={:?} conversation_id={} content_len={} attachments_count={}",
             client_message_id.as_deref(),
             conversation_id,
-            content.len()
+            content.len(),
+            attachments.len()
         );
+        for att in &attachments {
+            log::info!(
+                "[send_message] attachment: name={} path={} kind={} type={}",
+                att.file_name, att.file_path, att.kind, att.file_type
+            );
+        }
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
         // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
         // The derived dirs will be merged into the per-turn ToolPermissionContext as
@@ -2055,6 +2062,11 @@ impl TauriChatCommandAdapter {
                     .map(|a| std::path::PathBuf::from(&a.file_path))
                     .collect::<Vec<_>>(),
             );
+        log::info!(
+            "[send_message] derived session_attachment_dirs count={} dirs={:?}",
+            request.session_attachment_dirs.len(),
+            request.session_attachment_dirs
+        );
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
         if let Some(permission_mode) = permission_mode {
@@ -2272,6 +2284,10 @@ impl TauriChatCommandAdapter {
         remember: Option<bool>,
         destination: Option<PermissionDestination>,
     ) -> Result<(), String> {
+        log::info!(
+            "[approve_permission_request] tool_call_id={} remember={:?} destination={:?}",
+            tool_call_id, remember, destination
+        );
         self.runtime
             .resolve_permission_request(
                 &ToolCallId::new(tool_call_id),
@@ -2291,6 +2307,10 @@ impl TauriChatCommandAdapter {
         remember: Option<bool>,
         destination: Option<PermissionDestination>,
     ) -> Result<(), String> {
+        log::info!(
+            "[deny_permission_request] tool_call_id={} remember={:?} destination={:?}",
+            tool_call_id, remember, destination
+        );
         self.runtime
             .resolve_permission_request(
                 &ToolCallId::new(tool_call_id),

@@ -53,6 +53,11 @@ pub struct QueryEngine {
     /// merged in at capability-build time via `session_attachment_dirs`.
     /// `None` in test/legacy paths → capability gets `ToolPermissionContext::empty()`.
     base_permission_ctx: Option<Arc<ToolPermissionContext>>,
+    /// Optional reference to the PermissionStore so `build_turn_permission_ctx`
+    /// can re-load `additional_working_dirs` / `allow_rules` on every turn —
+    /// crucial for ack-driven grants taking effect within the same turn.
+    /// When None, falls back to the (stale) `base_permission_ctx` snapshot.
+    permission_store: Option<Arc<crate::runtime::store::PermissionStore>>,
     /// Session-scoped accumulation of working dirs derived from attachments across
     /// all turns (source = Session).  Grows monotonically within a session;
     /// never evicted until the session engine is dropped.
@@ -86,6 +91,7 @@ impl QueryEngine {
             cost_per_1k_tokens: None,
             runtime_resolver: None,
             base_permission_ctx: None,
+            permission_store: None,
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -112,6 +118,7 @@ impl QueryEngine {
             cost_per_1k_tokens: self.cost_per_1k_tokens,
             runtime_resolver: self.runtime_resolver.clone(),
             base_permission_ctx: self.base_permission_ctx.clone(),
+            permission_store: self.permission_store.clone(),
             session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -181,6 +188,18 @@ impl QueryEngine {
         self
     }
 
+    /// Inject the PermissionStore so `build_turn_permission_ctx` can re-load
+    /// `additional_working_dirs` / `allow_rules` on every turn.  Required for
+    /// ack-driven grants ("永久允许") to take effect within the same turn —
+    /// otherwise the replay reads a stale `base_permission_ctx` snapshot.
+    pub fn with_permission_store(
+        mut self,
+        store: Arc<crate::runtime::store::PermissionStore>,
+    ) -> Self {
+        self.permission_store = Some(store);
+        self
+    }
+
     /// Merge per-turn attachment-derived directories (source = Session) into the
     /// session-scoped accumulator.  Called by `RuntimeChatTurnDriver` at the start
     /// of each turn so that directories introduced by this turn remain available
@@ -203,11 +222,21 @@ impl QueryEngine {
     /// 4. Merge session_attachment_dirs as RuleSource::Session, preferring
     ///    pre-existing UserSettings source on duplicate paths.
     pub(crate) fn build_turn_permission_ctx(&self, turn: &TurnState) -> Arc<ToolPermissionContext> {
-        let base = self
-            .base_permission_ctx
-            .as_ref()
-            .map(|ctx| (**ctx).clone())
-            .unwrap_or_else(ToolPermissionContext::empty);
+        // Always reload base from PermissionStore when available — this ensures
+        // user "永久允许" grants take effect within the same turn (e.g. on the
+        // replay after Ask resolution), not just on the next turn boundary.
+        let base = if let Some(store) = self.permission_store.as_ref() {
+            let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(store);
+            let mut ctx = ToolPermissionContext::empty();
+            ctx.additional_working_dirs = entries.working_dirs;
+            ctx.allow_rules = entries.allow_rules;
+            ctx
+        } else {
+            self.base_permission_ctx
+                .as_ref()
+                .map(|ctx| (**ctx).clone())
+                .unwrap_or_else(ToolPermissionContext::empty)
+        };
 
         let mut ctx = base;
 
@@ -236,6 +265,15 @@ impl QueryEngine {
                     .or_insert_with(|| source.clone());
             }
         }
+
+        log::info!(
+            "[build_turn_permission_ctx] mode={:?} primary_root={:?} additional_working_dirs={:?} allow_rules_count={} deny_rules_count={}",
+            ctx.mode,
+            ctx.primary_root,
+            ctx.additional_working_dirs.keys().collect::<Vec<_>>(),
+            ctx.allow_rules.len(),
+            ctx.deny_rules.len(),
+        );
 
         Arc::new(ctx)
     }

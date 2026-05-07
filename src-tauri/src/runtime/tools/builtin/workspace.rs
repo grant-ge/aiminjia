@@ -116,7 +116,7 @@ pub(crate) async fn resolve_and_authorize_path(
             // Ask must be surfaced via check_permissions before execute is called.
             // Reaching here means the tool was invoked without prior authorization.
             Err(ToolError::PermissionDenied(format!(
-                "path requires user authorization but ask was not handled: {reason}"
+                "需要用户授权但权限请求未被处理：{reason}"
             )))
         }
     }
@@ -203,10 +203,18 @@ pub(crate) fn check_path_permission(
         }),
         Decision::Ask { reason } => {
             // Encode step-6 vs step-4b in the path_auth_scope field for persistence routing.
-            let path_auth_scope = if is_step_4b_write(&canonical, op, ctx_ref) {
-                format!("pathwrite:{}", canonical.display())
+            // Why §7.8 "Ask 中 path 的粒度": A 场景（step 6）的 path 应是包含目标文件的目录，
+            // 而非文件本身——否则"永久允许"加的是单文件 working_dir，同目录兄弟仍被拦。
+            // step-4b 写入用 working_dir 范围的 glob (canonical_dir/**)，写在 pathwrite: 后。
+            let scope_path: std::path::PathBuf = if canonical.is_dir() {
+                canonical.clone()
             } else {
-                format!("path:{}", canonical.display())
+                canonical.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| canonical.clone())
+            };
+            let path_auth_scope = if is_step_4b_write(&canonical, op, ctx_ref) {
+                format!("pathwrite:{}", scope_path.display())
+            } else {
+                format!("path:{}", scope_path.display())
             };
             Some(PermissionDecision::Ask {
                 message: reason,

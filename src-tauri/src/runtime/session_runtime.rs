@@ -372,9 +372,13 @@ impl SessionRuntime {
             Arc::new(ToolPermissionContext::empty())
         };
 
-        session_engine
+        let mut engine = session_engine
             .with_authorized_workspace(authorized_workspace)
-            .with_permission_ctx(base_ctx)
+            .with_permission_ctx(base_ctx);
+        if let Some(store) = self.permission_store.as_ref() {
+            engine = engine.with_permission_store(store.clone());
+        }
+        engine
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
@@ -473,6 +477,10 @@ impl SessionRuntime {
         scope: &str,
         destination: PermissionDestination,
     ) {
+        log::info!(
+            "[persist_path_auth_grant] scope='{}' destination={:?}",
+            scope, destination
+        );
         let (kind, path_str) = match scope.split_once(':') {
             Some((k, p)) => (k, p),
             None => {
@@ -484,6 +492,10 @@ impl SessionRuntime {
         match kind {
             "path" => {
                 // step-6 Ask → working dir grant
+                log::info!(
+                    "[persist_path_auth_grant] -> append_working_dir({:?}, {})",
+                    destination, path.display()
+                );
                 if let Err(err) = store.append_working_dir(destination, path) {
                     log::warn!(
                         "[SessionRuntime] append_working_dir failed: {} (in-memory grant retained)",
@@ -495,6 +507,10 @@ impl SessionRuntime {
                 // step-4b Ask → write allow_rule grant
                 // Pattern is `<dir>/**` so subsequent writes anywhere under the dir are allowed.
                 let pattern = format!("{}/**", path_str);
+                log::info!(
+                    "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Write)",
+                    destination, pattern
+                );
                 if let Err(err) = store.append_path_allow_rule(
                     destination,
                     pattern,
