@@ -62,6 +62,26 @@ impl AgendaStore {
         Ok(serde_json::from_slice(&bytes)?)
     }
 
+    pub fn update(&self, item: AgendaItem) -> anyhow::Result<AgendaItem> {
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(&item.id)?;
+        validate_phase1_constraints(&item)?;
+        let path = self.item_path(&item.id);
+        if !path.exists() {
+            anyhow::bail!("agenda item not found: {}", item.id.as_str());
+        }
+        let prev: AgendaItem = serde_json::from_slice(&std::fs::read(&path)?)?;
+        if prev.organizer_persona_id != item.organizer_persona_id
+            && prev.status != super::item::ItemStatus::Orphaned
+        {
+            anyhow::bail!(
+                "phase1 constraint: organizer can only change when status was Orphaned"
+            );
+        }
+        atomic_write_json(&path, &item)?;
+        Ok(item)
+    }
+
     pub fn list(&self) -> anyhow::Result<Vec<AgendaItem>> {
         let _guard = self.lock.lock().unwrap();
         if !self.items_dir().exists() {
@@ -293,6 +313,56 @@ mod tests {
         let saved = store.create(make_valid_item("p1")).unwrap();
         let fetched = store.get(&saved.id).unwrap();
         assert_eq!(fetched.id, saved.id);
+    }
+
+    #[test]
+    fn update_persists_changes() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut saved = store.create(make_valid_item("p1")).unwrap();
+        saved.title = "new title".into();
+        let updated = store.update(saved.clone()).unwrap();
+        assert_eq!(updated.title, "new title");
+        assert_eq!(store.get(&saved.id).unwrap().title, "new title");
+    }
+
+    #[test]
+    fn update_rejects_organizer_change_when_not_orphaned() {
+        use super::super::item::Participant;
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let saved = store.create(make_valid_item("p1")).unwrap();
+        let mut modified = saved.clone();
+        modified.organizer_persona_id = "p2".into();
+        modified.participants = vec![Participant {
+            persona_id: "p2".into(),
+            joined_at: Utc::now(),
+        }];
+        let err = store.update(modified).unwrap_err();
+        assert!(err.to_string().contains("organizer"));
+    }
+
+    #[test]
+    fn update_allows_organizer_change_when_orphaned() {
+        use super::super::item::{ItemStatus, Participant};
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut saved = store.create(make_valid_item("p1")).unwrap();
+        saved.status = ItemStatus::Orphaned;
+        store.update(saved.clone()).unwrap();
+
+        let mut revived = saved.clone();
+        revived.organizer_persona_id = "p2".into();
+        revived.participants = vec![Participant {
+            persona_id: "p2".into(),
+            joined_at: Utc::now(),
+        }];
+        revived.status = ItemStatus::Active;
+        let updated = store.update(revived).unwrap();
+        assert_eq!(updated.organizer_persona_id, "p2");
+        assert_eq!(updated.status, ItemStatus::Active);
     }
 
     #[test]
