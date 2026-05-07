@@ -2768,7 +2768,7 @@ pub fn spawn_agenda_runner(
             let Some(paths) = path_resolver.resolve_paths() else { continue; };
             let store = AgendaStore::new(paths.base_dir());
             if let Err(e) = run_due_once(&store, dispatcher.as_ref(), Utc::now()).await {
-                tracing::warn!(error = %e, "agenda runner tick failed");
+                log::warn!("agenda runner tick failed: {e}");
             }
         }
     });
@@ -2786,7 +2786,7 @@ pub async fn run_due_once(
             .dispatch(item.clone(), planned, TriggerSource::Scheduled, now)
             .await
         {
-            tracing::warn!(item_id = %item.id.as_str(), error = %e, "agenda dispatch failed");
+            log::warn!("agenda dispatch failed for {}: {e}", item.id.as_str());
         }
     }
     Ok(())
