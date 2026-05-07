@@ -879,6 +879,34 @@ fn delete_missing_returns_false() {
     let result = store.delete(&AgendaItemId("missing".into())).unwrap();
     assert!(!result);
 }
+
+#[test]
+fn get_rejects_path_traversal_id() {
+    use super::super::item::AgendaItemId;
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let outside = store.root.join("outside.json");
+    std::fs::create_dir_all(&store.root).unwrap();
+    std::fs::write(&outside, "{}").unwrap();
+
+    let err = store.get(&AgendaItemId("../outside".into())).unwrap_err();
+    assert!(err.to_string().contains("invalid agenda item id"));
+    assert!(outside.exists());
+}
+
+#[test]
+fn delete_rejects_path_traversal_id_without_removing_outside_file() {
+    use super::super::item::AgendaItemId;
+    let dir = TempDir::new().unwrap();
+    let store = AgendaStore::new(dir.path());
+    let outside = store.root.join("outside.json");
+    std::fs::create_dir_all(&store.root).unwrap();
+    std::fs::write(&outside, "{}").unwrap();
+
+    let err = store.delete(&AgendaItemId("../outside".into())).unwrap_err();
+    assert!(err.to_string().contains("invalid agenda item id"));
+    assert!(outside.exists());
+}
 ```
 
 - [ ] **Step 2：跑测试看失败**
@@ -895,6 +923,7 @@ cd src-tauri && cargo test --lib runtime::agenda::store::tests::get_returns_save
 ```rust
 pub fn get(&self, id: &AgendaItemId) -> anyhow::Result<AgendaItem> {
     let _guard = self.lock.lock().unwrap();
+    validate_item_id_for_path(id)?;
     let path = self.item_path(id);
     if !path.exists() {
         anyhow::bail!("agenda item not found: {}", id.as_str());
@@ -922,6 +951,7 @@ pub fn list(&self) -> anyhow::Result<Vec<AgendaItem>> {
 
 pub fn delete(&self, id: &AgendaItemId) -> anyhow::Result<bool> {
     let _guard = self.lock.lock().unwrap();
+    validate_item_id_for_path(id)?;
     let path = self.item_path(id);
     if !path.exists() {
         return Ok(false);
@@ -929,6 +959,20 @@ pub fn delete(&self, id: &AgendaItemId) -> anyhow::Result<bool> {
     std::fs::remove_file(&path)?;
     Ok(true)
 }
+
+fn validate_item_id_for_path(id: &AgendaItemId) -> anyhow::Result<()> {
+    let raw = id.as_str();
+    if raw.is_empty() || raw == "." || raw == ".." || raw.contains('/') || raw.contains('\\') {
+        anyhow::bail!("invalid agenda item id: {}", raw);
+    }
+    Ok(())
+}
+```
+
+同时在已有 `create` 方法持锁后、`validate_phase1_constraints(&item)?;` 前追加：
+
+```rust
+validate_item_id_for_path(&item.id)?;
 ```
 
 - [ ] **Step 4：跑测试看通过**
