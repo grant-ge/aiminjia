@@ -503,6 +503,12 @@ impl ToolRegistry {
                 let storage = StorageCapability {
                     workspace_path: ctx.workspace_path.clone(),
                     authorized_workspace: ctx.authorized_workspace.clone(),
+                    // Legacy plugin path: use empty permission_ctx.  Phase 5 will
+                    // revisit sub-agent inheritance; for now tools on this path
+                    // are not yet consulting the ctx (Phase 4 wires the read side).
+                    permission_ctx: std::sync::Arc::new(
+                        crate::runtime::path_auth::ToolPermissionContext::empty(),
+                    ),
                 };
                 let browser_available = ctx.connector_engine.is_some();
                 let file_ops = if name == "load_file" {

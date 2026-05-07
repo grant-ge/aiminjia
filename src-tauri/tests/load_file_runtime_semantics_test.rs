@@ -108,6 +108,9 @@ fn make_ctx_with_file_ops(file_ops: Arc<dyn FileOperations>) -> ToolExecutionCon
         storage: Some(app_lib::runtime::tools::StorageCapability {
             workspace_path: std::path::PathBuf::from("/tmp/mock-workspace"),
             authorized_workspace: None,
+            permission_ctx: std::sync::Arc::new(
+                app_lib::runtime::path_auth::ToolPermissionContext::empty(),
+            ),
         }),
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,
@@ -203,6 +206,9 @@ async fn load_file_runtime_tool_execute_errors_when_file_ops_is_none() {
         storage: Some(app_lib::runtime::tools::StorageCapability {
             workspace_path: std::path::PathBuf::from("/tmp"),
             authorized_workspace: None,
+            permission_ctx: std::sync::Arc::new(
+                app_lib::runtime::path_auth::ToolPermissionContext::empty(),
+            ),
         }),
         workspace_id: Some("ws-test".to_string()),
         browser_available: false,

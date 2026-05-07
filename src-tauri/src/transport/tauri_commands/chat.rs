@@ -2044,6 +2044,17 @@ impl TauriChatCommandAdapter {
             content.len()
         );
         let mut request = ChatTurnRequest::new(conversation_id.clone(), content, attachments);
+        // Derive per-turn attachment dirs on the backend (frontend paths are untrusted).
+        // The derived dirs will be merged into the per-turn ToolPermissionContext as
+        // RuleSource::Session in QueryEngine::build_turn_permission_ctx.
+        request.session_attachment_dirs =
+            crate::runtime::path_auth::derive_working_dirs_from_attachments(
+                &request
+                    .attachments
+                    .iter()
+                    .map(|a| std::path::PathBuf::from(&a.file_path))
+                    .collect::<Vec<_>>(),
+            );
         request.agent_name = agent_name;
         request.client_message_id = client_message_id;
         if let Some(permission_mode) = permission_mode {

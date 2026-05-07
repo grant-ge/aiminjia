@@ -20,6 +20,8 @@ use async_trait::async_trait;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
+use crate::runtime::path_auth::ToolPermissionContext;
+
 use crate::runtime::dependencies::{
     RuntimeDependencyError, RuntimeDependencyResult, RuntimeResolver, WorkspaceDependencies,
 };
@@ -34,6 +36,11 @@ pub struct StorageCapability {
     pub workspace_path: PathBuf,
     /// Authorized local directory for this session (if any).
     pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
+    /// Per-turn path authorization context built from PermissionStore + session
+    /// attachment directories.  Wrapped in `Arc` so sub-agents can clone cheaply.
+    /// Phase 4 will switch read/write/list/search/sandbox tools to consult this;
+    /// in Phase 3 it is carried but not yet read by tools.
+    pub permission_ctx: Arc<ToolPermissionContext>,
 }
 
 #[derive(Clone, Debug)]
@@ -228,6 +235,7 @@ impl CapabilityContext {
             storage: Some(StorageCapability {
                 workspace_path,
                 authorized_workspace: None,
+                permission_ctx: Arc::new(ToolPermissionContext::empty()),
             }),
             workspace_id: Some(workspace_id.into()),
             browser_available: false,

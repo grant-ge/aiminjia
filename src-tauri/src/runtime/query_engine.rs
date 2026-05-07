@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +9,7 @@ use crate::runtime::chat::PermissionDenialRecord;
 use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::events::{RuntimeEvent, RuntimeEventKind};
+use crate::runtime::path_auth::{RuleSource, ToolPermissionContext};
 use crate::runtime::state::TurnState;
 use crate::runtime::store::AuthorizedWorkspaceRef;
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
@@ -46,6 +48,17 @@ pub struct QueryEngine {
     cost_per_1k_tokens: Option<f64>,
     /// Managed Node/Python runtime resolver propagated into capability contexts.
     runtime_resolver: Option<ManagedRuntimeResolver>,
+    /// Base permission context loaded from PermissionStore at session setup
+    /// (UserSettings working dirs + allow_rules).  Per-turn attachment dirs are
+    /// merged in at capability-build time via `session_attachment_dirs`.
+    /// `None` in test/legacy paths → capability gets `ToolPermissionContext::empty()`.
+    base_permission_ctx: Option<Arc<ToolPermissionContext>>,
+    /// Session-scoped accumulation of working dirs derived from attachments across
+    /// all turns (source = Session).  Grows monotonically within a session;
+    /// never evicted until the session engine is dropped.
+    /// Wrapped in `Arc<Mutex<...>>` so the field survives the value-clone performed
+    /// by `with_authorized_workspace` / `with_permission_ctx` builder calls.
+    session_attachment_dirs: Arc<Mutex<HashMap<PathBuf, RuleSource>>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -72,13 +85,19 @@ impl QueryEngine {
             max_budget_usd: None,
             cost_per_1k_tokens: None,
             runtime_resolver: None,
+            base_permission_ctx: None,
+            session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Clone static runtime configuration while creating fresh per-session state.
     ///
     /// Session-scoped fields (`authorized_workspace`, `read_file_state`,
-    /// `total_usage`) are reset and must be injected by SessionRuntime.
+    /// `total_usage`, `session_attachment_dirs`) are reset and must be injected
+    /// by SessionRuntime.  Static configuration fields (`tool_dispatcher`,
+    /// `workspace_path`, `browser_available`, `file_ops`, `max_budget_usd`,
+    /// `cost_per_1k_tokens`, `runtime_resolver`, `base_permission_ctx`) are
+    /// preserved from the base engine.
     pub fn clone_with_fresh_session_state(&self) -> Self {
         Self {
             tool_dispatcher: self.tool_dispatcher.clone(),
@@ -92,6 +111,8 @@ impl QueryEngine {
             max_budget_usd: self.max_budget_usd,
             cost_per_1k_tokens: self.cost_per_1k_tokens,
             runtime_resolver: self.runtime_resolver.clone(),
+            base_permission_ctx: self.base_permission_ctx.clone(),
+            session_attachment_dirs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -149,6 +170,85 @@ impl QueryEngine {
     pub fn with_cost_per_1k_tokens(mut self, cost_per_1k_tokens: f64) -> Self {
         self.cost_per_1k_tokens = Some(cost_per_1k_tokens);
         self
+    }
+
+    /// Inject a base `ToolPermissionContext` loaded from the persistent store
+    /// (UserSettings working dirs + allow_rules).  Called by `SessionRuntime`
+    /// after loading from `PermissionStore`.  Per-turn session attachment dirs are
+    /// accumulated separately in `session_attachment_dirs`.
+    pub fn with_permission_ctx(mut self, ctx: Arc<ToolPermissionContext>) -> Self {
+        self.base_permission_ctx = Some(ctx);
+        self
+    }
+
+    /// Merge per-turn attachment-derived directories (source = Session) into the
+    /// session-scoped accumulator.  Called by `RuntimeChatTurnDriver` at the start
+    /// of each turn so that directories introduced by this turn remain available
+    /// for all subsequent tool calls in the session.
+    pub fn merge_session_attachment_dirs(&self, dirs: &[std::path::PathBuf]) {
+        let mut acc = self
+            .session_attachment_dirs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        for dir in dirs {
+            acc.insert(dir.clone(), RuleSource::Session);
+        }
+    }
+
+    /// Build the per-turn `ToolPermissionContext` by combining:
+    /// 1. Clone the base context (UserSettings working_dirs + allow_rules from
+    ///    PermissionStore).
+    /// 2. Set primary_root from authorized_workspace.root_path else workspace_path.
+    /// 3. Set mode from turn.permission_mode().
+    /// 4. Merge session_attachment_dirs as RuleSource::Session, preferring
+    ///    pre-existing UserSettings source on duplicate paths.
+    pub(crate) fn build_turn_permission_ctx(&self, turn: &TurnState) -> Arc<ToolPermissionContext> {
+        let base = self
+            .base_permission_ctx
+            .as_ref()
+            .map(|ctx| (**ctx).clone())
+            .unwrap_or_else(ToolPermissionContext::empty);
+
+        let mut ctx = base;
+
+        // Set primary_root: authorized_workspace takes precedence over workspace_path.
+        ctx.primary_root = self
+            .authorized_workspace
+            .as_ref()
+            .map(|aw| aw.root_path.clone())
+            .or_else(|| self.workspace_path.clone());
+
+        // Propagate the turn's permission mode.
+        ctx.mode = turn.permission_mode();
+
+        // Merge session-accumulated attachment dirs (source = Session).
+        {
+            let acc = self
+                .session_attachment_dirs
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            // Why: when the same path is both a persistent UserSettings entry and a
+            // transient Session attachment, prefer the durable source so future UI /
+            // telemetry sees the correct provenance.
+            for (dir, source) in acc.iter() {
+                ctx.additional_working_dirs
+                    .entry(dir.clone())
+                    .or_insert_with(|| source.clone());
+            }
+        }
+
+        Arc::new(ctx)
+    }
+
+    /// Test-only accessor exposing the merge logic of `build_turn_permission_ctx`
+    /// to integration tests in `tests/`.  Production code should call the
+    /// `pub(crate)` version directly; this wrapper exists only so that the
+    /// separate test binary can cross the crate boundary.
+    pub fn build_turn_permission_ctx_for_test(
+        &self,
+        turn: &TurnState,
+    ) -> Arc<ToolPermissionContext> {
+        self.build_turn_permission_ctx(turn)
     }
 
     pub fn for_test(tool_dispatcher: Arc<ToolDispatcher>) -> Self {
@@ -426,10 +526,12 @@ impl QueryEngine {
                 .map(|aw| aw.root_path.clone())
         });
         let mut ctx = if let Some(workspace_path) = capability_workspace {
+            let permission_ctx = self.build_turn_permission_ctx(turn);
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
                     authorized_workspace: self.authorized_workspace.clone(),
+                    permission_ctx,
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,
@@ -604,10 +706,12 @@ impl QueryEngine {
                 .map(|aw| aw.root_path.clone())
         });
         let ctx = if let Some(workspace_path) = capability_workspace {
+            let permission_ctx = self.build_turn_permission_ctx(turn);
             let capability = Arc::new(CapabilityContext {
                 storage: Some(StorageCapability {
                     workspace_path,
                     authorized_workspace: self.authorized_workspace.clone(),
+                    permission_ctx,
                 }),
                 workspace_id: Some(turn.session_id().as_str().to_string()),
                 browser_available: self.browser_available,

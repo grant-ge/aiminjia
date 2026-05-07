@@ -23,6 +23,7 @@ use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
     PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
 };
+use crate::runtime::path_auth::{load_path_auth_entries, RuleSource, ToolPermissionContext};
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -356,7 +357,24 @@ impl SessionRuntime {
             .entry(session_id.as_str().to_string())
             .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
             .clone();
-        session_engine.with_authorized_workspace(authorized_workspace)
+
+        // Reload base ToolPermissionContext from the persistent PermissionStore
+        // on each turn so UserSettings changes (working dirs / allow rules) take
+        // effect immediately. Per-turn session attachment dirs are accumulated
+        // separately via the Arc<Mutex<HashMap>> on QueryEngine.
+        let base_ctx = if let Some(store) = self.permission_store.as_ref() {
+            let entries = load_path_auth_entries(store);
+            let mut ctx = ToolPermissionContext::empty();
+            ctx.additional_working_dirs = entries.working_dirs;
+            ctx.allow_rules = entries.allow_rules;
+            Arc::new(ctx)
+        } else {
+            Arc::new(ToolPermissionContext::empty())
+        };
+
+        session_engine
+            .with_authorized_workspace(authorized_workspace)
+            .with_permission_ctx(base_ctx)
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
