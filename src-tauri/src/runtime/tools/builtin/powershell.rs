@@ -12,17 +12,17 @@ use tokio::process::Command;
 
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
-use crate::storage::process_ext::NoWindowExt;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
+use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
-    interpret_command_result, kill_child_process_tree, read_merged_streams,
-    truncated_to_max_bytes, wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
+    interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
+    wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 
@@ -51,10 +51,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ),
     ("format-volume", "Refusing: Format-Volume erases data"),
     ("clear-disk", "Refusing: Clear-Disk wipes a disk"),
-    (
-        "initialize-disk",
-        "Refusing: Initialize-Disk wipes a disk",
-    ),
+    ("initialize-disk", "Refusing: Initialize-Disk wipes a disk"),
     (
         "stop-computer",
         "Refusing: Stop-Computer shuts down the machine",
@@ -67,10 +64,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
         "| invoke-expression",
         "Refusing: pipe-to-Invoke-Expression is remote code execution",
     ),
-    (
-        "| iex",
-        "Refusing: pipe-to-iex is remote code execution",
-    ),
+    ("| iex", "Refusing: pipe-to-iex is remote code execution"),
     (
         ").downloadstring(",
         "Refusing: WebClient.DownloadString followed by execution is RCE",
@@ -198,21 +192,14 @@ impl RuntimeTool for PowerShellTool {
             )
         })?;
 
-        // Force UTF-8 stdout / stderr before running the user command.
-        // - `chcp 65001` switches the active console code page to UTF-8 so any
-        //   native binaries the user pipes (e.g. `git status`, `cat`) emit UTF-8.
-        // - `[Console]::OutputEncoding` is what `Write-Output` and the PS
-        //   formatter use; default on PowerShell 5.1 is CP936 on zh-CN systems
-        //   and unrepresentable Unicode → `?` in our captured stdout.
-        // - `$OutputEncoding` controls what PS sends down the pipeline, also
-        //   defaulting to ASCII pre-7.0 — same `?` story for non-ASCII text.
-        // PowerShell 7+ already defaults to UTF-8 but the prologue is harmless.
-        // `> $null` swallows chcp's "Active code page: 65001" status line so the
-        // user's actual output isn't polluted.
+        // Best-effort UTF-8 setup before running the user command. Managed
+        // Windows hosts may run PowerShell in ConstrainedLanguage mode, where
+        // OutputEncoding property setters fail; those setup failures must not
+        // pollute output or block the actual command.
         let wrapped_command = format!(
-            "chcp 65001 > $null; \
-             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \
-             $OutputEncoding = [System.Text.Encoding]::UTF8; \
+            "chcp 65001 > $null 2>$null; \
+             & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
              {command}"
         );
 
