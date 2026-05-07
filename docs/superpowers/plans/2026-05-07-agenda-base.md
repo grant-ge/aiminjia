@@ -2647,7 +2647,7 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
             run_id: run_id.clone(),
             status: OccurrenceStatus::Running,
             error_summary: None,
-            trigger_source,
+            trigger_source: trigger_source.clone(),
         };
         store.append_occurrence(&occ)?;
         let occurrence_id = occ.id.clone();

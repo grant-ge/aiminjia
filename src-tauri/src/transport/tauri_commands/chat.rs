@@ -2042,6 +2042,18 @@ impl TauriChatCommandAdapter {
         .await
     }
 
+    fn agenda_store_for_current_user(&self) -> anyhow::Result<crate::runtime::agenda::AgendaStore> {
+        use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
+
+        let resolver = self
+            .services
+            .app
+            .try_state::<Arc<CurrentUserStorage>>()
+            .ok_or_else(|| anyhow::anyhow!("CurrentUserStorage not registered"))?;
+        let paths = resolver.require_paths()?;
+        Ok(crate::runtime::agenda::AgendaStore::new(paths.base_dir()))
+    }
+
     pub async fn send_message(
         &self,
         conversation_id: String,
@@ -2562,6 +2574,93 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
         self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
             .await
             .map_err(anyhow::Error::msg)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
+    async fn dispatch(
+        &self,
+        item: crate::runtime::agenda::AgendaItem,
+        planned_fire_at: chrono::DateTime<chrono::Utc>,
+        trigger_source: crate::runtime::agenda::TriggerSource,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<String> {
+        use crate::runtime::agenda::{Occurrence, OccurrenceStatus};
+        use crate::runtime::ids::{RunId, SessionId};
+
+        let store = self.agenda_store_for_current_user()?;
+
+        // 1. 创建 conversation
+        let conversation_id = conversation_service::create_conversation(
+            self.services.db.clone() as Arc<dyn ConversationStore>,
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+
+        // 2. 预生成 RunId 并写 Running occurrence
+        let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
+        let session_id = SessionId::new(conversation_id.clone());
+        let occ = Occurrence {
+            id: Occurrence::new_id(),
+            agenda_item_id: item.id.clone(),
+            fired_at: now,
+            planned_fire_at,
+            started_at: now,
+            finished_at: None,
+            primary_persona_id: item.organizer_persona_id.clone(),
+            conversation_id: conversation_id.clone(),
+            session_id: session_id.clone(),
+            run_id: run_id.clone(),
+            status: OccurrenceStatus::Running,
+            error_summary: None,
+            trigger_source: trigger_source.clone(),
+        };
+        store.append_occurrence(&occ)?;
+        let occurrence_id = occ.id.clone();
+
+        // 3. 推进 item next_fire_at + occurrence_count
+        if matches!(
+            trigger_source,
+            crate::runtime::agenda::TriggerSource::Scheduled
+        ) {
+            store.advance_after_fire(&item.id, now)?;
+        }
+
+        // 4. 构造 prompt 并触发 agent
+        let prompt = format!(
+            "[日程触发] {}\n计划触发时间：{}\n\n{}",
+            item.title, planned_fire_at, item.prompt
+        );
+
+        let result = self
+            .send_message_with_overrides(
+                conversation_id.clone(),
+                prompt,
+                Vec::new(),
+                None,
+                None,
+                None,
+                Some(item.organizer_persona_id.clone()),
+                Some(run_id.clone()),
+            )
+            .await;
+
+        // 5. 追加最终 occurrence
+        let mut final_occ = occ.clone();
+        final_occ.finished_at = Some(chrono::Utc::now());
+        match result {
+            Ok(_) => {
+                final_occ.status = OccurrenceStatus::Succeeded;
+            }
+            Err(e) => {
+                final_occ.status = OccurrenceStatus::Failed;
+                final_occ.error_summary = Some(e);
+            }
+        }
+        store.append_occurrence(&final_occ)?;
+
+        Ok(occurrence_id)
     }
 }
 
