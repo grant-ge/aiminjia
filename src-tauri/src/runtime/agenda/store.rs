@@ -44,6 +44,7 @@ impl AgendaStore {
 
     pub fn create(&self, item: AgendaItem) -> anyhow::Result<AgendaItem> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(&item.id)?;
         validate_phase1_constraints(&item)?;
         std::fs::create_dir_all(self.items_dir())?;
         atomic_write_json(&self.item_path(&item.id), &item)?;
@@ -52,6 +53,7 @@ impl AgendaStore {
 
     pub fn get(&self, id: &AgendaItemId) -> anyhow::Result<AgendaItem> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
         let path = self.item_path(id);
         if !path.exists() {
             anyhow::bail!("agenda item not found: {}", id.as_str());
@@ -79,6 +81,7 @@ impl AgendaStore {
 
     pub fn delete(&self, id: &AgendaItemId) -> anyhow::Result<bool> {
         let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
         let path = self.item_path(id);
         if !path.exists() {
             return Ok(false);
@@ -86,6 +89,14 @@ impl AgendaStore {
         std::fs::remove_file(&path)?;
         Ok(true)
     }
+}
+
+fn validate_item_id_for_path(id: &AgendaItemId) -> anyhow::Result<()> {
+    let raw = id.as_str();
+    if raw.is_empty() || raw == "." || raw == ".." || raw.contains('/') || raw.contains('\\') {
+        anyhow::bail!("invalid agenda item id: {}", raw);
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_phase1_constraints(item: &AgendaItem) -> anyhow::Result<()> {
@@ -319,5 +330,45 @@ mod tests {
         let store = AgendaStore::new(dir.path());
         let result = store.delete(&AgendaItemId("missing".into())).unwrap();
         assert!(!result);
+    }
+
+    #[test]
+    fn get_rejects_path_traversal_id() {
+        use super::super::item::AgendaItemId;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let outside = store.root.join("outside.json");
+        std::fs::create_dir_all(&store.root).unwrap();
+        std::fs::write(&outside, "{}").unwrap();
+
+        let err = store.get(&AgendaItemId("../outside".into())).unwrap_err();
+        assert!(err.to_string().contains("invalid agenda item id"));
+        assert!(outside.exists());
+    }
+
+    #[test]
+    fn create_rejects_path_traversal_id_without_writing_outside_file() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.id = super::super::item::AgendaItemId("../outside".into());
+
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("invalid agenda item id"));
+        assert!(!store.root.join("outside.json").exists());
+    }
+
+    #[test]
+    fn delete_rejects_path_traversal_id_without_removing_outside_file() {
+        use super::super::item::AgendaItemId;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let outside = store.root.join("outside.json");
+        std::fs::create_dir_all(&store.root).unwrap();
+        std::fs::write(&outside, "{}").unwrap();
+
+        let err = store.delete(&AgendaItemId("../outside".into())).unwrap_err();
+        assert!(err.to_string().contains("invalid agenda item id"));
+        assert!(outside.exists());
     }
 }
