@@ -340,9 +340,9 @@ impl PermissionPipeline for StorePolicyPipeline {
                     return PermissionDecision::Ask {
                         message,
                         suggestions: vec![
-                            "Allow once".into(),
-                            "Always allow".into(),
-                            "Deny".into(),
+                            "仅本次允许".into(),
+                            "永久允许".into(),
+                            "拒绝".into(),
                         ],
                         remember_options: default_remember_options(),
                         default_destination: Some(PermissionDestination::Session),

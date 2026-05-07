@@ -219,9 +219,9 @@ pub(crate) fn check_path_permission(
             Some(PermissionDecision::Ask {
                 message: reason,
                 suggestions: vec![
-                    "Allow once".into(),
-                    "Always allow".into(),
-                    "Deny".into(),
+                    "仅本次允许".into(),
+                    "永久允许".into(),
+                    "拒绝".into(),
                 ],
                 remember_options: vec![
                     crate::runtime::tools::permission::PermissionDestination::Session,
