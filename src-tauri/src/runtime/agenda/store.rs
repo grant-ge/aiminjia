@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use super::item::AgendaItemId;
+use super::item::{AgendaItem, AgendaItemId};
+use crate::storage::file_store::io::atomic_write_json;
 
 pub struct AgendaStore {
     pub(crate) root: PathBuf,
@@ -40,6 +41,34 @@ impl AgendaStore {
         let yyyy_mm = when.format("%Y-%m").to_string();
         self.occurrence_dir_for(id).join(format!("{yyyy_mm}.jsonl"))
     }
+
+    pub fn create(&self, item: AgendaItem) -> anyhow::Result<AgendaItem> {
+        let _guard = self.lock.lock().unwrap();
+        validate_phase1_constraints(&item)?;
+        std::fs::create_dir_all(self.items_dir())?;
+        atomic_write_json(&self.item_path(&item.id), &item)?;
+        Ok(item)
+    }
+}
+
+pub(crate) fn validate_phase1_constraints(item: &AgendaItem) -> anyhow::Result<()> {
+    if item.participants.len() != 1 {
+        anyhow::bail!("phase1 constraint: participants.len() must be 1");
+    }
+    if item.participants[0].persona_id != item.organizer_persona_id {
+        anyhow::bail!("phase1 constraint: organizer must equal participants[0]");
+    }
+    if item.override_of.is_some() {
+        anyhow::bail!("phase1 constraint: override_of must be None");
+    }
+    if let Some(rule) = &item.rule {
+        if !rule.by_day.is_empty() || !rule.by_month_day.is_empty() {
+            anyhow::bail!("phase1 constraint: rule.by_day / by_month_day must be empty");
+        }
+    } else if !item.skip_dates.is_empty() {
+        anyhow::bail!("phase1 constraint: skip_dates only valid when rule is Some");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -81,5 +110,109 @@ mod tests {
             store.occurrence_shard_path(&id, when),
             dir.path().join("agenda/occurrences/agenda-x/2026-05.jsonl")
         );
+    }
+
+    fn make_valid_item(persona: &str) -> super::super::item::AgendaItem {
+        use super::super::item::*;
+        use chrono::Utc;
+        let now = Utc::now();
+        AgendaItem {
+            id: AgendaItemId::new(),
+            title: "T".into(),
+            prompt: "P".into(),
+            organizer_persona_id: persona.into(),
+            participants: vec![Participant {
+                persona_id: persona.into(),
+                joined_at: now,
+            }],
+            start_at: now,
+            timezone: "Asia/Shanghai".into(),
+            rule: None,
+            skip_dates: vec![],
+            next_fire_at: None,
+            occurrence_count: 0,
+            status: ItemStatus::Active,
+            override_of: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn create_persists_item() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let item = make_valid_item("p1");
+        let saved = store.create(item.clone()).unwrap();
+        assert_eq!(saved.id, item.id);
+        assert!(store.item_path(&item.id).exists());
+    }
+
+    #[test]
+    fn rejects_participants_len_not_one() {
+        use super::super::item::Participant;
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.participants.push(Participant {
+            persona_id: "p2".into(),
+            joined_at: Utc::now(),
+        });
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("participants"));
+    }
+
+    #[test]
+    fn rejects_organizer_not_in_participants() {
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.participants[0].persona_id = "other".into();
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("organizer"));
+    }
+
+    #[test]
+    fn rejects_override_of_set() {
+        use super::super::item::{AgendaItemId, OverrideRef};
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.override_of = Some(OverrideRef {
+            series_item_id: AgendaItemId("agenda-x".into()),
+            original_at: Utc::now(),
+        });
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("override_of"));
+    }
+
+    #[test]
+    fn rejects_rule_with_by_day() {
+        use super::super::item::*;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.rule = Some(RecurrenceRule {
+            freq: Freq::Weekly,
+            interval: 1,
+            end_condition: EndCondition::Never,
+            by_day: vec![Weekday::Mon],
+            by_month_day: vec![],
+        });
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("by_day"));
+    }
+
+    #[test]
+    fn rejects_skip_dates_on_one_shot() {
+        use chrono::Utc;
+        let dir = TempDir::new().unwrap();
+        let store = AgendaStore::new(dir.path());
+        let mut item = make_valid_item("p1");
+        item.skip_dates.push(Utc::now());
+        let err = store.create(item).unwrap_err();
+        assert!(err.to_string().contains("skip_dates"));
     }
 }
