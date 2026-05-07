@@ -111,6 +111,7 @@ pub struct ChatTurnRequest {
     pub client_message_id: Option<String>,
     pub selected_skill_id: Option<String>,
     pub selected_skill_label: Option<String>,
+    pub persona_id_override: Option<String>,
 }
 
 impl ChatTurnRequest {
@@ -130,7 +131,13 @@ impl ChatTurnRequest {
             client_message_id: None,
             selected_skill_id: None,
             selected_skill_label: None,
+            persona_id_override: None,
         }
+    }
+
+    pub fn with_persona_id_override(mut self, persona_id: String) -> Self {
+        self.persona_id_override = Some(persona_id);
+        self
     }
 }
 
@@ -2345,5 +2352,18 @@ mod tests {
         assert_eq!(dynamic_contexts.len(), 1);
         assert!(dynamic_contexts[0].contains("可用专项技能"));
         assert!(dynamic_contexts[0].contains("biz-writing"));
+    }
+
+    #[test]
+    fn chat_turn_request_default_has_no_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![]);
+        assert!(req.persona_id_override.is_none());
+    }
+
+    #[test]
+    fn chat_turn_request_with_persona_override() {
+        let req = ChatTurnRequest::new("conv-1".to_string(), "hello".to_string(), vec![])
+            .with_persona_id_override("persona-x".into());
+        assert_eq!(req.persona_id_override.as_deref(), Some("persona-x"));
     }
 }
