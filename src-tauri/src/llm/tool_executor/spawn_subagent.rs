@@ -18,6 +18,7 @@ use crate::runtime::agent::definition::AgentPrompt;
 use crate::runtime::agent::output_writer;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::agent::task_notification::{build_task_notification_xml, TaskNotificationQueue};
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::AgentId;
 use crate::runtime::tools::builtin::spawn_subagent::{
     SpawnAsyncOutcome, SpawnSubagentContext, SpawnSubagentLauncher, SpawnSubagentRequest,
@@ -227,7 +228,7 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         context: SpawnSubagentContext,
     ) -> Result<SpawnAsyncOutcome> {
         let (gateway, tool_registry, app_settings) = self.build_run_components()?;
-        let (config, runtime_deps) = self.build_sub_agent_args(&request, &context, true).await?;
+        let (mut config, runtime_deps) = self.build_sub_agent_args(&request, &context, true).await?;
 
         // Generate a fresh AgentId for this async sub-agent.
         let agent_id = AgentId::new(uuid::Uuid::new_v4().to_string());
@@ -244,16 +245,29 @@ impl SpawnSubagentLauncher for DefaultSpawnSubagentLauncher {
         };
         let transcript_path_for_task = transcript_path.clone();
 
-        // If the request has a name, register it in AsyncAgentTaskStore.
+        // Create a fresh cancellation token for this async sub-agent so that
+        // TaskStop can cancel it independently of the parent run's token.
+        let cancel_token = CancellationToken::new();
+
+        // Always register in AsyncAgentTaskStore (by name if provided,
+        // otherwise anonymously) so that TaskStop can find it by agent_id
+        // regardless of whether the LLM provided a name.
+        let handle = AsyncTaskHandle {
+            agent_id: agent_id.clone(),
+            state: AsyncTaskState::Running,
+            output_file: transcript_path.clone(),
+            description: request.description.clone(),
+            cancel_token: cancel_token.clone(),
+        };
         if let Some(ref name) = request.name {
-            let handle = AsyncTaskHandle {
-                agent_id: agent_id.clone(),
-                state: AsyncTaskState::Running,
-                output_file: transcript_path.clone(),
-                description: request.description.clone(),
-            };
             self.task_store.register(name, handle);
+        } else {
+            self.task_store.register_anonymous(handle);
         }
+
+        // Override the sub-agent config's cancel token with the one we
+        // stored in the handle, so that TaskStop can cancel via the handle.
+        config.cancel_token = Some(cancel_token);
 
         // Capture all Arcs + owned data for the spawned task (no &-references).
         let task_store = self.task_store.clone();

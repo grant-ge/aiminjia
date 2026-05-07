@@ -534,6 +534,21 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
+            "TaskStop",
+            "终止一个正在后台运行的 Agent 任务（按 task_id，即 Agent(run_in_background=true) 返回的 agent_id 同值）。",
+        )
+        .with_kind(ToolKind::Support),
+        json!({
+            "type": "object",
+            "required": ["task_id"],
+            "properties": {
+                "task_id": { "type": "string", "description": "后台 Agent 任务 ID，与 agent_id 值相同" }
+            }
+        }),
+    ));
+
+    c.insert(CatalogEntry::new(
+        ToolDefinition::new(
             "WriteMemory",
             "保存一条项目记忆到本地记忆库。记忆按 workspace 分桶存储，跨对话持久化。\n\n类型说明：\n- user_preference：用户偏好\n- project_constraint：项目约束\n- reference_info：外部系统指针\n- feedback：AI 行为纠正或确认",
         )
@@ -609,6 +624,7 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "TaskUpdate",
     "TaskList",
     "TaskGet",
+    "TaskStop",
 ];
 
 /// 全局默认 catalog（延迟初始化）。

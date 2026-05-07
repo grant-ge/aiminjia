@@ -9,6 +9,7 @@
 pub const ALL_AGENT_DISALLOWED: &[&str] = &[
     "AskUserQuestion",
     "Agent",  // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
+    "TaskStop", // 子 agent 不能取消兄弟/父 agent 任务
 ];
 
 /// async（后台）subagent 额外允许集：仅以下工具可用

@@ -198,9 +198,11 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 .map_err(|e| {
                     ToolError::ExecutionFailed(format!("async sub-agent launch failed: {e}"))
                 })?;
+            let agent_id_str = outcome.agent_id.to_string();
             let json = serde_json::json!({
                 "status": "async_launched",
-                "agent_id": outcome.agent_id.to_string(),
+                "agent_id": agent_id_str.clone(),
+                "task_id": agent_id_str,
                 "name": outcome.name,
             });
             return Ok(ToolResult::new(

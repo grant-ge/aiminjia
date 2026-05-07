@@ -115,6 +115,7 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "SearchMemory",
     "Skill",
     "TaskOutput",
+    "TaskStop",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -876,6 +877,31 @@ impl ToolRegistry {
                     Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
+            }
+            "TaskStop" => {
+                use tauri::Manager;
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[task_stop registry] no app_handle in PluginContext — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[task_stop registry] AsyncAgentTaskStore not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             _ => None,
         }
