@@ -1,3 +1,4 @@
+pub mod agenda;
 pub mod agent;
 pub mod cancellation;
 pub mod chat;
@@ -15,7 +16,6 @@ pub mod project_memory;
 pub mod query_engine;
 pub mod renlijia_md;
 pub mod run_registry;
-pub mod agenda;
 pub mod schedule;
 pub mod schedule_runner;
 pub mod session_runtime;
