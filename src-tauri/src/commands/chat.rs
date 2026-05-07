@@ -536,8 +536,6 @@ pub mod testsupport {
 const FILE_GEN_TOOLS: &[&str] = &[
     "generate_report",
     "generate_chart",
-    "export_data",
-    "generate_slides",
 ];
 
 /// Returns true iff the most recent tool message in `messages` was produced
@@ -598,18 +596,6 @@ mod auto_capture_tests {
     }
 
     #[test]
-    fn detects_export_data_as_file_gen() {
-        let msgs = vec![tool("export_data", "ok")];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn detects_generate_slides_as_file_gen() {
-        let msgs = vec![tool("generate_slides", "ok")];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
     fn does_not_skip_when_last_tool_is_execute_python() {
         // execute_python is the last tool — data step, should be captured
         let msgs = vec![
@@ -626,16 +612,6 @@ mod auto_capture_tests {
     fn does_not_skip_when_no_tool_messages() {
         // Pure dialog with no tool calls — not a file-gen step, capture normally
         let msgs = vec![user("你好"), assistant("你好！请问有什么可以帮你？")];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_tool_is_save_analysis_note() {
-        // save_analysis_note is bookkeeping, not file gen — capture normally
-        let msgs = vec![
-            assistant("recording finding"),
-            tool("save_analysis_note", "saved"),
-        ];
         assert!(!is_last_tool_file_generation(&msgs));
     }
 

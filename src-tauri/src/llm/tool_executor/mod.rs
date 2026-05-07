@@ -15,17 +15,12 @@
 
 mod chart;
 mod dingtalk;
-mod export;
 pub(crate) mod file_load;
 mod internal_system;
-mod notes;
-mod progress;
 mod python;
 mod report;
 mod search;
-mod slides;
 pub(crate) mod spawn_subagent;
-mod stats;
 mod util;
 
 use anyhow::{anyhow, Result};
@@ -37,7 +32,7 @@ use crate::plugin::tool_trait::FileMeta;
 // Public types
 // ─────────────────────────────────────────────────
 
-/// Result from file-generating tool handlers (generate_report, generate_chart, export_data).
+/// Result from file-generating tool handlers (generate_report, generate_chart).
 pub struct FileGenResult {
     pub content: String,
     pub file_meta: FileMeta,
@@ -53,7 +48,6 @@ pub(crate) use chart::build_chart_python;
 pub(crate) use chart::handle_generate_chart;
 pub(crate) use chart::handle_generate_chart_core;
 pub(crate) use chart::ChartCoreParams;
-pub(crate) use export::handle_export_data;
 pub(crate) use file_load::handle_load_file;
 pub(crate) use internal_system::execute_browse_data;
 pub(crate) use internal_system::handle_browse_and_extract;
@@ -63,8 +57,6 @@ pub(crate) use internal_system::handle_extract_with_pagination;
 pub(crate) use internal_system::handle_page_execute_js;
 pub(crate) use internal_system::handle_read_page_content;
 pub(crate) use internal_system::DefaultBrowseDataLauncher;
-pub(crate) use notes::handle_save_analysis_note;
-pub(crate) use progress::handle_update_progress;
 pub(crate) use python::handle_execute_python;
 pub(crate) use python::handle_execute_python_core;
 pub(crate) use python::ExecutePythonCoreParams;
@@ -74,10 +66,7 @@ pub(crate) use report::handle_generate_report_core;
 pub(crate) use report::ReportCoreParams;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
-pub(crate) use slides::handle_generate_slides;
 pub(crate) use spawn_subagent::DefaultSpawnSubagentLauncher;
-pub(crate) use stats::handle_detect_anomalies;
-pub(crate) use stats::handle_hypothesis_test;
 // DingTalk — AI Table (6)
 pub(crate) use dingtalk::handle_dingtalk_create_record;
 pub(crate) use dingtalk::handle_dingtalk_delete_record;

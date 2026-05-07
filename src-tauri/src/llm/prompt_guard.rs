@@ -10,8 +10,7 @@
 /// user would never naturally type or expect to see.
 ///
 /// NOTE: Tool/function names the LLM legitimately references in analysis
-/// mode (e.g. `save_analysis_note`, `_export_detail`, `前序分析记录`)
-/// are NOT included to avoid false positives during multi-iteration steps.
+/// mode are NOT included to avoid false positives during multi-iteration steps.
 const FINGERPRINTS: &[&str] = &[
     // Preamble internal function names (sandbox internals, never user-visible)
     "_print_table",
@@ -25,7 +24,6 @@ const FINGERPRINTS: &[&str] = &[
     // Internal configuration labels
     "execute_python 环境",
     "排除人员展示规则",
-    "update_progress 更新步骤状态",
 ];
 
 /// Minimum number of fingerprint matches to flag as a leak.
@@ -91,7 +89,7 @@ mod tests {
     #[test]
     fn test_single_fingerprint_passes() {
         // A single fingerprint is below threshold — not a leak
-        let content = "我会调用 save_analysis_note 保存分析结果。";
+        let content = "系统使用了 _print_table 来展示结果。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }
 
@@ -147,14 +145,4 @@ mod tests {
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }
 
-    #[test]
-    fn test_analysis_mode_output_no_false_positive() {
-        // LLM legitimately mentions save_analysis_note, _export_detail, 前序分析记录
-        // during analysis workflow — should NOT trigger
-        let content = "分析完成，我已调用 save_analysis_note 保存关键结论。\
-                        您可以使用 _export_detail 导出详细数据。\
-                        请查看前序分析记录了解之前步骤的发现。\
-                        analysis_direction 已确认为薪酬公平性诊断。";
-        assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
-    }
 }

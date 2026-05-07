@@ -594,7 +594,7 @@ impl QueryEngine {
             .ok_or_else(|| anyhow::anyhow!("tool dispatcher not configured"))?;
         let ctx = turn.build_execution_context(format!("tool-call-{tool_name}"));
         // Inject capability context when workspace_path is available so that
-        // workspace-scoped runtime tools (list_directory, read_workspace_file, etc.)
+        // workspace-scoped runtime tools (read_workspace_file, etc.)
         // can resolve their root path correctly.  When no workspace_path is set
         // (legacy/test paths), capability remains None and tools that require it
         // will return PermissionDenied as expected.

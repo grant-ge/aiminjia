@@ -126,26 +126,26 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
 
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
 
-    // list_directory should now be routed to the RuntimeTool (not legacy).
+    // read_workspace_file should be routed to the RuntimeTool (not legacy).
     // The tool requires workspace capability; our ctx has workspace_path set,
     // which is enough to satisfy the CapabilityPermissionPipeline check.
     let result = registry
         .execute(
-            "list_directory",
+            "read_workspace_file",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
-            serde_json::json!({"path": "."}),
+            serde_json::json!({"path": "test.csv"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await;
     assert!(
         result.is_ok(),
-        "list_directory should succeed via runtime tool: {:?}",
+        "read_workspace_file should succeed via runtime tool: {:?}",
         result
     );
     let output = result.unwrap();
     assert!(
-        output.content.contains("test.csv"),
-        "Should list test.csv, got: {}",
+        output.content.contains("col"),
+        "Should read test.csv content, got: {}",
         output.content
     );
 }
@@ -153,16 +153,15 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
 // ─── Test 2: workspace/file/bash/grep runtime tools are registered ────────────
 
 #[tokio::test]
-async fn all_four_workspace_runtime_tools_are_registered() {
+async fn all_workspace_runtime_tools_are_registered() {
     let registry = ToolRegistry::new();
     register_builtin_tools(&registry).await;
 
-    // Verify all four tools appear in get_all_schemas()
+    // Verify all tools appear in get_all_schemas()
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
 
     for tool_name in &[
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",
@@ -301,19 +300,20 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     register_builtin_tools(&registry).await;
 
     let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("probe.txt"), b"hello").unwrap();
     let ctx = build_test_plugin_ctx(tmp.path().to_path_buf());
 
     let result = registry
         .execute(
-            "list_directory",
+            "search_files",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
-            serde_json::json!({"path": "."}),
+            serde_json::json!({"pattern": "*.txt"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await;
     assert!(
         result.is_ok(),
-        "execute should succeed for list_directory: {:?}",
+        "execute should succeed for search_files: {:?}",
         result
     );
     let output = result.unwrap();
@@ -321,8 +321,8 @@ async fn execute_dispatches_to_runtime_tool_not_legacy() {
     let parsed: serde_json::Value =
         serde_json::from_str(&output.content).expect("RuntimeTool should return valid JSON");
     assert!(
-        parsed.get("files").is_some(),
-        "Expected 'files' key in JSON output from RuntimeTool, got: {}",
+        parsed.get("matches").is_some(),
+        "Expected JSON output from RuntimeTool, got: {}",
         output.content
     );
 }
@@ -348,13 +348,13 @@ async fn workspace_runtime_tool_uses_authorized_workspace_when_present() {
 
     let result = registry
         .execute(
-            "list_directory",
+            "search_files",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
-            serde_json::json!({"path": "."}),
+            serde_json::json!({"pattern": "*"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await
-        .expect("list_directory should succeed with authorized workspace");
+        .expect("search_files should succeed with authorized workspace");
 
     assert!(
         result.content.contains("external-only.txt"),
@@ -744,11 +744,11 @@ async fn browser_tool_without_connector_engine_is_permission_denied() {
 /// rejected (workspace:read scope requires storage capability).
 #[tokio::test]
 async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
-    use app_lib::runtime::tools::builtin::workspace::ListDirectoryRuntimeTool;
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
 
     let registry = ToolRegistry::new();
     registry
-        .register_runtime(Arc::new(ListDirectoryRuntimeTool))
+        .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))
         .await;
 
     let tmp = TempDir::new().unwrap();
@@ -763,11 +763,11 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
         app_lib::runtime::tools::ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     // No capability attached → permission denied
     let outcome = dispatcher
-        .dispatch("list_directory", serde_json::json!({"path": "."}), exec_ctx)
+        .dispatch("read_workspace_file", serde_json::json!({"path": "x.txt"}), exec_ctx)
         .await;
     assert!(
         outcome.is_err(),
-        "list_directory without capability should be rejected by CapabilityPermissionPipeline"
+        "read_workspace_file without capability should be rejected by CapabilityPermissionPipeline"
     );
 }
 

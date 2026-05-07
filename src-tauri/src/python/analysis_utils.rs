@@ -2495,7 +2495,7 @@ def _reset_to_step(step_num):
         print(f"Step {step_num} snapshot not found")
 
 def _export_current(filename='current_data', title='Current Data', format='excel'):
-    """Export current _df to file (solves export_data tool not using _df)."""
+    """Export current _df to file."""
     df = globals().get('_df')
     if df is None:
         print("_df not loaded, cannot export")

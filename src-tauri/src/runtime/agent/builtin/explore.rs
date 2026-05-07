@@ -10,7 +10,6 @@ pub fn explore_agent_definition() -> AgentDefinition {
             "read_workspace_file".into(),
             "grep_content".into(),
             "search_files".into(),
-            "list_directory".into(),
             "web_search".into(),
         ],
         disallowed_tools: vec![],
@@ -33,8 +32,7 @@ mod tests {
     /// M2.2 / F6 regression: explore.allowed_tools must use the canonical tool
     /// names from runtime/tools/catalog.rs. Earlier names like "read_file" /
     /// "grep" / "glob" don't exist in the catalog, so resolve_agent_tools
-    /// would silently strip them and leave explore with only list_directory +
-    /// web_search.
+    /// would silently strip them and leave explore with only web_search.
     #[test]
     fn explore_tools_match_canonical_catalog_names() {
         let def = explore_agent_definition();
@@ -43,7 +41,6 @@ mod tests {
             "read_workspace_file",
             "grep_content",
             "search_files",
-            "list_directory",
             "web_search",
             "write_file", // not requested → must not appear
             "bash",       // not requested → must not appear
@@ -64,7 +61,6 @@ mod tests {
             "read_workspace_file",
             "grep_content",
             "search_files",
-            "list_directory",
             "web_search",
         ] {
             assert!(

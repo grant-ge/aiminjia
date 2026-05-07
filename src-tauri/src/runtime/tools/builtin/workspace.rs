@@ -120,68 +120,6 @@ fn update_file_state_cache(ctx: &ToolExecutionContext, resolved: &Path, content:
     }
 }
 
-// ── ListDirectoryRuntimeTool ──────────────────────────────────────────────
-
-pub struct ListDirectoryRuntimeTool;
-
-#[async_trait]
-impl RuntimeTool for ListDirectoryRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("list_directory")
-            .unwrap_or_else(|| ToolDefinition::new("list_directory", "List authorized directory"))
-    }
-
-    fn is_concurrency_safe(&self, _input: &Value) -> bool {
-        true
-    }
-
-    async fn execute(
-        &self,
-        input: Value,
-        ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
-        let rel = input.get("path").and_then(Value::as_str).unwrap_or(".");
-        let resolved = resolve_path(&root, rel)?;
-        if !resolved.is_dir() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "Not a directory: {rel}"
-            )));
-        }
-        let mut files = Vec::new();
-        for entry in std::fs::read_dir(&resolved)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
-            .flatten()
-        {
-            let meta = entry.metadata().ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            files.push(json!({
-                "name": entry.file_name().to_string_lossy(),
-                "type": if is_dir { "directory" } else { "file" },
-                "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
-            }));
-        }
-        files.sort_by(|a, b| {
-            b["type"]
-                .as_str()
-                .unwrap_or("")
-                .cmp(a["type"].as_str().unwrap_or(""))
-                .then(
-                    a["name"]
-                        .as_str()
-                        .unwrap_or("")
-                        .cmp(b["name"].as_str().unwrap_or("")),
-                )
-        });
-        let count = files.len();
-        Ok(tool_result(
-            "list_directory",
-            json!({ "path": rel, "files": files, "count": count }),
-        ))
-    }
-}
-
 // ── ReadWorkspaceFileRuntimeTool ──────���───────────────────────────────────
 
 pub struct ReadWorkspaceFileRuntimeTool;

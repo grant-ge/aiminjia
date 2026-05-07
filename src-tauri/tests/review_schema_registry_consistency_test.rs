@@ -56,7 +56,6 @@ async fn review_register_builtin_tools_preserves_catalog_consistency() {
 #[test]
 fn review_registered_workspace_and_request_scoped_tools_all_in_catalog() {
     for id in &[
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",

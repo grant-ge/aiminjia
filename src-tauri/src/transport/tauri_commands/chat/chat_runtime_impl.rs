@@ -17,7 +17,6 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 /// 有授权目录：暴露所有工具（含 workspace 工具）。
 /// 无授权目录：排除 workspace 工具，避免 LLM 看到不可用工具。
 const WORKSPACE_TOOL_NAMES: &[&str] = &[
-    "list_directory",
     "read_workspace_file",
     "search_files",
     "get_file_info",
@@ -141,7 +140,7 @@ pub(crate) fn build_llm_content(
         .collect();
 
     let hint = if has_authorized_workspace {
-        "提示：对这些显式附加路径请优先使用 list_directory / read_workspace_file / search_files / get_file_info；对已连接本地目录也优先使用工作区文件工具，需要计算或生成文件时再结合 execute_python。"
+        "提示：对这些显式附加路径请优先使用 read_workspace_file / search_files / get_file_info；对已连接本地目录也优先使用工作区文件工具，需要计算或生成文件时再结合 execute_python。"
     } else {
         "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时再结合 execute_python 处理内容。"
     };
@@ -207,7 +206,7 @@ mod tests {
         register_builtin_tools(&registry).await;
         let allowed = std::collections::HashSet::from([
             "execute_python".to_string(),
-            "list_directory".to_string(),
+            "read_workspace_file".to_string(),
         ]);
 
         let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;

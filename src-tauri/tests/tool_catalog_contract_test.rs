@@ -70,7 +70,6 @@ async fn get_schemas_filtered_returns_sorted_by_name() {
         .get_schemas_filtered(&ToolFilter::Only(vec![
             "web_search".to_string(),
             "browse_navigate".to_string(),
-            "list_directory".to_string(),
         ]))
         .await;
     let names: Vec<_> = schemas.iter().map(|s| s.name.clone()).collect();
@@ -187,13 +186,6 @@ fn catalog_read_workspace_file_has_16000_limit() {
 }
 
 #[test]
-fn catalog_list_directory_has_4000_limit() {
-    use app_lib::runtime::tools::catalog::TOOL_CATALOG;
-    let def = TOOL_CATALOG.get("list_directory").unwrap();
-    assert_eq!(def.default_max_result_size_chars, 4_000);
-}
-
-#[test]
 fn catalog_search_files_has_4000_limit() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
     let def = TOOL_CATALOG.get("search_files").unwrap();
@@ -206,9 +198,6 @@ fn catalog_other_tools_default_to_8000_when_not_overridden() {
 
     for id in [
         "web_search",
-        "plan_update",
-        "progress_update",
-        "save_analysis_note",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(
@@ -243,10 +232,8 @@ fn catalog_non_long_running_tools_keep_timeout_unset() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     for id in [
-        "list_directory",
         "read_workspace_file",
         "web_search",
-        "plan_update",
     ] {
         let def = TOOL_CATALOG.get(id).unwrap();
         assert_eq!(

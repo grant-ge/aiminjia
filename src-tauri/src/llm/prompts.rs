@@ -718,13 +718,6 @@ mod tests {
             "save_memory",
             "load_core_memory",
             "distill_memories",
-            "plan_update",
-            "progress_update",
-            "save_analysis_note",
-            "hypothesis_test",
-            "detect_anomalies",
-            "slides_gen",
-            "export_data",
         ] {
             assert!(
                 !parts.static_section.contains(retired_tool),

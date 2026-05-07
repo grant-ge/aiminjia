@@ -849,31 +849,6 @@ def _save_sections(sections, filename='report_sections.json'):
     print(f'报告数据已写入: {filename}（{len(sections)} 个章节）→ 现在调用 generate_report(source="{filename}", format="docx|pdf|html|markdown", title="...")')
     return filename
 
-
-def _save_slides(slides, filename='slides.json'):
-    """Write slides array to a workspace-relative JSON file, return its path.
-
-    Use before calling `generate_slides(source=<path>, title=...)`. Same reliability
-    rationale as _save_sections.
-
-    Example:
-        path = _save_slides([
-            {"title": "封面", "layout": "title_slide"},
-            {"title": "核心发现", "bullets": ["..."]},
-        ])
-        # Then call generate_slides(source=path, title="...", theme="light")
-    """
-    if not isinstance(slides, list):
-        raise TypeError(f'slides must be a list, got {type(slides).__name__}')
-    if not slides:
-        raise ValueError('slides list is empty; at least one slide is required')
-    import json as _json_local
-    import os as _os_local
-    path = _os_local.path.join(_os_local.getcwd(), filename)
-    with open(path, 'w', encoding='utf-8') as f:
-        _json_local.dump(slides, f, ensure_ascii=False, indent=2)
-    print(f'幻灯片数据已写入: {filename}（{len(slides)} 张）→ 现在调用 generate_slides(source="{filename}", title="...")')
-    return filename
 "###;
 
 #[cfg(test)]

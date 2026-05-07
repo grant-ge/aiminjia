@@ -228,7 +228,7 @@ fn collect_results_uses_per_result_limit_not_global_default() {
     let content_6k = "d".repeat(6_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "list_directory".to_string(),
+        tool_name: "read_workspace_file".to_string(),
         content: content_6k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),

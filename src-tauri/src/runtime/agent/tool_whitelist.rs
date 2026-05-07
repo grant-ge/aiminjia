@@ -19,7 +19,7 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 /// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
     "read_workspace_file", "write_file", "edit_file",
-    "bash", "grep_content", "search_files", "list_directory", "get_file_info",
+    "bash", "grep_content", "search_files", "get_file_info",
     "web_search",
     "spawn_subagent",
     "task_output",

@@ -40,7 +40,7 @@ fn tool_without_scope_is_always_allowed() {
 #[test]
 fn workspace_read_tool_rejected_without_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("list_directory", &["workspace:read"]);
+    let def = def_with_scope("read_workspace_file", &["workspace:read"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
     assert!(
@@ -60,7 +60,7 @@ fn workspace_read_tool_rejected_without_capability() {
 fn workspace_read_tool_allowed_with_workspace_capability() {
     let tmp = TempDir::new().unwrap();
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("list_directory", &["workspace:read"]);
+    let def = def_with_scope("read_workspace_file", &["workspace:read"]);
     let ctx = ctx_with_workspace(&tmp);
     assert!(is_allow(&pipeline.authorize(&def, &json!({}), &ctx)));
 }

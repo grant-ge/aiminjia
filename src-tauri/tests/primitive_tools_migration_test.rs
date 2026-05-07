@@ -16,7 +16,6 @@ use app_lib::runtime::tools::definition::ToolKind;
 fn all_primitive_tools_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
     let primitives = [
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",
@@ -110,7 +109,6 @@ fn load_file_is_power_with_correct_scopes() {
 fn workspace_primitives_have_correct_scope() {
     let catalog = ToolCatalog::default_catalog();
     for id in &[
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",

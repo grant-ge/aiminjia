@@ -136,21 +136,6 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Primitive: workspace tools ──────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("list_directory", "列出授权工作目录中的文件和子目录")
-            .with_kind(ToolKind::Primitive)
-            .with_read_only(true)
-            .with_max_result_size_chars(4_000)
-            .with_capability_scope(["workspace:read"]),
-        json!({
-            "type": "object",
-            "required": [],
-            "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的路径，默认 '.'", "default": "." }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
         ToolDefinition::new("read_workspace_file", "读取授权工作目录中的文本文件内容")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
@@ -448,7 +433,7 @@ fn build_default_catalog() -> ToolCatalog {
             _smart_read_csv(path) 自动检测编码。\
             工作目录为工作区根目录，各子目录：uploads/（上传文件）、exports/（导出数据）、reports/（报告）、charts/（图表）。\
             \n\n【数据来源】已上传文件先调用 load_file 加载，数据以 _df（单文件 DataFrame）/ _dfs（多文件 dict）/ _text / _texts 变量形式注入。\
-            已连接本地目录先用 list_directory / search_files / read_workspace_file 读取后再传入本工具处理。\
+            已连接本地目录先用 bash 或 search_files / read_workspace_file 读取后再传入本工具处理。\
             \n\n【文件管理函数】_ws_list(path, pattern) 列目录 | _ws_search(keyword) 搜内容 | _ws_info(path) 查详情 | _ws_convert(path, format) 格式转换 | _ws_merge(paths) 合并文件。\
             \n\n注意：Power 工具，有 session 状态和文件写出副作用。代码执行出错时直接修正重试。")
             .with_kind(ToolKind::Power)
@@ -554,26 +539,6 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "export_data",
-            "【Composite 工具】将数据导出为文件（数据转换 + 写文件）。\
-            \n\n【使用方式】在 execute_python 中用 _export_detail(_df, filename, format) 直接导出，\
-            禁止在 data 参数中传入原始数据数组（会超出 token 限制）。",
-        )
-        .with_kind(ToolKind::Composite)
-        .with_capability_scope(["workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["data","format","filename"],
-            "properties": {
-                "data": { "type": "object" },
-                "format": { "type": "string", "enum": ["csv","excel","json"] },
-                "filename": { "type": "string" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
             "spawn_subagent",
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'、'browse_data_agent'）或不同模型。\
@@ -647,23 +612,6 @@ fn build_default_catalog() -> ToolCatalog {
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
-            "generate_slides",
-            "【Composite 工具】生成演示文稿（多页渲染 + 写文件）。",
-        )
-        .with_kind(ToolKind::Composite)
-        .with_capability_scope(["workspace:write"]),
-        json!({
-            "type": "object",
-            "required": ["title"],
-            "properties": {
-                "title": { "type": "string" },
-                "slides": { "type": "array" }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new(
             "load_skill",
             "加载一个专项技能的详细指令到当前对话。无副作用：不改变系统提示、不限制工具、不持久化。",
         )
@@ -682,18 +630,6 @@ fn build_default_catalog() -> ToolCatalog {
             }
         }),
     ));
-
-    // ── Support tools ─────────────────────────────────────────────
-    for (id, desc) in &[
-        ("plan_update", "更新任务计划状态"),
-        ("progress_update", "更新分析步骤进度"),
-        ("save_analysis_note", "保存中间分析记录"),
-    ] {
-        c.insert(CatalogEntry::new(
-            ToolDefinition::new(*id, *desc).with_kind(ToolKind::Support),
-            json!({ "type": "object", "properties": {}, "required": [] }),
-        ));
-    }
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
@@ -739,38 +675,6 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "answers": { "type": "object", "description": "用户回答（由系统填入，模型勿填）" },
                 "metadata": { "type": "object" }
-            }
-        }),
-    ));
-
-    // ── Power: statistical analysis ───────────────────────────────
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("hypothesis_test", "统计假设检验（t-test/ANOVA/chi-square/Mann-Whitney/regression）")
-            .with_kind(ToolKind::Power)
-            .with_capability_scope(["python:exec"]),
-        json!({
-            "type": "object",
-            "required": ["test_type", "groups"],
-            "properties": {
-                "test_type": { "type": "string", "enum": ["t_test", "anova", "chi_square", "regression", "mann_whitney"] },
-                "groups": { "type": "array", "items": { "type": "string" }, "description": "要比较的列名" },
-                "significance_level": { "type": "number", "default": 0.05 }
-            }
-        }),
-    ));
-
-    c.insert(CatalogEntry::new(
-        ToolDefinition::new("detect_anomalies", "检测数据中的异常值（Z-score/IQR/Grubbs）")
-            .with_kind(ToolKind::Power)
-            .with_capability_scope(["python:exec"]),
-        json!({
-            "type": "object",
-            "required": ["column"],
-            "properties": {
-                "column": { "type": "string", "description": "要分析的列名" },
-                "method": { "type": "string", "enum": ["zscore", "iqr", "grubbs"], "default": "zscore" },
-                "threshold": { "type": "number" },
-                "group_by": { "type": "string" }
             }
         }),
     ));
@@ -885,8 +789,8 @@ fn build_default_catalog() -> ToolCatalog {
 /// daily 模式允许 LLM 直接调用的工具集。
 ///
 /// 包含所有 Primitive + Power 工具，以及少数 daily 场景常用的 Composite 工具
-/// （browse_data、generate_report、generate_chart、export_data）。
-/// 不包含 browse_and_extract / generate_slides 等纯分析流程专属的 Composite 工具。
+/// （browse_data、generate_report、generate_chart）。
+/// 不包含 browse_and_extract 等纯分析流程专属的 Composite 工具。
 ///
 /// 对齐 claude-code-best 原子工具模型：主要包含 register_runtime 工具；
 /// `load_skill` 是例外，它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
@@ -895,7 +799,6 @@ fn build_default_catalog() -> ToolCatalog {
 ///   - web_search, browse_navigate, read_page_content（request-scoped，非 daily 默认工具）
 ///   - load_file, execute_python（request-scoped，未全局注册）
 ///   - browse_data, generate_report, generate_chart（request-scoped，未全局注册）
-///   - export_data, plan_update, progress_update, save_analysis_note（ToolPlugin 已关闭）
 ///   - save_memory, load_core_memory, distill_memories（legacy memory ToolPlugin 已关闭）
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
@@ -905,7 +808,6 @@ pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     "read_workspace_file",
     "write_file",
     "edit_file",
-    "list_directory",
     "search_files",
     "get_file_info",
     "grep_content",

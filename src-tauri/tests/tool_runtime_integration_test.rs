@@ -21,45 +21,92 @@ async fn query_engine_routes_tool_calls_through_dispatcher_and_permission_pipeli
 /// a `CapabilityContext` into `ToolExecutionContext` before dispatching to a
 /// workspace-scoped RuntimeTool.
 ///
-/// Without the fix, `list_directory` (which calls `require_workspace_root`) would
+/// Without the fix, workspace tools (which call `require_workspace_root`) would
 /// return `PermissionDenied` because `ctx.capability` would be `None`.
+///
+/// The test exercises the full QueryEngine dispatch path (not a direct tool call)
+/// to confirm that capability injection happens inside the engine's dispatch logic.
 #[tokio::test]
 async fn query_engine_injects_capability_context_for_workspace_tool() {
+    use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
+    use app_lib::runtime::chat::tool_round_types::RuntimeToolCallOutcome;
     use app_lib::runtime::event_bus::RuntimeEventBus;
     use app_lib::runtime::identity::IdentityMapping;
     use app_lib::runtime::ids::RunId;
     use app_lib::runtime::state::TurnState;
-    use app_lib::runtime::tools::builtin::workspace::ListDirectoryRuntimeTool;
+    use app_lib::runtime::tools::builtin::workspace::SearchFilesRuntimeTool;
     use app_lib::runtime::tools::{AllowAllPermissionPipeline, ToolDispatcher};
     use std::sync::Arc;
     use tempfile::TempDir;
 
     let tmp = TempDir::new().unwrap();
-    // Create a file so list_directory returns at least one entry
     std::fs::write(tmp.path().join("hello.txt"), b"world").unwrap();
 
-    // Build a dispatcher with just the workspace tool and allow-all permissions
+    // Build a dispatcher with the workspace tool registered and allow-all permissions.
     let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(AllowAllPermissionPipeline)));
-    dispatcher.register(Arc::new(ListDirectoryRuntimeTool));
+    dispatcher.register(Arc::new(SearchFilesRuntimeTool));
 
-    // Build engine WITH workspace_path injected (the fix under test)
-    let engine =
-        QueryEngine::with_dispatcher(dispatcher).with_workspace_path(tmp.path().to_path_buf());
+    // ── Negative case: no workspace_path → capability is None → error outcome ──
+
+    let engine_no_workspace = QueryEngine::with_dispatcher(dispatcher.clone());
+
+    let mapping_neg = IdentityMapping::from_legacy_conversation_id("conv-ws-neg".to_string());
+    let turn_neg = TurnState::new(
+        mapping_neg,
+        RunId::new("run-ws-neg"),
+        "search without workspace".to_string(),
+    );
+    let bus_neg = RuntimeEventBus::new();
+    let call_neg = RuntimeToolCallRequest {
+        tool_call_id: "tc-neg-1".to_string(),
+        tool_name: "search_files".to_string(),
+        args: serde_json::json!({ "pattern": "*" }),
+        purpose: None,
+    };
+    let outcome_neg = engine_no_workspace
+        .run_tool_call_with_bus(&turn_neg, &bus_neg, call_neg)
+        .await
+        .unwrap();
+    match outcome_neg {
+        RuntimeToolCallOutcome::Completed { is_error, .. } => assert!(
+            is_error,
+            "search_files without workspace_path should produce an error outcome"
+        ),
+        other => panic!(
+            "Expected Completed outcome for no-workspace case, got: {:?}",
+            other
+        ),
+    }
+
+    // ── Positive case: with_workspace_path → QueryEngine injects capability → success ──
+
+    let engine = QueryEngine::with_dispatcher(dispatcher)
+        .with_workspace_path(tmp.path().to_path_buf());
 
     let mapping = IdentityMapping::from_legacy_conversation_id("conv-ws".to_string());
-    let turn = TurnState::new(mapping, RunId::new("run-ws"), "list workspace".to_string());
-    let bus = RuntimeEventBus::new();
-
-    // run_tool_with_bus should succeed — capability context is injected so
-    // require_workspace_root() resolves to tmp.path() instead of returning PermissionDenied.
-    let result = engine
-        .run_tool_with_bus(&turn, &bus, "list_directory")
-        .await;
-    assert!(
-        result.is_ok(),
-        "list_directory should succeed when QueryEngine has workspace_path set: {:?}",
-        result
+    let turn = TurnState::new(
+        mapping,
+        RunId::new("run-ws"),
+        "search with workspace".to_string(),
     );
+    let bus = RuntimeEventBus::new();
+    let call = RuntimeToolCallRequest {
+        tool_call_id: "tc-1".to_string(),
+        tool_name: "search_files".to_string(),
+        args: serde_json::json!({ "pattern": "*" }),
+        purpose: None,
+    };
+    let outcome = engine
+        .run_tool_call_with_bus(&turn, &bus, call)
+        .await
+        .unwrap();
+    match outcome {
+        RuntimeToolCallOutcome::Completed { is_error, .. } => assert!(
+            !is_error,
+            "search_files should succeed when QueryEngine injects capability context"
+        ),
+        other => panic!("Expected Completed outcome, got: {:?}", other),
+    }
 }
 
 // ── Workspace-First: authorized workspace injection ──────────────────────────

@@ -9,7 +9,6 @@ fn composite_tools_are_not_primitive() {
     let composite_ids = [
         "browse_data",
         "generate_report",
-        "export_data",
         "generate_chart",
     ];
     for id in &composite_ids {

@@ -175,19 +175,19 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
 
 #[tokio::test]
 async fn get_all_schemas_includes_runtime_tool_schema() {
-    // Use list_directory which IS in TOOL_CATALOG
-    use app_lib::runtime::tools::builtin::workspace::ListDirectoryRuntimeTool;
+    // Use read_workspace_file which IS in TOOL_CATALOG
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
 
     let registry = ToolRegistry::new();
     registry
-        .register_runtime(Arc::new(ListDirectoryRuntimeTool))
+        .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))
         .await;
 
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        names.contains(&"list_directory"),
-        "Schema should include list_directory, got: {:?}",
+        names.contains(&"read_workspace_file"),
+        "Schema should include read_workspace_file, got: {:?}",
         names
     );
 }

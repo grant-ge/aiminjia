@@ -7,9 +7,7 @@ fn composite_tools_are_composite_kind() {
     let composite_ids = [
         "browse_data",
         "generate_report",
-        "export_data",
         "generate_chart",
-        "generate_slides",
         "browse_and_extract",
     ];
     for id in &composite_ids {
@@ -31,9 +29,7 @@ fn composite_tools_description_signals_composite_nature() {
     let composite_ids = [
         "browse_data",
         "generate_report",
-        "export_data",
         "generate_chart",
-        "generate_slides",
         "browse_and_extract",
     ];
     for id in &composite_ids {

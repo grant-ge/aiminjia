@@ -16,14 +16,10 @@ async fn legacy_tool_adapter_executes_builtin_tool_through_runtime_contract() {
 #[test]
 fn workspace_read_tools_are_concurrency_safe() {
     use app_lib::runtime::tools::builtin::workspace::{
-        GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
+        GetFileInfoRuntimeTool, ReadWorkspaceFileRuntimeTool,
         SearchFilesRuntimeTool,
     };
 
-    assert!(
-        ListDirectoryRuntimeTool.is_concurrency_safe(&json!({})),
-        "list_directory should be concurrency safe"
-    );
     assert!(
         ReadWorkspaceFileRuntimeTool.is_concurrency_safe(&json!({})),
         "read_workspace_file should be concurrency safe"
@@ -41,11 +37,10 @@ fn workspace_read_tools_are_concurrency_safe() {
 #[test]
 fn workspace_read_tools_are_read_only() {
     use app_lib::runtime::tools::builtin::workspace::{
-        GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
+        GetFileInfoRuntimeTool, ReadWorkspaceFileRuntimeTool,
         SearchFilesRuntimeTool,
     };
 
-    assert!(ListDirectoryRuntimeTool.is_read_only(&json!({})));
     assert!(ReadWorkspaceFileRuntimeTool.is_read_only(&json!({})));
     assert!(SearchFilesRuntimeTool.is_read_only(&json!({})));
     assert!(GetFileInfoRuntimeTool.is_read_only(&json!({})));

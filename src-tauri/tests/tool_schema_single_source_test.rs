@@ -4,7 +4,6 @@ use app_lib::runtime::tools::definition::ToolKind;
 #[test]
 fn catalog_contains_all_registered_tools() {
     let required = vec![
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",
@@ -22,7 +21,6 @@ fn catalog_contains_all_registered_tools() {
         "execute_python",
         "browse_data",
         "generate_report",
-        "export_data",
     ];
     let catalog = ToolCatalog::default_catalog();
     for name in &required {
@@ -62,7 +60,6 @@ fn browse_data_is_composite_in_catalog() {
 fn workspace_tools_are_primitive_in_catalog() {
     let catalog = ToolCatalog::default_catalog();
     for name in &[
-        "list_directory",
         "read_workspace_file",
         "search_files",
         "get_file_info",

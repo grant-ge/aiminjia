@@ -1550,7 +1550,7 @@ mod tests {
     fn flush_pending_tool_single_object_is_not_split() {
         let mut st = test_state();
         st.tool_id = Some("toolu_normal".to_string());
-        st.tool_name = Some("list_directory".to_string());
+        st.tool_name = Some("read_workspace_file".to_string());
         st.tool_args = String::from(r#"{"path": "/tmp"}"#);
 
         flush_pending_tool(&mut st);
@@ -1563,7 +1563,7 @@ mod tests {
         assert_eq!(tool_events.len(), 1);
         if let StreamEvent::ToolCallStart { tool_call } = tool_events[0] {
             assert_eq!(tool_call.id, "toolu_normal");
-            assert_eq!(tool_call.name, "list_directory");
+            assert_eq!(tool_call.name, "read_workspace_file");
             assert_eq!(
                 tool_call.arguments.get("path").and_then(|v| v.as_str()),
                 Some("/tmp")
