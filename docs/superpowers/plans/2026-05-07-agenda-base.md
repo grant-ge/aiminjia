@@ -2253,6 +2253,23 @@ cd src-tauri && cargo test --lib runtime::agenda
 cd src-tauri && cargo clippy --lib -- -D warnings 2>&1 | grep -i agenda
 ```
 
+若 clippy 输出 `AgendaItemId` 的 `new_without_default`，在 `src-tauri/src/runtime/agenda/item.rs` 为 `AgendaItemId` 增加：
+
+```rust
+impl Default for AgendaItemId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+```
+
+然后提交：
+
+```bash
+git add docs/superpowers/plans/2026-05-07-agenda-base.md src-tauri/src/runtime/agenda/item.rs
+git commit -m "fix(agenda): implement Default for AgendaItemId"
+```
+
 Tag this commit as `agenda-pr1-done` for review checkpoint.
 
 ---
