@@ -23,17 +23,16 @@ fn recurring_next(
 ) -> Option<DateTime<Utc>> {
     let interval = rule.interval.max(1) as i64;
     let mut cursor = item.start_at;
-    let mut steps_taken: u32 = 0;
 
-    while cursor <= now || item.skip_dates.contains(&cursor) {
-        cursor = match rule.freq {
-            Freq::Daily => cursor + chrono::Duration::days(interval),
-            Freq::Weekly => cursor + chrono::Duration::weeks(interval),
-            Freq::Monthly => add_months(cursor, interval as u32)?,
-            Freq::Yearly => add_years(cursor, interval as u32)?,
-        };
-        steps_taken += 1;
-        if steps_taken > 10_000 {
+    if cursor <= now {
+        cursor = advance_after_now(cursor, &rule.freq, interval, now)?;
+    }
+
+    let mut skip_steps: u32 = 0;
+    while item.skip_dates.contains(&cursor) {
+        cursor = advance_once(cursor, &rule.freq, interval)?;
+        skip_steps += 1;
+        if skip_steps > 10_000 {
             return None;
         }
     }
@@ -62,8 +61,66 @@ fn add_months(dt: DateTime<Utc>, months: u32) -> Option<DateTime<Utc>> {
     dt.checked_add_months(Months::new(months))
 }
 
+fn advance_after_now(
+    cursor: DateTime<Utc>,
+    freq: &Freq,
+    interval: i64,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    match freq {
+        Freq::Daily => advance_by_fixed_days_after_now(cursor, interval, now),
+        Freq::Weekly => advance_by_fixed_days_after_now(cursor, interval * 7, now),
+        Freq::Monthly | Freq::Yearly => {
+            let mut cursor = cursor;
+            let mut steps_taken: u32 = 0;
+            while cursor <= now {
+                cursor = advance_once(cursor, freq, interval)?;
+                steps_taken += 1;
+                if steps_taken > 10_000 {
+                    return None;
+                }
+            }
+            Some(cursor)
+        }
+    }
+}
+
+fn advance_by_fixed_days_after_now(
+    cursor: DateTime<Utc>,
+    step_days: i64,
+    now: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let elapsed_days = (now - cursor).num_days();
+    let steps = elapsed_days / step_days + 1;
+    let days_to_add = step_days.checked_mul(steps)?;
+    cursor.checked_add_signed(chrono::Duration::days(days_to_add))
+}
+
+fn advance_once(dt: DateTime<Utc>, freq: &Freq, interval: i64) -> Option<DateTime<Utc>> {
+    match freq {
+        Freq::Daily => dt.checked_add_signed(chrono::Duration::days(interval)),
+        Freq::Weekly => dt.checked_add_signed(chrono::Duration::weeks(interval)),
+        Freq::Monthly => add_months(dt, interval as u32),
+        Freq::Yearly => add_years(dt, interval as u32),
+    }
+}
+
 fn add_years(dt: DateTime<Utc>, years: u32) -> Option<DateTime<Utc>> {
-    dt.with_year(dt.year() + years as i32)
+    let years = i32::try_from(years.max(1)).ok()?;
+    let mut target_year = dt.year().checked_add(years)?;
+    let mut attempts: u32 = 0;
+
+    loop {
+        if let Some(next) = dt.with_year(target_year) {
+            return Some(next);
+        }
+
+        attempts += 1;
+        if attempts > 10_000 {
+            return None;
+        }
+        target_year = target_year.checked_add(years)?;
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +264,30 @@ mod tests {
             by_day: vec![], by_month_day: vec![],
         }, 1);
         let expected = Utc.with_ymd_and_hms(2027, 5, 7, 9, 0, 0).unwrap();
+        assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+    }
+
+    #[test]
+    fn yearly_leap_day_skips_invalid_years() {
+        let start = Utc.with_ymd_and_hms(2024, 2, 29, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2024, 3, 1, 0, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Yearly, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        }, 1);
+        let expected = Utc.with_ymd_and_hms(2028, 2, 29, 9, 0, 0).unwrap();
+        assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+    }
+
+    #[test]
+    fn daily_long_catch_up_returns_next_future_occurrence() {
+        let start = Utc.with_ymd_and_hms(1990, 1, 1, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        }, 1);
+        let expected = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
         assert_eq!(compute_next_fire_at(&item, now), Some(expected));
     }
 }
