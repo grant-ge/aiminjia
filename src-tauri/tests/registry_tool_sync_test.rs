@@ -53,7 +53,7 @@ async fn register_runtime_does_not_overwrite_builtin_schema() {
     let registry = ToolRegistry::new();
     let original_schema = TOOL_CATALOG
         .get_entry("bash")
-        .expect("execute_python must exist in TOOL_CATALOG")
+        .expect("bash must exist in TOOL_CATALOG")
         .json_schema;
 
     registry
@@ -64,7 +64,7 @@ async fn register_runtime_does_not_overwrite_builtin_schema() {
 
     let new_schema = TOOL_CATALOG
         .get_entry("bash")
-        .expect("execute_python should remain in TOOL_CATALOG")
+        .expect("bash should remain in TOOL_CATALOG")
         .json_schema;
     assert_eq!(
         original_schema, new_schema,

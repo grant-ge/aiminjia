@@ -24,7 +24,6 @@ async fn authorized_session_exposes_workspace_tools_and_searches_workspace() {
     for tool_name in &[
         "read_workspace_file",
         "search_files",
-        "get_file_info",
     ] {
         assert!(
             trace

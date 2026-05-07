@@ -533,94 +533,6 @@ pub mod testsupport {
     }
 }
 
-const FILE_GEN_TOOLS: &[&str] = &[
-    "generate_report",
-    "generate_chart",
-];
-
-/// Returns true iff the most recent tool message in `messages` was produced
-/// by one of the file-generating tools.
-fn is_last_tool_file_generation(messages: &[crate::llm::streaming::ChatMessage]) -> bool {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "tool")
-        .and_then(|m| m.name.as_deref())
-        .map(|name| FILE_GEN_TOOLS.contains(&name))
-        .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod auto_capture_tests {
-    use super::is_last_tool_file_generation;
-    use crate::llm::streaming::ChatMessage;
-
-    fn user(content: &str) -> ChatMessage {
-        ChatMessage::text("user", content)
-    }
-    fn assistant(content: &str) -> ChatMessage {
-        ChatMessage::text("assistant", content)
-    }
-    fn tool(name: &str, content: &str) -> ChatMessage {
-        ChatMessage {
-            role: "tool".into(),
-            content: content.into(),
-            thinking: None,
-            thinking_blocks: None,
-            tool_calls: None,
-            tool_call_id: Some("tc-1".into()),
-            name: Some(name.into()),
-        }
-    }
-
-    #[test]
-    fn detects_generate_report_as_file_gen() {
-        let msgs = vec![
-            user("分析这份数据"),
-            assistant("好的"),
-            tool("execute_python", "df = pd.read_excel(...)"),
-            assistant("生成报告"),
-            tool("generate_report", "{\"file_id\":\"abc\"}"),
-            assistant("已生成"),
-        ];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn detects_generate_chart_as_file_gen() {
-        let msgs = vec![
-            tool("execute_python", "data ready"),
-            tool("generate_chart", "{\"file_id\":\"x\"}"),
-        ];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_last_tool_is_execute_python() {
-        // execute_python is the last tool — data step, should be captured
-        let msgs = vec![
-            user("clean data"),
-            assistant("分析中"),
-            tool("generate_report", "early generation"),
-            tool("execute_python", "stats: mean=5.2"),
-            assistant("均值是 5.2"),
-        ];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_no_tool_messages() {
-        // Pure dialog with no tool calls — not a file-gen step, capture normally
-        let msgs = vec![user("你好"), assistant("你好！请问有什么可以帮你？")];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_tool_is_load_file() {
-        let msgs = vec![tool("load_file", "loaded 1095 rows")];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-}
 
 #[cfg(test)]
 mod xml_strip_tests {
@@ -628,14 +540,14 @@ mod xml_strip_tests {
 
     #[test]
     fn test_strip_closed_function_calls() {
-        let input = "你好\n<function_calls>\n<invoke name=\"load_file\">\n<parameter name=\"file_id\">abc</parameter>\n</invoke>\n</function_calls>\n世界";
+        let input = "你好\n<function_calls>\n<invoke name=\"bash\">\n<parameter name=\"file_id\">abc</parameter>\n</invoke>\n</function_calls>\n世界";
         let result = strip_hallucinated_xml(input);
         assert_eq!(result, "你好\n\n世界");
     }
 
     #[test]
     fn test_strip_unclosed_function_calls() {
-        let input = "你好\n<function_calls>\n<invoke name=\"execute_python\">\n<parameter name=\"code\">print(1)</parameter>";
+        let input = "你好\n<function_calls>\n<invoke name=\"bash\">\n<parameter name=\"code\">print(1)</parameter>";
         let result = strip_hallucinated_xml(input);
         assert_eq!(result, "你好");
     }

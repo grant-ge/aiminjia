@@ -108,7 +108,6 @@ fn k2_microcompact_preserves_message_count() {
 fn x2_microcompact_config_default_includes_preserved_tool_names() {
     let config = MicrocompactConfig::default();
     // preserved_tool_names is built from catalog entries with preserve_tool_use_results=true
-    // Deleted tools (execute_python, generate_report) are no longer in catalog
     // Verify the config builds without error and preserved_tool_names is a valid HashSet
     let _ = config.preserved_tool_names;
 }

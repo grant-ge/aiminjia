@@ -16,7 +16,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
@@ -116,25 +115,13 @@ pub trait NotificationSink: Send + Sync + std::fmt::Debug {
 
 // ── FileOperations trait ─────────────────────────────────────────────────────
 
-/// Result returned by a file-loading operation (retained for compile compatibility).
-#[derive(Clone, Debug)]
-pub struct LoadedFileResult {
-    /// User-visible JSON payload returned to the LLM/runtime.
-    pub content: String,
-}
-
-/// Narrow file-loading capability exposed to runtime tools (stub interface).
+/// Narrow file-operations capability exposed to runtime tools.
 ///
-/// This trait was used by `LoadFileRuntimeTool` to decouple it from
-/// `PluginContext`. The `load_file` tool has been removed in Phase 3 of the
-/// tool cleanup, but the trait is retained because `CapabilityContext` and
-/// `QueryEngine` still carry an `Option<Arc<dyn FileOperations>>` field.
-/// A future cleanup pass should remove those fields and this trait entirely.
-#[async_trait]
+/// The `load_file` method was removed in Phase 3 of the tool cleanup.
+/// The trait is retained because `CapabilityContext` and `QueryEngine` still
+/// carry an `Option<Arc<dyn FileOperations>>` field for `is_loaded` checks and
+/// workspace path resolution.
 pub trait FileOperations: Send + Sync + std::fmt::Debug {
-    /// Load a file using the raw tool arguments (stub — always returns error).
-    async fn load_file(&self, args: &serde_json::Value) -> anyhow::Result<LoadedFileResult>;
-
     /// Return whether this file is already loaded for the given scope.
     fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool;
 
@@ -336,14 +323,7 @@ impl std::fmt::Debug for DefaultFileOperations {
     }
 }
 
-#[async_trait]
 impl FileOperations for DefaultFileOperations {
-    async fn load_file(&self, _args: &serde_json::Value) -> anyhow::Result<LoadedFileResult> {
-        Err(anyhow::anyhow!(
-            "load_file has been removed in Phase 3 of the tool cleanup"
-        ))
-    }
-
     fn is_loaded(&self, file_id: &str, scope_id: &str) -> bool {
         let key = format!("loaded:{}:{}", scope_id, file_id);
         matches!(self.storage.get_memory(&key), Ok(Some(_)))
