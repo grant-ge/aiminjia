@@ -9,7 +9,7 @@ pub fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<Dat
 }
 
 fn one_shot_next(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
-    if item.occurrence_count == 0 && item.start_at > now {
+    if item.occurrence_count == 0 && item.start_at >= now {
         Some(item.start_at)
     } else {
         None
@@ -51,6 +51,13 @@ mod tests {
         let start_at = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
         let item = make_one_shot(start_at, 0);
         assert_eq!(compute_next_fire_at(&item, now), Some(start_at));
+    }
+
+    #[test]
+    fn one_shot_equal_now_returns_start_at() {
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let item = make_one_shot(now, 0);
+        assert_eq!(compute_next_fire_at(&item, now), Some(now));
     }
 
     #[test]
