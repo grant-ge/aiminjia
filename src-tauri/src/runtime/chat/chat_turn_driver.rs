@@ -672,6 +672,7 @@ impl RuntimeChatTurnDriver {
                 suggestions,
                 remember_options,
                 default_destination,
+                path_auth_scope,
                 ..
             } = decision
             else {
@@ -691,6 +692,7 @@ impl RuntimeChatTurnDriver {
                 remember_options: remember_options.clone(),
                 default_destination: *default_destination,
                 original_request: original_request.clone(),
+                path_auth_scope: path_auth_scope.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
 
@@ -2123,6 +2125,7 @@ mod tests {
                 remember_options: vec![],
                 default_destination: None,
                 reason: PermissionReason::Other("not-mode".to_string()),
+                path_auth_scope: None,
             },
         })];
 

@@ -959,6 +959,7 @@ mod tests {
             remember_options: crate::runtime::tools::permission::default_permission_ask().0,
             default_destination: crate::runtime::tools::permission::default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
+            path_auth_scope: None,
         });
 
         let decision = result

@@ -832,6 +832,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         } => PermissionDecision::Ask {
             message: format!(
                 "Subagent tool '{}' (tool_call_id={}) requires confirmation: {}",
@@ -841,6 +842,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         },
         other => other,
     }

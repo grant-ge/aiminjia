@@ -205,6 +205,7 @@ mod tests {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::Other("subagent-inner".to_string()),
+            path_auth_scope: None,
         };
 
         let extracted = take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))
