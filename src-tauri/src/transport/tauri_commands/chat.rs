@@ -890,8 +890,6 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let content_json = crate::runtime::chat::chat_turn_driver::build_user_content_json(
             content,
             attachments,
-            None,
-            None,
         )
         .to_string();
 

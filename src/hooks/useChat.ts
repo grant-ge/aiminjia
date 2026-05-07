@@ -327,7 +327,7 @@ export function useChat() {
 
     try {
       console.log('[useChat] Calling sendMessage IPC, attachments:', files)
-      await sendMessage(conversationId, text, files, null, messageId, null, null)
+      await sendMessage(conversationId, text, files, null, messageId)
       console.log('[useChat] sendMessage IPC returned OK')
       recordDiagnostic({
         event: 'chat.submit.completed',
