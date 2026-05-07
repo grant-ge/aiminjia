@@ -4226,6 +4226,32 @@ git commit -m "test(agenda): review test locking per-tick scope re-resolve"
 
 ---
 
+### 任务 31 Review 修复：增强 runner scope 架构锁定
+
+**Files:**
+- Modify: `src-tauri/tests/review_agenda_runner_scope.rs`
+- Modify: `docs/superpowers/plans/2026-05-07-agenda-base.md`
+
+- [ ] **Step R1：增强测试**
+  - 继续断言 `path_resolver.resolve_paths()` 在 `loop {` 之后。
+  - 新增断言 `AgendaStore::new(paths.base_dir())` 在 `loop {` 之后。
+  - 新增断言 `loop {` 前的生产代码片段不包含 `AgendaStore::new(`，避免缓存 store。
+
+- [ ] **Step R2：跑测试**
+
+```bash
+cd src-tauri && cargo test --test review_agenda_runner_scope
+```
+
+- [ ] **Step R3：Commit**
+
+```bash
+git add docs/superpowers/plans/2026-05-07-agenda-base.md src-tauri/tests/review_agenda_runner_scope.rs
+git commit -m "fix(agenda): strengthen runner scope review test"
+```
+
+---
+
 ## 任务 32：review_agenda_command_thinness.rs
 
 **Files:**
