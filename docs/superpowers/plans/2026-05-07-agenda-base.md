@@ -3577,6 +3577,85 @@ git add docs/superpowers/plans/2026-05-07-agenda-base.md src-tauri/src/transport
 git commit -m "feat(agenda): tauri commands update_agenda_item / delete_agenda_item"
 ```
 
+- [ ] **Review Fix Step 1：写失败的 serde 测试**
+
+在 `agenda.rs` 的 `#[cfg(test)] mod tests` 末尾追加：
+
+```rust
+#[test]
+fn update_request_json_rule_null_means_clear_rule() {
+    let request: UpdateAgendaItemRequest = serde_json::from_value(serde_json::json!({
+        "rule": null
+    }))
+    .unwrap();
+    assert!(matches!(request.rule, Some(None)));
+}
+
+#[test]
+fn update_request_json_missing_rule_means_leave_unchanged() {
+    let request: UpdateAgendaItemRequest = serde_json::from_value(serde_json::json!({
+        "title": "T"
+    }))
+    .unwrap();
+    assert!(matches!(request.rule, None));
+}
+```
+
+- [ ] **Review Fix Step 2：跑测试看失败**
+
+```bash
+cd src-tauri && cargo test --lib transport::tauri_commands::agenda::tests::update_request_json
+```
+
+期望：`update_request_json_rule_null_means_clear_rule` FAIL，证明 JSON `null` 当前不会变成 `Some(None)`。
+
+- [ ] **Review Fix Step 3：实现 nullable rule 反序列化**
+
+在 `UpdateAgendaItemRequest.rule` 上加自定义 deserialize：
+
+```rust
+#[serde(default, deserialize_with = "deserialize_nullable_rule")]
+pub rule: Option<Option<crate::runtime::agenda::RecurrenceRule>>,
+```
+
+并在 `UpdateAgendaItemRequest` 上方追加：
+
+```rust
+fn deserialize_nullable_rule<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<crate::runtime::agenda::RecurrenceRule>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(Some(None)),
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+```
+
+- [ ] **Review Fix Step 4：跑测试看通过**
+
+```bash
+cd src-tauri && cargo test --lib transport::tauri_commands::agenda::tests::update_request_json
+```
+
+- [ ] **Review Fix Step 5：cargo check**
+
+```bash
+cd src-tauri && cargo check
+```
+
+- [ ] **Review Fix Step 6：Commit**
+
+```bash
+git add docs/superpowers/plans/2026-05-07-agenda-base.md src-tauri/src/transport/tauri_commands/agenda.rs
+git commit -m "fix(agenda): allow update command to clear recurrence rule"
+```
+
 ---
 ## 任务 25：Tauri 命令 run_now / list_occurrences
 

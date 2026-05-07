@@ -135,6 +135,21 @@ pub async fn create_agenda_item(
     store.create(item).map_err(|e| e.to_string())
 }
 
+fn deserialize_nullable_rule<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<crate::runtime::agenda::RecurrenceRule>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match value {
+        None => Ok(Some(None)),
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgendaItemRequest {
@@ -142,6 +157,7 @@ pub struct UpdateAgendaItemRequest {
     pub prompt: Option<String>,
     pub start_at: Option<DateTime<Utc>>,
     pub timezone: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_nullable_rule")]
     pub rule: Option<Option<crate::runtime::agenda::RecurrenceRule>>,
     pub status: Option<ItemStatus>,
 }
@@ -402,5 +418,23 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, "timezone must be a valid IANA timezone");
+    }
+
+    #[test]
+    fn update_request_json_rule_null_means_clear_rule() {
+        let request: UpdateAgendaItemRequest = serde_json::from_value(serde_json::json!({
+            "rule": null
+        }))
+        .unwrap();
+        assert!(matches!(request.rule, Some(None)));
+    }
+
+    #[test]
+    fn update_request_json_missing_rule_means_leave_unchanged() {
+        let request: UpdateAgendaItemRequest = serde_json::from_value(serde_json::json!({
+            "title": "T"
+        }))
+        .unwrap();
+        assert!(matches!(request.rule, None));
     }
 }
