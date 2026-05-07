@@ -290,4 +290,53 @@ mod tests {
         let expected = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
         assert_eq!(compute_next_fire_at(&item, now), Some(expected));
     }
+
+    #[test]
+    fn count_returns_none_after_n_occurrences() {
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 9, 0, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Count { n: 3 },
+            by_day: vec![], by_month_day: vec![],
+        }, 3);
+        assert_eq!(compute_next_fire_at(&item, now), None);
+    }
+
+    #[test]
+    fn count_returns_some_when_under_n() {
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 8, 0, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Count { n: 3 },
+            by_day: vec![], by_month_day: vec![],
+        }, 1);
+        let expected = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
+        assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+    }
+
+    #[test]
+    fn until_returns_none_after_until_at() {
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 5, 9, 0, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap();
+        let item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Until { at: until },
+            by_day: vec![], by_month_day: vec![],
+        }, 2);
+        assert_eq!(compute_next_fire_at(&item, now), None);
+    }
+
+    #[test]
+    fn skip_dates_skips_to_next() {
+        let start = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap();
+        let skip = Utc.with_ymd_and_hms(2026, 5, 8, 9, 0, 0).unwrap();
+        let mut item = make_recurring(start, RecurrenceRule {
+            freq: Freq::Daily, interval: 1, end_condition: EndCondition::Never,
+            by_day: vec![], by_month_day: vec![],
+        }, 1);
+        item.skip_dates.push(skip);
+        let expected = Utc.with_ymd_and_hms(2026, 5, 9, 9, 0, 0).unwrap();
+        assert_eq!(compute_next_fire_at(&item, now), Some(expected));
+    }
 }
