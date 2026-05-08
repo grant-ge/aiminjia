@@ -298,6 +298,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 request.messages.len()
             );
 
+            let max_tokens =
+                crate::llm::max_tokens::default_max_tokens_for_model(&effective_settings.primary_model);
             let stream_result = self
                 .gateway
                 .stream_message(
@@ -307,7 +309,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     worker_system_prompt_for_gateway(&request),
                     request.dynamic_context.as_deref(),
                     Some(request.tool_defs.clone()),
-                    4096,
+                    max_tokens,
                     Some(&sub_conv_id),
                 )
                 .await;
