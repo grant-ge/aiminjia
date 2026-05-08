@@ -133,7 +133,7 @@ async fn register_builtin_tools_registers_workspace_runtime_tools() {
         .execute(
             "Read",
             &RequestScopedRuntimeDeps::from_plugin_context(&ctx),
-            serde_json::json!({"path": "test.csv"}),
+            serde_json::json!({"file_path": "test.csv"}),
             app_lib::runtime::cancellation::CancellationToken::new(),
         )
         .await;
@@ -490,7 +490,7 @@ async fn to_runtime_dispatcher_uses_capability_permission_pipeline() {
         app_lib::runtime::tools::ToolExecutionContext::for_test("test-conv", "run-1", "tc-1");
     // No capability attached → permission denied
     let outcome = dispatcher
-        .dispatch("Read", serde_json::json!({"path": "x.txt"}), exec_ctx)
+        .dispatch("Read", serde_json::json!({"file_path": "x.txt"}), exec_ctx)
         .await;
     assert!(
         outcome.is_err(),

@@ -170,7 +170,7 @@ async fn pre_tool_hook_tool_filter_only_affects_target() {
         .with_hook_registry(Arc::new(registry));
 
     let result = dispatcher
-        .dispatch("Write", json!({"path": "/tmp/x"}), ctx)
+        .dispatch("Write", json!({"file_path": "/tmp/x"}), ctx)
         .await;
     assert!(result.is_ok());
     assert_eq!(received.lock().unwrap().len(), 1);

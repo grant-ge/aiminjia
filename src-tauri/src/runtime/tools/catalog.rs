@@ -143,10 +143,12 @@ fn build_default_catalog() -> ToolCatalog {
             .with_capability_scope(["workspace:read"]),
         json!({
             "type": "object",
-            "required": ["path"],
+            "required": ["file_path"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
-                "max_bytes": { "type": "integer", "description": "最多读取字节数，默认 1048576", "default": 1048576 }
+                "file_path": { "type": "string", "description": "文件路径（绝对路径或相对授权工作目录的路径）" },
+                "offset": { "type": "integer", "description": "起始行号（1-based）。指定 offset 时按行读取而非字节" },
+                "limit": { "type": "integer", "description": "最多读取行数。配合 offset 使用，默认 2000 行" },
+                "max_bytes": { "type": "integer", "description": "字节模式上限（不指定 offset/limit 时生效）。默认 1048576", "default": 1048576 }
             }
         }),
     ));
@@ -162,7 +164,7 @@ fn build_default_catalog() -> ToolCatalog {
             "required": ["pattern"],
             "properties": {
                 "pattern": { "type": "string", "description": "文件名 glob 模式，如 '*.csv'" },
-                "path": { "type": "string", "description": "搜索的子目录（相对路径），默认 '.'", "default": "." },
+                "path": { "type": "string", "description": "搜索的子目录路径（绝对或相对授权工作目录），默认 '.'", "default": "." },
                 "max_results": { "type": "integer", "description": "最多返回结果数，默认 100", "default": 100 }
             }
         }),
@@ -174,47 +176,52 @@ fn build_default_catalog() -> ToolCatalog {
             .with_capability_scope(["workspace:write"]),
         json!({
             "type": "object",
-            "required": ["path", "content"],
+            "required": ["file_path", "content"],
             "properties": {
-                "path": {
+                "file_path": {
                     "type": "string",
-                    "description": "相对于授权工作目录的目标文件路径"
+                    "description": "目标文件路径（绝对或相对授权工作目录）"
                 },
                 "content": {
                     "type": "string",
                     "description": "要写入的文件完整内容（UTF-8 文本）。必须在同一次调用中提供全部内容，不得分步调用或省略任何部分。"
                 }
             },
-            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 read_workspace_file 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 edit_file 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
+            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 Read 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 Edit 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
         }),
     ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Edit",
-            "对授权工作目录中的文件执行精确的 old_string → new_string 替换（优先于 write_file 用于修改现有文件）",
+            "对授权工作目录中的文件执行精确的 old_string → new_string 替换（优先于 Write 用于修改现有文件）",
         )
         .with_kind(ToolKind::Primitive)
         .with_capability_scope(["workspace:read", "workspace:write"]),
         json!({
             "type": "object",
-            "required": ["path", "old_string", "new_string"],
+            "required": ["file_path", "old_string", "new_string"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
+                "file_path": { "type": "string", "description": "文件路径（绝对或相对授权工作目录）" },
                 "old_string": {
                     "type": "string",
-                    "description": "要替换的原始字符串。必须在文件中唯一存在，否则工具报错；若匹配不唯一，请增加更多上下文行使其唯一。若为空字符串，则视为向空文件写入内容（文件必须为空或不存在）。"
+                    "description": "要替换的原始字符串。默认必须在文件中唯一存在，否则工具报错；若需替换全部出现，请设置 replace_all=true。若为空字符串，则视为向空文件写入内容（文件必须为空或不存在）。"
                 },
-                "new_string": { "type": "string", "description": "替换后的新字符串" }
+                "new_string": { "type": "string", "description": "替换后的新字符串" },
+                "replace_all": {
+                    "type": "boolean",
+                    "description": "true 时替换文件中所有出现的 old_string；false（默认）时要求 old_string 唯一存在",
+                    "default": false
+                }
             },
-            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 read_workspace_file 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 write_file（本工具只传输差异，更安全高效）。\n- old_string 在文件中必须唯一；若不唯一，请扩大 old_string 的上下文范围直到唯一匹配。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
+            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 Read 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 Write（本工具只传输差异，更安全高效）。\n- 默认要求 old_string 在文件中唯一；不唯一时请扩大 old_string 的上下文，或传 replace_all=true 替换全部。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
         }),
     ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "Bash",
-            "在授权工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
+            "在授权工作目录中执行 shell 命令。默认 timeout 120000ms；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
@@ -227,10 +234,10 @@ fn build_default_catalog() -> ToolCatalog {
             "required": ["command"],
             "properties": {
                 "command": { "type": "string", "description": "要执行的 shell 命令" },
-                "timeout_secs": {
+                "timeout": {
                     "type": "integer",
-                    "description": "超时秒数，默认 120，最大 600",
-                    "default": 120
+                    "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
+                    "default": 120000
                 }
             }
         }),
@@ -246,7 +253,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n- 文本搜索：`Select-String -Pattern 'foo' -Path *.txt`（grep 等价）\
             \n- 调用 .exe：直接写程序名即可，如 `python script.py`、`node app.js`\
             \n- **不要**使用 Unix 专属命令（grep/find/rm/cat/ls -la 等不存在或行为不同）\
-            \n\n默认 timeout 120s；timeout/cancel 时终止进程并返回错误。\
+            \n\n默认 timeout 120000ms；timeout/cancel 时终止进程并返回错误。\
             \n\n安全约束：拒绝 `Remove-Item C:\\Windows`、`Format-Volume`、`Stop-Computer`、`iwr ... | iex` 等危险模式。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理。",
         )
@@ -259,10 +266,10 @@ fn build_default_catalog() -> ToolCatalog {
             "required": ["command"],
             "properties": {
                 "command": { "type": "string", "description": "要执行的 PowerShell 命令" },
-                "timeout_secs": {
+                "timeout": {
                     "type": "integer",
-                    "description": "超时秒数，默认 120，最大 600",
-                    "default": 120
+                    "description": "超时毫秒数，默认 120000（120 秒），最大 600000（10 分钟）",
+                    "default": 120000
                 }
             }
         }),

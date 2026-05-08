@@ -61,7 +61,7 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
         "conv-workspace-read",
         authorized_root.path(),
         "Read",
-        json!({ "path": "sales_2026.csv" }),
+        json!({ "file_path": "sales_2026.csv" }),
     )
     .await
     .unwrap();

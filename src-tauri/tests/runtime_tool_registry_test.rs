@@ -18,7 +18,7 @@ async fn read_workspace_file_runtime_tool_reads_content() {
     std::fs::write(tmp.path().join("hello.txt"), b"hello world").unwrap();
     let ctx = make_ctx_with_workspace(&tmp);
     let tool = ReadWorkspaceFileRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"path": "hello.txt"}), ctx)
+    let result = RuntimeTool::execute(&tool, json!({"file_path": "hello.txt"}), ctx)
         .await
         .unwrap();
     assert!(

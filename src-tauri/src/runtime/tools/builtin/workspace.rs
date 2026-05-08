@@ -144,9 +144,9 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         let capability = ctx.capability.as_ref();
         let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let max_bytes = capability
             .and_then(|cap| cap.file_reading_limits.as_ref())
             .map(|limits| limits.max_size_bytes)
@@ -189,7 +189,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                             limit_text_content(&state.content, max_bytes);
                         let truncated = limit_truncated || metadata.len() as usize > content.len();
                         let mut result = json!({
-                            "path": rel,
+                            "file_path": rel,
                             "content": content,
                             "size": metadata.len(),
                             "cached": true,
@@ -220,7 +220,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                 );
             }
         }
-        let mut result = json!({ "path": rel, "content": content, "size": bytes.len() });
+        let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
         }
@@ -369,7 +369,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         use crate::runtime::store::permission_store::PolicyDecision;
         use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
-        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
+        let path = input.get("file_path").and_then(Value::as_str).unwrap_or("");
         if path.is_empty() {
             return None;
         }
@@ -407,9 +407,9 @@ impl RuntimeTool for WriteFileRuntimeTool {
     ) -> Result<ToolResult, ToolError> {
         let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let content = input
             .get("content")
             .and_then(Value::as_str)
@@ -429,7 +429,7 @@ impl RuntimeTool for WriteFileRuntimeTool {
         Ok(tool_result(
             "Write",
             json!({
-                "path": rel,
+                "file_path": rel,
                 "size": content.len(),
                 "created": true,
             }),
@@ -461,7 +461,7 @@ impl RuntimeTool for EditFileRuntimeTool {
         use crate::runtime::store::permission_store::PolicyDecision;
         use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 
-        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
+        let path = input.get("file_path").and_then(Value::as_str).unwrap_or("");
         if path.is_empty() {
             return None;
         }
@@ -499,9 +499,9 @@ impl RuntimeTool for EditFileRuntimeTool {
     ) -> Result<ToolResult, ToolError> {
         let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let old_string = input
             .get("old_string")
             .and_then(Value::as_str)
@@ -510,6 +510,10 @@ impl RuntimeTool for EditFileRuntimeTool {
             .get("new_string")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: new_string".into()))?;
+        let replace_all = input
+            .get("replace_all")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let resolved = resolve_path(&root, rel)?;
 
@@ -541,7 +545,7 @@ impl RuntimeTool for EditFileRuntimeTool {
             return Ok(tool_result(
                 "Edit",
                 json!({
-                    "path": rel,
+                    "file_path": rel,
                     "operation": "create",
                     "bytes_written": new_string.len(),
                 }),
@@ -554,13 +558,17 @@ impl RuntimeTool for EditFileRuntimeTool {
                 "old_string not found in file: {rel}\nString: {old_string}"
             )));
         }
-        if matches > 1 {
+        if matches > 1 && !replace_all {
             return Err(ToolError::ExecutionFailed(format!(
-                "old_string found {matches} times in file: {rel}. Provide more context to uniquely identify the target.\nString: {old_string}"
+                "old_string found {matches} times in file: {rel}. Provide more context to uniquely identify the target, or pass replace_all: true to replace all occurrences.\nString: {old_string}"
             )));
         }
 
-        let updated_content = original_content.replacen(old_string, new_string, 1);
+        let updated_content = if replace_all {
+            original_content.replace(old_string, new_string)
+        } else {
+            original_content.replacen(old_string, new_string, 1)
+        };
         std::fs::write(&resolved, updated_content.as_bytes())
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
         update_file_state_cache(&ctx, &resolved, &updated_content);
@@ -568,9 +576,10 @@ impl RuntimeTool for EditFileRuntimeTool {
         Ok(tool_result(
             "Edit",
             json!({
-                "path": rel,
+                "file_path": rel,
                 "operation": "edit",
                 "bytes_written": updated_content.len(),
+                "replacements": matches,
             }),
         ))
     }

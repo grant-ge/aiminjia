@@ -1472,7 +1472,7 @@ mod tests {
         st.tool_id = Some("toolu_lotus_combined".to_string());
         st.tool_name = Some("Read".to_string());
         st.tool_args = String::from(
-            r#"{"path": "README.md", "max_bytes": 5000}{"path": "AGENTS.md"}{"path": "Makefile"}"#,
+            r#"{"file_path": "README.md", "max_bytes": 5000}{"file_path": "AGENTS.md"}{"file_path": "Makefile"}"#,
         );
 
         flush_pending_tool(&mut st);
@@ -1507,7 +1507,7 @@ mod tests {
         assert_eq!(calls[2].id, "toolu_lotus_combined_split_2");
         // Each call must carry exactly its own arguments, not the concatenation.
         assert_eq!(
-            calls[0].arguments.get("path").and_then(|v| v.as_str()),
+            calls[0].arguments.get("file_path").and_then(|v| v.as_str()),
             Some("README.md")
         );
         assert_eq!(
@@ -1515,11 +1515,11 @@ mod tests {
             Some(5000)
         );
         assert_eq!(
-            calls[1].arguments.get("path").and_then(|v| v.as_str()),
+            calls[1].arguments.get("file_path").and_then(|v| v.as_str()),
             Some("AGENTS.md")
         );
         assert_eq!(
-            calls[2].arguments.get("path").and_then(|v| v.as_str()),
+            calls[2].arguments.get("file_path").and_then(|v| v.as_str()),
             Some("Makefile")
         );
         // After flush the args buffer must be cleared so the next tool_call
@@ -1535,7 +1535,7 @@ mod tests {
         let mut st = test_state();
         st.tool_id = Some("toolu_normal".to_string());
         st.tool_name = Some("Read".to_string());
-        st.tool_args = String::from(r#"{"path": "/tmp"}"#);
+        st.tool_args = String::from(r#"{"file_path": "/tmp"}"#);
 
         flush_pending_tool(&mut st);
 
@@ -1549,7 +1549,7 @@ mod tests {
             assert_eq!(tool_call.id, "toolu_normal");
             assert_eq!(tool_call.name, "Read");
             assert_eq!(
-                tool_call.arguments.get("path").and_then(|v| v.as_str()),
+                tool_call.arguments.get("file_path").and_then(|v| v.as_str()),
                 Some("/tmp")
             );
         }

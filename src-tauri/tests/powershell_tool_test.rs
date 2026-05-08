@@ -104,7 +104,7 @@ async fn powershell_returns_error_on_timeout() {
     let ctx = make_ctx(&tmp);
     let result = PowerShellTool
         .execute(
-            json!({ "command": "Start-Sleep -Seconds 10", "timeout_secs": 1 }),
+            json!({ "command": "Start-Sleep -Seconds 10", "timeout": 1000 }),
             ctx,
         )
         .await;

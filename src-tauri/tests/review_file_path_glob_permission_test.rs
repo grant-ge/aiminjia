@@ -36,7 +36,7 @@ async fn review_write_file_path_glob_deny_blocks_matching_path() {
     let ctx = make_ctx(store, &tmp);
     let decision = WriteFileRuntimeTool
         .check_permissions(
-            &json!({"path": "blocked/output.csv", "content": "a,b"}),
+            &json!({"file_path": "blocked/output.csv", "content": "a,b"}),
             &ctx,
         )
         .await;
@@ -53,7 +53,7 @@ async fn review_write_file_no_matching_glob_returns_none() {
     let ctx = make_ctx(store, &tmp);
     let decision = WriteFileRuntimeTool
         .check_permissions(
-            &json!({"path": "output/result.csv", "content": "a,b"}),
+            &json!({"file_path": "output/result.csv", "content": "a,b"}),
             &ctx,
         )
         .await;
@@ -76,7 +76,7 @@ async fn review_edit_file_path_glob_deny_blocks_matching_path() {
     let ctx = make_ctx(store, &tmp);
     let decision = EditFileRuntimeTool
         .check_permissions(
-            &json!({"path": "secret/config.txt", "old_string": "a", "new_string": "b"}),
+            &json!({"file_path": "secret/config.txt", "old_string": "a", "new_string": "b"}),
             &ctx,
         )
         .await;

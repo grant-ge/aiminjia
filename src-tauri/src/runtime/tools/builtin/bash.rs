@@ -82,11 +82,14 @@ fn default_bash_timeout_secs() -> u64 {
 }
 
 fn resolve_timeout_secs(input: &Value) -> u64 {
-    input
-        .get("timeout_secs")
+    // Input is `timeout` in milliseconds (aligned with claude-code-best).
+    // Convert to seconds for internal consumption. Default in seconds.
+    let ms = input
+        .get("timeout")
         .and_then(Value::as_u64)
-        .unwrap_or_else(default_bash_timeout_secs)
-        .min(MAX_TIMEOUT_SECS)
+        .unwrap_or_else(|| default_bash_timeout_secs() * 1000);
+    let secs = ms.div_ceil(1000);
+    secs.min(MAX_TIMEOUT_SECS)
 }
 
 fn tool_result_bash(content: String, data: Value) -> ToolResult {
@@ -289,7 +292,8 @@ mod tests {
 
     #[test]
     fn resolve_timeout_secs_prefers_input_override() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 5 })), 5);
+        // 5000ms = 5s
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 5000 })), 5);
     }
 
     #[test]
@@ -304,6 +308,13 @@ mod tests {
 
     #[test]
     fn resolve_timeout_secs_caps_large_values() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
+        // 9_999_000ms would be 9999s, capped to MAX (600s)
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 9_999_000 })), 600);
+    }
+
+    #[test]
+    fn resolve_timeout_secs_rounds_up_subsecond_ms() {
+        // 1500ms should round up to 2s (don't truncate to 1s)
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 1500 })), 2);
     }
 }
