@@ -8,7 +8,13 @@
 
 1. **P0**：取消 `chat.rs:1394` 对 `DAILY_BASE_PROMPT` 的强制覆盖，让 PromptAssembler 的产物真正进入 LLM 请求。
 2. **DAILY 白名单**：保留 17 个工具的白名单，让它在主对话路径上**真正生效**（接入 `build_visible_tool_defs` / 等价入口），不删。
-3. **AGENT.md**：维持现状不动，**不**引入 CLAUDE.md / AGENTS.md / `.claude/` 兼容。
+3. **AGENT.md → AGENTS.md 彻底重命名**：
+   - 文件名：`~/.renlijia/AGENT.md` → `~/.renlijia/AGENTS.md`；工作目录逐级 `AGENT.md` / `.aijia/AGENT.md` / `AGENT.local.md` → `AGENTS.md` / `.aijia/AGENTS.md` / `AGENTS.local.md`
+   - 代码变量 / 类型 / trait 方法 `RenlijiaMdLoader` / `RenlijiaMdFile` / `load_renlijia_md` / `renlijia_md_*` → `AgentsMdLoader` / `AgentsMdFile` / `load_agents_md` / `agents_md_*`
+   - base.md 新增第 7 条核心规则，明确 AGENTS.md 机制
+   - subagent 人设**不提** AGENTS.md（保持子代理人格独立）
+   - **不保留** AGENT.md 兼容别名（产品未正式发布，无历史用户文件）
+   - 仍不兼容 CLAUDE.md / `.claude/` 加载
 4. **PromptCachePolicy**：接入 wire format（Claude provider 多块化 + OpenAI 兼容渲染器输出 content 数组）。
 5. **Subagent**：为 4 个内置 subagent 写独立人格（草稿放在本方案 §6，由用户审）。
 6. **Coordinator**：保持 `team.rs` 5 行 stub，加 TODO 注释明确"未实现"。
@@ -274,9 +280,36 @@ pub struct TeamContext { ... }
 // 前端 src/features/employees 同步。
 ```
 
-### 2.11 `src-tauri/src/runtime/renlijia_md.rs`
+### 2.11 `src-tauri/src/runtime/renlijia_md.rs` → 重写为 AGENTS.md 加载器
 
-文件头注释明确："本 loader 只支持 AGENT.md / AGENT.local.md / .aijia/AGENT.md，不兼容 CLAUDE.md / AGENTS.md。"——避免后续读者误判。
+**重命名工作清单**：
+
+1. **文件名扫描**（4 处）：
+   - `~/.renlijia/AGENT.md` → `~/.renlijia/AGENTS.md`
+   - 工作目录及父目录 `AGENT.md` → `AGENTS.md`
+   - `.aijia/AGENT.md` → `.aijia/AGENTS.md`
+   - `AGENT.local.md` → `AGENTS.local.md`
+
+2. **类型/方法/变量重命名**（grep `RenlijiaMd|renlijia_md`，覆盖 7 个文件）：
+   - 结构体：`RenlijiaMdFile` → `AgentsMdFile`，`RenlijiaMdLoader` → `AgentsMdLoader`
+   - trait 方法：`RuntimeLlmExecutor::load_renlijia_md` → `load_agents_md`
+   - 字段/变量：`renlijia_md_loader` / `renlijia_md_files` / `renlijia_md_context_message` → `agents_md_*`
+   - 模块导出：`crate::runtime::renlijia_md` → `crate::runtime::agents_md`（文件改名）
+   - 受影响文件：`src-tauri/src/runtime/{mod.rs, renlijia_md.rs, chat/chat_turn_driver.rs}`、`src-tauri/src/transport/tauri_commands/chat.rs`、`src-tauri/tests/plan_ac_claude_md_test.rs`（含改名为 `plan_ac_agents_md_test.rs`）
+
+3. **注入消息标签**（`chat_turn_driver.rs::build_renlijia_md_context_message`）：
+   - `# renlijiaMd` 标签 → `# agentsMd`
+   - 函数名一并改：`build_agents_md_context_message`
+
+4. **文件头注释**：明确"本 loader 仅支持 AGENTS.md / AGENTS.local.md / .aijia/AGENTS.md，不兼容 CLAUDE.md / `.claude/`"。
+
+### 2.13 `src-tauri/prompts/base.md` 新增第 7 条核心规则（新增小节）
+
+在【核心规则】末尾追加：
+
+```
+7. 项目指令文件：当对话上下文中包含 AGENTS.md 内容（消息以 `# agentsMd` 标签开头并带文件来源路径），视为该项目或用户���指令，优先级仅次于本 system prompt。应当遵守其中约定的代码风格、命名规范、禁止操作等。多个 AGENTS.md 文件按层级合并（用户全局 → 工作目录父级 → 工作目录），就近层级优先。
+```
 
 ### 2.12 测试
 

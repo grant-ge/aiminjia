@@ -1596,35 +1596,211 @@ cd src-tauri && cargo check 2>&1 | tail -5
 
 ---
 
-### Task 4.8: TODO 注释 — `renlijia_md.rs`
+### Task 4.8: TODO 注释 — `agents_md.rs`（重命名后）
 
 **Files:**
-- Modify: `src-tauri/src/runtime/renlijia_md.rs`
+- Modify: `src-tauri/src/runtime/agents_md.rs`（Task 4.10 改名后的位置）
+
+> 注意：本 Task 必须在 Task 4.10（AGENTS.md 重命名）之后执行。
 
 - [ ] **Step 1: 加文件头注释**
 
-`renlijia_md.rs` 最上方加：
+`agents_md.rs` 最上方加：
 
 ```rust
 //! 项目指令文件加载器。
 //!
 //! 支持的文件名（仅这些）：
-//! - `~/.renlijia/AGENT.md`（用户全局）
-//! - 工作目录及其父目录的 `AGENT.md` / `.aijia/AGENT.md` / `AGENT.local.md`
+//! - `~/.renlijia/AGENTS.md`（用户全局）
+//! - 工作目录及其父目录的 `AGENTS.md` / `.aijia/AGENTS.md` / `AGENTS.local.md`
 //!
-//! 不兼容：CLAUDE.md / AGENTS.md（复数）/ .claude/CLAUDE.md / .claude/rules/*.md。
+//! 不兼容：CLAUDE.md / .claude/CLAUDE.md / .claude/rules/*.md。
 //! 这是 2026-05-08 的有意决定（用户决策），减少多源指令的冲突面与维护成本。
-//! 用户从 Claude Code 迁移过来时由用户自己重命名 AGENT.md 即可。
 //!
-//! 多文件按追加方式合并（不是覆盖）。
-//! 当前消费侧（chat_turn_driver::build_renlijia_md_context_message）
-//! 没有为每段加来源标记，未来如有混淆问题再考虑加 `<from path="...">` 标注。
+//! 多文件按追加方式合并（不是覆盖），就近层级优先（工作目录覆盖用户全局）。
+//! 消费侧（chat_turn_driver::build_agents_md_context_message）会把每段
+//! 内容包成 `# agentsMd` user message 注入到主对话上下文。
 ```
 
 - [ ] **Step 2: 编译检查**
 
 ```bash
 cd src-tauri && cargo check 2>&1 | tail -5
+```
+
+---
+
+### Task 4.10: AGENTS.md 重命名（连根拔起）
+
+**Files:**
+- Rename: `src-tauri/src/runtime/renlijia_md.rs` → `src-tauri/src/runtime/agents_md.rs`
+- Rename: `src-tauri/tests/plan_ac_claude_md_test.rs` → `src-tauri/tests/plan_ac_agents_md_test.rs`
+- Modify: `src-tauri/src/runtime/mod.rs`（模块声明）
+- Modify: `src-tauri/src/runtime/chat/chat_turn_driver.rs`（trait 方法 + 注入函数）
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`（loader 实例化、trait 方法实现）
+- Modify: `src-tauri/prompts/base.md`（新增第 7 条核心规则）
+
+**这是一个综合性重命名 Task，分 3 阶段：阶段一改文件名扫描，阶段二改类型/变量名，阶段三改 prompt 文件。**
+
+#### 阶段一：renlijia_md.rs 内部文件名扫描改 AGENTS.md
+
+- [ ] **Step 1: 修改 `renlijia_md.rs` 4 处扫描点**
+
+```rust
+// src-tauri/src/runtime/renlijia_md.rs
+// 第 28 行
+&home.join(".renlijia").join("AGENTS.md"),  // 旧: AGENT.md
+
+// 第 47-49 行
+self.try_add_file(&dir.join("AGENTS.md"), &mut seen, &mut result);
+self.try_add_file(&dir.join(".aijia").join("AGENTS.md"), &mut seen, &mut result);
+self.try_add_file(&dir.join("AGENTS.local.md"), &mut seen, &mut result);
+```
+
+- [ ] **Step 2: 修改测试中所有 `AGENT.md` 引用**
+
+`src-tauri/tests/plan_ac_claude_md_test.rs` 全文 sed 替换：
+
+```bash
+sed -i '' 's/AGENT\.md/AGENTS.md/g; s/AGENT\.local\.md/AGENTS.local.md/g' \
+    src-tauri/tests/plan_ac_claude_md_test.rs
+```
+
+> macOS 用 `sed -i ''`，Linux 用 `sed -i`（实施时按平台调整）。
+
+- [ ] **Step 3: 跑测试验证文件名扫描正常**
+
+```bash
+cd src-tauri && cargo test --test plan_ac_claude_md_test 2>&1 | tail -10
+```
+Expected: PASS。
+
+#### 阶段二：类型 / 变量 / 方法 / 文件名重命名
+
+- [ ] **Step 4: 全仓库 grep 找到所有 `RenlijiaMd|renlijia_md|load_renlijia_md` 引用**
+
+```bash
+grep -rn "RenlijiaMd\|renlijia_md\|load_renlijia_md\|build_renlijia_md_context_message" \
+    src-tauri/src src-tauri/tests --include="*.rs"
+```
+
+预期 7-10 个文件出现在结果里。
+
+- [ ] **Step 5: 用 sed 批量重命名（标识符）**
+
+```bash
+cd /Users/a20250311/.codex/worktrees/5c88/lotus-app
+
+# 列出受影响文件
+files=$(grep -rln "RenlijiaMd\|renlijia_md\|build_renlijia_md_context_message" \
+    src-tauri/src src-tauri/tests --include="*.rs")
+
+# 顺序很重要：长名字先替换避免冲突
+for f in $files; do
+    sed -i '' \
+        -e 's/build_renlijia_md_context_message/build_agents_md_context_message/g' \
+        -e 's/load_renlijia_md/load_agents_md/g' \
+        -e 's/RenlijiaMdLoader/AgentsMdLoader/g' \
+        -e 's/RenlijiaMdFile/AgentsMdFile/g' \
+        -e 's/renlijia_md_loader/agents_md_loader/g' \
+        -e 's/renlijia_md_files/agents_md_files/g' \
+        -e 's/renlijia_md_context_message/agents_md_context_message/g' \
+        -e 's/renlijia_md::/agents_md::/g' \
+        -e 's/runtime::renlijia_md/runtime::agents_md/g' \
+        -e 's/pub mod renlijia_md/pub mod agents_md/g' \
+        "$f"
+done
+```
+
+- [ ] **Step 6: 改注入标签**
+
+`src-tauri/src/runtime/chat/chat_turn_driver.rs` 找到注入消息构造函数（`build_agents_md_context_message`），把内部 `# renlijiaMd` 标签改成 `# agentsMd`：
+
+```bash
+grep -n "renlijiaMd" src-tauri/src/runtime/chat/chat_turn_driver.rs
+# 把找到的行里 'renlijiaMd' 改成 'agentsMd'
+```
+
+- [ ] **Step 7: 物理重命名文件**
+
+```bash
+git mv src-tauri/src/runtime/renlijia_md.rs src-tauri/src/runtime/agents_md.rs
+git mv src-tauri/tests/plan_ac_claude_md_test.rs src-tauri/tests/plan_ac_agents_md_test.rs
+```
+
+- [ ] **Step 8: 编译检查**
+
+```bash
+cd src-tauri && cargo check 2>&1 | tail -20
+```
+Expected: 编译通过。如果有报错，多半是 sed 漏掉某处，再 grep 一次。
+
+- [ ] **Step 9: 跑测试**
+
+```bash
+cd src-tauri && cargo test --test plan_ac_agents_md_test 2>&1 | tail -10
+```
+Expected: PASS。
+
+#### 阶段三：base.md 新增第 7 条核心规则
+
+- [ ] **Step 10: 修改 `src-tauri/prompts/base.md`**
+
+读现有 `base.md`：
+
+```bash
+cat src-tauri/prompts/base.md
+```
+
+在【核心规则】最后一条（第 6 条"能力边界"）后**追加**第 7 条：
+
+```
+7. 项目指令文件：当对话上下文中包含 AGENTS.md 内容（消息以 `# agentsMd` 标签开头并带文件来源路径），视为该项目或用户的指令，优先级仅次于本 system prompt。应当遵守其中约定的代码风格、命名规范、禁止操作等。多个 AGENTS.md 文件按层级合并（用户全局 → 工作目录父级 → 工作目录），就近层级优先。
+```
+
+> 注意：base.md 的内容会被 `include_str!` 嵌入二进制，必须在编译前修改完毕。
+
+- [ ] **Step 11: 跑端到端测试验证 base.md 新规则进入 LLM 请求**
+
+修改 `src-tauri/tests/effective_system_prompt_test.rs`（Task 1.5 创建的测试），在断言里追加：
+
+```rust
+assert!(
+    captured.contains("AGENTS.md"),
+    "base.md should now mention AGENTS.md mechanism after rename"
+);
+assert!(
+    captured.contains("agentsMd"),
+    "base.md should reference the agentsMd context tag"
+);
+```
+
+```bash
+cd src-tauri && cargo test --test effective_system_prompt_test 2>&1 | tail -10
+```
+Expected: PASS。
+
+- [ ] **Step 12: 全量回归 + commit**
+
+```bash
+cd src-tauri && cargo test --all 2>&1 | tail -20
+```
+Expected: 全部 PASS。
+
+```bash
+git add -A
+git commit -m "refactor(agents-md): rename AGENT.md → AGENTS.md (file + types + base.md rule)
+
+- 文件名扫描：~/.renlijia/AGENTS.md、工作目录 AGENTS.md / .aijia/AGENTS.md /
+  AGENTS.local.md（替换原 AGENT.md 系列，不保留兼容别名 — 产品未发布无历史
+  用户文件）
+- 类型/方法/变量：RenlijiaMd* → AgentsMd*，load_renlijia_md → load_agents_md，
+  renlijia_md_* → agents_md_*，模块 runtime::renlijia_md → runtime::agents_md
+- 注入标签：# renlijiaMd → # agentsMd
+- base.md 新增第 7 条核心规则，明确 AGENTS.md 机制
+- 测试同步重命名 + 新增 base.md 包含 AGENTS.md 关键串的断言
+
+关联 spec: §0.3 / §2.11 / §2.13"
 ```
 
 ---
