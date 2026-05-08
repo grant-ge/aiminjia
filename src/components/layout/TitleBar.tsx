@@ -1,5 +1,7 @@
 import React from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { UpdateAvailableLink } from './UpdateAvailableLink'
+import { useUpdaterStore } from '@/lib/updaterStore'
 
 function handleDragStart(e: React.MouseEvent) {
   if (e.buttons === 1 && e.detail === 2) {
@@ -33,9 +35,26 @@ function WindowControls() {
   )
 }
 
-/** Renders only on Windows. macOS keeps the sidebar-top drag spacer in AppSidebar. */
+/**
+ * Windows: full title bar with drag region + window controls.
+ * macOS: thin overlay strip (transparent, no border) carrying only the
+ * UpdateAvailableLink — visible only when an update is ready, otherwise null.
+ */
 export function TitleBar() {
-  if (!navigator.userAgent.includes('Windows')) return null
+  const updateReady = useUpdaterStore((s) => s.phase === 'ready')
+  const isWindows = navigator.userAgent.includes('Windows')
+
+  if (!isWindows) {
+    if (!updateReady) return null
+    return (
+      <div className="pointer-events-none fixed right-3 top-2 z-40 flex items-center">
+        <div className="pointer-events-auto" onMouseDown={(e) => e.stopPropagation()}>
+          <UpdateAvailableLink />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       data-tauri-drag-region
@@ -43,6 +62,7 @@ export function TitleBar() {
       onMouseDown={handleDragStart}
     >
       <div className="flex-1" data-tauri-drag-region />
+      <UpdateAvailableLink />
       <WindowControls />
     </div>
   )
