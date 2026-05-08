@@ -26,10 +26,6 @@ fn build_test_plugin_ctx(
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(
         &workspace_path,
     ));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace_path.clone(),
-        None,
-    ));
     #[allow(deprecated)]
     app_lib::plugin::context::PluginContext {
         storage,
@@ -42,7 +38,6 @@ fn build_test_plugin_ctx(
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,

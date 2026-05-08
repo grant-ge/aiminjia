@@ -615,10 +615,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         };
 
         self.gateway.clear_task(&sub_conv_id);
-        self.runtime_deps
-            .session_manager
-            .destroy_run(&child_run_id)
-            .await;
 
         if let Some(handle) = child_handle.as_ref() {
             if cancelled {

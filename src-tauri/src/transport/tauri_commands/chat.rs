@@ -333,7 +333,6 @@ struct TauriChatServices {
     assistant_write_queue: Arc<MessageWriteQueue>,
     crypto: Option<Arc<SecureStorage>>,
     tool_registry: Arc<ToolRegistry>,
-    session_mgr: Arc<crate::python::session::PythonSessionManager>,
     auth_manager: Arc<AuthManager>,
     app: tauri::AppHandle,
     skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
@@ -1926,7 +1925,6 @@ impl TauriChatCommandAdapter {
         crypto: Option<Arc<SecureStorage>>,
         tool_registry: Arc<ToolRegistry>,
         skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
-        session_mgr: Arc<crate::python::session::PythonSessionManager>,
         auth_manager: Arc<AuthManager>,
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
@@ -1942,7 +1940,6 @@ impl TauriChatCommandAdapter {
             assistant_write_queue,
             crypto,
             tool_registry,
-            session_mgr,
             auth_manager,
             app,
             skill_registry,
@@ -2135,7 +2132,6 @@ impl TauriChatCommandAdapter {
             tavily_api_key,
             bocha_api_key,
             app_handle: Some(self.services.app.clone()),
-            session_manager: self.services.session_mgr.clone(),
             auth_manager: Some(self.services.auth_manager.clone()),
             connector_engine,
             use_cloud,
@@ -2195,7 +2191,6 @@ impl TauriChatCommandAdapter {
         self.services
             .gateway
             .clear_task_for_run(&conversation_id, &run_id);
-        self.services.session_mgr.destroy_run(&run_id).await;
 
         if result.is_ok() {
             // Quick synchronous guard: only attempt title generation when needed.
@@ -2247,7 +2242,6 @@ impl TauriChatCommandAdapter {
         );
         conversation_service::stop_streaming(
             self.services.gateway.clone(),
-            self.services.session_mgr.clone(),
             conversation_id,
         )
         .await
@@ -2398,7 +2392,6 @@ impl TauriChatCommandAdapter {
             self.services.db.clone(),
             self.services.gateway.clone(),
             self.services.file_mgr.clone(),
-            self.services.session_mgr.clone(),
             conversation_id,
         )
         .await?;

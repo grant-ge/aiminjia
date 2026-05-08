@@ -43,7 +43,6 @@ use crate::connector::dingtalk::DingtalkBridge;
 use crate::llm::gateway::LlmGateway;
 use crate::models::settings::AppSettings;
 use crate::plugin::registry::ToolRegistry;
-use crate::python::session::PythonSessionManager;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::dependencies::ManagedRuntimeResolver;
@@ -87,7 +86,6 @@ pub struct PluginContext {
     pub tavily_api_key: Option<String>,
     pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
-    pub session_manager: Arc<PythonSessionManager>,
     pub auth_manager: Option<Arc<AuthManager>>,
     pub connector_engine: Option<Arc<ConnectorEngine>>,
     pub dingtalk_bridge: Option<Arc<DingtalkBridge>>,

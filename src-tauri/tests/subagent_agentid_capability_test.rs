@@ -61,10 +61,6 @@ impl RuntimeTool for CaptureSubagentContextTool {
 fn make_plugin_ctx(workspace: &Path, agent_id: Option<AgentId>) -> PluginContext {
     let storage = Arc::new(AppStorage::new(workspace).expect("AppStorage::new failed"));
     let file_manager = Arc::new(FileManager::new(workspace));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace.to_path_buf(),
-        None,
-    ));
 
     PluginContext {
         storage,
@@ -77,7 +73,6 @@ fn make_plugin_ctx(workspace: &Path, agent_id: Option<AgentId>) -> PluginContext
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,

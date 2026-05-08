@@ -82,7 +82,6 @@ runtime/                        ← L2: Session/Query Runtime（核心编排层�
   agent/                        ← L4: Task/Agent Runtime（子代理、任务生命周期）
   store/                        ← L5: State Store（repository trait + file-based 实现）
 llm/                            ← L6: Infra Adapter（LLM provider、tool_executor）
-python/                         ← L6: Infra Adapter（Python 沙箱执行）
 storage/                        ← L6: Infra Adapter（文件持久化、workspace 管理）
 plugin/                         ← 遗留工具插件系统（正在向 RuntimeTool 迁移）
 ```
@@ -180,7 +179,6 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 - `uploads/` — 用户上传文件副本
 - `reports/` / `charts/` / `analysis/` — 生成物
 - `logs/` — 运行日志
-- `temp/` — 临时 Python 脚本
 
 ## 重要架构决策与约束
 

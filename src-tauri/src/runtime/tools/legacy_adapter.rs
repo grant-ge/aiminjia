@@ -177,10 +177,6 @@ mod tests {
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
-            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(
-                temp_dir.path().to_path_buf(),
-                None,
-            )),
             auth_manager: None,
             dingtalk_bridge: None,
             connector_engine: None,

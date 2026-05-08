@@ -384,7 +384,6 @@ pub mod testsupport {
     use crate::plugin::builtin::tools::register_builtin_tools;
     use crate::plugin::context::PluginContext;
     use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
-    use crate::python::session::PythonSessionManager;
     use crate::runtime::event_bus::RuntimeEventBus;
     use crate::runtime::identity::IdentityMapping;
     use crate::runtime::ids::RunId;
@@ -448,7 +447,6 @@ pub mod testsupport {
         std::fs::create_dir_all(&workspace_path)?;
         let storage = Arc::new(AppStorage::new(&workspace_path)?);
         let file_manager = Arc::new(FileManager::new(&workspace_path));
-        let session_manager = Arc::new(PythonSessionManager::new(workspace_path.clone(), None));
         let tool_registry = ToolRegistry::new();
         register_builtin_tools(&tool_registry).await;
 
@@ -495,7 +493,6 @@ pub mod testsupport {
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
-            session_manager,
             auth_manager: None,
             connector_engine: None,
             use_cloud: false,

@@ -48,10 +48,6 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        tmp.clone(),
-        None,
-    ));
     #[allow(deprecated)]
     app_lib::plugin::context::PluginContext {
         storage,
@@ -64,7 +60,6 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,

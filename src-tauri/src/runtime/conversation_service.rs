@@ -26,14 +26,8 @@ pub struct RenameConversationOutcome {
 
 pub async fn stop_streaming(
     gateway: Arc<LlmGateway>,
-    session_mgr: Arc<crate::python::session::PythonSessionManager>,
     conversation_id: String,
 ) -> Result<(), String> {
-    if let Some(run_id) = gateway.active_run_id(&conversation_id) {
-        let _ = session_mgr.interrupt_run(&run_id).await;
-    } else {
-        let _ = session_mgr.interrupt(&conversation_id).await;
-    }
     gateway
         .cancel_conversation(&conversation_id)
         .map_err(|e| e.to_string())
@@ -127,14 +121,8 @@ pub async fn delete_conversation(
     db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
     file_mgr: Arc<FileManager>,
-    session_mgr: Arc<crate::python::session::PythonSessionManager>,
     conversation_id: String,
 ) -> Result<DeleteConversationOutcome, String> {
-    session_mgr.destroy(&conversation_id).await;
-    if let Some(run_id) = gateway.active_run_id(&conversation_id) {
-        session_mgr.destroy_run(&run_id).await;
-    }
-
     let was_busy = gateway.is_conversation_busy(&conversation_id);
     if was_busy {
         log::info!(

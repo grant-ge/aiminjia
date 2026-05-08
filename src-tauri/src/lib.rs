@@ -4,7 +4,6 @@ pub mod connector;
 pub mod llm;
 pub mod models;
 pub mod plugin;
-pub mod python;
 pub mod runtime;
 pub mod runtime_audit;
 pub mod search;
@@ -517,14 +516,6 @@ pub fn run() {
             ));
             app.manage(facade);
 
-            // Initialize Python session manager for persistent REPL sessions
-            let session_mgr = Arc::new(
-                python::session::PythonSessionManager::with_lazy_runtime_resolver(
-                    file_mgr.workspace_path(),
-                    runtime_resolver.clone(),
-                ),
-            );
-
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new(
                     db.clone(),
@@ -533,24 +524,11 @@ pub fn run() {
                     secure_storage.clone(),
                     tool_registry.clone(),
                     disk_skill_registry.clone(),
-                    session_mgr.clone(),
                     auth_manager.clone(),
                     permission_store.clone(),
                     app.handle().clone(),
                 ),
             );
-
-            // Start idle session reaper (every 5 minutes)
-            {
-                let session_mgr_clone = session_mgr.clone();
-                tauri::async_runtime::spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
-                    loop {
-                        interval.tick().await;
-                        session_mgr_clone.reap_idle().await;
-                    }
-                });
-            }
 
             // Register managed state
             app.manage(db);
@@ -570,7 +548,6 @@ pub fn run() {
             app.manage(mcp_config_store);
             app.manage(permission_store);
             app.manage(skill_registry);
-            app.manage(session_mgr);
             app.manage(agent_runtime);
             app.manage(chat_adapter);
             app.manage(async_agent_task_store);
@@ -739,11 +716,6 @@ pub fn run() {
                         );
                     }
                 }
-
-                // Graceful shutdown: checkpoint all Python sessions before exit.
-                // block_on is safe here — the event loop is already shutting down.
-                let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();
-                tauri::async_runtime::block_on(session_mgr.shutdown_all());
 
                 // Shutdown CDP browser (kill Chromium process) via connector engine
                 let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();
