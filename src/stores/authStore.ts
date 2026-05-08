@@ -11,7 +11,7 @@ import {
   type CloudModel,
 } from '@/lib/tauri'
 import { useChatStore } from '@/stores/chatStore'
-import type { Route } from '@/stores/uiStore'
+import { useUiStore, type Route } from '@/stores/uiStore'
 
 interface AuthState {
   isLoggedIn: boolean
@@ -118,6 +118,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const models = info.models.length > 0 ? info.models : await getCloudModels()
       const selectedCloudModel = await syncCloudModelSelection(models)
       set({ ...mapAuthState(info, models), selectedCloudModel, isAuthPending: false })
+      useUiStore.getState().setRoute({ kind: 'home' })
     } catch (error) {
       set({ isAuthPending: false })
       throw error
