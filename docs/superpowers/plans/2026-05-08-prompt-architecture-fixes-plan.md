@@ -1677,49 +1677,83 @@ Expected: PASS。
 
 #### 阶段二：类型 / 变量 / 方法 / 文件名重命名
 
-- [ ] **Step 4: 全仓库 grep 找到所有 `RenlijiaMd|renlijia_md|load_renlijia_md` 引用**
+- [ ] **Step 4: 全仓库 grep 找到所有 `RenlijiaMd|renlijia_md|renlijia_files|renlijiaMd|load_renlijia_md` 引用**
 
 ```bash
-grep -rn "RenlijiaMd\|renlijia_md\|load_renlijia_md\|build_renlijia_md_context_message" \
+grep -rn "RenlijiaMd\|renlijia_md\|renlijia_files\|renlijiaMd\|load_renlijia_md\|build_renlijia_md_context_message" \
     src-tauri/src src-tauri/tests --include="*.rs"
 ```
 
-预期 7-10 个文件出现在结果里。
+> **第二轮 review 修订**：预期至少命中 **10 个文件**，其中 3 个是审查补报的测试文件：
+> - `tests/review_memory_turn_injection_test.rs`（含 `renlijia_files` 无 `_md_` 中缀、`with_renlijia_files` 方法名）
+> - `tests/prompt_architecture_test.rs`（字符串字面量 `"renlijiaMd"` + `# renlijiaMd`）
+> - `tests/plan_u4_memory_runtime_native_test.rs`（字符串字面量 `# renlijiaMd`）
 
-- [ ] **Step 5: 用 sed 批量重命名（标识符）**
+- [ ] **Step 5: 用 sed 批量重命名（标识符 + 字符串字面量）**
 
 ```bash
 cd /Users/a20250311/.codex/worktrees/5c88/lotus-app
 
 # 列出受影响文件
-files=$(grep -rln "RenlijiaMd\|renlijia_md\|build_renlijia_md_context_message" \
+files=$(grep -rln "RenlijiaMd\|renlijia_md\|renlijia_files\|renlijiaMd\|build_renlijia_md_context_message" \
     src-tauri/src src-tauri/tests --include="*.rs")
 
-# 顺序很重要：长名字先替换避免冲突
+# 顺序敏感：长前缀先替换避免与短前缀冲突
+# 第二轮 review 补充：renlijia_md_section / RenlijiaMdContextExecutor / renlijia_files /
+#   with_renlijia_files / 字符串字面量 "renlijiaMd" / # renlijiaMd
 for f in $files; do
     sed -i '' \
         -e 's/build_renlijia_md_context_message/build_agents_md_context_message/g' \
+        -e 's/RenlijiaMdContextExecutor/AgentsMdContextExecutor/g' \
         -e 's/load_renlijia_md/load_agents_md/g' \
         -e 's/RenlijiaMdLoader/AgentsMdLoader/g' \
         -e 's/RenlijiaMdFile/AgentsMdFile/g' \
+        -e 's/with_renlijia_files/with_agents_files/g' \
         -e 's/renlijia_md_loader/agents_md_loader/g' \
         -e 's/renlijia_md_files/agents_md_files/g' \
         -e 's/renlijia_md_context_message/agents_md_context_message/g' \
+        -e 's/renlijia_md_section/agents_md_section/g' \
+        -e 's/renlijia_files/agents_files/g' \
         -e 's/renlijia_md::/agents_md::/g' \
         -e 's/runtime::renlijia_md/runtime::agents_md/g' \
         -e 's/pub mod renlijia_md/pub mod agents_md/g' \
+        -e 's/"renlijiaMd"/"agentsMd"/g' \
+        -e 's/# renlijiaMd/# agentsMd/g' \
         "$f"
 done
+
+# 验证：grep 不应再命中任何旧名（字符串/标识符都清空）
+grep -rn "RenlijiaMd\|renlijia_md\|renlijia_files\|renlijiaMd" \
+    src-tauri/src src-tauri/tests --include="*.rs" \
+    || echo "✅ 所有旧名已清理"
 ```
 
-- [ ] **Step 6: 改注入标签**
+> **替换顺序关键性说明**：
+> - `renlijia_files` 必须在 `with_renlijia_files` 之**后**替换——否则 `with_renlijia_files` 里的 `renlijia_files` 会先被改成 `agents_files`，再匹配 `with_renlijia_files` 时就找不到了
+> - 字符串 `"renlijiaMd"` 必须放最后——否则前面的标识符替换可能误伤
 
-`src-tauri/src/runtime/chat/chat_turn_driver.rs` 找到注入消息构造函数（`build_agents_md_context_message`），把内部 `# renlijiaMd` 标签改成 `# agentsMd`：
+- [ ] **Step 6: 改剩余注入标签（如果 sed 没完全命中）**
+
+Step 5 的最后两条 sed（`"renlijiaMd"` 和 `# renlijiaMd`）已经处理了字符串字面量。这一步主要 double check：
 
 ```bash
-grep -n "renlijiaMd" src-tauri/src/runtime/chat/chat_turn_driver.rs
-# 把找到的行里 'renlijiaMd' 改成 'agentsMd'
+grep -rn "renlijiaMd" src-tauri/src src-tauri/tests --include="*.rs"
 ```
+Expected: 无输出（全部已清理）。若有残留，手动修。
+
+- [ ] **Step 6.5: 中间编译关卡（第二轮 review 补充）**
+
+在物理重命名文件（Step 7）之前跑一次全量编译检查：
+
+```bash
+cd src-tauri && cargo check --tests 2>&1 | tail -20
+```
+Expected: 编译通过（仅剩 warning）。
+
+若有编译错误，优先排查：
+- `grep "renlijia\|Renlijia" src-tauri/src src-tauri/tests --include="*.rs"` 找遗漏标识符
+- 若命中的行在 `renlijia_md.rs` / `plan_ac_claude_md_test.rs` 里，是正常的（文件还没改名），可忽略
+- 其他位置的命中必须手动修掉才能继续 Step 7
 
 - [ ] **Step 7: 物理重命名文件**
 
@@ -1848,7 +1882,7 @@ git commit -m "feat(prompt): wave 4 - subagent independent personas + TODO place
   各自有 200-400 字独立中文人格 prompt（不继承主对话 AI小家身份）
 - general/explore 合并自 claude-code-best 翻译版 + 本地原创补丁
 - browse_data / daily_assistant 沿用本地原创版（claude-code-best 无对应物）
-- team.rs / dispatch_prompt.rs / renlijia_md.rs 三处加 TODO 块注释，
+- team.rs / dispatch_prompt.rs / agents_md.rs 三处加 TODO 块注释，
   明确未实现功能的范围、为什么不实施、何时再考虑
 - 测试覆盖：subagent_persona_test 验证每个 agent 都有安全/输出/数据真实性条款
 
@@ -1860,6 +1894,16 @@ git commit -m "feat(prompt): wave 4 - subagent independent personas + TODO place
 ---
 
 ## 全局验收（实施完成后）
+
+### 开发者本地迁移提示（实施前必读）
+
+如果你（或团队成员）本地已有 `~/.renlijia/AGENT.md` 文件（产品虽未发布但开发期间可能写过），改名生效后该文件会**失效不再被加载**。请在合并/部署前手动改名：
+
+```bash
+[ -f ~/.renlijia/AGENT.md ] && mv ~/.renlijia/AGENT.md ~/.renlijia/AGENTS.md && echo "✅ 本地 AGENT.md 已迁移"
+```
+
+工作目录里的 `AGENT.md` / `.aijia/AGENT.md` / `AGENT.local.md` 同理（如果你在某些 lotus 工作区写过这些文件，手动改名）。
 
 - [ ] **跑全部测试**
 

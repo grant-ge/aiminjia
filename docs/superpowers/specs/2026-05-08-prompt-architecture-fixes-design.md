@@ -290,12 +290,22 @@ pub struct TeamContext { ... }
    - `.aijia/AGENT.md` → `.aijia/AGENTS.md`
    - `AGENT.local.md` → `AGENTS.local.md`
 
-2. **类型/方法/变量重命名**（grep `RenlijiaMd|renlijia_md`，覆盖 7 个文件）：
-   - 结构体：`RenlijiaMdFile` → `AgentsMdFile`，`RenlijiaMdLoader` → `AgentsMdLoader`
+2. **类型/方法/变量重命名**（grep `RenlijiaMd|renlijia_md|renlijia_files|renlijiaMd`，覆盖 **10 个文件**——第二轮 review 修订）：
+   - 结构体：`RenlijiaMdFile` → `AgentsMdFile`，`RenlijiaMdLoader` → `AgentsMdLoader`，**`RenlijiaMdContextExecutor` → `AgentsMdContextExecutor`**（测试专用 mock）
    - trait 方法：`RuntimeLlmExecutor::load_renlijia_md` → `load_agents_md`
-   - 字段/变量：`renlijia_md_loader` / `renlijia_md_files` / `renlijia_md_context_message` → `agents_md_*`
+   - 字段/变量：`renlijia_md_loader` / `renlijia_md_files` / `renlijia_md_context_message` / **`renlijia_md_section`** / **`renlijia_files`（无 `_md_` 中缀，review_memory_turn_injection_test.rs 独有）** / **`with_renlijia_files`（mock 方法名）** → 全部替换为 `agents_md_*` / `agents_*` 对应名
    - 模块导出：`crate::runtime::renlijia_md` → `crate::runtime::agents_md`（文件改名）
-   - 受影响文件：`src-tauri/src/runtime/{mod.rs, renlijia_md.rs, chat/chat_turn_driver.rs}`、`src-tauri/src/transport/tauri_commands/chat.rs`、`src-tauri/tests/plan_ac_claude_md_test.rs`（含改名为 `plan_ac_agents_md_test.rs`）
+   - **字符串字面量**：`"renlijiaMd"` → `"agentsMd"`，`# renlijiaMd` → `# agentsMd`（测试硬断言用）
+   - 受影响文件（完整 10 个）：
+     - `src-tauri/src/runtime/mod.rs`
+     - `src-tauri/src/runtime/renlijia_md.rs`（改名为 `agents_md.rs`）
+     - `src-tauri/src/runtime/chat/chat_turn_driver.rs`
+     - `src-tauri/src/transport/tauri_commands/chat.rs`
+     - `src-tauri/tests/plan_ac_claude_md_test.rs`（改名为 `plan_ac_agents_md_test.rs`）
+     - `src-tauri/tests/prompt_architecture_test.rs` **（字符串字面量，review 补报）**
+     - `src-tauri/tests/review_memory_turn_injection_test.rs` **（含 `renlijia_files` 字段、`with_renlijia_files` 方法，review 补报）**
+     - `src-tauri/tests/plan_u4_memory_runtime_native_test.rs` **（字符串字面量，review 补报）**
+     - 以及其他被 grep 命中的测试文件（实施前必须再次 grep 全仓库确认）
 
 3. **注入消息标签**（`chat_turn_driver.rs::build_renlijia_md_context_message`）：
    - `# renlijiaMd` 标签 → `# agentsMd`
@@ -308,7 +318,7 @@ pub struct TeamContext { ... }
 在【核心规则】末尾追加：
 
 ```
-7. 项目指令文件：当对话上下文中包含 AGENTS.md 内容（消息以 `# agentsMd` 标签开头并带文件来源路径），视为该项目或用户���指令，优先级仅次于本 system prompt。应当遵守其中约定的代码风格、命名规范、禁止操作等。多个 AGENTS.md 文件按层级合并（用户全局 → 工作目录父级 → 工作目录），就近层级优先。
+7. 项目指令文件：当对话上下文中出现 context section 以 `# agentsMd` 标签开头（包裹在 `<system-reminder>` 内并标注文件来源路径）时，视为该项目或用户的指令，优先级仅次于本 system prompt。应当遵守其中约定的代码风格、命名规范、禁止操作等。**如果上下文中没有 AGENTS.md 内容，正常工作即可——不要主动询问"你的 AGENTS.md 在哪"**。多个 AGENTS.md 文件按层级合并（用户全局 → 工作目录父级 → 工作目录），就近层级优先。
 ```
 
 ### 2.12 测试
