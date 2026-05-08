@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
+#[cfg(target_os = "windows")]
 use crate::storage::process_ext::NoWindowExt;
 
 pub struct SkillSubstitutionContext {

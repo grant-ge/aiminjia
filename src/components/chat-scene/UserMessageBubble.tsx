@@ -6,6 +6,7 @@ import { openLocalFile } from '@/lib/tauri'
 import { Blocks } from 'lucide-react'
 import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { isPreviewableFileType } from '@/components/chat/generatedFileActions'
+import { useLocalImageDataUrl } from '@/hooks/useLocalImageDataUrl'
 import type { FileAttachment, SkillCommandBreadcrumb } from '@/types/message'
 
 interface UserMessageBubbleProps {
@@ -35,6 +36,31 @@ function AttachmentIcon({ kind }: { kind: FileAttachment['kind'] }) {
     <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
       <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
     </svg>
+  )
+}
+
+function ImageThumbnail({ file, onClick }: { file: FileAttachment; onClick: () => void }) {
+  const { url } = useLocalImageDataUrl(file.filePath, file.mimeType)
+  if (!url) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 transition-opacity hover:opacity-80"
+        style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+        title={file.fileName}
+      >
+        <AttachmentIcon kind="image" />
+        <span className="max-w-[64px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
+          {file.fileName}
+        </span>
+      </button>
+    )
+  }
+  return (
+    <button type="button" onClick={onClick} className="overflow-hidden rounded-lg transition-opacity hover:opacity-90" title={file.fileName}>
+      <img src={url} alt={file.fileName} className="max-h-40 max-w-[200px] rounded-lg object-cover" />
+    </button>
   )
 }
 
@@ -68,21 +94,27 @@ export function UserMessageBubble({ text, commandText, skillCommand, files, conv
     <div className="flex w-full flex-col items-end gap-1.5">
       {hasFiles ? (
         <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
-          {files!.map((file) => (
-            <button
-              key={file.id}
-              type="button"
-              onClick={() => handleAttachmentClick(file)}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 transition-opacity hover:opacity-80"
-              style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
-              title={file.fileName}
-            >
-              <AttachmentIcon kind={file.kind ?? (file.fileType === 'folder' ? 'folder' : file.fileType === 'image' ? 'image' : 'file')} />
-              <span className="max-w-[64px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
-                {file.fileName}
-              </span>
-            </button>
-          ))}
+          {files!.map((file) => {
+            const kind = file.kind ?? (file.fileType === 'folder' ? 'folder' : file.fileType === 'image' ? 'image' : 'file')
+            if (kind === 'image') {
+              return <ImageThumbnail key={file.id} file={file} onClick={() => handleAttachmentClick(file)} />
+            }
+            return (
+              <button
+                key={file.id}
+                type="button"
+                onClick={() => handleAttachmentClick(file)}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 transition-opacity hover:opacity-80"
+                style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+                title={file.fileName}
+              >
+                <AttachmentIcon kind={kind} />
+                <span className="max-w-[64px] truncate text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                  {file.fileName}
+                </span>
+              </button>
+            )
+          })}
         </div>
       ) : null}
       {text || tokenLabel ? (

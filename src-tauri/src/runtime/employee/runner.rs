@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tokio::time::{self, Duration};
 
-use crate::runtime::employee::store::{DueEmployee, EmployeeRecord, EmployeeStore};
+use crate::runtime::employee::store::{EmployeeRecord, EmployeeStore};
 use crate::storage::UserScopedPathResolver;
 
 /// Source of an employee run trigger.

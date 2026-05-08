@@ -16,7 +16,7 @@ use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
 use crate::plugin::skill_trait::ToolFilter;
-use crate::plugin::{SkillRegistry, ToolRegistry};
+use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::chat::prompt::{PromptAssembler, PromptBuildContext, TurnPromptSnapshot};
@@ -31,6 +31,7 @@ use crate::runtime::store::PendingPermissionResolution;
 use crate::runtime::tools::permission::PermissionDestination;
 use crate::runtime::{ChatTurnRequest, QueryEngine, RuntimeEventBus, SessionRuntime};
 use crate::storage::crypto::SecureStorage;
+use crate::storage::current_user_storage::CurrentUserStorage;
 use crate::storage::file_manager::FileManager;
 use crate::storage::file_store::AppStorage;
 use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQueue};
@@ -324,10 +325,49 @@ struct EmployeeRunOverrides {
     max_iterations: usize,
 }
 
+/// `MessageWriteTarget` that delegates to whichever `AppStorage` is active at call time.
+/// When a user is logged in it writes to the user-scoped dir; otherwise falls back to `root_db`.
+struct DynamicWriteTarget {
+    cus: Arc<CurrentUserStorage>,
+    root_db: Arc<AppStorage>,
+}
+
+impl DynamicWriteTarget {
+    fn storage(&self) -> Arc<AppStorage> {
+        self.cus.get_or(&self.root_db)
+    }
+}
+
+impl crate::storage::message_write_queue::MessageWriteTarget for DynamicWriteTarget {
+    fn insert_message(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        role: &str,
+        content_json: &str,
+    ) -> anyhow::Result<()> {
+        self.storage()
+            .insert_message(id, conversation_id, role, content_json)
+            .map_err(Into::into)
+    }
+
+    fn update_message_content(
+        &self,
+        id: &str,
+        conversation_id: &str,
+        content_json: &str,
+    ) -> anyhow::Result<()> {
+        self.storage()
+            .update_message_content(id, conversation_id, content_json)
+            .map_err(Into::into)
+    }
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 struct TauriChatServices {
-    db: Arc<AppStorage>,
+    cus: Arc<CurrentUserStorage>,
+    root_db: Arc<AppStorage>,
     gateway: Arc<LlmGateway>,
     file_mgr: Arc<FileManager>,
     assistant_write_queue: Arc<MessageWriteQueue>,
@@ -340,6 +380,12 @@ struct TauriChatServices {
     runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
     /// Shared map for injecting employee-run tool whitelists per conversation.
     employee_run_overrides: Arc<std::sync::Mutex<std::collections::HashMap<String, EmployeeRunOverrides>>>,
+}
+
+impl TauriChatServices {
+    fn db(&self) -> Arc<AppStorage> {
+        self.cus.get_or(&self.root_db)
+    }
 }
 
 struct TauriLegacyTurnExecutor {
@@ -820,7 +866,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         request: &ChatTurnRequest,
     ) -> Result<ResolvedLlmSettings, TurnError> {
-        let global_settings_map = self.services.db.get_all_settings().unwrap_or_default();
+        let global_settings_map = self.services.db().get_all_settings().unwrap_or_default();
         let global_settings = if global_settings_map.is_empty() {
             AppSettings::default()
         } else {
@@ -832,7 +878,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             global_settings_map
         } else {
             self.services
-                .db
+                .db()
                 .get_effective_settings(Some(std::path::Path::new(&workspace_path)))
                 .unwrap_or(global_settings_map)
         };
@@ -851,7 +897,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             None
         } else {
             self.services
-                .db
+                .db()
                 .get_conversation_model_override(request.conversation_id.as_str())
                 .unwrap_or(None)
         };
@@ -897,7 +943,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
         if let Err(e) =
             self.services
-                .db
+                .db()
                 .insert_message(&msg_id, conversation_id, "user", &content_json)
         {
             log::error!(
@@ -947,7 +993,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             rev: None,
         };
         self.services
-            .db
+            .db()
             .insert_chat_message_record(&stored)
             .map_err(|e| TurnError::PersistenceError(e.to_string()))?;
         Ok(Some(msg_id))
@@ -1001,7 +1047,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
                 seq: None,
                 rev: None,
             };
-            if let Err(e) = self.services.db.insert_chat_message_record(&stored) {
+            if let Err(e) = self.services.db().insert_chat_message_record(&stored) {
                 log::warn!(
                     "[persist_tool_messages] Failed to save tool message id={} conv={}: {}",
                     msg_id,
@@ -1048,7 +1094,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         }
 
         // Check that the conversation still exists (might have been deleted while the agent ran).
-        if self.services.db.get_conversation(conversation_id).is_err() {
+        if self.services.db().get_conversation(conversation_id).is_err() {
             log::warn!(
                 "[persist_assistant_message] Conversation {} deleted during agent run, skipping save",
                 conversation_id
@@ -1062,7 +1108,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let content_value = if !generated_file_ids.is_empty() {
             match self
                 .services
-                .db
+                .db()
                 .get_generated_files_by_ids(generated_file_ids)
             {
                 Ok(file_records) if !file_records.is_empty() => {
@@ -1147,7 +1193,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             content_json.len()
         );
         persist_assistant_content_json(
-            self.services.db.clone(),
+            self.services.db().clone(),
             self.services.assistant_write_queue.clone(),
             message_id.clone(),
             conversation_id.to_string(),
@@ -1178,7 +1224,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     ///   - 从 DB 读取 active persona
     ///   - 从 auth_manager 获取 product_name（租户品牌名）
     async fn build_system_prompt(&self, _conversation_id: &str) -> Result<String, TurnError> {
-        let persona = self.services.db.get_active_persona().ok();
+        let persona = self.services.db().get_active_persona().ok();
 
         let product_name: Option<String> = self
             .services
@@ -1216,7 +1262,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         &self,
         _conversation_id: &str,
     ) -> Result<Option<TurnPromptSnapshot>, TurnError> {
-        let persona = self.services.db.get_active_persona().ok();
+        let persona = self.services.db().get_active_persona().ok();
 
         let product_name: Option<String> = self
             .services
@@ -1363,7 +1409,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let authorized_workspace =
             chat_runtime_impl::load_authorized_workspace(&self.services.app, conversation_id);
         let chat_messages = load_history_via_runtime_history(
-            &self.services.db,
+            &self.services.db(),
             conversation_id,
             authorized_workspace.is_some(),
         )?;
@@ -1382,7 +1428,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         record: crate::runtime::chat::compaction::CompactBoundaryRecord,
     ) -> Result<(), TurnError> {
         self.services
-            .db
+            .db()
             .append_compact_boundary(&record)
             .map_err(|e| {
                 TurnError::PersistenceError(format!("Failed to persist compact boundary: {}", e))
@@ -1463,7 +1509,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         workspace_path: &std::path::Path,
         query: &str,
     ) -> Result<crate::runtime::project_memory::ProjectMemoryContext, TurnError> {
-        let app_data_dir = self.services.db.base_dir().to_path_buf();
+        let app_data_dir = self.services.db().base_dir().to_path_buf();
         let service = crate::runtime::project_memory::ProjectMemoryService::new(
             app_data_dir,
             workspace_path.to_path_buf(),
@@ -1474,7 +1520,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
     }
 
     async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {
-        Ok(self.services.db.load_core_memory())
+        Ok(self.services.db().load_core_memory())
     }
 }
 
@@ -1713,6 +1759,76 @@ mod tests {
             "worker error text should be preserved for the caller"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // TauriChatServices::db() — dynamic user-scope resolution
+    // -----------------------------------------------------------------------
+
+    fn make_cus_with_home(tmp: &TempDir) -> Arc<crate::storage::current_user_storage::CurrentUserStorage> {
+        let home = Arc::new(crate::storage::AiJiaHome::from_path(tmp.path().to_path_buf()));
+        Arc::new(crate::storage::current_user_storage::CurrentUserStorage::new(home))
+    }
+
+    /// Wraps `CurrentUserStorage::get_or` — the same logic as `TauriChatServices::db()`.
+    fn resolve_db(
+        cus: &crate::storage::current_user_storage::CurrentUserStorage,
+        root_db: &Arc<AppStorage>,
+    ) -> Arc<AppStorage> {
+        cus.get_or(root_db)
+    }
+
+    #[test]
+    fn services_db_returns_root_before_login() {
+        let root_tmp = TempDir::new().unwrap();
+        let cus_tmp = TempDir::new().unwrap();
+        let root_db = Arc::new(AppStorage::new(root_tmp.path()).unwrap());
+        let cus = make_cus_with_home(&cus_tmp);
+        assert_eq!(
+            resolve_db(&cus, &root_db).base_dir(),
+            root_db.base_dir(),
+            "before login db() must resolve to root_db"
+        );
+    }
+
+    #[test]
+    fn services_db_returns_user_dir_after_login() {
+        let root_tmp = TempDir::new().unwrap();
+        let cus_tmp = TempDir::new().unwrap();
+        let root_db = Arc::new(AppStorage::new(root_tmp.path()).unwrap());
+        let cus = make_cus_with_home(&cus_tmp);
+
+        let scope = crate::storage::UserScope::new(1, 2);
+        cus.activate_scope(scope).unwrap();
+
+        let expected = cus_tmp.path().join("users").join("t_1__u_2");
+        assert_eq!(
+            resolve_db(&cus, &root_db).base_dir(),
+            expected.as_path(),
+            "after login db() must resolve to user-scoped dir"
+        );
+        assert_ne!(
+            resolve_db(&cus, &root_db).base_dir(),
+            root_db.base_dir(),
+            "after login db() must not point at root_db"
+        );
+    }
+
+    #[test]
+    fn services_db_falls_back_to_root_after_logout() {
+        let root_tmp = TempDir::new().unwrap();
+        let cus_tmp = TempDir::new().unwrap();
+        let root_db = Arc::new(AppStorage::new(root_tmp.path()).unwrap());
+        let cus = make_cus_with_home(&cus_tmp);
+
+        cus.activate_scope(crate::storage::UserScope::new(1, 2)).unwrap();
+        cus.deactivate();
+
+        assert_eq!(
+            resolve_db(&cus, &root_db).base_dir(),
+            root_db.base_dir(),
+            "after logout db() must fall back to root_db"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1920,7 +2036,8 @@ fn infer_runtime_root(path: &std::path::Path) -> std::path::PathBuf {
 impl TauriChatCommandAdapter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        db: Arc<AppStorage>,
+        cus: Arc<CurrentUserStorage>,
+        root_db: Arc<AppStorage>,
         gateway: Arc<LlmGateway>,
         file_mgr: Arc<FileManager>,
         crypto: Option<Arc<SecureStorage>>,
@@ -1934,9 +2051,13 @@ impl TauriChatCommandAdapter {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
-        let assistant_write_queue = Arc::new(MessageWriteQueue::new(db.clone()));
+        let assistant_write_queue = Arc::new(MessageWriteQueue::new(Arc::new(DynamicWriteTarget {
+            cus: cus.clone(),
+            root_db: root_db.clone(),
+        })));
         let services = TauriChatServices {
-            db,
+            cus,
+            root_db,
             gateway,
             file_mgr,
             assistant_write_queue,
@@ -2001,17 +2122,6 @@ impl TauriChatCommandAdapter {
             );
         }
         Self { runtime, services }
-    }
-
-    async fn load_llm_settings(&self) -> Result<ResolvedLlmSettings, TurnError> {
-        TauriLegacyTurnExecutor {
-            services: self.services.clone(),
-            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
-            )),
-        }
-        .load_llm_settings()
-        .await
     }
 
     async fn load_llm_settings_for_turn(
@@ -2109,7 +2219,7 @@ impl TauriChatCommandAdapter {
             conversation_id
         );
         let (tavily_api_key, bocha_api_key, use_cloud, app_settings_arc) = {
-            let map = self.services.db.get_all_settings().unwrap_or_default();
+            let map = self.services.db().get_all_settings().unwrap_or_default();
             let mut s = if map.is_empty() {
                 AppSettings::default()
             } else {
@@ -2148,7 +2258,7 @@ impl TauriChatCommandAdapter {
             conversation_id
         );
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
-            storage: self.services.db.clone(),
+            storage: self.services.db().clone(),
             file_manager: self.services.file_mgr.clone(),
             workspace_path: workspace_path.clone(),
             conversation_id: session_id.as_str().to_string(),
@@ -2224,7 +2334,7 @@ impl TauriChatCommandAdapter {
         if result.is_ok() {
             // Quick synchronous guard: only attempt title generation when needed.
             let needs_title =
-                conversation_service::should_auto_title(&*self.services.db, &conversation_id)
+                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
                     .unwrap_or(false);
 
             if needs_title {
@@ -2233,7 +2343,7 @@ impl TauriChatCommandAdapter {
                 let dummy_request =
                     ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
                 if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
-                    let db = self.services.db.clone() as Arc<dyn ConversationStore>;
+                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
                     let gateway = self.services.gateway.clone();
                     let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
                         Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
@@ -2373,7 +2483,7 @@ impl TauriChatCommandAdapter {
         conversation_id: String,
     ) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_messages(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
         )
         .await
@@ -2396,7 +2506,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn create_conversation(&self) -> Result<String, String> {
         conversation_service::create_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await
     }
@@ -2406,7 +2516,7 @@ impl TauriChatCommandAdapter {
         conversation_id: String,
     ) -> Result<Option<String>, String> {
         conversation_service::get_conversation_model_override(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
         )
         .await
@@ -2418,7 +2528,7 @@ impl TauriChatCommandAdapter {
         model: Option<String>,
     ) -> Result<(), String> {
         conversation_service::set_conversation_model_override(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
             model,
         )
@@ -2427,7 +2537,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn delete_conversation(&self, conversation_id: String) -> Result<(), String> {
         let outcome = conversation_service::delete_conversation(
-            self.services.db.clone(),
+            self.services.db().clone(),
             self.services.gateway.clone(),
             self.services.file_mgr.clone(),
             self.services.session_mgr.clone(),
@@ -2463,7 +2573,7 @@ impl TauriChatCommandAdapter {
         new_title: String,
     ) -> Result<(), String> {
         let outcome = conversation_service::rename_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
             new_title,
         )
@@ -2480,7 +2590,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn archive_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::archive_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
         )
         .await
@@ -2488,7 +2598,7 @@ impl TauriChatCommandAdapter {
 
     pub async fn restore_conversation(&self, conversation_id: String) -> Result<(), String> {
         conversation_service::restore_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>,
+            self.services.db().clone() as Arc<dyn ConversationStore>,
             conversation_id,
         )
         .await
@@ -2496,14 +2606,14 @@ impl TauriChatCommandAdapter {
 
     pub async fn get_archived_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         conversation_service::get_archived_conversations(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await
     }
 
     pub async fn get_conversations(&self) -> Result<Vec<serde_json::Value>, String> {
         let mut convs = conversation_service::get_conversations(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await?;
         // 为每个对话注入 workspaceName（来自已绑定的授权目录）。
@@ -2524,7 +2634,7 @@ impl TauriChatCommandAdapter {
         conversation_id: String,
     ) -> Result<Vec<crate::models::message::TaskRecordFrontend>, String> {
         crate::models::message::TaskRecordFrontend::list_from_task_v2_store(
-            self.services.db.base_dir(),
+            self.services.db().base_dir(),
             &conversation_id,
         )
         .map_err(|e| e.to_string())
@@ -2539,7 +2649,7 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
         fire_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         let conversation_id = conversation_service::create_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await
         .map_err(anyhow::Error::msg)?;
@@ -2605,7 +2715,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         // ─── Sync phase: create conversation, persist Running entry, return id ───
 
         let conversation_id = conversation_service::create_conversation(
-            self.services.db.clone() as Arc<dyn ConversationStore>
+            self.services.db().clone() as Arc<dyn ConversationStore>
         )
         .await
         .map_err(anyhow::Error::msg)?;
@@ -2736,7 +2846,7 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
                     // conversation to build a useful title + summary for the inbox.
                     let _ = adapter.services.assistant_write_queue.flush();
                     let (title, summary) = extract_report_title_summary(
-                        adapter.services.db.as_ref(),
+                        adapter.services.db().as_ref(),
                         &conv_id,
                     );
                     if let Err(e) = inbox_writer::push_report(
