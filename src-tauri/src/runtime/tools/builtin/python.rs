@@ -184,6 +184,12 @@ impl RuntimeTool for ExecutePythonRuntimeTool {
             model: self.model.as_deref().unwrap_or("unknown"),
             python_binary: self.python_binary.clone(),
             python_home: self.python_home.clone(),
+            extra_read_paths: storage_cap
+                .permission_ctx
+                .additional_working_dirs
+                .keys()
+                .cloned()
+                .collect(),
         };
         let content =
             crate::llm::tool_executor::handle_execute_python_core(&params, &input, python.as_ref())

@@ -727,13 +727,22 @@ impl<'a> SubagentWorkerRuntime<'a> {
             python_home,
         });
 
-        QueryEngine::with_dispatcher(dispatcher)
+        let engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(self.runtime_deps.workspace_path.clone())
             .with_authorized_workspace(self.runtime_deps.authorized_workspace.clone())
             .with_browser_available(self.runtime_deps.connector_engine.is_some())
             .with_file_ops(file_ops)
             .with_runtime_resolver(self.runtime_deps.runtime_resolver.clone())
-            .with_read_file_state(child_read_file_state)
+            .with_read_file_state(child_read_file_state);
+
+        // Phase 5: seed child QueryEngine with parent's permission_ctx snapshot
+        // so path tools see the same authorized dirs (UserSettings working dirs +
+        // session attachment dirs merged in at spawn time).
+        if let Some(ctx) = self.runtime_deps.permission_ctx.clone() {
+            engine.with_permission_ctx(ctx)
+        } else {
+            engine
+        }
     }
 }
 
@@ -832,6 +841,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         } => PermissionDecision::Ask {
             message: format!(
                 "Subagent tool '{}' (tool_call_id={}) requires confirmation: {}",
@@ -841,6 +851,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         },
         other => other,
     }

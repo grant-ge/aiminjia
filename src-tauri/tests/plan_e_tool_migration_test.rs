@@ -619,6 +619,7 @@ impl BrowseDataLauncher for AskBrowseDataLauncher {
                 default_destination: app_lib::runtime::tools::permission::default_permission_ask()
                     .1,
                 reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+                path_auth_scope: None,
             },
         ))
     }

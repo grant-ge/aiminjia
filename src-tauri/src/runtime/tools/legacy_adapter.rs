@@ -197,6 +197,7 @@ mod tests {
             cancellation: None,
             permission_mode: PermissionMode::Default,
             runtime_resolver: None,
+            permission_ctx: None,
         };
         let adapter = LegacyToolAdapter::from_plugin(plugin, plugin_ctx);
         let runtime_ctx =

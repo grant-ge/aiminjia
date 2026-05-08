@@ -22,6 +22,11 @@ pub struct PendingPermissionRequest {
     pub remember_options: Vec<PermissionDestination>,
     pub default_destination: Option<PermissionDestination>,
     pub original_request: RuntimeToolCallRequest,
+    /// Encodes path-auth persistence kind for §7.8 routing.
+    /// - `Some("path:<canonical>")` → step-6 Ask → append_working_dir on "永久"
+    /// - `Some("pathwrite:<canonical>")` → step-4b write Ask → append_path_allow_rule(Write)
+    /// - `None` → non-path Ask
+    pub path_auth_scope: Option<String>,
 }
 
 #[derive(Clone, Debug)]

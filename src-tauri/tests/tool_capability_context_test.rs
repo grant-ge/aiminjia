@@ -63,6 +63,9 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
     let storage_cap = StorageCapability {
         workspace_path: std::path::PathBuf::from("/tmp/test-workspace"),
         authorized_workspace: None,
+        permission_ctx: std::sync::Arc::new(
+            app_lib::runtime::path_auth::ToolPermissionContext::empty(),
+        ),
     };
     let cap_ctx = CapabilityContext {
         storage: Some(storage_cap),

@@ -136,7 +136,7 @@ fn build_default_catalog() -> ToolCatalog {
 
     // ── Primitive: workspace tools ──────────────────────────────────
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("list_directory", "列出授权工作目录中的文件和子目录")
+        ToolDefinition::new("list_directory", "列出指定目录中的文件和子目录（路径会经过权限检查）")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(4_000)
@@ -145,13 +145,13 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": [],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的路径，默认 '.'", "default": "." }
+                "path": { "type": "string", "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。默认 '.'。", "default": "." }
             }
         }),
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("read_workspace_file", "读取授权工作目录中的文本文件内容")
+        ToolDefinition::new("read_workspace_file", "读取本地文本文件内容（路径会经过权限检查）")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(16_000)
@@ -160,14 +160,14 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["path"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
+                "path": { "type": "string", "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。" },
                 "max_bytes": { "type": "integer", "description": "最多读取字节数，默认 1048576", "default": 1048576 }
             }
         }),
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("search_files", "在授权工作目录中搜索匹配 glob 模式的文件")
+        ToolDefinition::new("search_files", "在指定目录中搜索匹配 glob 模式的文件（路径会经过权限检查）")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_max_result_size_chars(4_000)
@@ -177,14 +177,14 @@ fn build_default_catalog() -> ToolCatalog {
             "required": ["pattern"],
             "properties": {
                 "pattern": { "type": "string", "description": "文件名 glob 模式，如 '*.csv'" },
-                "path": { "type": "string", "description": "搜索的子目录（相对路径），默认 '.'", "default": "." },
+                "path": { "type": "string", "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。默认 '.'。", "default": "." },
                 "max_results": { "type": "integer", "description": "最多返回结果数，默认 100", "default": 100 }
             }
         }),
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("get_file_info", "获取授权工作目录中文件或目录的元数据")
+        ToolDefinition::new("get_file_info", "获取文件或目录的元数据（路径会经过权限检查）")
             .with_kind(ToolKind::Primitive)
             .with_read_only(true)
             .with_capability_scope(["workspace:read"]),
@@ -192,13 +192,13 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["path"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的路径" }
+                "path": { "type": "string", "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。" }
             }
         }),
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("write_file", "在授权工作目录中创建或完整覆盖写入文本文件")
+        ToolDefinition::new("write_file", "创建或完整覆盖写入本地文本文件（路径会经过权限检查）")
             .with_kind(ToolKind::Primitive)
             .with_capability_scope(["workspace:write"]),
         json!({
@@ -207,21 +207,21 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "相对于授权工作目录的目标文件路径"
+                    "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。"
                 },
                 "content": {
                     "type": "string",
                     "description": "要写入的文件完整内容（UTF-8 文本）。必须在同一次调用中提供全部内容，不得分步调用或省略任何部分。"
                 }
             },
-            "description": "将文本内容写入工作目录中的文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 read_workspace_file 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 edit_file 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
+            "description": "本工具支持任意本地路径，写入会经过权限检查（主目录直通；附件目录在 acceptEdits 模式自动允许，其它情况询问）。\n\n将文本内容写入本地文件。\n\n使用规则：\n- 如果目标文件已存在，必须先使用 read_workspace_file 工具读取其内容，否则本工具将拒绝执行。\n- 修改已有文件时，优先使用 edit_file 工具（仅传输差异部分）。仅在新建文件或需要完整重写时使用本工具。\n- content 参数必须在同一次调用中包含文件的全部最终内容，不得分批或分步写入。\n- 本工具会创建不存在的父目录。"
         }),
     ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "edit_file",
-            "对授权工作目录中的文件执行精确的 old_string → new_string 替换（优先于 write_file 用于修改现有文件）",
+            "对本地文件执行精确的 old_string → new_string 替换（路径会经过权限检查）",
         )
         .with_kind(ToolKind::Primitive)
         .with_capability_scope(["workspace:read", "workspace:write"]),
@@ -229,21 +229,21 @@ fn build_default_catalog() -> ToolCatalog {
             "type": "object",
             "required": ["path", "old_string", "new_string"],
             "properties": {
-                "path": { "type": "string", "description": "相对于授权工作目录的文件路径" },
+                "path": { "type": "string", "description": "支持相对于主工作目录的路径或绝对路径。主工作目录、附件目录、永久授权的目录可直接访问；其它路径会询问；~/.renlijia 内永远拒绝。" },
                 "old_string": {
                     "type": "string",
                     "description": "要替换的原始字符串。必须在文件中唯一存在，否则工具报错；若匹配不唯一，请增加更多上下文行使其唯一。若为空字符串，则视为向空文件写入内容（文件必须为空或不存在）。"
                 },
                 "new_string": { "type": "string", "description": "替换后的新字符串" }
             },
-            "description": "对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 read_workspace_file 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 write_file（本工具只传输差异，更安全高效）。\n- old_string 在文件中必须唯一；若不唯一，请扩大 old_string 的上下文范围直到唯一匹配。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
+            "description": "本工具支持任意本地路径，写入会经过权限检查（主目录直通；附件目录在 acceptEdits 模式自动允许，其它情况询问）。\n\n对文件执行精确字符串替换。\n\n使用规则：\n- 编辑前必须至少使用一次 read_workspace_file 读取目标文件，否则本工具将报错。\n- 修改现有文件时始终优先使用本工具，而非 write_file（本工具只传输差异，更安全高效）。\n- old_string 在文件中必须唯一；若不唯一，请扩大 old_string 的上下文范围直到唯一匹配。\n- old_string 和 new_string 必须保持原始缩进（空格/Tab），不得修改缩进格式。"
         }),
     ));
 
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "bash",
-            "在授权工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
+            "在工作目录中执行 shell 命令。默认 timeout 120s；当前前台路径在 timeout/cancel 时终止进程并返回错误。\
             \n\n安全约束：仅对明显危险 pattern（`rm -rf /`、向 /etc/ 写入等）做 hard deny。\
             \n\nstdout + stderr 合并返回；非零 exit code 默认按错误处理，grep/rg/find/diff/test 等遵循 claude-code-best 的语义豁免。",
         )
@@ -268,7 +268,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "powershell",
-            "在授权工作目录中执行 PowerShell 命令（Windows 平台专用）。\
+            "在工作目录中执行 PowerShell 命令（Windows 平台专用）。\
             优先使用 pwsh.exe（PowerShell 7+，支持 `&&` `||`），否则回退 powershell.exe（5.1，**不支持 `&&`/`||`**，请用 `;` 分隔或显式判断 `$LASTEXITCODE`）。\
             \n\n用法说明：\
             \n- 文件操作：`Get-ChildItem`、`Get-Content`、`Remove-Item -Recurse -Force`\
@@ -300,7 +300,7 @@ fn build_default_catalog() -> ToolCatalog {
     c.insert(CatalogEntry::new(
         ToolDefinition::new(
             "grep_content",
-            "在授权工作目录中搜索文件内容。当前 Phase 1 对标 claude-code-best 的 GrepTool 核心模式：\
+            "搜索文件内容（路径会经过权限检查）。当前 Phase 1 对标 claude-code-best 的 GrepTool 核心模式：\
             \n- `output_mode=files_with_matches`：返回命中文件路径\
             \n- `output_mode=content`：返回 `path:line:content` 文本\
             \n- `output_mode=count`：返回 `path:count` 文本\

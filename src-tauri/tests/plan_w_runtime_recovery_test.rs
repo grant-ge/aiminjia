@@ -278,6 +278,7 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
             args: json!({"value": 1}),
             purpose: None,
         },
+        path_auth_scope: None,
     };
     let resolution_rx = pending_store
         .insert(request)

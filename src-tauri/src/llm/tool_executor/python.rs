@@ -30,6 +30,11 @@ pub(crate) struct ExecutePythonCoreParams<'a> {
     pub model: &'a str,
     pub python_binary: Option<std::path::PathBuf>,
     pub python_home: Option<std::path::PathBuf>,
+    /// Additional directories to allow in the sandbox's read paths (e.g. attachment dirs
+    /// from ToolPermissionContext::additional_working_dirs).  These are merged with
+    /// the authorized_workspace extra paths so that files the user has already
+    /// allowed via path-auth Ask are readable from sandboxed Python.
+    pub extra_read_paths: Vec<std::path::PathBuf>,
 }
 
 impl<'a> ExecutePythonCoreParams<'a> {
@@ -79,6 +84,7 @@ pub(crate) async fn handle_execute_python(ctx: &PluginContext, args: &Value) -> 
         model: &ctx.model,
         python_binary: Some(python_binary),
         python_home,
+        extra_read_paths: vec![],
     };
     handle_execute_python_core(&params, args, &python).await
 }
@@ -104,18 +110,24 @@ pub(crate) async fn handle_execute_python_core(
     let workspace_path_buf = params.workspace_path.to_path_buf();
     let (mut sandbox, workspace_root_preamble) = match params.authorized_workspace {
         Some(aw) => {
-            let s = SandboxConfig::for_workspace_with_authorized(
-                &workspace_path_buf,
-                vec![aw.root_path.clone()],
-            );
+            let mut extra = vec![aw.root_path.clone()];
+            extra.extend_from_slice(&params.extra_read_paths);
+            let s = SandboxConfig::for_workspace_with_authorized(&workspace_path_buf, extra);
             let p =
                 crate::llm::tool_executor::file_load::build_local_workspace_preamble(&aw.root_path);
             (s, p)
         }
-        None => (
-            SandboxConfig::for_workspace(&workspace_path_buf),
-            String::new(),
-        ),
+        None => {
+            if params.extra_read_paths.is_empty() {
+                (SandboxConfig::for_workspace(&workspace_path_buf), String::new())
+            } else {
+                let s = SandboxConfig::for_workspace_with_authorized(
+                    &workspace_path_buf,
+                    params.extra_read_paths.clone(),
+                );
+                (s, String::new())
+            }
+        }
     };
     sandbox.timeout_seconds = default_execute_python_timeout_secs() as u32;
     #[allow(deprecated)]
@@ -921,6 +933,7 @@ mod tests {
             model: "test-model",
             python_binary: Some(PathBuf::from("/usr/bin/python3")),
             python_home: None,
+            extra_read_paths: vec![],
         };
 
         assert_eq!(
