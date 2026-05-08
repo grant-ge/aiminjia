@@ -209,12 +209,6 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn load_skill_for_reload(
-    _path: &Path,
-) -> Result<(String, Box<dyn crate::plugin::skill_trait::Skill>), String> {
-    unimplemented!("Skill reload will be restored after Phase D SkillRegistry lands.")
-}
-
 /// List all installed custom skills.
 #[tauri::command]
 pub async fn list_custom_skills(app: AppHandle) -> Result<Vec<CustomSkillInfo>, String> {
@@ -575,6 +569,7 @@ pub async fn install_marketplace_skill(
     ))
 }
 
+#[allow(dead_code)] // Placeholder until Phase D SkillRegistry lands; covered by `pack_skill_to_dir_unimplemented_until_phase_d` test.
 pub(crate) fn pack_skill_to_dir(_skill_dir: &Path, _output_dir: &Path) -> Result<PathBuf, String> {
     unimplemented!(
         "Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands."

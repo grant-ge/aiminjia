@@ -8,7 +8,6 @@ import { SkillDetailHero } from '@/components/skills/SkillDetailHero'
 import { SkillMetaRow } from '@/components/skills/SkillMetaRow'
 import { SkillTryGrid } from '@/components/skills/SkillTryGrid'
 import { SkillUsageBlock } from '@/components/skills/SkillUsageBlock'
-import { useChat } from '@/hooks/useChat'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -24,7 +23,6 @@ const TRY_PROMPTS = [
 
 export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
   const skill = useSkillStore((s) => s.getById(skillId))
-  const { createConversationFromSkill } = useChat()
   const setRoute = useUiStore((s) => s.setRoute)
   const setPrefillText = useUiStore((s) => s.setPrefillText)
   const goToSkillCenter = () => setRoute({ kind: 'skill-center' })
@@ -109,7 +107,6 @@ export function SkillDetailPage({ skillId }: SkillDetailPageProps) {
             title={skill.displayName}
             meta={skill.source === 'builtin' ? '内置' : '自定义'}
             desc={p}
-            onClick={() => void createConversationFromSkill(skill.id)}
           />
         ))}
       </SkillTryGrid>

@@ -139,9 +139,9 @@ pub(crate) fn build_llm_content(
         .collect();
 
     let hint = if has_authorized_workspace {
-        "提示：对这些显式附加路径请优先使用 read_workspace_file / search_files；对已连接本地目录也优先使用工作区文件工具，需要计算时再结合 bash 等 shell 工具。"
+        "本轮附件已自动加入授权目录（read 自由；write 默认询问，acceptEdits 模式自动允许）：\n- 文件附件：所在目录被授权\n- 文件夹附件：该目录及子树被授权\n请优先使用 Read / Glob / Grep 读取附件；需要计算时再结合 Bash 处理内容。"
     } else {
-        "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时结合 bash 处理内容。"
+        "本轮附件已自动加入授权目录（read 自由；write 默认询问，acceptEdits 模式自动允许）：\n- 文件附件：所在目录被授权\n- 文件夹附件：该目录及子树被授权\n请优先使用 Read / Glob / Grep 读取附件；需要计算时再结合 Bash 处理内容。"
     };
 
     format!(
@@ -238,7 +238,8 @@ mod tests {
         let content = build_llm_content("请分析这个目录里的销售数据", &attachments, true);
 
         assert!(content.contains("[当前消息附件]"));
-        assert!(content.contains("这些显式附加路径"));
-        assert!(content.contains("对已连接本地目录也优先使用工作区文件工具"));
+        assert!(content.contains("附件"));
+        assert!(content.contains("授权目录"));
+        assert!(!content.contains("load_file(file_id)"));
     }
 }

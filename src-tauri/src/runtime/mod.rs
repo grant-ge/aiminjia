@@ -11,6 +11,7 @@ pub mod identity;
 pub mod ids;
 pub mod interaction;
 pub mod mcp;
+pub mod path_auth;
 pub mod project_memory;
 pub mod query_engine;
 pub mod renlijia_md;

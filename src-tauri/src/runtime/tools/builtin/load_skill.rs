@@ -31,19 +31,6 @@ impl LoadSkillRuntimeTool {
     pub fn new(skill_registry: Arc<Mutex<SkillRegistry>>) -> Self {
         Self { skill_registry }
     }
-
-    fn available_skill_ids(&self) -> String {
-        let ids = self
-            .skill_registry
-            .lock()
-            .map(|reg| reg.skill_ids())
-            .unwrap_or_default();
-        if ids.is_empty() {
-            "无可用专项技能".to_string()
-        } else {
-            ids.join(", ")
-        }
-    }
 }
 
 #[async_trait]

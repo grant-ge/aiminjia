@@ -12,17 +12,17 @@ use tokio::process::Command;
 
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
-use crate::storage::process_ext::NoWindowExt;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
+use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
-    interpret_command_result, kill_child_process_tree, read_merged_streams,
-    truncated_to_max_bytes, wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
+    interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
+    wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 
@@ -51,10 +51,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ),
     ("format-volume", "Refusing: Format-Volume erases data"),
     ("clear-disk", "Refusing: Clear-Disk wipes a disk"),
-    (
-        "initialize-disk",
-        "Refusing: Initialize-Disk wipes a disk",
-    ),
+    ("initialize-disk", "Refusing: Initialize-Disk wipes a disk"),
     (
         "stop-computer",
         "Refusing: Stop-Computer shuts down the machine",
@@ -67,10 +64,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
         "| invoke-expression",
         "Refusing: pipe-to-Invoke-Expression is remote code execution",
     ),
-    (
-        "| iex",
-        "Refusing: pipe-to-iex is remote code execution",
-    ),
+    ("| iex", "Refusing: pipe-to-iex is remote code execution"),
     (
         ").downloadstring(",
         "Refusing: WebClient.DownloadString followed by execution is RCE",
@@ -201,11 +195,22 @@ impl RuntimeTool for PowerShellTool {
             )
         })?;
 
+        // Best-effort UTF-8 setup before running the user command. Managed
+        // Windows hosts may run PowerShell in ConstrainedLanguage mode, where
+        // OutputEncoding property setters fail; those setup failures must not
+        // pollute output or block the actual command.
+        let wrapped_command = format!(
+            "chcp 65001 > $null 2>$null; \
+             & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             {command}"
+        );
+
         let mut child = Command::new(&location.path)
             .arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
-            .arg(&command)
+            .arg(&wrapped_command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

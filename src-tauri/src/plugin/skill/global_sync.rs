@@ -567,21 +567,6 @@ pub fn write_global_skills_state(state_path: &Path, state: &GlobalSkillsState) -
     .map_err(|error| anyhow!("write global skills state: {error}"))
 }
 
-async fn download_text(url: &str) -> Result<String> {
-    let response = reqwest::Client::new()
-        .get(url)
-        .timeout(MANIFEST_DOWNLOAD_TIMEOUT)
-        .send()
-        .await
-        .with_context(|| format!("download manifest '{}'", url))?
-        .error_for_status()
-        .with_context(|| format!("download manifest status '{}'", url))?;
-    response
-        .text()
-        .await
-        .with_context(|| format!("read manifest body '{}'", url))
-}
-
 async fn download_file(url: &str, path: &Path) -> Result<()> {
     let response = reqwest::Client::new()
         .get(url)

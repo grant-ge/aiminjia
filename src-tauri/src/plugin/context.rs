@@ -48,6 +48,7 @@ use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::dependencies::ManagedRuntimeResolver;
 use crate::runtime::event_bus::RuntimeEventBus;
 use crate::runtime::ids::{AgentId, RunId, SessionId};
+use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::capability::FileStateCache;
 use crate::runtime::tools::permission::PermissionMode;
 use crate::storage::file_manager::FileManager;
@@ -117,6 +118,12 @@ pub struct PluginContext {
     /// Transitional bridge for legacy ToolPlugin paths that still need managed
     /// Node/Python runtime dependencies while they migrate to runtime tools.
     pub runtime_resolver: Option<ManagedRuntimeResolver>,
+    /// Phase 5 path-auth inheritance: the parent turn's merged ToolPermissionContext.
+    /// Set when the PluginContext is constructed inside a sub-agent call so that
+    /// registry.rs can pass the parent's authorized paths into StorageCapability.
+    /// `None` for all non-sub-agent paths (legacy tools, test helpers) — they get
+    /// `ToolPermissionContext::empty()` as before.
+    pub permission_ctx: Option<Arc<ToolPermissionContext>>,
 }
 
 impl PluginContext {

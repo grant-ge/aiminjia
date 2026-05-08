@@ -11,7 +11,12 @@
 //! `LegacyToolAdapter`.  Migrate individual handlers to `RuntimeTool` +
 //! `CapabilityContext` when touching them; do not add new handlers here.
 // Legacy tool handlers: PluginContext is intentionally used here.
-#![allow(deprecated)]
+// dead_code / unused_imports allowed module-wide because the entire
+// module is being phased out in favour of `runtime/tools/builtin/`.
+// Re-exports below preserve the public crate API for any straggler
+// callers; both the lints and these handlers will be removed together
+// once migration finishes.
+#![allow(deprecated, dead_code, unused_imports)]
 
 mod dingtalk;
 mod search;
@@ -103,6 +108,55 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 pub(crate) mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Arc;
+    use crate::plugin::context::PluginContext;
+    use crate::storage::file_manager::FileManager;
+    use crate::storage::file_store::AppStorage;
+
+    // ── Test helpers ─────────────────────────────
+
+    pub fn create_test_db() -> (Arc<AppStorage>, tempfile::TempDir) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Arc::new(AppStorage::new(dir.path()).unwrap());
+        // Create a conversation for testing.
+        db.create_conversation("test_conv_1", "Test Conversation")
+            .unwrap();
+        (db, dir)
+    }
+
+    pub fn create_test_context(db: Arc<AppStorage>) -> PluginContext {
+        let workspace = std::env::temp_dir().join("tool_executor_test");
+        std::fs::create_dir_all(&workspace).ok();
+        PluginContext {
+            storage: db,
+            file_manager: Arc::new(FileManager::new(&workspace)),
+            workspace_path: workspace.clone(),
+            conversation_id: "test_conv_1".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("test_conv_1"),
+            run_id: Some(crate::runtime::ids::RunId::new("run-test-1")),
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: None,
+            auth_manager: None,
+            connector_engine: None,
+            dingtalk_bridge: None,
+            use_cloud: false,
+            model: "test-model".to_string(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
+            skill_registry: None,
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: None,
+            permission_ctx: None,
+        }
+    }
 
     // ── Argument extraction tests ────────────────
 

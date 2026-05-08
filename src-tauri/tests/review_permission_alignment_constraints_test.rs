@@ -89,6 +89,7 @@ fn review_permission_mode_dont_ask_converts_ask_to_deny() {
         remember_options: ro,
         default_destination: dd,
         reason: PermissionReason::UnknownScope,
+        path_auth_scope: None,
     };
     assert!(matches!(
         apply_permission_mode(ask, "tool", PermissionMode::DontAsk),
@@ -105,6 +106,7 @@ fn review_permission_mode_plan_converts_ask_to_deny() {
         remember_options: ro,
         default_destination: dd,
         reason: PermissionReason::UnknownScope,
+        path_auth_scope: None,
     };
     assert!(
         matches!(
@@ -124,6 +126,7 @@ fn review_permission_mode_default_preserves_ask() {
         remember_options: ro,
         default_destination: dd,
         reason: PermissionReason::UnknownScope,
+        path_auth_scope: None,
     };
     assert!(matches!(
         apply_permission_mode(ask, "tool", PermissionMode::Default),

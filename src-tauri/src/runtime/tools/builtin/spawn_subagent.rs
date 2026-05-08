@@ -29,6 +29,7 @@ use crate::runtime::agent::definition::AgentModel;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
@@ -60,6 +61,11 @@ pub struct SpawnSubagentContext {
     pub cancellation: CancellationToken,
     pub permission_mode: PermissionMode,
     pub parent_tool_use_id: ToolCallId,
+    /// Phase 5: snapshot of the parent turn's merged ToolPermissionContext.
+    /// Carried from `ToolExecutionContext.capability.storage.permission_ctx` at
+    /// the point the parent calls spawn_subagent.  `None` when the tool is
+    /// invoked through a path where capability has not been set (tests, legacy).
+    pub permission_ctx: Option<Arc<ToolPermissionContext>>,
 }
 
 /// Outcome from the async launcher path.
@@ -187,6 +193,13 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
             parent_tool_use_id: ctx.tool_call_id.clone(),
+            // Phase 5: snapshot the parent turn's merged permission_ctx so the
+            // launcher can seed the child's QueryEngine with it.
+            permission_ctx: ctx
+                .capability
+                .as_ref()
+                .and_then(|cap| cap.storage.as_ref())
+                .map(|storage| storage.permission_ctx.clone()),
         };
 
         // ── Async path: launch detached sub-agent ─────────────────────────

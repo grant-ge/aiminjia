@@ -29,6 +29,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+            path_auth_scope: None,
         }
     }
 }
@@ -71,6 +72,7 @@ impl RuntimeTool for ExecuteAskTool {
             reason: app_lib::runtime::tools::permission::PermissionReason::Other(
                 "execute_ask".into(),
             ),
+            path_auth_scope: None,
         }))
     }
 }
@@ -95,6 +97,7 @@ fn review_plan_mode_converts_ask_to_deny() {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+            path_auth_scope: None,
         },
         "echo_tool",
         PermissionMode::Plan,

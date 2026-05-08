@@ -96,7 +96,7 @@ impl Default for AppSettings {
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
             enable_taor_tracking: true,
-            use_cloud: false,
+            use_cloud: true,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
             persona_onboarding_done: false,

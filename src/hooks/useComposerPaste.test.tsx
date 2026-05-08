@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
-import { useComposerPaste } from './useComposerPaste'
+import { useComposerPaste, __test_setLastPasteHasFile } from './useComposerPaste'
 import type { PendingAttachment } from './useChatAttachments'
 
 const saveClipboardImageMock = vi.fn()
@@ -65,12 +65,15 @@ describe('useComposerPaste', () => {
     saveClipboardImageMock.mockReset()
     resolvePastedPathsMock.mockReset()
     readClipboardFilePathsMock.mockReset()
+    // Simulate document capture listener having detected file types in clipboard.
+    __test_setLastPasteHasFile(true)
   })
 
   it('saves clipboard image and emits attachment', async () => {
+    readClipboardFilePathsMock.mockResolvedValue([])
     saveClipboardImageMock.mockResolvedValue(samplePending)
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const file = new File([new Uint8Array([1, 2, 3])], 'paste.png', { type: 'image/png' })
     const event = makeImagePasteEvent(file)
@@ -82,12 +85,13 @@ describe('useComposerPaste', () => {
     expect(onResolved).toHaveBeenCalledWith([samplePending])
   })
 
-  it('resolves absolute paths in pasted text', async () => {
+  it('resolves native file paths from clipboard', async () => {
+    readClipboardFilePathsMock.mockResolvedValue(['/Users/me/a.png', '/Users/me/dir'])
     resolvePastedPathsMock.mockResolvedValue([samplePending])
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
-    const event = makeTextPasteEvent('/Users/me/a.png\n/Users/me/dir')
+    const event = makeTextPasteEvent('', ['Files'])
     result.current.handlePaste(event)
 
     await new Promise((r) => setTimeout(r, 0))
@@ -97,10 +101,10 @@ describe('useComposerPaste', () => {
   })
 
   it('does not call onResolved when image save throws', async () => {
+    readClipboardFilePathsMock.mockResolvedValue([])
     saveClipboardImageMock.mockRejectedValue(new Error('ipc fail'))
     const onResolved = vi.fn()
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const file = new File([new Uint8Array([1])], 'paste.png', { type: 'image/png' })
     const event = makeImagePasteEvent(file)
@@ -109,15 +113,13 @@ describe('useComposerPaste', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(saveClipboardImageMock).toHaveBeenCalled()
     expect(onResolved).not.toHaveBeenCalled()
-    expect(errorSpy).toHaveBeenCalled()
-    errorSpy.mockRestore()
   })
 
   it('falls back to native clipboard file paths', async () => {
     readClipboardFilePathsMock.mockResolvedValue(['/Users/me/native.png'])
     resolvePastedPathsMock.mockResolvedValue([samplePending])
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const event = makeTextPasteEvent('foo.zip', ['Files', 'text/plain'])
     result.current.handlePaste(event)
@@ -130,8 +132,9 @@ describe('useComposerPaste', () => {
   })
 
   it('lets plain text paste through without preventDefault', async () => {
+    __test_setLastPasteHasFile(false)
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const event = makeTextPasteEvent('hello world')
     result.current.handlePaste(event)
@@ -146,7 +149,7 @@ describe('useComposerPaste', () => {
     readClipboardFilePathsMock.mockResolvedValue(['/Users/me/photo.png'])
     resolvePastedPathsMock.mockResolvedValue([samplePending])
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const file = new File([new Uint8Array([1, 2])], 'photo.png', { type: 'image/png' })
     const event = makeImagePasteEvent(file, ['Files'])
@@ -164,7 +167,7 @@ describe('useComposerPaste', () => {
     readClipboardFilePathsMock.mockResolvedValue([])
     saveClipboardImageMock.mockResolvedValue(samplePending)
     const onResolved = vi.fn()
-    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved }))
+    const { result } = renderHook(() => useComposerPaste({ onAttachmentsResolved: onResolved, saveClipboardImage: saveClipboardImageMock }))
 
     const file = new File([new Uint8Array([1])], 'shot.png', { type: 'image/png' })
     const event = makeImagePasteEvent(file, ['Files'])

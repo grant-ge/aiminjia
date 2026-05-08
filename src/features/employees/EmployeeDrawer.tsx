@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { deriveStatus, type EmployeeStatus } from './EmployeeCard'
+import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 import { findTemplate } from './templates'
 import { ResourceConfigForm } from './ResourceConfigForm'
@@ -106,6 +107,7 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
   const [resourceModalOpen, setResourceModalOpen] = useState(false)
   const [cronModalOpen, setCronModalOpen] = useState(false)
   const setRoute = useUiStore((s) => s.setRoute)
+  const getSkillById = useSkillStore((s) => s.getById)
 
   if (!emp) return null
 
@@ -337,19 +339,31 @@ export function EmployeeDrawer({ employee: emp, inboxEntries, activeRun = null, 
               </div>
             </section>
 
-            {/* 工具白名单 */}
-            {emp.toolWhitelist.length > 0 && (
-              <section>
-                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">工具白名单</h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {emp.toolWhitelist.map((t) => (
-                    <span key={t} className="rounded-md bg-accent px-2 py-0.5 font-mono text-xs text-foreground">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              </section>
-            )}
+            {/* 绑定技能 — what the employee actually does. The old UI showed
+                `toolWhitelist` (internal tool names like `bash`, `load_file`)
+                which leaked implementation detail and conflated capability
+                (skill) with permission (tools). User-visible answer to
+                "员工会做什么" is the SKILL.md it's bound to. */}
+            {emp.defaultSkillId && (() => {
+              const skill = getSkillById(emp.defaultSkillId)
+              return (
+                <section>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    绑定技能
+                  </h3>
+                  <div className="rounded-md border border-border bg-card px-3 py-2">
+                    <div className="text-sm font-medium text-foreground">
+                      {skill?.displayName || emp.defaultSkillId}
+                    </div>
+                    {skill?.shortDescription || skill?.description ? (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {skill.shortDescription || skill.description}
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              )
+            })()}
 
             {/* 近期汇报 */}
             {empInbox.length > 0 && (

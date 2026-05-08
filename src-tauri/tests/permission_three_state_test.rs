@@ -47,6 +47,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
+            path_auth_scope: None,
         }
     }
 }
@@ -305,6 +306,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+        permission_ctx: None,
     };
 
     let result = registry

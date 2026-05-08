@@ -66,6 +66,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
+            path_auth_scope: None,
         }
     }
 }

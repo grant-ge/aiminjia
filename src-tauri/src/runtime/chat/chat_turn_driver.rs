@@ -111,6 +111,12 @@ pub struct ChatTurnRequest {
     pub client_message_id: Option<String>,
     pub selected_skill_id: Option<String>,
     pub selected_skill_label: Option<String>,
+    /// Working directories derived from this turn's attachments at the transport
+    /// layer (backend side only — frontend paths are untrusted).  These are merged
+    /// into the per-turn `ToolPermissionContext.additional_working_dirs` with
+    /// `RuleSource::Session` before tool execution.  Empty when there are no
+    /// attachments or all attachment paths failed validation.
+    pub session_attachment_dirs: Vec<std::path::PathBuf>,
 }
 
 impl ChatTurnRequest {
@@ -130,6 +136,7 @@ impl ChatTurnRequest {
             client_message_id: None,
             selected_skill_id: None,
             selected_skill_label: None,
+            session_attachment_dirs: Vec::new(),
         }
     }
 }
@@ -665,6 +672,7 @@ impl RuntimeChatTurnDriver {
                 suggestions,
                 remember_options,
                 default_destination,
+                path_auth_scope,
                 ..
             } = decision
             else {
@@ -684,6 +692,7 @@ impl RuntimeChatTurnDriver {
                 remember_options: remember_options.clone(),
                 default_destination: *default_destination,
                 original_request: original_request.clone(),
+                path_auth_scope: path_auth_scope.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
 
@@ -984,6 +993,14 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
+        // Merge this turn's attachment-derived directories into the session-scoped
+        // accumulator so they remain available for all subsequent tool calls.
+        // This must happen before any tool dispatching (both S4 and legacy paths).
+        if !request.session_attachment_dirs.is_empty() {
+            self.query_engine
+                .merge_session_attachment_dirs(&request.session_attachment_dirs);
+        }
+
         // S4 path: when an llm_executor is present, use the S4 driver loop.
         if let Some(ref executor) = self.llm_executor {
             return self
@@ -2108,6 +2125,7 @@ mod tests {
                 remember_options: vec![],
                 default_destination: None,
                 reason: PermissionReason::Other("not-mode".to_string()),
+                path_auth_scope: None,
             },
         })];
 

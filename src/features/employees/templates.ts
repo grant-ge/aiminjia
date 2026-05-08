@@ -1,7 +1,7 @@
 // Single source of truth for the 5 built-in employee templates.
 // Read both by HireWizard (during 雇佣) and EmployeeDrawer (for trigger prechecks).
 
-export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'none'
+export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'none'
 
 export interface RequiresAttachmentSpec {
   /** Comma-separated extension list passed to the file picker, e.g. `.pdf,.docx`. */
@@ -104,6 +104,41 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     defaultSkillId: 'dingtalk-workspace',
     requiresAttachment: null,
     resourceConfigKind: 'none',
+    requiresDingtalk: true,
+  },
+  {
+    templateId: 'builtin:xiaozhao',
+    avatar: '🎯',
+    name: '小招',
+    role: '招聘助理',
+    description: '批量筛选简历并按匹配度排序，撰写岗位 JD，搜索候选人公开信息，生成针对性面试问题。',
+    toolWhitelist: [
+      'load_file', 'read_file', 'grep_content',
+      'web_search', 'browse_and_extract', 'read_page_content',
+      'execute_python', 'memory_save', 'memory_search',
+      'load_skill', 'generate_report',
+    ],
+    cron: null,
+    systemPromptExtra: '你是一名专业的招聘助理。你的核心职责是帮助 HR 和用人经理高效筛选简历、撰写 JD、调研候选人背景、生成面试问题。\n\n关键原则：\n1. 简历筛选必须基于明确的 JD 或用户指定的硬性条件，不做主观臆断\n2. 评分必须有依据——每份简历的推荐/不推荐都要给出具体理由\n3. 候选人调研仅限公开信息（搜索引擎、公开社交媒体、公开论文/专利），不做隐私侵入\n4. 面试问题要针对候选人简历中的具体经历提问，不要泛泛而谈\n5. 所有输出使用中文，专业术语保留英文原文',
+    badge: '🟢 开箱即用',
+    defaultSkillId: 'resume-screening',
+    requiresAttachment: { accept: '.pdf,.docx,.doc,.png,.jpg', min: 1, max: 20 },
+    resourceConfigKind: 'none',
+    requiresDingtalk: false,
+  },
+  {
+    templateId: 'builtin:xiaozhou',
+    avatar: '📝',
+    name: '小周',
+    role: '周报撰写员',
+    description: '每周五自动汇总本周钉钉日程、已完成待办、群聊关键讨论，生成结构化周报，用户确认后可发送到指定钉钉群。',
+    toolWhitelist: ['bash', 'load_skill', 'memory_save', 'memory_search', 'generate_report'],
+    cron: '0 17 * * 5',
+    systemPromptExtra: '你是一名周报撰写助理。你的职责是从钉钉日程、待办和群聊中自动提取本周工作内容，生成结构化周报。\n\n关键原则：\n1. 所有内容必须基于钉钉数据，不编造任何工作内容\n2. 智能归类——不是简单罗列日程和待办，要按项目/主题归类，提炼关键成果\n3. 群聊摘要只提取决策和待跟进事项，忽略闲聊和无关内容\n4. 逾期未完成的待办标红并归入"下周计划"，附标注"延续自上周"\n5. 发送钉钉消息前必须展示完整内容并等待用户明确确认\n6. 所有钉钉操作通过 dws CLI 完成，先 load_skill(\'dingtalk-workspace\') 学习命令',
+    badge: '🟡 需授权钉钉',
+    defaultSkillId: 'dingtalk-workspace',
+    requiresAttachment: null,
+    resourceConfigKind: 'weekly-report',
     requiresDingtalk: true,
   },
 ]

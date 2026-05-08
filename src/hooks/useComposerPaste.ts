@@ -47,9 +47,10 @@ function pushToast(level: 'info', title: string, message: string) {
 
 export interface UseComposerPasteParams {
   onAttachmentsResolved: (attachments: PendingAttachment[]) => void
+  saveClipboardImage: (bytes: Uint8Array, mimeType: string) => Promise<PendingAttachment>
 }
 
-export function useComposerPaste({ onAttachmentsResolved }: UseComposerPasteParams) {
+export function useComposerPaste({ onAttachmentsResolved, saveClipboardImage }: UseComposerPasteParams) {
   ensureSnapshotterInstalled()
   const { resolvePastedPaths } = useChatAttachments()
 
@@ -58,30 +59,61 @@ export function useComposerPaste({ onAttachmentsResolved }: UseComposerPastePara
 
     event.preventDefault()
 
+    // Extract image blob synchronously — clipboardData is cleared after the event handler returns.
+    let imageFile: File | null = null
+    const items = event.clipboardData?.items
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          imageFile = item.getAsFile()
+          break
+        }
+      }
+    }
+
     void (async () => {
       const nativePaths = await readClipboardFilePaths().catch(() => [] as string[])
-      if (nativePaths.length === 0) {
-        pushToast('info', '无法粘贴', '剪贴板中的文件类型暂不支持作为附件粘贴，请改用左下角"+"按钮选择文件。')
+      if (nativePaths.length > 0) {
+        const capped = nativePaths.slice(0, MAX_PASTED_PATHS)
+        const resolved = await resolvePastedPaths(capped)
+        if (resolved.length === 0) {
+          pushToast('info', '无法粘贴', '选中的项目（如磁盘根目录、系统目录或别名）不支持作为附件粘贴。')
+          return
+        }
+        if (resolved.length < capped.length) {
+          pushToast(
+            'info',
+            '部分项目已忽略',
+            `已忽略 ${capped.length - resolved.length} 个不支持的项目（如磁盘根目录、系统目录或别名）。`,
+          )
+        }
+        onAttachmentsResolved(resolved)
         return
       }
-      const capped = nativePaths.slice(0, MAX_PASTED_PATHS)
-      const resolved = await resolvePastedPaths(capped)
-      if (resolved.length === 0) {
-        pushToast('info', '无法粘贴', '选中的项目（如磁盘根目录、系统目录或别名）不支持作为附件粘贴。')
+
+      // No file paths — fall back to clipboard image blob (screenshots, copied images).
+      if (imageFile) {
+        try {
+          const buffer = await imageFile.arrayBuffer()
+          const attachment = await saveClipboardImage(new Uint8Array(buffer), imageFile.type)
+          onAttachmentsResolved([attachment])
+        } catch {
+          pushToast('info', '无法粘贴', '剪贴板图片保存失败，请重试。')
+        }
         return
       }
-      if (resolved.length < capped.length) {
-        pushToast(
-          'info',
-          '部分项目已忽略',
-          `已忽略 ${capped.length - resolved.length} 个不支持的项目（如磁盘根目录、系统目录或别名）。`,
-        )
-      }
-      onAttachmentsResolved(resolved)
+
+      pushToast('info', '无法粘贴', '剪贴板中的文件类型暂不支持作为附件粘贴，请改用左下角"+"按钮选择文件。')
     })()
-  }, [resolvePastedPaths, onAttachmentsResolved])
+  }, [resolvePastedPaths, onAttachmentsResolved, saveClipboardImage])
 
   return { handlePaste }
+}
+
+/** @internal test-only — sets the snapshot state normally managed by document capture listener. */
+export function __test_setLastPasteHasFile(value: boolean) {
+  lastPasteHasFile = value
 }
 
 export type { PendingAttachment }

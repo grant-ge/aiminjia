@@ -59,9 +59,11 @@ describe('AppSidebar', () => {
     expect(screen.getByText('仁励家网络科技(杭州)')).toBeInTheDocument()
   })
 
-  it('renders 3 nav items, the section title 项目, and footer 设置', () => {
+  it('renders nav items, the section title 项目, and footer 设置', () => {
     render(<AppSidebar />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '汇报中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
     expect(screen.getByText('项目')).toBeInTheDocument()
@@ -89,6 +91,21 @@ describe('AppSidebar', () => {
 
     render(<AppSidebar />)
 
+    expect(screen.getByRole('button', { name: '新任务' }).className).not.toMatch(
+      /(^|\s)bg-sidebar-accent(\s|$)/,
+    )
+  })
+
+
+
+  it('highlights 数字员工 when employees route is active', () => {
+    uiState.route = { kind: 'employees' }
+
+    render(<AppSidebar />)
+
+    expect(screen.getByRole('button', { name: '数字员工' }).className).toMatch(
+      /(^|\s)bg-sidebar-accent(\s|$)/,
+    )
     expect(screen.getByRole('button', { name: '新任务' }).className).not.toMatch(
       /(^|\s)bg-sidebar-accent(\s|$)/,
     )

@@ -406,22 +406,6 @@ fn extract_auth_url(line: &str) -> Option<String> {
     None
 }
 
-/// Open a URL in the default system browser.
-fn open_url_in_browser(url: &str) {
-    let result = {
-        #[cfg(target_os = "macos")]
-        { std::process::Command::new("open").arg(url).spawn() }
-        #[cfg(target_os = "windows")]
-        { std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn() }
-        #[cfg(target_os = "linux")]
-        { std::process::Command::new("xdg-open").arg(url).spawn() }
-    };
-    match result {
-        Ok(_) => log::info!("[dws-login] Browser opened successfully"),
-        Err(e) => log::error!("[dws-login] Failed to open browser: {}. URL: {}", e, url),
-    }
-}
-
 // ── Tests ───────────────────────────────────────────────────────
 
 #[cfg(test)]

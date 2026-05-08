@@ -13,6 +13,7 @@ fn make_ask() -> PermissionDecision {
         remember_options,
         default_destination,
         reason: PermissionReason::UnknownScope,
+        path_auth_scope: None,
     }
 }
 

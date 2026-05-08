@@ -21,14 +21,13 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AppDropdown } from '@/components/common/AppDropdown'
 import { requestConfirm } from '@/components/common/ConfirmDialogHost'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { SkillCard } from '@/components/skills/SkillCard'
 import { SkillCategoryBar } from '@/components/skills/SkillCategoryBar'
-import { SkillHotSection } from '@/components/skills/SkillHotSection'
 import { SkillOfficeSection } from '@/components/skills/SkillOfficeSection'
 import { Button } from '@/components/ui/button'
 import { SKILL_CATEGORIES, type SkillCategoryId } from '@/data/skill-categories'
@@ -59,6 +58,8 @@ const ICONS: Record<string, LucideIcon> = {
   'trending-up': TrendingUp,
   users: Users,
 }
+
+const HIDE_SKILL_ACTIONS = true
 
 const CATEGORY_STYLE: Record<string, { bg: string }> = {
   hr:      { bg: 'bg-blue-500' },
@@ -126,19 +127,23 @@ export function SkillCenterPage() {
     }
   }
 
-  const loadSkills = async () => {
+  const handleLoadError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    setLoadError(message)
+    console.error('Failed to load skills:', error)
+  }
+
+  const loadSkills = useCallback(async () => {
     setLoadError(null)
     try {
       await reload()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setLoadError(message)
-      console.error('Failed to load skills:', error)
+      handleLoadError(error)
     }
-  }
+  }, [reload])
 
   useEffect(() => {
-    void loadSkills()
+    void reload().catch(handleLoadError)
   }, [reload])
 
   const categoryItems = useMemo(
@@ -204,7 +209,6 @@ export function SkillCenterPage() {
       padding="px-7 pt-6 pb-8"
       gap="gap-5"
     >
-      <SkillHotSection />
       <SkillOfficeSection
         categoryBar={
           <SkillCategoryBar
@@ -230,7 +234,9 @@ export function SkillCenterPage() {
               iconNode={getSkillIcon(skill.icon)}
               iconBg={getIconBg(skill.category)}
               onClick={() => setRoute({ kind: 'skill-detail', skillId: skill.id })}
-              actionsSlot={
+              actionsSlot={HIDE_SKILL_ACTIONS ? (
+                <div aria-hidden="true" className="h-7 w-7" />
+              ) : (
                 <AppDropdown
                   ariaLabel={`${skill.displayName} 更多操作`}
                   trigger={
@@ -251,7 +257,7 @@ export function SkillCenterPage() {
                     },
                   ]}
                 />
-              }
+              )}
             />
           ))
         )}

@@ -68,6 +68,8 @@ describe('Sidebar', () => {
     render(<Sidebar onOpenSettings={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '汇报中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
 expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument()

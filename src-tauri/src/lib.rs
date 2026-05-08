@@ -518,7 +518,8 @@ pub fn run() {
 
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new(
-                    db.clone(),
+                    current_user_storage.clone(),
+                    root_db.clone(),
                     gateway.clone(),
                     file_mgr.clone(),
                     secure_storage.clone(),

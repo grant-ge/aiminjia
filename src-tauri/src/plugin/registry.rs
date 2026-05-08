@@ -51,6 +51,11 @@ pub struct RequestScopedRuntimeDeps {
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
     pub runtime_resolver: Option<ManagedRuntimeResolver>,
+    /// Phase 5 path-auth inheritance: the parent turn's merged ToolPermissionContext.
+    /// Propagated from `PluginContext.permission_ctx` so that registry.rs can pass the
+    /// parent's authorized paths into `StorageCapability` when executing tools.
+    /// `None` for non-sub-agent paths (legacy tools, test helpers).
+    pub permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -81,6 +86,7 @@ impl RequestScopedRuntimeDeps {
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
             runtime_resolver: ctx.runtime_resolver.clone(),
+            permission_ctx: ctx.permission_ctx.clone(),
         }
     }
 
@@ -475,6 +481,16 @@ impl ToolRegistry {
                 let storage = StorageCapability {
                     workspace_path: ctx.workspace_path.clone(),
                     authorized_workspace: ctx.authorized_workspace.clone(),
+                    // Phase 5: inherit parent's permission_ctx when available
+                    // (sub-agent path), otherwise fall back to empty() (legacy/test).
+                    permission_ctx: ctx
+                        .permission_ctx
+                        .clone()
+                        .unwrap_or_else(|| {
+                            std::sync::Arc::new(
+                                crate::runtime::path_auth::ToolPermissionContext::empty(),
+                            )
+                        }),
                 };
                 let cap = CapabilityContext {
                     storage: Some(storage),
@@ -612,6 +628,7 @@ impl ToolRegistry {
                 permission_mode: ctx.permission_mode,
                 runtime_resolver: ctx.runtime_resolver.clone(),
                 dingtalk_bridge: None,
+                permission_ctx: ctx.permission_ctx.clone(),
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(

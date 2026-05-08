@@ -178,6 +178,14 @@ impl DefaultSpawnSubagentLauncher {
             read_file_state: scoped_deps.read_file_state.clone(),
             app_handle: scoped_deps.app_handle.clone(),
             runtime_resolver: scoped_deps.runtime_resolver.clone(),
+            // Phase 5: snapshot of the parent turn's merged permission_ctx,
+            // extracted from SpawnSubagentContext which received it from the
+            // parent ToolExecutionContext.capability.storage.permission_ctx.
+            // The child's QueryEngine uses this as its base_permission_ctx so
+            // path tools run by the sub-agent see the same authorized paths as
+            // the parent (UserSettings working dirs + session attachment dirs
+            // already merged in at the time of spawning).
+            permission_ctx: context.permission_ctx.clone(),
         };
 
         Ok((config, runtime_deps))

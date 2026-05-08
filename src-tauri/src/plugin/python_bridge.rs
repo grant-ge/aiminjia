@@ -28,7 +28,7 @@ pub struct PythonToolBridge {
 impl PythonToolBridge {
     /// Create from a parsed plugin manifest and its directory.
     #[allow(dead_code)]
-    pub fn from_manifest(_id: &str, _handler: &str, plugin_dir: PathBuf) -> Result<Self, String> {
+    pub fn from_manifest(_id: &str, _handler: &str, _plugin_dir: PathBuf) -> Result<Self, String> {
         unimplemented!("Python plugin bridge removed in Phase 3 tool cleanup")
     }
 

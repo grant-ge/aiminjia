@@ -18,17 +18,21 @@ export function useEmployees() {
     setError(null)
     const list = await employeeList()
     setEmployees(list)
-    // Probe active run for each employee in parallel; cheap (in-memory mutex
-    // lookup on the backend, no network).
+    // Probe active run only for non-archived employees. Archived employees
+    // can't have a real run by definition (the trigger command rejects them
+    // and the scheduler skips them), and on a recycle bin with N entries we
+    // were burning N IPC calls every 5s for nothing.
     const probes = await Promise.all(
-      list.map(async (e) => {
-        try {
-          return [e.id, await employeeActiveRun(e.id)] as const
-        } catch (err) {
-          console.warn(`[useEmployees] employeeActiveRun(${e.id}) failed:`, err)
-          return [e.id, null] as const
-        }
-      }),
+      list
+        .filter((e) => e.lifecycle !== 'archived')
+        .map(async (e) => {
+          try {
+            return [e.id, await employeeActiveRun(e.id)] as const
+          } catch (err) {
+            console.warn(`[useEmployees] employeeActiveRun(${e.id}) failed:`, err)
+            return [e.id, null] as const
+          }
+        }),
     )
     const next: Record<string, EmployeeActiveRunInfo> = {}
     for (const [id, run] of probes) {
