@@ -27,30 +27,49 @@ const WORKSPACE_TOOL_NAMES: &[&str] = &[
     "grep_content",
 ];
 
-pub(crate) async fn build_visible_tool_defs(
+/// 决定 schema 过滤策略。和"运行时权限白名单"是两回事——
+/// 后者由 TurnConfigOverrides.allowed_tools 控制，进入 tool_round_driver。
+#[derive(Debug, Clone)]
+pub enum ToolSchemaFilter {
+    /// 普通对话：用 DAILY_ALLOWED_TOOLS 白名单过滤
+    DailyWhitelist,
+    /// Employee 派活：用员工自定义白名单过滤
+    EmployeeWhitelist(std::collections::HashSet<String>),
+    /// 无过滤（subagent 路径或显式全量）
+    None,
+}
+
+pub async fn build_visible_tool_defs(
     registry: &ToolRegistry,
     has_authorized_workspace: bool,
-    allowed_tools: Option<&std::collections::HashSet<String>>,
+    schema_filter: ToolSchemaFilter,
 ) -> Vec<crate::llm::streaming::ToolDefinition> {
     let defs = if has_authorized_workspace {
         registry.get_schemas_filtered(&ToolFilter::All).await
     } else {
         registry
             .get_schemas_filtered(&ToolFilter::Exclude(
-                WORKSPACE_TOOL_NAMES
-                    .iter()
-                    .map(|name| name.to_string())
-                    .collect(),
+                WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect(),
             ))
             .await
     };
 
-    match allowed_tools {
-        Some(allowed) => defs
+    match schema_filter {
+        ToolSchemaFilter::DailyWhitelist => {
+            let allowed: std::collections::HashSet<&str> =
+                crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
+                    .iter()
+                    .copied()
+                    .collect();
+            defs.into_iter()
+                .filter(|d| allowed.contains(d.name.as_str()))
+                .collect()
+        }
+        ToolSchemaFilter::EmployeeWhitelist(allowed) => defs
             .into_iter()
-            .filter(|def| allowed.contains(def.name.as_str()))
+            .filter(|d| allowed.contains(d.name.as_str()))
             .collect(),
-        None => defs,
+        ToolSchemaFilter::None => defs,
     }
 }
 
@@ -164,7 +183,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, true, None).await;
+        let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -182,7 +201,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, false, None).await;
+        let defs = build_visible_tool_defs(&registry, false, ToolSchemaFilter::None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -209,7 +228,12 @@ mod tests {
             "list_directory".to_string(),
         ]);
 
-        let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;
+        let defs = build_visible_tool_defs(
+            &registry,
+            false,
+            ToolSchemaFilter::EmployeeWhitelist(allowed),
+        )
+        .await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         assert_eq!(names, vec!["execute_python"]);

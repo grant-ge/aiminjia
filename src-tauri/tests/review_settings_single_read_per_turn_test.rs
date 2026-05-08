@@ -72,6 +72,10 @@ impl RuntimeLlmExecutor for CountingSettingsExecutor {
     ) -> Result<String, TurnError> {
         Ok("msg-settings".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]

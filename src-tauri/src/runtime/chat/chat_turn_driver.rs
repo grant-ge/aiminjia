@@ -6,9 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::llm::context_decay::{
-    context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
-};
+use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
@@ -250,11 +248,9 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 
     /// 返回本次 Turn 使用的 tool definitions（JSON schema）。
     ///
-    /// 默认实现返回空 vec（向后兼容旧 mock executor）。
-    /// 生产 executor（TauriLegacyTurnExecutor）必须 override。
-    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])
-    }
+    /// 不再提供默认实现——所有 mock executor 必须显式 override，
+    /// 否则会因为返回空 vec 让测试静默通过。
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError>;
 
     /// 加载 conversation 的历史对话消息（格式：[{role, content}, ...]）。
     ///
@@ -1391,7 +1387,31 @@ impl RuntimeChatTurnDriver {
             );
 
             // Build the read-only executor input.
-            let estimated_tokens = estimate_tokens_from_json(&state.messages);
+            let system_chars = config.system_prompt.len();
+            let dynamic_chars = iteration_delta_context.len();
+            let messages_chars = serde_json::to_string(&state.messages)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let tools_chars = serde_json::to_string(&config.tool_defs)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let estimated_tokens =
+                (system_chars + dynamic_chars + messages_chars + tools_chars) / 4;
+            record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.tokens.estimated",
+                turn.session_id(),
+                turn.run_id(),
+                None,
+                None,
+                Some(serde_json::json!({
+                    "system_chars": system_chars,
+                    "dynamic_chars": dynamic_chars,
+                    "messages_chars": messages_chars,
+                    "tools_chars": tools_chars,
+                    "estimated_input_tokens": estimated_tokens,
+                })),
+            );
             let context_window = context_window_for_provider(&config.llm_settings.primary_model);
             if (estimated_tokens as f64) > (context_window as f64 * CONTEXT_OVERFLOW_THRESHOLD) {
                 log::warn!(
@@ -2316,6 +2336,10 @@ mod tests {
 
         async fn get_skill_catalog(&self, _agent_id: Option<&str>) -> String {
             self.skill_catalog.clone().unwrap_or_default()
+        }
+
+        async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+            Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
         }
     }
 

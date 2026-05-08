@@ -15,7 +15,6 @@ use crate::llm::prompt_guard;
 use crate::llm::prompts;
 use crate::models::message::SubAgentTranscriptEntryFrontend;
 use crate::models::settings::AppSettings;
-use crate::plugin::skill_trait::ToolFilter;
 use crate::plugin::ToolRegistry;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::cancellation::CancellationToken;
@@ -38,7 +37,7 @@ use crate::storage::message_write_queue::{MessageWriteCompletion, MessageWriteQu
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
 use crate::transport::tauri_runtime_host::TauriRuntimeHost;
 
-pub(crate) mod chat_runtime_impl;
+pub mod chat_runtime_impl;
 
 pub(crate) use chat_runtime_impl::build_visible_tool_defs;
 
@@ -1305,46 +1304,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         ))
     }
 
-    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        use crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
-
-        let filter = ToolFilter::Only(DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect());
-
-        let tool_definitions: Vec<crate::llm::streaming::ToolDefinition> = self
-            .services
-            .tool_registry
-            .get_schemas_filtered(&filter)
-            .await;
-
-        // ToolDefinition implements Serialize
-        let json_defs: Vec<serde_json::Value> = tool_definitions
-            .into_iter()
-            .filter_map(|td| {
-                serde_json::to_value(&td)
-                    .map_err(|e| {
-                        log::warn!(
-                            "[get_tool_defs] Failed to serialize tool '{}': {}",
-                            td.name,
-                            e
-                        )
-                    })
-                    .ok()
-            })
-            .collect();
-
-        log::info!(
-            "[get_tool_defs] returned {} tool definitions",
-            json_defs.len(),
-        );
-
-        Ok(json_defs)
-    }
-
     async fn load_turn_config_overrides(
         &self,
         request: &ChatTurnRequest,
     ) -> Result<TurnConfigOverrides, TurnError> {
-        // Check for employee-run overrides injected by dispatch_employee_run.
         let employee_overrides = self
             .services
             .employee_run_overrides
@@ -1352,24 +1315,27 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .ok()
             .and_then(|map| map.get(request.conversation_id.as_str()).cloned());
 
-        let all_tools = self
-            .services
-            .tool_registry
-            .get_all_schemas()
-            .await
-            .into_iter()
-            .map(|def| def.name)
-            .collect::<Vec<_>>();
-
-        // Apply employee whitelist: intersect full tool set with allowed list.
-        let allowed_tools: std::collections::HashSet<String> = match &employee_overrides {
-            Some(ov) if !ov.tool_whitelist.is_empty() => all_tools
-                .iter()
-                .filter(|name| ov.tool_whitelist.contains(name.as_str()))
-                .cloned()
-                .collect(),
-            _ => all_tools.iter().cloned().collect(),
+        // 第一步：决定 schema 过滤策略
+        let schema_filter = match &employee_overrides {
+            Some(ov) if !ov.tool_whitelist.is_empty() => {
+                chat_runtime_impl::ToolSchemaFilter::EmployeeWhitelist(
+                    ov.tool_whitelist.iter().cloned().collect(),
+                )
+            }
+            _ => chat_runtime_impl::ToolSchemaFilter::DailyWhitelist,
         };
+
+        // 第二步：独立计算运行时权限白名单（与 schema 过滤是两回事）
+        let runtime_allowed_tools: std::collections::HashSet<String> =
+            match &employee_overrides {
+                Some(ov) if !ov.tool_whitelist.is_empty() => {
+                    ov.tool_whitelist.iter().cloned().collect()
+                }
+                _ => crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            };
 
         let max_iterations = employee_overrides
             .as_ref()
@@ -1383,7 +1349,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         let visible_tool_defs = chat_runtime_impl::build_visible_tool_defs(
             self.services.tool_registry.as_ref(),
             authorized_workspace.is_some(),
-            Some(&allowed_tools),
+            schema_filter,
         )
         .await;
         let json_defs = visible_tool_defs
@@ -1392,12 +1358,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             .collect();
 
         Ok(TurnConfigOverrides {
-            system_prompt: Some(crate::runtime::chat::base_prompt::DAILY_BASE_PROMPT.to_string()),
+            system_prompt: None, // P0 修复：让 PromptAssembler 产物真正进入 LLM
             tool_defs: Some(json_defs),
-            allowed_tools: Some(allowed_tools),
+            allowed_tools: Some(runtime_allowed_tools),
             max_iterations: Some(max_iterations),
-            // Leave token_budget = None so chat_turn_driver picks the
-            // model-aware default (`max_tokens::default_max_tokens_for_model`).
             token_budget: None,
         })
     }
@@ -1517,6 +1481,14 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         service.load_context(query).map_err(|err| {
             TurnError::PersistenceError(format!("Failed to load project memory: {err}"))
         })
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        // Production tool_defs are populated via load_turn_config_overrides
+        // (returns Some(json_defs)), so the driver overrides this empty default.
+        // This impl exists only to satisfy the trait — it should never be the value
+        // actually used in a turn.
+        Ok(vec![])
     }
 
     async fn load_core_memory(&self, _conversation_id: &str) -> Result<String, TurnError> {

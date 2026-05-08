@@ -81,6 +81,10 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
     async fn load_history(&self, _conversation_id: &str) -> Result<Vec<JsonValue>, TurnError> {
         Ok(self.history.clone())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 struct CompactingExecutor {
@@ -157,6 +161,10 @@ impl RuntimeLlmExecutor for CompactingExecutor {
     async fn save_compact_boundary(&self, record: CompactBoundaryRecord) -> Result<(), TurnError> {
         self.boundaries.lock().unwrap().push(record);
         Ok(())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 
