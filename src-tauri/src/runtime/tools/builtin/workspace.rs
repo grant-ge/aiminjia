@@ -109,6 +109,15 @@ pub(crate) async fn resolve_and_authorize_path(
         perm_ctx
     };
 
+    // If the dispatcher injected permission_override=Allow (i.e. user just approved),
+    // skip the path-auth check entirely — the user's approval covers this path.
+    if matches!(
+        ctx.permission_override,
+        Some(crate::runtime::tools::permission::PermissionDecision::Allow { .. })
+    ) {
+        return Ok(canonical);
+    }
+
     match decide::is_path_allowed(&canonical, op, ctx_ref) {
         Decision::Allow => Ok(canonical),
         Decision::Deny(msg) => Err(ToolError::PermissionDenied(msg)),
