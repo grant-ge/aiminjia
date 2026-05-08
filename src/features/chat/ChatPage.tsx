@@ -6,6 +6,7 @@ import { ChatTopBar } from '@/components/shell/ChatTopBar'
 import { useChat } from '@/hooks/useChat'
 import { useChatStore } from '@/stores/chatStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { useGeneratedFilePreviewStore } from '@/stores/generatedFilePreviewStore'
 import { openGeneratedFile } from '@/lib/tauri'
 import { useEffect } from 'react'
 
@@ -13,13 +14,13 @@ interface ChatPageProps {
   conversationId: string
 }
 
-const SHOW_RIGHT_PANEL = false
-
 export function ChatPage({ conversationId }: ChatPageProps) {
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const pushNotification = useNotificationStore((s) => s.push)
+  const previewTarget = useGeneratedFilePreviewStore((s) => s.target)
+  const previewOpen = previewTarget?.conversationId === conversationId
   const title = conversations.find((c) => c.id === conversationId)?.title ?? ''
 
   const handleOpenPreviewTarget = async (target: PreviewTarget) => {
@@ -58,7 +59,7 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           <ChatArea />
           <ChatBottomArea />
         </div>
-        {SHOW_RIGHT_PANEL ? (
+        {previewOpen ? (
           <RightPanel
             conversationId={conversationId}
             onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
