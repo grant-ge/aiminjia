@@ -11,8 +11,6 @@ export interface SettingsMenuItem {
   disabled?: boolean
 }
 
-const disabledReason = '未开放'
-
 // eslint-disable-next-line react-refresh/only-export-components
 export const SETTINGS_MENU_ITEMS: SettingsMenuItem[] = [
   { key: 'account', label: '通用' },
@@ -35,34 +33,24 @@ export function SettingsMenu({ activeKey, onSelect }: SettingsMenuProps) {
     <aside className="flex min-h-0 flex-col rounded-l-[18px] bg-secondary px-4 py-6">
       <div className="mb-2 shrink-0 text-lg font-bold text-foreground">设置</div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
-        {SETTINGS_MENU_ITEMS.map((it) => {
+        {SETTINGS_MENU_ITEMS.filter((it) => !it.disabled).map((it) => {
           const active = it.key === activeKey
-          const ariaLabel = it.disabled ? `${it.label}（${disabledReason}）` : it.label
           return (
             <button
               key={it.key}
               type="button"
-              disabled={it.disabled}
-              aria-label={ariaLabel}
-              title={it.disabled ? disabledReason : undefined}
+              aria-label={it.label}
               onClick={() => {
-                if (!it.disabled) onSelect(it.key)
+                onSelect(it.key)
               }}
               className={cn(
                 'flex items-center rounded-[10px] px-3 py-2.5 text-left text-sm',
                 active
                   ? 'bg-card font-semibold text-foreground'
                   : 'font-medium text-muted-foreground transition-colors hover:bg-card/60',
-                it.disabled &&
-                  'cursor-not-allowed text-muted-foreground/45 hover:bg-transparent',
               )}
             >
               <span className="min-w-0 flex-1 truncate">{it.label}</span>
-              {it.disabled ? (
-                <span className="ml-2 shrink-0 text-[0.6875rem] font-medium text-muted-foreground/50">
-                  未开放
-                </span>
-              ) : null}
             </button>
           )
         })}

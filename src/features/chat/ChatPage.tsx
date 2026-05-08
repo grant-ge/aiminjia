@@ -13,6 +13,8 @@ interface ChatPageProps {
   conversationId: string
 }
 
+const SHOW_RIGHT_PANEL = false
+
 export function ChatPage({ conversationId }: ChatPageProps) {
   const { switchConversation } = useChat()
   const conversations = useChatStore((s) => s.conversations)
@@ -56,10 +58,12 @@ export function ChatPage({ conversationId }: ChatPageProps) {
           <ChatArea />
           <ChatBottomArea />
         </div>
-        <RightPanel
-          conversationId={conversationId}
-          onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
-        />
+        {SHOW_RIGHT_PANEL ? (
+          <RightPanel
+            conversationId={conversationId}
+            onOpenExternal={(target) => void handleOpenPreviewTarget(target)}
+          />
+        ) : null}
       </div>
     </div>
   )

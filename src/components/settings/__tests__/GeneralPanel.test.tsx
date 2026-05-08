@@ -27,20 +27,13 @@ describe('GeneralPanel', () => {
     expect(onLogout).toHaveBeenCalledTimes(1)
   })
 
-  it('renders 通用 section with disabled language selector', () => {
+  it('hides unavailable general settings', () => {
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    expect(screen.getByText('通用')).toBeInTheDocument()
-    expect(screen.getByText('语言')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: '语言' })).toBeDisabled()
-  })
-
-  it('renders disabled autostart and prevent-sleep toggles', () => {
-    render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    expect(screen.getByText('开机自启动')).toBeInTheDocument()
-    expect(screen.getByText('任务运行时阻止自动休眠')).toBeInTheDocument()
-    const toggles = screen.getAllByRole('switch')
-    expect(toggles).toHaveLength(2)
-    toggles.forEach((t) => expect(t).toBeDisabled())
+    expect(screen.queryByText('语言')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: '语言' })).not.toBeInTheDocument()
+    expect(screen.queryByText('开机自启动')).not.toBeInTheDocument()
+    expect(screen.queryByText('任务运行时阻止自动休眠')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
   })
 
   it('renders 外观 section with accent color swatches', () => {
@@ -75,13 +68,11 @@ describe('GeneralPanel', () => {
     expect(applyBranding).toHaveBeenCalledWith({ accentColor: '#4f46e5' })
   })
 
-  it('language select is disabled and does not call setAppLanguage', () => {
+  it('does not render language select while language switching is unavailable', () => {
     const setAppLanguage = vi.fn()
     useSettingsStore.setState({ setAppLanguage } as never)
     render(<GeneralPanel user={mockUser} onLogout={() => {}} />)
-    const select = screen.getByRole('combobox', { name: '语言' })
-    expect(select).toBeDisabled()
-    fireEvent.change(select, { target: { value: 'en-US' } })
+    expect(screen.queryByRole('combobox', { name: '语言' })).not.toBeInTheDocument()
     expect(setAppLanguage).not.toHaveBeenCalled()
   })
 })
