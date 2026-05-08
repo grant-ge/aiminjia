@@ -335,6 +335,7 @@ mod tests {
             auto_model_routing: true,
             primary_model: "deepseek-v3".to_string(),
             primary_api_key: "pk-test".to_string(),
+            use_cloud: false,
             ..Default::default()
         }
     }

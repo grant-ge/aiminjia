@@ -40,7 +40,7 @@ impl Default for ResolvedLlmSettings {
             auto_model_routing: false,
             custom_model_endpoint: String::new(),
             custom_model_name: String::new(),
-            use_cloud: false,
+            use_cloud: true,
             cloud_model: String::new(),
             cloud_model_type: String::new(),
             thinking_type: "disabled".to_string(),

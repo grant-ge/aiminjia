@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bochaApiKey: '',
   customModelEndpoint: '',
   customModelName: '',
-  useCloud: false,
+  useCloud: true,
   cloudModel: '',
   cloudModelType: '',
   personaOnboardingDone: false,
