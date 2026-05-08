@@ -119,13 +119,13 @@ provider 按 cache_policy 输出多块 wire body
 |---|---|---|---|---|
 | **Wave 1** | P0 一行废掉的 prompt 恢复 + 工具白名单双轨拆开 + token 估算 | `chat.rs`, `chat_runtime_impl.rs`, `chat_turn_driver.rs` | 1 天 | 端到端测试 + employee 派活手动验证 |
 | **Wave 2** | `PromptCachePolicy` 真正驱动 OpenAI wire format（Claude provider 已废弃） | `renderer_openai.rs`, `prompt/types.rs` | 1 天 | OpenAI wire body snapshot 测试 |
-| **Wave 3** | gateway 接口升级到 `PromptSystemView`（3 个调用点） | `gateway.rs`, `chat.rs:538`, `worker_runtime.rs:303` | 1.5 天 | OpenAI 主路径 wire body 多块化生效 |
+| **Wave 3** | ~~gateway 接口升级到 `PromptSystemView`~~ → **裁剪**：仅修 `worker_runtime.rs` max_tokens 硬编码 | `worker_runtime.rs` | 0.5 天 | review_ 测试无 NEW regression |
 | **Wave 4** | 4 个 subagent 独立人格 + 3 处 TODO 注释 | `agent/builtin/*.rs`, `team.rs`, `dispatch_prompt.rs`, `renlijia_md.rs` | 2 天 | persona 测试 + 4 场景手动验证 |
 
 **为什么这个顺序**：
 - Wave 1 最先：P0 是其他 wave 的前提（不修这个 wave 2/3 就算改好了也看不到效果）
-- Wave 2 在 Wave 3 之前：先让 provider 准备好接收多块视图，再升级 gateway 接口送进去
-- Wave 4 最后：subagent 人格依赖 Wave 3 的 view 接口（`worker_runtime.rs:303` 升级到 view 后才能让 cache 生效）
+- ~~Wave 2 在 Wave 3 之前：先让 provider 准备好接收多块视图，再升级 gateway 接口送进去~~（Wave 3 已裁剪，gateway 不再升级）
+- Wave 4 最后：subagent 人格独立改造，与 Wave 1-3 解耦
 
 ---
 
@@ -895,7 +895,7 @@ pub fn openai_system_message_flat(&self) -> Option<serde_json::Value> {
 }
 ```
 
-> 调用方判断 `provider.supports_cache_control_in_content_array()` 决定走哪个。本 Task 暂不接调用方——Wave 3 gateway 升级时统一接入。
+> 调用方判断 `provider.supports_cache_control_in_content_array()` 决定走哪个。本 Task 暂不接调用方——Wave 3 已裁剪不升级 gateway，本方法目前无生产调用方，作为未来 prompt cache 贯通改造的预留接口。
 
 - [ ] **Step 3: 编译检查**
 
@@ -945,196 +945,64 @@ git commit -m "feat(prompt): wave 2 - PromptCachePolicy drives provider wire for
 
 ---
 
-## Wave 3: Gateway 接口升级（1.5 天）
+## Wave 3: max_tokens 硬编码修复（裁剪后，0.5 天）
 
-### Task 3.1: gateway 新增 `_with_view` 重载
+### 裁剪说明（2026-05-09）
 
-**Files:**
-- Modify: `src-tauri/src/llm/gateway.rs:243-260, 361-380`
+**原 Task 3.1 / 3.2 / 3.4 全部删除**：
 
-- [ ] **Step 1: 看现有签名**
+- Task 3.1（gateway 加 `_with_view` 重载）和 Task 3.2（升级 chat.rs 调用点）的目的是让 prompt cache 多块化贯通到 LLM wire body。但深入读代码后发现：要让多块 prompt cache 真正落到 OpenAI wire body，需要改造 `LlmRequest` / `ChatMessage` / `build_request` / OpenAI provider 整条链——工作量是原 plan §3.1 的 5 倍，影响 masking / decay / 持久化等多处。
+- 用户决策（2026-05-09）：**prompt cache 贯通暂不做**，开后续单独 spec 处理。
+- 因此 Task 3.1（重载）和 Task 3.2（升级调用点）变成空架子（重载内部还是 flatten 成 string），没有实际收益，删除。
+- Task 3.4（conversation_service 注释）也一并删除（没有升级要解释）。
 
-```bash
-sed -n '243,260p' src-tauri/src/llm/gateway.rs
-sed -n '361,380p' src-tauri/src/llm/gateway.rs
-```
+**Wave 3 唯一保留任务：max_tokens 硬编码修复**（原 Task 3.3 的下半部分），与 prompt cache 无关，是独立的 bug 修复。
 
-- [ ] **Step 2: 新增重载方法**
-
-`gateway.rs` 添加（`stream_message` 和 `send_message` 各加一个 `_with_view`）：
-
-```rust
-pub async fn stream_message_with_view(
-    &self,
-    settings: &ResolvedLlmSettings,
-    system_view: &PromptSystemView,
-    /* 其他参数与 stream_message 一致 */
-) -> Result<...> {
-    // 内部调用 build_request 的 _with_view 变体
-    // OpenAI 兼容路径根据 capability 决定走 view 还是 flat（lotus 主路径）
-    // Claude 路径已废弃（不再调用 ClaudeProvider）
-}
-
-pub async fn send_message_with_view(
-    /* 同上 */
-) -> Result<...>
-```
-
-并保留原 `stream_message(system_prompt: Option<&str>, ...)` 实现，内部转：
-
-```rust
-pub async fn stream_message(
-    &self,
-    settings: &ResolvedLlmSettings,
-    system_prompt: Option<&str>,
-    /* 其他参数 */
-) -> Result<...> {
-    let view = match system_prompt {
-        Some(s) if !s.trim().is_empty() => PromptSystemView {
-            blocks: vec![PromptBlock::static_block(
-                PromptSectionId::new("legacy_flat"),
-                s,
-            )],
-        },
-        _ => PromptSystemView { blocks: vec![] },
-    };
-    self.stream_message_with_view(settings, &view, ...).await
-}
-```
-
-- [ ] **Step 3: 编译检查**
-
-```bash
-cd src-tauri && cargo check 2>&1 | tail -10
-```
-
-- [ ] **Step 4: 加单元测试覆盖 view → request body 链路**
-
-新增 `src-tauri/tests/gateway_with_view_test.rs`：测试 `_with_view` 路径的 wire body 包含正确的多块 system 结构。
-
-```rust
-// 用 mock provider 捕获 build_request 输出，断言：
-// 1. system 字段是数组
-// 2. 第一个 element 有 cache_control
-```
-
----
-
-### Task 3.2: 升级 `chat.rs:538` 调用点（主对话）
+### Task 3.3 (裁剪版): 修 `worker_runtime.rs` max_tokens 硬编码
 
 **Files:**
-- Modify: `src-tauri/src/transport/tauri_commands/chat.rs:538` 区域
+- Modify: `src-tauri/src/runtime/agent/worker_runtime.rs`（行号实施时确认）
 
-- [ ] **Step 1: 找到调用点**
+**Goal:** subagent 调用 LLM 时 max_tokens 不再硬编码 4096，改成按 model 自动选（`default_max_tokens_for_model`）。这是 v0.5.8 引入的设施（见 CLAUDE.md "max_tokens 按模型自动选"），但 worker_runtime 这一处漏掉了。
+
+- [ ] **Step 1: 找硬编码点**
 
 ```bash
-grep -n "stream_message\|send_message" src-tauri/src/transport/tauri_commands/chat.rs | head -10
+grep -n "max_tokens.*4096\|4096" src-tauri/src/runtime/agent/worker_runtime.rs | head -5
 ```
 
-- [ ] **Step 2: 改为传 view**
+- [ ] **Step 2: 替换**
 
-把 `gateway.stream_message(settings, system_prompt.as_deref(), ...)` 改为：
+把硬编码 4096 替换为：
 
 ```rust
-let system_view = config
-    .prompt_snapshot
-    .as_ref()
-    .map(|s| s.system_view())
-    .unwrap_or_else(|| PromptSystemView { blocks: vec![] });
-
-gateway.stream_message_with_view(settings, &system_view, ...)
-```
-
-- [ ] **Step 3: 编译 + 测试**
-
-```bash
-cd src-tauri && cargo check && cargo test --test effective_system_prompt_test
-```
-
----
-
-### Task 3.3: 升级 `worker_runtime.rs:303` 调用点（subagent）+ 修 max_tokens 硬编码
-
-**Files:**
-- Modify: `src-tauri/src/runtime/agent/worker_runtime.rs:295-315`
-
-- [ ] **Step 1: 找当前调用**
-
-```bash
-sed -n '295,315p' src-tauri/src/runtime/agent/worker_runtime.rs
-```
-
-- [ ] **Step 2: 替换为 view 调用 + 修 max_tokens**
-
-```rust
-// 旧：max_tokens: Some(4096)
 let max_tokens = crate::llm::max_tokens::default_max_tokens_for_model(&model_name);
-
-// 旧：gateway.stream_message(..., system_prompt.as_deref(), ...)
-let system_view = subagent_prompt_assembly.to_system_view();
-gateway.stream_message_with_view(
-    settings,
-    &system_view,
-    /* 其他参数 */
-).await
 ```
 
-> 注意：`subagent_prompt_assembly` 来源是 Wave 4 子代理人格升级后的产物。Wave 3 实施时若 Wave 4 还没改，可暂时把 prompt 字符串包成 `PromptSystemView::single_static_block(s)`。
+`model_name` 的来源依赖 worker_runtime 现有 scope 中的变量（实施时按实际找）。
 
 - [ ] **Step 3: 编译 + 测试**
 
 ```bash
-cd src-tauri && cargo check && cargo test --test claude_provider_multi_block_test
+cd src-tauri && cargo check
+cd src-tauri && cargo test review_ --tests --no-fail-fast 2>&1 | tail -10
 ```
+Expected: 编译通过，review_ 测试与 base 一致（无 NEW regression）。
 
----
-
-### Task 3.4: `conversation_service.rs:398` 保留旧接口（标题生成不升级）
-
-**Files:**
-- 不修改任何文件
-
-- [ ] **Step 1: 确认决策**
-
-`conversation_service.rs:398` 是标题生成路径，一次性极简调用，无 cache 价值。保留 `stream_message(system_prompt: Option<&str>, ...)` 旧接口即可，无需改动。
-
-- [ ] **Step 2: 加文档注释明确决策**
-
-在 `src-tauri/src/runtime/conversation_service.rs:398` 上方加注释：
-
-```rust
-// NOTE: 标题生成是一次性极简调用，不需要 prompt cache。
-// 故保留 stream_message 旧接口，不升级到 stream_message_with_view。
-```
-
----
-
-### Task 3.5: Wave 3 验证 + commit
-
-- [ ] **Step 1: 跑全量测试**
-
-```bash
-cd src-tauri && cargo test --all 2>&1 | tail -20
-```
-Expected: 全部 PASS。
-
-- [ ] **Step 2: 手动验证 Claude subagent 不再 400**
-
-启动 `pnpm tauri:dev`，触发一个 subagent 任务（如 explore agent），抓 Claude provider 日志，确认 wire body 的 system 是数组格式且请求成功。
-
-- [ ] **Step 3: commit**
+### Task 3.5 (裁剪版): Wave 3 commit
 
 ```bash
 git add -A
-git commit -m "feat(prompt): wave 3 - gateway interface upgrade for PromptSystemView
+git commit -m "feat(prompt): wave 3 (trimmed) - fix worker_runtime max_tokens hardcode
 
-- gateway.rs 新增 stream_message_with_view / send_message_with_view 重载
-- 旧接口 stream_message(Option<&str>) 保留，内部转 view（向后兼容）
-- chat.rs:538 主对话升级到 _with_view
-- worker_runtime.rs:303 subagent 升级到 _with_view，并修复 max_tokens 硬编码（用 default_max_tokens_for_model）
-- conversation_service.rs:398 标题生成保留旧接口（无 cache 价值，加注释说明）
+worker_runtime.rs subagent 调用 LLM 时 max_tokens 从写死 4096 改成按 model 自动选
+（default_max_tokens_for_model）。这是 v0.5.8 引入的设施，本次补漏。
 
-关联 spec: Wave 3"
+注：原 spec/plan 的 §3.1 / §3.2 / §3.4（gateway 加 _with_view 重载 + 主对话/子代理升级到 view）
+全部删除——prompt cache 多块化贯通到 wire body 需要深改 LlmRequest / ChatMessage / build_request /
+provider 整条链，工作量 5 倍于原 plan。用户决策（2026-05-09）：暂不做，开后续单独 spec。
+
+关联 spec: Wave 3 (裁剪版)"
 ```
 
 ---
