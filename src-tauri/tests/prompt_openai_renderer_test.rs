@@ -17,14 +17,34 @@ fn sample_prompt_assembly() -> PromptAssembly {
 }
 
 #[test]
-fn renderer_flattens_prompt_assembly_into_single_system_message() {
+fn renderer_emits_multi_block_content_array_with_cache_control() {
     let rendered = OpenAiChatPromptRenderer::render_system_message(&sample_prompt_assembly())
         .expect("non-empty assembly should render");
 
     assert_eq!(rendered["role"], "system");
-    assert_eq!(
-        rendered["content"],
-        "base instructions\n\npersona instructions\n\nturn reminder"
+    let content = rendered["content"]
+        .as_array()
+        .expect("content should be an array (multi-block prompt cache shape)");
+
+    // 4 个 block 中 1 个 empty 被过滤，剩 3 个：base / persona / reminder
+    assert_eq!(content.len(), 3, "empty block should be filtered out");
+
+    // base: StaticPrefix → cache_control: ephemeral
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[0]["text"], "base instructions");
+    assert_eq!(content[0]["cache_control"]["type"], "ephemeral");
+
+    // persona: SessionDynamic → cache_control: ephemeral
+    assert_eq!(content[1]["type"], "text");
+    assert_eq!(content[1]["text"], "persona instructions");
+    assert_eq!(content[1]["cache_control"]["type"], "ephemeral");
+
+    // reminder: Volatile → no cache_control
+    assert_eq!(content[2]["type"], "text");
+    assert_eq!(content[2]["text"], "turn reminder");
+    assert!(
+        content[2].get("cache_control").is_none(),
+        "Volatile block must NOT carry cache_control"
     );
 }
 
@@ -43,8 +63,10 @@ fn renderer_does_not_emit_anthropic_private_fields() {
 }
 
 #[test]
-fn rendered_system_message_deserializes_to_chat_message() {
-    let rendered = OpenAiChatPromptRenderer::render_system_message(&sample_prompt_assembly())
+fn flat_renderer_output_round_trips_into_chat_message() {
+    // 降级 flat 路径用于不支持 content 数组的 OpenAI 兼容端点；
+    // 输出 content 仍是单字符串，可以直接反序列化成 ChatMessage。
+    let rendered = OpenAiChatPromptRenderer::render_system_message_flat(&sample_prompt_assembly())
         .expect("non-empty assembly should render");
     let message: ChatMessage = serde_json::from_value(rendered).expect("valid ChatMessage");
 
