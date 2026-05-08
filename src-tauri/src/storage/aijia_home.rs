@@ -23,11 +23,11 @@ impl AiJiaHome {
         }
     }
 
-    /// 用于测试，传入任意路径。
-    #[cfg(test)]
+    /// 用于测试，传入任意路径。仅供测试使用，勿在生产代码中调用。
     pub fn from_path(root: PathBuf) -> Self {
         Self {
             root,
+            #[cfg(test)]
             runtime_cache_root: None,
         }
     }
