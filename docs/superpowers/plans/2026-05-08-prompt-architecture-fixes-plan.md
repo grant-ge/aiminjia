@@ -4,7 +4,7 @@
 
 **Goal:** 把 lotus-app prompt 装配链路上所有已知的"已实现但被废 / 已设计未接通 / 已声称未做对"的问题一次性修完，未实现功能加 TODO 留口子。
 
-**Architecture:** PromptAssembler 输出真正进入 LLM 请求；DAILY_ALLOWED_TOOLS 双轨拆开（schema 过滤 vs 运行时权限）；PromptCachePolicy 驱动 wire format（Claude 多块化 + OpenAI content 数组）；4 个内置 subagent 各自独立人格 prompt；coordinator 等未实现项加 TODO。
+**Architecture:** PromptAssembler 输出真正进入 LLM 请求；DAILY_ALLOWED_TOOLS 双轨拆开（schema 过滤 vs 运行时权限）；PromptCachePolicy 驱动 wire format（OpenAI content 数组多块化 — Claude provider 因 lotus 全走 OpenAI 协议而废弃）；4 个内置 subagent 各自独立人格 prompt；coordinator 等未实现项加 TODO。
 
 **Tech Stack:** Rust 2021 / Tokio / Tauri 2.x / serde / async_trait
 
@@ -53,7 +53,7 @@ driver: effective = override.unwrap_or(snapshot)
   → 用极简版覆盖完整版，PromptAssembler 产物被抛弃
   ↓
 gateway 把单字符串扔给 provider
-  → Claude 整体打一个 cache_control（粒度太粗）
+  → Claude provider（已废弃，lotus 全走 OpenAI 协议）：保留旧实现不动
   → OpenAI 兼容端点 flatten 成单字符串（cache_policy 标注完全失效）
 ```
 
@@ -73,8 +73,8 @@ driver: effective = snapshot（PromptAssembler 真正生效）
 gateway 接收 PromptSystemView（多块视图）
   ↓
 provider 按 cache_policy 输出多块 wire body
-  → Claude: system 是数组，static 块带 cache_control
-  → OpenAI: content 是数组（capability 不支持就降级）
+  → OpenAI: content 是数组（capability 不支持就降级 flat）；lotus 主路径全走此分支
+  → Claude provider 路径未启用（lotus 当前不走原生 Anthropic）
 ```
 
 ### 4 个 Subagent 改前 vs 改后
@@ -97,8 +97,8 @@ provider 按 cache_policy 输出多块 wire body
 | Claude Code 概念 | 借鉴方式 | 对应到 lotus 哪里 |
 |---|---|---|
 | `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`（静态/动态分界） | 借鉴思路，**用 `PromptCachePolicy` 枚举实现**而不是 marker 字符串 | `prompt/types.rs:19` PromptBlock.cache_policy |
-| `buildSystemPromptBlocks()`（多块输出 + cache_control） | 直接对标 | `claude.rs::build_request_body_from_view`（Wave 2 新增）|
-| `splitSysPromptPrefix()`（按 boundary 分 cache scope） | 简化借鉴：只用 ephemeral 一种 scope | OpenAI renderer + Claude provider |
+| `buildSystemPromptBlocks()`（多块输出 + cache_control） | 直接对标 | OpenAI renderer 多块化（Wave 2 Task 2.1）；Claude 路径已废弃 |
+| `splitSysPromptPrefix()`（按 boundary 分 cache scope） | 简化借鉴：只用 ephemeral 一种 scope | OpenAI renderer 实现 |
 | 子代理独立人格（`generalPurposeAgent.ts` 等几百行 prompt） | **翻译版骨架 + 本地原创补丁**（spec §6 / §6.A） | Wave 4 替换 4 个 builtin agent prompt |
 | `enhanceSystemPromptWithEnvDetails`（追加 env） | lotus 已有（`spawn_subagent.rs::build_env_info`），保留 | 不修改 |
 
@@ -118,8 +118,8 @@ provider 按 cache_policy 输出多块 wire body
 | Wave | 解决什么问题 | 改的核心文件 | 工时 | 验证方式 |
 |---|---|---|---|---|
 | **Wave 1** | P0 一行废掉的 prompt 恢复 + 工具白名单双轨拆开 + token 估算 | `chat.rs`, `chat_runtime_impl.rs`, `chat_turn_driver.rs` | 1 天 | 端到端测试 + employee 派活手动验证 |
-| **Wave 2** | `PromptCachePolicy` 真正驱动 provider wire format | `renderer_openai.rs`, `providers/claude.rs` | 1.5 天 | wire body snapshot 测试 |
-| **Wave 3** | gateway 接口升级到 `PromptSystemView`（3 个调用点） | `gateway.rs`, `chat.rs:538`, `worker_runtime.rs:303` | 1.5 天 | Claude subagent 调用不再 400 |
+| **Wave 2** | `PromptCachePolicy` 真正驱动 OpenAI wire format（Claude provider 已废弃） | `renderer_openai.rs`, `prompt/types.rs` | 1 天 | OpenAI wire body snapshot 测试 |
+| **Wave 3** | gateway 接口升级到 `PromptSystemView`（3 个调用点） | `gateway.rs`, `chat.rs:538`, `worker_runtime.rs:303` | 1.5 天 | OpenAI 主路径 wire body 多块化生效 |
 | **Wave 4** | 4 个 subagent 独立人格 + 3 处 TODO 注释 | `agent/builtin/*.rs`, `team.rs`, `dispatch_prompt.rs`, `renlijia_md.rs` | 2 天 | persona 测试 + 4 场景手动验证 |
 
 **为什么这个顺序**：
@@ -905,138 +905,16 @@ cd src-tauri && cargo check 2>&1 | tail -10
 
 ---
 
-### Task 2.3: Claude provider 多块化（核心）
+### ~~Task 2.3: Claude provider 多块化（核心）~~ — **已删除（2026-05-08）**
 
-**Files:**
-- Modify: `src-tauri/src/llm/providers/claude.rs:194-260`
+**删除原因**：lotus 生产路径**全部走 OpenAI 兼容协议**（经 lotus 网关或第三方 OpenAI-compatible 端点中转），即便最终模型是 claude-sonnet-4-6，也不会命中 `ClaudeProvider::build_request_body`。Claude provider 多块化对当前业务 0 影响。
 
-- [ ] **Step 1: 读现有 system 抽取与 cache_control 注入逻辑**
+**何时再做**：如果未来引入原生 Anthropic SDK 直连（绕过 OpenAI 兼容层），再补这块。届时按 spec §2.3 接口设计实现 `ClaudeProvider::build_request_body_from_view`。
 
-```bash
-sed -n '180,260p' src-tauri/src/llm/providers/claude.rs
-```
-确认当前是把整个 system 字符串当成一个整体加 `cache_control: ephemeral`。
-
-- [ ] **Step 2: 写失败测试**
-
-新增 `src-tauri/tests/claude_provider_multi_block_test.rs`：
-
-```rust
-use app_lib::llm::providers::claude::ClaudeProvider;
-use app_lib::runtime::chat::prompt::{
-    PromptAssembly, PromptBlock, PromptCachePolicy, PromptSectionId, PromptSystemView,
-};
-
-#[test]
-fn claude_emits_multi_block_system_with_cache_control_on_static() {
-    let view = PromptSystemView {
-        blocks: vec![
-            PromptBlock::static_block(PromptSectionId::new("base"), "BASE_TEXT"),
-            PromptBlock::static_block(PromptSectionId::new("tool_pref"), "TOOL_PREF_TEXT"),
-            PromptBlock::dynamic_block(PromptSectionId::new("persona"), "PERSONA_TEXT"),
-        ],
-    };
-    let body = ClaudeProvider::build_request_body_from_view(
-        "claude-sonnet-4-6",
-        &view,
-        &[],   // tools
-        &[],   // messages
-        4096,
-    );
-
-    let system = body["system"].as_array().expect("system must be array");
-    assert!(system.len() >= 2, "expected multi-block, got {}", system.len());
-    // 第一个 block 含 cache_control
-    assert_eq!(system[0]["type"], "text");
-    assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
-    // 各 block 的文本片段都在
-    let all_text = serde_json::to_string(&system).unwrap();
-    assert!(all_text.contains("BASE_TEXT"));
-    assert!(all_text.contains("PERSONA_TEXT"));
-}
-
-#[test]
-fn claude_falls_back_to_string_system_when_view_is_empty() {
-    let view = PromptSystemView { blocks: vec![] };
-    let body = ClaudeProvider::build_request_body_from_view(
-        "claude-sonnet-4-6", &view, &[], &[], 4096,
-    );
-    // 空 view 应当不输出 system 字段，或输出空数组 — 由实现决定
-    if let Some(system) = body.get("system") {
-        if let Some(arr) = system.as_array() {
-            assert!(arr.is_empty());
-        }
-    }
-}
-```
-
-- [ ] **Step 3: 跑测试验证失败**
-
-```bash
-cd src-tauri && cargo test --test claude_provider_multi_block_test 2>&1 | tail -20
-```
-Expected: FAIL（`build_request_body_from_view` 不存在）。
-
-- [ ] **Step 4: 实现 `build_request_body_from_view`**
-
-`src-tauri/src/llm/providers/claude.rs` 新增 pub 方法（保留原有 `build_request_body` 不动作为兼容）：
-
-```rust
-pub fn build_request_body_from_view(
-    model: &str,
-    system_view: &PromptSystemView,
-    tools: &[serde_json::Value],
-    messages: &[serde_json::Value],
-    max_tokens: usize,
-) -> serde_json::Value {
-    let system_blocks: Vec<serde_json::Value> = system_view
-        .blocks
-        .iter()
-        .filter(|b| !b.text.trim().is_empty())
-        .map(|b| {
-            let mut item = serde_json::json!({
-                "type": "text",
-                "text": b.text,
-            });
-            match b.cache_policy {
-                PromptCachePolicy::StaticPrefix | PromptCachePolicy::SessionDynamic => {
-                    item["cache_control"] = serde_json::json!({ "type": "ephemeral" });
-                }
-                PromptCachePolicy::Volatile => {}
-            }
-            item
-        })
-        .collect();
-
-    let mut body = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": messages,
-    });
-
-    if !system_blocks.is_empty() {
-        body["system"] = serde_json::Value::Array(system_blocks);
-    }
-
-    if !tools.is_empty() {
-        // 保留现有 tools cache_control 逻辑（最后一个 tool 加 cache_control）
-        let mut tools_with_cache: Vec<serde_json::Value> = tools.to_vec();
-        if let Some(last) = tools_with_cache.last_mut() {
-            last["cache_control"] = serde_json::json!({ "type": "ephemeral" });
-        }
-        body["tools"] = serde_json::Value::Array(tools_with_cache);
-    }
-
-    body
-}
-```
-
-- [ ] **Step 5: 跑测试验证通过**
-
-```bash
-cd src-tauri && cargo test --test claude_provider_multi_block_test 2>&1 | tail -20
-```
-Expected: PASS。
+**对 Wave 2 其它 Task 的影响**：
+- Task 2.1（OpenAi renderer 多块化）独立完成，是生产路径 prompt cache 的关键
+- Task 2.2（capability fallback）独立完成
+- Task 2.4（Wave 2 commit）的 commit message 不再包含 Claude provider 一条
 
 ---
 
@@ -1058,10 +936,11 @@ git commit -m "feat(prompt): wave 2 - PromptCachePolicy drives provider wire for
 
 - OpenAiChatPromptRenderer 输出 content 数组，static/session_dynamic 块带 cache_control
 - 保留 render_system_message_flat 作为降级版本（capability 不支持时用）
-- ClaudeProvider 新增 build_request_body_from_view，按 PromptCachePolicy 输出多块 system
-- 测试覆盖：cache_wire_format snapshot
+- 测试覆盖：OpenAI cache_wire_format snapshot
 
-关联 spec: Wave 2"
+注：原 spec §2.3 的 Claude provider 多块化已删除（lotus 全走 OpenAI 协议，无业务价值）。
+
+关联 spec: Wave 2 (§2.1 / §2.2)"
 ```
 
 ---
@@ -1092,8 +971,8 @@ pub async fn stream_message_with_view(
     /* 其他参数与 stream_message 一致 */
 ) -> Result<...> {
     // 内部调用 build_request 的 _with_view 变体
-    // Claude 路径走 ClaudeProvider::build_request_body_from_view
-    // OpenAI 兼容路径根据 capability 决定走 view 还是 flat
+    // OpenAI 兼容路径根据 capability 决定走 view 还是 flat（lotus 主路径）
+    // Claude 路径已废弃（不再调用 ClaudeProvider）
 }
 
 pub async fn send_message_with_view(
@@ -1929,7 +1808,7 @@ Expected: 看到 4 个 wave commit + 之前的 spec/research commit。
 
 逐条跑 spec 里 §5 的 8 条验收：
 1. 诊断 sections 列出 5 块 ✓
-2. Claude wire body 多块 + cache_control ✓（cache_wire_format_test）
+2. ~~Claude wire body 多块 + cache_control~~ → 改为：OpenAI wire body 多块 + cache_control（cache_wire_format_test）
 3. 工具可见性（普通对话）✓
 4. 工具可见性（employee）✓
 5. subagent persona ✓（不含 AI小家）
