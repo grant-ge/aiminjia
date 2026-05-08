@@ -380,8 +380,7 @@ fn build_default_catalog() -> ToolCatalog {
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
         .with_kind(ToolKind::Support)
-        .with_read_only(true)
-        .with_capability_scope(["read_only"]),
+        .with_read_only(true),
         json!({
             "type": "object",
             "required": ["task_id"],
