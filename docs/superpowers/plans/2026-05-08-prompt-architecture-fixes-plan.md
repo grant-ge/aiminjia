@@ -21,6 +21,127 @@
 
 ---
 
+## 背景：为什么要做这件事
+
+**症状**：lotus-app 的 system prompt 设计文档声称有完整分层（base / tool_preference / memory_mechanics / persona / daily），但调研发现真实发给 LLM 的 system prompt 只有 100 字符的 `DAILY_BASE_PROMPT`——5 块 prompt 中**只有 4 条简短规则真正生效**。
+
+**根因**：`chat.rs:1394` 一行代码 `system_prompt: Some(DAILY_BASE_PROMPT.into())` 让 driver 在 `chat_turn_driver.rs:1082-1093` 用 `unwrap_or_else` 永远拿到这个极简版，PromptAssembler 装配出的完整产物被直接抛弃。
+
+**附带问题**（5 个并行 subagent 调研发现）：
+1. 工具白名单 `DAILY_ALLOWED_TOOLS` 17 个，但生产路径是死代码——主对话实际看到 30+ 工具
+2. `PromptCachePolicy::{StaticPrefix, SessionDynamic, Volatile}` 标注了 cache 语义，但 provider wire format 完全忽略这个标注
+3. 4 个内置 subagent prompt 全是 1 行英文或空字符串
+4. `EmployeeRecord.systemPromptExtra` 字段名误导（实际进入用户消息，不是 system prompt）
+5. `runtime/agent/team.rs` 是 5 行 stub，coordinator 概念从未落地
+
+**完整分析**见 `docs/2026-05-08-claude-code-system-prompt-comparison.md`。
+
+---
+
+## 架构总览：改前 vs 改后
+
+### 当前（问题状态）
+
+```
+PromptAssembler.build_system_prompt()
+  → 装配出 [base, tool_preference, memory_mechanics, persona, daily] 5 块
+  ↓
+load_turn_config_overrides()
+  → 永远返回 Some(DAILY_BASE_PROMPT)  ← P0 病灶
+  ↓
+driver: effective = override.unwrap_or(snapshot)
+  → 用极简版覆盖完整版，PromptAssembler 产物被抛弃
+  ↓
+gateway 把单字符串扔给 provider
+  → Claude 整体打一个 cache_control（粒度太粗）
+  → OpenAI 兼容端点 flatten 成单字符串（cache_policy 标注完全失效）
+```
+
+### 改后（目标状态）
+
+```
+PromptAssembler.build_system_prompt()
+  → 5 块 PromptBlock，每块带 cache_policy 标注
+  ↓
+load_turn_config_overrides()
+  → system_prompt: None（不再覆盖）
+  → schema_filter: Daily/Employee/None（明确语义）
+  → runtime_allowed_tools: 独立计算（双轨拆开）
+  ↓
+driver: effective = snapshot（PromptAssembler 真正生效）
+  ↓
+gateway 接收 PromptSystemView（多块视图）
+  ↓
+provider 按 cache_policy 输出多块 wire body
+  → Claude: system 是数组，static 块带 cache_control
+  → OpenAI: content 是数组（capability 不支持就降级）
+```
+
+### 4 个 Subagent 改前 vs 改后
+
+| Agent | 改前 system_prompt | 改后 |
+|---|---|---|
+| `general-purpose` | 1 行英文 | 200 字独立中文人格（搜索/分析/输出格式） |
+| `explore` | 1 行英文 | 300 字严格只读人格（明确禁止列表） |
+| `browse_data_agent` | 空字符串 | 200 字数据提取专家（数据真实性约束） |
+| `daily_assistant_agent` | 空字符串 | 200 字日常助手（专业资质边界） |
+
+> 子代理**不**继承主对话 "AI小家" 身份，避免人格混淆。
+
+---
+
+## Claude Code 对照分析（我们抄什么、不抄什么）
+
+### 借鉴
+
+| Claude Code 概念 | 借鉴方式 | 对应到 lotus 哪里 |
+|---|---|---|
+| `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`（静态/动态分界） | 借鉴思路，**用 `PromptCachePolicy` 枚举实现**而不是 marker 字符串 | `prompt/types.rs:19` PromptBlock.cache_policy |
+| `buildSystemPromptBlocks()`（多块输出 + cache_control） | 直接对标 | `claude.rs::build_request_body_from_view`（Wave 2 新增）|
+| `splitSysPromptPrefix()`（按 boundary 分 cache scope） | 简化借鉴：只用 ephemeral 一种 scope | OpenAI renderer + Claude provider |
+| 子代理独立人格（`generalPurposeAgent.ts` 等几百行 prompt） | **翻译版骨架 + 本地原创补丁**（spec §6 / §6.A） | Wave 4 替换 4 个 builtin agent prompt |
+| `enhanceSystemPromptWithEnvDetails`（追加 env） | lotus 已有（`spawn_subagent.rs::build_env_info`），保留 | 不修改 |
+
+### 不抄
+
+| Claude Code 做法 | 不抄的原因 | lotus 决策 |
+|---|---|---|
+| CLAUDE.md / `.claude/` / AGENTS.md 加载 | 用户决策"不引入兼容层"，减少多源指令冲突 | Wave 4 加注释明确"维持 AGENT.md 单一命名" |
+| Coordinator 多 worker 调度 | 当前没有真实业务需要 | Wave 4 仅 TODO 留口子，`team.rs` 保持 stub |
+| 多种 cache scope（global / org / 默认） | 用量没到那个级别，简化为单 ephemeral 即可 | 不引入 |
+| 子代理英文长 prompt（claude-code-best 是英文） | 我们是中文产品 | 翻译为中文 + 适配本地工具名 |
+
+---
+
+## 4 波改造一目了然
+
+| Wave | 解决什么问题 | 改的核心文件 | 工时 | 验证方式 |
+|---|---|---|---|---|
+| **Wave 1** | P0 一行废掉的 prompt 恢复 + 工具白名单双轨拆开 + token 估算 | `chat.rs`, `chat_runtime_impl.rs`, `chat_turn_driver.rs` | 1 天 | 端到端测试 + employee 派活手动验证 |
+| **Wave 2** | `PromptCachePolicy` 真正驱动 provider wire format | `renderer_openai.rs`, `providers/claude.rs` | 1.5 天 | wire body snapshot 测试 |
+| **Wave 3** | gateway 接口升级到 `PromptSystemView`（3 个调用点） | `gateway.rs`, `chat.rs:538`, `worker_runtime.rs:303` | 1.5 天 | Claude subagent 调用不再 400 |
+| **Wave 4** | 4 个 subagent 独立人格 + 3 处 TODO 注释 | `agent/builtin/*.rs`, `team.rs`, `dispatch_prompt.rs`, `renlijia_md.rs` | 2 天 | persona 测试 + 4 场景手动验证 |
+
+**为什么这个顺序**：
+- Wave 1 最先：P0 是其他 wave 的前提（不修这个 wave 2/3 就算改好了也看不到效果）
+- Wave 2 在 Wave 3 之前：先让 provider 准备好接收多块视图，再升级 gateway 接口送进去
+- Wave 4 最后：subagent 人格依赖 Wave 3 的 view 接口（`worker_runtime.rs:303` 升级到 view 后才能让 cache 生效）
+
+---
+
+## 怎么读这个 Plan
+
+下面 4 波每一波都是一组 Task，每个 Task 又拆成 5-7 个 Step。**Step 粒度故意做得很细**（每步 2-5 分钟一个动作），是为了让 AI subagent 执行时能逐步推进，每步都能验证。
+
+**人类读者可以跳过 Step 细节**，只看：
+- 每个 Task 开头的「Files」清单（这次改哪个文件）
+- 每个 Task 结尾的「Expected」（验证标准）
+- 每个 Wave 末尾的 commit message（这一波做了什么）
+
+**AI executor 必须按 Step 顺序执行**，包括"跑测试看失败"这种步骤——这是 TDD 节奏的一部分，不是冗余。
+
+---
+
 ## Wave 1: P0 + 工具白名单双职责拆分（1 天）
 
 ### Task 1.1: 新增 `ToolSchemaFilter` 枚举与 schema 过滤逻辑
