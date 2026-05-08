@@ -11,7 +11,7 @@ use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::renlijia_md::RenlijiaMdFile;
+use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 
@@ -26,16 +26,16 @@ async fn ac1_load_project_agent_md_from_workspace() {
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
     std::fs::write(
-        workspace.join("AGENT.md"),
+        workspace.join("AGENTS.md"),
         "# Project\nproject instructions",
     )
     .expect("write agent md");
 
-    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
     let files = loader.load(&workspace).await;
 
-    let project_file = files.iter().find(|f| f.path == workspace.join("AGENT.md"));
-    assert!(project_file.is_some(), "should find workspace AGENT.md");
+    let project_file = files.iter().find(|f| f.path == workspace.join("AGENTS.md"));
+    assert!(project_file.is_some(), "should find workspace AGENTS.md");
     assert!(project_file
         .expect("project file")
         .content
@@ -48,10 +48,10 @@ async fn ac1_load_order_root_before_workspace() {
     let parent = tmp.path().join("parent");
     let child = parent.join("child");
     std::fs::create_dir_all(&child).expect("create child");
-    std::fs::write(parent.join("AGENT.md"), "parent instructions").expect("write parent");
-    std::fs::write(child.join("AGENT.md"), "child instructions").expect("write child");
+    std::fs::write(parent.join("AGENTS.md"), "parent instructions").expect("write parent");
+    std::fs::write(child.join("AGENTS.md"), "child instructions").expect("write child");
 
-    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
     let files = loader.load(&child).await;
 
     let contents: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
@@ -72,11 +72,11 @@ async fn ac1_load_dot_aijia_and_local_agent_md() {
     let workspace = tmp.path().join("project");
     let dot_claude = workspace.join(".aijia");
     std::fs::create_dir_all(&dot_claude).expect("create .aijia");
-    std::fs::write(dot_claude.join("AGENT.md"), "dot-claude instructions")
+    std::fs::write(dot_claude.join("AGENTS.md"), "dot-claude instructions")
         .expect("write dot claude");
-    std::fs::write(workspace.join("AGENT.local.md"), "local override").expect("write local claude");
+    std::fs::write(workspace.join("AGENTS.local.md"), "local override").expect("write local claude");
 
-    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
     let files = loader.load(&workspace).await;
 
     assert!(files
@@ -89,10 +89,10 @@ async fn ac1_load_dot_aijia_and_local_agent_md() {
 async fn ac2_mtime_cache_invalidate_on_change() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().to_path_buf();
-    let file_path = workspace.join("AGENT.md");
+    let file_path = workspace.join("AGENTS.md");
     std::fs::write(&file_path, "version 1").expect("write v1");
 
-    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
     let files1 = loader.load(&workspace).await;
     assert!(files1.iter().any(|f| f.content.contains("version 1")));
 
@@ -104,33 +104,33 @@ async fn ac2_mtime_cache_invalidate_on_change() {
 }
 
 #[tokio::test]
-async fn review_renlijia_md_loader_empty_path_does_not_panic() {
-    let mut loader = app_lib::runtime::renlijia_md::RenlijiaMdLoader::new();
+async fn review_agents_md_loader_empty_path_does_not_panic() {
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
     let files = loader.load(Path::new("")).await;
     let _ = files;
 }
 
 #[test]
-fn review_renlijia_md_loader_has_no_tauri_dependency() {
+fn review_agents_md_loader_has_no_tauri_dependency() {
     let source =
-        std::fs::read_to_string("src/runtime/renlijia_md.rs").expect("read renlijia_md.rs");
+        std::fs::read_to_string("src/runtime/agents_md.rs").expect("read agents_md.rs");
     assert!(
         !source.contains("use tauri::"),
-        "runtime/renlijia_md.rs must not depend on tauri::*"
+        "runtime/agents_md.rs must not depend on tauri::*"
     );
 }
 
-struct RenlijiaMdContextExecutor {
+struct AgentsMdContextExecutor {
     workspace_path: PathBuf,
-    renlijia_md_files: Vec<RenlijiaMdFile>,
+    agents_md_files: Vec<AgentsMdFile>,
     received_messages: Mutex<Vec<Vec<serde_json::Value>>>,
 }
 
-impl RenlijiaMdContextExecutor {
-    fn new(workspace_path: PathBuf, renlijia_md_files: Vec<RenlijiaMdFile>) -> Self {
+impl AgentsMdContextExecutor {
+    fn new(workspace_path: PathBuf, agents_md_files: Vec<AgentsMdFile>) -> Self {
         Self {
             workspace_path,
-            renlijia_md_files,
+            agents_md_files,
             received_messages: Mutex::new(Vec::new()),
         }
     }
@@ -141,7 +141,7 @@ impl RenlijiaMdContextExecutor {
 }
 
 #[async_trait]
-impl RuntimeLlmExecutor for RenlijiaMdContextExecutor {
+impl RuntimeLlmExecutor for AgentsMdContextExecutor {
     async fn run_llm_step(
         &self,
         input: &LlmStepInput<'_>,
@@ -164,12 +164,12 @@ impl RuntimeLlmExecutor for RenlijiaMdContextExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_renlijia_md(
+    async fn load_agents_md(
         &self,
         workspace_path: &Path,
-    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
+    ) -> Result<Vec<AgentsMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
-        Ok(self.renlijia_md_files.clone())
+        Ok(self.agents_md_files.clone())
     }
 
     async fn persist_assistant_message(
@@ -189,15 +189,15 @@ impl RuntimeLlmExecutor for RenlijiaMdContextExecutor {
 }
 
 #[tokio::test]
-async fn ac3_driver_inserts_separate_renlijia_md_context_message_after_system_reminder() {
+async fn ac3_driver_inserts_separate_agents_md_context_message_after_system_reminder() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().join("project");
     std::fs::create_dir_all(&workspace).expect("create workspace");
-    let renlijia_path = workspace.join("AGENT.md");
+    let renlijia_path = workspace.join("AGENTS.md");
     let renlijia_content = "project instructions";
-    let executor = Arc::new(RenlijiaMdContextExecutor::new(
+    let executor = Arc::new(AgentsMdContextExecutor::new(
         workspace.clone(),
-        vec![RenlijiaMdFile {
+        vec![AgentsMdFile {
             path: renlijia_path.clone(),
             content: renlijia_content.to_string(),
         }],
@@ -234,7 +234,7 @@ async fn ac3_driver_inserts_separate_renlijia_md_context_message_after_system_re
         "messages[1] must be a separate meta context message, got: {}",
         context_message
     );
-    assert!(context_message.contains("# renlijiaMd"));
+    assert!(context_message.contains("# agentsMd"));
     assert!(context_message.contains(renlijia_path.to_string_lossy().as_ref()));
     assert!(context_message.contains(renlijia_content));
     assert_eq!(first_call_messages[2]["content"], "hello");

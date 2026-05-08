@@ -32,6 +32,16 @@ pub fn build_dispatch_prompt(
         "你现在是「{}」（{}）。\n{}\n",
         employee.name, employee.role, employee.description
     );
+    // NOTE: 字段名 system_prompt_extra 是历史遗留。
+    // 它实际拼入用户派活消息（user_message 参数），安全层级 = 用户输入，
+    // 而不是 system prompt。模型可以选择性遵守，不像真正的 system prompt 是硬约束。
+    //
+    // TODO(rename): 将来重命名为 dispatch_prompt_extra 或 identity_extra。
+    // 重命名时需要：
+    //   - EmployeeRecord 字段名修改
+    //   - 加 #[serde(alias = "systemPromptExtra")] 向前兼容旧文件
+    //   - 前端 src/features/employees 同步
+    //   - 涉及多文件变更，建议单独成 PR
     let extra = employee.system_prompt_extra.as_deref().unwrap_or("");
 
     let catchup = catchup_info.map(|s| format!("\n{s}")).unwrap_or_default();

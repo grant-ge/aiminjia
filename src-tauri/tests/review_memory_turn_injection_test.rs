@@ -12,7 +12,7 @@ use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
 use app_lib::runtime::project_memory::ProjectMemoryContext;
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::renlijia_md::RenlijiaMdFile;
+use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::tools::permission::AllowAllPermissionPipeline;
 use app_lib::runtime::tools::ToolDispatcher;
@@ -29,7 +29,7 @@ struct MemoryTurnExecutor {
     project_memory: ProjectMemoryBehavior,
     core_memory: String,
     env_info: String,
-    renlijia_files: Vec<RenlijiaMdFile>,
+    agents_files: Vec<AgentsMdFile>,
     responses: Mutex<Vec<LlmStepResult>>,
     load_project_memory_calls: Mutex<Vec<(PathBuf, String)>>,
     load_core_memory_calls: Mutex<Vec<String>>,
@@ -44,7 +44,7 @@ impl MemoryTurnExecutor {
             project_memory: ProjectMemoryBehavior::Context(project_memory),
             core_memory: String::new(),
             env_info: String::new(),
-            renlijia_files: Vec::new(),
+            agents_files: Vec::new(),
             responses: Mutex::new(vec![content_complete()]),
             load_project_memory_calls: Mutex::new(Vec::new()),
             load_core_memory_calls: Mutex::new(Vec::new()),
@@ -63,8 +63,8 @@ impl MemoryTurnExecutor {
         self
     }
 
-    fn with_renlijia_files(mut self, renlijia_files: Vec<RenlijiaMdFile>) -> Self {
-        self.renlijia_files = renlijia_files;
+    fn with_agents_files(mut self, agents_files: Vec<AgentsMdFile>) -> Self {
+        self.agents_files = agents_files;
         self
     }
 
@@ -79,7 +79,7 @@ impl MemoryTurnExecutor {
             project_memory: ProjectMemoryBehavior::Error(error.into()),
             core_memory: String::new(),
             env_info: String::new(),
-            renlijia_files: Vec::new(),
+            agents_files: Vec::new(),
             responses: Mutex::new(vec![content_complete()]),
             load_project_memory_calls: Mutex::new(Vec::new()),
             load_core_memory_calls: Mutex::new(Vec::new()),
@@ -130,12 +130,12 @@ impl RuntimeLlmExecutor for MemoryTurnExecutor {
         Ok(self.env_info.clone())
     }
 
-    async fn load_renlijia_md(
+    async fn load_agents_md(
         &self,
         workspace_path: &Path,
-    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
+    ) -> Result<Vec<AgentsMdFile>, TurnError> {
         assert_eq!(workspace_path, self.workspace_path.as_path());
-        Ok(self.renlijia_files.clone())
+        Ok(self.agents_files.clone())
     }
 
     async fn load_project_memory(
@@ -425,7 +425,7 @@ async fn empty_project_memory_rendering_does_not_inject_empty_memory_headers() {
 }
 
 #[tokio::test]
-async fn project_memory_renlijia_md_and_env_info_remain_separate_context_blocks() {
+async fn project_memory_agents_md_and_env_info_remain_separate_context_blocks() {
     let tmp = tempfile::tempdir().unwrap();
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
@@ -433,7 +433,7 @@ async fn project_memory_renlijia_md_and_env_info_remain_separate_context_blocks(
     let executor = Arc::new(
         MemoryTurnExecutor::new(workspace.clone(), project_memory())
             .with_env_info("# env_info\nPlatform: test")
-            .with_renlijia_files(vec![RenlijiaMdFile {
+            .with_agents_files(vec![AgentsMdFile {
                 path: renlijia_path,
                 content: "项目指令内容".to_string(),
             }]),

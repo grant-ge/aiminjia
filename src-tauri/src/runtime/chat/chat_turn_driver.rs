@@ -294,11 +294,11 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(TurnConfigOverrides::default())
     }
 
-    /// 加载 AGENT.md user-context 文件。
-    async fn load_renlijia_md(
+    /// 加载 AGENTS.md user-context 文件。
+    async fn load_agents_md(
         &self,
         _workspace_path: &Path,
-    ) -> Result<Vec<crate::runtime::renlijia_md::RenlijiaMdFile>, TurnError> {
+    ) -> Result<Vec<crate::runtime::agents_md::AgentsMdFile>, TurnError> {
         Ok(vec![])
     }
 
@@ -493,14 +493,14 @@ fn mark_turn_cancelled_with_synthetic_results(
     state.stream_cancelled = true;
 }
 
-fn build_renlijia_md_context_message(
-    renlijia_md_files: &[crate::runtime::renlijia_md::RenlijiaMdFile],
+fn build_agents_md_context_message(
+    agents_md_files: &[crate::runtime::agents_md::AgentsMdFile],
 ) -> Option<serde_json::Value> {
-    if renlijia_md_files.is_empty() {
+    if agents_md_files.is_empty() {
         return None;
     }
 
-    let renlijia_md_section = renlijia_md_files
+    let agents_md_section = agents_md_files
         .iter()
         .map(|file| format!("{}:\n{}", file.path.display(), file.content))
         .collect::<Vec<_>>()
@@ -509,8 +509,8 @@ fn build_renlijia_md_context_message(
     Some(serde_json::json!({
         "role": "user",
         "content": format!(
-            "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# renlijiaMd\n{}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n",
-            renlijia_md_section
+            "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# agentsMd\n{}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n",
+            agents_md_section
         ),
         "isMeta": true,
     }))
@@ -1135,24 +1135,24 @@ impl RuntimeChatTurnDriver {
         );
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        // messages 顺序：[system-reminder, renlijia-md-meta?, ...history, current-user-content]
+        // messages 顺序：[system-reminder, agents-md-meta?, ...history, current-user-content]
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日").to_string();
         let today_iso = now.format("%Y-%m-%d").to_string();
         let system_reminder_message =
             crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
-        let renlijia_md_files = executor
-            .load_renlijia_md(&config.workspace_path)
+        let agents_md_files = executor
+            .load_agents_md(&config.workspace_path)
             .await
             .unwrap_or_else(|e| {
                 log::warn!(
-                    "[run_chat_turn_s4] load_renlijia_md failed for workspace '{}': {}",
+                    "[run_chat_turn_s4] load_agents_md failed for workspace '{}': {}",
                     config.workspace_path.display(),
                     e
                 );
                 Vec::new()
             });
-        let renlijia_md_context_message = build_renlijia_md_context_message(&renlijia_md_files);
+        let agents_md_context_message = build_agents_md_context_message(&agents_md_files);
 
         // Sentinel content sent by the frontend when a background sub-agent
         // completes — we want to wake the parent up so it drains pending
@@ -1200,8 +1200,8 @@ impl RuntimeChatTurnDriver {
 
         let mut initial_messages = Vec::with_capacity(2 + history.len() + 1);
         initial_messages.push(system_reminder_message);
-        if let Some(renlijia_md_context_message) = renlijia_md_context_message {
-            initial_messages.push(renlijia_md_context_message);
+        if let Some(agents_md_context_message) = agents_md_context_message {
+            initial_messages.push(agents_md_context_message);
         }
         initial_messages.extend(history);
         if !is_resume_for_task_notification {

@@ -389,7 +389,7 @@ impl TauriChatServices {
 
 struct TauriLegacyTurnExecutor {
     services: TauriChatServices,
-    renlijia_md_loader: Arc<tokio::sync::Mutex<crate::runtime::renlijia_md::RenlijiaMdLoader>>,
+    agents_md_loader: Arc<tokio::sync::Mutex<crate::runtime::agents_md::AgentsMdLoader>>,
 }
 
 async fn wait_for_message_write_completion(
@@ -1460,11 +1460,11 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
         Ok(self.services.file_mgr.workspace_path().to_path_buf())
     }
 
-    async fn load_renlijia_md(
+    async fn load_agents_md(
         &self,
         workspace_path: &std::path::Path,
-    ) -> Result<Vec<crate::runtime::renlijia_md::RenlijiaMdFile>, TurnError> {
-        let mut loader = self.renlijia_md_loader.lock().await;
+    ) -> Result<Vec<crate::runtime::agents_md::AgentsMdFile>, TurnError> {
+        let mut loader = self.agents_md_loader.lock().await;
         Ok(loader.load(workspace_path).await)
     }
 
@@ -2048,8 +2048,8 @@ impl TauriChatCommandAdapter {
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
             services: services.clone(),
-            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            agents_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::agents_md::AgentsMdLoader::new(),
             )),
         });
         // NOTE: request-scoped dispatcher is built per-call in send_message() to avoid
@@ -2102,8 +2102,8 @@ impl TauriChatCommandAdapter {
     ) -> Result<ResolvedLlmSettings, TurnError> {
         TauriLegacyTurnExecutor {
             services: self.services.clone(),
-            renlijia_md_loader: Arc::new(tokio::sync::Mutex::new(
-                crate::runtime::renlijia_md::RenlijiaMdLoader::new(),
+            agents_md_loader: Arc::new(tokio::sync::Mutex::new(
+                crate::runtime::agents_md::AgentsMdLoader::new(),
             )),
         }
         .load_llm_settings_for_turn(request)
