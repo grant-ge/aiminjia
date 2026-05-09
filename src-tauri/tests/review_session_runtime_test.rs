@@ -123,6 +123,10 @@ impl RuntimeLlmExecutor for SessionTestExecutor {
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 struct DummyTool;

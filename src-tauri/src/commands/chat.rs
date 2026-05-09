@@ -478,7 +478,7 @@ pub mod testsupport {
         let visible_tool_defs = crate::transport::tauri_commands::chat::build_visible_tool_defs(
             &tool_registry,
             authorized_workspace.is_some(),
-            None,
+            crate::transport::tauri_commands::chat::chat_runtime_impl::ToolSchemaFilter::None,
         )
         .await;
 
