@@ -924,7 +924,44 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
+            "create_agenda_item"
+            | "list_agenda_items"
+            | "update_agenda_item"
+            | "cancel_agenda_item"
+            | "skip_occurrence"
+            | "list_agenda_occurrences" => {
+                let deps = Self::try_build_agenda_deps(ctx)?;
+                Some(Self::make_agenda_tool(name, deps))
+            }
             _ => None,
+        }
+    }
+
+    fn try_build_agenda_deps(
+        ctx: &RequestScopedRuntimeDeps,
+    ) -> Option<Arc<crate::runtime::tools::builtin::agenda::AgendaToolDeps>> {
+        // user-scoped 根目录走 ctx.storage（同 builtin::memory 的 WriteMemory/SearchMemory）
+        let base_dir = ctx.storage.base_dir().to_path_buf();
+        // 任务 45 注入的 active persona id；未解析（test/legacy）→ 拒绝构造工具
+        let persona_id = ctx.current_persona_id.clone()?;
+        Some(Arc::new(
+            crate::runtime::tools::builtin::agenda::AgendaToolDeps::new(base_dir, persona_id),
+        ))
+    }
+
+    fn make_agenda_tool(
+        name: &str,
+        deps: Arc<crate::runtime::tools::builtin::agenda::AgendaToolDeps>,
+    ) -> Arc<dyn crate::runtime::tools::RuntimeTool> {
+        use crate::runtime::tools::builtin::agenda::*;
+        match name {
+            "create_agenda_item" => Arc::new(CreateAgendaItemRuntimeTool { deps }),
+            "list_agenda_items" => Arc::new(ListAgendaItemsRuntimeTool { deps }),
+            "update_agenda_item" => Arc::new(UpdateAgendaItemRuntimeTool { deps }),
+            "cancel_agenda_item" => Arc::new(CancelAgendaItemRuntimeTool { deps }),
+            "skip_occurrence" => Arc::new(SkipOccurrenceRuntimeTool { deps }),
+            "list_agenda_occurrences" => Arc::new(ListAgendaOccurrencesRuntimeTool { deps }),
+            _ => unreachable!("agenda tool name list out of sync"),
         }
     }
 }
