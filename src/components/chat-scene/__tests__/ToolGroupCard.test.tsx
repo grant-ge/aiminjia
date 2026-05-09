@@ -29,7 +29,7 @@ describe('ToolGroupCard', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
 
     expect(screen.getByText('工具执行轨迹')).toBeInTheDocument()
-    expect(screen.getByText('已完成 2 步')).toBeInTheDocument()
+    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
     expect(screen.queryByText('工具步骤')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /查看执行详情/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
@@ -66,6 +66,21 @@ describe('ToolGroupCard', () => {
     render(<ToolGroupCard status="running" steps={runningSteps} />)
 
     expect(screen.getByText('执行中 1 / 3')).toBeInTheDocument()
+  })
+
+  it('presents failed tool steps as completed with neutral output styling', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} />)
+
+    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
+    fireEvent.click(screen.getByRole('button', { name: /preview_file/ }))
+
+    expect(screen.queryByText('失败')).not.toBeInTheDocument()
+    expect(screen.getAllByText('完成')).toHaveLength(3)
+    expect(screen.getByText('preview failed')).toHaveStyle({
+      color: 'var(--color-text-secondary)',
+    })
   })
 
   it('collapses and expands the whole tool trace block from the header', () => {

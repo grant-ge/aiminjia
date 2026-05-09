@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,31 +14,31 @@ type ReportScope = 'self' | 'team'
 
 interface FormState {
   template: ReportTemplate
-  watchGroups: string[]
-  newGroup: string
-  sendEnabled: boolean
-  sendGroupName: string
+  watchGroupsInput: string
   scope: ReportScope
   language: 'zh' | 'en'
+}
+
+function parseGroups(input: string): string[] {
+  return input
+    .split(/[,，;；\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
 }
 
 function stateFromInitial(initial: Record<string, unknown>): FormState {
   const template = (['standard', 'brief', 'okr'].includes(initial.template as string)
     ? initial.template
     : 'standard') as ReportTemplate
-  const watchGroups = Array.isArray(initial.watchGroups)
+  const groups = Array.isArray(initial.watchGroups)
     ? (initial.watchGroups as unknown[]).filter((g): g is string => typeof g === 'string')
     : []
-  const sendTarget = (initial.sendTarget ?? {}) as Record<string, unknown>
   const scope = initial.scope === 'team' ? 'team' : 'self'
   const language = initial.language === 'en' ? 'en' : 'zh'
 
   return {
     template,
-    watchGroups,
-    newGroup: '',
-    sendEnabled: !!sendTarget.enabled,
-    sendGroupName: typeof sendTarget.groupName === 'string' ? sendTarget.groupName : '',
+    watchGroupsInput: groups.join('，'),
     scope,
     language,
   }
@@ -58,33 +57,21 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
     setState((s) => ({ ...s, ...patch }))
   }
 
-  function addGroup() {
-    const name = state.newGroup.trim()
-    if (!name || state.watchGroups.includes(name)) return
-    update({ watchGroups: [...state.watchGroups, name], newGroup: '' })
-  }
-
-  function removeGroup(index: number) {
-    update({ watchGroups: state.watchGroups.filter((_, i) => i !== index) })
-  }
-
   function handleSave() {
     onSubmit({
       template: state.template,
-      watchGroups: state.watchGroups,
-      sendTarget: {
-        enabled: state.sendEnabled,
-        groupName: state.sendGroupName.trim(),
-      },
+      watchGroups: parseGroups(state.watchGroupsInput),
       scope: state.scope,
       language: state.language,
     })
   }
 
+  const parsedGroups = parseGroups(state.watchGroupsInput)
+
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">
-        配置周报偏好。小周会在每周五自动汇总钉钉日程、待办和群聊，生成结构化周报。
+        配置周报偏好。小周会在每周五自动汇总钉钉日程、待办和群聊，生成结构化周报，呈现在对话中供你查看与编辑。
       </p>
 
       {/* Template style */}
@@ -137,69 +124,29 @@ export function WeeklyReportConfigForm({ initial, onSubmit, onCancel }: WeeklyRe
         </div>
       </div>
 
-      {/* Watch groups */}
+      {/* Watch groups — comma-separated text input */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-muted-foreground">监听群聊（可选）</label>
-        {state.watchGroups.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {state.watchGroups.map((g, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs"
-              >
-                {g}
-                <button
-                  type="button"
-                  onClick={() => removeGroup(i)}
-                  className="rounded-full p-0.5 hover:bg-muted-foreground/20"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <Input
-            value={state.newGroup}
-            onChange={(e) => update({ newGroup: e.target.value })}
-            placeholder="输入钉钉群名"
-            className="text-xs"
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGroup() } }}
-          />
-          <Button variant="outline" size="sm" onClick={addGroup} disabled={!state.newGroup.trim()}>
-            添加
-          </Button>
-        </div>
+        <Input
+          value={state.watchGroupsInput}
+          onChange={(e) => update({ watchGroupsInput: e.target.value })}
+          placeholder="例如：产品周会，研发日常，客户支持"
+          className="text-xs"
+        />
         <p className="text-xs text-muted-foreground/70">
-          填写群名，小周会搜索匹配的钉钉群并提取本周关键讨论。留空则跳过群聊摘要。
+          填写钉钉群名，多个群用 <span className="font-mono">逗号</span>（中英文均可）或换行分隔。小周会按群名搜索并提取本周关键讨论；留空则跳过群聊摘要。
         </p>
-      </div>
-
-      {/* Send target */}
-      <div className="flex flex-col gap-1.5">
-        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={state.sendEnabled}
-            onChange={(e) => update({ sendEnabled: e.target.checked })}
-          />
-          周报生成后发送到钉钉群
-          <span className="font-normal text-muted-foreground/70">（每次仍需确认）</span>
-        </label>
-        {state.sendEnabled && (
-          <Input
-            value={state.sendGroupName}
-            onChange={(e) => update({ sendGroupName: e.target.value })}
-            placeholder="发送目标群名"
-            className="text-xs"
-          />
+        {parsedGroups.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            将监听 {parsedGroups.length} 个群：
+            <span className="ml-1 text-foreground">{parsedGroups.join('、')}</span>
+          </p>
         )}
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" onClick={onCancel}>取消</Button>
-        <Button onClick={handleSave}>确认雇佣</Button>
+        <Button onClick={handleSave}>保存</Button>
       </div>
     </div>
   )

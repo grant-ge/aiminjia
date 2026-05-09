@@ -429,6 +429,123 @@ pub async fn save_clipboard_image_to_tmp_dir(
     save_clipboard_image_to_tmp(aijia_home.inner().as_ref(), &bytes, &mime_type)
 }
 
+/// Save a clipboard image into the workspace's `.staging/clipboard/` directory.
+/// The workspace path must be an absolute, existing directory; it is normally
+/// the user's authorized workspace (e.g. `~/.renlijia/defaultFolder`). Files
+/// stored here are visible to the user, follow the workspace lifecycle, and
+/// remain readable via `read_local_image_as_data_url` because the staging dir
+/// lives on disk under a path the renderer already trusts.
+pub(crate) fn save_clipboard_image_to_workspace_staging_impl(
+    workspace: &Path,
+    bytes: &[u8],
+    mime_type: &str,
+) -> Result<SavedClipboardAttachment, String> {
+    if !workspace.is_absolute() {
+        return Err("workspace path must be absolute".to_string());
+    }
+    let ext = clipboard_extension_for_mime(mime_type);
+    let file_name = format!(
+        "clipboard-{}-{}.{}",
+        chrono::Utc::now().timestamp_millis(),
+        &uuid::Uuid::new_v4().simple().to_string()[..8],
+        ext
+    );
+    let dir = workspace.join(".staging").join("clipboard");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let full_path = dir.join(&file_name);
+    std::fs::write(&full_path, bytes).map_err(|e| e.to_string())?;
+    Ok(SavedClipboardAttachment {
+        file_name,
+        path: full_path.to_string_lossy().to_string(),
+        file_size: bytes.len() as u64,
+        mime_type: mime_type.to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn save_clipboard_image_to_workspace_staging(
+    aijia_home: State<'_, Arc<AiJiaHome>>,
+    bytes: Vec<u8>,
+    mime_type: String,
+) -> Result<SavedClipboardAttachment, String> {
+    // Staging always lives under default_folder so read_local_image_as_data_url
+    // (which restricts paths to aijia_home.root) can serve thumbnails regardless
+    // of which workspace the user authorized. Workspace switches don't strand
+    // pasted images mid-compose either.
+    save_clipboard_image_to_workspace_staging_impl(
+        &aijia_home.default_folder(),
+        &bytes,
+        &mime_type,
+    )
+}
+
+/// Best-effort cleanup: remove files older than `max_age_days` from
+/// `<workspace>/.staging/clipboard/`. Errors are swallowed.
+pub fn cleanup_workspace_clipboard_staging(workspace: &Path, max_age_days: u64) {
+    let dir = workspace.join(".staging").join("clipboard");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(max_age_days * 86_400));
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta.modified().ok();
+        if let (Some(modified), Some(cutoff)) = (modified, cutoff) {
+            if modified < cutoff {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+fn mime_for_image_extension(path: &Path) -> &'static str {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("svg") => "image/svg+xml",
+        _ => "image/png",
+    }
+}
+
+const MAX_INLINE_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Read a local image and return a `data:` URL. The path is restricted to the
+/// AIjia home tree (`~/.renlijia/`) so the renderer cannot read arbitrary user
+/// files via this command. Used by `useLocalImageDataUrl` to render thumbnails
+/// of pasted/uploaded images without depending on Tauri's `fs:default` scope,
+/// which doesn't grant read access to `~/.renlijia/`.
+#[tauri::command]
+pub async fn read_local_image_as_data_url(
+    aijia_home: State<'_, Arc<AiJiaHome>>,
+    path: String,
+) -> Result<String, String> {
+    let raw = Path::new(&path);
+    let canonical = std::fs::canonicalize(raw).map_err(|e| e.to_string())?;
+    let home_root = std::fs::canonicalize(aijia_home.root()).map_err(|e| e.to_string())?;
+    if !canonical.starts_with(&home_root) {
+        return Err("path is outside aijia home".to_string());
+    }
+    let meta = std::fs::metadata(&canonical).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a regular file".to_string());
+    }
+    if meta.len() > MAX_INLINE_IMAGE_BYTES {
+        return Err("image exceeds inline limit".to_string());
+    }
+    let bytes = std::fs::read(&canonical).map_err(|e| e.to_string())?;
+    let mime = mime_for_image_extension(&canonical);
+    Ok(format!("data:{};base64,{}", mime, STANDARD.encode(&bytes)))
+}
+
 #[cfg(target_os = "macos")]
 fn read_clipboard_file_paths_platform() -> Result<Vec<String>, String> {
     use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSPasteboardTypeFileURL};

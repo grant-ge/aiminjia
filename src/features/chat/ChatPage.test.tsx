@@ -42,5 +42,6 @@ describe('ChatPage layout', () => {
     expect(screen.getByTestId('chat-header')).toBeInTheDocument()
     expect(screen.getByTestId('chat-content')).toBeInTheDocument()
     expect(screen.getByTestId('chat-footer-input')).toBeInTheDocument()
+    expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument()
   })
 })

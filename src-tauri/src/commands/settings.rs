@@ -5,7 +5,8 @@ use crate::llm::providers::{
 };
 use crate::models::settings::AppSettings;
 use crate::storage::crypto::SecureStorage;
-use crate::storage::file_store::RuntimeRepositoryFacade;
+use crate::storage::current_user_storage::CurrentUserStorage;
+use crate::storage::file_store::AppStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
@@ -18,18 +19,28 @@ fn is_sensitive_key(key: &str) -> bool {
     SENSITIVE_KEYS.contains(&key) || key.starts_with("apiKey:")
 }
 
+/// Resolve the active settings store: user-scoped when logged in, root storage
+/// otherwise. Settings reads/writes must go through the same path that
+/// `send_message` reads through (TauriChatServices::db()), or saved values
+/// won't be visible at request time.
+fn settings_store(
+    cus: &Arc<CurrentUserStorage>,
+    root: &Arc<AppStorage>,
+) -> Arc<AppStorage> {
+    cus.get_or(root)
+}
+
 /// Get current application settings.
 /// Reads from storage settings and deserializes into AppSettings.
 /// API key fields are decrypted if SecureStorage is available.
 #[tauri::command]
 pub async fn get_settings(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
 ) -> Result<AppSettings, String> {
-    let settings_map = facade
-        .settings_store()
-        .get_all()
-        .map_err(|e| e.to_string())?;
+    let store = settings_store(&cus, &root_db);
+    let settings_map = store.get_all_settings().map_err(|e| e.to_string())?;
 
     // If no settings stored yet, return defaults
     if settings_map.is_empty() {
@@ -56,11 +67,12 @@ pub async fn get_settings(
 /// Also persists the API key under `apiKey:{primaryModel}` for per-provider storage.
 #[tauri::command]
 pub async fn update_settings(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    let store = facade.settings_store();
+    let store = settings_store(&cus, &root_db);
     // Serialize to JSON, then store each field as a separate key
     let json = serde_json::to_value(&settings).map_err(|e| e.to_string())?;
     if let serde_json::Value::Object(map) = json {
@@ -82,7 +94,7 @@ pub async fn update_settings(
                 }
             }
 
-            store.set(&key, &value_str).map_err(|e| e.to_string())?;
+            store.set_setting(&key, &value_str).map_err(|e| e.to_string())?;
         }
     }
 
@@ -102,7 +114,7 @@ pub async fn update_settings(
             }
         }
         store
-            .set(&per_provider_key, &value_str)
+            .set_setting(&per_provider_key, &value_str)
             .map_err(|e| e.to_string())?;
     }
 
@@ -113,11 +125,14 @@ pub async fn update_settings(
 /// Returns provider identifiers (e.g. "deepseek-v3", "openai") that have non-empty keys.
 #[tauri::command]
 pub async fn get_configured_providers(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
 ) -> Result<Vec<String>, String> {
-    let store = facade.settings_store();
-    let prefix_map = store.get_by_prefix("apiKey:").map_err(|e| e.to_string())?;
+    let store = settings_store(&cus, &root_db);
+    let prefix_map = store
+        .get_settings_by_prefix("apiKey:")
+        .map_err(|e| e.to_string())?;
     let mut providers: Vec<String> = Vec::new();
 
     for (key, value) in &prefix_map {
@@ -137,7 +152,7 @@ pub async fn get_configured_providers(
 
     // Migration compat: if current primaryModel not in list but primaryApiKey is non-empty,
     // include it
-    let settings_map = store.get_all().map_err(|e| e.to_string())?;
+    let settings_map = store.get_all_settings().map_err(|e| e.to_string())?;
     let settings = AppSettings::from_string_map(&settings_map);
     let primary_key = if let Some(ss) = crypto.as_ref() {
         decrypt_if_encrypted(ss, &settings.primary_api_key)
@@ -156,15 +171,16 @@ pub async fn get_configured_providers(
 /// and updates primaryModel + primaryApiKey in settings.
 #[tauri::command]
 pub async fn switch_provider(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
     provider: String,
 ) -> Result<(), String> {
-    let store = facade.settings_store();
+    let store = settings_store(&cus, &root_db);
     // Load the per-provider key
     let per_provider_key = format!("apiKey:{}", provider);
     let stored_key = store
-        .get(&per_provider_key)
+        .get_setting(&per_provider_key)
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
 
@@ -176,7 +192,7 @@ pub async fn switch_provider(
 
     // Update primaryModel and primaryApiKey
     store
-        .set("primaryModel", &provider)
+        .set_setting("primaryModel", &provider)
         .map_err(|e| e.to_string())?;
 
     // Encrypt primaryApiKey before storing
@@ -192,7 +208,7 @@ pub async fn switch_provider(
         }
     }
     store
-        .set("primaryApiKey", &key_to_store)
+        .set_setting("primaryApiKey", &key_to_store)
         .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -202,11 +218,14 @@ pub async fn switch_provider(
 /// populate all provider tabs. Returns a map of provider → plaintext key.
 #[tauri::command]
 pub async fn get_all_provider_keys(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
 ) -> Result<HashMap<String, String>, String> {
-    let store = facade.settings_store();
-    let prefix_map = store.get_by_prefix("apiKey:").map_err(|e| e.to_string())?;
+    let store = settings_store(&cus, &root_db);
+    let prefix_map = store
+        .get_settings_by_prefix("apiKey:")
+        .map_err(|e| e.to_string())?;
     let mut result: HashMap<String, String> = HashMap::new();
 
     for (key, value) in &prefix_map {
@@ -223,7 +242,7 @@ pub async fn get_all_provider_keys(
     }
 
     // Migration compat: include current primaryApiKey if not already present
-    let settings_map = store.get_all().map_err(|e| e.to_string())?;
+    let settings_map = store.get_all_settings().map_err(|e| e.to_string())?;
     let settings = AppSettings::from_string_map(&settings_map);
     let primary_key = if let Some(ss) = crypto.as_ref() {
         decrypt_if_encrypted(ss, &settings.primary_api_key)
@@ -243,16 +262,17 @@ pub async fn get_all_provider_keys(
 /// Empty keys are removed from storage.
 #[tauri::command]
 pub async fn update_all_provider_keys(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     crypto: State<'_, Option<Arc<SecureStorage>>>,
     keys: HashMap<String, String>,
 ) -> Result<(), String> {
-    let store = facade.settings_store();
+    let store = settings_store(&cus, &root_db);
     for (provider, plaintext_key) in &keys {
         let db_key = format!("apiKey:{}", provider);
         if plaintext_key.is_empty() {
             // Remove empty keys
-            store.delete(&db_key).map_err(|e| e.to_string())?;
+            store.delete_setting(&db_key).map_err(|e| e.to_string())?;
         } else {
             let mut value_to_store = plaintext_key.clone();
             if let Some(ss) = crypto.as_ref() {
@@ -268,7 +288,7 @@ pub async fn update_all_provider_keys(
                 }
             }
             store
-                .set(&db_key, &value_to_store)
+                .set_setting(&db_key, &value_to_store)
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -279,7 +299,8 @@ pub async fn update_all_provider_keys(
 /// Makes a real HTTP validation call using the provider implementation.
 #[tauri::command]
 pub async fn validate_api_key(
-    facade: State<'_, Arc<RuntimeRepositoryFacade>>,
+    cus: State<'_, Arc<CurrentUserStorage>>,
+    root_db: State<'_, Arc<AppStorage>>,
     provider: String,
     api_key: String,
 ) -> Result<bool, String> {
@@ -310,10 +331,8 @@ pub async fn validate_api_key(
         }
         "custom" => {
             // For custom provider, read endpoint + model from settings
-            let settings_map = facade
-                .settings_store()
-                .get_all()
-                .map_err(|e| e.to_string())?;
+            let store = settings_store(&cus, &root_db);
+            let settings_map = store.get_all_settings().map_err(|e| e.to_string())?;
             let settings = AppSettings::from_string_map(&settings_map);
             if settings.custom_model_endpoint.is_empty() || settings.custom_model_name.is_empty() {
                 return Err("请先填写 API Endpoint 和模型名称".to_string());

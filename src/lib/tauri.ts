@@ -301,6 +301,20 @@ export function saveClipboardImageToTmp(
   })
 }
 
+export function saveClipboardImageToWorkspaceStaging(
+  bytes: number[],
+  mimeType: string,
+): Promise<SavedClipboardAttachmentPayload> {
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_workspace_staging', {
+    bytes,
+    mimeType,
+  })
+}
+
+export function readLocalImageAsDataUrl(path: string): Promise<string> {
+  return invoke<string>('read_local_image_as_data_url', { path })
+}
+
 export function listAgents(): Promise<AgentInfo[]> {
   return invoke<AgentInfo[]>('list_agents')
 }

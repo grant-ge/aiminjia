@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { AuthGate } from '@/components/auth/AuthGate'
 import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
-import { UpdaterDialog } from '@/components/common/UpdaterDialog'
+import { UpdaterPanel } from '@/components/common/UpdaterPanel'
 import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
 import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
@@ -73,7 +73,7 @@ function AppShell() {
   const removeInteraction = useInteractionStore((s) => s.removeInteraction)
   const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
   const activeInteraction = pendingInteractions[0] ?? null
-  const { prompt: updaterPrompt, acceptUpdate, dismissUpdate } = useUpdater()
+  useUpdater()
 
   const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
     if (!activeAsk) return
@@ -136,15 +136,7 @@ function AppShell() {
           onClose={() => removeInteraction(activeInteraction.interactionId)}
         />
       ) : null}
-      <UpdaterDialog
-        open={updaterPrompt !== null}
-        version={updaterPrompt?.version ?? ''}
-        notes={updaterPrompt?.notes ?? ''}
-        onLater={dismissUpdate}
-        onUpdateNow={() => {
-          void acceptUpdate()
-        }}
-      />
+      <UpdaterPanel />
     </div>
   )
 }

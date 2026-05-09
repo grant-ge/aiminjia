@@ -9,7 +9,6 @@ interface ToolTraceStepProps {
 function statusLabel(status: ToolStep['status']): string {
   switch (status) {
     case 'running': return '执行中'
-    case 'error': return '失败'
     default: return '完成'
   }
 }
@@ -17,7 +16,6 @@ function statusLabel(status: ToolStep['status']): string {
 function statusColor(status: ToolStep['status']): string {
   switch (status) {
     case 'running': return 'var(--color-semantic-blue)'
-    case 'error': return 'var(--color-semantic-red)'
     default: return 'var(--color-text-muted)'
   }
 }
