@@ -1,12 +1,13 @@
-//! Claude (Anthropic) provider — Anthropic Messages API format.
+//! Claude (Anthropic) provider — Anthropic Messages API.
 //!
 //! Uses `x-api-key` auth, `input_schema` for tools, and Anthropic-specific SSE
 //! event types (`content_block_start`, `content_block_delta`, `message_delta`).
 //!
-//! ## ⚠ DEPRECATED — 待删除
-//! 产品仅对外暴露 OpenAI 协议（lotus / custom）。本 provider 是 Anthropic
-//! Messages API 协议，与产品接入层不通用，UI 不会触发。保留为历史代码。
-//! 删除计划：专项 P-router-model-passthrough。详见 `providers/mod.rs` 顶部说明。
+//! Phase C (2026-05-09): URL is parameterized via `with_url(...)` so this same
+//! impl drives both direct anthropic.com calls (via `new(...)`, `is_direct=true`)
+//! and the lotus gateway anthropic ingress (via `LotusProvider`,
+//! `is_direct=false`). Beta thinking headers are gated on `is_direct` because
+//! the gateway is byte-level passthrough but does not advertise beta gating.
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Result};
