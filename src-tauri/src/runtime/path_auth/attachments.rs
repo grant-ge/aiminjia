@@ -1,8 +1,17 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::runtime::path_auth::forbidden::is_forbidden_dir;
-
+/// Derive working directories from user-provided attachment paths.
+///
+/// Each path's parent directory (or the path itself if it's a directory) is
+/// added to the result. Duplicates by canonical path are removed.
+///
+/// Note on filtering: this function used to skip "forbidden" directories
+/// (~/.ssh, ~/.aws, /etc, etc.) but that contradicted the path-auth model.
+/// User-attached paths are treated as user-authorized — if they truly want
+/// to attach ~/.ssh as workspace context, that's their explicit choice.
+/// Downstream path-auth (decide::is_path_allowed) still runs on every tool
+/// call and will Ask before any sensitive read/write completes.
 pub fn derive_working_dirs_from_attachments(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut seen: HashSet<PathBuf> = HashSet::new();
     for p in paths {
@@ -18,9 +27,6 @@ pub fn derive_working_dirs_from_attachments(paths: &[PathBuf]) -> Vec<PathBuf> {
                 None => continue,
             }
         };
-        if is_forbidden_dir(&dir) {
-            continue;
-        }
         seen.insert(dir);
     }
     seen.into_iter().collect()
@@ -67,49 +73,8 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn skip_forbidden_home_self() {
-        if let Some(home) = dirs::home_dir() {
-            let result = derive_working_dirs_from_attachments(&[home]);
-            assert!(result.is_empty());
-        }
-    }
-
-    #[test]
-    fn skip_forbidden_dotssh() {
-        let Some(home) = dirs::home_dir() else { return; };
-        let dotssh = home.join(".ssh");
-        if !dotssh.exists() {
-            // Cannot exercise the integration path on this machine because
-            // canonicalize would fail and the path would be skipped before
-            // is_forbidden_dir is even called. The unit-level guarantee that
-            // is_forbidden_dir(~/.ssh) returns true is covered in forbidden.rs tests.
-            return;
-        }
-        let result = derive_working_dirs_from_attachments(&[dotssh.clone()]);
-        assert!(
-            !result.iter().any(|p| p == &dotssh || p.ends_with(".ssh")),
-            "~/.ssh should be filtered out, got: {:?}",
-            result
-        );
-    }
-
-    #[test]
-    fn skip_forbidden_renlijia_root() {
-        let Some(home) = dirs::home_dir() else { return; };
-        let renlijia = home.join(".renlijia");
-        if !renlijia.exists() {
-            // Cannot exercise the integration path on this machine because
-            // canonicalize would fail and the path would be skipped before
-            // is_forbidden_dir is even called. The unit-level guarantee that
-            // is_forbidden_dir(~/.renlijia) returns true is covered in forbidden.rs tests.
-            return;
-        }
-        let result = derive_working_dirs_from_attachments(&[renlijia.clone()]);
-        assert!(
-            !result.iter().any(|p| p == &renlijia || p.ends_with(".renlijia")),
-            "~/.renlijia should be filtered out, got: {:?}",
-            result
-        );
-    }
+    // Removed: skip_forbidden_home_self / skip_forbidden_dotssh / skip_forbidden_renlijia_root.
+    // These tests asserted the old hardcoded-blacklist behavior; under the new
+    // "no absolute denials" policy attachments are passed through unchanged and
+    // sensitive paths are gated downstream by path-auth Ask flow.
 }

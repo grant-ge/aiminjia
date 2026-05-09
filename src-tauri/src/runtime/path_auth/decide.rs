@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::runtime::path_auth::context::ToolPermissionContext;
-use crate::runtime::path_auth::forbidden::is_lotus_internal;
 use crate::runtime::path_auth::op::PathOp;
 use crate::runtime::tools::permission::PermissionMode;
 
@@ -76,14 +75,20 @@ pub fn is_path_allowed(path: &Path, op: PathOp, ctx: &ToolPermissionContext) -> 
         }
     }
 
-    // Step 3: ~/.renlijia/ subtree protection
-    let primary_root_ref = ctx.primary_root.as_deref();
-    if is_lotus_internal(&canonical, primary_root_ref) {
-        return Decision::Deny(format!(
-            "拒绝访问 Lotus 内部目录（~/.renlijia/）：路径={}",
-            canonical.display()
-        ));
-    }
+    // Step 3: removed.
+    //
+    // Previously this step hard-denied any path under ~/.renlijia/. That conflicted
+    // with the path-auth model (user authorization is the single source of truth)
+    // and with Lotus's own design — skills, conversations, subagent_transcripts etc.
+    // all live under ~/.renlijia/ and the user legitimately needs to read them.
+    //
+    // After removal, paths under ~/.renlijia/ flow through the standard Step 4-6:
+    //   - inside authorized_workspace / additional_working_dirs → Allow / Ask per op
+    //   - outside → Step 6 Ask (Default mode) / Deny (Plan/DontAsk mode)
+    //
+    // If a future need arises to flag specific sensitive files (permissions.json,
+    // crypto/*.key) with elevated risk, prefer adding deny_rules with user-visible
+    // reasons over re-introducing a hardcoded subtree wall.
 
     // Step 4a: inside primary_root
     if let Some(ref root) = ctx.primary_root {
@@ -215,21 +220,24 @@ mod tests {
     }
 
     #[test]
-    fn lotus_internal_blocks_read_outside_primary() {
+    fn renlijia_path_outside_primary_returns_ask_in_default_mode() {
+        // Was previously a hard Deny (Step 3 lotus-internal wall). After removal,
+        // ~/.renlijia/ paths flow through Step 4-6 like any other unauthorized path.
+        // In Default mode with no primary_root and no allow rules, expect Ask.
         if let Some(home) = dirs::home_dir() {
             let lotus_path = home.join(".renlijia").join("permissions.json");
             let ctx = ToolPermissionContext::empty();
             assert!(matches!(
                 is_path_allowed(&lotus_path, PathOp::Read, &ctx),
-                Decision::Deny(_)
+                Decision::Ask { .. }
             ));
         }
     }
 
     // NOTE: the §5.1 exception (primary_root inside ~/.renlijia/ exempts paths from the
-    // lotus-internal block) is verified at the unit level in forbidden.rs::tests::
-    // is_lotus_internal_allows_when_primary_inside_renlijia. An integration-level test here
-    // would require creating files under the real ~/.renlijia/, which modifies user state.
+    // lotus-internal block) used to need a special carve-out because of the Step 3 wall.
+    // After removing that wall, primary_root inside ~/.renlijia/ works through standard
+    // Step 4a logic; no special test needed here.
 
     #[test]
     fn primary_root_allows_read_and_write_directly() {
