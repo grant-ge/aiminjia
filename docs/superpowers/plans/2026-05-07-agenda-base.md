@@ -5569,72 +5569,112 @@ Employee 路径被 `setRoute({ kind: 'chat', conversationId: convId })` 主动�
 
 > 这一段补 6 个 RuntimeTool（让数字员工自管日程）、persona 删除时把 organizer 命中的 item 转 Orphaned、3 个 review test、删除老 schedule 模块。
 
-## 任务 45：CapabilityContext 加 current_persona_id
+## 任务 45：RequestScopedRuntimeDeps 加 current_persona_id
+
+> **修正背景**（2026-05-09）：plan 原版让 `CapabilityContext` 加字段，但 `CapabilityContext`（capability.rs:140-153）是面向所有工具的窄能力袋（storage / browser_available / file_ops），doc 明确禁止扩张；persona id 是 agenda 工具独有的业务身份字段，应在工具构造期通过 `RequestScopedRuntimeDeps`（registry.rs:27）注入，绑死到 `AgendaToolDeps`。详见 spec §4.5。
 
 **Files:**
-- Modify: `src-tauri/src/runtime/tools/capability.rs`
+- Modify: `src-tauri/src/plugin/registry.rs`
+- Modify: `src-tauri/src/plugin/context.rs`
+- Modify: `src-tauri/src/transport/tauri_commands/chat.rs`
 
-- [ ] **Step 1：写测试**
+- [ ] **Step 1：在 RequestScopedRuntimeDeps 加字段**
 
-在 `capability.rs` 末尾的 `#[cfg(test)] mod tests`（如无则新建）追加：
+`registry.rs` `pub struct RequestScopedRuntimeDeps {` 末尾追加（紧邻 `permission_ctx` 之前或之后，保持字段分组合理）：
+
+```rust
+/// 当前运行时已解析的 active persona id（由 chat.rs 主路径在 build deps 时注入）。
+/// agenda 工具用它在 `AgendaToolDeps` 构造期绑定 organizer，强制工具操作
+/// 限定在自己 persona 的 item 范围内，LLM 改不了。`None` 表示尚未解析（非主
+/// 路径 / 测试桩 / 子代理 fallback）；具体工具拿到后用 `.clone()?` 短路即可。
+pub current_persona_id: Option<String>,
+```
+
+- [ ] **Step 2：PluginContext 同步加字段**
+
+`plugin/context.rs` 找到 `pub struct PluginContext {` 同样加：
+
+```rust
+pub current_persona_id: Option<String>,
+```
+
+- [ ] **Step 3：from_plugin_context / with_run_scope 等 boilerplate 同步**
+
+`registry.rs::from_plugin_context` 复制：
+
+```rust
+current_persona_id: ctx.current_persona_id.clone(),
+```
+
+`with_run_scope` / `with_runtime_resolver` 等 builder pattern 不动（字段默认会克隆过来）。
+
+- [ ] **Step 4：写测试（在 registry.rs `#[cfg(test)] mod tests`）**
 
 ```rust
 #[test]
-fn current_persona_id_default_none() {
-    let ctx = CapabilityContext::default();
-    assert!(ctx.current_persona_id.is_none());
+fn request_scoped_deps_carries_current_persona_id() {
+    let deps = RequestScopedRuntimeDeps::for_test_with_persona(Some("alice".into()));
+    assert_eq!(deps.current_persona_id.as_deref(), Some("alice"));
 }
 
 #[test]
-fn current_persona_id_can_be_set() {
-    let mut ctx = CapabilityContext::default();
-    ctx.current_persona_id = Some("p1".into());
-    assert_eq!(ctx.current_persona_id.as_deref(), Some("p1"));
+fn request_scoped_deps_persona_defaults_to_none() {
+    let deps = RequestScopedRuntimeDeps::for_test_with_persona(None);
+    assert!(deps.current_persona_id.is_none());
 }
 ```
 
-- [ ] **Step 2：跑测试看失败**
-
-```bash
-cd src-tauri && cargo test --lib runtime::tools::capability::tests::current_persona_id_default_none
-```
-预期：FAIL。
-
-- [ ] **Step 3：在 struct 加字段**
+如果 `for_test_with_persona` 不存在，加一个最小 helper（仅在 `#[cfg(test)]`）：
 
 ```rust
-pub struct CapabilityContext {
-    // ... 现有字段
-    pub current_persona_id: Option<String>,
+#[cfg(test)]
+impl RequestScopedRuntimeDeps {
+    pub fn for_test_with_persona(persona_id: Option<String>) -> Self {
+        let mut s = Self::for_test();  // 或参考已有 test ctor
+        s.current_persona_id = persona_id;
+        s
+    }
 }
 ```
 
-`Default::default()` 实现里加：
+> 若 `RequestScopedRuntimeDeps` 没有 `for_test()`，复用已有的 plugin context 构造路径或用 `unimplemented!()` 占位的最小 stub——目的只是让字段被看到，组件层测试在任务 46 / 53 才补充。
+
+- [ ] **Step 5：在 chat.rs 主路径注入字段**
+
+`transport/tauri_commands/chat.rs` 找到 build `RequestScopedRuntimeDeps` / build `PluginContext` 的地方（grep `RequestScopedRuntimeDeps::from_plugin_context` 或 `PluginContext {` 字面量构造）。`chat.rs:1223` 已经把 `persona` 解析出来了，将这个值的 id 在 build 时填入：
 
 ```rust
-current_persona_id: None,
+let active_persona_id: Option<String> = match request.persona_id_override.as_deref() {
+    Some(id) => Some(id.to_string()),
+    None => self.services.db().get_active_persona_id().ok(),
+};
+
+// 构造 PluginContext / RequestScopedRuntimeDeps 时填入：
+current_persona_id: active_persona_id.clone(),
 ```
 
-- [ ] **Step 4：在编排层注入字段**
+> 关键约束：注入必须发生在 `RequestScopedRuntimeDeps` 真正被 `try_build_request_scoped_tool` 用到之前。grep `try_build_request_scoped_tool` 调用栈反推注入位置即可。
 
-grep `CapabilityContext::new` 或 `CapabilityContext {` 找到所有构造点。在主路径（chat.rs / send_message_with_overrides 调用栈里 build CapabilityContext 的地方）填入：
-
-```rust
-current_persona_id: request.persona_id_override.clone()
-    .or_else(|| self.services.db.get_active_persona_id().ok()),
-```
-
-- [ ] **Step 5：cargo check + 跑全部 lib 测试**
+- [ ] **Step 6：cargo check + 跑全部 lib 测试**
 
 ```bash
-cd src-tauri && cargo check && cargo test --lib runtime::tools::capability
+cd src-tauri && cargo check && cargo test --lib plugin::registry
 ```
 
-- [ ] **Step 6：Commit**
+预期：编译通过，新增 2 条单测 PASS，原有测试不变。
+
+- [ ] **Step 7：Commit**
 
 ```bash
-git add src-tauri/src/runtime/tools/capability.rs
-git commit -m "feat(tools): CapabilityContext.current_persona_id field"
+git add src-tauri/src/plugin/registry.rs src-tauri/src/plugin/context.rs src-tauri/src/transport/tauri_commands/chat.rs
+git commit -m "feat(runtime): RequestScopedRuntimeDeps.current_persona_id field
+
+Threads active persona id through PluginContext → RequestScopedRuntimeDeps
+so request-scoped tools (agenda, future colleague-aware) can bind organizer
+identity at construction time without widening CapabilityContext.
+
+Resolved from request.persona_id_override or db.get_active_persona_id()
+in chat.rs main path. None for legacy / test paths."
 ```
 
 ---
@@ -6559,7 +6599,11 @@ fn try_build_agenda_deps(
     &self,
     deps_ctx: &RequestScopedRuntimeDeps,
 ) -> Option<Arc<crate::runtime::tools::builtin::agenda::AgendaToolDeps>> {
-    let base_dir = deps_ctx.user_paths.as_ref()?.base_dir().to_path_buf();
+    // user-scoped 根目录走 ctx.storage（与 builtin::memory 同款，registry.rs:876
+    // 的 WriteMemory/SearchMemory 已经这么取）
+    let base_dir = deps_ctx.storage.base_dir().to_path_buf();
+    // 任务 45 已经把 active persona id 注入到 RequestScopedRuntimeDeps；
+    // 没解析到（test 桩 / 子代理 fallback）就直接 None，让上层走 unknown 工具分支
     let persona_id = deps_ctx.current_persona_id.clone()?;
     Some(Arc::new(
         crate::runtime::tools::builtin::agenda::AgendaToolDeps::new(base_dir, persona_id),
@@ -6584,7 +6628,7 @@ fn make_agenda_tool(
 }
 ```
 
-> `RequestScopedRuntimeDeps.user_paths` 和 `current_persona_id` 字段存在性需 grep 验证。如果没有 `user_paths`，用 `deps_ctx.path_resolver.resolve_paths()`。如果没有 `current_persona_id` 字段，需要在 `RequestScopedRuntimeDeps` 加一个，由 `send_message_with_overrides` 注入。
+> `deps_ctx.storage.base_dir()` 是 user-scoped 根目���（已验证 registry.rs:876 同款用法）。`current_persona_id` 字段已在任务 45 加好。`?` 短路意味着 active persona 未解析时，agenda 工具就跳过注册，不会被 LLM 调用——符合预期（无 persona 上下文等于无 organizer 身份）。
 
 - [ ] **Step 5：cargo check + 全量 lib 测试**
 

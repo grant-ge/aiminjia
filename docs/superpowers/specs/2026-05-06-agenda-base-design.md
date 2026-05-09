@@ -354,6 +354,28 @@ src-tauri/src/runtime/agenda/
 - Occurrence 记录 session_id / run_id，链路可溯源
 - 加 `tests/review_agenda_session_id.rs` 锁住此约束
 
+### 4.5 当前 persona id 注入路径（agenda 工具的安全基础）
+
+§7 的 6 个 agent 工具要求 organizer 强制等于"当前 persona"。该约束是**安全边界**——LLM 不能传 organizer，工具内部从 runtime 注入获取。注入路径如下：
+
+```
+chat.rs::send_message_with_overrides
+  ↓ 解析 active persona id（已有：request.persona_id_override.or_else(db.get_active_persona)）
+  ↓
+RequestScopedRuntimeDeps.current_persona_id: Option<String>     ← ★ 新增字段
+  ↓ ToolRegistry::try_build_request_scoped_tool 时直读
+  ↓
+AgendaToolDeps.current_persona_id: String                       ← 工具构造时绑死
+  ↓
+RuntimeTool::execute() 直接读 self.deps.current_persona_id      ← LLM 改不了
+```
+
+**不走 `CapabilityContext`**——后者是工具运行时的窄能力袋（storage / browser_available / file_ops），仅承载所有工具共用的"系统能力"。persona id 是**业务身份**，不是系统能力，且只 agenda 工具需要，应在工具构造期绑死，避免污染窄接口（参考 capability.rs 文件 doc）。
+
+**不暴露给 LLM**——system prompt 现有 persona 段（identity / expertise / memory_hints）已足以让 LLM 按角色行事；persona id 是 runtime 内部标识，让 LLM 看见反而可能被复制到工具参数里制造幻觉空间。
+
+**未来扩展**：当需要"同事感�� + 跨 persona 派单"时（PR-5 候选），同事名册在 system prompt 注入、`dispatch_to_colleague` 工具校验目标 persona 关系——但 organizer 仍由 runtime 注入，安全模型不变。
+
 ---
 
 ## 5. 触发与执行
