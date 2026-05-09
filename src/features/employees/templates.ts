@@ -141,6 +141,26 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     resourceConfigKind: 'weekly-report',
     requiresDingtalk: true,
   },
+  {
+    templateId: 'builtin:xiaobiao',
+    avatar: '📋',
+    name: '小标',
+    role: '标书撰写员',
+    description: '解析招标文件与参考模板，按结构化工作流分章节撰写完整投标文件，自动套用模板风格导出 docx。',
+    toolWhitelist: [
+      'load_file', 'read_file', 'grep_content',
+      'web_search', 'browse_and_extract', 'read_page_content',
+      'execute_python', 'memory_save', 'memory_search',
+      'load_skill', 'generate_report',
+    ],
+    cron: null,
+    systemPromptExtra: '你是一名专业的标书撰写员。你的工作必须严格遵循 bid-writing 技能定义的 4 步工作流：解析 → 大纲 → 逐章撰写 → docx 导出，每步等待用户确认。\n\n关键原则：\n1. 严格对齐招标书的「必须响应项」，逐项明确响应，不漏项\n2. 公司业绩、资质、人员信息只能引用用户提供的资料；缺资料写「待用户补充」，绝不编造\n3. 章节之间术语一致、口径统一；前文已说明的不重复展开\n4. 禁用空话套话（「高度重视」「精心打造」「业内领先」等）\n5. 联网搜索结果必须标注来源链接\n6. 输出语言以中文为主，专业术语保留英文原文',
+    badge: '🟢 开箱即用',
+    defaultSkillId: 'bid-writing',
+    requiresAttachment: { accept: '.pdf,.docx,.doc', min: 2, max: 6 },
+    resourceConfigKind: 'none',
+    requiresDingtalk: false,
+  },
 ]
 
 /** Look up the template that produced an employee, by `EmployeeRecord.templateId`. */
