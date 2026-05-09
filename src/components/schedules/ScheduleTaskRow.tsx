@@ -39,6 +39,11 @@ export function ScheduleTaskRow({
         <div className="truncate font-medium text-foreground">{item.title}</div>
         <div className="truncate text-xs text-muted-foreground">
           {describeFrequency(item.rule, item.startAt, item.timezone)}
+          {item.workspacePath ? (
+            <span className="ml-2 text-muted-foreground/70" title={item.workspacePath}>
+              · 📁 {workspaceShortName(item.workspacePath)}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="text-xs text-muted-foreground whitespace-nowrap">
@@ -97,4 +102,9 @@ function formatNextFire(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+function workspaceShortName(path: string): string {
+  const parts = path.split(/[/\\]/).filter(Boolean)
+  return parts[parts.length - 1] ?? path
 }

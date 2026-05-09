@@ -72,6 +72,7 @@ export function AgendaItemDetail({
               />
               <Row label="下次触发" value={item.nextFireAt ?? '-'} />
               <Row label="状态" value={item.status} />
+              <Row label="工作目录" value={item.workspacePath ?? '使用应用当前目录'} />
             </TabsContent>
             <TabsContent value="history" className="space-y-1">
               {occs.length === 0 ? (

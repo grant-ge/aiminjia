@@ -2712,6 +2712,57 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         .await
         .map_err(anyhow::Error::msg)?;
 
+        // 1.5. 如果 item 绑定了 workspace_path，把它 authorize 给这条新 conversation。
+        //      这跟 HomeTaskComposerCard 提交时的 authorize_local_directory 等价：
+        //      session_id == conversation_id，让后续 send_message 通过
+        //      load_authorized_workspace 拿到正确目录而不是漂移到全局 workspace。
+        if let Some(workspace_path) = item.workspace_path.as_deref() {
+            let trimmed = workspace_path.trim();
+            if !trimmed.is_empty() {
+                if let Some(facade) = self
+                    .services
+                    .app
+                    .try_state::<Arc<crate::storage::file_store::RuntimeRepositoryFacade>>()
+                {
+                    let root_path = std::path::PathBuf::from(trimmed);
+                    let canonical = root_path.canonicalize().unwrap_or(root_path);
+                    let display_name = canonical
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| canonical.to_string_lossy().to_string());
+                    let ws = crate::runtime::store::AuthorizedWorkspace {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        session_id: crate::runtime::ids::SessionId::new(conversation_id.clone()),
+                        root_path: canonical.clone(),
+                        display_name,
+                        authorized_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    if let Err(e) = facade.authorized_workspace_store().replace_for_session(&ws) {
+                        log::warn!(
+                            "[agenda-dispatch] authorize workspace failed conv={} path={} err={}",
+                            conversation_id,
+                            canonical.display(),
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "[agenda-dispatch] authorized workspace conv={} root={}",
+                            conversation_id,
+                            canonical.display()
+                        );
+                    }
+                } else {
+                    log::warn!(
+                        "[agenda-dispatch] RuntimeRepositoryFacade not in app state, \
+                         agenda item workspace_path will be ignored conv={} path={}",
+                        conversation_id,
+                        trimmed
+                    );
+                }
+            }
+        }
+
         // 2. 预生成 RunId 并写 Running occurrence
         let run_id = RunId::new(uuid::Uuid::new_v4().to_string());
         let session_id = SessionId::new(conversation_id.clone());

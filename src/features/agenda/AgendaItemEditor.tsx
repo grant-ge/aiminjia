@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Folder } from 'lucide-react'
 
 import {
   type AgendaItem,
@@ -7,6 +8,8 @@ import {
   type RecurrenceRule,
   type UpdateAgendaItemRequest,
   createAgendaItem,
+  getDefaultFolder,
+  pickLocalDirectory,
   updateAgendaItem,
 } from '@/lib/tauri'
 import {
@@ -18,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { useHomeStore } from '@/stores/homeStore'
 
 type Frequency = 'one_shot' | Freq
 
@@ -54,8 +58,11 @@ export function AgendaItemEditor({
   const [endKind, setEndKind] = useState<'never' | 'count' | 'until'>('never')
   const [endCount, setEndCount] = useState(10)
   const [endUntilLocal, setEndUntilLocal] = useState('')
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const homeWorkspace = useHomeStore((s) => s.selectedWorkspace)
 
   useEffect(() => {
     if (initial) {
@@ -75,6 +82,7 @@ export function AgendaItemEditor({
         setEndKind('until')
         setEndUntilLocal(toLocalInput(ec.at))
       }
+      setWorkspacePath(initial.workspacePath ?? null)
     } else {
       setTitle(initialDraft?.title ?? '')
       setPrompt(initialDraft?.prompt ?? '')
@@ -93,9 +101,26 @@ export function AgendaItemEditor({
         setEndKind('until')
         setEndUntilLocal(toLocalInput(ec.at))
       }
+      // 新建：默认用 home picker 选过的 workspace；没选过就异步取 default folder
+      if (initialDraft?.workspacePath !== undefined) {
+        setWorkspacePath(initialDraft.workspacePath ?? null)
+      } else if (homeWorkspace?.rootPath) {
+        setWorkspacePath(homeWorkspace.rootPath)
+      } else {
+        setWorkspacePath(null)
+        getDefaultFolder()
+          .then((ws) => {
+            if (ws?.rootPath) {
+              setWorkspacePath((prev) => prev ?? ws.rootPath)
+            }
+          })
+          .catch(() => {
+            // 非致命：保留 null，后端会 fallback 到全局 workspace
+          })
+      }
     }
     setError(null)
-  }, [initial, initialDraft, open])
+  }, [initial, initialDraft, open, homeWorkspace])
 
   const buildRule = (): RecurrenceRule | null => {
     if (frequency === 'one_shot') return null
@@ -124,6 +149,7 @@ export function AgendaItemEditor({
           startAt,
           timezone,
           rule: buildRule(),
+          workspacePath,
         }
         await updateAgendaItem(initial.id, req)
       } else {
@@ -134,6 +160,7 @@ export function AgendaItemEditor({
           timezone,
           organizerPersonaId,
           rule: buildRule(),
+          workspacePath,
         }
         await createAgendaItem(req)
       }
@@ -143,6 +170,18 @@ export function AgendaItemEditor({
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePickWorkspace = async () => {
+    try {
+      const path = await pickLocalDirectory({
+        defaultPath: workspacePath ?? undefined,
+        title: '选择此日程触发时使用的工作目录',
+      })
+      if (path) setWorkspacePath(path)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -235,6 +274,31 @@ export function AgendaItemEditor({
             value={startAtLocal}
             onChange={(e) => setStartAtLocal(e.target.value)}
           />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">工作目录</label>
+          <div className="flex items-center gap-2">
+            <div
+              className="flex-1 truncate rounded-md border border-input bg-transparent px-3 py-1.5 text-sm"
+              title={workspacePath ?? undefined}
+            >
+              {workspacePath ?? '使用应用当前工作目录'}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handlePickWorkspace}
+              aria-label="选择工作目录"
+            >
+              <Folder className="h-4 w-4" />
+              选择
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            触发时会把该目录授权给新对话；留空则跟随应用当前选中的工作目录。
+          </p>
         </div>
 
         {error ? (

@@ -37,6 +37,7 @@ function makeItem(id: string): AgendaItem {
     occurrenceCount: 0,
     status: 'active',
     overrideOf: null,
+    workspacePath: null,
     createdAt: now,
     updatedAt: now,
   }

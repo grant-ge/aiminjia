@@ -386,6 +386,7 @@ mod tests {
             occurrence_count: 0,
             status: ItemStatus::Active,
             override_of: None,
+            workspace_path: None,
             created_at: now,
             updated_at: now,
         }

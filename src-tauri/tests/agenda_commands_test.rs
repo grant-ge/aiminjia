@@ -23,6 +23,7 @@ fn make_item(persona: &str, start_at: chrono::DateTime<chrono::Utc>) -> AgendaIt
         occurrence_count: 0,
         status: ItemStatus::Active,
         override_of: None,
+        workspace_path: None,
         created_at: now,
         updated_at: now,
     }

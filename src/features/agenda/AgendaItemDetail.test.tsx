@@ -24,6 +24,7 @@ const sampleItem: AgendaItem = {
   occurrenceCount: 0,
   status: 'active',
   overrideOf: null,
+  workspacePath: null,
   createdAt: '',
   updatedAt: '',
 }

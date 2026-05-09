@@ -430,6 +430,7 @@ export interface AgendaItem {
   occurrenceCount: number
   status: ItemStatus
   overrideOf: OverrideRef | null
+  workspacePath: string | null
   createdAt: string
   updatedAt: string
 }
@@ -463,6 +464,7 @@ export interface CreateAgendaItemRequest {
   startAt: string
   timezone?: string
   rule?: RecurrenceRule | null
+  workspacePath?: string | null
 }
 
 export interface UpdateAgendaItemRequest {
@@ -472,6 +474,7 @@ export interface UpdateAgendaItemRequest {
   timezone?: string
   rule?: RecurrenceRule | null
   status?: ItemStatus
+  workspacePath?: string | null
 }
 
 export function listAgendaItems(filter?: ItemFilter): Promise<AgendaItem[]> {

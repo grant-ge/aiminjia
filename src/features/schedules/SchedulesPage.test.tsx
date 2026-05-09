@@ -30,6 +30,7 @@ const sampleItem = (over: Partial<AgendaItem> = {}): AgendaItem => ({
   occurrenceCount: 0,
   status: 'active',
   overrideOf: null,
+  workspacePath: null,
   createdAt: '',
   updatedAt: '',
   ...over,

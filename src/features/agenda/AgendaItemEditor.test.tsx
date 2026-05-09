@@ -11,9 +11,21 @@ import { AgendaItemEditor } from './AgendaItemEditor'
 describe('AgendaItemEditor', () => {
   beforeEach(() => {
     invokeMock.mockReset()
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_default_folder') {
+        return { id: 'default', rootPath: '/tmp/default', displayName: 'default' }
+      }
+      return null
+    })
   })
 
   it('saves new one-shot item', async () => {
+    invokeMock.mockImplementationOnce(async (cmd: string) => {
+      if (cmd === 'get_default_folder') {
+        return { id: 'default', rootPath: '/tmp/default', displayName: 'default' }
+      }
+      return null
+    })
     invokeMock.mockResolvedValueOnce({ id: 'agenda-x' })
     const onSaved = vi.fn()
 

@@ -147,6 +147,7 @@ mod tests {
             occurrence_count,
             status: ItemStatus::Active,
             override_of: None,
+            workspace_path: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -202,6 +203,7 @@ mod tests {
             occurrence_count,
             status: ItemStatus::Active,
             override_of: None,
+            workspace_path: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

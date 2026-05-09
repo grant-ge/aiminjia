@@ -68,6 +68,8 @@ pub struct CreateAgendaItemRequest {
     pub start_at: DateTime<Utc>,
     pub timezone: Option<String>,
     pub rule: Option<crate::runtime::agenda::RecurrenceRule>,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
 }
 
 fn build_agenda_item_from_create_request(
@@ -100,6 +102,13 @@ fn build_agenda_item_from_create_request(
         return Err("timezone must be a valid IANA timezone".into());
     }
 
+    let workspace_path = request
+        .workspace_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
     let mut item = AgendaItem {
         id: AgendaItemId::new(),
         title,
@@ -117,6 +126,7 @@ fn build_agenda_item_from_create_request(
         occurrence_count: 0,
         status: ItemStatus::Active,
         override_of: None,
+        workspace_path,
         created_at: now,
         updated_at: now,
     };
@@ -150,6 +160,16 @@ where
     }
 }
 
+fn deserialize_nullable_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(Some(value))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgendaItemRequest {
@@ -160,6 +180,8 @@ pub struct UpdateAgendaItemRequest {
     #[serde(default, deserialize_with = "deserialize_nullable_rule")]
     pub rule: Option<Option<crate::runtime::agenda::RecurrenceRule>>,
     pub status: Option<ItemStatus>,
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    pub workspace_path: Option<Option<String>>,
 }
 
 fn apply_update_agenda_item_request(
@@ -199,6 +221,13 @@ fn apply_update_agenda_item_request(
     }
     if let Some(st) = request.status {
         item.status = st;
+    }
+    if let Some(wp) = request.workspace_path {
+        item.workspace_path = wp
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
     }
     item.updated_at = now;
     item.next_fire_at = crate::runtime::agenda::compute_next_fire_at(item, now);
@@ -293,6 +322,7 @@ mod tests {
             start_at: Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap(),
             timezone: timezone.map(str::to_string),
             rule: None,
+            workspace_path: None,
         }
     }
 
@@ -370,6 +400,7 @@ mod tests {
             occurrence_count: 0,
             status: ItemStatus::Active,
             override_of: None,
+            workspace_path: None,
             created_at: now,
             updated_at: now,
         }
@@ -389,6 +420,7 @@ mod tests {
                 timezone: Some("  UTC  ".into()),
                 rule: Some(None),
                 status: Some(ItemStatus::Paused),
+                workspace_path: None,
             },
             now,
         )

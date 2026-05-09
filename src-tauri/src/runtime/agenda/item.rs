@@ -103,6 +103,10 @@ pub struct AgendaItem {
     pub occurrence_count: u32,
     pub status: ItemStatus,
     pub override_of: Option<OverrideRef>,
+    /// 触发时绑定到新 conversation 的工作目录（可选）。None 表示不显式 authorize，
+    /// 由 dispatcher 走应用全局当前 workspace 兜底。
+    #[serde(default)]
+    pub workspace_path: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
