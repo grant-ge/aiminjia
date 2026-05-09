@@ -677,6 +677,7 @@ pub fn run() {
             commands::employees::employee_trigger,
             commands::employees::employee_stop_run,
             commands::employees::employee_active_run,
+            commands::employees::employee_index_knowledge_async,
             commands::employees::inbox_list,
             commands::employees::inbox_mark_read,
             commands::employees::inbox_mark_all_read,

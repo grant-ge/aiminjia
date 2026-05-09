@@ -217,8 +217,13 @@ pub fn index_one(
                 Some(t) => format!("【{}】\n{}", t, chunk.content),
                 None => chunk.content.clone(),
             };
-            let category = format!("knowledge:{}", employee_id);
-            let tags = vec!["faq".to_string(), original_name.to_string()];
+            // MemoryCategory only accepts: preference, fact, learning, pattern, observation.
+            // Use "fact" for FAQ/knowledge-base content so it lands in "Enterprise Facts".
+            let category = "fact";
+            let tags = vec![
+                format!("knowledge:{}", employee_id),
+                original_name.to_string(),
+            ];
             let _ = app_storage.save_cognitive_memory(
                 &content,
                 &category,
