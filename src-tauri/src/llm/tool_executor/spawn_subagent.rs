@@ -170,7 +170,6 @@ impl DefaultSpawnSubagentLauncher {
             session_id: scoped_deps.session_id.clone(),
             run_id: scoped_deps.run_id.clone(),
             agent_id: scoped_deps.agent_id.clone(),
-            connector_engine: scoped_deps.connector_engine.clone(),
             agent_runtime: scoped_deps.agent_runtime.clone(),
             event_bus: scoped_deps.event_bus.clone(),
             skill_registry: scoped_deps.skill_registry.clone(),

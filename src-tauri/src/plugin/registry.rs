@@ -36,7 +36,6 @@ pub struct RequestScopedRuntimeDeps {
     pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
     pub auth_manager: Option<Arc<crate::auth::AuthManager>>,
-    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub use_cloud: bool,
     pub model: String,
     pub gateway: Option<Arc<crate::llm::gateway::LlmGateway>>,
@@ -72,7 +71,6 @@ impl RequestScopedRuntimeDeps {
             bocha_api_key: ctx.bocha_api_key.clone(),
             app_handle: ctx.app_handle.clone(),
             auth_manager: ctx.auth_manager.clone(),
-            connector_engine: ctx.connector_engine.clone(),
             use_cloud: ctx.use_cloud,
             model: ctx.model.clone(),
             gateway: ctx.gateway.clone(),
@@ -613,7 +611,6 @@ impl ToolRegistry {
                 bocha_api_key: ctx.bocha_api_key.clone(),
                 app_handle: ctx.app_handle.clone(),
                 auth_manager: ctx.auth_manager.clone(),
-                connector_engine: ctx.connector_engine.clone(),
                 use_cloud: ctx.use_cloud,
                 model: ctx.model.clone(),
                 gateway: ctx.gateway.clone(),
@@ -740,11 +737,10 @@ impl ToolRegistry {
     ///
     /// Called by `execute()` between the global `runtime_tools` lookup (Step 1)
     /// and the legacy `ToolPlugin` fallback (Step 3).  This handles tools whose
-    /// `Deps` structs carry session-level state (`conversation_id`, `run_id`,
-    /// `connector_engine`) that cannot be stored in the global singleton registry.
+    /// `Deps` structs carry session-level state (`conversation_id`, `run_id`)
+    /// that cannot be stored in the global singleton registry.
     ///
     /// Returns `None` for unknown tool names (falls through to legacy path).
-    /// For browser tools, also returns `None` when `connector_engine` is absent.
     async fn try_build_request_scoped_tool(
         name: &str,
         ctx: &RequestScopedRuntimeDeps,

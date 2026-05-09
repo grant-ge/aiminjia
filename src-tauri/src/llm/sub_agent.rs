@@ -32,7 +32,6 @@ pub struct SubAgentRuntimeDeps {
     pub session_id: crate::runtime::ids::SessionId,
     pub run_id: Option<RunId>,
     pub agent_id: Option<crate::runtime::ids::AgentId>,
-    pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
     pub skill_registry:
@@ -70,7 +69,6 @@ impl SubAgentRuntimeDeps {
             bocha_api_key: None,
             app_handle: self.app_handle.clone(),
             auth_manager: None,
-            connector_engine: self.connector_engine.clone(),
             use_cloud: false,
             model: String::new(),
             gateway: None,
