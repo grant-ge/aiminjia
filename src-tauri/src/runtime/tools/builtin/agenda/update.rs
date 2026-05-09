@@ -1,0 +1,29 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use serde_json::Value;
+
+use super::deps::AgendaToolDeps;
+use crate::runtime::tools::context::ToolExecutionContext;
+use crate::runtime::tools::definition::ToolDefinition;
+use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::RuntimeTool;
+
+pub struct UpdateAgendaItemRuntimeTool {
+    pub deps: Arc<AgendaToolDeps>,
+}
+
+#[async_trait]
+impl RuntimeTool for UpdateAgendaItemRuntimeTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition::new("update_agenda_item", "修改自己创建的日程")
+    }
+
+    async fn execute(
+        &self,
+        _input: Value,
+        _ctx: ToolExecutionContext,
+    ) -> Result<ToolResult, ToolError> {
+        Err(ToolError::ExecutionFailed("not yet implemented".into()))
+    }
+}
