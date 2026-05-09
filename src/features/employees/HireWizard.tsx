@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { employeeCreate, employeeIndexKnowledgeAsync, type PendingKnowledgeSource } from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +20,7 @@ interface HireWizardProps {
 }
 
 export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [selected, setSelected] = useState<EmployeeTemplate | null>(null)
   const [name, setName] = useState('')
@@ -107,16 +109,20 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         <DialogHeader className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-base">
-              {step === 1 ? '选择员工模板' : step === 2 ? '配置员工' : '配置资源'}
+              {step === 1
+                ? t('employee.config.wizard.titleStep1')
+                : step === 2
+                  ? t('employee.config.wizard.titleStep2')
+                  : t('employee.config.wizard.titleStep3')}
             </DialogTitle>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={step === 1 ? 'text-foreground font-medium' : ''}>1 选模板</span>
+              <span className={step === 1 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel1')}</span>
               <span>→</span>
-              <span className={step === 2 ? 'text-foreground font-medium' : ''}>2 配置</span>
+              <span className={step === 2 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel2')}</span>
               {selected?.resourceConfigKind !== 'none' && (
                 <>
                   <span>→</span>
-                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>3 资源</span>
+                  <span className={step === 3 ? 'text-foreground font-medium' : ''}>{t('employee.config.wizard.stepLabel3')}</span>
                 </>
               )}
             </div>
@@ -165,7 +171,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
 
             {/* Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">员工名字</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('employee.config.wizard.nameLabel')}</label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -178,7 +184,7 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             {selected.cron && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted-foreground">定时触发</label>
+                  <label className="text-xs font-medium text-muted-foreground">{t('employee.config.wizard.cronLabel')}</label>
                   <button
                     type="button"
                     onClick={() => setEnableCron((v) => !v)}
@@ -188,14 +194,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
                         : 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {enableCron ? '已启用' : '已关闭'}
+                    {enableCron ? t('employee.config.wizard.cronEnabled') : t('employee.config.wizard.cronDisabled')}
                   </button>
                 </div>
                 {enableCron && (
                   <Input
                     value={cron}
                     onChange={(e) => setCron(e.target.value)}
-                    placeholder="30 9 * * 1  （5 字段 cron）"
+                    placeholder={t('employee.config.wizard.cronPlaceholder')}
                     className="font-mono text-sm"
                   />
                 )}
@@ -209,10 +215,14 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             {/* Actions */}
             <div className="flex items-center justify-between pt-1">
               <Button variant="ghost" onClick={() => setStep(1)} disabled={busy}>
-                ← 返回
+                {t('employee.config.wizard.back')}
               </Button>
               <Button onClick={handleStep2Next} disabled={busy || !name.trim()}>
-                {busy ? '雇佣中…' : selected.resourceConfigKind === 'none' ? '✅ 确认雇佣' : '下一步 →'}
+                {busy
+                  ? t('employee.config.wizard.hiring')
+                  : selected.resourceConfigKind === 'none'
+                    ? t('employee.config.wizard.confirmHire')
+                    : t('employee.config.wizard.next')}
               </Button>
             </div>
           </div>

@@ -548,7 +548,24 @@
         "watchGroupsSummary": "将监听 {{count}} 个群："
       },
       "save": "保存",
-      "cancel": "取消"
+      "cancel": "取消",
+      "wizard": {
+        "titleStep1": "选择员工模板",
+        "titleStep2": "配置员工",
+        "titleStep3": "配置资源",
+        "stepLabel1": "1 选模板",
+        "stepLabel2": "2 配置",
+        "stepLabel3": "3 资源",
+        "nameLabel": "员工名字",
+        "cronLabel": "定时触发",
+        "cronEnabled": "已启用",
+        "cronDisabled": "已关闭",
+        "cronPlaceholder": "30 9 * * 1  （5 字段 cron）",
+        "back": "← 返回",
+        "hiring": "雇佣中…",
+        "confirmHire": "✅ 确认雇佣",
+        "next": "下一步 →"
+      }
     }
   }
 }

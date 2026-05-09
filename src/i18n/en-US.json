@@ -548,7 +548,24 @@
         "watchGroupsSummary": "Watching {{count}} group(s):"
       },
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "wizard": {
+        "titleStep1": "Pick a template",
+        "titleStep2": "Configure employee",
+        "titleStep3": "Configure resources",
+        "stepLabel1": "1 Template",
+        "stepLabel2": "2 Configure",
+        "stepLabel3": "3 Resources",
+        "nameLabel": "Employee name",
+        "cronLabel": "Scheduled trigger",
+        "cronEnabled": "Enabled",
+        "cronDisabled": "Disabled",
+        "cronPlaceholder": "30 9 * * 1  (5-field cron)",
+        "back": "← Back",
+        "hiring": "Hiring…",
+        "confirmHire": "✅ Confirm hire",
+        "next": "Next →"
+      }
     }
   }
 }
