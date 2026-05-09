@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { GroupMatchInput, groupMatchFromRecord, groupMatchToRecord, type GroupMatchConfig } from './GroupMatchInput'
+import { KnowledgeSourcesField, type KnowledgeSource } from './KnowledgeSourcesField'
 
-interface CustomerSupportConfigFormProps {
+interface Props {
   initial: Record<string, unknown>
   onSubmit: (next: Record<string, unknown>) => void
   onCancel: () => void
@@ -13,38 +15,41 @@ interface CustomerSupportConfigFormProps {
 type ResponseStyle = 'professional' | 'friendly' | 'concise'
 type SummaryCron = 'daily' | 'weekly' | 'off'
 
-interface TagListState {
-  escalationKeywords: string[]
-  techKeywords: string[]
-}
-
 interface FormState {
   groupMatch: GroupMatchConfig
   responseStyle: ResponseStyle
   greeting: string
   closing: string
   summaryCron: SummaryCron
-  tags: TagListState
+  knowledgeSources: KnowledgeSource[]
+  escalationKeywords: string[]
+  techKeywords: string[]
 }
-
-const RESPONSE_STYLES: { value: ResponseStyle; label: string }[] = [
-  { value: 'professional', label: 'Professional' },
-  { value: 'friendly', label: 'Friendly' },
-  { value: 'concise', label: 'Concise' },
-]
-
-const SUMMARY_OPTIONS: { value: SummaryCron; label: string }[] = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'off', label: 'Off' },
-]
 
 const DEFAULT_ESCALATION = ['投诉', '退款', '赔偿', '律师', '工信部']
 const DEFAULT_TECH = ['报错', 'error', '500', 'API', '部署', '配置', '日志', 'bug']
 
-function parseStringArray(val: unknown): string[] {
-  if (!Array.isArray(val)) return []
-  return (val as unknown[]).filter((k): k is string => typeof k === 'string')
+function parseStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return (v as unknown[]).filter((x): x is string => typeof x === 'string')
+}
+
+function parseKnowledgeSources(v: unknown): KnowledgeSource[] {
+  if (!Array.isArray(v)) return []
+  return (v as unknown[]).flatMap((raw): KnowledgeSource[] => {
+    if (!raw || typeof raw !== 'object') return []
+    const r = raw as Record<string, unknown>
+    if (typeof r.path !== 'string' || typeof r.originalName !== 'string') return []
+    const status = r.status
+    return [{
+      path: r.path,
+      originalName: r.originalName,
+      size: typeof r.size === 'number' ? r.size : 0,
+      status: (status === 'pending' || status === 'indexing' || status === 'done' || status === 'failed') ? status : 'pending',
+      slicedCount: typeof r.slicedCount === 'number' ? r.slicedCount : 0,
+      error: typeof r.error === 'string' ? r.error : undefined,
+    }]
+  })
 }
 
 function stateFromInitial(initial: Record<string, unknown>): FormState {
@@ -54,89 +59,59 @@ function stateFromInitial(initial: Record<string, unknown>): FormState {
     gm.exclude = ['内部', '测试']
   }
   const responseStyle = (['professional', 'friendly', 'concise'].includes(initial.responseStyle as string)
-    ? initial.responseStyle
-    : 'friendly') as ResponseStyle
-  const greeting = typeof initial.greeting === 'string' ? initial.greeting : '您好，'
-  const closing = typeof initial.closing === 'string' ? initial.closing : '如还有其他问题随时告诉我们~'
+    ? initial.responseStyle : 'friendly') as ResponseStyle
   const summaryCron = (['daily', 'weekly', 'off'].includes(initial.summaryCron as string)
-    ? initial.summaryCron
-    : 'weekly') as SummaryCron
-  const escalationRaw = parseStringArray(initial.escalationKeywords)
-  const techRaw = parseStringArray(initial.techKeywords)
+    ? initial.summaryCron : 'weekly') as SummaryCron
   return {
     groupMatch: gm,
     responseStyle,
-    greeting,
-    closing,
+    greeting: typeof initial.greeting === 'string' ? initial.greeting : '您好，',
+    closing: typeof initial.closing === 'string' ? initial.closing : '如还有其他问题随时告诉我们~',
     summaryCron,
-    tags: {
-      escalationKeywords: escalationRaw.length > 0 ? escalationRaw : DEFAULT_ESCALATION,
-      techKeywords: techRaw.length > 0 ? techRaw : DEFAULT_TECH,
-    },
+    knowledgeSources: parseKnowledgeSources(initial.knowledgeSources),
+    escalationKeywords: parseStringArray(initial.escalationKeywords).length > 0
+      ? parseStringArray(initial.escalationKeywords) : DEFAULT_ESCALATION,
+    techKeywords: parseStringArray(initial.techKeywords).length > 0
+      ? parseStringArray(initial.techKeywords) : DEFAULT_TECH,
   }
 }
 
-function InlineTagEditor({
-  label,
-  hint,
-  tags,
-  onChange,
-}: {
-  label: string
-  hint: string
-  tags: string[]
-  onChange: (next: string[]) => void
-}) {
+function InlineTagEditor({ label, hint, tags, onChange }: { label: string; hint: string; tags: string[]; onChange: (n: string[]) => void }) {
   const [input, setInput] = useState('')
-
-  function add() {
-    const t = input.trim()
-    if (t && !tags.includes(t)) {
-      onChange([...tags, t])
-      setInput('')
-    }
-  }
-
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">{label}</label>
       <div className="flex flex-wrap items-center gap-1.5">
         {tags.map((tag, i) => (
-          <span
-            key={`${tag}-${i}`}
-            className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-foreground"
-          >
+          <span key={`${tag}-${i}`} className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-0.5 text-xs">
             {tag}
-            <button
-              type="button"
-              onClick={() => onChange(tags.filter((_, idx) => idx !== i))}
-              className="ml-0.5 text-muted-foreground hover:text-destructive text-[10px]"
-            >
-              x
-            </button>
+            <button type="button" onClick={() => onChange(tags.filter((_, idx) => idx !== i))} className="ml-0.5 text-[10px] text-muted-foreground hover:text-destructive">×</button>
           </span>
         ))}
-        <div className="flex items-center gap-1">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
-            placeholder="+"
-            className="h-6 w-16 rounded border border-input bg-background px-1 text-xs"
-          />
-        </div>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              const t = input.trim()
+              if (t && !tags.includes(t)) { onChange([...tags, t]); setInput('') }
+            }
+          }}
+          placeholder="+"
+          className="h-6 w-16 rounded border border-input bg-background px-1 text-xs"
+        />
       </div>
       <p className="text-xs text-muted-foreground/70">{hint}</p>
     </div>
   )
 }
 
-export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: CustomerSupportConfigFormProps) {
+export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Props) {
+  const { t } = useTranslation()
   const [state, setState] = useState<FormState>(() => stateFromInitial(initial))
 
-  function update(patch: Partial<FormState>) {
-    setState((s) => ({ ...s, ...patch }))
-  }
+  function update(patch: Partial<FormState>) { setState((s) => ({ ...s, ...patch })) }
 
   function handleSave() {
     onSubmit({
@@ -144,108 +119,85 @@ export function CustomerSupportConfigForm({ initial, onSubmit, onCancel }: Custo
       responseStyle: state.responseStyle,
       greeting: state.greeting,
       closing: state.closing,
-      escalationKeywords: state.tags.escalationKeywords,
-      techKeywords: state.tags.techKeywords,
+      escalationKeywords: state.escalationKeywords,
+      techKeywords: state.techKeywords,
       summaryCron: state.summaryCron,
+      knowledgeSources: state.knowledgeSources,
       language: 'zh',
     })
   }
 
   const valid = state.groupMatch.keywords.length > 0
+  const styles: ResponseStyle[] = ['professional', 'friendly', 'concise']
+  const summaries: SummaryCron[] = ['daily', 'weekly', 'off']
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Configure customer support settings. The employee will scan matching DingTalk groups for business inquiries, search FAQ and past conversations, then draft friendly replies for your review.
-      </p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('employee.config.customerSupport.intro')}</p>
 
       <GroupMatchInput
         value={state.groupMatch}
         onChange={(gm) => update({ groupMatch: gm })}
-        label="Monitor groups (keyword matching)"
         defaultKeywords={['服务', '客户', '售后']}
         defaultExclude={['内部', '测试']}
       />
 
-      {/* Response style */}
+      <KnowledgeSourcesField
+        value={state.knowledgeSources}
+        onChange={(next) => update({ knowledgeSources: next })}
+      />
+
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Response style</label>
+        <label className="text-xs font-medium text-muted-foreground">{t('employee.config.responseStyle.label')}</label>
         <div className="flex items-center gap-3 text-sm">
-          {RESPONSE_STYLES.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="responseStyle"
-                value={opt.value}
-                checked={state.responseStyle === opt.value}
-                onChange={() => update({ responseStyle: opt.value })}
-              />
-              {opt.label}
+          {styles.map((opt) => (
+            <label key={opt} className="flex items-center gap-1.5">
+              <input type="radio" checked={state.responseStyle === opt} onChange={() => update({ responseStyle: opt })} />
+              {t(`employee.config.responseStyle.${opt}`)}
             </label>
           ))}
         </div>
       </div>
 
-      {/* Greeting / Closing */}
       <div className="flex gap-3">
         <div className="flex flex-1 flex-col gap-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Greeting</label>
-          <Input
-            value={state.greeting}
-            onChange={(e) => update({ greeting: e.target.value })}
-            placeholder="您好，"
-            className="text-xs"
-          />
+          <label className="text-xs font-medium text-muted-foreground">{t('employee.config.greeting')}</label>
+          <Input value={state.greeting} onChange={(e) => update({ greeting: e.target.value })} className="text-xs" />
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Closing</label>
-          <Input
-            value={state.closing}
-            onChange={(e) => update({ closing: e.target.value })}
-            placeholder="如还有其他问题随时告诉我们~"
-            className="text-xs"
-          />
+          <label className="text-xs font-medium text-muted-foreground">{t('employee.config.closing')}</label>
+          <Input value={state.closing} onChange={(e) => update({ closing: e.target.value })} className="text-xs" />
         </div>
       </div>
 
-      {/* Escalation keywords */}
       <InlineTagEditor
-        label="Escalation keywords (skip auto-reply, flag human intervention)"
-        hint="Messages containing these words will be flagged for manual handling."
-        tags={state.tags.escalationKeywords}
-        onChange={(next) => update({ tags: { ...state.tags, escalationKeywords: next } })}
+        label={t('employee.config.escalation.label')}
+        hint={t('employee.config.escalation.hint')}
+        tags={state.escalationKeywords}
+        onChange={(next) => update({ escalationKeywords: next })}
+      />
+      <InlineTagEditor
+        label={t('employee.config.techKeywords.label')}
+        hint={t('employee.config.techKeywords.hint')}
+        tags={state.techKeywords}
+        onChange={(next) => update({ techKeywords: next })}
       />
 
-      {/* Tech keywords */}
-      <InlineTagEditor
-        label="Tech keywords (route to tech support)"
-        hint="Messages containing these words will be tagged as technical issues."
-        tags={state.tags.techKeywords}
-        onChange={(next) => update({ tags: { ...state.tags, techKeywords: next } })}
-      />
-
-      {/* Summary cron */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Conversation summary frequency</label>
+        <label className="text-xs font-medium text-muted-foreground">{t('employee.config.summaryFreq.label')}</label>
         <div className="flex items-center gap-3 text-sm">
-          {SUMMARY_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="summaryCron"
-                value={opt.value}
-                checked={state.summaryCron === opt.value}
-                onChange={() => update({ summaryCron: opt.value })}
-              />
-              {opt.label}
+          {summaries.map((opt) => (
+            <label key={opt} className="flex items-center gap-1.5">
+              <input type="radio" checked={state.summaryCron === opt} onChange={() => update({ summaryCron: opt })} />
+              {t(`employee.config.summaryFreq.${opt}`)}
             </label>
           ))}
         </div>
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button onClick={handleSave} disabled={!valid}>Save</Button>
+        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button onClick={handleSave} disabled={!valid}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )
