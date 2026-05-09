@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -84,30 +85,36 @@ function stateFromInitial(initial: Record<string, unknown>): FormState {
   }
 }
 
+type FieldMappingError =
+  | { code: 'object' }
+  | { code: 'string'; field: string }
+  | { code: 'parse'; error: string }
+
 function tryParseFieldMapping(
   raw: string,
-): { ok: true; value: Record<string, string> } | { ok: false; error: string } {
+): { ok: true; value: Record<string, string> } | { ok: false; err: FieldMappingError } {
   const trimmed = raw.trim()
   if (!trimmed) return { ok: true, value: {} }
   try {
     const parsed = JSON.parse(trimmed) as unknown
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, error: '必须是 JSON 对象（{}），不是数组也不是 null' }
+      return { ok: false, err: { code: 'object' } }
     }
     const out: Record<string, string> = {}
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof v !== 'string') {
-        return { ok: false, error: `字段 ${k} 的列名必须是字符串` }
+        return { ok: false, err: { code: 'string', field: k } }
       }
       out[k] = v
     }
     return { ok: true, value: out }
   } catch (err) {
-    return { ok: false, error: `JSON 解析失败：${String(err)}` }
+    return { ok: false, err: { code: 'parse', error: String(err) } }
   }
 }
 
 export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTableConfigFormProps) {
+  const { t } = useTranslation()
   const [state, setState] = useState<FormState>(() => stateFromInitial(initial))
 
   const parsed = useMemo(() => parseDingtalkAitableUrl(state.shareUrl), [state.shareUrl])
@@ -140,32 +147,44 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
     })
   }
 
+  function fieldMappingErrorMsg(): string {
+    if (fieldMappingResult.ok) return ''
+    const { err } = fieldMappingResult
+    if (err.code === 'object') return t('employee.config.salesTable.fieldMappingError_object')
+    if (err.code === 'string') return t('employee.config.salesTable.fieldMappingError_string', { field: err.field })
+    return t('employee.config.salesTable.fieldMappingError_parse', { error: err.error })
+  }
+
   const showParseHint = state.shareUrl.trim().length > 0
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs leading-relaxed text-muted-foreground">
-        粘贴钉钉 AI 表格的链接即可。小销会基于这张表读取在谈客户。字段映射可以留空——首次派活时员工会通过对话引导你完成。
+        {t('employee.config.salesTable.intro')}
       </p>
 
       {/* Share URL — primary input */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">钉钉 AI 表格链接</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          {t('employee.config.salesTable.shareUrlLabel')}
+        </label>
         <Input
           value={state.shareUrl}
           onChange={(e) => update({ shareUrl: e.target.value })}
-          placeholder="https://docs.dingtalk.com/i/nodes/.../?iframeQuery=..."
+          placeholder={t('employee.config.salesTable.shareUrlPlaceholder')}
           className="font-mono text-xs"
         />
         {showParseHint && parsed && (
           <p className="text-xs text-emerald-600">
-            ✓ 已识别：base <span className="font-mono">{parsed.baseId.slice(0, 12)}…</span> /
-            table <span className="font-mono">{parsed.tableId}</span>
+            {t('employee.config.salesTable.parseOk', {
+              baseId: `${parsed.baseId.slice(0, 12)}…`,
+              tableId: parsed.tableId,
+            })}
           </p>
         )}
         {showParseHint && !parsed && (
           <p className="text-xs text-amber-600">
-            链接格式无法识别。可以下方手动填 baseId / tableId，或直接保存——派活时小销会引导你定位表格。
+            {t('employee.config.salesTable.parseError')}
           </p>
         )}
       </div>
@@ -174,20 +193,24 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
       {showParseHint && !parsed && (
         <div className="flex flex-col gap-3 rounded-md border border-border/60 bg-accent/20 p-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Base ID（手动填写）</label>
+            <label className="text-xs font-medium text-muted-foreground">
+              {t('employee.config.salesTable.baseIdLabel')}
+            </label>
             <Input
               value={state.baseId}
               onChange={(e) => update({ baseId: e.target.value })}
-              placeholder="例如 oP0MALyR8k73krjmIQeMLXrz83bzYmDO"
+              placeholder={t('employee.config.salesTable.baseIdPlaceholder')}
               className="font-mono text-xs"
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Table ID（手动填写）</label>
+            <label className="text-xs font-medium text-muted-foreground">
+              {t('employee.config.salesTable.tableIdLabel')}
+            </label>
             <Input
               value={state.tableId}
               onChange={(e) => update({ tableId: e.target.value })}
-              placeholder="例如 26qlT0c"
+              placeholder={t('employee.config.salesTable.tableIdPlaceholder')}
               className="font-mono text-xs"
             />
           </div>
@@ -196,7 +219,9 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
 
       {/* Scope */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">范围</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          {t('employee.config.salesTable.scopeLabel')}
+        </label>
         <div className="flex items-center gap-3 text-sm">
           <label className="flex items-center gap-1.5">
             <input
@@ -206,7 +231,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
               checked={state.scope === 'self'}
               onChange={() => update({ scope: 'self' })}
             />
-            仅我负责的客户
+            {t('employee.config.salesTable.scopeSelf')}
           </label>
           <label className="flex items-center gap-1.5">
             <input
@@ -216,7 +241,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
               checked={state.scope === 'department'}
               onChange={() => update({ scope: 'department' })}
             />
-            整个部门
+            {t('employee.config.salesTable.scopeDepartment')}
           </label>
         </div>
       </div>
@@ -229,7 +254,7 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
           className="flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
         >
           {state.showAdvanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          高级：预填字段映射
+          {t('employee.config.salesTable.advancedToggle')}
         </button>
         {state.showAdvanced && (
           <>
@@ -241,18 +266,18 @@ export function SalesTableConfigForm({ initial, onSubmit, onCancel }: SalesTable
               className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed"
             />
             <p className="text-xs text-muted-foreground/70">
-              留空也可以——派活时员工会通过 dws 列出真实字段名供你选择。
+              {t('employee.config.salesTable.fieldMappingHint')}
             </p>
             {!fieldMappingResult.ok && (
-              <p className="text-xs text-destructive">{fieldMappingResult.error}</p>
+              <p className="text-xs text-destructive">{fieldMappingErrorMsg()}</p>
             )}
           </>
         )}
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onCancel}>取消</Button>
-        <Button onClick={handleSave} disabled={!valid}>保存</Button>
+        <Button variant="ghost" onClick={onCancel}>{t('employee.config.cancel')}</Button>
+        <Button onClick={handleSave} disabled={!valid}>{t('employee.config.save')}</Button>
       </div>
     </div>
   )

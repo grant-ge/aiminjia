@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, X } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
@@ -116,18 +117,22 @@ export function GroupMatchInput({
   defaultKeywords = [],
   defaultExclude = [],
 }: GroupMatchInputProps) {
+  const { t } = useTranslation()
+
   function update(patch: Partial<GroupMatchConfig>) {
     onChange({ ...value, ...patch })
   }
 
+  const eg = t('employee.config.groupMatch.eg')
+
   const keywordsPlaceholder =
     defaultKeywords.length > 0
-      ? `e.g. ${defaultKeywords.join(', ')}`
+      ? `${eg} ${defaultKeywords.join(', ')}`
       : ''
 
   const excludePlaceholder =
     defaultExclude.length > 0
-      ? `e.g. ${defaultExclude.join(', ')}`
+      ? `${eg} ${defaultExclude.join(', ')}`
       : ''
 
   return (
@@ -138,7 +143,7 @@ export function GroupMatchInput({
 
       <div className="flex flex-col gap-1.5">
         <label className="text-xs text-muted-foreground">
-          <span className="font-medium">include keywords</span>
+          <span className="font-medium">{t('employee.config.groupMatch.includeLabel')}</span>
         </label>
         <TagInput
           tags={value.keywords}
@@ -147,13 +152,13 @@ export function GroupMatchInput({
           placeholder={keywordsPlaceholder}
         />
         <p className="text-xs text-muted-foreground/70">
-          Group names containing <strong>any</strong> keyword will be matched. New groups matching these keywords are auto-included on next scan.
+          {t('employee.config.groupMatch.includeHintSimple')}
         </p>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label className="text-xs text-muted-foreground">
-          <span className="font-medium">exclude keywords</span> (optional)
+          <span className="font-medium">{t('employee.config.groupMatch.excludeLabel')}</span>
         </label>
         <TagInput
           tags={value.exclude}
@@ -164,7 +169,9 @@ export function GroupMatchInput({
       </div>
 
       <div className="flex items-center gap-2">
-        <label className="text-xs text-muted-foreground whitespace-nowrap">Max groups</label>
+        <label className="text-xs text-muted-foreground whitespace-nowrap">
+          {t('employee.config.groupMatch.maxGroupsLabel')}
+        </label>
         <Input
           type="number"
           value={value.maxGroups}

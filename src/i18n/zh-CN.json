@@ -461,7 +461,12 @@
         "include": "包含关键词",
         "exclude": "排除关键词",
         "addPlaceholder": "+ 添加",
-        "matchedHint": "已匹配 {{count}} 个群"
+        "matchedHint": "已匹配 {{count}} 个群",
+        "includeLabel": "包含关键词",
+        "excludeLabel": "排除关键词（可选）",
+        "includeHintSimple": "群名包含任意一个关键词即匹配。新加入符合条件的群会在下次扫描时自动纳入。",
+        "maxGroupsLabel": "最大群数",
+        "eg": "例："
       },
       "responseStyle": {
         "label": "回复风格",
@@ -498,13 +503,49 @@
         "label": "监测 URL",
         "hint": "调研员将定期访问以下 URL 抓取变化。",
         "addPlaceholder": "https://...",
-        "addButton": "添加"
+        "addButton": "添加",
+        "namePlaceholder": "监测对象名称（如 Anthropic）",
+        "urlPlaceholder": "https://example.com/news",
+        "tagsPlaceholder": "标签（逗号分隔，可选）",
+        "addRow": "添加监测对象"
       },
       "salesTable": {
-        "title": "配置数据源"
+        "title": "配置数据源",
+        "intro": "粘贴钉钉 AI 表格的链接即可。小销会基于这张表读取在谈客户。字段映射可以留空——首次派活时员工会通过对话引导你完成。",
+        "shareUrlLabel": "钉钉 AI 表格链接",
+        "shareUrlPlaceholder": "https://docs.dingtalk.com/i/nodes/.../?iframeQuery=...",
+        "parseOk": "✓ 已识别：base {{baseId}} / table {{tableId}}",
+        "parseError": "链接格式无法识别。可以下方手动填 baseId / tableId，或直接保存——派活时小销会引导你定位表格。",
+        "baseIdLabel": "Base ID（手动填写）",
+        "baseIdPlaceholder": "例如 oP0MALyR8k73krjmIQeMLXrz83bzYmDO",
+        "tableIdLabel": "Table ID（手动填写）",
+        "tableIdPlaceholder": "例如 26qlT0c",
+        "scopeLabel": "范围",
+        "scopeSelf": "仅我负责的客户",
+        "scopeDepartment": "整个部门",
+        "advancedToggle": "高级：预填字段映射",
+        "fieldMappingHint": "留空也可以——派活时员工会通过 dws 列出真实字段名供你选择。",
+        "fieldMappingError_object": "必须是 JSON 对象（{}），不是数组也不是 null",
+        "fieldMappingError_string": "字段 {{field}} 的列名必须是字符串",
+        "fieldMappingError_parse": "JSON 解析失败：{{error}}"
       },
       "weeklyReport": {
-        "title": "配置周报偏好"
+        "title": "配置周报偏好",
+        "intro": "配置周报偏好。小周会在每周五自动汇总钉钉日程、待办和群聊，生成结构化周报，呈现在对话中供你查看与编辑。",
+        "styleLabel": "周报风格",
+        "templateStandard": "标准",
+        "templateStandardDesc": "日程 + 待办 + 群聊，分日归类",
+        "templateBrief": "简洁",
+        "templateBriefDesc": "要点列表，一页纸",
+        "templateOkr": "OKR 对齐",
+        "templateOkrDesc": "按 O/KR 归类本周进展",
+        "scopeLabel": "范围",
+        "scopeSelf": "个人周报",
+        "scopeTeam": "团队周报（汇总下属）",
+        "watchGroupsLabel": "监听群聊（可选）",
+        "watchGroupsPlaceholder": "例如：产品周会，研发日常，客户支持",
+        "watchGroupsHintSimple": "填写钉钉群名，多个群用逗号（中英文均可）或换行分隔。小周会按群名搜索并提取本周关键讨论；留空则跳过群聊摘要。",
+        "watchGroupsSummary": "将监听 {{count}} 个群："
       },
       "save": "保存",
       "cancel": "取消"
