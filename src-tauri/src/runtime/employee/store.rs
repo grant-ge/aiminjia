@@ -7,7 +7,7 @@ use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::runtime::schedule::{compute_next_cron_run, parse_cron_expression};
+use crate::runtime::employee::cron::{compute_next_cron_run, parse_cron_expression};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

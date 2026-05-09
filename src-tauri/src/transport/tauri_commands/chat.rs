@@ -2677,34 +2677,6 @@ impl TauriChatCommandAdapter {
     }
 }
 
-#[async_trait]
-impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommandAdapter {
-    async fn dispatch_schedule_run(
-        &self,
-        schedule: crate::runtime::schedule::ScheduleRecord,
-        fire_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        let conversation_id = conversation_service::create_conversation(
-            self.services.db().clone() as Arc<dyn ConversationStore>
-        )
-        .await
-        .map_err(anyhow::Error::msg)?;
-        emit_conversation_created(
-            &self.services.app,
-            &conversation_id,
-            "schedule",
-            Some(&schedule.title),
-        );
-        let prompt = format!(
-            "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
-            schedule.title, fire_at, schedule.prompt
-        );
-        self.send_message(conversation_id, prompt, Vec::new(), None, None, None)
-            .await
-            .map_err(anyhow::Error::msg)
-    }
-}
-
 #[async_trait::async_trait]
 impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
     async fn dispatch(

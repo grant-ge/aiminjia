@@ -557,13 +557,6 @@ pub fn run() {
                 crate::runtime::employee::EmployeeActiveRuns::new(),
             ));
 
-            runtime::schedule_runner::spawn_schedule_runner(
-                current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
-                app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
-                    .inner()
-                    .clone(),
-            );
-
             runtime::agenda::spawn_agenda_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
                 app.state::<Arc<transport::tauri_commands::chat::TauriChatCommandAdapter>>()
@@ -681,10 +674,6 @@ pub fn run() {
             transport::tauri_commands::agenda::list_agenda_occurrences,
             transport::tauri_commands::agenda::skip_occurrence,
             transport::tauri_commands::agenda::unskip_occurrence,
-            // Schedule commands
-            commands::schedules::list_schedules,
-            commands::schedules::create_schedule,
-            commands::schedules::delete_schedule,
             // Employee commands
             commands::employees::employee_list,
             commands::employees::employee_get,
