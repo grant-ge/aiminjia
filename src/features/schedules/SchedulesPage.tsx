@@ -1,18 +1,24 @@
-import { useCallback, useState } from 'react'
-import { CalendarClock, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { CalendarClock } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
 
-import { Button } from '@/components/ui/button'
 import { ScheduleEmptyState } from '@/components/schedules/ScheduleEmptyState'
 import { ScheduleListCard } from '@/components/schedules/ScheduleListCard'
 import { ScheduleTableHeader } from '@/components/schedules/ScheduleTableHeader'
+import { ScheduleTaskRow } from '@/components/schedules/ScheduleTaskRow'
 import { ScheduleTemplateCard } from '@/components/schedules/ScheduleTemplateCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
 import { useAgendaItems } from '@/hooks/useAgendaItems'
+import { AgendaItemEditor } from '@/features/agenda/AgendaItemEditor'
+import { AgendaItemDetail } from '@/features/agenda/AgendaItemDetail'
 import {
+  type AgendaItem,
   type CreateAgendaItemRequest,
   deleteAgendaItem,
+  runAgendaItemNow,
+  updateAgendaItem,
 } from '@/lib/tauri'
 
 const TEMPLATES: Array<{
@@ -39,12 +45,28 @@ const TEMPLATES: Array<{
 
 export function SchedulesPage() {
   const { items, loading, error, refresh } = useAgendaItems()
-  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [draftFromTemplate, setDraftFromTemplate] =
     useState<Partial<CreateAgendaItemRequest> | null>(null)
+  const [editing, setEditing] = useState<AgendaItem | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
+  const [detail, setDetail] = useState<AgendaItem | null>(null)
+  const [activePersonaId, setActivePersonaId] = useState('default')
   const [pageError, setPageError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke<{ id?: string } | null>('get_active_persona')
+      .then((p) => {
+        if (!cancelled && p?.id) setActivePersonaId(p.id)
+      })
+      .catch(() => {
+        // 没有 persona 也不阻塞页面，组织者用 'default' 兜底
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleUseTemplate = useCallback(
     (template: (typeof TEMPLATES)[number]) => {
@@ -53,6 +75,7 @@ export function SchedulesPage() {
         prompt: template.prompt,
         rule: null,
       })
+      setEditing(null)
       setEditorOpen(true)
     },
     [],
@@ -61,19 +84,61 @@ export function SchedulesPage() {
   const handleDelete = useCallback(
     async (id: string) => {
       setPendingDeleteId(null)
-      setDeletingId(id)
       setPageError(null)
       try {
         await deleteAgendaItem(id)
         await refresh()
       } catch (err) {
         setPageError(formatError(err))
-      } finally {
-        setDeletingId(null)
       }
     },
     [refresh],
   )
+
+  const handleRunNow = useCallback(
+    async (id: string) => {
+      setPageError(null)
+      try {
+        await runAgendaItemNow(id)
+        await refresh()
+      } catch (err) {
+        setPageError(formatError(err))
+      }
+    },
+    [refresh],
+  )
+
+  const handleToggleStatus = useCallback(
+    async (item: AgendaItem) => {
+      setPageError(null)
+      try {
+        await updateAgendaItem(item.id, {
+          status: item.status === 'active' ? 'paused' : 'active',
+        })
+        await refresh()
+      } catch (err) {
+        setPageError(formatError(err))
+      }
+    },
+    [refresh],
+  )
+
+  const handleEdit = useCallback((item: AgendaItem) => {
+    setEditing(item)
+    setDraftFromTemplate(null)
+    setEditorOpen(true)
+  }, [])
+
+  const closeEditor = useCallback(() => {
+    setEditorOpen(false)
+    setEditing(null)
+    setDraftFromTemplate(null)
+  }, [])
+
+  const onEditorSaved = useCallback(() => {
+    void refresh()
+    closeEditor()
+  }, [refresh, closeEditor])
 
   const emptyTitle = loading ? '正在加载定时任务' : '还没有定时任务'
   const emptyDesc = loading
@@ -125,32 +190,14 @@ export function SchedulesPage() {
         }
       >
         {items.map((item) => (
-          <div
+          <ScheduleTaskRow
             key={item.id}
-            className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.7fr)_auto] items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem]"
-          >
-            <div className="min-w-0">
-              <div className="truncate font-medium text-foreground">{item.title}</div>
-              <div className="mt-1 truncate text-muted-foreground">{item.prompt}</div>
-            </div>
-            <div className="min-w-0 text-muted-foreground">
-              <div>{item.nextFireAt ?? '待计算'}</div>
-            </div>
-            <div className="min-w-0">
-              <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-foreground">
-                {item.status}
-              </span>
-            </div>
-            <Button
-              aria-label={`删除 ${item.title}`}
-              variant="ghost"
-              size="icon"
-              disabled={deletingId === item.id}
-              onClick={() => setPendingDeleteId(item.id)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
+            item={item}
+            onEdit={handleEdit}
+            onDelete={(id) => setPendingDeleteId(id)}
+            onRunNow={handleRunNow}
+            onToggleStatus={handleToggleStatus}
+          />
         ))}
       </ScheduleListCard>
       <ConfirmDialog
@@ -162,11 +209,20 @@ export function SchedulesPage() {
         onOpenChange={(open) => !open && setPendingDeleteId(null)}
         onConfirm={() => pendingDeleteId && void handleDelete(pendingDeleteId)}
       />
-      {editorOpen ? (
-        <div data-testid="agenda-editor-placeholder" hidden>
-          {JSON.stringify(draftFromTemplate)}
-        </div>
-      ) : null}
+      <AgendaItemEditor
+        open={editorOpen}
+        initial={editing}
+        initialDraft={draftFromTemplate}
+        organizerPersonaId={editing?.organizerPersonaId ?? activePersonaId}
+        onClose={closeEditor}
+        onSaved={onEditorSaved}
+      />
+      <AgendaItemDetail
+        open={detail !== null}
+        item={detail}
+        onClose={() => setDetail(null)}
+        onChanged={() => void refresh()}
+      />
     </PageSectionShell>
   )
 }
