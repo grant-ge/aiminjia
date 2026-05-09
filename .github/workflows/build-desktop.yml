@@ -100,7 +100,7 @@ jobs:
       - name: Download changelog.json from production
         shell: bash
         run: |
-          curl -fsSL "https://lotus.renlijia.com/changelog.json" -o src-tauri/changelog.json \
+          curl -fsSL "https://ai.renlijia.com/changelog.json" -o src-tauri/changelog.json \
             || echo '{"versions":[]}' > src-tauri/changelog.json
 
       - name: Build Tauri app
