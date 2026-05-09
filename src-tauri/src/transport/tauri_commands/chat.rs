@@ -1363,6 +1363,7 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
             allowed_tools: Some(runtime_allowed_tools),
             max_iterations: Some(max_iterations),
             token_budget: None,
+            authorized_workspace,
         })
     }
 
@@ -1462,10 +1463,10 @@ impl RuntimeLlmExecutor for TauriLegacyTurnExecutor {
 
     async fn load_agents_md(
         &self,
-        workspace_path: &std::path::Path,
+        authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
     ) -> Result<Vec<crate::runtime::agents_md::AgentsMdFile>, TurnError> {
         let mut loader = self.agents_md_loader.lock().await;
-        Ok(loader.load(workspace_path).await)
+        Ok(loader.load(authorized_workspace).await)
     }
 
     async fn load_project_memory(

@@ -1,4 +1,12 @@
-use std::path::Path;
+//! AGENTS.md 加载器测试
+//!
+//! 覆盖 spec §4.5：
+//! - 仅从 `{authorized_workspace}/AGENTS.md` 加载
+//! - None → 返回空 Vec
+//! - 文件不存在 → 返回空 Vec
+//! - 64 KiB 截断
+//! - 反向断言：.aijia / 父目录 / AGENTS.local.md 均不加载
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -13,11 +21,92 @@ use app_lib::runtime::ids::RunId;
 use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
+use app_lib::runtime::store::AuthorizedWorkspaceRef;
 use async_trait::async_trait;
+
+// ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
 fn make_test_turn(conversation_id: &str) -> TurnState {
     let mapping = IdentityMapping::from_legacy_conversation_id(conversation_id);
     TurnState::new(mapping, RunId::new("test-run"), "hi".to_string())
+}
+
+fn make_ws_ref(root_path: PathBuf) -> AuthorizedWorkspaceRef {
+    AuthorizedWorkspaceRef {
+        id: "ws-test".to_string(),
+        root_path,
+        display_name: "test workspace".to_string(),
+    }
+}
+
+// ── 正向测试 ──────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn loads_when_authorized_workspace_has_agents_md() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_path = tmp.path().to_path_buf();
+    std::fs::write(ws_path.join("AGENTS.md"), "# Project\nproject instructions")
+        .expect("write AGENTS.md");
+
+    let ws_ref = make_ws_ref(ws_path.clone());
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert_eq!(files.len(), 1, "should load exactly one file");
+    assert_eq!(files[0].path, ws_path.join("AGENTS.md"));
+    assert!(files[0].content.contains("project instructions"));
+}
+
+#[tokio::test]
+async fn returns_empty_when_authorized_workspace_is_none() {
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(None).await;
+    assert!(files.is_empty(), "None workspace should return empty vec");
+}
+
+#[tokio::test]
+async fn returns_empty_when_file_not_present() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_ref = make_ws_ref(tmp.path().to_path_buf());
+    // workspace 根目录下无 AGENTS.md 文件
+
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+    assert!(files.is_empty(), "no AGENTS.md → empty vec");
+}
+
+#[tokio::test]
+async fn returns_loaded_with_empty_string_when_file_is_empty() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_path = tmp.path().to_path_buf();
+    std::fs::write(ws_path.join("AGENTS.md"), "").expect("write empty");
+
+    let ws_ref = make_ws_ref(ws_path.clone());
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert_eq!(files.len(), 1, "empty file still loads as one entry");
+    assert_eq!(files[0].content, "");
+}
+
+#[tokio::test]
+async fn truncates_when_file_exceeds_64kib() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_path = tmp.path().to_path_buf();
+    // 70 KiB の ASCII コンテンツ
+    let large_content = "x".repeat(70 * 1024);
+    std::fs::write(ws_path.join("AGENTS.md"), &large_content).expect("write large");
+
+    let ws_ref = make_ws_ref(ws_path.clone());
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        files[0].content.len(),
+        65536,
+        "content must be truncated to exactly 65536 bytes"
+    );
 }
 
 #[tokio::test]
@@ -31,8 +120,9 @@ async fn ac1_load_project_agent_md_from_workspace() {
     )
     .expect("write agent md");
 
+    let ws_ref = make_ws_ref(workspace.clone());
     let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
-    let files = loader.load(&workspace).await;
+    let files = loader.load(Some(&ws_ref)).await;
 
     let project_file = files.iter().find(|f| f.path == workspace.join("AGENTS.md"));
     assert!(project_file.is_some(), "should find workspace AGENTS.md");
@@ -43,72 +133,88 @@ async fn ac1_load_project_agent_md_from_workspace() {
 }
 
 #[tokio::test]
-async fn ac1_load_order_root_before_workspace() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let parent = tmp.path().join("parent");
-    let child = parent.join("child");
-    std::fs::create_dir_all(&child).expect("create child");
-    std::fs::write(parent.join("AGENTS.md"), "parent instructions").expect("write parent");
-    std::fs::write(child.join("AGENTS.md"), "child instructions").expect("write child");
-
-    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
-    let files = loader.load(&child).await;
-
-    let contents: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
-    let parent_pos = contents
-        .iter()
-        .position(|c| c.contains("parent instructions"))
-        .expect("parent file present");
-    let child_pos = contents
-        .iter()
-        .position(|c| c.contains("child instructions"))
-        .expect("child file present");
-    assert!(parent_pos < child_pos, "parent should come before child");
-}
-
-#[tokio::test]
-async fn ac1_load_dot_aijia_and_local_agent_md() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let workspace = tmp.path().join("project");
-    let dot_claude = workspace.join(".aijia");
-    std::fs::create_dir_all(&dot_claude).expect("create .aijia");
-    std::fs::write(dot_claude.join("AGENTS.md"), "dot-claude instructions")
-        .expect("write dot claude");
-    std::fs::write(workspace.join("AGENTS.local.md"), "local override").expect("write local claude");
-
-    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
-    let files = loader.load(&workspace).await;
-
-    assert!(files
-        .iter()
-        .any(|f| f.content.contains("dot-claude instructions")));
-    assert!(files.iter().any(|f| f.content.contains("local override")));
-}
-
-#[tokio::test]
 async fn ac2_mtime_cache_invalidate_on_change() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let workspace = tmp.path().to_path_buf();
     let file_path = workspace.join("AGENTS.md");
     std::fs::write(&file_path, "version 1").expect("write v1");
 
+    let ws_ref = make_ws_ref(workspace.clone());
     let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
-    let files1 = loader.load(&workspace).await;
+    let files1 = loader.load(Some(&ws_ref)).await;
     assert!(files1.iter().any(|f| f.content.contains("version 1")));
 
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(&file_path, "version 2").expect("write v2");
 
-    let files2 = loader.load(&workspace).await;
+    let files2 = loader.load(Some(&ws_ref)).await;
     assert!(files2.iter().any(|f| f.content.contains("version 2")));
 }
 
+// ── 反向测试（废弃路径不应加载） ──────────────────────────────────────────────
+
 #[tokio::test]
-async fn review_agents_md_loader_empty_path_does_not_panic() {
+async fn does_not_load_from_aijia_subdirectory() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_path = tmp.path().to_path_buf();
+    let dot_aijia = ws_path.join(".aijia");
+    std::fs::create_dir_all(&dot_aijia).expect("create .aijia");
+    std::fs::write(dot_aijia.join("AGENTS.md"), "aijia subdirectory content")
+        .expect("write .aijia/AGENTS.md");
+    // workspace 根目录没有 AGENTS.md
+
+    let ws_ref = make_ws_ref(ws_path.clone());
     let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
-    let files = loader.load(Path::new("")).await;
-    let _ = files;
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert!(
+        files.is_empty(),
+        ".aijia/AGENTS.md must NOT be loaded; got: {:?}",
+        files
+    );
 }
+
+#[tokio::test]
+async fn does_not_load_from_parent_directory() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().to_path_buf();
+    let child = parent.join("child");
+    std::fs::create_dir_all(&child).expect("create child");
+    std::fs::write(parent.join("AGENTS.md"), "parent instructions")
+        .expect("write parent AGENTS.md");
+    // child 目录内没有 AGENTS.md
+
+    let ws_ref = make_ws_ref(child.clone());
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert!(
+        files.is_empty(),
+        "parent directory AGENTS.md must NOT be loaded; got: {:?}",
+        files
+    );
+}
+
+#[tokio::test]
+async fn does_not_load_agents_local_md_variant() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let ws_path = tmp.path().to_path_buf();
+    std::fs::write(ws_path.join("AGENTS.local.md"), "local override content")
+        .expect("write AGENTS.local.md");
+    // workspace 根目录下无 AGENTS.md 文件
+
+    let ws_ref = make_ws_ref(ws_path.clone());
+    let mut loader = app_lib::runtime::agents_md::AgentsMdLoader::new();
+    let files = loader.load(Some(&ws_ref)).await;
+
+    assert!(
+        files.is_empty(),
+        "AGENTS.local.md must NOT be loaded; got: {:?}",
+        files
+    );
+}
+
+// ── 架构约束回归 ──────────────────────────────────────────────────────────────
 
 #[test]
 fn review_agents_md_loader_has_no_tauri_dependency() {
@@ -119,6 +225,8 @@ fn review_agents_md_loader_has_no_tauri_dependency() {
         "runtime/agents_md.rs must not depend on tauri::*"
     );
 }
+
+// ── ac3：driver 注入独立 agentsMd 上下文消息 ─────────────────────────────────
 
 struct AgentsMdContextExecutor {
     workspace_path: PathBuf,
@@ -166,9 +274,8 @@ impl RuntimeLlmExecutor for AgentsMdContextExecutor {
 
     async fn load_agents_md(
         &self,
-        workspace_path: &Path,
+        _authorized_workspace: Option<&app_lib::runtime::store::AuthorizedWorkspaceRef>,
     ) -> Result<Vec<AgentsMdFile>, TurnError> {
-        assert_eq!(workspace_path, self.workspace_path.as_path());
         Ok(self.agents_md_files.clone())
     }
 
@@ -184,7 +291,7 @@ impl RuntimeLlmExecutor for AgentsMdContextExecutor {
     }
 
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+        Ok(vec![])
     }
 }
 

@@ -942,6 +942,7 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
             allowed_tools: Some(self.precomputed_runtime_allowed.clone()),
             max_iterations: Some(30),
             token_budget: None,
+            authorized_workspace: None,
         })
     }
 

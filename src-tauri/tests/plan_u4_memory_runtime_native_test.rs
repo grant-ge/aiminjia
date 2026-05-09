@@ -226,9 +226,8 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
 
     async fn load_agents_md(
         &self,
-        workspace_path: &Path,
+        _authorized_workspace: Option<&app_lib::runtime::store::AuthorizedWorkspaceRef>,
     ) -> Result<Vec<AgentsMdFile>, TurnError> {
-        assert_eq!(workspace_path, self.workspace_path.as_path());
         Ok(self.agents_md_files.clone())
     }
 

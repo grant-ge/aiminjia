@@ -297,7 +297,7 @@ pub trait RuntimeLlmExecutor: Send + Sync {
     /// 加载 AGENTS.md user-context 文件。
     async fn load_agents_md(
         &self,
-        _workspace_path: &Path,
+        _authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
     ) -> Result<Vec<crate::runtime::agents_md::AgentsMdFile>, TurnError> {
         Ok(vec![])
     }
@@ -1102,6 +1102,7 @@ impl RuntimeChatTurnDriver {
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
+            authorized_workspace: overrides.authorized_workspace,
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
@@ -1142,7 +1143,7 @@ impl RuntimeChatTurnDriver {
         let system_reminder_message =
             crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
         let agents_md_files = executor
-            .load_agents_md(&config.workspace_path)
+            .load_agents_md(config.authorized_workspace.as_ref())
             .await
             .unwrap_or_else(|e| {
                 log::warn!(

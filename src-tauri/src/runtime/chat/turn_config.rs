@@ -62,6 +62,7 @@ pub struct TurnConfig {
     pub chunk_timeout_secs: u64,
     pub masking_level: String,
     pub workspace_path: PathBuf,
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
     pub llm_settings: ResolvedLlmSettings,
     pub conversation_id: SessionId,
     pub run_id: RunId,
@@ -76,6 +77,9 @@ pub struct TurnConfigOverrides {
     pub allowed_tools: Option<HashSet<String>>,
     pub max_iterations: Option<usize>,
     pub token_budget: Option<usize>,
+    /// 当前会话已授权的本地工作目录（来自 AuthorizedWorkspaceStore）。
+    /// 由 executor::load_turn_config_overrides 填入，转存到 TurnConfig 供 load_agents_md 使用。
+    pub authorized_workspace: Option<crate::runtime::store::AuthorizedWorkspaceRef>,
 }
 
 /// Turn 级可变状态。Driver 是唯一修改者。
