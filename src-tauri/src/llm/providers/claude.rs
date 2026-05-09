@@ -28,11 +28,20 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 const ANTHROPIC_BETA_THINKING: &str = "interleaved-thinking-2025-05-14";
 
-/// Anthropic Claude provider.
+/// Anthropic Claude provider. URL is configurable so the same SSE state
+/// machine, body builder, tool/thinking handling can drive both direct
+/// `api.anthropic.com` calls and lotus-gateway `/anthropic/v1/messages`
+/// calls (the gateway is byte-level passthrough).
+///
+/// `anthropic-beta` headers are direct-only — the gateway forwards bodies
+/// verbatim but does not advertise beta feature gating, so betas like
+/// `interleaved-thinking-*` are suppressed when `is_direct=false`.
 pub struct ClaudeProvider {
     client: Client,
     api_key: String,
     model: String,
+    api_url: String,
+    is_direct: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -75,11 +84,25 @@ impl SseState {
 }
 
 impl ClaudeProvider {
+    /// Direct anthropic.com client (uses `x-api-key` + `anthropic-beta` headers).
     pub fn new(api_key: String, model: Option<String>) -> Self {
+        Self::with_url(api_key, model, ANTHROPIC_API_URL.to_string(), true)
+    }
+
+    /// Construct with a custom URL. Pass `is_direct=false` for the lotus
+    /// gateway path so beta thinking headers are suppressed.
+    pub fn with_url(
+        api_key: String,
+        model: Option<String>,
+        api_url: String,
+        is_direct: bool,
+    ) -> Self {
         Self {
             client: super::build_http_client(),
             api_key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            api_url,
+            is_direct,
         }
     }
 
@@ -94,15 +117,20 @@ impl ClaudeProvider {
             ANTHROPIC_VERSION.to_string(),
         );
         headers.insert("content-type".to_string(), "application/json".to_string());
-        match request.thinking_config {
-            Some(crate::llm::streaming::ThinkingConfig::Adaptive)
-            | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
-                headers.insert(
-                    "anthropic-beta".to_string(),
-                    ANTHROPIC_BETA_THINKING.to_string(),
-                );
+        // Beta features (interleaved thinking) are direct-anthropic-only:
+        // the lotus gateway forwards bodies verbatim but does not advertise
+        // beta gating, and unknown beta tags would be silently ignored.
+        if self.is_direct {
+            match request.thinking_config {
+                Some(crate::llm::streaming::ThinkingConfig::Adaptive)
+                | Some(crate::llm::streaming::ThinkingConfig::Enabled { .. }) => {
+                    headers.insert(
+                        "anthropic-beta".to_string(),
+                        ANTHROPIC_BETA_THINKING.to_string(),
+                    );
+                }
+                _ => {}
             }
-            _ => {}
         }
         headers
     }
@@ -370,7 +398,7 @@ impl LlmProviderTrait for ClaudeProvider {
         debug!("Claude send request to model: {}", self.model);
 
         let headers = self.build_request_headers(&request);
-        let mut req = self.client.post(ANTHROPIC_API_URL);
+        let mut req = self.client.post(&self.api_url);
         for (key, value) in headers {
             req = req.header(key, value);
         }
@@ -401,7 +429,7 @@ impl LlmProviderTrait for ClaudeProvider {
         debug!("Claude stream request to model: {}", self.model);
 
         let headers = self.build_request_headers(&stream_request);
-        let mut req = self.client.post(ANTHROPIC_API_URL);
+        let mut req = self.client.post(&self.api_url);
         for (key, value) in headers {
             req = req.header(key, value);
         }
@@ -484,7 +512,7 @@ impl LlmProviderTrait for ClaudeProvider {
 
         let response = self
             .client
-            .post(ANTHROPIC_API_URL)
+            .post(&self.api_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
