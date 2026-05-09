@@ -50,6 +50,7 @@ export const TAURI_EVENTS = {
   INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
   DIAGNOSTICS_EVENT: 'diagnostics:event',
+  AGENDA_DISPATCHED: 'agenda:dispatched',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -1319,6 +1320,27 @@ export function onConversationTitleUpdated(
   return listen<{ conversationId: string; title: string }>(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_TITLE_UPDATED, (event) => {
     handler(event.payload)
   }))
+}
+
+export interface AgendaDispatchedPayload {
+  conversationId: string
+  agendaItemId: string
+  title: string
+}
+
+/**
+ * 监听 agenda 触发事件：dispatcher 在新建 conversation 后 emit。
+ * sidebar 收到后应当 reload 对话列表，让新对话出现在用户面前。
+ */
+export function onAgendaDispatched(
+  handler: (payload: AgendaDispatchedPayload) => void,
+): Promise<() => void> {
+  return listen<AgendaDispatchedPayload>(
+    TAURI_EVENTS.AGENDA_DISPATCHED,
+    createInstrumentedEventHandler(TAURI_EVENTS.AGENDA_DISPATCHED, (event) => {
+      handler(event.payload)
+    }),
+  )
 }
 
 /**

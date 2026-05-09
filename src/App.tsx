@@ -25,8 +25,10 @@ import {
   approvePermissionRequest,
   cancelPermissionRequest,
   denyPermissionRequest,
+  getConversations,
   getPluginInfo,
   getSettings,
+  onAgendaDispatched,
   onAuthExpired,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
@@ -199,6 +201,30 @@ function App() {
           conversation.id === conversationId ? { ...conversation, title } : conversation,
         ),
       )
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [])
+
+  // 监听 agenda 触发：每次 dispatcher 在后端创建新 conversation 后，
+  // sidebar 需要 reload 才能看到这条新对话（前端没走 createNewConversation 的乐观更新路径）。
+  useEffect(() => {
+    const unlisten = onAgendaDispatched(async () => {
+      try {
+        const raw = await getConversations()
+        const convs = raw.map((c) => ({
+          id: (c.id as string) ?? '',
+          title: (c.title as string) ?? '新对话',
+          createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+          updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+          isArchived: (c.isArchived as boolean) ?? false,
+          workspaceName: (c.workspaceName as string | undefined) ?? undefined,
+        }))
+        useChatStore.getState().setConversations(convs)
+      } catch (err) {
+        console.error('[App] reload conversations after agenda dispatch failed:', err)
+      }
     })
     return () => {
       unlisten.then((fn) => fn())

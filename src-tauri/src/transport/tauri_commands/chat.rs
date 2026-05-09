@@ -2712,6 +2712,17 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         .await
         .map_err(anyhow::Error::msg)?;
 
+        // 1.4. 通知前端有新 conversation：sidebar 监听后刷新列表。
+        //      不依赖具体 payload；前端拿到信号就 reload getConversations。
+        let _ = self.services.app.emit(
+            "agenda:dispatched",
+            serde_json::json!({
+                "conversationId": conversation_id,
+                "agendaItemId": item.id.as_str(),
+                "title": item.title,
+            }),
+        );
+
         // 1.5. 如果 item 绑定了 workspace_path，把它 authorize 给这条新 conversation。
         //      这跟 HomeTaskComposerCard 提交时的 authorize_local_directory 等价：
         //      session_id == conversation_id，让后续 send_message 通过
