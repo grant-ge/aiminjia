@@ -180,8 +180,24 @@ impl AuthClient {
     }
 
     /// List available models from the server.
+    ///
+    /// Phase C: hits `/anthropic/v1/models` (NOT the OpenAI-shape
+    /// `/v1/models`) so the returned set is exactly the models reachable
+    /// over the anthropic ingress that `LotusProvider` now uses. Returning
+    /// the OpenAI list would let the desktop UI pick a model that has no
+    /// anthropic-protocol route, then fail with `5001 no_route` on first
+    /// real request.
+    ///
+    /// The anthropic response shape is
+    ///   `{ data: [{ type: "model", id, display_name, created_at }], has_more, ... }`
+    /// — different from OpenAI's `{ data: [{ id, type: "chat" | "reasoner", ... }] }`.
+    /// We map it back into our own `CloudModelInfo`. The `model_type`
+    /// distinction (chat / reasoner) used to pick a gateway endpoint
+    /// in the OpenAI-ingress era; under anthropic ingress everything
+    /// goes to a single endpoint, so all entries get `model_type =
+    /// "chat"` as a future-proof default.
     pub async fn list_models(&self, session_key: &str) -> Result<Vec<CloudModelInfo>> {
-        let url = format!("{}/v1/models", BASE_URL);
+        let url = format!("{}/anthropic/v1/models", BASE_URL);
         log::info!(
             "[list_models] GET {} session_key_len={}",
             url,
@@ -190,7 +206,8 @@ impl AuthClient {
         let resp = self
             .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", session_key))
+            .header("x-api-key", session_key)
+            .header("anthropic-version", "2023-06-01")
             .send()
             .await?;
 
@@ -217,16 +234,22 @@ impl AuthClient {
             return Err(parse_api_error(status.as_u16(), &body));
         }
 
-        // OpenAI-compatible /v1/models response: { data: [{ id, type, ... }] }
+        // Anthropic `/v1/models` shape:
+        //   { "data": [{"type":"model","id":"claude-...","display_name":"...","created_at":"..."}], "has_more": false, ... }
         let body: serde_json::Value = resp.json().await?;
         let models = body["data"]
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .map(|m| CloudModelInfo {
-                        id: m["id"].as_str().unwrap_or("").to_string(),
-                        name: m["id"].as_str().unwrap_or("").to_string(),
-                        model_type: m["type"].as_str().unwrap_or("chat").to_string(),
+                    .map(|m| {
+                        let id = m["id"].as_str().unwrap_or("").to_string();
+                        let display = m["display_name"].as_str().unwrap_or("").to_string();
+                        let name = if display.is_empty() { id.clone() } else { display };
+                        CloudModelInfo {
+                            id,
+                            name,
+                            model_type: "chat".to_string(),
+                        }
                     })
                     .collect()
             })
