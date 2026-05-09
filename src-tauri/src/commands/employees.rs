@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 use crate::runtime::employee::inbox::{InboxEntry, InboxStore};
 use crate::runtime::employee::store::{
     CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
+use crate::storage::file_store::AppStorage;
 use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -267,4 +268,45 @@ pub async fn employee_active_run(
         .inner()
         .clone();
     Ok(active_runs.lookup(&id))
+}
+
+// ─── knowledge indexing ───────────────────────────────────────────────────────
+
+/// Arguments for `employee_index_knowledge_async`.
+///
+/// `sources` is a list of `(absolute_path, original_name)` pairs.
+/// The caller must have already added the corresponding entries to
+/// `resource_config.knowledgeSources` with `status = "pending"` before
+/// invoking this command.
+#[derive(serde::Deserialize)]
+pub struct IndexKnowledgeArgs {
+    pub employee_id: String,
+    /// (absolute_path, original_name) pairs.
+    pub sources: Vec<(String, String)>,
+}
+
+/// Kick off async background indexing for the listed knowledge-source files.
+///
+/// Returns immediately — progress is tracked per-file via `knowledgeSources[*].status`
+/// on the `EmployeeRecord` (poll `employee_get` to observe `"indexing"` → `"done"`/`"failed"`).
+#[tauri::command]
+pub async fn employee_index_knowledge_async(
+    args: IndexKnowledgeArgs,
+    app: AppHandle,
+    root_db: State<'_, Arc<AppStorage>>,
+) -> Result<(), String> {
+    use crate::runtime::employee::knowledge::spawn_index_all;
+    use std::path::PathBuf;
+
+    let store = Arc::new(employee_store(&app)?);
+    let app_storage = root_db.inner().clone();
+
+    let sources: Vec<(PathBuf, String)> = args
+        .sources
+        .into_iter()
+        .map(|(p, name)| (PathBuf::from(p), name))
+        .collect();
+
+    spawn_index_all(store, app_storage, args.employee_id, sources);
+    Ok(())
 }

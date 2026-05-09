@@ -49,11 +49,16 @@ pub(crate) async fn handle_save_memory(ctx: &PluginContext, args: &Value) -> Res
 pub(crate) async fn handle_search_memory(ctx: &PluginContext, args: &Value) -> Result<String> {
     let query = super::require_str(args, "query")?;
     let category = super::optional_str(args, "category");
+    let tag_filter = super::optional_str(args, "tag");
     let days = super::optional_i64(args, "days", 30);
 
-    let results =
-        ctx.storage
-            .search_cognitive_memory(query, category, days, &ctx.conversation_id)?;
+    let results = ctx.storage.search_cognitive_memory(
+        query,
+        category,
+        days,
+        &ctx.conversation_id,
+        tag_filter,
+    )?;
 
     Ok(json!({
         "status": "ok",

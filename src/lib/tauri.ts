@@ -1794,6 +1794,28 @@ export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | n
 }
 
 // ---------------------------------------------------------------------------
+// Knowledge Indexing Commands
+// ---------------------------------------------------------------------------
+
+export interface PendingKnowledgeSource {
+  path: string
+  originalName: string
+  size: number
+}
+
+export async function employeeIndexKnowledgeAsync(
+  employeeId: string,
+  sources: PendingKnowledgeSource[],
+): Promise<void> {
+  await invoke('employee_index_knowledge_async', {
+    args: {
+      employee_id: employeeId,
+      sources: sources.map((s) => [s.path, s.originalName] as [string, string]),
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Inbox Commands
 // ---------------------------------------------------------------------------
 
