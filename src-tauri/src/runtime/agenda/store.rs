@@ -110,7 +110,54 @@ impl AgendaStore {
             return Ok(false);
         }
         std::fs::remove_file(&path)?;
+        // 顺手清理 atomic-write 留下的 .bak 备份与孤儿 occurrence 历史
+        let bak = path.with_extension("json.bak");
+        let _ = std::fs::remove_file(&bak);
+        let occ_path = self.occurrences_dir().join(id.as_str());
+        let _ = std::fs::remove_file(&occ_path);
         Ok(true)
+    }
+
+    /// 软删除：把 status 切到 Cancelled，保留磁盘数据；下次 list 仍能看到，
+    /// 但 runner 的 take_due 只接 Active，不会再触发。
+    pub fn cancel(
+        &self,
+        id: &AgendaItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<AgendaItem> {
+        use super::item::ItemStatus;
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
+        let path = self.item_path(id);
+        let bytes = std::fs::read(&path)?;
+        let mut item: AgendaItem = serde_json::from_slice(&bytes)?;
+        item.status = ItemStatus::Cancelled;
+        item.next_fire_at = None;
+        item.updated_at = now;
+        atomic_write_json(&path, &item)?;
+        Ok(item)
+    }
+
+    /// 从 Cancelled 恢复到 Active，重算 next_fire_at。
+    pub fn restore(
+        &self,
+        id: &AgendaItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<AgendaItem> {
+        use super::item::ItemStatus;
+        let _guard = self.lock.lock().unwrap();
+        validate_item_id_for_path(id)?;
+        let path = self.item_path(id);
+        let bytes = std::fs::read(&path)?;
+        let mut item: AgendaItem = serde_json::from_slice(&bytes)?;
+        if !matches!(item.status, ItemStatus::Cancelled) {
+            anyhow::bail!("item is not cancelled, cannot restore");
+        }
+        item.status = ItemStatus::Active;
+        item.updated_at = now;
+        item.next_fire_at = compute_next_fire_at(&item, now);
+        atomic_write_json(&path, &item)?;
+        Ok(item)
     }
 
     pub fn mark_orphaned_by_organizer(&self, persona_id: &str) -> anyhow::Result<usize> {

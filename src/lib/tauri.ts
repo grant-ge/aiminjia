@@ -392,7 +392,7 @@ export function getTasks(
   return invoke('get_tasks', { conversationId })
 }
 
-export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned'
+export type ItemStatus = 'active' | 'paused' | 'completed' | 'orphaned' | 'cancelled'
 export type OccurrenceStatus = 'running' | 'succeeded' | 'failed'
 export type Freq = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
@@ -495,6 +495,12 @@ export function updateAgendaItem(
 }
 export function deleteAgendaItem(id: string): Promise<boolean> {
   return invoke<boolean>('delete_agenda_item', { id })
+}
+export function cancelAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('cancel_agenda_item', { id })
+}
+export function restoreAgendaItem(id: string): Promise<AgendaItem> {
+  return invoke<AgendaItem>('restore_agenda_item', { id })
 }
 export function runAgendaItemNow(id: string): Promise<string> {
   return invoke<string>('run_agenda_item_now', { id })

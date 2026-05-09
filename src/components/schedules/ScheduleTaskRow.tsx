@@ -1,4 +1,4 @@
-import { Pause, Pencil, Play, Trash2 } from 'lucide-react'
+import { Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { PersonaAvatar } from '@/components/agenda/PersonaAvatar'
@@ -8,7 +8,9 @@ import type { AgendaItem } from '@/lib/tauri'
 interface ScheduleTaskRowProps {
   item: AgendaItem
   onEdit: (item: AgendaItem) => void
-  onDelete: (id: string) => void
+  onCancel: (id: string) => void
+  onRestore: (id: string) => void
+  onPurge: (id: string) => void
   onRunNow: (id: string) => void
   onToggleStatus: (item: AgendaItem) => void
 }
@@ -18,6 +20,7 @@ const STATUS_LABEL: Record<AgendaItem['status'], string> = {
   paused: '已暂停',
   completed: '已完成',
   orphaned: '组织者缺失',
+  cancelled: '已取消',
 }
 
 const STATUS_BADGE: Record<AgendaItem['status'], string> = {
@@ -25,17 +28,21 @@ const STATUS_BADGE: Record<AgendaItem['status'], string> = {
   paused: 'bg-muted text-muted-foreground',
   completed: 'bg-green-100 text-green-700',
   orphaned: 'bg-red-100 text-red-700',
+  cancelled: 'bg-muted text-muted-foreground line-through',
 }
 
 export function ScheduleTaskRow({
   item,
   onEdit,
-  onDelete,
+  onCancel,
+  onRestore,
+  onPurge,
   onRunNow,
   onToggleStatus,
 }: ScheduleTaskRowProps) {
   const isPaused = item.status === 'paused'
-  const dimmed = isPaused ? 'opacity-70' : ''
+  const isCancelled = item.status === 'cancelled'
+  const dimmed = isPaused || isCancelled ? 'opacity-70' : ''
 
   return (
     <div
@@ -78,42 +85,67 @@ export function ScheduleTaskRow({
 
       {/* 列 4：操作（hover 显示） */}
       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
-        <Button
-          variant="ghost"
-          size="icon"
-          title="立即运行"
-          aria-label={`立即运行 ${item.title}`}
-          onClick={() => onRunNow(item.id)}
-        >
-          <Play className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          title={isPaused ? '启用' : '暂停'}
-          aria-label={`${isPaused ? '启用' : '暂停'} ${item.title}`}
-          onClick={() => onToggleStatus(item)}
-        >
-          {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          title="编辑"
-          aria-label={`编辑 ${item.title}`}
-          onClick={() => onEdit(item)}
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          title="删除"
-          aria-label={`删除 ${item.title}`}
-          onClick={() => onDelete(item.id)}
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        {isCancelled ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="恢复"
+              aria-label={`恢复 ${item.title}`}
+              onClick={() => onRestore(item.id)}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="永久删除"
+              aria-label={`永久删除 ${item.title}`}
+              onClick={() => onPurge(item.id)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="立即运行"
+              aria-label={`立即运行 ${item.title}`}
+              onClick={() => onRunNow(item.id)}
+            >
+              <Play className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title={isPaused ? '启用' : '暂停'}
+              aria-label={`${isPaused ? '启用' : '暂停'} ${item.title}`}
+              onClick={() => onToggleStatus(item)}
+            >
+              {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="编辑"
+              aria-label={`编辑 ${item.title}`}
+              onClick={() => onEdit(item)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="取消"
+              aria-label={`取消 ${item.title}`}
+              onClick={() => onCancel(item.id)}
+            >
+              <X className="h-4 w-4 text-destructive" />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )

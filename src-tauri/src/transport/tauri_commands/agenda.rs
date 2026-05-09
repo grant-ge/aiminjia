@@ -257,6 +257,28 @@ pub async fn delete_agenda_item(
 }
 
 #[tauri::command]
+pub async fn cancel_agenda_item(
+    id: String,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<AgendaItem, String> {
+    let store = store_for(&resolver)?;
+    store
+        .cancel(&AgendaItemId(id), Utc::now())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_agenda_item(
+    id: String,
+    resolver: State<'_, Arc<dyn UserScopedPathResolver>>,
+) -> Result<AgendaItem, String> {
+    let store = store_for(&resolver)?;
+    store
+        .restore(&AgendaItemId(id), Utc::now())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn run_agenda_item_now(
     id: String,
     resolver: State<'_, Arc<dyn UserScopedPathResolver>>,

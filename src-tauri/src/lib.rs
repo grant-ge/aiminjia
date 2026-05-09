@@ -675,6 +675,8 @@ pub fn run() {
             transport::tauri_commands::agenda::get_agenda_item,
             transport::tauri_commands::agenda::update_agenda_item,
             transport::tauri_commands::agenda::delete_agenda_item,
+            transport::tauri_commands::agenda::cancel_agenda_item,
+            transport::tauri_commands::agenda::restore_agenda_item,
             transport::tauri_commands::agenda::run_agenda_item_now,
             transport::tauri_commands::agenda::list_agenda_occurrences,
             transport::tauri_commands::agenda::skip_occurrence,

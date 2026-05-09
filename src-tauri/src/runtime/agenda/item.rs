@@ -28,6 +28,7 @@ pub enum ItemStatus {
     Paused,
     Completed,
     Orphaned,
+    Cancelled,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

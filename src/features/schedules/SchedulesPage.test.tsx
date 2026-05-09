@@ -41,6 +41,7 @@ interface InvokeQueueHandlers {
   onUpdate?: (req: { id: string; request: unknown }) => Promise<unknown>
   onRunNow?: (req: { id: string }) => Promise<unknown>
   onDelete?: (req: { id: string }) => Promise<unknown>
+  onCancel?: (req: { id: string }) => Promise<unknown>
 }
 
 function setupInvokeQueue(handlers: InvokeQueueHandlers) {
@@ -64,6 +65,9 @@ function setupInvokeQueue(handlers: InvokeQueueHandlers) {
     }
     if (cmd === 'run_agenda_item_now') {
       return handlers.onRunNow ? await handlers.onRunNow(args as { id: string }) : 'occ-x'
+    }
+    if (cmd === 'cancel_agenda_item') {
+      return handlers.onCancel ? await handlers.onCancel(args as { id: string }) : null
     }
     if (cmd === 'delete_agenda_item') {
       return handlers.onDelete ? await handlers.onDelete(args as { id: string }) : true
@@ -89,28 +93,28 @@ describe('SchedulesPage', () => {
     expect(invokeMock).toHaveBeenCalledWith('list_agenda_items', { filter: undefined })
   })
 
-  it('asks for confirmation before deleting an agenda item', async () => {
-    const deleteCalls: Array<{ id: string }> = []
+  it('asks for confirmation before cancelling an agenda item', async () => {
+    const cancelCalls: Array<{ id: string }> = []
     setupInvokeQueue({
       agendaListSequence: [[sampleItem({ title: '日报汇总' })], []],
-      onDelete: async (req) => {
-        deleteCalls.push(req)
-        return true
+      onCancel: async (req) => {
+        cancelCalls.push(req)
+        return sampleItem({ title: '日报汇总', status: 'cancelled' })
       },
     })
 
     render(<SchedulesPage />)
     await screen.findByText('日报汇总')
 
-    fireEvent.click(screen.getByRole('button', { name: '删除 日报汇总' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消 日报汇总' }))
 
-    expect(screen.getByText('删除此定时任务？')).toBeInTheDocument()
-    expect(deleteCalls).toHaveLength(0)
+    expect(screen.getByText('取消此定时任务？')).toBeInTheDocument()
+    expect(cancelCalls).toHaveLength(0)
 
-    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认取消' }))
 
     await waitFor(() => {
-      expect(deleteCalls).toEqual([{ id: 'agenda-1' }])
+      expect(cancelCalls).toEqual([{ id: 'agenda-1' }])
     })
   })
 

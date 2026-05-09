@@ -17,7 +17,9 @@ import { AgendaItemDetail } from '@/features/agenda/AgendaItemDetail'
 import {
   type AgendaItem,
   type CreateAgendaItemRequest,
+  cancelAgendaItem,
   deleteAgendaItem,
+  restoreAgendaItem,
   runAgendaItemNow,
   updateAgendaItem,
 } from '@/lib/tauri'
@@ -45,7 +47,9 @@ const TEMPLATES: ScheduleTemplate[] = [
 
 export function SchedulesPage() {
   const { items, loading, error, refresh } = useAgendaItems()
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null)
+  const [pendingPurgeId, setPendingPurgeId] = useState<string | null>(null)
+  const [showCancelled, setShowCancelled] = useState(false)
   const [draftFromTemplate, setDraftFromTemplate] =
     useState<Partial<CreateAgendaItemRequest> | null>(null)
   const [editing, setEditing] = useState<AgendaItem | null>(null)
@@ -78,9 +82,36 @@ export function SchedulesPage() {
     setEditorOpen(true)
   }, [])
 
-  const handleDelete = useCallback(
+  const handleCancel = useCallback(
     async (id: string) => {
-      setPendingDeleteId(null)
+      setPendingCancelId(null)
+      setPageError(null)
+      try {
+        await cancelAgendaItem(id)
+        await refresh()
+      } catch (err) {
+        setPageError(formatError(err))
+      }
+    },
+    [refresh],
+  )
+
+  const handleRestore = useCallback(
+    async (id: string) => {
+      setPageError(null)
+      try {
+        await restoreAgendaItem(id)
+        await refresh()
+      } catch (err) {
+        setPageError(formatError(err))
+      }
+    },
+    [refresh],
+  )
+
+  const handlePurge = useCallback(
+    async (id: string) => {
+      setPendingPurgeId(null)
       setPageError(null)
       try {
         await deleteAgendaItem(id)
@@ -143,10 +174,21 @@ export function SchedulesPage() {
     closeEditor()
   }, [refresh, closeEditor])
 
-  const emptyTitle = loading ? '正在加载定时任务' : '还没有定时任务'
+  const visibleItems = showCancelled
+    ? items.filter((it) => it.status === 'cancelled')
+    : items.filter((it) => it.status !== 'cancelled')
+  const cancelledCount = items.filter((it) => it.status === 'cancelled').length
+
+  const emptyTitle = loading
+    ? '正在加载定时任务'
+    : showCancelled
+      ? '没有已取消的任务'
+      : '还没有定时任务'
   const emptyDesc = loading
     ? '请稍候，正在读取本地任务配置。'
-    : '选择上方模板或在对话中创建你的第一个定时任务。'
+    : showCancelled
+      ? '取消的任务会出现在这里，可以恢复或永久删除。'
+      : '选择上方模板或在对话中创建你的第一个定时任务。'
 
   const displayedError = pageError ?? error
 
@@ -174,18 +216,34 @@ export function SchedulesPage() {
         header={
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="text-sm font-semibold text-foreground">任务列表</div>
-              <div className="text-[0.8125rem] text-muted-foreground">共 {items.length} 条</div>
+              <div className="text-sm font-semibold text-foreground">
+                {showCancelled ? '已取消' : '任务列表'}
+              </div>
+              <div className="text-[0.8125rem] text-muted-foreground">
+                共 {visibleItems.length} 条
+              </div>
             </div>
-            <Button size="sm" onClick={handleCreateBlank} aria-label="新建日程">
-              <Plus className="h-4 w-4" />
-              新建
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={showCancelled ? 'default' : 'outline'}
+                onClick={() => setShowCancelled((v) => !v)}
+                aria-label={showCancelled ? '返回任务列表' : '查看已取消'}
+              >
+                {showCancelled ? '返回' : `已取消 ${cancelledCount > 0 ? `(${cancelledCount})` : ''}`}
+              </Button>
+              {showCancelled ? null : (
+                <Button size="sm" onClick={handleCreateBlank} aria-label="新建日程">
+                  <Plus className="h-4 w-4" />
+                  新建
+                </Button>
+              )}
+            </div>
           </div>
         }
         table={<ScheduleTableHeader columns={['任务名称', '执行频率', '状态', '操作']} />}
         empty={
-          items.length === 0 ? (
+          visibleItems.length === 0 ? (
             <ScheduleEmptyState
               icon={<CalendarClock className="h-8 w-8 text-muted-foreground" />}
               title={emptyTitle}
@@ -194,25 +252,36 @@ export function SchedulesPage() {
           ) : null
         }
       >
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <ScheduleTaskRow
             key={item.id}
             item={item}
             onEdit={handleEdit}
-            onDelete={(id) => setPendingDeleteId(id)}
+            onCancel={(id) => setPendingCancelId(id)}
+            onRestore={handleRestore}
+            onPurge={(id) => setPendingPurgeId(id)}
             onRunNow={handleRunNow}
             onToggleStatus={handleToggleStatus}
           />
         ))}
       </ScheduleListCard>
       <ConfirmDialog
-        open={!!pendingDeleteId}
-        title="删除此定时任务？"
-        description="删除后该定时任务将停止执行，且无法从任务列表中恢复。"
-        confirmLabel="确认删除"
+        open={!!pendingCancelId}
+        title="取消此定时任务？"
+        description="取消后该任务将停止触发，但可以从「已取消」中恢复。"
+        confirmLabel="确认取消"
         variant="destructive"
-        onOpenChange={(open) => !open && setPendingDeleteId(null)}
-        onConfirm={() => pendingDeleteId && void handleDelete(pendingDeleteId)}
+        onOpenChange={(open) => !open && setPendingCancelId(null)}
+        onConfirm={() => pendingCancelId && void handleCancel(pendingCancelId)}
+      />
+      <ConfirmDialog
+        open={!!pendingPurgeId}
+        title="永久删除此任务？"
+        description="此操作会从磁盘抹除任务及其执行历史，无法恢复。"
+        confirmLabel="确认永久删除"
+        variant="destructive"
+        onOpenChange={(open) => !open && setPendingPurgeId(null)}
+        onConfirm={() => pendingPurgeId && void handlePurge(pendingPurgeId)}
       />
       <AgendaItemEditor
         open={editorOpen}
