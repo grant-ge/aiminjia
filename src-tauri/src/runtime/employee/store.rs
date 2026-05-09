@@ -28,6 +28,26 @@ impl Default for EmployeeLifecycle {
     }
 }
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KnowledgeSourceStatus {
+    Pending,
+    Indexing,
+    Done,
+    Failed,
+}
+
+impl KnowledgeSourceStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Indexing => "indexing",
+            Self::Done => "done",
+            Self::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmployeeRecord {
@@ -283,6 +303,62 @@ impl EmployeeStore {
         record.updated_at = Utc::now();
         self.write_record(&record)?;
         Ok(record)
+    }
+
+    pub fn update_knowledge_source_status(
+        &self,
+        id: &str,
+        path: &str,
+        status: KnowledgeSourceStatus,
+        sliced_count: u64,
+        error: Option<String>,
+    ) -> anyhow::Result<()> {
+        let _guard = self.lock.lock().unwrap();
+        let path_buf = self.record_path(id);
+        let content = std::fs::read_to_string(&path_buf)?;
+        let mut record: EmployeeRecord = serde_json::from_str(&content)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let sources = record
+            .resource_config
+            .get_mut("knowledgeSources")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| anyhow::anyhow!("knowledgeSources field missing"))?;
+
+        let entry = sources
+            .iter_mut()
+            .find(|s| s.get("path").and_then(|p| p.as_str()) == Some(path))
+            .ok_or_else(|| anyhow::anyhow!("knowledge source path not found: {}", path))?;
+
+        let obj = entry
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("knowledge source is not an object"))?;
+
+        obj.insert("status".into(), serde_json::Value::String(status.as_str().into()));
+        obj.insert("slicedCount".into(), serde_json::Value::from(sliced_count));
+        match status {
+            KnowledgeSourceStatus::Indexing => {
+                obj.insert("startedAt".into(), serde_json::Value::String(now));
+                obj.remove("error");
+            }
+            KnowledgeSourceStatus::Done => {
+                obj.insert("completedAt".into(), serde_json::Value::String(now));
+                obj.remove("error");
+            }
+            KnowledgeSourceStatus::Failed => {
+                if let Some(err) = error {
+                    obj.insert("error".into(), serde_json::Value::String(err));
+                }
+                obj.insert("completedAt".into(), serde_json::Value::String(now));
+            }
+            KnowledgeSourceStatus::Pending => {
+                obj.remove("error");
+                obj.remove("startedAt");
+                obj.remove("completedAt");
+            }
+        }
+
+        self.write_record(&record)
     }
 
     /// Hard-delete an employee directory. The escape hatch behind the soft-delete
