@@ -244,7 +244,7 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 
 ## 发布流程（权威 · 自 v0.4.14 起）
 
-推 tag → CI 全自动 → 本地跑一行 Homebrew bump。
+推 tag → CI 自动跑 Win + macOS arm64 → 本地补 Homebrew bump + macOS Intel 双传。
 
 ### 改版本号（4 处）
 
@@ -277,6 +277,23 @@ git push origin main && git push origin vX.Y.Z   # 这步触发 CI
 ```bash
 python3 scripts/bump-homebrew.py X.Y.Z
 ```
+
+### macOS Intel（x86_64）— 本地构建 + 双传
+
+CI matrix 只覆盖 Windows + macOS arm64。**Intel 包必须本地补打**（不补就会停留在旧版本，老用户拿不到新版）。在 macOS 机器上跑：
+
+```bash
+rustup target add x86_64-apple-darwin             # 首次
+pnpm tauri build --target x86_64-apple-darwin     # 5–10 分钟
+python3 scripts/upload-x64.py X.Y.Z               # 双传 OSS + GitHub Release
+```
+
+`upload-x64.py` 会：
+1. 上传 dmg / tar.gz / sig 到 OSS（`aijia/v{V}/AIjia_{V}_x64.dmg` 等）
+2. 复制到 OSS `latest/macos-x64`，patch `update.json` 加 `darwin-x86_64` 平台
+3. 通过 `gh` CLI 把同样三个文件附加到 GitHub Release `vX.Y.Z`（release 不存在则自动建）
+
+前置：`gh auth status` 已登录有 `repo` scope 的账号；OSS 凭证在 Keychain `aijia-oss`（或 env `OSS_ACCESS_KEY_ID/SECRET`）。两者其一缺失：脚本会跳过对应步骤并打 warning，不会中断。
 
 ## Git Remotes
 
