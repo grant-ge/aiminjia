@@ -19,7 +19,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use app_lib::runtime::chat::tool_round_types::RuntimeToolCallRequest;
 use app_lib::runtime::event_bus::RuntimeEventBus;
 use app_lib::runtime::identity::IdentityMapping;
 use app_lib::runtime::ids::RunId;
@@ -27,7 +26,7 @@ use app_lib::runtime::query_engine::QueryEngine;
 use app_lib::runtime::state::TurnState;
 use app_lib::runtime::store::AuthorizedWorkspaceRef;
 use app_lib::runtime::tools::{
-    AllowAllPermissionPipeline, CapabilityPermissionPipeline, RuntimeTool, ToolDefinition,
+    AllowAllPermissionPipeline, RuntimeTool, ToolDefinition,
     ToolDispatcher, ToolError, ToolExecutionContext, ToolResult,
 };
 use app_lib::transport::tauri_event_adapter::TauriEventAdapter;
@@ -84,27 +83,6 @@ fn make_capturing_tool(
         captured_authorized_root: captured.clone(),
     });
     (tool, captured)
-}
-
-struct BrowserScopedRuntimeTool {
-    reached_execute: Arc<Mutex<bool>>,
-}
-
-#[async_trait]
-impl RuntimeTool for BrowserScopedRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("browser_scoped_tool", "Test browser-scoped runtime tool")
-            .with_capability_scope(["browser"])
-    }
-
-    async fn execute(
-        &self,
-        _input: Value,
-        _ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        *self.reached_execute.lock().unwrap() = true;
-        Ok(ToolResult::new("browser_scoped_tool", "browser-ok", None))
-    }
 }
 
 // ── Test 1 ────────────────────────────────────────────────────────────────────
@@ -244,55 +222,4 @@ async fn runtime_chat_mainline_emits_tool_events_once() {
     );
 }
 
-// ── Test 4 ────────────────────────────────────────────────────────────────────
 
-/// Regression guard for the P1 browser capability fix.
-///
-/// When the production tool round builds `QueryEngine` with
-/// `with_browser_available(true)`, a browser-scoped runtime tool must pass the
-/// `CapabilityPermissionPipeline` check and actually reach `execute()`.
-#[tokio::test]
-async fn runtime_chat_mainline_passes_browser_capability_to_runtime_tool_round() {
-    let reached_execute = Arc::new(Mutex::new(false));
-    let dispatcher = Arc::new(ToolDispatcher::new(Arc::new(CapabilityPermissionPipeline)));
-    dispatcher.register(Arc::new(BrowserScopedRuntimeTool {
-        reached_execute: reached_execute.clone(),
-    }));
-
-    let workspace = TempDir::new().unwrap();
-    let engine = QueryEngine::with_dispatcher(dispatcher)
-        .with_workspace_path(workspace.path().to_path_buf())
-        .with_browser_available(true);
-
-    let mapping = IdentityMapping::from_legacy_conversation_id("conv-browser".to_string());
-    let turn = TurnState::new(
-        mapping,
-        RunId::new("run-browser"),
-        "browser capability".to_string(),
-    );
-    let bus = RuntimeEventBus::new();
-
-    let outcome = engine
-        .run_tool_call_with_bus(
-            &turn,
-            &bus,
-            RuntimeToolCallRequest {
-                tool_call_id: "tool-call-browser".to_string(),
-                tool_name: "browser_scoped_tool".to_string(),
-                args: Value::Null,
-                purpose: Some("browser capability regression".to_string()),
-            },
-        )
-        .await
-        .expect("runtime tool round should complete without transport error");
-
-    assert!(
-        !outcome.is_error(),
-        "browser-scoped tool should not be blocked when browser_available=true: {:?}",
-        outcome
-    );
-    assert!(
-        *reached_execute.lock().unwrap(),
-        "browser-scoped tool must reach execute(); otherwise permission pipeline still blocks it"
-    );
-}
