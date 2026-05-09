@@ -138,8 +138,8 @@ mod tests {
     #[test]
     fn test_normal_tool_usage_no_false_positive() {
         // Typical LLM output mentioning tools it's using — should NOT trigger
-        let content = "我先用 read_workspace_file 读取文件数据，然后用 bash 进行分析。\
-                        接下来我会用 web_search 搜索行业基准数据。\
+        let content = "我先用 Read 读取文件数据，然后用 Bash 进行分析。\
+                        接下来我会用 WebSearch 搜索行业基准数据。\
                         数据显示 Compa-Ratio 中位数为 95%，CV 为 18%。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }

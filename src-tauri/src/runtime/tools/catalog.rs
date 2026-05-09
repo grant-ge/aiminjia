@@ -333,7 +333,7 @@ fn build_default_catalog() -> ToolCatalog {
             "【Composite 工具】启动一个子 Agent 执行聚焦任务。\
             \n\n适用场景：任务需要干净上下文、专属 Agent 类型（如 'explore'、'general-purpose'）或不同模型。\
             \n\n同步路径（run_in_background=false 或省略）：阻塞等待子 Agent 完成并返回最终输出文本。\
-            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 task_output(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
+            \n\n异步路径（run_in_background=true）：立即返回 agent_id；子 Agent 在后台运行；用 TaskOutput(task_id=agent_id, offset=N) 增量读取 transcript；子 Agent 完成时父的下一轮会收到 <task-notification> XML。",
         )
         .with_kind(ToolKind::Composite)
         .with_capability_scope(["workspace:write"]),
@@ -359,7 +359,7 @@ fn build_default_catalog() -> ToolCatalog {
                 },
                 "run_in_background": {
                     "type": "boolean",
-                    "description": "若为 true，异步运行并立即返回 agent_id；后续用 task_output 增量读 transcript，完成时父的下一轮收到 <task-notification>。",
+                    "description": "若为 true，异步运行并立即返回 agent_id；后续用 TaskOutput 增量读 transcript，完成时父的下一轮收到 <task-notification>。",
                     "default": false
                 },
                 "name": {
@@ -374,9 +374,9 @@ fn build_default_catalog() -> ToolCatalog {
         ToolDefinition::new(
             "TaskOutput",
             "【Support 工具】读取异步子 Agent 的 transcript 增量。\
-            \n\n用法：spawn_subagent({run_in_background: true, name: \"w1\"}) 立即返回 agent_id。\
+            \n\n用法：Agent({run_in_background: true, name: \"w1\"}) 立即返回 agent_id。\
             子 Agent 完成时通过 <task-notification> XML 通知（含 <output-file> 路径）。\
-            期间或之后用 task_output(task_id=agent_id, offset=N) 读取产出。\
+            期间或之后用 TaskOutput(task_id=agent_id, offset=N) 读取产出。\
             \n\n返回 {lines: [string], new_offset: number}。下次调用传 offset=new_offset 拉取增量。",
         )
         .with_kind(ToolKind::Support)
@@ -387,7 +387,7 @@ fn build_default_catalog() -> ToolCatalog {
             "properties": {
                 "task_id": {
                     "type": "string",
-                    "description": "异步 Agent 的 ID（spawn_subagent 返回的 agent_id）"
+                    "description": "异步 Agent 的 ID（Agent 工具 run_in_background=true 时返回的 agent_id）"
                 },
                 "offset": {
                     "type": "integer",
@@ -609,7 +609,7 @@ fn build_default_catalog() -> ToolCatalog {
 /// daily 模式允许 LLM 直接调用的工具集（Primitive + 必要 Support 工具）。
 ///
 /// 对齐原子工具模型；register_runtime 注册的工具默认走 ToolDispatcher。
-/// `load_skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
+/// `Skill` 是例外：它需要 request-scoped SkillRegistry，但必须在 daily 模式可见。
 pub const DAILY_ALLOWED_TOOLS: &[&str] = &[
     // 以下 10 个工具均在 register_builtin_tools() 中 register_runtime 注册，走 ToolDispatcher
     // Shell：每平台只注册其中一个（Unix=bash, Windows=powershell），过滤层会自动隐藏不可达的那个

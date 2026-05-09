@@ -25,7 +25,7 @@ pub(crate) static PROMPT_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex
 const BASE_FALLBACK: &str = "你是 AI小家 — 智能工作助手。";
 
 /// All recognized prompt names.
-const PROMPT_NAMES: &[&str] = &["base", "daily", "browser_agent"];
+const PROMPT_NAMES: &[&str] = &["base", "daily"];
 
 // 工具选择偏好章节——静态内容，写入 static_section，所有 mode 均包含。
 const TOOL_PREFERENCE_SECTION: &str = r#"
@@ -41,14 +41,14 @@ const TOOL_PREFERENCE_SECTION: &str = r#"
 const MEMORY_MECHANICS_SECTION: &str = r#"
 
 【记忆管理】
-你拥有跨对话持久化记忆能力，可通过 `write_memory` 与 `search_memory` 操作项目记忆。
+你拥有跨对话持久化记忆能力，可通过 `WriteMemory` 与 `SearchMemory` 操作项目记忆。
 
-何时调用 `write_memory`
+何时调用 `WriteMemory`
 - 用户明确要求“记住”“下次也这样”
 - 用户纠正你的行为或确认一个长期适用的做法
 - 识别到稳定的用户偏好、项目约束、外部系统指针
 
-何时调用 `search_memory`
+何时调用 `SearchMemory`
 - 当前问题明显依赖历史偏好、既有项目约束、过去确认过的做法
 - 回答前需要确认是否已有相关记忆，避免重复追问
 
@@ -75,8 +75,6 @@ const MEMORY_MECHANICS_SECTION: &str = r#"
 pub enum PromptMode {
     /// 日常助手模式（base + 工具偏好 + daily.md + persona）
     Daily,
-    /// 浏览器子代理模式（base + 工具偏好 + browser_agent.md）
-    BrowserAgent,
 }
 
 /// System prompt 的分层结构。
@@ -87,7 +85,7 @@ pub enum PromptMode {
 pub struct SystemPromptParts {
     /// 稳定前缀（base.md 品牌替换后 + 工具选择偏好章节）
     pub static_section: String,
-    /// 动态后缀（persona 段 + daily.md / browser_agent.md，Analysis 时为空）
+    /// 动态后缀（persona 段 + daily.md）
     pub dynamic_section: String,
 }
 
@@ -96,7 +94,6 @@ pub struct SystemPromptParts {
 pub struct PromptFragmentSnapshot {
     pub base: String,
     pub daily: String,
-    pub browser_agent: String,
     pub tool_preference: String,
     pub memory_mechanics: String,
 }
@@ -121,7 +118,7 @@ impl std::fmt::Display for PromptSource {
 
 /// PromptStore 是纯文本片段仓库。
 ///
-/// 它只负责按名字加载/缓存 base、daily、browser_agent 等原始 prompt
+/// 它只负责按名字加载/缓存 base、daily 等原始 prompt
 /// 片段，不承担 system prompt 组装逻辑。新增 prompt 片段时修改这里；
 /// 组装策略统一放在 `build_system_prompt_parts`。
 struct PromptStore {
@@ -265,7 +262,6 @@ pub fn get_prompt_fragment_snapshot() -> PromptFragmentSnapshot {
     PromptFragmentSnapshot {
         base: guard.get("base").to_string(),
         daily: guard.get("daily").to_string(),
-        browser_agent: guard.get("browser_agent").to_string(),
         tool_preference: TOOL_PREFERENCE_SECTION.to_string(),
         memory_mechanics: MEMORY_MECHANICS_SECTION.to_string(),
     }
@@ -281,16 +277,6 @@ pub fn memory_mechanics_section() -> &'static str {
     MEMORY_MECHANICS_SECTION
 }
 
-/// Get the raw browser agent prompt fragment.
-pub fn get_browser_agent_prompt_fragment() -> String {
-    get_prompt_fragment("browser_agent")
-}
-
-/// Get the raw browser agent prompt fragment (legacy accessor).
-pub fn get_browser_agent_prompt() -> String {
-    get_browser_agent_prompt_fragment()
-}
-
 /// Compatibility shim for old callers.
 /// New production code must use `runtime::chat::prompt::PromptAssembler`.
 ///
@@ -302,7 +288,7 @@ pub fn get_browser_agent_prompt() -> String {
 /// **注意：** 不再注入当前日期——日期改为首条 user message `<system-reminder>` 注入。
 /// build_system_prompt_parts 是 system prompt 的唯一组装入口；
 /// 其他调用方若需要完整字符串，应通过 `get_system_prompt` 这个兼容 shim
-/// 间接调用，而不是自行拼接 base / daily / browser_agent 片段。
+/// 间接调用，而不是自行拼接 base / daily 片段。
 pub fn build_system_prompt_parts(
     mode: PromptMode,
     persona: Option<&crate::storage::file_store::persona::Persona>,
@@ -553,34 +539,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_system_prompt_parts_browser_agent_no_daily() {
-        let _guard = PROMPT_TEST_LOCK.lock().unwrap();
-        let tmp = tempfile::tempdir().unwrap();
-        let bundled = tmp.path().join("bundled");
-        let user = tmp.path().join("user");
-        setup_prompts(
-            &bundled,
-            &[
-                ("base", "AI小家 base"),
-                ("daily", "日常工作助手"),
-                ("browser_agent", "浏览器代理"),
-            ],
-        );
-        fs::create_dir_all(&user).unwrap();
-        init_prompts(&bundled, &user);
-
-        let parts = build_system_prompt_parts(PromptMode::BrowserAgent, None, None);
-        assert!(
-            !parts.dynamic_section.contains("日常工作助手"),
-            "BrowserAgent dynamic_section must NOT contain daily prompt"
-        );
-        assert!(
-            parts.dynamic_section.contains("浏览器代理"),
-            "BrowserAgent dynamic_section must contain browser prompt"
-        );
-    }
-
-    #[test]
     fn test_build_system_prompt_parts_product_name_replacement() {
         let _guard = PROMPT_TEST_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
@@ -740,11 +698,11 @@ mod tests {
         let parts = build_system_prompt_parts(PromptMode::Daily, None, None);
         assert!(
             parts.static_section.contains("WriteMemory"),
-            "static section must mention write_memory guidance"
+            "static section must mention WriteMemory guidance"
         );
         assert!(
             parts.static_section.contains("SearchMemory"),
-            "static section must mention search_memory guidance"
+            "static section must mention SearchMemory guidance"
         );
         assert!(
             !parts.static_section.contains("save_memory"),
