@@ -126,6 +126,13 @@ const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
     "Skill",
     "TaskOutput",
     "TaskStop",
+    // Agenda tools (request-scoped — built per-turn from RequestScopedRuntimeDeps.current_persona_id)
+    "create_agenda_item",
+    "list_agenda_items",
+    "update_agenda_item",
+    "cancel_agenda_item",
+    "skip_occurrence",
+    "list_agenda_occurrences",
 ];
 
 /// Info about a registered tool (for management UI).
