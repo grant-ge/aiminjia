@@ -19,7 +19,6 @@
 │   ├── src/                   # Rust 源码
 │   └── tests/                 # 集成测试
 ├── scripts/
-│   ├── setup-playwright.sh/.ps1
 │   ├── ci-upload-windows.py
 │   ├── ci-upload-macos.py
 │   ├── ci-finalize.py
