@@ -2534,6 +2534,9 @@ impl TauriChatCommandAdapter {
     }
 
     pub async fn create_conversation(&self) -> Result<String, String> {
+        // 不在这里 emit conversation:created：前端 createNewConversation 已经做了
+        // 乐观更新（optimisticId → backendId 替换），重复事件会触发不必要的 reload。
+        // 只有后端绕开前端入口的 dispatcher（agenda / employee / schedule）需要 emit。
         conversation_service::create_conversation(
             self.services.db().clone() as Arc<dyn ConversationStore>
         )
@@ -2681,6 +2684,12 @@ impl crate::runtime::schedule_runner::ScheduleRunDispatcher for TauriChatCommand
         )
         .await
         .map_err(anyhow::Error::msg)?;
+        emit_conversation_created(
+            &self.services.app,
+            &conversation_id,
+            "schedule",
+            Some(&schedule.title),
+        );
         let prompt = format!(
             "[定时任务触发] {}\n计划触发时间：{}\n\n{}",
             schedule.title, fire_at, schedule.prompt
@@ -2713,14 +2722,14 @@ impl crate::runtime::agenda::AgendaRunDispatcher for TauriChatCommandAdapter {
         .map_err(anyhow::Error::msg)?;
 
         // 1.4. 通知前端有新 conversation：sidebar 监听后刷新列表。
-        //      不依赖具体 payload；前端拿到信号就 reload getConversations。
-        let _ = self.services.app.emit(
-            "agenda:dispatched",
-            serde_json::json!({
-                "conversationId": conversation_id,
-                "agendaItemId": item.id.as_str(),
-                "title": item.title,
-            }),
+        //      所有后端直接走 conversation_service::create_conversation 的路径
+        //      （agenda / employee / schedule_runner）都要 emit 这个事件，
+        //      因为前端 chatStore 的乐观更新只发生在前端 createNewConversation 路径。
+        emit_conversation_created(
+            &self.services.app,
+            &conversation_id,
+            "agenda",
+            Some(&item.title),
         );
 
         // 1.5. 如果 item 绑定了 workspace_path，把它 authorize 给这条新 conversation。
@@ -2903,6 +2912,12 @@ impl crate::runtime::employee::runner::EmployeeRunDispatcher for TauriChatComman
         )
         .await
         .map_err(anyhow::Error::msg)?;
+        emit_conversation_created(
+            &self.services.app,
+            &conversation_id,
+            "employee",
+            Some(&employee.name),
+        );
 
         // Compute the trigger label here (it depends on `trigger_kind` which is
         // a transport-layer enum — keeping the match local keeps the prompt
@@ -3164,4 +3179,31 @@ impl TauriChatCommandAdapter {
             }
         });
     }
+}
+
+/// 通知前端后端直接创建了新 conversation，让 sidebar reload 对话列表。
+///
+/// 所有后端绕开前端 `createNewConversation`（走 `conversation_service::create_conversation`）
+/// 的路径都要 emit 一次，否则 sidebar 不会感知：
+/// - agenda dispatcher（定时日程 / 立即运行）
+/// - employee dispatcher（数字员工派活）
+/// - schedule_runner（老 schedule 模块，PR-4 会删）
+/// - 前端 `create_conversation` Tauri 命令（走 TauriChatCommandAdapter）
+///
+/// `source` 是调用方标识（"agenda" / "employee" / "schedule" / "user"），
+/// 前端可以据此决定 UX 差异（比如是否自动切到该对话），但目前只做 reload。
+fn emit_conversation_created(
+    app: &tauri::AppHandle,
+    conversation_id: &str,
+    source: &str,
+    title: Option<&str>,
+) {
+    let _ = app.emit(
+        "conversation:created",
+        serde_json::json!({
+            "conversationId": conversation_id,
+            "source": source,
+            "title": title,
+        }),
+    );
 }

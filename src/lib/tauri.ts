@@ -50,7 +50,7 @@ export const TAURI_EVENTS = {
   INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
   DIAGNOSTICS_EVENT: 'diagnostics:event',
-  AGENDA_DISPATCHED: 'agenda:dispatched',
+  CONVERSATION_CREATED: 'conversation:created',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -1322,22 +1322,25 @@ export function onConversationTitleUpdated(
   }))
 }
 
-export interface AgendaDispatchedPayload {
+export interface ConversationCreatedPayload {
   conversationId: string
-  agendaItemId: string
-  title: string
+  source: 'user' | 'agenda' | 'employee' | 'schedule' | string
+  title: string | null
 }
 
 /**
- * 监听 agenda 触发事件：dispatcher 在新建 conversation 后 emit。
- * sidebar 收到后应当 reload 对话列表，让新对话出现在用户面前。
+ * 监听后端创建新 conversation 事件。所有直接走后端 create_conversation
+ * 的路径（agenda / employee / schedule_runner / user IPC）都会 emit。
+ *
+ * sidebar 收到后应当 reload 对话列表。**不应当切路由或换 activeConversationId**：
+ * 用户可能正在其它对话里操作，sidebar 只是多出一行而已。
  */
-export function onAgendaDispatched(
-  handler: (payload: AgendaDispatchedPayload) => void,
+export function onConversationCreated(
+  handler: (payload: ConversationCreatedPayload) => void,
 ): Promise<() => void> {
-  return listen<AgendaDispatchedPayload>(
-    TAURI_EVENTS.AGENDA_DISPATCHED,
-    createInstrumentedEventHandler(TAURI_EVENTS.AGENDA_DISPATCHED, (event) => {
+  return listen<ConversationCreatedPayload>(
+    TAURI_EVENTS.CONVERSATION_CREATED,
+    createInstrumentedEventHandler(TAURI_EVENTS.CONVERSATION_CREATED, (event) => {
       handler(event.payload)
     }),
   )

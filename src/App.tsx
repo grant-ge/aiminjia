@@ -28,8 +28,8 @@ import {
   getConversations,
   getPluginInfo,
   getSettings,
-  onAgendaDispatched,
   onAuthExpired,
+  onConversationCreated,
   onConversationTitleUpdated,
 } from '@/lib/tauri'
 import { useAuthStore } from '@/stores/authStore'
@@ -207,10 +207,11 @@ function App() {
     }
   }, [])
 
-  // 监听 agenda 触发：每次 dispatcher 在后端创建新 conversation 后，
-  // sidebar 需要 reload 才能看到这条新对话（前端没走 createNewConversation 的乐观更新路径）。
+  // 监听后端创建新 conversation：每次 agenda / employee / schedule_runner 或用户自己
+  // 建新对话时，sidebar 的 chatStore 需要 reload 才能看到。此处只刷列表，
+  // 不改 activeConversationId / 路由 —— 用户可能正在别的对话里操作。
   useEffect(() => {
-    const unlisten = onAgendaDispatched(async () => {
+    const unlisten = onConversationCreated(async () => {
       try {
         const raw = await getConversations()
         const convs = raw.map((c) => ({
@@ -223,7 +224,7 @@ function App() {
         }))
         useChatStore.getState().setConversations(convs)
       } catch (err) {
-        console.error('[App] reload conversations after agenda dispatch failed:', err)
+        console.error('[App] reload conversations after conversation:created failed:', err)
       }
     })
     return () => {
