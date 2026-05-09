@@ -117,10 +117,6 @@ impl AiJiaHome {
         self.user_dir(scope).join("agents")
     }
 
-    pub fn user_playwright_profile_dir(&self, scope: &UserScope) -> PathBuf {
-        self.user_dir(scope).join("playwright-profile")
-    }
-
     pub fn user_api_data_dir(&self, scope: &UserScope) -> PathBuf {
         self.user_dir(scope).join("api-data")
     }
@@ -162,10 +158,6 @@ impl AiJiaHome {
 
     pub fn subagent_transcripts_dir(&self) -> PathBuf {
         self.root.join("subagent_transcripts")
-    }
-
-    pub fn playwright_profile_dir(&self) -> PathBuf {
-        self.root.join("playwright-profile")
     }
 
     pub fn api_data_dir(&self) -> PathBuf {
@@ -224,7 +216,6 @@ impl AiJiaHome {
         std::fs::create_dir_all(self.user_skills_dir(scope))?;
         std::fs::create_dir_all(self.user_agents_dir(scope))?;
         std::fs::create_dir_all(self.user_subagent_transcripts_dir(scope))?;
-        std::fs::create_dir_all(self.user_playwright_profile_dir(scope))?;
         std::fs::create_dir_all(self.user_api_data_dir(scope))?;
         std::fs::create_dir_all(self.user_screenshots_dir(scope))?;
         std::fs::create_dir_all(self.user_site_profiles_dir(scope))?;
@@ -237,7 +228,6 @@ impl AiJiaHome {
         std::fs::create_dir_all(&self.root)?;
         std::fs::create_dir_all(self.skills_dir())?;
         std::fs::create_dir_all(self.subagent_transcripts_dir())?;
-        std::fs::create_dir_all(self.playwright_profile_dir())?;
         std::fs::create_dir_all(self.api_data_dir())?;
         std::fs::create_dir_all(self.screenshots_dir())?;
         std::fs::create_dir_all(self.crypto_dir())?;
@@ -290,7 +280,6 @@ mod tests {
         assert!(home.root().exists());
         assert!(home.skills_dir().exists());
         assert!(home.subagent_transcripts_dir().exists());
-        assert!(home.playwright_profile_dir().exists());
         assert!(home.api_data_dir().exists());
         assert!(home.screenshots_dir().exists());
         assert!(home.crypto_dir().exists());
@@ -367,10 +356,6 @@ mod tests {
             user_dir.join("subagent_transcripts")
         );
         assert_eq!(home.user_skills_dir(&scope), user_dir.join("skills"));
-        assert_eq!(
-            home.user_playwright_profile_dir(&scope),
-            user_dir.join("playwright-profile")
-        );
         assert_eq!(home.user_api_data_dir(&scope), user_dir.join("api-data"));
         assert_eq!(
             home.user_screenshots_dir(&scope),
@@ -413,7 +398,6 @@ mod tests {
         assert!(home.user_skills_dir(&scope).exists());
         assert!(home.user_agents_dir(&scope).exists());
         assert!(home.user_subagent_transcripts_dir(&scope).exists());
-        assert!(home.user_playwright_profile_dir(&scope).exists());
         assert!(home.user_api_data_dir(&scope).exists());
         assert!(home.user_screenshots_dir(&scope).exists());
         assert!(home.user_site_profiles_dir(&scope).exists());

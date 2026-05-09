@@ -65,9 +65,6 @@ impl UserScopedPaths {
     pub fn project_memories_dir(&self) -> PathBuf {
         self.base.join("project_memories")
     }
-    pub fn playwright_profile_dir(&self) -> PathBuf {
-        self.base.join("playwright-profile")
-    }
     pub fn api_data_dir(&self) -> PathBuf {
         self.base.join("api-data")
     }
@@ -137,10 +134,6 @@ mod tests {
         assert_eq!(
             paths.subagent_transcripts_dir(),
             root.join("users/t_1__u_2/subagent_transcripts")
-        );
-        assert_eq!(
-            paths.playwright_profile_dir(),
-            root.join("users/t_1__u_2/playwright-profile")
         );
     }
 
