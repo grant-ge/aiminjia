@@ -17,7 +17,10 @@ pub struct UpdateAgendaItemRuntimeTool {
 #[async_trait]
 impl RuntimeTool for UpdateAgendaItemRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("update_agenda_item", "修改自己创建的日程")
+        ToolDefinition::new(
+            "update_agenda_item",
+            "修改自己创建的【自动任务/计划任务】（标题/触发内容/频率/启用状态）。",
+        )
     }
 
     async fn execute(

@@ -20,7 +20,10 @@ pub struct CreateAgendaItemRuntimeTool {
 #[async_trait]
 impl RuntimeTool for CreateAgendaItemRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("create_agenda_item", "创建一条日程，到指定时间触发")
+        ToolDefinition::new(
+            "create_agenda_item",
+            "创建一条到点自动触发的【数字员工自动任务/计划任务】（不是钉钉/外部日历）。一次性或循环（每天/每周/每月/每年），到点自动执行内置 prompt。",
+        )
     }
 
     async fn execute(

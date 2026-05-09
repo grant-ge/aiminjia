@@ -19,7 +19,10 @@ pub struct CancelAgendaItemRuntimeTool {
 #[async_trait]
 impl RuntimeTool for CancelAgendaItemRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("cancel_agenda_item", "取消自己创建的日程（软删除）")
+        ToolDefinition::new(
+            "cancel_agenda_item",
+            "取消自己创建的【自动任务/计划任务】（软删除，可在 UI 恢复）。",
+        )
     }
 
     async fn execute(

@@ -18,7 +18,10 @@ pub struct SkipOccurrenceRuntimeTool {
 #[async_trait]
 impl RuntimeTool for SkipOccurrenceRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("skip_occurrence", "跳过循环日程的某一次")
+        ToolDefinition::new(
+            "skip_occurrence",
+            "跳过循环【自动任务/计划任务】的某一次触发。",
+        )
     }
 
     async fn execute(

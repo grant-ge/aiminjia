@@ -607,7 +607,10 @@ fn build_default_catalog() -> ToolCatalog {
     // organizer 强制为当前 persona——runtime 在 RequestScopedRuntimeDeps 注入 persona id，
     // 工具构造期绑死到 AgendaToolDeps，LLM 不传 organizer 字段。详见 spec §4.5。
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("create_agenda_item", "创建一条日程，到指定时间触发")
+        ToolDefinition::new(
+            "create_agenda_item",
+            "创建一条到点自动触发的【数字员工自动任务/计划任务】（不是钉钉/外部日历）。一次性或循环（每天/每周/每月/每年），到点自动执行内置 prompt。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
         json!({
@@ -638,7 +641,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("list_agenda_items", "列出当前数字员工的日程")
+        ToolDefinition::new(
+            "list_agenda_items",
+            "列出当前数字员工自己的【自动任务/计划任务】清单（不是钉钉日历）。用户问'你的日程/你的任务/你定了哪些计划'时用本工具。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true),
         json!({
@@ -655,7 +661,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("update_agenda_item", "修改自己创建的日程")
+        ToolDefinition::new(
+            "update_agenda_item",
+            "修改自己创建的【自动任务/计划任务】（标题/触发内容/频率/启用状态）。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
         json!({
@@ -672,7 +681,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("cancel_agenda_item", "取消自己创建的日程（软删除，可恢复）")
+        ToolDefinition::new(
+            "cancel_agenda_item",
+            "取消自己创建的【自动任务/计划任务】（软删除，可在 UI 恢复）。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false)
             .with_destructive(true),
@@ -684,7 +696,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("skip_occurrence", "跳过循环日程的某一次")
+        ToolDefinition::new(
+            "skip_occurrence",
+            "跳过循环【自动任务/计划任务】的某一次触发。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(false),
         json!({
@@ -698,7 +713,10 @@ fn build_default_catalog() -> ToolCatalog {
     ));
 
     c.insert(CatalogEntry::new(
-        ToolDefinition::new("list_agenda_occurrences", "查看自己日程的执行历史")
+        ToolDefinition::new(
+            "list_agenda_occurrences",
+            "查看自己【自动任务/计划任务】过往的执行历史（成功/失败记录）。",
+        )
             .with_kind(ToolKind::Primitive)
             .with_read_only(true),
         json!({

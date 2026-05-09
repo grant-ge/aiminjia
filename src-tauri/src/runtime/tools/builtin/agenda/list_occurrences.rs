@@ -17,7 +17,10 @@ pub struct ListAgendaOccurrencesRuntimeTool {
 #[async_trait]
 impl RuntimeTool for ListAgendaOccurrencesRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("list_agenda_occurrences", "查看自己日程的执行历史")
+        ToolDefinition::new(
+            "list_agenda_occurrences",
+            "查看自己【自动任务/计划任务】过往的执行历史（成功/失败记录）。",
+        )
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {

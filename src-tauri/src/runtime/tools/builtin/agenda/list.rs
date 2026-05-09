@@ -17,7 +17,10 @@ pub struct ListAgendaItemsRuntimeTool {
 #[async_trait]
 impl RuntimeTool for ListAgendaItemsRuntimeTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("list_agenda_items", "列出当前数字员工的日程")
+        ToolDefinition::new(
+            "list_agenda_items",
+            "列出当前数字员工自己的【自动任务/计划任务】清单（不是钉钉日历）。用户问'你的日程/你的任务/你定了哪些计划'时用本工具。",
+        )
     }
 
     fn is_read_only(&self, _input: &Value) -> bool {
