@@ -2164,22 +2164,16 @@ impl TauriChatCommandAdapter {
 
         let session_id = request.conversation_id.clone();
         log::info!(
-            "[send_message] resolving connector_engine and agent_runtime states conv={}",
+            "[send_message] resolving agent_runtime state conv={}",
             conversation_id
         );
-        let connector_engine = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .map(|v| v.inner().clone());
         let agent_runtime = self
             .services
             .app
             .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
             .map(|v| v.inner().clone());
         log::info!(
-            "[send_message] connector_engine={} agent_runtime={}",
-            connector_engine.is_some(),
+            "[send_message] agent_runtime={}",
             agent_runtime.is_some()
         );
         // 读 tavily/bocha key 和 use_cloud 给 web_search 工具用。之前这里写死成
@@ -2239,7 +2233,6 @@ impl TauriChatCommandAdapter {
             bocha_api_key,
             app_handle: Some(self.services.app.clone()),
             auth_manager: Some(self.services.auth_manager.clone()),
-            connector_engine,
             use_cloud,
             model: String::new(),
             gateway: Some(self.services.gateway.clone()),
@@ -2271,21 +2264,10 @@ impl TauriChatCommandAdapter {
             "[send_message] runtime_dispatcher built conv={}",
             conversation_id
         );
-        let browser_available = self
-            .services
-            .app
-            .try_state::<Arc<crate::connector::ConnectorEngine>>()
-            .is_some();
-        log::info!(
-            "[send_message] browser_available={} conv={}",
-            browser_available,
-            conversation_id
-        );
         let runtime = self.runtime.clone().with_query_engine(
             QueryEngine::with_dispatcher(runtime_dispatcher)
                 .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
-                .with_runtime_resolver(self.services.runtime_resolver.clone())
-                .with_browser_available(browser_available),
+                .with_runtime_resolver(self.services.runtime_resolver.clone()),
         );
         log::info!(
             "[send_message] calling runtime.run_chat_request conv={}",
