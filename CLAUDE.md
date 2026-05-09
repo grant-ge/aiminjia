@@ -284,9 +284,14 @@ CI matrix 只覆盖 Windows + macOS arm64。**Intel 包必须本地补打**（�
 
 ```bash
 rustup target add x86_64-apple-darwin             # 首次
+# 设置 Tauri 签名密钥（rsign 加密格式，密码在 Keychain "aijia-tauri-signer"）
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/aijia.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s aijia-tauri-signer -a password -w)"
 pnpm tauri build --target x86_64-apple-darwin     # 5–10 分钟
 python3 scripts/upload-x64.py X.Y.Z               # 双传 OSS + GitHub Release
 ```
+
+**顺序约束**：必须等 GitHub CI（`finalize` job）跑完再跑 `upload-x64.py`。否则 CI 的 `ci-finalize.py` 会**覆盖** update.json，丢失 `darwin-x86_64` 平台条目（preserve 逻辑只在版本号一致时生效，但 CI 写入是覆盖性的，最后写的赢）。
 
 `upload-x64.py` 会：
 1. 上传 dmg / tar.gz / sig 到 OSS（`aijia/v{V}/AIjia_{V}_x64.dmg` 等）
@@ -294,6 +299,8 @@ python3 scripts/upload-x64.py X.Y.Z               # 双传 OSS + GitHub Release
 3. 通过 `gh` CLI 把同样三个文件附加到 GitHub Release `vX.Y.Z`（release 不存在则自动建）
 
 前置：`gh auth status` 已登录有 `repo` scope 的账号；OSS 凭证在 Keychain `aijia-oss`（或 env `OSS_ACCESS_KEY_ID/SECRET`）。两者其一缺失：脚本会跳过对应步骤并打 warning，不会中断。
+
+如果忘记设置 `TAURI_SIGNING_PRIVATE_KEY`：build 会成功产出 `.dmg` + `.app.tar.gz`，但**不生成 `.sig`**，并在末尾报 `A public key has been found, but no private key`。补好 env 后 re-run `pnpm tauri build --target x86_64-apple-darwin` 即可（增量编译，~3-4 分钟）。
 
 ## Git Remotes
 
