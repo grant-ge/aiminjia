@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { AgendaItem, ItemFilter, listAgendaItems } from '@/lib/tauri'
+import { type AgendaItem, type ItemFilter, listAgendaItems } from '@/lib/tauri'
 
 export function useAgendaItems(filter?: ItemFilter) {
   const [items, setItems] = useState<AgendaItem[]>([])
