@@ -50,6 +50,7 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
                 PermissionDestination::User,
             ],
             default_destination: Some(PermissionDestination::Session),
+            primary_model: "deepseek-v3".into(),
         },
     );
     let mapped = map_runtime_event(&event).expect("legacy adapter should expose permission ask");

@@ -2019,6 +2019,35 @@ impl TauriChatCommandAdapter {
         permission_store: Arc<crate::runtime::store::PermissionStore>,
         app: tauri::AppHandle,
     ) -> Self {
+        Self::new_with_channel_sessions(
+            cus,
+            root_db,
+            gateway,
+            file_mgr,
+            crypto,
+            tool_registry,
+            skill_registry,
+            auth_manager,
+            permission_store,
+            app,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_channel_sessions(
+        cus: Arc<CurrentUserStorage>,
+        root_db: Arc<AppStorage>,
+        gateway: Arc<LlmGateway>,
+        file_mgr: Arc<FileManager>,
+        crypto: Option<Arc<SecureStorage>>,
+        tool_registry: Arc<ToolRegistry>,
+        skill_registry: Arc<std::sync::Mutex<crate::plugin::skill::registry::SkillRegistry>>,
+        auth_manager: Arc<AuthManager>,
+        permission_store: Arc<crate::runtime::store::PermissionStore>,
+        app: tauri::AppHandle,
+        channel_sessions: Option<Arc<dyn crate::connector::channel::ask_coordinator::ChannelSessionRegistry>>,
+    ) -> Self {
         let runtime_resolver = app
             .try_state::<crate::runtime::dependencies::ManagedRuntimeResolver>()
             .map(|resolver| resolver.inner().clone());
@@ -2041,7 +2070,10 @@ impl TauriChatCommandAdapter {
             employee_run_overrides: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let host = Arc::new(TauriRuntimeHost::new(services.app.clone()));
-        let adapter = Arc::new(TauriEventAdapter::new(host));
+        let adapter = Arc::new(match channel_sessions {
+            Some(registry) => TauriEventAdapter::with_channel_sessions(host, registry),
+            None => TauriEventAdapter::new(host),
+        });
         let bus = RuntimeEventBus::new();
         bus.subscribe(adapter);
         let llm_executor: Arc<dyn RuntimeLlmExecutor> = Arc::new(TauriLegacyTurnExecutor {
@@ -2106,6 +2138,137 @@ impl TauriChatCommandAdapter {
         }
         .load_llm_settings_for_turn(request)
         .await
+    }
+
+    /// 返回当前 workspace 根目录，供 ChannelManager 等调用方构造下载目录。
+    pub fn workspace_path(&self) -> std::path::PathBuf {
+        self.services.file_mgr.workspace_path().to_path_buf()
+    }
+
+    /// 向内部 runtime event bus 注册外部订阅者。
+    pub fn subscribe_event_listener(&self, subscriber: std::sync::Arc<dyn crate::runtime::event_bus::RuntimeEventSubscriber>) {
+        self.runtime.subscribe_event_listener(subscriber);
+    }
+
+    /// 暴露权限控制平面，供 IM 协调器等外部组件使用。
+    pub fn permission_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::store::PendingPermissionControlPlane> {
+        self.runtime.permission_control_plane()
+    }
+
+    /// 暴露交互控制平面，供 IM 协调器等外部组件使用。
+    pub fn interaction_control_plane(&self) -> std::sync::Arc<dyn crate::runtime::interaction::PendingInteractionControlPlane> {
+        self.runtime.interaction_control_plane()
+    }
+
+    /// 与 `send_message` 相同，但接受调用方已预构造的 `ChatTurnRequest`，
+    /// 保留其中的 `run_id`，用于外部需要在发送前注册 run_id 的场景（如 DingtalkReplyManager）。
+    pub async fn send_chat_request(&self, request: ChatTurnRequest) -> Result<(), String> {
+        let conversation_id = request.conversation_id.as_str().to_string();
+        let run_id = request.run_id.clone();
+        self.services
+            .gateway
+            .set_busy_for_run(&conversation_id, run_id.clone())?;
+
+        let session_id = request.conversation_id.clone();
+        let connector_engine = self
+            .services
+            .app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .map(|v| v.inner().clone());
+        let agent_runtime = self
+            .services
+            .app
+            .try_state::<Arc<crate::runtime::agent::AgentRuntime>>()
+            .map(|v| v.inner().clone());
+        let (tavily_api_key, bocha_api_key, use_cloud) = {
+            let map = self.services.db().get_all_settings().unwrap_or_default();
+            let mut s = if map.is_empty() {
+                AppSettings::default()
+            } else {
+                AppSettings::from_string_map(&map)
+            };
+            if let Some(ss) = self.services.crypto.as_ref() {
+                s.tavily_api_key = decrypt_api_key(ss, &s.tavily_api_key);
+                s.bocha_api_key = decrypt_api_key(ss, &s.bocha_api_key);
+            }
+            let tavily = if s.tavily_api_key.is_empty() { None } else { Some(s.tavily_api_key) };
+            let bocha = if s.bocha_api_key.is_empty() { None } else { Some(s.bocha_api_key) };
+            (tavily, bocha, s.use_cloud)
+        };
+        let workspace_path = self.services.file_mgr.workspace_path();
+        let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
+            storage: self.services.db().clone(),
+            file_manager: self.services.file_mgr.clone(),
+            workspace_path: workspace_path.clone(),
+            conversation_id: session_id.as_str().to_string(),
+            session_id: session_id.clone(),
+            run_id: Some(run_id.clone()),
+            agent_id: None,
+            tavily_api_key,
+            bocha_api_key,
+            app_handle: Some(self.services.app.clone()),
+            auth_manager: Some(self.services.auth_manager.clone()),
+            connector_engine,
+            use_cloud,
+            model: String::new(),
+            gateway: Some(self.services.gateway.clone()),
+            tool_registry: Some(self.services.tool_registry.clone()),
+            app_settings: Some(Arc::new(AppSettings::default())),
+            agent_runtime,
+            event_bus: None,
+            skill_registry: Some(self.services.skill_registry.clone()),
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: request.permission_mode,
+            runtime_resolver: self.services.runtime_resolver.clone(),
+            permission_ctx: None,
+        };
+        let runtime_dispatcher = self
+            .services
+            .tool_registry
+            .to_runtime_dispatcher(request_scoped_runtime_deps)
+            .await;
+        let browser_available = self
+            .services
+            .app
+            .try_state::<Arc<crate::connector::ConnectorEngine>>()
+            .is_some();
+        let runtime = self.runtime.clone().with_query_engine(
+            QueryEngine::with_dispatcher(runtime_dispatcher)
+                .with_workspace_path(self.services.file_mgr.workspace_path().to_path_buf())
+                .with_runtime_resolver(self.services.runtime_resolver.clone())
+                .with_browser_available(browser_available),
+        );
+        let result = runtime.run_chat_request(request).await;
+        self.services
+            .gateway
+            .clear_task_for_run(&conversation_id, &run_id);
+
+        if result.is_ok() {
+            let needs_title =
+                conversation_service::should_auto_title(&*self.services.db(), &conversation_id)
+                    .unwrap_or(false);
+            if needs_title {
+                let dummy_request =
+                    ChatTurnRequest::new(conversation_id.clone(), String::new(), vec![]);
+                if let Ok(resolved) = self.load_llm_settings_for_turn(&dummy_request).await {
+                    let db = self.services.db().clone() as Arc<dyn ConversationStore>;
+                    let gateway = self.services.gateway.clone();
+                    let host: Arc<dyn crate::transport::runtime_host::RuntimeHost> =
+                        Arc::new(TauriRuntimeHost::new(self.services.app.clone()));
+                    let conv_id = conversation_id.clone();
+                    let settings = build_gateway_settings(&resolved);
+                    tauri::async_runtime::spawn(async move {
+                        conversation_service::generate_and_set_title(
+                            db, gateway, host, conv_id, settings,
+                        )
+                        .await;
+                    });
+                }
+            }
+        }
+        result
     }
 
     pub async fn send_message(

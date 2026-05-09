@@ -67,7 +67,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
     return (
       <div className="space-y-4">
         <div
-          className="rounded-lg border p-4"
+          className="rounded-lg border p-4 border-border"
           style={{
             background: 'var(--color-bg-main)',
             borderColor: 'var(--color-border)',
@@ -108,7 +108,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
   return (
     <div>
       <div
-        className="rounded-lg border p-4"
+        className="rounded-lg border p-4 border-border"
         style={{
           background: 'var(--color-bg-main)',
           borderColor: 'var(--color-border)',
@@ -124,7 +124,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
         <div className="mb-3">
           <input
             type="text"
-            className="mb-2 h-9 w-full rounded-md border px-3 text-sm outline-none"
+            className="mb-2 h-9 w-full rounded-md border px-3 text-sm outline-none border-border"
             style={{
               background: 'var(--color-bg-main)',
               borderColor: 'var(--color-border)',
@@ -137,7 +137,7 @@ export function LoginSection({ onLoginSuccess }: LoginSectionProps) {
           />
           <input
             type="password"
-            className="h-9 w-full rounded-md border px-3 text-sm outline-none"
+            className="h-9 w-full rounded-md border px-3 text-sm outline-none border-border"
             style={{
               background: 'var(--color-bg-main)',
               borderColor: 'var(--color-border)',

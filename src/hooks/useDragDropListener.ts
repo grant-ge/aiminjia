@@ -68,16 +68,6 @@ export function useDragDropListener() {
           }
 
           useDropInbox.getState().push(accepted)
-          useNotificationStore.getState().push({
-            level: 'info',
-            title: accepted.length === 1 ? '已加入对话' : `已加入 ${accepted.length} 个文件`,
-            message: accepted.map((a) => a.fileName).slice(0, 3).join('、')
-              + (accepted.length > 3 ? ` 等 ${accepted.length} 项` : ''),
-            actions: [],
-            dismissible: true,
-            autoHide: 3,
-            context: 'toast',
-          })
         })
         if (cancelled) {
           unlisten()

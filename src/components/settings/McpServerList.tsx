@@ -25,7 +25,7 @@ export function McpServerList({
   if (loading) {
     return (
       <div
-        className="rounded-lg border p-4 text-sm"
+        className="rounded-lg border p-4 text-sm border-border"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
       >
         {t('common.loading')}
@@ -36,7 +36,7 @@ export function McpServerList({
   if (!servers || servers.length === 0) {
     return (
       <div
-        className="rounded-lg border p-6 text-center"
+        className="rounded-lg border p-6 text-center border-border"
         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
       >
         <p className="mb-1">{t('settings.mcp.list.empty')}</p>
@@ -53,7 +53,7 @@ export function McpServerList({
         return (
           <div
             key={server.name}
-            className="flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:justify-between"
+            className="flex flex-col gap-3 rounded-lg border px-4 py-3 md:flex-row md:items-center md:justify-between border-border"
             style={{
               borderColor: 'var(--color-border)',
               background: 'var(--color-bg-main)',

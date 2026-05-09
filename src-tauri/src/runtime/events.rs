@@ -48,6 +48,7 @@ pub enum RuntimeEventKind {
         mode: PermissionMode,
         remember_options: Vec<PermissionDestination>,
         default_destination: Option<PermissionDestination>,
+        primary_model: String,
     },
     UserInteractionRequired {
         interaction_id: crate::runtime::interaction::InteractionId,
@@ -55,6 +56,7 @@ pub enum RuntimeEventKind {
         tool_name: String,
         kind: crate::runtime::interaction::InteractionKind,
         payload: serde_json::Value,
+        primary_model: String,
     },
     UserInteractionResolved {
         interaction_id: crate::runtime::interaction::InteractionId,

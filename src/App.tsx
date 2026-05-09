@@ -12,6 +12,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
+import { ChannelPage } from '@/features/channel/ChannelPage'
 import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
@@ -40,6 +41,7 @@ import { useSkillStore } from '@/stores/skillStore'
 import { useStreamingStore } from '@/stores/streamingStore'
 import { useInteractionStore } from '@/stores/interactionStore'
 import { useUiStore } from '@/stores/uiStore'
+import { initChannelListeners } from '@/stores/channelStore'
 import { applyFontScale, loadPersistedFontScale, normalizeFontScale, persistFontScale } from '@/styles/fontScale'
 
 applyFontScale(loadPersistedFontScale())
@@ -63,6 +65,8 @@ function RouteSwitch() {
       return <InboxPage />
     case 'chat':
       return <ChatPage conversationId={route.conversationId} />
+    case 'channel':
+      return <ChannelPage sessionId={route.sessionId} />
   }
 }
 
@@ -203,6 +207,10 @@ function App() {
     return () => {
       unlisten.then((fn) => fn())
     }
+  }, [])
+
+  useEffect(() => {
+    void initChannelListeners()
   }, [])
 
   return (

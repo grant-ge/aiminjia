@@ -15,6 +15,7 @@ export function ToolGroupCodeBlock({ inputJson, output }: ToolGroupCodeBlockProp
       {inputJson ? (
         <div className="flex flex-col gap-1.5">
           <div className="text-xs font-semibold text-muted-foreground">输入</div>
+          {/* 代码块固定深色底 + 浅色字，跨 light/dark 主题保持终端样观感 */}
           <pre className="whitespace-pre-wrap rounded-md bg-[#0a0a0a] p-3 font-mono text-xs leading-relaxed text-primary-foreground">
             {inputJson}
           </pre>

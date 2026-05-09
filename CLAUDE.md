@@ -152,6 +152,30 @@ Skill 系统采用无状态架构，仅加载 `~/.renlijia/users/{scope}/skills/
 
 前端通过 `src/lib/tauri.ts` 中的 `TAURI_EVENTS` 常量订阅事件，不直接使用字符串字面量。
 
+### UI 编写规范（强约束）
+
+写前端 UI 时遵守以下两条硬规则，违反会导致主题不一致 / 深色模式失效 / 设计系统失效：
+
+**1. 颜色必须使用主题变量，禁止硬编码具体颜色**
+
+- ✅ 用语义变量：`bg-background` / `bg-muted` / `bg-primary` / `bg-secondary` / `bg-destructive` / `text-foreground` / `text-muted-foreground` / `text-primary` / `text-primary-foreground` / `border-border` / `border-input` / `ring-ring`
+- ❌ 禁止 `bg-white` / `bg-black` / `text-white` / `text-black` / `bg-[#xxx]` / `text-[#xxx]` / `border-white` / `border-black`
+- ❌ 用 `border-b` / `border` 等不指定颜色的写法等价于硬编码默认色，必须显式带 `border-border` 或其他语义边框
+- 例外：内部纯结构性占位（如 QR code dot pattern、严格指定的品牌色 logo）可以保留具体色值，但要写注释说明为何不能用变量
+
+**2. 复用现成组件，不要手搓已存在的公共能力**
+
+写 UI 之前先 grep `src/components/` 看有没有现成组件，能复用就复用：
+
+- 按钮 → `@/components/ui/button` 的 `<Button>`，靠 `variant` 切色（`default` / `secondary` / `ghost` / `destructive` / `outline` / `link`），不要再叠 `bg-black text-white hover:bg-black/85` 把默认 variant 覆盖掉
+- 顶栏 → `@/components/shell/ChatTopBar`（聊天页 / 频道页）或 `@/components/shell/PageTopBar`（普通页），不要手写 `<div data-tauri-drag-region className="flex h-10 ...">`
+- 对话框 → `@/components/ui/dialog` 的 `Dialog` / `DialogContent`，外层圆角想生效就给 `DialogContent` 加 `overflow-hidden`
+- 下拉 → `@/components/common/AppDropdown`
+- 确认弹窗 → `requestConfirm`（`@/components/common/ConfirmDialogHost`）
+- Toast → `useNotificationStore.push({ context: 'toast' })`
+
+**Code review 自查清单**：diff 里看到 `bg-black` / `text-white` / `text-[#` / `bg-[#` / `border-white` / 没带颜色的裸 `border-b`、看到自己手写顶栏 / 按钮样式而不是用组件——立刻换成变量 / 公共组件。
+
 ## 存储结构
 
 所有运行时数据持久化到 `~/.renlijia/`（`AiJiaHome::from_home()`），不再使用 Tauri app data dir（后者仅用于启动时一次性迁移）：

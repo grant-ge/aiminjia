@@ -129,7 +129,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                   onChange(option.value)
                   onClose()
                 }}
-                className="relative flex h-[132px] flex-col rounded-[18px] border p-4 text-left transition-colors"
+                className="relative flex h-[132px] flex-col rounded-[18px] border p-4 text-left transition-colors border-border"
                 style={{
                   background: option.tone.bg,
                   borderColor: selected ? 'var(--color-accent)' : option.tone.border,
@@ -146,7 +146,7 @@ export function ModelPickerPopover({ open, value, onChange, onClose }: ModelPick
                     </div>
                   </div>
                   <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border"
                     style={{
                       borderColor: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.72)',
                       background: selected ? 'var(--color-accent)' : 'rgba(255,255,255,0.62)',

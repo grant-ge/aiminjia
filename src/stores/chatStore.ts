@@ -24,6 +24,7 @@ import {
   type ToolExecution,
   useStreamingStore,
 } from './streamingStore'
+import { useUiStore } from './uiStore'
 
 export type ChatState = SessionState & StreamingState
 
@@ -113,6 +114,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
 bindSessionStore(useChatStore)
 bindStreamingStore(useChatStore)
+
+function deriveActiveIdFromRoute(route: ReturnType<typeof useUiStore.getState>['route']): string | null {
+  if (route.kind === 'chat') return route.conversationId
+  if (route.kind === 'channel') return route.sessionId ?? null
+  return null
+}
+
+// Initialise synchronously on module load so the first render is correct.
+useChatStore.setState({ activeConversationId: deriveActiveIdFromRoute(useUiStore.getState().route) })
+
+// Keep chatStore.activeConversationId in sync whenever the route changes.
+useUiStore.subscribe((state, prev) => {
+  if (state.route === prev.route) return
+  const nextId = deriveActiveIdFromRoute(state.route)
+  const prevId = deriveActiveIdFromRoute(prev.route)
+  if (nextId === prevId) return
+  useChatStore.getState().setActiveConversation(nextId)
+})
 
 export { useSessionStore, useStreamingStore }
 export type {

@@ -30,6 +30,8 @@ pub trait PendingInteractionControlPlane: Send + Sync {
     fn cancel_for_session(&self, session_id: &str, message: &str) -> usize;
 
     fn pending_count_for_session(&self, session_id: &str) -> usize;
+
+    fn is_pending(&self, interaction_id: &InteractionId) -> bool;
 }
 
 #[derive(Default)]
@@ -142,5 +144,12 @@ impl PendingInteractionControlPlane for InMemoryInteractionControlPlane {
             .values()
             .filter(|entry| entry.request.session_id.as_str() == session_id)
             .count()
+    }
+
+    fn is_pending(&self, interaction_id: &InteractionId) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains_key(interaction_id.as_str())
     }
 }

@@ -1,55 +1,38 @@
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { ChatBottomArea } from '@/components/chat-scene/ChatBottomArea'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { render, waitFor } from '@testing-library/react'
+import { ChatBottomArea } from '../ChatBottomArea'
 import { useUiStore } from '@/stores/uiStore'
-import { useChatStore } from '@/stores/chatStore'
-import { CREATE_SKILL_COMMAND } from '@/data/skill-constants'
 
-// Mock tauri events and hooks
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
-  emit: vi.fn(),
-}))
-
-vi.mock('@/hooks/useFileUpload', () => ({
-  useFileUpload: () => ({
-    isUploading: false,
-    selectAndUploadFiles: vi.fn(),
-  }),
-}))
+vi.mock('@tiptap/react', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@tiptap/react')>()
+  return { ...mod, ReactNodeViewRenderer: () => () => ({}) }
+})
 
 vi.mock('@/hooks/useChat', () => ({
-  useChat: () => ({
-    sendUserMessage: vi.fn(),
-    isStreaming: false,
-    stopCurrentStream: vi.fn(),
+  useChat: () => ({ sendUserMessage: vi.fn(), isStreaming: false, stopCurrentStream: vi.fn() }),
+}))
+vi.mock('@/hooks/useChatAttachments', () => ({
+  useChatAttachments: () => ({
+    isPickingAttachments: false,
+    pickAttachments: vi.fn().mockResolvedValue([]),
+    saveClipboardImage: vi.fn(),
+    resolvePastedPaths: vi.fn(),
   }),
 }))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}))
+beforeEach(() => {
+  useUiStore.setState({ prefillText: '帮我看看销售数据' })
+})
 
-describe('ChatBottomArea prefill consumption', () => {
-  beforeEach(() => {
-    useUiStore.setState({ prefillText: null })
-    useChatStore.setState({ activeConversationId: 'test-conv-id' })
-  })
-
-  it('input is empty when prefillText is null', () => {
+describe('ChatBottomArea prefill', () => {
+  it('consumes prefill text on mount and shows it in the editor', async () => {
     render(<ChatBottomArea />)
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('')
-  })
-
-  it('input is prefilled and store is cleared when prefillText is set', () => {
-    useUiStore.setState({ prefillText: CREATE_SKILL_COMMAND })
-    render(<ChatBottomArea />)
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe(CREATE_SKILL_COMMAND)
+    await waitFor(() => {
+      const text = document.querySelector('.ProseMirror')?.textContent ?? ''
+      expect(text).toContain('帮我看看销售数据')
+    })
     expect(useUiStore.getState().prefillText).toBeNull()
   })
 })

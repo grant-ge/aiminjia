@@ -94,7 +94,6 @@ export function useChat() {
 
     // Optimistic store update
     store.setConversations([conversation, ...store.conversations])
-    store.setActiveConversation(optimisticId)
     store.setMessages([])
 
     try {
@@ -114,7 +113,6 @@ export function useChat() {
             c.id === optimisticId ? { ...c, id: backendId } : c,
           ),
         )
-        current.setActiveConversation(backendId)
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         return backendId
       }
@@ -124,7 +122,7 @@ export function useChat() {
       // Rollback
       const current = useChatStore.getState()
       current.setConversations(current.conversations.filter((c) => c.id !== optimisticId))
-      current.setActiveConversation(null)
+      useUiStore.getState().setRoute({ kind: 'home' })
     }
 
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: optimisticId })
@@ -142,7 +140,7 @@ export function useChat() {
     store.setConversations(store.conversations.filter((c) => c.id !== id))
 
     if (store.activeConversationId === id) {
-      store.setActiveConversation(null)
+      useUiStore.getState().setRoute({ kind: 'home' })
       store.setMessages([])
     }
 
@@ -182,7 +180,6 @@ export function useChat() {
     recordDiagnostic({ event: 'conversation.switch.started', conversationId: id })
     const loadVersion = ++switchVersionRef.current
     const store = useChatStore.getState()
-    store.setActiveConversation(id)
     store.setMessages([])
     useUiStore.getState().setRoute({ kind: 'chat', conversationId: id })
     void syncBusyConversations()
@@ -275,7 +272,6 @@ export function useChat() {
           { id: backendId, title: '新对话', createdAt: now, updatedAt: now, isArchived: false },
           ...store.conversations,
         ])
-        store.setActiveConversation(backendId)
         store.setMessages([])
         useUiStore.getState().setRoute({ kind: 'chat', conversationId: backendId })
         conversationId = backendId
@@ -422,9 +418,9 @@ export function useChat() {
     recordDiagnostic({ event: 'conversation.archive.started', conversationId: id })
     // 乐观更新：从列表移除
     store.setConversations(store.conversations.filter((c) => c.id !== id))
-    // 如果归档的是当前对话，切回 null
+    // 如果归档的是当前对话，切回 home
     if (store.activeConversationId === id) {
-      store.setActiveConversation(null)
+      useUiStore.getState().setRoute({ kind: 'home' })
     }
     try {
       await tauriArchiveConversation(id)

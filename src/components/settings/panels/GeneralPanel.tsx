@@ -58,7 +58,7 @@ export function GeneralPanel({ user, onLogout }: GeneralPanelProps) {
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-white">
+              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-primary-foreground">
                 {(user.name.charAt(0) || '?').toUpperCase()}
               </span>
             )}

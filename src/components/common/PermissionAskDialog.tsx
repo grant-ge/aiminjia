@@ -164,7 +164,7 @@ export function PermissionAskDialog({
         </p>
 
         <div
-          className="rounded-md border px-3 py-2 text-xs"
+          className="rounded-md border px-3 py-2 text-xs border-border"
           style={{
             background: 'var(--color-bg-subtle)',
             borderColor: 'var(--color-border)',
@@ -204,7 +204,7 @@ export function PermissionAskDialog({
             .map((option) => (
               <label
                 key={option.value}
-                className="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2"
+                className="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 border-border"
                 style={{
                   borderColor:
                     selectedDestination === option.value

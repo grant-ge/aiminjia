@@ -252,7 +252,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
             <p style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading')}</p>
           ) : skills.length === 0 ? (
             <div
-              className="rounded-lg border p-6 text-center"
+              className="rounded-lg border p-6 text-center border-border"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
             >
               <p className="mb-1">{t('settings.skills.empty')}</p>
@@ -263,7 +263,7 @@ export function SkillsTab(_props: SkillsTabProps = {}) {
               {skills.map((skill) => (
                 <div
                   key={skill.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3"
+                  className="flex items-center justify-between rounded-lg border px-4 py-3 border-border"
                   style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-main)' }}
                 >
                   <div className="flex items-center gap-2">

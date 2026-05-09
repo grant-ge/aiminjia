@@ -11,7 +11,7 @@ interface InsightBlockProps {
 export function InsightBlock({ insight }: InsightBlockProps) {
   return (
     <div
-      className="my-3 rounded-lg border p-3.5"
+      className="my-3 rounded-lg border p-3.5 border-border"
       style={{
         background: 'var(--color-semantic-blue-bg-light)',
         borderColor: 'var(--color-semantic-blue-border)',

@@ -119,6 +119,7 @@ fn permission_ask_required_maps_to_permission_ask_with_full_confirmation_payload
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        primary_model: "deepseek-v3".into(),
     });
 
     assert_eq!(legacy.name, "permission:ask");
@@ -151,6 +152,7 @@ fn permission_ask_required_dont_ask_mode_maps_mode_as_dont_ask() {
             PermissionDestination::Workspace,
         ],
         default_destination: Some(PermissionDestination::Session),
+        primary_model: "deepseek-v3".into(),
     });
 
     assert_eq!(legacy.name, "permission:ask");

@@ -106,7 +106,7 @@ export function LoginPage() {
                   type="checkbox"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
-                  className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-white transition-colors checked:border-primary checked:bg-primary"
+                  className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-border bg-background transition-colors checked:border-primary checked:bg-primary"
                   ref={(el) => {
                     if (!el) return
                     const update = () => {

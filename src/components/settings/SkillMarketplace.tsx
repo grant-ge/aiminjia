@@ -148,7 +148,7 @@ export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } =
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder={t('settings.skills.searchPlaceholder')}
-            className="h-7 rounded-md border px-2 text-xs"
+            className="h-7 rounded-md border px-2 text-xs border-border"
             style={{
               borderColor: 'var(--color-border)',
               background: 'var(--color-bg-main)',
@@ -165,7 +165,7 @@ export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } =
         <p style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading')}</p>
       ) : error ? (
         <div
-          className="rounded-lg border p-6 text-center"
+          className="rounded-lg border p-6 text-center border-border"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
         >
           <p>{t('settings.skills.loadFailed')}</p>
@@ -175,7 +175,7 @@ export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } =
         </div>
       ) : items.length === 0 ? (
         <div
-          className="rounded-lg border p-6 text-center"
+          className="rounded-lg border p-6 text-center border-border"
           style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
         >
           <p>{t('settings.skills.noResults')}</p>
@@ -187,7 +187,7 @@ export function SkillMarketplace({ onInstalled }: { onInstalled?: () => void } =
             {items.map((item) => (
               <div
                 key={item.id}
-                className="rounded-lg border p-4 flex flex-col gap-2"
+                className="rounded-lg border p-4 flex flex-col gap-2 border-border"
                 style={{
                   borderColor: 'var(--color-border)',
                   background: 'var(--color-bg-card)',

@@ -62,7 +62,7 @@ export function UpdaterPanel() {
       }}
     >
       <div
-        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out]"
+        className="flex flex-col rounded-lg border animate-[modalIn_0.2s_ease-out] border-border"
         style={{
           width: '520px',
           maxWidth: 'calc(100vw - 48px)',
@@ -73,7 +73,7 @@ export function UpdaterPanel() {
         }}
       >
         <div
-          className="shrink-0 px-5 py-4 border-b"
+          className="shrink-0 px-5 py-4 border-b border-border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <h3 className="text-base font-semibold">
@@ -116,7 +116,7 @@ export function UpdaterPanel() {
         </div>
 
         <div
-          className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3"
+          className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3 border-border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <button

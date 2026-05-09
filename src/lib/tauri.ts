@@ -50,6 +50,8 @@ export const TAURI_EVENTS = {
   INTERACTION_RESOLVED: 'interaction:resolved',
   TURN_COMPLETED: 'turn:completed',
   DIAGNOSTICS_EVENT: 'diagnostics:event',
+  CHANNEL_PLATFORM_STATE: 'channel:platform-state',
+  CHANNEL_MESSAGE: 'channel:message',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -311,10 +313,6 @@ export function saveClipboardImageToWorkspaceStaging(
   })
 }
 
-export function readLocalImageAsDataUrl(path: string): Promise<string> {
-  return invoke<string>('read_local_image_as_data_url', { path })
-}
-
 export function listAgents(): Promise<AgentInfo[]> {
   return invoke<AgentInfo[]>('list_agents')
 }
@@ -495,6 +493,148 @@ export function renameConversation(conversationId: string, newTitle: string): Pr
 
 export function archiveConversation(conversationId: string): Promise<void> {
   return invoke<void>('archive_conversation', { conversationId })
+}
+
+// ---------------------------------------------------------------------------
+// Channel types
+// ---------------------------------------------------------------------------
+
+export type ChannelPlatform = 'dingtalk' | 'feishu' | 'wechat' | 'wecom'
+
+export type ChannelCapability = 'available' | 'comingSoon'
+
+export type ChannelConnectionState =
+  | 'unconfigured'
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'configError'
+
+export type RobotCodeSource = 'registration' | 'appKeyFallback'
+
+export interface ChannelConfigView {
+  platform: ChannelPlatform
+  appKey: string
+  appSecretMasked: string
+  robotCode: string
+  robotCodeSource: RobotCodeSource
+  source: 'OPEN_CLAW'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChannelPlatformState {
+  platform: ChannelPlatform
+  capability: ChannelCapability
+  configured: boolean
+  enabled: boolean
+  connection: ChannelConnectionState
+  config?: ChannelConfigView | null
+  lastConnectedAt?: string | null
+  lastError?: string | null
+}
+
+export interface ChannelPlatformStatePayload {
+  state: ChannelPlatformState
+}
+
+export interface ChannelMessagePayload {
+  platform: ChannelPlatform
+  sessionId: string
+  senderNick: string
+  textPreview: string
+}
+
+export interface ChannelConversation {
+  sessionId: string
+  platform: ChannelPlatform
+  conversationType: 'group' | 'private'
+  externalId: string
+  displayName: string
+  unreadCount: number
+  robotCode: string
+  isActiveRobot: boolean
+}
+
+export interface ChannelRegistrationBeginResult {
+  deviceCode: string
+  userCode: string
+  verificationUriComplete: string
+  verificationUri: string
+  intervalSeconds: number
+  expiresInSeconds: number
+  source: string
+}
+
+export interface ChannelRegistrationPollResult {
+  state: 'waiting' | 'success' | 'fail' | 'expired' | 'unknown'
+  clientId?: string | null
+  robotCode?: string | null
+  config?: ChannelConfigView | null
+  platformState?: ChannelPlatformState | null
+  failReason?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Channel IPC
+// ---------------------------------------------------------------------------
+
+export function channelGetPlatforms(): Promise<ChannelPlatformState[]> {
+  return invoke<ChannelPlatformState[]>('channel_get_platforms')
+}
+
+export function channelGetPlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_get_platform', { platform })
+}
+
+export function channelGetConversations(
+  platform?: ChannelPlatform,
+): Promise<ChannelConversation[]> {
+  return invoke<ChannelConversation[]>('channel_get_conversations', { platform })
+}
+
+export function channelBeginRegistration(
+  platform: ChannelPlatform,
+): Promise<ChannelRegistrationBeginResult> {
+  return invoke<ChannelRegistrationBeginResult>('channel_begin_registration', { platform })
+}
+
+export function channelPollRegistration(
+  platform: ChannelPlatform,
+  deviceCode: string,
+): Promise<ChannelRegistrationPollResult> {
+  return invoke<ChannelRegistrationPollResult>('channel_poll_registration', { platform, deviceCode })
+}
+
+export function channelSetEnabled(
+  platform: ChannelPlatform,
+  enabled: boolean,
+): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_set_enabled', { platform, enabled })
+}
+
+export function channelRemovePlatform(platform: ChannelPlatform): Promise<ChannelPlatformState> {
+  return invoke<ChannelPlatformState>('channel_remove_platform', { platform })
+}
+
+export function channelRevealSecret(platform: ChannelPlatform): Promise<string> {
+  return invoke<string>('channel_reveal_secret', { platform })
+}
+
+export function onChannelPlatformState(
+  handler: (payload: ChannelPlatformStatePayload) => void,
+): Promise<() => void> {
+  return listen<ChannelPlatformStatePayload>(
+    TAURI_EVENTS.CHANNEL_PLATFORM_STATE,
+    (e) => handler(e.payload),
+  )
+}
+
+export function onChannelMessage(
+  handler: (payload: ChannelMessagePayload) => void,
+): Promise<() => void> {
+  return listen<ChannelMessagePayload>(TAURI_EVENTS.CHANNEL_MESSAGE, (e) => handler(e.payload))
 }
 
 export function restoreConversation(conversationId: string): Promise<void> {

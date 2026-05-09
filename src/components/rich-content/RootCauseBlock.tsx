@@ -11,7 +11,7 @@ interface RootCauseBlockProps {
 export function RootCauseBlock({ rootCause }: RootCauseBlockProps) {
   return (
     <div
-      className="my-3 rounded-lg border p-4"
+      className="my-3 rounded-lg border p-4 border-border"
       style={{
         background: 'var(--color-semantic-red-bg-light)',
         borderColor: 'var(--color-semantic-red-border)',

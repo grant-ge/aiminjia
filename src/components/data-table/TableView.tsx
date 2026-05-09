@@ -115,7 +115,7 @@ export function TableView({
 
         {showFooter && (
           <div
-            className="flex items-center justify-between border-t px-3 py-2 text-xs"
+            className="flex items-center justify-between border-t px-3 py-2 text-xs border-border"
             style={{
               background: 'var(--table-header-bg)',
               borderColor: 'var(--table-divider)',

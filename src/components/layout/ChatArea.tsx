@@ -19,8 +19,14 @@ function scrollToBottom(el: HTMLElement | null, smooth = false) {
 export function ChatArea() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const activeConversationId = useChatStore((s) => s.activeConversationId)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const userScrolledUp = useRef(false)
+  const lastConversationId = useRef<string | null>(null)
+  // When switching conversations, we want an instant jump to bottom (not smooth).
+  // The flag stays set until we observe messages for the new conversation, since
+  // setActiveConversationId and setMessages can land in separate renders.
+  const pendingHardJumpRef = useRef(true)
 
   /** Detect when the user scrolls up (away from bottom). */
   const handleScroll = useCallback(() => {
@@ -29,12 +35,23 @@ export function ChatArea() {
     userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100
   }, [])
 
-  // Scroll to bottom when new messages arrive
   useEffect(() => {
-    if (!userScrolledUp.current) {
-      scrollToBottom(scrollContainerRef.current, true)
+    if (lastConversationId.current !== activeConversationId) {
+      lastConversationId.current = activeConversationId
+      pendingHardJumpRef.current = true
+      userScrolledUp.current = false
     }
-  }, [messages.length])
+    if (userScrolledUp.current) return
+    const el = scrollContainerRef.current
+    if (!el) return
+    if (pendingHardJumpRef.current) {
+      scrollToBottom(el)
+      requestAnimationFrame(() => scrollToBottom(scrollContainerRef.current))
+      if (messages.length > 0) pendingHardJumpRef.current = false
+    } else {
+      scrollToBottom(el, true)
+    }
+  }, [activeConversationId, messages.length])
 
   // During streaming, use a 300ms interval for smooth auto-scroll
   // instead of per-token scrollIntoView that causes rendering issues

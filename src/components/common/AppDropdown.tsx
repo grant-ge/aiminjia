@@ -56,8 +56,8 @@ export function AppDropdown({
         side={side}
         sideOffset={sideOffset}
         className={cn(
-          'min-w-40 rounded-[13px] border border-black/5 bg-[#fbfbfa] p-1.5 text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)]',
-          '[&_[data-highlighted]]:bg-black/[0.04] [&_[data-highlighted]]:text-foreground',
+          'min-w-40 rounded-[13px] border border-border bg-popover p-1.5 text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.10),0_2px_6px_rgba(0,0,0,0.06)]',
+          '[&_[data-highlighted]]:bg-accent [&_[data-highlighted]]:text-accent-foreground',
           contentClassName,
         )}
       >

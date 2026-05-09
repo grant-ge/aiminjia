@@ -25,6 +25,7 @@ function WindowControls() {
         <svg width="10" height="10" viewBox="0 0 10 10"><rect fill="none" stroke="currentColor" strokeWidth="1" x="0.5" y="0.5" width="9" height="9"/></svg>
       </button>
       <button
+        // Windows 关闭按钮固定红底 + 白字（对齐 Win 系统外观，不随主题）
         className={`${btnClass} hover:!bg-red-600 hover:!text-white`}
         onClick={() => getCurrentWindow().close()}
         aria-label="Close"

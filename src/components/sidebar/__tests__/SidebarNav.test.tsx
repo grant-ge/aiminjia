@@ -5,13 +5,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { SidebarNav } from '../SidebarNav'
 
 describe('SidebarNav', () => {
-  it('renders nav items for 新任务, 数字员工, 汇报中心, 技能中心 and 定时任务', () => {
+  it('renders nav items for 新任务, 数字员工, 汇报中心, 技能中心, 定时任务 and IM 频道', () => {
     render(<SidebarNav activeKey="home" onSelect={() => {}} />)
     expect(screen.getByRole('button', { name: '新任务' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '数字员工' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '汇报中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '技能中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'IM 频道' })).toBeInTheDocument()
   })
 
   it('marks the active item with sidebar-accent background class', () => {

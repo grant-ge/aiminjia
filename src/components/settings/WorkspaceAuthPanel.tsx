@@ -167,7 +167,7 @@ export function WorkspaceAuthPanel({ sessionId }: Props) {
       )}
       <form className="space-y-2" onSubmit={handleManualSubmit}>
         <div
-          className="rounded-lg border p-3"
+          className="rounded-lg border p-3 border-border"
           style={{
             borderColor: 'var(--color-border-secondary)',
             background: 'var(--color-bg-secondary)',
@@ -182,7 +182,7 @@ export function WorkspaceAuthPanel({ sessionId }: Props) {
               onChange={(event) => setManualPath(event.target.value)}
               disabled={pending || !sessionId}
               placeholder="/Users/you/Documents/project"
-              className="flex-1 rounded-md border px-3 py-2 text-sm"
+              className="flex-1 rounded-md border px-3 py-2 text-sm border-border"
               style={{
                 borderColor: 'var(--color-border-secondary)',
                 background: 'var(--color-bg-primary)',

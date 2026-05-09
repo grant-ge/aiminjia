@@ -199,7 +199,7 @@ export function SubAgentTranscriptViewer({
 
       {expanded && (
         <div
-          className="border-t"
+          className="border-t border-border"
           style={{ borderColor: 'var(--color-border)' }}
         >
           <TranscriptBody loadState={loadState} entries={entries} errorMsg={errorMsg} />

@@ -955,6 +955,12 @@ impl RuntimeRepositoryFacade {
         self.conversation_store.as_ref()
     }
 
+    pub fn conversation_store_arc(
+        &self,
+    ) -> std::sync::Arc<dyn crate::runtime::store::ConversationStore> {
+        self.conversation_store.clone()
+    }
+
     pub fn persona_store(&self) -> &dyn crate::runtime::store::PersonaStore {
         self.persona_store.as_ref()
     }

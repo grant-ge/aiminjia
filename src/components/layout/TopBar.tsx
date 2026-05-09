@@ -19,7 +19,7 @@ export function TopBar() {
 
   return (
     <header
-      className="flex h-11 shrink-0 items-center border-b px-6"
+      className="flex h-11 shrink-0 items-center border-b px-6 border-border"
       style={{ borderColor: 'var(--color-border)' }}
     >
       <h2

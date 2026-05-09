@@ -72,7 +72,7 @@ const CATEGORY_STYLE: Record<string, { bg: string }> = {
 
 function getSkillIcon(icon: string) {
   const Icon = ICONS[icon] ?? FileText
-  return <Icon className="h-4 w-4 text-white" />
+  return <Icon className="h-4 w-4 text-primary-foreground" />
 }
 
 function getIconBg(category: string) {

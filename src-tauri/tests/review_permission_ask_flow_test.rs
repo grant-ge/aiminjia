@@ -598,6 +598,7 @@ fn permission_ask_required_maps_to_frontend_permission_ask_payload() {
             mode: PermissionMode::Default,
             remember_options: vec![PermissionDestination::Session],
             default_destination: Some(PermissionDestination::Session),
+            primary_model: "deepseek-v3".into(),
         },
     );
 

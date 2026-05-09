@@ -704,6 +704,7 @@ impl RuntimeChatTurnDriver {
                         mode,
                         remember_options: remember_options.clone(),
                         default_destination: *default_destination,
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -883,6 +884,7 @@ impl RuntimeChatTurnDriver {
                         tool_name: interaction_request.tool_name.clone(),
                         kind: interaction_request.kind.clone(),
                         payload: interaction_request.payload.clone(),
+                        primary_model: turn.primary_model().to_string(),
                     },
                 ))
                 .await?;
@@ -1108,6 +1110,9 @@ impl RuntimeChatTurnDriver {
             run_id: request.run_id.clone(),
             hook_registry: request.hook_registry.clone(),
         };
+        // Make primary_model available on TurnState so downstream emit sites
+        // (resolve_permission_asks / resolve_interaction_requests) can forward it.
+        turn.set_primary_model(config.llm_settings.primary_model.clone());
         if let Some(snapshot) = &config.prompt_snapshot {
             let diagnostics =
                 crate::runtime::chat::prompt::PromptDiagnostics::from_assembly(snapshot.assembly());
@@ -2025,6 +2030,10 @@ mod tests {
 
         fn pending_count_for_session(&self, _session_id: &crate::runtime::ids::SessionId) -> usize {
             0
+        }
+
+        fn is_pending(&self, _tool_call_id: &ToolCallId) -> bool {
+            false
         }
     }
 
