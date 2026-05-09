@@ -40,7 +40,7 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
         RunId::new("run-1"),
         RuntimeEventKind::PermissionAskRequired {
             tool_call_id: "tc-ask-1".into(),
-            tool_name: "bash".to_string(),
+            tool_name: "Bash".to_string(),
             message: "need approval".to_string(),
             suggestions: vec!["Allow once".to_string(), "Deny".to_string()],
             mode: PermissionMode::Plan,
@@ -71,7 +71,7 @@ fn maps_permission_ask_runtime_event_to_legacy_permission_ask() {
     );
     assert_eq!(
         mapped.payload.get("toolName").and_then(|v| v.as_str()),
-        Some("bash")
+        Some("Bash")
     );
     assert_eq!(
         mapped.payload.get("message").and_then(|v| v.as_str()),

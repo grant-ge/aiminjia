@@ -132,7 +132,7 @@ async fn bash_returns_error_on_timeout() {
 
     let tool = BashTool;
     let result = tool
-        .execute(json!({ "command": "sleep 10", "timeout_secs": 1 }), ctx)
+        .execute(json!({ "command": "sleep 10", "timeout": 1000 }), ctx)
         .await;
 
     assert!(result.is_err(), "timeout should surface as tool error");
@@ -157,7 +157,7 @@ async fn bash_timeout_kills_descendant_processes() {
         .execute(
             json!({
                 "command": "sh -c 'sleep 2; echo orphan > timeout-child.txt' & wait",
-                "timeout_secs": 1
+                "timeout": 1000
             }),
             ctx,
         )

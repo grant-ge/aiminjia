@@ -128,7 +128,7 @@ pub fn list_skills_from_registry(registry: &Arc<Mutex<SkillRegistry>>) -> Vec<Sk
                     .unwrap_or_else(|| skill.frontmatter.name.clone()),
                 description: skill.frontmatter.description.clone(),
                 icon: None,
-                category: None,
+                category: skill.frontmatter.category.clone(),
             })
         })
         .collect()
@@ -207,12 +207,6 @@ pub fn refresh_skill_registry(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("registry lock poisoned: {}", e))?
         .replace_all(loaded.into_values().collect());
     Ok(())
-}
-
-fn load_skill_for_reload(
-    _path: &Path,
-) -> Result<(String, Box<dyn crate::plugin::skill_trait::Skill>), String> {
-    unimplemented!("Skill reload will be restored after Phase D SkillRegistry lands.")
 }
 
 /// List all installed custom skills.
@@ -575,6 +569,7 @@ pub async fn install_marketplace_skill(
     ))
 }
 
+#[allow(dead_code)] // Placeholder until Phase D SkillRegistry lands; covered by `pack_skill_to_dir_unimplemented_until_phase_d` test.
 pub(crate) fn pack_skill_to_dir(_skill_dir: &Path, _output_dir: &Path) -> Result<PathBuf, String> {
     unimplemented!(
         "Skill packaging will be restored in a follow-up after Phase D SkillRegistry lands."

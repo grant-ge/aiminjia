@@ -27,6 +27,10 @@ import type { GeneratedFile } from '@/types/message'
 
 const EMPTY_TASKS: ConversationTaskState[] = []
 
+// Toggle to bring the task-monitor sidebar back. Code paths below are kept
+// intact so flipping this to true restores the panel without further edits.
+const SHOW_TASK_MONITOR = false
+
 // ─── RightPanel root ──────────────────────────────────────────────────────────
 
 interface RightPanelProps {
@@ -52,16 +56,21 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
             onClosePreview={closePreview}
           />
         </div>
-        <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
-          <div className="px-4 py-2">
-            <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+        {SHOW_TASK_MONITOR ? (
+          <div className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto border-l border-border bg-background">
+            <div className="px-4 py-2">
+              <h2 className="text-[15px] font-semibold text-foreground">任务监控</h2>
+            </div>
+            <TaskSection conversationId={conversationId} />
+            <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
           </div>
-          <TaskSection conversationId={conversationId} />
-          <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
-          <SkillMcpSection />
-        </div>
+        ) : null}
       </div>
     )
+  }
+
+  if (!SHOW_TASK_MONITOR) {
+    return null
   }
 
   return (
@@ -74,7 +83,6 @@ export function RightPanel({ conversationId, onOpenExternal }: RightPanelProps) 
       </div>
       <TaskSection conversationId={conversationId} />
       <ArtifactSection conversationId={conversationId} onOpenExternal={onOpenExternal} />
-      <SkillMcpSection />
     </div>
   )
 }
@@ -298,33 +306,4 @@ function ArtifactFileIcon({ fileType }: { fileType?: string }) {
     default:
       return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
   }
-}
-
-// ─── SkillMcpSection ──────────────────────────────────────────────────────────
-
-function SkillMcpSection() {
-  const [open, setOpen] = useState(true)
-
-  return (
-    <div className="border-b border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="text-[0.8125rem] font-semibold text-foreground">技能与 MCP</span>
-        <ChevronDown
-          className={cn(
-            'h-4 w-4 text-muted-foreground transition-transform duration-150',
-            !open && '-rotate-90',
-          )}
-        />
-      </button>
-      {open && (
-        <div className="px-4 pb-3">
-          <p className="text-xs text-muted-foreground">暂无调用</p>
-        </div>
-      )}
-    </div>
-  )
 }

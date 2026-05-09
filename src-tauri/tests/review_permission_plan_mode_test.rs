@@ -13,12 +13,13 @@ fn make_ask() -> PermissionDecision {
         remember_options,
         default_destination,
         reason: PermissionReason::UnknownScope,
+        path_auth_scope: None,
     }
 }
 
 #[test]
 fn review_plan_mode_ask_becomes_deny() {
-    let result = apply_permission_mode(make_ask(), "bash", PermissionMode::Plan);
+    let result = apply_permission_mode(make_ask(), "Bash", PermissionMode::Plan);
     assert!(
         matches!(result, PermissionDecision::Deny { .. }),
         "Plan mode must convert Ask to Deny, got: {:?}",
@@ -38,7 +39,7 @@ fn review_plan_mode_allow_passes_through() {
         updated_input: None,
         reason: PermissionReason::StoredPolicy,
     };
-    let result = apply_permission_mode(allow, "bash", PermissionMode::Plan);
+    let result = apply_permission_mode(allow, "Bash", PermissionMode::Plan);
     assert!(matches!(result, PermissionDecision::Allow { .. }));
 }
 
@@ -48,13 +49,13 @@ fn review_plan_mode_deny_passes_through() {
         message: "blocked".into(),
         reason: PermissionReason::StoredPolicy,
     };
-    let result = apply_permission_mode(deny, "bash", PermissionMode::Plan);
+    let result = apply_permission_mode(deny, "Bash", PermissionMode::Plan);
     assert!(matches!(result, PermissionDecision::Deny { .. }));
 }
 
 #[test]
 fn review_dont_ask_mode_ask_becomes_deny() {
-    let result = apply_permission_mode(make_ask(), "bash", PermissionMode::DontAsk);
+    let result = apply_permission_mode(make_ask(), "Bash", PermissionMode::DontAsk);
     assert!(
         matches!(result, PermissionDecision::Deny { .. }),
         "DontAsk mode must also convert Ask to Deny"

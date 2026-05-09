@@ -253,8 +253,8 @@ fn memory_tool_definition_names_match_tool_catalog_registration() {
     let write = WriteMemoryRuntimeTool::new(deps(dir.path()));
     let search = SearchMemoryRuntimeTool::new(deps(dir.path()));
 
-    assert_eq!(write.definition().id, "write_memory");
-    assert_eq!(search.definition().id, "search_memory");
-    assert!(TOOL_CATALOG.get("write_memory").is_some());
-    assert!(TOOL_CATALOG.get("search_memory").is_some());
+    assert_eq!(write.definition().id, "WriteMemory");
+    assert_eq!(search.definition().id, "SearchMemory");
+    assert!(TOOL_CATALOG.get("WriteMemory").is_some());
+    assert!(TOOL_CATALOG.get("SearchMemory").is_some());
 }

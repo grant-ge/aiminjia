@@ -10,8 +10,7 @@
 /// user would never naturally type or expect to see.
 ///
 /// NOTE: Tool/function names the LLM legitimately references in analysis
-/// mode (e.g. `save_analysis_note`, `_export_detail`, `前序分析记录`)
-/// are NOT included to avoid false positives during multi-iteration steps.
+/// mode are NOT included to avoid false positives during multi-iteration steps.
 const FINGERPRINTS: &[&str] = &[
     // Preamble internal function names (sandbox internals, never user-visible)
     "_print_table",
@@ -23,9 +22,7 @@ const FINGERPRINTS: &[&str] = &[
     "requires_confirmation",
     "确认卡点",
     // Internal configuration labels
-    "execute_python 环境",
     "排除人员展示规则",
-    "update_progress 更新步骤状态",
 ];
 
 /// Minimum number of fingerprint matches to flag as a leak.
@@ -91,7 +88,7 @@ mod tests {
     #[test]
     fn test_single_fingerprint_passes() {
         // A single fingerprint is below threshold — not a leak
-        let content = "我会调用 save_analysis_note 保存分析结果。";
+        let content = "系统使用了 _print_table 来展示结果。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }
 
@@ -109,7 +106,7 @@ mod tests {
     #[test]
     fn test_many_fingerprints_triggers_leak() {
         let content = "SYSTEM_PROMPT 包含了 数据真实性铁律 和 确认卡点 以及 前序分析记录。\
-                        execute_python 环境 中有 _load_data 和 _smart_read_csv。";
+                        排除人员展示规则 中有 _load_data 和 _smart_read_csv。";
         match check_for_leak(content) {
             LeakCheckResult::Leaked { matched_count, .. } => {
                 assert!(
@@ -141,20 +138,10 @@ mod tests {
     #[test]
     fn test_normal_tool_usage_no_false_positive() {
         // Typical LLM output mentioning tools it's using — should NOT trigger
-        let content = "我先用 load_file 加载文件数据，然后用 execute_python 进行分析。\
-                        接下来我会用 web_search 搜索行业基准数据。\
+        let content = "我先用 Read 读取文件数据，然后用 Bash 进行分析。\
+                        接下来我会用 WebSearch 搜索行业基准数据。\
                         数据显示 Compa-Ratio 中位数为 95%，CV 为 18%。";
         assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
     }
 
-    #[test]
-    fn test_analysis_mode_output_no_false_positive() {
-        // LLM legitimately mentions save_analysis_note, _export_detail, 前序分析记录
-        // during analysis workflow — should NOT trigger
-        let content = "分析完成，我已调用 save_analysis_note 保存关键结论。\
-                        您可以使用 _export_detail 导出详细数据。\
-                        请查看前序分析记录了解之前步骤的发现。\
-                        analysis_direction 已确认为薪酬公平性诊断。";
-        assert!(matches!(check_for_leak(content), LeakCheckResult::Clean));
-    }
 }

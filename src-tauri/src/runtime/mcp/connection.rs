@@ -323,6 +323,7 @@ impl McpConnection for StdioMcpConnection {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        crate::storage::process_ext::NoWindowExt::no_window(&mut command);
 
         // Prepend the bundle bin dir to PATH so shebang scripts (npx → node, etc.) find
         // the bundled node interpreter rather than failing on systems without system node.
@@ -331,6 +332,16 @@ impl McpConnection for StdioMcpConnection {
             &mut command,
             std::path::Path::new(&program),
         );
+
+        // Force UTF-8 stdio for MCP children. Windows zh-CN consoles default to
+        // CP936; many MCP servers (Python, Node) honor these env vars and emit
+        // UTF-8 to their piped stdout, which our line-framed JSON-RPC reader
+        // requires. User env_map below can still override if needed.
+        command.env("PYTHONIOENCODING", "utf-8");
+        command.env("PYTHONUTF8", "1");
+        if std::env::var_os("LANG").is_none() {
+            command.env("LANG", "en_US.UTF-8");
+        }
 
         for (key, value) in self.env_map() {
             command.env(key, value);

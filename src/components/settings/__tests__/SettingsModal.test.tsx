@@ -28,7 +28,8 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('button', { name: '通用' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '关于 AI 小家' })).toBeInTheDocument()
     expect(screen.getByText('姚域权')).toBeInTheDocument()
-    expect(screen.getByText('语言')).toBeInTheDocument()
+    expect(screen.queryByText('语言')).not.toBeInTheDocument()
+    expect(screen.getByText('外观')).toBeInTheDocument()
     expect(screen.getByText('强调色')).toBeInTheDocument()
   })
 
@@ -39,13 +40,12 @@ describe('SettingsModal', () => {
     expect(screen.getByText('检查更新')).toBeInTheDocument()
   })
 
-  it('does not switch to disabled settings', () => {
+  it('does not render unavailable settings', () => {
     useUiStore.getState().openSettings('account')
     render(<SettingsModal />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'MCP 服务（未开放）' }))
-
     expect(screen.getByText('姚域权')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'MCP 服务（未开放）' })).not.toBeInTheDocument()
     expect(screen.queryByText(/MCP 服务 · 即将上线/)).not.toBeInTheDocument()
   })
 })

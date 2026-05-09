@@ -23,7 +23,7 @@ async fn edit_file_replaces_unique_string() {
 
     let tool = EditFileRuntimeTool;
     tool.execute(
-        json!({ "path": "file.txt", "old_string": "world", "new_string": "rust" }),
+        json!({ "file_path": "file.txt", "old_string": "world", "new_string": "rust" }),
         ctx,
     )
     .await
@@ -42,7 +42,7 @@ async fn edit_file_fails_when_old_string_not_found() {
     let tool = EditFileRuntimeTool;
     let result = tool
         .execute(
-            json!({ "path": "file.txt", "old_string": "NONEXISTENT", "new_string": "x" }),
+            json!({ "file_path": "file.txt", "old_string": "NONEXISTENT", "new_string": "x" }),
             ctx,
         )
         .await;
@@ -58,7 +58,7 @@ async fn edit_file_fails_when_old_string_not_unique() {
     let tool = EditFileRuntimeTool;
     let result = tool
         .execute(
-            json!({ "path": "dup.txt", "old_string": "foo", "new_string": "bar" }),
+            json!({ "file_path": "dup.txt", "old_string": "foo", "new_string": "bar" }),
             ctx,
         )
         .await;
@@ -78,7 +78,7 @@ async fn edit_file_fails_when_file_does_not_exist() {
     let tool = EditFileRuntimeTool;
     let result = tool
         .execute(
-            json!({ "path": "missing.txt", "old_string": "anything", "new_string": "x" }),
+            json!({ "file_path": "missing.txt", "old_string": "anything", "new_string": "x" }),
             ctx,
         )
         .await;
@@ -92,7 +92,7 @@ async fn edit_file_creates_new_file_when_old_string_empty_and_file_missing() {
 
     let tool = EditFileRuntimeTool;
     tool.execute(
-        json!({ "path": "new.txt", "old_string": "", "new_string": "brand new" }),
+        json!({ "file_path": "new.txt", "old_string": "", "new_string": "brand new" }),
         ctx,
     )
     .await
@@ -115,7 +115,7 @@ async fn edit_file_updates_cache_after_edit() {
 
     let tool = EditFileRuntimeTool;
     tool.execute(
-        json!({ "path": "cache.txt", "old_string": "original", "new_string": "updated" }),
+        json!({ "file_path": "cache.txt", "old_string": "original", "new_string": "updated" }),
         ctx,
     )
     .await
@@ -134,7 +134,7 @@ async fn edit_file_rejects_path_traversal() {
     let tool = EditFileRuntimeTool;
     let result = tool
         .execute(
-            json!({ "path": "../etc/passwd", "old_string": "root", "new_string": "evil" }),
+            json!({ "file_path": "../etc/passwd", "old_string": "root", "new_string": "evil" }),
             ctx,
         )
         .await;
@@ -150,7 +150,7 @@ async fn edit_file_replaces_multiline_string() {
 
     let tool = EditFileRuntimeTool;
     tool.execute(
-        json!({ "path": "multi.txt", "old_string": "line two\n", "new_string": "LINE TWO\n" }),
+        json!({ "file_path": "multi.txt", "old_string": "line two\n", "new_string": "LINE TWO\n" }),
         ctx,
     )
     .await

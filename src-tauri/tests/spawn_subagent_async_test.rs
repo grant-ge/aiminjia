@@ -85,7 +85,7 @@ async fn async_launched_returns_immediately_with_agent_id() {
     let result = tool
         .execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "do work",
                 "description": "async test",
                 "run_in_background": true,
@@ -130,7 +130,7 @@ async fn async_launched_without_name_returns_null() {
     let result = tool
         .execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "do anonymous work",
                 "description": "no name test",
                 "run_in_background": true
@@ -170,7 +170,7 @@ async fn launch_async_called_when_run_in_background_true() {
 
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "background job",
             "description": "routing test",
             "run_in_background": true
@@ -208,7 +208,7 @@ async fn launch_sync_called_when_run_in_background_false() {
 
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "sync job",
             "description": "sync routing test",
             "run_in_background": false
@@ -247,7 +247,7 @@ async fn launch_sync_called_when_run_in_background_omitted() {
     // Note: run_in_background is absent — defaults to false
     tool.execute(
         json!({
-            "subagent_type": "browse_data_agent",
+            "subagent_type": "explore",
             "prompt": "default routing",
             "description": "omitted field test"
         }),

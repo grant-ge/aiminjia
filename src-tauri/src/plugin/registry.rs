@@ -35,7 +35,6 @@ pub struct RequestScopedRuntimeDeps {
     pub tavily_api_key: Option<String>,
     pub bocha_api_key: Option<String>,
     pub app_handle: Option<tauri::AppHandle>,
-    pub session_manager: Arc<crate::python::session::PythonSessionManager>,
     pub auth_manager: Option<Arc<crate::auth::AuthManager>>,
     pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub use_cloud: bool,
@@ -52,6 +51,11 @@ pub struct RequestScopedRuntimeDeps {
     pub cancellation: Option<crate::runtime::cancellation::CancellationToken>,
     pub permission_mode: PermissionMode,
     pub runtime_resolver: Option<ManagedRuntimeResolver>,
+    /// Phase 5 path-auth inheritance: the parent turn's merged ToolPermissionContext.
+    /// Propagated from `PluginContext.permission_ctx` so that registry.rs can pass the
+    /// parent's authorized paths into `StorageCapability` when executing tools.
+    /// `None` for non-sub-agent paths (legacy tools, test helpers).
+    pub permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -67,7 +71,6 @@ impl RequestScopedRuntimeDeps {
             tavily_api_key: ctx.tavily_api_key.clone(),
             bocha_api_key: ctx.bocha_api_key.clone(),
             app_handle: ctx.app_handle.clone(),
-            session_manager: ctx.session_manager.clone(),
             auth_manager: ctx.auth_manager.clone(),
             connector_engine: ctx.connector_engine.clone(),
             use_cloud: ctx.use_cloud,
@@ -83,6 +86,7 @@ impl RequestScopedRuntimeDeps {
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
             runtime_resolver: ctx.runtime_resolver.clone(),
+            permission_ctx: ctx.permission_ctx.clone(),
         }
     }
 
@@ -106,42 +110,16 @@ impl RequestScopedRuntimeDeps {
         self
     }
 
-    fn python_runtime(
-        &self,
-    ) -> crate::runtime::dependencies::RuntimeDependencyResult<(
-        std::path::PathBuf,
-        Option<std::path::PathBuf>,
-    )> {
-        if let Some(resolver) = &self.runtime_resolver {
-            let deps = resolver.workspace_dependencies()?;
-            return Ok((deps.python, None));
-        }
-
-        Err(
-            crate::runtime::dependencies::RuntimeDependencyError::ResolverUnavailable(
-                "RequestScopedRuntimeDeps has no RuntimeResolver".to_string(),
-            ),
-        )
-    }
 }
 
 const REQUEST_SCOPED_RUNTIME_TOOL_NAMES: &[&str] = &[
-    "web_search",
-    "browse_navigate",
-    "read_page_content",
-    "page_execute_js",
-    "extract_table_data",
-    "extract_with_pagination",
-    "browse_and_extract",
-    "load_file",
-    "browse_data",
-    "spawn_subagent",
-    "execute_python",
-    "generate_report",
-    "generate_chart",
-    "write_memory",
-    "search_memory",
-    "load_skill",
+    "WebSearch",
+    "Agent",
+    "WriteMemory",
+    "SearchMemory",
+    "Skill",
+    "TaskOutput",
+    "TaskStop",
 ];
 
 /// Info about a registered tool (for management UI).
@@ -503,32 +481,22 @@ impl ToolRegistry {
                 let storage = StorageCapability {
                     workspace_path: ctx.workspace_path.clone(),
                     authorized_workspace: ctx.authorized_workspace.clone(),
-                };
-                let browser_available = ctx.connector_engine.is_some();
-                let file_ops = if name == "load_file" {
-                    let (python_binary, python_home) = ctx
-                        .python_runtime()
-                        .map_err(|err| ToolError::ExecutionFailed(err.to_string()))?;
-                    Some(
-                        Arc::new(crate::runtime::tools::capability::DefaultFileOperations {
-                            storage: ctx.storage.clone(),
-                            file_manager: ctx.file_manager.clone(),
-                            workspace_path: ctx.workspace_path.clone(),
-                            conversation_id: ctx.conversation_id.clone(),
-                            run_id: ctx.run_id.clone(),
-                            python_binary: Some(python_binary),
-                            python_home,
-                        })
-                            as Arc<dyn crate::runtime::tools::capability::FileOperations>,
-                    )
-                } else {
-                    None
+                    // Phase 5: inherit parent's permission_ctx when available
+                    // (sub-agent path), otherwise fall back to empty() (legacy/test).
+                    permission_ctx: ctx
+                        .permission_ctx
+                        .clone()
+                        .unwrap_or_else(|| {
+                            std::sync::Arc::new(
+                                crate::runtime::path_auth::ToolPermissionContext::empty(),
+                            )
+                        }),
                 };
                 let cap = CapabilityContext {
                     storage: Some(storage),
                     workspace_id: Some(ctx.conversation_id.clone()),
-                    browser_available,
-                    file_ops,
+                    browser_available: false,
+                    file_ops: None,
                     read_file_state: ctx.read_file_state.clone(),
                     file_reading_limits: Some(
                         crate::runtime::tools::capability::FileReadingLimits::default(),
@@ -644,7 +612,6 @@ impl ToolRegistry {
                 tavily_api_key: ctx.tavily_api_key.clone(),
                 bocha_api_key: ctx.bocha_api_key.clone(),
                 app_handle: ctx.app_handle.clone(),
-                session_manager: ctx.session_manager.clone(),
                 auth_manager: ctx.auth_manager.clone(),
                 connector_engine: ctx.connector_engine.clone(),
                 use_cloud: ctx.use_cloud,
@@ -661,6 +628,7 @@ impl ToolRegistry {
                 permission_mode: ctx.permission_mode,
                 runtime_resolver: ctx.runtime_resolver.clone(),
                 dingtalk_bridge: None,
+                permission_ctx: ctx.permission_ctx.clone(),
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
@@ -785,7 +753,7 @@ impl ToolRegistry {
         use std::sync::Arc;
 
         match name {
-            "web_search" => {
+            "WebSearch" => {
                 let deps = builtin::network::SearchDeps {
                     tavily_api_key: ctx.tavily_api_key.clone(),
                     bocha_api_key: ctx.bocha_api_key.clone(),
@@ -794,94 +762,7 @@ impl ToolRegistry {
                 };
                 Some(Arc::new(builtin::network::WebSearchRuntimeTool::new(deps)))
             }
-            "browse_navigate" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::BrowseNavigateRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "read_page_content" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ReadPageContentRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "page_execute_js" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::PageExecuteJsRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "extract_table_data" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ExtractTableDataRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "extract_with_pagination" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::ExtractWithPaginationRuntimeTool::new(
-                        deps,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "browse_and_extract" => {
-                let deps = builtin::browser::BrowserDeps {
-                    connector_engine: ctx.connector_engine.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    conversation_id: ctx.conversation_id.clone(),
-                };
-                Some(
-                    Arc::new(builtin::browser::BrowseAndExtractRuntimeTool::new(deps))
-                        as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "load_file" => Some(Arc::new(builtin::file::LoadFileRuntimeTool::new())),
-            "browse_data" => Some(Arc::new(
-                builtin::browse_data::BrowseDataRuntimeTool::with_launcher(Arc::new(
-                    crate::llm::tool_executor::DefaultBrowseDataLauncher::from_runtime_deps(
-                        ctx.clone(),
-                    ),
-                )),
-            ) as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "spawn_subagent" => {
+            "Agent" => {
                 use tauri::Manager;
 
                 // Fail-closed: if app state is missing any of the three Arcs,
@@ -965,7 +846,7 @@ impl ToolRegistry {
                     ),
                 ) as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
-            "task_output" => {
+            "TaskOutput" => {
                 use tauri::Manager;
                 let app = match ctx.app_handle.as_ref() {
                     Some(a) => a,
@@ -990,96 +871,51 @@ impl ToolRegistry {
                 Some(Arc::new(builtin::task_output::TaskOutputRuntimeTool::new(resolver))
                     as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
-            "execute_python" => {
-                use crate::runtime::tools::builtin::python_execution::DefaultPythonExecution;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(err) => {
-                        return Some(Arc::new(builtin::python::ExecutePythonRuntimeTool::error(
-                            err.to_string(),
-                        ))
-                            as Arc<dyn crate::runtime::tools::RuntimeTool>);
-                    }
-                };
-                let python = Arc::new(DefaultPythonExecution::new(
-                    ctx.session_manager.clone(),
-                    python_binary.clone(),
-                    python_home.clone(),
-                ));
-                Some(Arc::new(
-                    builtin::python::ExecutePythonRuntimeTool::with_runtime_deps(
-                        python,
-                        ctx.storage.clone(),
-                        ctx.file_manager.clone(),
-                        ctx.run_id.clone(),
-                        ctx.model.clone(),
-                        python_binary,
-                        python_home,
-                    ),
-                )
-                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
-            }
-            "generate_report" => {
-                use crate::runtime::tools::builtin::report_capability::DefaultReportCapability;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(_) => return None,
-                };
-                let capability = Arc::new(DefaultReportCapability {
-                    storage: ctx.storage.clone(),
-                    file_manager: ctx.file_manager.clone(),
-                    auth_manager: ctx.auth_manager.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    python_binary,
-                    python_home,
-                });
-                Some(
-                    Arc::new(builtin::report::GenerateReportRuntimeTool::with_capability(
-                        capability,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "generate_chart" => {
-                use crate::runtime::tools::builtin::chart_capability::DefaultChartCapability;
-
-                let (python_binary, python_home) = match ctx.python_runtime() {
-                    Ok(runtime) => runtime,
-                    Err(_) => return None,
-                };
-                let capability = Arc::new(DefaultChartCapability {
-                    storage: ctx.storage.clone(),
-                    workspace_path: ctx.workspace_path.clone(),
-                    python_binary,
-                    python_home,
-                });
-                Some(
-                    Arc::new(builtin::chart::GenerateChartRuntimeTool::with_capability(
-                        capability,
-                    )) as Arc<dyn crate::runtime::tools::RuntimeTool>,
-                )
-            }
-            "write_memory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
+            "WriteMemory" => Some(Arc::new(builtin::memory::WriteMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "search_memory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
+            "SearchMemory" => Some(Arc::new(builtin::memory::SearchMemoryRuntimeTool::new(
                 builtin::memory::MemoryDeps {
                     app_data_dir: ctx.storage.base_dir().to_path_buf(),
                     workspace_path: ctx.workspace_path.clone(),
                 },
             ))
                 as Arc<dyn crate::runtime::tools::RuntimeTool>),
-            "load_skill" => {
+            "Skill" => {
                 let registry = ctx.skill_registry.clone()?;
                 Some(
                     Arc::new(builtin::load_skill::LoadSkillRuntimeTool::new(registry))
                         as Arc<dyn crate::runtime::tools::RuntimeTool>,
                 )
+            }
+            "TaskStop" => {
+                use tauri::Manager;
+                let app = match ctx.app_handle.as_ref() {
+                    Some(a) => a,
+                    None => {
+                        log::error!(
+                            "[task_stop registry] no app_handle in PluginContext — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                let task_store = match app
+                    .try_state::<Arc<crate::runtime::agent::async_task_store::AsyncAgentTaskStore>>(
+                    ) {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        log::error!(
+                            "[task_stop registry] AsyncAgentTaskStore not in app state — refusing to register tool"
+                        );
+                        return None;
+                    }
+                };
+                Some(Arc::new(builtin::task_stop::TaskStopRuntimeTool { store: task_store })
+                    as Arc<dyn crate::runtime::tools::RuntimeTool>)
             }
             _ => None,
         }

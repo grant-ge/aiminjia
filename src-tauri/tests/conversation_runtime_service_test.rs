@@ -17,9 +17,6 @@ async fn conversation_runtime_service_handles_crud_and_busy_cleanup_without_taur
     let file_mgr = Arc::new(FileManager::new(&workspace));
     let run_registry = Arc::new(RuntimeRunRegistry::new());
     let gateway = Arc::new(LlmGateway::new_with_registry(db.clone(), run_registry));
-    let session_mgr = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace, None,
-    ));
 
     let conversation_id = conversation_service::create_conversation(db.clone())
         .await
@@ -49,7 +46,6 @@ async fn conversation_runtime_service_handles_crud_and_busy_cleanup_without_taur
         db.clone(),
         gateway.clone(),
         file_mgr,
-        session_mgr,
         conversation_id.clone(),
     )
     .await
@@ -75,9 +71,6 @@ async fn delete_conversation_clears_persisted_active_skill_state() {
     let file_mgr = Arc::new(FileManager::new(&workspace));
     let run_registry = Arc::new(RuntimeRunRegistry::new());
     let gateway = Arc::new(LlmGateway::new_with_registry(db.clone(), run_registry));
-    let session_mgr = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace, None,
-    ));
 
     let conversation_id = conversation_service::create_conversation(db.clone())
         .await
@@ -97,7 +90,6 @@ async fn delete_conversation_clears_persisted_active_skill_state() {
         db.clone(),
         gateway,
         file_mgr,
-        session_mgr,
         conversation_id.clone(),
     )
     .await
@@ -120,10 +112,6 @@ async fn delete_conversation_returns_error_when_associated_file_delete_fails() {
     let file_mgr = Arc::new(FileManager::new(&workspace));
     let run_registry = Arc::new(RuntimeRunRegistry::new());
     let gateway = Arc::new(LlmGateway::new_with_registry(db.clone(), run_registry));
-    let session_mgr = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace.clone(),
-        None,
-    ));
 
     let conversation_id = conversation_service::create_conversation(db.clone())
         .await
@@ -144,7 +132,6 @@ async fn delete_conversation_returns_error_when_associated_file_delete_fails() {
         db.clone(),
         gateway,
         file_mgr,
-        session_mgr,
         conversation_id.clone(),
     )
     .await;

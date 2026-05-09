@@ -7,7 +7,7 @@ import { ToolGroupCard } from '../ToolGroupCard'
 const STEPS = [
   {
     index: 1,
-    name: 'read_workspace_file',
+    name: 'Read',
     status: 'done' as const,
     durationMs: 120,
     inputJson: '{ "path": "messages.jsonl" }',
@@ -15,7 +15,7 @@ const STEPS = [
   },
   {
     index: 2,
-    name: 'read_workspace_file',
+    name: 'Read',
     status: 'done' as const,
     durationMs: 80,
     inputJson: '{ "path": "config.json" }',
@@ -29,14 +29,14 @@ describe('ToolGroupCard', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
 
     expect(screen.getByText('工具执行轨迹')).toBeInTheDocument()
-    expect(screen.getByText('已完成 2 步')).toBeInTheDocument()
+    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
     expect(screen.queryByText('工具步骤')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /查看执行详情/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /read_workspace_file/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
 
-    expect(screen.getAllByRole('button', { name: /read_workspace_file/ })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /Read/ })).toHaveLength(2)
     expect(screen.getByRole('button', { name: /preview_file/ })).toBeInTheDocument()
     expect(screen.queryByText('输入')).not.toBeInTheDocument()
     expect(document.querySelector('.lucide-circle-check')).not.toBeInTheDocument()
@@ -47,7 +47,7 @@ describe('ToolGroupCard', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
     fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
 
-    const readButtons = screen.getAllByRole('button', { name: /read_workspace_file/ })
+    const readButtons = screen.getAllByRole('button', { name: /Read/ })
     fireEvent.click(readButtons[0])
     fireEvent.click(readButtons[1])
 
@@ -68,19 +68,34 @@ describe('ToolGroupCard', () => {
     expect(screen.getByText('执行中 1 / 3')).toBeInTheDocument()
   })
 
+  it('presents failed tool steps as completed with neutral output styling', () => {
+    render(<ToolGroupCard status="done" steps={STEPS} />)
+
+    expect(screen.getByText('已完成 3 步')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
+    fireEvent.click(screen.getByRole('button', { name: /preview_file/ }))
+
+    expect(screen.queryByText('失败')).not.toBeInTheDocument()
+    expect(screen.getAllByText('完成')).toHaveLength(3)
+    expect(screen.getByText('preview failed')).toHaveStyle({
+      color: 'var(--color-text-secondary)',
+    })
+  })
+
   it('collapses and expands the whole tool trace block from the header', () => {
     render(<ToolGroupCard status="done" steps={STEPS} />)
 
-    expect(screen.queryByRole('button', { name: /read_workspace_file/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
 
-    expect(screen.getAllByRole('button', { name: /read_workspace_file/ })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /Read/ })).toHaveLength(2)
     expect(screen.getByText('已完成 2 步')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /工具执行轨迹/ }))
 
-    expect(screen.queryByRole('button', { name: /read_workspace_file/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Read/ })).not.toBeInTheDocument()
   })
 
 })

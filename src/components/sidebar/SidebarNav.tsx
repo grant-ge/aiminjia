@@ -2,10 +2,10 @@
  * @designSource design.pen#47U5w (nv1/nv2/nv3)
  * @sizing each row padding [6,8], gap 2
  */
-import { Blocks, Clock3, Inbox, Users, type LucideIcon } from 'lucide-react'
+import { Blocks, Clock3, Inbox, SquarePen, Users, type LucideIcon } from 'lucide-react'
 import { useGlobalUnreadCount } from '@/features/employees/useInbox'
 
-export type SidebarNavKey = 'home' | 'skill-center' | 'schedules' | 'inbox'
+export type SidebarNavKey = 'home' | 'employees' | 'skill-center' | 'schedules' | 'inbox'
 
 interface SidebarNavProps {
   activeKey?: SidebarNavKey | null
@@ -13,7 +13,8 @@ interface SidebarNavProps {
 }
 
 const NAV: Array<{ key: SidebarNavKey; label: string; icon: LucideIcon; badge?: boolean }> = [
-  { key: 'home', label: '数字员工', icon: Users },
+  { key: 'home', label: '新任务', icon: SquarePen },
+  { key: 'employees', label: '数字员工', icon: Users },
   { key: 'inbox', label: '汇报中心', icon: Inbox, badge: true },
   { key: 'skill-center', label: '技能中心', icon: Blocks },
   { key: 'schedules', label: '定时任务', icon: Clock3 },

@@ -7,9 +7,9 @@
 /// 这些工具是父 agent 与用户交互的专属能力，
 /// 子 agent 调用会破坏控制流（如反向问父之外的人，或操纵 plan mode）。
 pub const ALL_AGENT_DISALLOWED: &[&str] = &[
-    "ask_user_question",
-    "exit_plan_mode",
-    "enter_plan_mode",
+    "AskUserQuestion",
+    "Agent",  // 防止子 agent 递归 spawn（对齐 claude-code-best 默认）
+    "TaskStop", // 子 agent 不能取消兄弟/父 agent 任务
 ];
 
 /// async（后台）subagent 额外允许集：仅以下工具可用
@@ -19,13 +19,11 @@ pub const ALL_AGENT_DISALLOWED: &[&str] = &[
 /// canonical 名一致；否则 `resolve_agent_tools` 会在 available_names 过滤步骤把
 /// async agent 的工具集裁成空。
 pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
-    "read_workspace_file", "write_file", "edit_file",
-    "bash", "grep_content", "search_files", "list_directory", "get_file_info",
-    "web_search",
-    "spawn_subagent",
-    "task_output",
-    "browse_and_extract", "browse_navigate", "read_page_content",
-    "page_execute_js", "extract_table_data", "extract_with_pagination",
+    "Read", "Write", "Edit",
+    "Bash", "Grep", "Glob",
+    "WebSearch",
+    "Agent",
+    "TaskOutput",
 ];
 
 /// 解析 subagent 最终可用工具集
@@ -36,6 +34,7 @@ pub const ASYNC_AGENT_ALLOWED: &[&str] = &[
 /// - `available`：当前 ToolRegistry 全集中的工具名。
 /// - `is_async`：是否后台 agent。
 /// - `allow_recursive_spawn`：是否允许子 agent 再 spawn 子 agent。默认 false。
+///   **注意**：当前对 `spawn_subagent` 无效，因为它已在 ALL_AGENT_DISALLOWED 中被提前过滤。
 pub fn resolve_agent_tools(
     def_allowed: &[String],
     def_disallowed: &[String],
@@ -55,8 +54,11 @@ pub fn resolve_agent_tools(
         out.retain(|t| ASYNC_AGENT_ALLOWED.contains(&t.as_str()));
     }
 
+    // TODO(phase-2): allow_recursive_spawn is now dead for spawn_subagent because
+    // ALL_AGENT_DISALLOWED removes it earlier. Either remove the parameter or
+    // move spawn_subagent out of ALL_AGENT_DISALLOWED if recursive spawn must work.
     if !allow_recursive_spawn {
-        out.retain(|t| t != "spawn_subagent");
+        out.retain(|t| t != "Agent");
     }
 
     out
@@ -75,7 +77,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "bash"]),
+            &vs(&["read_file", "Bash"]),
             false,
             false,
         );
@@ -88,7 +90,7 @@ mod tests {
         let allowed = resolve_agent_tools(
             &vs(&["read_file"]),
             &[],
-            &vs(&["read_file", "bash"]),
+            &vs(&["read_file", "Bash"]),
             false,
             false,
         );
@@ -98,9 +100,9 @@ mod tests {
     #[test]
     fn def_disallowed_overrides_def_allowed() {
         let allowed = resolve_agent_tools(
-            &vs(&["read_file", "write_file"]),
-            &vs(&["write_file"]),
-            &vs(&["read_file", "write_file"]),
+            &vs(&["read_file", "Write"]),
+            &vs(&["Write"]),
+            &vs(&["read_file", "Write"]),
             false,
             false,
         );
@@ -112,12 +114,12 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "ask_user_question"]),
+            &vs(&["read_file", "AskUserQuestion"]),
             false,
             false,
         );
         assert!(allowed.contains(&"read_file".to_string()));
-        assert!(!allowed.contains(&"ask_user_question".to_string()));
+        assert!(!allowed.contains(&"AskUserQuestion".to_string()));
     }
 
     #[test]
@@ -126,18 +128,18 @@ mod tests {
             &[],
             &[],
             &vs(&[
-                "read_workspace_file",
-                "ask_user_question",
-                "extract_table_data",
+                "Read",
+                "AskUserQuestion",
+                "WebSearch",
                 "unknown_tool",
             ]),
             true,
             false,
         );
         // unknown_tool 不在 ASYNC_AGENT_ALLOWED → 被过滤
-        assert!(allowed.contains(&"read_workspace_file".to_string()));
-        assert!(allowed.contains(&"extract_table_data".to_string()));
-        assert!(!allowed.contains(&"ask_user_question".to_string()));
+        assert!(allowed.contains(&"Read".to_string()));
+        assert!(allowed.contains(&"WebSearch".to_string()));
+        assert!(!allowed.contains(&"AskUserQuestion".to_string()));
         assert!(!allowed.contains(&"unknown_tool".to_string()));
     }
 
@@ -146,36 +148,55 @@ mod tests {
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "spawn_subagent"]),
+            &vs(&["read_file", "Agent"]),
             false,
             false,
         );
         assert!(allowed.contains(&"read_file".to_string()));
-        assert!(!allowed.contains(&"spawn_subagent".to_string()));
+        assert!(!allowed.contains(&"Agent".to_string()));
     }
 
     #[test]
-    fn recursive_spawn_allowed_when_explicitly_enabled() {
+    fn recursive_spawn_blocked_unconditionally_by_system_disallowed() {
+        // spawn_subagent 在 ALL_AGENT_DISALLOWED，allow_recursive_spawn=true 也无效
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["read_file", "spawn_subagent"]),
+            &vs(&["read_file", "Agent"]),
             false,
             true,
         );
-        assert!(allowed.contains(&"spawn_subagent".to_string()));
+        assert!(allowed.contains(&"read_file".to_string()));
+        assert!(!allowed.contains(&"Agent".to_string()));
     }
 
     #[test]
-    fn async_can_recursive_spawn_when_explicitly_enabled() {
-        // async + spawn_subagent 在 ASYNC_AGENT_ALLOWED 中
+    fn async_spawn_also_blocked_by_system_disallowed() {
+        // spawn_subagent 在 ALL_AGENT_DISALLOWED，async + allow_recursive_spawn=true 也无效
         let allowed = resolve_agent_tools(
             &[],
             &[],
-            &vs(&["spawn_subagent"]),
+            &vs(&["Agent"]),
             true,
             true,
         );
-        assert_eq!(allowed, vec!["spawn_subagent".to_string()]);
+        assert!(allowed.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod disallowed_validation_tests {
+    use super::ALL_AGENT_DISALLOWED;
+    use crate::runtime::tools::catalog::TOOL_CATALOG;
+
+    #[test]
+    fn all_agent_disallowed_names_match_catalog_exactly() {
+        for name in ALL_AGENT_DISALLOWED {
+            assert!(
+                TOOL_CATALOG.get(name).is_some(),
+                "ALL_AGENT_DISALLOWED contains '{}' which is not in TOOL_CATALOG (likely case mismatch or stale name)",
+                name
+            );
+        }
     }
 }

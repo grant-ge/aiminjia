@@ -58,10 +58,6 @@ impl ToolPlugin for BlockingLegacyTool {
 fn make_plugin_ctx(workspace: &Path) -> PluginContext {
     let storage = Arc::new(AppStorage::new(workspace).expect("AppStorage::new failed"));
     let file_manager = Arc::new(FileManager::new(workspace));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace.to_path_buf(),
-        None,
-    ));
 
     PluginContext {
         storage,
@@ -74,7 +70,6 @@ fn make_plugin_ctx(workspace: &Path) -> PluginContext {
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,
@@ -91,6 +86,7 @@ fn make_plugin_ctx(workspace: &Path) -> PluginContext {
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+        permission_ctx: None,
     }
 }
 

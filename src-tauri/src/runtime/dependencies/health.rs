@@ -6,6 +6,8 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::storage::process_ext::NoWindowExt;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeToolProbe {
     pub name: String,
@@ -112,7 +114,8 @@ fn run_version_command_with_timeout(
     command
         .arg("--version")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .no_window();
     // Prepend our bundle's bin dir to PATH so that shebang scripts (e.g. npm/npx
     // which start with `#!/usr/bin/env node`) can find the bundled node interpreter
     // rather than relying on a system-wide node that may not exist.

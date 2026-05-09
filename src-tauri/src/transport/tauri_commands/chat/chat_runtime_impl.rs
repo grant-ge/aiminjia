@@ -17,40 +17,58 @@ use crate::storage::file_store::RuntimeRepositoryFacade;
 /// 有授权目录：暴露所有工具（含 workspace 工具）。
 /// 无授权目录：排除 workspace 工具，避免 LLM 看到不可用工具。
 const WORKSPACE_TOOL_NAMES: &[&str] = &[
-    "list_directory",
-    "read_workspace_file",
-    "search_files",
-    "get_file_info",
-    "write_file",
-    "edit_file",
-    "bash",
-    "grep_content",
+    "Read",
+    "Glob",
+    "Write",
+    "Edit",
+    "Bash",
+    "PowerShell",
+    "Grep",
 ];
 
-pub(crate) async fn build_visible_tool_defs(
+/// 决定 schema 过滤策略。和"运行时权限白名单"是两回事——
+/// 后者由 TurnConfigOverrides.allowed_tools 控制，进入 tool_round_driver。
+#[derive(Debug, Clone)]
+pub enum ToolSchemaFilter {
+    /// 普通对话：用 DAILY_ALLOWED_TOOLS 白名单过滤
+    DailyWhitelist,
+    /// Employee 派活：用员工自定义白名单过滤
+    EmployeeWhitelist(std::collections::HashSet<String>),
+    /// 无过滤（subagent 路径或显式全量）
+    None,
+}
+
+pub async fn build_visible_tool_defs(
     registry: &ToolRegistry,
     has_authorized_workspace: bool,
-    allowed_tools: Option<&std::collections::HashSet<String>>,
+    schema_filter: ToolSchemaFilter,
 ) -> Vec<crate::llm::streaming::ToolDefinition> {
     let defs = if has_authorized_workspace {
         registry.get_schemas_filtered(&ToolFilter::All).await
     } else {
         registry
             .get_schemas_filtered(&ToolFilter::Exclude(
-                WORKSPACE_TOOL_NAMES
-                    .iter()
-                    .map(|name| name.to_string())
-                    .collect(),
+                WORKSPACE_TOOL_NAMES.iter().map(|s| s.to_string()).collect(),
             ))
             .await
     };
 
-    match allowed_tools {
-        Some(allowed) => defs
+    match schema_filter {
+        ToolSchemaFilter::DailyWhitelist => {
+            let allowed: std::collections::HashSet<&str> =
+                crate::runtime::tools::catalog::DAILY_ALLOWED_TOOLS
+                    .iter()
+                    .copied()
+                    .collect();
+            defs.into_iter()
+                .filter(|d| allowed.contains(d.name.as_str()))
+                .collect()
+        }
+        ToolSchemaFilter::EmployeeWhitelist(allowed) => defs
             .into_iter()
-            .filter(|def| allowed.contains(def.name.as_str()))
+            .filter(|d| allowed.contains(d.name.as_str()))
             .collect(),
-        None => defs,
+        ToolSchemaFilter::None => defs,
     }
 }
 
@@ -140,9 +158,9 @@ pub(crate) fn build_llm_content(
         .collect();
 
     let hint = if has_authorized_workspace {
-        "提示：对这些显式附加路径请优先使用 list_directory / read_workspace_file / search_files / get_file_info；对已连接本地目录也优先使用工作区文件工具，需要计算或生成文件时再结合 execute_python。"
+        "本轮附件已自动加入授权目录（read 自由；write 默认询问，acceptEdits 模式自动允许）：\n- 文件附件：所在目录被授权\n- 文件夹附件：该目录及子树被授权\n请优先使用 Read / Glob / Grep 读取附件；需要计算时再结合 Bash 处理内容。"
     } else {
-        "提示：这些附件是用户显式提供的本地路径；请优先使用文件工具读取它们，必要时再结合 execute_python 处理内容。"
+        "本轮附件已自动加入授权目录（read 自由；write 默认询问，acceptEdits 模式自动允许）：\n- 文件附件：所在目录被授权\n- 文件夹附件：该目录及子树被授权\n请优先使用 Read / Glob / Grep 读取附件；需要计算时再结合 Bash 处理内容。"
     };
 
     format!(
@@ -164,7 +182,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, true, None).await;
+        let defs = build_visible_tool_defs(&registry, true, ToolSchemaFilter::None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -182,7 +200,7 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
 
-        let defs = build_visible_tool_defs(&registry, false, None).await;
+        let defs = build_visible_tool_defs(&registry, false, ToolSchemaFilter::None).await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
         for tool_name in WORKSPACE_TOOL_NAMES {
@@ -195,8 +213,15 @@ mod tests {
         }
 
         assert!(
-            names.contains(&"execute_python"),
-            "non-workspace tools should remain visible without authorization"
+            !names.is_empty(),
+            "non-workspace tools should remain visible without authorization, got empty list"
+        );
+        // ask_user_question is a non-workspace tool registered in register_builtin_tools
+        // and should remain visible even without an authorized workspace
+        assert!(
+            names.iter().any(|n| !WORKSPACE_TOOL_NAMES.contains(n)),
+            "at least one non-workspace tool should remain visible, got {:?}",
+            names
         );
     }
 
@@ -205,18 +230,25 @@ mod tests {
         let registry = ToolRegistry::new();
         register_builtin_tools(&registry).await;
         let allowed = std::collections::HashSet::from([
-            "execute_python".to_string(),
-            "list_directory".to_string(),
+            "Grep".to_string(),
+            "Read".to_string(),
         ]);
 
-        let defs = build_visible_tool_defs(&registry, false, Some(&allowed)).await;
+        let defs = build_visible_tool_defs(
+            &registry,
+            false,
+            ToolSchemaFilter::EmployeeWhitelist(allowed),
+        )
+        .await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
-        assert_eq!(names, vec!["execute_python"]);
+        // read_workspace_file is in WORKSPACE_TOOL_NAMES so it gets filtered out first;
+        // grep_content is also a workspace tool so both are excluded without auth.
+        assert!(names.is_empty(), "all allowed tools are workspace-scoped, expect empty after double filter; got {:?}", names);
     }
 
     #[test]
-    fn test_build_llm_content_with_authorized_workspace_scopes_load_file_to_uploads() {
+    fn test_build_llm_content_with_authorized_workspace_uses_workspace_tools_hint() {
         let attachments = vec![crate::runtime::chat::chat_turn_driver::ChatAttachmentRef {
             id: "attachment-1".to_string(),
             file_name: "sales.xlsx".to_string(),
@@ -230,10 +262,8 @@ mod tests {
         let content = build_llm_content("请分析这个目录里的销售数据", &attachments, true);
 
         assert!(content.contains("[当前消息附件]"));
-        assert!(content.contains("这些显式附加路径"));
-        assert!(content.contains(
-            "对已连接本地目录也优先使用工作区文件工具"
-        ));
+        assert!(content.contains("附件"));
+        assert!(content.contains("授权目录"));
         assert!(!content.contains("load_file(file_id)"));
     }
 }

@@ -8,6 +8,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
 use crate::runtime::hooks::config::{HookConfig, HookEvent};
+use crate::storage::process_ext::NoWindowExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookDecision {
@@ -108,13 +109,34 @@ impl HookRunner {
         let cwd = resolve_hook_cwd(workspace_root);
 
         let timed = tokio::time::timeout(timeout, async move {
-            let mut command = tokio::process::Command::new("sh");
+            // Windows: route through PowerShell since `sh` is not present unless
+            // Git Bash is on PATH. -NoProfile avoids loading user $PROFILE which
+            // can take seconds and pollute hook stdout. The prologue tries to
+            // force UTF-8 stdio, but must not fail under ConstrainedLanguage.
+            #[cfg(target_os = "windows")]
+            let mut command = {
+                let wrapped = format!(
+                    "chcp 65001 > $null 2>$null; \
+                     & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+                     & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+                     {}",
+                    config.command,
+                );
+                let mut c = tokio::process::Command::new("powershell.exe");
+                c.arg("-NoProfile").arg("-Command").arg(wrapped);
+                c
+            };
+            #[cfg(not(target_os = "windows"))]
+            let mut command = {
+                let mut c = tokio::process::Command::new("sh");
+                c.arg("-c").arg(&config.command);
+                c
+            };
             command
-                .arg("-c")
-                .arg(&config.command)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+                .stderr(Stdio::piped())
+                .no_window();
 
             if let Some(cwd) = cwd.as_ref() {
                 command.current_dir(cwd);
@@ -152,8 +174,12 @@ impl HookRunner {
             }
         };
 
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = crate::storage::console_decode::decode_console_bytes(&output.stdout)
+            .trim()
+            .to_string();
+        let stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr)
+            .trim()
+            .to_string();
         let exit_code = output.status.code();
 
         if exit_code == Some(2) {

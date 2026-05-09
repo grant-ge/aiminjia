@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useBrandingStore } from '@/stores/brandingStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUiStore } from '@/stores/uiStore'
+import { useUpdaterStore } from '@/lib/updaterStore'
 
 import { SettingsContentBody } from './SettingsContentBody'
 import { SettingsMenu } from './SettingsMenu'
@@ -74,11 +75,8 @@ export function SettingsModal() {
 
   const onCheckUpdate = async () => {
     try {
-      const [{ check }, { getVersion }, { relaunch }] = await Promise.all([
-        import('@tauri-apps/plugin-updater'),
-        import('@tauri-apps/api/app'),
-        import('@tauri-apps/plugin-process'),
-      ])
+      const { check } = await import('@tauri-apps/plugin-updater')
+      const { getVersion } = await import('@tauri-apps/api/app')
       const update = await check()
       if (!update) {
         await message('当前已是最新版本。', { title: productName, kind: 'info' })
@@ -91,16 +89,14 @@ export function SettingsModal() {
         return
       }
 
-      const confirmed = await requestConfirm({
-        title: `发现新版本 v${update.version}`,
-        description: update.body ?? `发现新版本 v${update.version}，是否立即更新？`,
-        confirmLabel: '立即更新',
-        cancelLabel: '稍后再说',
-      })
-      if (!confirmed) return
-
-      await update.downloadAndInstall()
-      await relaunch()
+      // Reuse the global updater pipeline so the user sees a real progress UI.
+      // bootstrap() handles cached pending downloads + progress events; the
+      // panel surfaces release notes and the install/relaunch button.
+      const store = useUpdaterStore.getState()
+      store.openPanel()
+      if (store.phase === 'idle' || store.phase === 'failed') {
+        void store.bootstrap()
+      }
     } catch (e) {
       await message(e instanceof Error ? e.message : String(e), { title: productName, kind: 'error' })
     }

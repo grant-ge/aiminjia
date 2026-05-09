@@ -2,7 +2,7 @@
  * @designSource design.pen#0EZDr / HsGnf / GknhC
  * @sizing padding [6,8,6,30] (indent 30 under ProjectAccordion), fontSize 13
  */
-import { Archive, Copy, Ellipsis, Loader2, Pencil, Pin } from "lucide-react";
+import { Archive, Copy, Ellipsis, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 
 import { AppDropdown, type AppDropdownItem } from "@/components/common/AppDropdown";
@@ -31,12 +31,6 @@ export function ConversationRow({
 
   const showMore = hovered || menuOpen || active;
   const menuItems: AppDropdownItem[] = [
-    {
-      id: 'pin',
-      label: '置顶聊天',
-      icon: <Pin className="h-3.5 w-3.5 shrink-0" />,
-      disabled: true,
-    },
     {
       id: 'archive',
       label: '归档聊天',

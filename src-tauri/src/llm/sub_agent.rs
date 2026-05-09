@@ -10,6 +10,7 @@ use crate::runtime::agent::subagent_result_envelope::SubAgentResultEnvelope;
 use crate::runtime::agent::worker_runtime::SubagentWorkerRuntime;
 use crate::runtime::agent::AgentRuntime;
 use crate::runtime::ids::RunId;
+use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::permission::PermissionMode;
 
 #[cfg(test)]
@@ -31,7 +32,6 @@ pub struct SubAgentRuntimeDeps {
     pub session_id: crate::runtime::ids::SessionId,
     pub run_id: Option<RunId>,
     pub agent_id: Option<crate::runtime::ids::AgentId>,
-    pub session_manager: Arc<crate::python::session::PythonSessionManager>,
     pub connector_engine: Option<Arc<crate::connector::ConnectorEngine>>,
     pub agent_runtime: Option<Arc<AgentRuntime>>,
     pub event_bus: Option<crate::runtime::event_bus::RuntimeEventBus>,
@@ -41,6 +41,13 @@ pub struct SubAgentRuntimeDeps {
     pub read_file_state: Option<Arc<crate::runtime::tools::capability::FileStateCache>>,
     pub app_handle: Option<tauri::AppHandle>,
     pub runtime_resolver: Option<crate::runtime::dependencies::ManagedRuntimeResolver>,
+    /// Phase 5 path-auth inheritance: snapshot of the parent turn's merged
+    /// ToolPermissionContext (UserSettings working dirs + allow_rules + session
+    /// attachment dirs already merged in at spawn time).  When `Some`, the child's
+    /// QueryEngine is seeded with this as its base_permission_ctx so all path tools
+    /// run by the sub-agent respect the parent's authorized paths.  `None` for test
+    /// and legacy paths that haven't yet been wired.
+    pub permission_ctx: Option<Arc<ToolPermissionContext>>,
 }
 
 impl SubAgentRuntimeDeps {
@@ -62,7 +69,6 @@ impl SubAgentRuntimeDeps {
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: self.app_handle.clone(),
-            session_manager: self.session_manager.clone(),
             auth_manager: None,
             connector_engine: self.connector_engine.clone(),
             use_cloud: false,
@@ -78,6 +84,7 @@ impl SubAgentRuntimeDeps {
             cancellation,
             permission_mode: PermissionMode::Default,
             runtime_resolver: self.runtime_resolver.clone(),
+            permission_ctx: self.permission_ctx.clone(),
         }
     }
 }
@@ -205,6 +212,7 @@ mod tests {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::Other("subagent-inner".to_string()),
+            path_auth_scope: None,
         };
 
         let extracted = take_ask_required_decision(&LegacyToolError::AskRequired(decision.clone()))

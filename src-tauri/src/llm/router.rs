@@ -250,7 +250,7 @@ pub fn select_route(task_type: &TaskType, settings: &AppSettings) -> RouteResult
 
     match task_type {
         // Analysis ALWAYS uses primary model with tools — this is critical
-        // for the 6-step workflow that relies on execute_python, load_file, etc.
+        // for agentic turns that call shell and workspace tools.
         TaskType::Analysis => RouteResult {
             provider: settings.primary_model.clone(),
             api_key: settings.primary_api_key.clone(),
@@ -335,6 +335,7 @@ mod tests {
             auto_model_routing: true,
             primary_model: "deepseek-v3".to_string(),
             primary_api_key: "pk-test".to_string(),
+            use_cloud: false,
             ..Default::default()
         }
     }

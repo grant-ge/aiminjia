@@ -12,15 +12,9 @@ use app_lib::runtime::agent::tool_whitelist::resolve_agent_tools;
 fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
     // P4.2 hardcodes allow_recursive_spawn=false in worker_runtime.
     // Verify resolve_agent_tools applied with that flag drops spawn_subagent.
-    let available = vec![
-        "spawn_subagent".to_string(),
-        "read_workspace_file".to_string(),
-    ];
+    let available = vec!["Agent".to_string(), "read_workspace_file".to_string()];
     let allowed = resolve_agent_tools(
-        &[
-            "spawn_subagent".to_string(),
-            "read_workspace_file".to_string(),
-        ], // def_allowed
+        &["Agent".to_string(), "read_workspace_file".to_string()], // def_allowed
         &[],                                                        // def_disallowed
         &available,
         false, // not async
@@ -28,7 +22,7 @@ fn resolve_agent_tools_removes_recursive_spawn_by_default_for_subagents() {
     );
     assert!(allowed.contains(&"read_workspace_file".to_string()));
     assert!(
-        !allowed.contains(&"spawn_subagent".to_string()),
+        !allowed.contains(&"Agent".to_string()),
         "subagent must not be able to spawn sub-sub-agent by default"
     );
 }
@@ -56,7 +50,7 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
     let available = vec![
         "read_workspace_file".to_string(),
         "ask_user_question".to_string(),
-        "browse_data".to_string(), // not in ASYNC_AGENT_ALLOWED
+        "custom_tool_x".to_string(), // not in ASYNC_AGENT_ALLOWED
     ];
     let allowed = resolve_agent_tools(
         &[],
@@ -67,22 +61,16 @@ fn resolve_agent_tools_async_mode_restricts_to_safe_subset() {
     );
     assert!(allowed.contains(&"read_workspace_file".to_string()));
     assert!(!allowed.contains(&"ask_user_question".to_string()));
-    // browse_data is NOT in ASYNC_AGENT_ALLOWED list
-    assert!(!allowed.contains(&"browse_data".to_string()));
+    // custom_tool_x is NOT in ASYNC_AGENT_ALLOWED list
+    assert!(!allowed.contains(&"custom_tool_x".to_string()));
 }
 
 #[test]
 fn resolve_agent_tools_def_disallowed_overrides_def_allowed() {
-    let available = vec![
-        "read_workspace_file".to_string(),
-        "write_file".to_string(),
-    ];
+    let available = vec!["read_workspace_file".to_string(), "Write".to_string()];
     let allowed = resolve_agent_tools(
-        &[
-            "read_workspace_file".to_string(),
-            "write_file".to_string(),
-        ],
-        &["write_file".to_string()],
+        &["read_workspace_file".to_string(), "Write".to_string()],
+        &["Write".to_string()],
         &available,
         false,
         false,

@@ -1,6 +1,5 @@
 use app_lib::runtime::tools::builtin::workspace::{
-    GetFileInfoRuntimeTool, ListDirectoryRuntimeTool, ReadWorkspaceFileRuntimeTool,
-    SearchFilesRuntimeTool,
+    ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool,
 };
 use app_lib::runtime::tools::capability::CapabilityContext;
 use app_lib::runtime::tools::{RuntimeTool, ToolExecutionContext};
@@ -14,36 +13,12 @@ fn make_ctx_with_workspace(tmp: &TempDir) -> ToolExecutionContext {
 }
 
 #[tokio::test]
-async fn list_directory_runtime_tool_lists_files() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("data.csv"), b"col1\n1\n").unwrap();
-    let ctx = make_ctx_with_workspace(&tmp);
-    let tool = ListDirectoryRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"path": "."}), ctx)
-        .await
-        .unwrap();
-    assert!(
-        result.content.contains("data.csv"),
-        "Should list data.csv, got: {}",
-        result.content
-    );
-}
-
-#[tokio::test]
-async fn list_directory_requires_capability_context() {
-    let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1"); // no capability
-    let tool = ListDirectoryRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({}), ctx).await;
-    assert!(result.is_err(), "Should fail without capability context");
-}
-
-#[tokio::test]
 async fn read_workspace_file_runtime_tool_reads_content() {
     let tmp = TempDir::new().unwrap();
     std::fs::write(tmp.path().join("hello.txt"), b"hello world").unwrap();
     let ctx = make_ctx_with_workspace(&tmp);
     let tool = ReadWorkspaceFileRuntimeTool;
-    let result = RuntimeTool::execute(&tool, json!({"path": "hello.txt"}), ctx)
+    let result = RuntimeTool::execute(&tool, json!({"file_path": "hello.txt"}), ctx)
         .await
         .unwrap();
     assert!(
@@ -70,10 +45,8 @@ async fn search_files_runtime_tool_finds_csv() {
 async fn workspace_runtime_tools_have_correct_kind() {
     use app_lib::runtime::tools::definition::ToolKind;
     let tools: Vec<Box<dyn RuntimeTool>> = vec![
-        Box::new(ListDirectoryRuntimeTool),
         Box::new(ReadWorkspaceFileRuntimeTool),
         Box::new(SearchFilesRuntimeTool),
-        Box::new(GetFileInfoRuntimeTool),
     ];
     for tool in &tools {
         let def = tool.definition();

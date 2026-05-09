@@ -56,6 +56,8 @@ function isResourceConfigRequired(template: EmployeeTemplate): boolean {
   switch (template.resourceConfigKind) {
     case 'monitoring-urls':
       return true
+    case 'weekly-report':
+      return true
     case 'sales-table':
       // Soft requirement: employee can ask the user inside chat and persist
       // to memory (path A). The form is a convenience.
@@ -81,6 +83,11 @@ function isResourceConfigured(template: EmployeeTemplate, employee: EmployeeReco
       const tableId = cfg.tableId
       return typeof baseId === 'string' && baseId.length > 0
         && typeof tableId === 'string' && tableId.length > 0
+    }
+    case 'weekly-report': {
+      // Configured = template selected (defaults to 'standard' on first save).
+      const tpl = cfg.template
+      return typeof tpl === 'string' && tpl.length > 0
     }
     case 'none':
       return true

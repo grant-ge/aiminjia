@@ -63,3 +63,13 @@ describe('uiStore.route persistence', () => {
     expect(freshStore.getState().route).toEqual({ kind: 'home' })
   })
 })
+
+
+it('accepts persisted employees route', async () => {
+  localStorage.setItem('aijia-ui-route', JSON.stringify({ kind: 'employees' }))
+
+  vi.resetModules()
+  const { useUiStore: freshStore } = await import('../uiStore')
+
+  expect(freshStore.getState().route).toEqual({ kind: 'employees' })
+})

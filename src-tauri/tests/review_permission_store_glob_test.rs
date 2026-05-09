@@ -11,13 +11,13 @@ fn review_path_glob_allow_matches_file_inside_workspace() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob("/tmp/ws/**".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Session,
         ),
     );
-    let result = store.get_for_path("write_file", "/tmp/ws/data/output.csv");
+    let result = store.get_for_path("Write", "/tmp/ws/data/output.csv");
     assert_eq!(result, Some(PolicyDecision::AlwaysAllow));
 }
 
@@ -27,13 +27,13 @@ fn review_path_glob_does_not_match_outside_workspace() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob("/tmp/ws/**".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Session,
         ),
     );
-    let result = store.get_for_path("write_file", "/etc/passwd");
+    let result = store.get_for_path("Write", "/etc/passwd");
     assert_eq!(result, None);
 }
 
@@ -43,13 +43,13 @@ fn review_command_pattern_matches_exact_prefix() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::CommandPattern("git ".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Workspace,
         ),
     );
-    let result = store.get_for_command("bash", "git status --short");
+    let result = store.get_for_command("Bash", "git status --short");
     assert_eq!(result, Some(PolicyDecision::AlwaysAllow));
 }
 
@@ -59,13 +59,13 @@ fn review_command_pattern_does_not_match_different_command() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "bash",
+            "Bash",
             PermissionScope::CommandPattern("git ".into()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::Workspace,
         ),
     );
-    let result = store.get_for_command("bash", "rm -rf /tmp/old");
+    let result = store.get_for_command("Bash", "rm -rf /tmp/old");
     assert_eq!(result, None);
 }
 
@@ -75,7 +75,7 @@ fn review_path_glob_session_overrides_workspace() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob("/tmp/ws/**".into()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
@@ -84,12 +84,12 @@ fn review_path_glob_session_overrides_workspace() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "write_file",
+            "Write",
             PermissionScope::PathGlob("/tmp/ws/**".into()),
             PolicyDecision::Allow,
             PermissionSource::Session,
         ),
     );
-    let result = store.get_for_path("write_file", "/tmp/ws/out.csv");
+    let result = store.get_for_path("Write", "/tmp/ws/out.csv");
     assert_eq!(result, Some(PolicyDecision::Allow));
 }

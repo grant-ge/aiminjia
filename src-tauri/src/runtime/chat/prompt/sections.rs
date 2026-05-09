@@ -96,15 +96,6 @@ impl PromptAssembler {
                     }
                 }
             }
-            PromptMode::BrowserAgent => {
-                let browser = fragments.browser_agent;
-                if !browser.trim().is_empty() {
-                    blocks.push(PromptBlock::dynamic_block(
-                        PromptSectionId::new("browser_agent"),
-                        browser,
-                    ));
-                }
-            }
         }
 
         PromptAssembly::new(blocks)

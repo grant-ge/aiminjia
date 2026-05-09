@@ -24,7 +24,7 @@ async fn review_legacy_memory_tool_names_retired_but_runtime_names_available() {
         );
     }
 
-    for current in ["write_memory", "search_memory"] {
+    for current in ["WriteMemory", "SearchMemory"] {
         assert!(
             names.iter().any(|name| name == current),
             "runtime memory tool '{}' should stay visible in schema surface",
@@ -38,11 +38,11 @@ fn review_new_memory_tools_in_catalog() {
     use app_lib::runtime::tools::catalog::TOOL_CATALOG;
 
     assert!(
-        TOOL_CATALOG.get("write_memory").is_some(),
+        TOOL_CATALOG.get("WriteMemory").is_some(),
         "write_memory should be in TOOL_CATALOG"
     );
     assert!(
-        TOOL_CATALOG.get("search_memory").is_some(),
+        TOOL_CATALOG.get("SearchMemory").is_some(),
         "search_memory should be in TOOL_CATALOG"
     );
 }

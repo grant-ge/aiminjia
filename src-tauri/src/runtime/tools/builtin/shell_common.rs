@@ -172,7 +172,10 @@ pub async fn collect_reader(
         .await
         .map_err(|e| ToolError::ExecutionFailed(format!("reader task failed: {e}")))?
         .map_err(|e| ToolError::ExecutionFailed(format!("stream read failed: {e}")))?;
-    Ok((String::from_utf8_lossy(&bytes).to_string(), truncated))
+    Ok((
+        crate::storage::console_decode::decode_console_bytes(&bytes),
+        truncated,
+    ))
 }
 
 pub async fn wait_for_cancellation(token: CancellationToken) -> Option<CancellationReason> {

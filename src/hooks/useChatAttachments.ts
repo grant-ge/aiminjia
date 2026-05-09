@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 
-import { saveClipboardImageToTmp } from '@/lib/tauri'
+import { saveClipboardImageToWorkspaceStaging } from '@/lib/tauri'
 import type { FileAttachment } from '@/types/message'
 
 export interface PendingAttachment {
@@ -49,7 +49,9 @@ export function detectAttachmentFileType(path: string): FileAttachment['fileType
 }
 
 export function makePendingAttachment(filePath: string, fileType?: FileAttachment['fileType']): PendingAttachment {
-  const fileName = filePath.split('/').pop() ?? filePath
+  // Split on both POSIX and Windows separators so `C:\Users\…\file.xlsx`
+  // surfaces as `file.xlsx` instead of the whole path.
+  const fileName = filePath.split(/[\\/]/).pop() ?? filePath
   return {
     id: filePath,
     fileName,
@@ -63,17 +65,43 @@ export function makePendingAttachment(filePath: string, fileType?: FileAttachmen
 }
 
 /**
- * Reject pathological paths from clipboard paste:
- * - "/" (e.g. macOS "Macintosh HD" alias resolves to root → would attach the
- *   whole disk and freeze the app)
- * - "/Volumes" (volumes root)
- * - empty / single-segment system roots like "/System", "/private", "/var"
+ * Reject pathological paths that should never be attached:
+ * - empty string
+ * - root-only paths and well-known system roots on macOS/Linux ("/", "/Volumes",
+ *   "/System", "/private", "/var", "/etc", "/dev", "/usr", "/bin", "/sbin",
+ *   "/Library"); these tend to be alias-resolution artifacts (e.g. macOS
+ *   "Macintosh HD" → "/") that would attach the entire disk.
+ * - Windows volume roots ("C:\", "D:\") and Recycle Bin / system folders.
+ *
+ * The path may use either `/` (POSIX) or `\` (Windows) separators.
  */
 function isAcceptablePastedPath(path: string): boolean {
-  if (!path || !path.startsWith('/')) return false
-  const normalized = path.replace(/\/+$/, '')
+  if (!path) return false
+  const trimmed = path.trim()
+  if (!trimmed) return false
+
+  // Detect Windows path: drive letter + `:\` or `:/`.
+  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(trimmed)
+
+  if (isWindowsPath) {
+    // Reject bare volume root ("C:\" or "D:/").
+    const stripped = trimmed.replace(/[\\/]+$/, '')
+    if (/^[A-Za-z]:$/.test(stripped)) return false
+    // Reject trash / system folders that would attach huge / dangerous trees.
+    const lower = stripped.toLowerCase()
+    const FORBIDDEN_PREFIXES = ['c:\\windows', 'c:\\$recycle.bin', 'c:\\program files']
+    if (FORBIDDEN_PREFIXES.some((p) => lower.startsWith(p))) return false
+    return true
+  }
+
+  // POSIX path
+  if (!trimmed.startsWith('/')) return false
+  const normalized = trimmed.replace(/\/+$/, '')
   if (normalized === '') return false
-  const FORBIDDEN = new Set(['', '/Volumes', '/System', '/private', '/var', '/etc', '/dev', '/cores', '/usr', '/bin', '/sbin', '/Library'])
+  const FORBIDDEN = new Set([
+    '', '/Volumes', '/System', '/private', '/var', '/etc', '/dev', '/cores',
+    '/usr', '/bin', '/sbin', '/Library',
+  ])
   if (FORBIDDEN.has(normalized)) return false
   return true
 }
@@ -101,7 +129,7 @@ export function useChatAttachments() {
     bytes: Uint8Array,
     mimeType: string,
   ): Promise<PendingAttachment> => {
-    const saved: SavedClipboardAttachment = await saveClipboardImageToTmp(
+    const saved: SavedClipboardAttachment = await saveClipboardImageToWorkspaceStaging(
       Array.from(bytes),
       mimeType,
     )
@@ -121,7 +149,8 @@ export function useChatAttachments() {
     return paths
       .filter((path) => isAcceptablePastedPath(path))
       .map((path) => {
-        const hasExtension = /\.[A-Za-z0-9]+$/.test(path.split('/').pop() ?? '')
+        const basename = path.split(/[\\/]/).pop() ?? ''
+        const hasExtension = /\.[A-Za-z0-9]+$/.test(basename)
         const isDirectory = !hasExtension
         const fileType: FileAttachment['fileType'] = isDirectory ? 'folder' : detectAttachmentFileType(path)
         const attachment = makePendingAttachment(path, fileType)

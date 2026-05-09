@@ -11,6 +11,7 @@ import { useChat, type PendingFileInfo } from '@/hooks/useChat'
 import { useChatAttachments, type PendingAttachment } from '@/hooks/useChatAttachments'
 import { useComposerPaste } from '@/hooks/useComposerPaste'
 import { useChatStore } from '@/stores/chatStore'
+import { useDropInbox } from '@/stores/dropInbox'
 import { useSkillStore } from '@/stores/skillStore'
 import { useUiStore } from '@/stores/uiStore'
 
@@ -35,7 +36,7 @@ export function ChatBottomArea() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const { sendUserMessage, isStreaming, stopCurrentStream } = useChat()
-  const { isPickingAttachments, pickAttachments } = useChatAttachments()
+  const { isPickingAttachments, pickAttachments, saveClipboardImage } = useChatAttachments()
   const [showSkillPopover, setShowSkillPopover] = useState(false)
   const getSkillById = useSkillStore((s) => s.getById)
   // TODO: openSettings 待权限按钮功能上线后恢复使用
@@ -60,7 +61,6 @@ export function ChatBottomArea() {
     if (prefill) {
       setInput(prefill)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -142,7 +142,17 @@ export function ChatBottomArea() {
       return next.length > 0 ? [...prev, ...next] : prev
     })
   }, [])
-  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles })
+  const { handlePaste } = useComposerPaste({ onAttachmentsResolved: appendPendingFiles, saveClipboardImage })
+
+  // Drain native drag-drop inbox while ChatBottomArea is mounted (Chat route).
+  // Inbox is filled by `useDragDropListener` in App; only one composer is
+  // visible at a time so a single consumer is correct.
+  const dropPending = useDropInbox((s) => s.pending)
+  const consumeDropInbox = useDropInbox((s) => s.consume)
+  useEffect(() => {
+    if (dropPending.length === 0) return
+    appendPendingFiles(consumeDropInbox())
+  }, [dropPending.length, appendPendingFiles, consumeDropInbox])
 
   const hasPendingContent = input.trim() || pendingFiles.length > 0
   const isSendDisabled = (!hasPendingContent && !isStreaming) || isSending
@@ -179,6 +189,7 @@ export function ChatBottomArea() {
               isStreaming={isStreaming}
               onStop={stopCurrentStream}
               onOpenAttachment={attachmentBusy ? undefined : () => void handlePickAttachments()}
+              allowAttachmentOnlySubmit={pendingFiles.length > 0}
               pendingFilesSlot={pendingFiles.length > 0 ? (
                 <PendingAttachmentChips
                   pendingFiles={pendingFiles}

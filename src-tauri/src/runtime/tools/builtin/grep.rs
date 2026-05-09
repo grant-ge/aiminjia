@@ -6,14 +6,15 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::path::Path;
 
+use crate::runtime::path_auth::PathOp;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::permission::PermissionDecision;
 use crate::runtime::tools::RuntimeTool;
-use crate::storage::file_manager;
 
-use super::workspace::{matches_glob, require_workspace_root};
+use super::workspace::{check_path_permission, matches_glob, require_workspace_root};
 
 const MAX_RESULTS: usize = 1000;
 const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
@@ -38,7 +39,7 @@ pub struct GrepContentTool;
 
 fn tool_result_grep(content: String, value: Value) -> ToolResult {
     ToolResult {
-        tool_name: "grep_content".to_string(),
+        tool_name: "Grep".to_string(),
         content,
         data: Some(value),
         file_meta: None,
@@ -171,8 +172,8 @@ fn walk_path(path: &Path, root: &Path, regex: &Regex, glob: &str, results: &mut 
 impl RuntimeTool for GrepContentTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("grep_content")
-            .unwrap_or_else(|| ToolDefinition::new("grep_content", "Search file content"))
+            .get("Grep")
+            .unwrap_or_else(|| ToolDefinition::new("Grep", "Search file content"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -183,14 +184,22 @@ impl RuntimeTool for GrepContentTool {
         true
     }
 
+    async fn check_permissions(
+        &self,
+        input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Option<PermissionDecision> {
+        check_path_permission(input, ctx, PathOp::Read, "grep_content")
+    }
+
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("pattern") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "grep_content".to_string(),
+                tool_name: "Grep".to_string(),
                 message: "Missing required field: pattern (string regex)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "grep_content".to_string(),
+                tool_name: "Grep".to_string(),
                 message: "Field 'pattern' must be a string".to_string(),
             }),
             _ => None,
@@ -202,8 +211,9 @@ impl RuntimeTool for GrepContentTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
-        let display_root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        let display_root = require_workspace_root(&ctx)
+            .map(|r| r.canonicalize().unwrap_or(r))
+            .unwrap_or_default();
         let pattern = input
             .get("pattern")
             .and_then(Value::as_str)
@@ -212,8 +222,7 @@ impl RuntimeTool for GrepContentTool {
         let glob = input.get("glob").and_then(Value::as_str).unwrap_or("");
         let output_mode = parse_output_mode(&input)?;
 
-        let base = file_manager::resolve_local_reference(&root, path)
-            .map_err(|e| ToolError::PermissionDenied(e.to_string()))?;
+        let base = super::workspace::resolve_and_authorize_path(&ctx, path, PathOp::Read).await?;
         if !base.exists() {
             return Err(ToolError::ExecutionFailed(format!(
                 "Path does not exist: {path}"

@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::AgentId;
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,8 @@ pub struct AsyncTaskHandle {
     /// Human-readable description supplied at registration (e.g. the
     /// `name` / prompt fragment from `spawn_subagent`).
     pub description: String,
+    /// Token used to cooperatively cancel the running sub-agent.
+    pub cancel_token: CancellationToken,
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +88,13 @@ impl AsyncAgentTaskStore {
     pub fn register(&self, name: &str, handle: AsyncTaskHandle) {
         let mut g = self.inner.lock().expect("async_task_store: lock poisoned");
         g.by_name.insert(name.to_owned(), handle.agent_id.clone());
+        g.by_id.insert(handle.agent_id.clone(), handle);
+    }
+
+    /// Register a handle by AgentId only, without a name index.
+    /// Used by spawn_subagent when LLM doesn't provide a name.
+    pub fn register_anonymous(&self, handle: AsyncTaskHandle) {
+        let mut g = self.inner.lock().expect("async_task_store: lock poisoned");
         g.by_id.insert(handle.agent_id.clone(), handle);
     }
 
@@ -162,6 +172,7 @@ mod tests {
             state,
             output_file: PathBuf::from(format!("/tmp/{agent_id}.output")),
             description: format!("test agent {agent_id}"),
+            cancel_token: CancellationToken::new(),
         }
     }
 

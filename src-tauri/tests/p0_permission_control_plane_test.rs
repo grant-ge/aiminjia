@@ -61,6 +61,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
+            path_auth_scope: None,
         }
     }
 }
@@ -133,6 +134,10 @@ impl RuntimeLlmExecutor for ToolCallExecutor {
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 

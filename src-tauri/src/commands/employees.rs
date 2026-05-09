@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::runtime::employee::inbox::{InboxEntry, InboxStore};
 use crate::runtime::employee::store::{
-    CreateEmployeeRequest, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
+    CreateEmployeeRequest, EmployeeLifecycle, EmployeeRecord, EmployeeStore, UpdateEmployeeRequest,
 };
 use crate::storage::{CurrentUserStorage, UserScopedPathResolver};
 
@@ -55,11 +55,68 @@ pub async fn employee_update(
         .map_err(|e| e.to_string())
 }
 
+/// Soft-delete: set lifecycle = Archived. The employee is hidden from the
+/// main grid but recoverable via `employee_restore` for 7 days. After 7
+/// days, the scheduler's purge sweep hard-deletes the directory.
+///
+/// Errors when the record is already Archived so the caller can surface a
+/// clear "员工已处于解雇状态" message instead of silently no-op'ing.
 #[tauri::command]
 pub async fn employee_delete(app: AppHandle, id: String) -> Result<bool, String> {
-    employee_store(&app)?
-        .delete(&id)
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle == EmployeeLifecycle::Archived {
+        return Err("员工已处于解雇状态".to_string());
+    }
+    store
+        .update(
+            &id,
+            UpdateEmployeeRequest {
+                lifecycle: Some(EmployeeLifecycle::Archived),
+                ..Default::default()
+            },
+        )
+        .map(|_| true)
         .map_err(|e| e.to_string())
+}
+
+/// Restore an archived employee: lifecycle Archived -> Active.
+///
+/// Errors when the record is not Archived so the caller doesn't silently
+/// no-op (e.g. a stale UI button click).
+#[tauri::command]
+pub async fn employee_restore(app: AppHandle, id: String) -> Result<bool, String> {
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle != EmployeeLifecycle::Archived {
+        return Err("员工未处于解雇状态，无需恢复".to_string());
+    }
+    store
+        .update(
+            &id,
+            UpdateEmployeeRequest {
+                lifecycle: Some(EmployeeLifecycle::Active),
+                ..Default::default()
+            },
+        )
+        .map(|_| true)
+        .map_err(|e| e.to_string())
+}
+
+/// Hard-delete an employee directory. Skips the 7-day recovery window —
+/// used for the "永久删除" UI action and by the scheduler's auto-purge.
+///
+/// Refuses to purge a non-Archived employee — the only legitimate path to
+/// permanent deletion is via the recycle bin (or the scheduler's age sweep,
+/// which uses `purge_if_archived_older_than` directly on the store).
+#[tauri::command]
+pub async fn employee_purge(app: AppHandle, id: String) -> Result<bool, String> {
+    let store = employee_store(&app)?;
+    let current = store.get(&id).map_err(|e| e.to_string())?;
+    if current.lifecycle != EmployeeLifecycle::Archived {
+        return Err("只能永久删除已解雇的员工".to_string());
+    }
+    store.purge(&id).map_err(|e| e.to_string())
 }
 
 // ─── trigger ─────────────────────────────────────────────────────────────────
@@ -81,6 +138,19 @@ pub async fn employee_trigger(
 
     let store = employee_store(&app)?;
     let record = store.get(&id).map_err(|e| e.to_string())?;
+
+    // Authoritative lifecycle gate. The drawer disables this button for
+    // paused / archived, but the command must enforce it independently —
+    // skills, scripts, and stale UI clicks can all reach this entry point.
+    match record.lifecycle {
+        EmployeeLifecycle::Archived => {
+            return Err("员工已解雇，恢复后才能派活".to_string());
+        }
+        EmployeeLifecycle::Paused => {
+            return Err("员工已暂停，恢复员工后才能派活".to_string());
+        }
+        EmployeeLifecycle::Active => {}
+    }
 
     let adapter = app
         .state::<Arc<TauriChatCommandAdapter>>()
@@ -152,4 +222,49 @@ pub async fn inbox_unread_count(
     inbox_store(&app)?
         .unread_count(employee_id.as_deref())
         .map_err(|e| e.to_string())
+}
+
+// ─── active run / stop ───────────────────────────────────────────────────────
+
+/// Stop an employee's currently running dispatch (if any).
+/// Returns Ok(true) if a run was found and cancellation was requested,
+/// Ok(false) if no active run exists for this employee.
+#[tauri::command]
+pub async fn employee_stop_run(app: AppHandle, id: String) -> Result<bool, String> {
+    use crate::transport::tauri_commands::chat::TauriChatCommandAdapter;
+
+    let active_runs = app
+        .state::<Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+        .inner()
+        .clone();
+    let Some(run) = active_runs.lookup(&id) else {
+        return Ok(false);
+    };
+
+    let adapter = app
+        .state::<Arc<TauriChatCommandAdapter>>()
+        .inner()
+        .clone();
+    adapter
+        .stop_streaming(run.conversation_id.clone())
+        .await
+        .map_err(|e| format!("stop_streaming failed: {e}"))?;
+    // The active_runs entry is cleaned up by the dispatch's spawn block (via
+    // ActiveRunGuard's Drop) when the agent loop terminates; we don't
+    // unregister here to avoid double-frees and racing the natural cleanup.
+    Ok(true)
+}
+
+/// Returns the current ActiveRun for the employee (if any).
+/// Polled by the UI to drive Activity-dimension state derivation.
+#[tauri::command]
+pub async fn employee_active_run(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<crate::runtime::employee::ActiveRun>, String> {
+    let active_runs = app
+        .state::<Arc<crate::runtime::employee::EmployeeActiveRuns>>()
+        .inner()
+        .clone();
+    Ok(active_runs.lookup(&id))
 }

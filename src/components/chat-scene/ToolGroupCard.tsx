@@ -9,7 +9,7 @@ interface ToolGroupCardProps {
 }
 
 function buildBadge(status: ToolGroupCardProps['status'], steps: ToolStep[]): string {
-  const done = steps.filter((s) => s.status === 'done').length
+  const done = steps.filter((s) => s.status !== 'running').length
   return status === 'running' ? `执行中 ${done} / ${steps.length}` : `已完成 ${done} 步`
 }
 

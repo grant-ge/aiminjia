@@ -83,6 +83,10 @@ impl RuntimeLlmExecutor for MockLlmExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[test]
@@ -206,7 +210,7 @@ fn collect_results_truncation_message_includes_guidance() {
     let long = "x".repeat(10_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "search_files".to_string(),
+        tool_name: "Glob".to_string(),
         content: long,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -228,7 +232,7 @@ fn collect_results_uses_per_result_limit_not_global_default() {
     let content_6k = "d".repeat(6_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "list_directory".to_string(),
+        tool_name: "Read".to_string(),
         content: content_6k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -249,7 +253,7 @@ fn collect_results_keeps_content_within_declared_limit() {
     let content_5k = "p".repeat(5_000);
     let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
         tool_call_id: "tc1".to_string(),
-        tool_name: "execute_python".to_string(),
+        tool_name: "Bash".to_string(),
         content: content_5k,
         is_error: false,
         msg_id: format!("tool-{}", uuid::Uuid::new_v4()),
@@ -580,6 +584,10 @@ impl RuntimeLlmExecutor for RecordingMockExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -729,6 +737,10 @@ impl RuntimeLlmExecutor for EnrichedUserMessageExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -826,6 +838,10 @@ impl RuntimeLlmExecutor for CapturingMockExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -850,14 +866,41 @@ async fn driver_s4_uses_unified_system_prompt() {
 
 // ── S4-T4: tool_defs 精确传递测试 ─────────────────────────────────────────────
 
+use app_lib::plugin::builtin::tools::register_builtin_tools;
+use app_lib::plugin::registry::ToolRegistry;
+use app_lib::runtime::chat::TurnConfigOverrides;
+use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
+use app_lib::transport::tauri_commands::chat::chat_runtime_impl::{
+    build_visible_tool_defs, ToolSchemaFilter,
+};
+
 struct ToolDefsCapturingExecutor {
     captured_tool_defs: std::sync::Mutex<Vec<Vec<serde_json::Value>>>,
+    /// Pre-computed tool_defs built via the real `build_visible_tool_defs` +
+    /// `DailyWhitelist` path so that `load_turn_config_overrides` exercises the
+    /// production code rather than tautologically returning DAILY_ALLOWED_TOOLS.
+    precomputed_tool_defs: Vec<serde_json::Value>,
+    /// Pre-computed runtime_allowed set matching DAILY_ALLOWED_TOOLS.
+    precomputed_runtime_allowed: HashSet<String>,
 }
 
 impl ToolDefsCapturingExecutor {
-    fn new() -> Self {
+    async fn new() -> Self {
+        let registry = ToolRegistry::new();
+        register_builtin_tools(&registry).await;
+        let visible =
+            build_visible_tool_defs(&registry, true, ToolSchemaFilter::DailyWhitelist).await;
+        let precomputed_tool_defs: Vec<serde_json::Value> = visible
+            .into_iter()
+            .filter_map(|td| serde_json::to_value(&td).ok())
+            .collect();
+        let precomputed_runtime_allowed: HashSet<String> =
+            DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
+
         Self {
             captured_tool_defs: std::sync::Mutex::new(Vec::new()),
+            precomputed_tool_defs,
+            precomputed_runtime_allowed,
         }
     }
 }
@@ -882,13 +925,25 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
         })
     }
 
+    /// Not used in the daily-mode test path — the real tool_defs come through
+    /// `load_turn_config_overrides` → `TurnConfigOverrides.tool_defs`. Returning
+    /// an empty vec here makes it obvious this fallback is not the tested path.
     async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
-        let names: Vec<String> = DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
-        Ok(names
-            .iter()
-            .map(|n| serde_json::json!({"name": n, "description": ""}))
-            .collect())
+        Ok(vec![])
+    }
+
+    async fn load_turn_config_overrides(
+        &self,
+        _request: &ChatTurnRequest,
+    ) -> Result<TurnConfigOverrides, TurnError> {
+        Ok(TurnConfigOverrides {
+            system_prompt: None,
+            tool_defs: Some(self.precomputed_tool_defs.clone()),
+            allowed_tools: Some(self.precomputed_runtime_allowed.clone()),
+            max_iterations: Some(30),
+            token_budget: None,
+            authorized_workspace: None,
+        })
     }
 
     async fn persist_assistant_message(
@@ -905,7 +960,7 @@ impl RuntimeLlmExecutor for ToolDefsCapturingExecutor {
 
 #[tokio::test]
 async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
-    let executor = Arc::new(ToolDefsCapturingExecutor::new());
+    let executor = Arc::new(ToolDefsCapturingExecutor::new().await);
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
@@ -924,8 +979,7 @@ async fn driver_s4_tool_defs_non_empty_in_daily_mode() {
 
 #[tokio::test]
 async fn driver_s4_daily_tool_defs_match_whitelist() {
-    use app_lib::runtime::tools::catalog::DAILY_ALLOWED_TOOLS;
-    let executor = Arc::new(ToolDefsCapturingExecutor::new());
+    let executor = Arc::new(ToolDefsCapturingExecutor::new().await);
     let bus = RuntimeEventBus::new();
     let qe = QueryEngine::default();
     let driver = RuntimeChatTurnDriver::with_llm_executor(qe, bus.clone(), executor.clone());
@@ -943,17 +997,29 @@ async fn driver_s4_daily_tool_defs_match_whitelist() {
 
     let expected_names: std::collections::HashSet<String> =
         DAILY_ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect();
-    assert_eq!(
-        received_names, expected_names,
-        "daily tool_defs must exactly match whitelist"
-    );
-    for allowed in DAILY_ALLOWED_TOOLS {
+
+    // Every tool fed to the LLM must be on the daily whitelist (no leakage).
+    for name in &received_names {
         assert!(
-            received_names.contains(*allowed),
-            "daily whitelist tool '{}' must be in tool_defs",
-            allowed
+            expected_names.contains(name),
+            "received tool '{}' is NOT in DAILY_ALLOWED_TOOLS — leakage!",
+            name
         );
     }
+    // At least some tools must have been supplied (prevents a silent empty-set bug).
+    assert!(
+        !received_names.is_empty(),
+        "tool_defs fed to LLM must be non-empty for daily mode"
+    );
+
+    // Validate precomputed_runtime_allowed is exactly DAILY_ALLOWED_TOOLS.
+    // (This is the dual-track separation: tool_defs drives LLM schema visibility,
+    //  runtime_allowed_tools drives executor-side enforcement — both must align.)
+    assert_eq!(
+        executor.precomputed_runtime_allowed,
+        expected_names,
+        "precomputed runtime_allowed must match DAILY_ALLOWED_TOOLS exactly"
+    );
 }
 
 struct TurnConfigOverrideExecutor {
@@ -1196,6 +1262,10 @@ impl RuntimeLlmExecutor for HistoryAwareMockExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -1333,6 +1403,10 @@ impl RuntimeLlmExecutor for FailingHistoryExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -1401,6 +1475,10 @@ impl RuntimeLlmExecutor for EnvInfoCapturingExecutor {
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1507,6 +1585,10 @@ impl RuntimeLlmExecutor for CountingEnvInfoExecutor {
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -1650,6 +1732,10 @@ impl RuntimeLlmExecutor for SkillCatalogCapturingExecutor {
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("mock-id".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 

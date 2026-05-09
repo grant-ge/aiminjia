@@ -23,6 +23,7 @@ use crate::runtime::store::{
     AuthorizedWorkspaceRef, AuthorizedWorkspaceStore, PendingPermissionRequest,
     PendingPermissionRequestStore, PendingPermissionResolution, PermissionStore, PolicyDecision,
 };
+use crate::runtime::path_auth::{load_path_auth_entries, RuleSource, ToolPermissionContext};
 use crate::runtime::tools::permission::{persist_permission_decision, PermissionDestination};
 use crate::transport::runtime_host::RuntimeHost;
 use crate::transport::tauri_event_adapter::TauriEventAdapter;
@@ -356,7 +357,28 @@ impl SessionRuntime {
             .entry(session_id.as_str().to_string())
             .or_insert_with(|| self.query_engine.clone_with_fresh_session_state())
             .clone();
-        session_engine.with_authorized_workspace(authorized_workspace)
+
+        // Reload base ToolPermissionContext from the persistent PermissionStore
+        // on each turn so UserSettings changes (working dirs / allow rules) take
+        // effect immediately. Per-turn session attachment dirs are accumulated
+        // separately via the Arc<Mutex<HashMap>> on QueryEngine.
+        let base_ctx = if let Some(store) = self.permission_store.as_ref() {
+            let entries = load_path_auth_entries(store);
+            let mut ctx = ToolPermissionContext::empty();
+            ctx.additional_working_dirs = entries.working_dirs;
+            ctx.allow_rules = entries.allow_rules;
+            Arc::new(ctx)
+        } else {
+            Arc::new(ToolPermissionContext::empty())
+        };
+
+        let mut engine = session_engine
+            .with_authorized_workspace(authorized_workspace)
+            .with_permission_ctx(base_ctx);
+        if let Some(store) = self.permission_store.as_ref() {
+            engine = engine.with_permission_store(store.clone());
+        }
+        engine
     }
 
     /// Build a `RuntimeChatTurnDriver` scoped to the given turn's session.
@@ -409,6 +431,29 @@ impl SessionRuntime {
             return;
         }
 
+        let destination = destination
+            .or(pending_request.default_destination)
+            .unwrap_or(PermissionDestination::Session);
+
+        // path-auth Ask: route to dedicated PermissionStore methods per §7.8.
+        // Only handles Allow (deny via path_auth Ask is not currently surfaced).
+        if let Some(scope) = pending_request.path_auth_scope.as_ref() {
+            if matches!(decision, PolicyDecision::Allow) {
+                self.persist_path_auth_grant(permission_store, scope, destination);
+                return;
+            }
+            // Deny + path_auth: append_deny_rule is not yet implemented per spec §7.8
+            // (deny rules are only a data structure placeholder in Phase 1-4).
+            // Log explicitly so future implementers see the gap; in-memory deny is
+            // not retained either since path_auth_scope encodes path-level intent
+            // not tool-scope intent.
+            log::info!(
+                "[SessionRuntime] path_auth deny-remember for scope '{}' not persisted: deny path not yet implemented (§7.8)",
+                scope
+            );
+            return;
+        }
+
         if pending_request.capability_scopes.is_empty() {
             log::warn!(
                 "[SessionRuntime] Skip persisting permission for '{}' because no capability scopes were captured",
@@ -417,10 +462,6 @@ impl SessionRuntime {
             return;
         }
 
-        let destination = destination
-            .or(pending_request.default_destination)
-            .unwrap_or(PermissionDestination::Session);
-
         persist_permission_decision(
             permission_store,
             &pending_request.tool_name,
@@ -428,6 +469,63 @@ impl SessionRuntime {
             decision,
             destination,
         );
+    }
+
+    fn persist_path_auth_grant(
+        &self,
+        store: &PermissionStore,
+        scope: &str,
+        destination: PermissionDestination,
+    ) {
+        log::info!(
+            "[persist_path_auth_grant] scope='{}' destination={:?}",
+            scope, destination
+        );
+        let (kind, path_str) = match scope.split_once(':') {
+            Some((k, p)) => (k, p),
+            None => {
+                log::warn!("[SessionRuntime] malformed path_auth_scope: {}", scope);
+                return;
+            }
+        };
+        let path = std::path::PathBuf::from(path_str);
+        match kind {
+            "path" => {
+                // step-6 Ask → working dir grant
+                log::info!(
+                    "[persist_path_auth_grant] -> append_working_dir({:?}, {})",
+                    destination, path.display()
+                );
+                if let Err(err) = store.append_working_dir(destination, path) {
+                    log::warn!(
+                        "[SessionRuntime] append_working_dir failed: {} (in-memory grant retained)",
+                        err
+                    );
+                }
+            }
+            "pathwrite" => {
+                // step-4b Ask → write allow_rule grant
+                // Pattern is `<dir>/**` so subsequent writes anywhere under the dir are allowed.
+                let pattern = format!("{}/**", path_str);
+                log::info!(
+                    "[persist_path_auth_grant] -> append_path_allow_rule({:?}, {}, op=Write)",
+                    destination, pattern
+                );
+                if let Err(err) = store.append_path_allow_rule(
+                    destination,
+                    pattern,
+                    Some(crate::runtime::path_auth::PathOp::Write),
+                ) {
+                    log::warn!(
+                        "[SessionRuntime] append_path_allow_rule failed: {} (in-memory grant retained)",
+                        err
+                    );
+                }
+            }
+            other => {
+                log::warn!("[SessionRuntime] unknown path_auth_scope kind: {}", other);
+            }
+        }
     }
 
     fn ensure_active_session_cancel_root(&self, session_id: &SessionId) -> CancellationToken {
@@ -764,6 +862,7 @@ mod tests {
                     args: serde_json::json!({}),
                     purpose: None,
                 },
+                path_auth_scope: None,
             })
             .unwrap();
 
@@ -810,6 +909,7 @@ mod tests {
                     args: serde_json::json!({}),
                     purpose: None,
                 },
+                path_auth_scope: None,
             })
             .unwrap();
 
@@ -859,6 +959,7 @@ mod tests {
                     args: serde_json::json!({}),
                     purpose: None,
                 },
+                path_auth_scope: None,
             })
             .unwrap();
 
@@ -876,6 +977,121 @@ mod tests {
         assert_eq!(
             permission_store.get_for_scope("echo_tool", "custom:test"),
             Some(crate::runtime::store::PolicyDecision::Deny)
+        );
+    }
+
+    #[test]
+    fn permanent_allow_with_path_auth_scope_persists_via_append_working_dir() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let session_id = SessionId::new("session-path-auth-working-dir");
+        let tool_call_id = ToolCallId::new("tc-path-auth-wd");
+
+        let _rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id,
+                run_id: RunId::new("run-path-auth-wd"),
+                tool_name: "read_workspace_file".to_string(),
+                capability_scopes: vec![],
+                message: "Allow path?".to_string(),
+                suggestions: vec![],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "read_workspace_file".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: Some("path:/Users/example/Docs".to_string()),
+            })
+            .unwrap();
+
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::User),
+                },
+            )
+            .unwrap();
+
+        // The PermissionStore should now contain a User working_dir entry.
+        let entries = crate::runtime::path_auth::load_path_auth_entries(&permission_store);
+        let expected = std::path::PathBuf::from("/Users/example/Docs");
+        assert!(
+            entries.working_dirs.contains_key(&expected),
+            "append_working_dir must have been called for the path: {:?}",
+            entries.working_dirs
+        );
+
+        // capability_scopes were NOT recorded (path_auth_scope branch short-circuits).
+        assert_eq!(
+            permission_store.get_for_scope("read_workspace_file", "custom:test"),
+            None,
+            "capability_scope path must NOT be taken when path_auth_scope is set"
+        );
+    }
+
+    #[test]
+    fn permanent_allow_with_pathwrite_scope_persists_via_append_path_allow_rule() {
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let session_id = SessionId::new("session-pathwrite-allow-rule");
+        let tool_call_id = ToolCallId::new("tc-pathwrite-rule");
+
+        let _rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id,
+                run_id: RunId::new("run-pathwrite-rule"),
+                tool_name: "write_file".to_string(),
+                capability_scopes: vec![],
+                message: "Allow write?".to_string(),
+                suggestions: vec![],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "write_file".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: Some("pathwrite:/Users/example/Docs".to_string()),
+            })
+            .unwrap();
+
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::User),
+                },
+            )
+            .unwrap();
+
+        // The PermissionStore should now contain a User path_allow_rule for the pattern.
+        let entries = crate::runtime::path_auth::load_path_auth_entries(&permission_store);
+        let expected_pattern = "/Users/example/Docs/**";
+        let found = entries.allow_rules.iter().any(|r| r.pattern == expected_pattern);
+        assert!(
+            found,
+            "append_path_allow_rule must have been called with pattern '{}': {:?}",
+            expected_pattern,
+            entries.allow_rules
         );
     }
 
@@ -940,5 +1156,104 @@ mod tests {
 
         assert!(!root_before.is_cancelled());
         assert!(root_after.is_cancelled());
+    }
+
+    /// Verifies the full Ask → persist → Allow round-trip for pathwrite scope:
+    /// after a user clicks "Always Allow" on a path-auth Ask, the next turn's
+    /// decide::is_path_allowed must return Allow without re-asking.
+    #[test]
+    fn path_auth_ask_persist_allow_round_trip() {
+        use crate::runtime::path_auth::context::{PermissionRule, RuleSource, ToolPermissionContext};
+        use crate::runtime::path_auth::decide::{self, Decision};
+        use crate::runtime::path_auth::op::PathOp;
+        use crate::runtime::path_auth::store_bridge::load_path_auth_entries;
+        use std::collections::HashMap;
+
+        // Use a real tempdir so canonicalize_or_ancestor resolves correctly.
+        let tmp = TempDir::new().unwrap();
+        let doc_dir = tmp.path().join("Docs");
+        std::fs::create_dir_all(&doc_dir).unwrap();
+        let doc_dir_str = std::fs::canonicalize(&doc_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let scope = format!("pathwrite:{}", doc_dir_str);
+        let expected_pattern = format!("{}/**", doc_dir_str);
+
+        // 1. Create an in-memory PermissionStore.
+        let pending_permission_store = Arc::new(PendingPermissionRequestStore::new());
+        let permission_store = Arc::new(crate::runtime::store::PermissionStore::in_memory());
+        let runtime = SessionRuntime::new(QueryEngine::new(), RuntimeEventBus::new())
+            .with_pending_permission_store(pending_permission_store.clone())
+            .with_permission_store(permission_store.clone());
+        let session_id = SessionId::new("session-round-trip");
+        let tool_call_id = ToolCallId::new("tc-round-trip");
+
+        // 2. Construct a PendingPermissionRequest with pathwrite scope.
+        let _rx = pending_permission_store
+            .insert(crate::runtime::store::PendingPermissionRequest {
+                tool_call_id: tool_call_id.clone(),
+                session_id,
+                run_id: RunId::new("run-round-trip"),
+                tool_name: "write_file".to_string(),
+                capability_scopes: vec![],
+                message: "Allow write?".to_string(),
+                suggestions: vec![],
+                mode: PermissionMode::Default,
+                remember_options: vec![PermissionDestination::User],
+                default_destination: Some(PermissionDestination::User),
+                original_request: crate::runtime::chat::tool_round_types::RuntimeToolCallRequest {
+                    tool_call_id: tool_call_id.as_str().to_string(),
+                    tool_name: "write_file".to_string(),
+                    args: serde_json::json!({}),
+                    purpose: None,
+                },
+                path_auth_scope: Some(scope),
+            })
+            .unwrap();
+
+        // 3. Resolve with Allow { remember: true, destination: User }.
+        runtime
+            .resolve_permission_request(
+                &tool_call_id,
+                PendingPermissionResolution::Allow {
+                    updated_input: None,
+                    remember: true,
+                    destination: Some(PermissionDestination::User),
+                },
+            )
+            .unwrap();
+
+        // 4. Verify the store contains the expected pathwrite allow_rule.
+        let entries = load_path_auth_entries(&permission_store);
+        assert_eq!(
+            entries.allow_rules.len(),
+            1,
+            "should have exactly one allow_rule after persist: {:?}",
+            entries.allow_rules
+        );
+        let rule = &entries.allow_rules[0];
+        assert_eq!(rule.pattern, expected_pattern, "pattern must be dir/**");
+        assert_eq!(rule.op, Some(PathOp::Write), "op must be Write");
+        assert_eq!(rule.source, RuleSource::UserSettings, "source must be UserSettings");
+
+        // 5. Build a ToolPermissionContext from those entries.
+        let ctx = ToolPermissionContext {
+            mode: PermissionMode::Default,
+            primary_root: None,
+            additional_working_dirs: HashMap::new(),
+            allow_rules: entries.allow_rules,
+            deny_rules: vec![],
+        };
+
+        // 6 & 7. The next-turn decide must return Allow for a file inside Docs.
+        let target_file = doc_dir.join("report.txt");
+        let result = decide::is_path_allowed(&target_file, PathOp::Write, &ctx);
+        assert_eq!(
+            result,
+            Decision::Allow,
+            "round-trip must produce Allow for a file inside the granted dir; got {:?}",
+            result
+        );
     }
 }

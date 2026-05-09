@@ -1,4 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react'
+import { invoke } from '@tauri-apps/api/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tauriEventMock = vi.hoisted(() => {
@@ -61,6 +62,7 @@ describe('useStreaming integration review', () => {
     })
     useDiagnosticsStore.getState().clearDiagnostics()
     useNotificationStore.getState().dismissAll()
+    vi.mocked(invoke).mockReset()
   })
 
   it('registers a frontend listener for runtime task terminal notifications', async () => {
@@ -522,7 +524,7 @@ describe('useStreaming integration review', () => {
     })
   })
 
-  it('adds load_skill tool events to streaming bubbles', async () => {
+  it('adds Skill tool events to streaming bubbles', async () => {
     render(<HookHarness />)
     await waitForListeners()
 
@@ -531,7 +533,7 @@ describe('useStreaming integration review', () => {
       handler?.({
         payload: {
           conversationId: 'conv-load-skill',
-          toolName: 'load_skill',
+          toolName: 'Skill',
           toolId: 'tool-load-skill-1',
           purpose: 'Load salary query skill',
           input: { skill_name: 'salary-query' },
@@ -541,11 +543,86 @@ describe('useStreaming integration review', () => {
 
     expect(useChatStore.getState().streamStates['conv-load-skill']?.toolExecutions).toContainEqual(
       expect.objectContaining({
-        toolName: 'load_skill',
+        toolName: 'Skill',
         toolId: 'tool-load-skill-1',
         status: 'executing',
         summary: 'Load salary query skill',
       }),
     )
+  })
+
+  it('silently uploads diagnostics when a primary tool completes with an error', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      session_id: 'diag-1',
+      chunks_uploaded: 1,
+      chunks_total: 1,
+      events_uploaded: 0,
+      app_log_lines_uploaded: 1,
+      bad_metrics_lines: 0,
+    })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const handler = tauriEventMock.listeners.get('tool:completed')
+    act(() => {
+      handler?.({
+        payload: {
+          id: 'msg-tool-error',
+          conversationId: 'conv-tool-error',
+          role: 'tool',
+          createdAt: '2026-05-08T00:00:00.000Z',
+          content: { text: '' },
+          toolResult: {
+            toolCallId: 'tool-error-1',
+            name: 'get_file_info',
+            content: 'tool execution failed',
+            isError: true,
+            durationMs: 12,
+          },
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('upload_diagnostic_logs')
+    })
+  })
+
+  it('does not upload diagnostics twice for the same failed tool call', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      session_id: 'diag-1',
+      chunks_uploaded: 1,
+      chunks_total: 1,
+      events_uploaded: 0,
+      app_log_lines_uploaded: 1,
+      bad_metrics_lines: 0,
+    })
+    render(<HookHarness />)
+    await waitForListeners()
+
+    const payload = {
+      id: 'msg-tool-error',
+      conversationId: 'conv-tool-error',
+      role: 'tool',
+      createdAt: '2026-05-08T00:00:00.000Z',
+      content: { text: '' },
+      toolResult: {
+        toolCallId: 'tool-error-dedup',
+        name: 'get_file_info',
+        content: 'tool execution failed',
+        isError: true,
+        durationMs: 12,
+      },
+    }
+    const handler = tauriEventMock.listeners.get('tool:completed')
+    act(() => {
+      handler?.({ payload })
+      handler?.({ payload: { ...payload, id: 'msg-tool-error-replay' } })
+    })
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('upload_diagnostic_logs')
+    })
+    expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'upload_diagnostic_logs')).toHaveLength(1)
   })
 })

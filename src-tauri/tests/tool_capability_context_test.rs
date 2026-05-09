@@ -63,6 +63,9 @@ async fn runtime_tool_reads_workspace_from_capability_context() {
     let storage_cap = StorageCapability {
         workspace_path: std::path::PathBuf::from("/tmp/test-workspace"),
         authorized_workspace: None,
+        permission_ctx: std::sync::Arc::new(
+            app_lib::runtime::path_auth::ToolPermissionContext::empty(),
+        ),
     };
     let cap_ctx = CapabilityContext {
         storage: Some(storage_cap),
@@ -226,7 +229,7 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
 
     let tool = ReadWorkspaceFileRuntimeTool;
 
-    let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+    let r1 = RuntimeTool::execute(&tool, json!({"file_path": filename}), ctx())
         .await
         .unwrap();
     let r1_data = r1
@@ -236,7 +239,7 @@ async fn read_workspace_file_uses_file_state_cache_on_second_read() {
     assert_eq!(r1_data["content"], json!("line1\nline2\n"));
     assert!(r1_data.get("cached").is_none());
 
-    let r2 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+    let r2 = RuntimeTool::execute(&tool, json!({"file_path": filename}), ctx())
         .await
         .unwrap();
     let r2_data = r2
@@ -276,7 +279,7 @@ async fn read_workspace_file_reloads_when_larger_request_exceeds_truncated_cache
 
     let tool = ReadWorkspaceFileRuntimeTool;
 
-    let r1 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
+    let r1 = RuntimeTool::execute(&tool, json!({"file_path": filename, "max_bytes": 4}), ctx())
         .await
         .unwrap();
     let r1_data = r1
@@ -287,7 +290,7 @@ async fn read_workspace_file_reloads_when_larger_request_exceeds_truncated_cache
     assert_eq!(r1_data["truncated"], json!(true));
     assert!(r1_data.get("cached").is_none());
 
-    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
+    let r2 = RuntimeTool::execute(&tool, json!({"file_path": filename, "max_bytes": 4}), ctx())
         .await
         .unwrap();
     let r2_data = r2
@@ -298,7 +301,7 @@ async fn read_workspace_file_reloads_when_larger_request_exceeds_truncated_cache
     assert_eq!(r2_data["cached"], json!(true));
     assert_eq!(r2_data["truncated"], json!(true));
 
-    let r3 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+    let r3 = RuntimeTool::execute(&tool, json!({"file_path": filename}), ctx())
         .await
         .unwrap();
     let r3_data = r3
@@ -339,7 +342,7 @@ async fn read_workspace_file_truncates_cached_content_for_smaller_follow_up_limi
 
     let tool = ReadWorkspaceFileRuntimeTool;
 
-    let r1 = RuntimeTool::execute(&tool, json!({"path": filename}), ctx())
+    let r1 = RuntimeTool::execute(&tool, json!({"file_path": filename}), ctx())
         .await
         .unwrap();
     let r1_data = r1
@@ -348,7 +351,7 @@ async fn read_workspace_file_truncates_cached_content_for_smaller_follow_up_limi
         .expect("initial read should include structured data");
     assert_eq!(r1_data["content"], json!("abcdefghij"));
 
-    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 4}), ctx())
+    let r2 = RuntimeTool::execute(&tool, json!({"file_path": filename, "max_bytes": 4}), ctx())
         .await
         .unwrap();
     let r2_data = r2
@@ -389,7 +392,7 @@ async fn read_workspace_file_preserves_utf8_boundaries_between_cold_and_cached_r
 
     let tool = ReadWorkspaceFileRuntimeTool;
 
-    let r1 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 6}), ctx())
+    let r1 = RuntimeTool::execute(&tool, json!({"file_path": filename, "max_bytes": 6}), ctx())
         .await
         .unwrap();
     let r1_data = r1
@@ -401,7 +404,7 @@ async fn read_workspace_file_preserves_utf8_boundaries_between_cold_and_cached_r
     assert!(r1_data.get("cached").is_none());
     assert!(!r1_data["content"].as_str().unwrap().contains('\u{fffd}'));
 
-    let r2 = RuntimeTool::execute(&tool, json!({"path": filename, "max_bytes": 6}), ctx())
+    let r2 = RuntimeTool::execute(&tool, json!({"file_path": filename, "max_bytes": 6}), ctx())
         .await
         .unwrap();
     let r2_data = r2

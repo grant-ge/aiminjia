@@ -4,7 +4,6 @@ pub mod connector;
 pub mod llm;
 pub mod models;
 pub mod plugin;
-pub mod python;
 pub mod runtime;
 pub mod runtime_audit;
 pub mod search;
@@ -41,6 +40,7 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
+            commands::file::cleanup_workspace_clipboard_staging(&aijia_home.default_folder(), 7);
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -517,40 +517,20 @@ pub fn run() {
             ));
             app.manage(facade);
 
-            // Initialize Python session manager for persistent REPL sessions
-            let session_mgr = Arc::new(
-                python::session::PythonSessionManager::with_lazy_runtime_resolver(
-                    file_mgr.workspace_path(),
-                    runtime_resolver.clone(),
-                ),
-            );
-
             let chat_adapter = Arc::new(
                 transport::tauri_commands::chat::TauriChatCommandAdapter::new(
-                    db.clone(),
+                    current_user_storage.clone(),
+                    root_db.clone(),
                     gateway.clone(),
                     file_mgr.clone(),
                     secure_storage.clone(),
                     tool_registry.clone(),
                     disk_skill_registry.clone(),
-                    session_mgr.clone(),
                     auth_manager.clone(),
                     permission_store.clone(),
                     app.handle().clone(),
                 ),
             );
-
-            // Start idle session reaper (every 5 minutes)
-            {
-                let session_mgr_clone = session_mgr.clone();
-                tauri::async_runtime::spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
-                    loop {
-                        interval.tick().await;
-                        session_mgr_clone.reap_idle().await;
-                    }
-                });
-            }
 
             // Register managed state
             app.manage(db);
@@ -570,10 +550,12 @@ pub fn run() {
             app.manage(mcp_config_store);
             app.manage(permission_store);
             app.manage(skill_registry);
-            app.manage(session_mgr);
             app.manage(agent_runtime);
             app.manage(chat_adapter);
             app.manage(async_agent_task_store);
+            app.manage(std::sync::Arc::new(
+                crate::runtime::employee::EmployeeActiveRuns::new(),
+            ));
 
             runtime::schedule_runner::spawn_schedule_runner(
                 current_user_storage.clone() as Arc<dyn storage::UserScopedPathResolver>,
@@ -624,6 +606,8 @@ pub fn run() {
             file::upload_file,
             file::read_clipboard_file_paths,
             file::save_clipboard_image_to_tmp_dir,
+            file::save_clipboard_image_to_workspace_staging,
+            file::read_local_image_as_data_url,
             file::open_generated_file,
             file::reveal_file_in_folder,
             file::get_file_preview,
@@ -705,7 +689,11 @@ pub fn run() {
             commands::employees::employee_create,
             commands::employees::employee_update,
             commands::employees::employee_delete,
+            commands::employees::employee_restore,
+            commands::employees::employee_purge,
             commands::employees::employee_trigger,
+            commands::employees::employee_stop_run,
+            commands::employees::employee_active_run,
             commands::employees::inbox_list,
             commands::employees::inbox_mark_read,
             commands::employees::inbox_mark_all_read,
@@ -749,11 +737,6 @@ pub fn run() {
                         );
                     }
                 }
-
-                // Graceful shutdown: checkpoint all Python sessions before exit.
-                // block_on is safe here — the event loop is already shutting down.
-                let session_mgr = app_handle.state::<Arc<python::session::PythonSessionManager>>();
-                tauri::async_runtime::block_on(session_mgr.shutdown_all());
 
                 // Shutdown CDP browser (kill Chromium process) via connector engine
                 let engine = app_handle.state::<Arc<connector::ConnectorEngine>>();

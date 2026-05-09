@@ -16,7 +16,7 @@ fn parses_frontmatter_with_all_fields() {
 name: explore
 description: 只读探索代码库
 allowed_tools: ["read_file", "grep"]
-disallowed_tools: ["write_file"]
+disallowed_tools: ["Write"]
 max_iterations: 15
 model: haiku
 permission_mode: auto_deny
@@ -30,7 +30,7 @@ You are a read-only explorer. Search and report findings."#,
     assert_eq!(def.name, "explore");
     assert_eq!(def.description, "只读探索代码库");
     assert_eq!(def.allowed_tools, vec!["read_file", "grep"]);
-    assert_eq!(def.disallowed_tools, vec!["write_file"]);
+    assert_eq!(def.disallowed_tools, vec!["Write"]);
     assert_eq!(def.max_iterations, 15);
     assert!(matches!(def.model, AgentModel::Fixed(ref m) if m == "haiku"));
     assert!(matches!(def.permission_mode, AgentPermissionMode::AutoDeny));

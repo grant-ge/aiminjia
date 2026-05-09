@@ -3,7 +3,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn authorized_session_exposes_workspace_tools_and_lists_local_directory() {
+async fn authorized_session_exposes_workspace_tools_and_searches_workspace() {
     let authorized_root = TempDir::new().unwrap();
     std::fs::write(
         authorized_root.path().join("sales_2026.csv"),
@@ -15,17 +15,15 @@ async fn authorized_session_exposes_workspace_tools_and_lists_local_directory() 
     let trace = run_workspace_tool_with_authorized_session(
         "conv-workspace",
         authorized_root.path(),
-        "list_directory",
-        json!({ "path": "." }),
+        "Glob",
+        json!({ "pattern": "*" }),
     )
     .await
     .unwrap();
 
     for tool_name in &[
-        "list_directory",
-        "read_workspace_file",
-        "search_files",
-        "get_file_info",
+        "Read",
+        "Glob",
     ] {
         assert!(
             trace
@@ -62,8 +60,8 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
     let trace = run_workspace_tool_with_authorized_session(
         "conv-workspace-read",
         authorized_root.path(),
-        "read_workspace_file",
-        json!({ "path": "sales_2026.csv" }),
+        "Read",
+        json!({ "file_path": "sales_2026.csv" }),
     )
     .await
     .unwrap();
@@ -72,7 +70,7 @@ async fn authorized_session_reads_workspace_file_without_upload_flow() {
         trace
             .visible_tool_names
             .iter()
-            .any(|name| name == "read_workspace_file"),
+            .any(|name| name == "Read"),
         "authorized session should expose read_workspace_file, got {:?}",
         trace.visible_tool_names
     );

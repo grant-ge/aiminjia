@@ -222,19 +222,19 @@ fn reminder_builder_outputs_system_reminder_user_message() {
 
 #[test]
 fn reminder_builder_context_message_preserves_legacy_meta_contract() {
-    let message = ReminderBuilder::context_message("renlijiaMd", "- file.md: 摘要").unwrap();
+    let message = ReminderBuilder::context_message("agentsMd", "- file.md: 摘要").unwrap();
 
     assert_eq!(message["role"], "user");
     assert_eq!(message["isMeta"], true);
     assert_eq!(
         message["content"],
-        "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# renlijiaMd\n- file.md: 摘要\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
+        "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# agentsMd\n- file.md: 摘要\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
     );
 }
 
 #[test]
 fn reminder_builder_context_message_omits_blank_body() {
-    assert!(ReminderBuilder::context_message("renlijiaMd", "  \n\t").is_none());
+    assert!(ReminderBuilder::context_message("agentsMd", "  \n\t").is_none());
 }
 
 #[test]

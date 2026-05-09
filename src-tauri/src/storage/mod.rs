@@ -1,4 +1,5 @@
 pub mod aijia_home;
+pub mod console_decode;
 pub mod crypto;
 pub mod current_user_storage;
 pub mod file_manager;
@@ -8,6 +9,9 @@ pub mod mcp_config_store;
 pub mod message_write_queue;
 pub mod migration;
 pub mod migration_user_scope;
+pub mod process_ext;
+pub mod safe_filename;
+pub mod text_io;
 pub mod user_scope;
 pub mod user_scoped_paths;
 pub mod upload_gc;

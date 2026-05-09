@@ -127,7 +127,7 @@
       "load_file": "Loading file...",
       "save_analysis_note": "Saving analysis notes...",
       "update_progress": "Updating analysis progress...",
-      "web_search": "Searching for information...",
+      "WebSearch": "Searching for information...",
       "generate_report": "Generating report...",
       "export_data": "Exporting data...",
       "hypothesis_test": "Running statistical tests...",
@@ -370,7 +370,8 @@
     "canSwitchLater": "You can switch or customize your persona anytime in Settings"
   },
   "updater": {
-    "newVersionFound": "New version v{{version}} available. Update now?\n\n",
+    "newVersionFound": "New version v{{version}} available",
+    "releaseNotesHeader": "What's new",
     "downloading": "Downloading update",
     "downloadingDesc": "Downloading v{{version}}, please wait...",
     "downloadingProgress": "Downloading v{{version}}, {{pct}}%...",
@@ -380,7 +381,14 @@
     "downloadFailedDesc": "Please try again later or download the new version manually",
     "updateNow": "Update Now",
     "updateLater": "Later",
-    "updateAvailableDesc": "A new version is available. Would you like to update now?"
+    "updateAvailableDesc": "A new version is available. Would you like to update now?",
+    "linkText": "v{{version}} ready",
+    "linkTooltip": "Downloaded — click to review release notes",
+    "panelTitle": "Update available v{{version}}",
+    "versionLine": "{{current}} → {{next}} ({{size}} downloaded)",
+    "installAndRestart": "Install & Restart",
+    "installing": "Installing...",
+    "offlineHint": "Network unavailable, cannot install update. Please try again later."
   },
   "auth": {
     "expired": "Session expired",

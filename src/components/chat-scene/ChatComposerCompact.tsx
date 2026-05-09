@@ -28,6 +28,7 @@ interface ChatComposerCompactProps {
   isStreaming?: boolean
   onStop?: () => void
   onOpenAttachment?: () => void
+  allowAttachmentOnlySubmit?: boolean
   pendingFilesSlot?: ReactNode
   topSlot?: ReactNode
   skillCommand?: ComposerSkillCommand | null
@@ -53,6 +54,7 @@ export function ChatComposerCompact({
   isStreaming = false,
   onStop,
   onOpenAttachment,
+  allowAttachmentOnlySubmit = false,
   pendingFilesSlot,
   topSlot,
   skillCommand,
@@ -81,7 +83,7 @@ export function ChatComposerCompact({
     if (e.defaultPrevented) return
     if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (!submitDisabled && value.trim()) onSubmit(value)
+      if (!submitDisabled && (value.trim() || allowAttachmentOnlySubmit)) onSubmit(value)
     }
   }
 
@@ -196,15 +198,15 @@ export function ChatComposerCompact({
                   onStop?.()
                   return
                 }
-                if (!submitDisabled && value.trim()) onSubmit(value)
+                if (!submitDisabled && (value.trim() || allowAttachmentOnlySubmit)) onSubmit(value)
               }}
               disabled={isStreaming ? false : submitDisabled}
               className={
-                !isStreaming && (submitDisabled || !value.trim())
+                !isStreaming && (submitDisabled || (!value.trim() && !allowAttachmentOnlySubmit))
                   ? 'flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground'
                   : 'flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:opacity-90'
               }
-              style={!isStreaming && (submitDisabled || !value.trim()) ? { backgroundColor: '#D4D4D8' } : undefined}
+              style={!isStreaming && (submitDisabled || (!value.trim() && !allowAttachmentOnlySubmit)) ? { backgroundColor: '#D4D4D8' } : undefined}
             >
               {isStreaming ? (
                 <span className="block h-3.5 w-3.5 rounded-[2px] bg-current" />

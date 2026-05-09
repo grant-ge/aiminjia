@@ -23,7 +23,7 @@ async fn write_file_creates_new_file() {
     let tool = WriteFileRuntimeTool;
     let result = tool
         .execute(
-            json!({ "path": "hello.txt", "content": "hello world" }),
+            json!({ "file_path": "hello.txt", "content": "hello world" }),
             ctx,
         )
         .await
@@ -42,7 +42,7 @@ async fn write_file_overwrites_existing_file() {
 
     let tool = WriteFileRuntimeTool;
     tool.execute(
-        json!({ "path": "existing.txt", "content": "new content" }),
+        json!({ "file_path": "existing.txt", "content": "new content" }),
         ctx,
     )
     .await
@@ -59,7 +59,7 @@ async fn write_file_creates_parent_dirs() {
 
     let tool = WriteFileRuntimeTool;
     tool.execute(
-        json!({ "path": "subdir/nested/file.txt", "content": "nested" }),
+        json!({ "file_path": "subdir/nested/file.txt", "content": "nested" }),
         ctx,
     )
     .await
@@ -75,7 +75,7 @@ async fn write_file_rejects_path_traversal() {
 
     let tool = WriteFileRuntimeTool;
     let result = tool
-        .execute(json!({ "path": "../escape.txt", "content": "evil" }), ctx)
+        .execute(json!({ "file_path": "../escape.txt", "content": "evil" }), ctx)
         .await;
 
     assert!(result.is_err(), "Path traversal should be rejected");
@@ -93,7 +93,7 @@ async fn write_file_updates_file_state_cache() {
 
     let tool = WriteFileRuntimeTool;
     tool.execute(
-        json!({ "path": "cached.txt", "content": "cached content" }),
+        json!({ "file_path": "cached.txt", "content": "cached content" }),
         ctx,
     )
     .await

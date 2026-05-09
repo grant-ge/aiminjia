@@ -94,19 +94,53 @@ impl PermissionRule {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionStoreSnapshot {
     pub rules: Vec<PermissionRule>,
     #[serde(default)]
     pub legacy: HashMap<String, PolicyDecision>,
+    #[serde(default)]
+    pub additional_working_dirs: Vec<AdditionalWorkingDirEntry>,
+    #[serde(default)]
+    pub path_allow_rules: Vec<PathAllowRuleEntry>,
 }
 
-impl Default for PermissionStoreSnapshot {
-    fn default() -> Self {
-        Self {
-            rules: Vec::new(),
-            legacy: HashMap::new(),
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AdditionalWorkingDirEntry {
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathAllowRuleEntry {
+    pub pattern: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op: Option<StoredPathOp>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StoredPathOp {
+    Read,
+    Write,
+}
+
+impl From<crate::runtime::path_auth::PathOp> for StoredPathOp {
+    fn from(op: crate::runtime::path_auth::PathOp) -> Self {
+        use crate::runtime::path_auth::PathOp;
+        match op {
+            PathOp::Read => StoredPathOp::Read,
+            PathOp::Write => StoredPathOp::Write,
+        }
+    }
+}
+
+impl From<StoredPathOp> for crate::runtime::path_auth::PathOp {
+    fn from(op: StoredPathOp) -> Self {
+        use crate::runtime::path_auth::PathOp;
+        match op {
+            StoredPathOp::Read => PathOp::Read,
+            StoredPathOp::Write => PathOp::Write,
         }
     }
 }
@@ -137,6 +171,8 @@ impl PolicyDecision {
 struct PermissionLayer {
     rules: Vec<PermissionRule>,
     legacy: HashMap<String, PolicyDecision>,
+    additional_working_dirs: Vec<AdditionalWorkingDirEntry>,
+    path_allow_rules: Vec<PathAllowRuleEntry>,
 }
 
 impl PermissionLayer {
@@ -224,6 +260,8 @@ impl PermissionLayer {
         PermissionStoreSnapshot {
             rules,
             legacy: self.legacy.clone(),
+            additional_working_dirs: self.additional_working_dirs.clone(),
+            path_allow_rules: self.path_allow_rules.clone(),
         }
     }
 }
@@ -231,6 +269,15 @@ impl PermissionLayer {
 fn split_legacy_key(scope_key: &str) -> Option<(String, String)> {
     let (tool_name, scope) = scope_key.split_once(':')?;
     Some((tool_name.to_string(), scope.to_string()))
+}
+
+pub struct PathAuthData {
+    pub session_working_dirs: Vec<AdditionalWorkingDirEntry>,
+    pub workspace_working_dirs: Vec<AdditionalWorkingDirEntry>,
+    pub user_working_dirs: Vec<AdditionalWorkingDirEntry>,
+    pub session_allow_rules: Vec<PathAllowRuleEntry>,
+    pub workspace_allow_rules: Vec<PathAllowRuleEntry>,
+    pub user_allow_rules: Vec<PathAllowRuleEntry>,
 }
 
 fn load_snapshot(path: &PathBuf, source: PermissionSource) -> PermissionLayer {
@@ -253,6 +300,8 @@ fn load_snapshot(path: &PathBuf, source: PermissionSource) -> PermissionLayer {
             })
             .collect();
         layer.legacy = snapshot.legacy;
+        layer.additional_working_dirs = snapshot.additional_working_dirs;
+        layer.path_allow_rules = snapshot.path_allow_rules;
         return layer;
     }
 
@@ -434,36 +483,167 @@ impl PermissionStore {
         }
     }
 
+    pub(crate) fn path_auth_data(&self) -> PathAuthData {
+        let session_working_dirs = self
+            .session
+            .read()
+            .unwrap()
+            .additional_working_dirs
+            .clone();
+        let session_allow_rules = self
+            .session
+            .read()
+            .unwrap()
+            .path_allow_rules
+            .clone();
+
+        let workspace_working_dirs = self
+            .workspace
+            .read()
+            .unwrap()
+            .additional_working_dirs
+            .clone();
+        let workspace_allow_rules = self
+            .workspace
+            .read()
+            .unwrap()
+            .path_allow_rules
+            .clone();
+
+        let user_working_dirs = self
+            .user
+            .read()
+            .unwrap()
+            .additional_working_dirs
+            .clone();
+        let user_allow_rules = self
+            .user
+            .read()
+            .unwrap()
+            .path_allow_rules
+            .clone();
+
+        PathAuthData {
+            session_working_dirs,
+            workspace_working_dirs,
+            user_working_dirs,
+            session_allow_rules,
+            workspace_allow_rules,
+            user_allow_rules,
+        }
+    }
+
     fn flush_workspace(&self) {
+        if let Err(err) = self.flush_workspace_result() {
+            log::warn!(
+                "[PermissionStore] Failed to flush workspace permission snapshot: {}",
+                err
+            );
+        }
+    }
+
+    fn flush_user(&self) {
+        if let Err(err) = self.flush_user_result() {
+            log::warn!(
+                "[PermissionStore] Failed to flush user permission snapshot: {}",
+                err
+            );
+        }
+    }
+
+    fn flush_workspace_result(&self) -> std::io::Result<()> {
         if let Some(path) = &self.workspace_file_path {
             let snapshot = self
                 .workspace
                 .read()
                 .unwrap()
                 .snapshot_with_source(PermissionSource::Workspace);
-            flush_snapshot(path, &snapshot);
+            atomic_write_json(path, &snapshot)?;
         }
+        Ok(())
     }
 
-    fn flush_user(&self) {
+    fn flush_user_result(&self) -> std::io::Result<()> {
         if let Some(path) = &self.user_file_path {
             let snapshot = self
                 .user
                 .read()
                 .unwrap()
                 .snapshot_with_source(PermissionSource::User);
-            flush_snapshot(path, &snapshot);
+            atomic_write_json(path, &snapshot)?;
+        }
+        Ok(())
+    }
+
+    pub fn append_working_dir(
+        &self,
+        destination: crate::runtime::tools::permission::PermissionDestination,
+        path: PathBuf,
+    ) -> std::io::Result<()> {
+        match destination {
+            crate::runtime::tools::permission::PermissionDestination::Session => {
+                let mut layer = self.session.write().unwrap();
+                if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
+                    layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                }
+                Ok(())
+            }
+            crate::runtime::tools::permission::PermissionDestination::Workspace => {
+                {
+                    let mut layer = self.workspace.write().unwrap();
+                    if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
+                        layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                    }
+                }
+                self.flush_workspace_result()
+            }
+            crate::runtime::tools::permission::PermissionDestination::User => {
+                {
+                    let mut layer = self.user.write().unwrap();
+                    if !layer.additional_working_dirs.iter().any(|e| e.path == path) {
+                        layer.additional_working_dirs.push(AdditionalWorkingDirEntry { path });
+                    }
+                }
+                self.flush_user_result()
+            }
         }
     }
-}
 
-fn flush_snapshot(path: &PathBuf, snapshot: &PermissionStoreSnapshot) {
-    if let Err(err) = atomic_write_json(path, snapshot) {
-        log::warn!(
-            "[PermissionStore] Failed to flush permission snapshot to {:?}: {}",
-            path,
-            err
-        );
+    pub fn append_path_allow_rule(
+        &self,
+        destination: crate::runtime::tools::permission::PermissionDestination,
+        pattern: String,
+        op: Option<crate::runtime::path_auth::PathOp>,
+    ) -> std::io::Result<()> {
+        let stored_op = op.map(StoredPathOp::from);
+        let entry = PathAllowRuleEntry { pattern, op: stored_op };
+        match destination {
+            crate::runtime::tools::permission::PermissionDestination::Session => {
+                let mut layer = self.session.write().unwrap();
+                if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                    layer.path_allow_rules.push(entry);
+                }
+                Ok(())
+            }
+            crate::runtime::tools::permission::PermissionDestination::Workspace => {
+                {
+                    let mut layer = self.workspace.write().unwrap();
+                    if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                        layer.path_allow_rules.push(entry);
+                    }
+                }
+                self.flush_workspace_result()
+            }
+            crate::runtime::tools::permission::PermissionDestination::User => {
+                {
+                    let mut layer = self.user.write().unwrap();
+                    if !layer.path_allow_rules.iter().any(|e| e.pattern == entry.pattern && e.op == entry.op) {
+                        layer.path_allow_rules.push(entry);
+                    }
+                }
+                self.flush_user_result()
+            }
+        }
     }
 }
 
@@ -566,12 +746,13 @@ mod tests {
             &user_path,
             serde_json::to_string(&PermissionStoreSnapshot {
                 rules: vec![PermissionRule::simple(
-                    "execute_python",
-                    PermissionScope::Scope("python:exec".to_string()),
+                    "WebSearch",
+                    PermissionScope::Scope("network".to_string()),
                     PolicyDecision::AlwaysAllow,
                     PermissionSource::User,
                 )],
                 legacy: HashMap::new(),
+                ..Default::default()
             })
             .expect("serialize user"),
         )
@@ -583,8 +764,148 @@ mod tests {
             Some(PolicyDecision::AlwaysDeny)
         );
         assert_eq!(
-            store.get_for_scope("execute_python", "python:exec"),
+            store.get_for_scope("WebSearch", "network"),
             Some(PolicyDecision::AlwaysAllow)
         );
+    }
+
+    #[test]
+    fn path_auth_load_includes_additional_working_dirs() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = temp.path().join("perms.json");
+        let entry_path = PathBuf::from("/tmp/my-project");
+        let snapshot = PermissionStoreSnapshot {
+            additional_working_dirs: vec![AdditionalWorkingDirEntry { path: entry_path.clone() }],
+            ..Default::default()
+        };
+        std::fs::write(&path, serde_json::to_string(&snapshot).unwrap()).unwrap();
+
+        let store = PermissionStore::with_file(path);
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        assert!(entries.working_dirs.contains_key(&entry_path));
+    }
+
+    #[test]
+    fn path_auth_load_includes_path_allow_rules() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = temp.path().join("perms.json");
+        let snapshot = PermissionStoreSnapshot {
+            path_allow_rules: vec![PathAllowRuleEntry {
+                pattern: "/tmp/data/**".to_string(),
+                op: Some(StoredPathOp::Read),
+            }],
+            ..Default::default()
+        };
+        std::fs::write(&path, serde_json::to_string(&snapshot).unwrap()).unwrap();
+
+        let store = PermissionStore::with_file(path);
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        assert_eq!(entries.allow_rules.len(), 1);
+        assert_eq!(entries.allow_rules[0].pattern, "/tmp/data/**");
+    }
+
+    #[test]
+    fn path_auth_write_atomic_on_user_grant_workingdir() {
+        let temp = TempDir::new().expect("tempdir");
+        let user_path = temp.path().join("user.json");
+        let store = PermissionStore::with_layer_files(None, Some(user_path.clone()));
+        let p = PathBuf::from("/tmp/user-project");
+        store.append_working_dir(PermissionDestination::User, p.clone()).unwrap();
+
+        let content = std::fs::read_to_string(&user_path).unwrap();
+        assert!(
+            content.contains("\"additionalWorkingDirs\""),
+            "expected camelCase key in JSON, got: {}",
+            content
+        );
+        let snapshot: PermissionStoreSnapshot = serde_json::from_str(&content).unwrap();
+        assert!(snapshot.additional_working_dirs.iter().any(|e| e.path == p));
+    }
+
+    #[test]
+    fn path_auth_write_atomic_on_user_grant_allow_rule() {
+        let temp = TempDir::new().expect("tempdir");
+        let user_path = temp.path().join("user.json");
+        let store = PermissionStore::with_layer_files(None, Some(user_path.clone()));
+        store
+            .append_path_allow_rule(
+                PermissionDestination::User,
+                "/tmp/**".to_string(),
+                Some(crate::runtime::path_auth::PathOp::Write),
+            )
+            .unwrap();
+
+        let content = std::fs::read_to_string(&user_path).unwrap();
+        assert!(
+            content.contains("\"pathAllowRules\""),
+            "expected camelCase key in JSON, got: {}",
+            content
+        );
+        let snapshot: PermissionStoreSnapshot = serde_json::from_str(&content).unwrap();
+        assert!(snapshot.path_allow_rules.iter().any(|e| e.pattern == "/tmp/**" && e.op == Some(StoredPathOp::Write)));
+    }
+
+    #[test]
+    fn path_auth_backward_compat_no_new_fields() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = temp.path().join("old.json");
+        std::fs::write(&path, r#"{"rules":[],"legacy":{}}"#).unwrap();
+
+        let store = PermissionStore::with_file(path);
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        assert!(entries.working_dirs.is_empty());
+        assert!(entries.allow_rules.is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn path_auth_write_failure_keeps_inmemory_grant() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDir::new().expect("tempdir");
+        let dir = temp.path().join("readonly");
+        std::fs::create_dir(&dir).unwrap();
+        let ws_path = dir.join("workspace.json");
+        // make dir read-only so writes fail
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+        let store = PermissionStore::with_layer_files(Some(ws_path), None);
+        let p = PathBuf::from("/tmp/kept-in-memory");
+        let result = store.append_working_dir(PermissionDestination::Workspace, p.clone());
+        assert!(result.is_err());
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        assert!(entries.working_dirs.contains_key(&p));
+    }
+
+    #[test]
+    fn path_auth_dedup_working_dir_idempotent() {
+        let store = PermissionStore::in_memory();
+        let p = PathBuf::from("/tmp/dedup-test");
+        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
+        store.append_working_dir(PermissionDestination::Session, p.clone()).unwrap();
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        let count = entries.working_dirs.keys().filter(|k| **k == p).count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn path_auth_dedup_allow_rule_idempotent() {
+        let store = PermissionStore::in_memory();
+        store
+            .append_path_allow_rule(
+                PermissionDestination::Session,
+                "/tmp/**".to_string(),
+                Some(crate::runtime::path_auth::PathOp::Read),
+            )
+            .unwrap();
+        store
+            .append_path_allow_rule(
+                PermissionDestination::Session,
+                "/tmp/**".to_string(),
+                Some(crate::runtime::path_auth::PathOp::Read),
+            )
+            .unwrap();
+        let entries = crate::runtime::path_auth::store_bridge::load_path_auth_entries(&store);
+        let count = entries.allow_rules.iter().filter(|r| r.pattern == "/tmp/**").count();
+        assert_eq!(count, 1);
     }
 }

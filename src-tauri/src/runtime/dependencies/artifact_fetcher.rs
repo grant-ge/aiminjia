@@ -149,23 +149,6 @@ impl RuntimeArtifactFetcher {
             .map_err(|error| RuntimeArtifactFetchError::Network(error.to_string()))
     }
 
-    async fn fetch_from_manifest_text_async(
-        &self,
-        manifest_text: &str,
-        runtime_name: &str,
-        platform: RuntimePlatform,
-        downloads_dir: &Path,
-    ) -> Result<FetchedRuntimeArtifact, RuntimeArtifactFetchError> {
-        self.fetch_from_manifest_text_async_with_options(
-            manifest_text,
-            runtime_name,
-            platform,
-            downloads_dir,
-            RuntimeDownloadOptions::default(),
-        )
-        .await
-    }
-
     async fn fetch_from_manifest_text_async_with_options(
         &self,
         manifest_text: &str,

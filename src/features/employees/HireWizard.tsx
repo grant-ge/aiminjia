@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { BUILTIN_TEMPLATES, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
+import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
 
 // ─── wizard ───────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,8 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
         toolWhitelist: selected.toolWhitelist,
         cron: enableCron && cron.trim() ? cron.trim() : undefined,
         timezone: 'Asia/Shanghai',
-        enabled: true,
+        lifecycle: 'active',
+        cronEnabled: enableCron,
         systemPromptExtra: selected.systemPromptExtra,
         defaultSkillId: selected.defaultSkillId ?? undefined,
         resourceConfig: cfg,
@@ -216,6 +218,13 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {selected.resourceConfigKind === 'sales-table' && (
               <SalesTableConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'weekly-report' && (
+              <WeeklyReportConfigForm
                 initial={resourceConfig}
                 onSubmit={handleResourceSubmit}
                 onCancel={() => setStep(2)}

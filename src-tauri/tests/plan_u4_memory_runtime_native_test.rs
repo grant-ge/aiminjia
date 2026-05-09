@@ -13,7 +13,7 @@ use app_lib::runtime::project_memory::{
     ProjectMemoryContext, ProjectMemoryEntryDraft, ProjectMemoryService, ProjectMemoryType,
 };
 use app_lib::runtime::query_engine::QueryEngine;
-use app_lib::runtime::renlijia_md::RenlijiaMdFile;
+use app_lib::runtime::agents_md::AgentsMdFile;
 use app_lib::runtime::state::TurnState;
 use async_trait::async_trait;
 
@@ -170,7 +170,7 @@ description: 2026-04-25 起非关键改动暂停合并
 struct ProjectMemoryCapturingExecutor {
     workspace_path: PathBuf,
     project_memory: ProjectMemoryContext,
-    renlijia_md_files: Vec<RenlijiaMdFile>,
+    agents_md_files: Vec<AgentsMdFile>,
     captured_messages: Mutex<Vec<Vec<serde_json::Value>>>,
     captured_dynamic_contexts: Mutex<Vec<String>>,
     load_project_memory_calls: Mutex<u32>,
@@ -181,12 +181,12 @@ impl ProjectMemoryCapturingExecutor {
     fn new(
         workspace_path: PathBuf,
         project_memory: ProjectMemoryContext,
-        renlijia_md_files: Vec<RenlijiaMdFile>,
+        agents_md_files: Vec<AgentsMdFile>,
     ) -> Self {
         Self {
             workspace_path,
             project_memory,
-            renlijia_md_files,
+            agents_md_files,
             captured_messages: Mutex::new(Vec::new()),
             captured_dynamic_contexts: Mutex::new(Vec::new()),
             load_project_memory_calls: Mutex::new(0),
@@ -224,12 +224,11 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
         Ok(self.workspace_path.clone())
     }
 
-    async fn load_renlijia_md(
+    async fn load_agents_md(
         &self,
-        workspace_path: &Path,
-    ) -> Result<Vec<RenlijiaMdFile>, TurnError> {
-        assert_eq!(workspace_path, self.workspace_path.as_path());
-        Ok(self.renlijia_md_files.clone())
+        _authorized_workspace: Option<&app_lib::runtime::store::AuthorizedWorkspaceRef>,
+    ) -> Result<Vec<AgentsMdFile>, TurnError> {
+        Ok(self.agents_md_files.clone())
     }
 
     async fn load_project_memory(
@@ -261,6 +260,10 @@ impl RuntimeLlmExecutor for ProjectMemoryCapturingExecutor {
     ) -> Result<String, TurnError> {
         Ok("mock-msg-id".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -276,7 +279,7 @@ async fn u4_driver_injects_project_memory_as_separate_runtime_context() {
     let executor = Arc::new(ProjectMemoryCapturingExecutor::new(
         workspace.clone(),
         project_memory,
-        vec![RenlijiaMdFile {
+        vec![AgentsMdFile {
             path: renlijia_path.clone(),
             content: "project instructions".to_string(),
         }],
@@ -326,7 +329,7 @@ async fn u4_driver_injects_project_memory_as_separate_runtime_context() {
         "project memory should stay in dynamic context instead of being mixed into message history"
     );
     assert!(
-        combined_messages.contains("# renlijiaMd"),
+        combined_messages.contains("# agentsMd"),
         "RENLIJIA.md should remain a separate context message"
     );
 }

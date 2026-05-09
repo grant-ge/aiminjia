@@ -3,12 +3,12 @@ fn l1_input_validation_error_formats_tool_name_and_message() {
     use app_lib::runtime::tools::executor::ToolError;
 
     let err = ToolError::InputValidationError {
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         message: "Missing required field: command".to_string(),
     };
 
     let display = err.to_string();
-    assert!(display.contains("bash"), "got: {display}");
+    assert!(display.contains("Bash"), "got: {display}");
     assert!(
         display.contains("Missing required field: command"),
         "got: {display}"
@@ -20,7 +20,7 @@ fn l1_input_validation_error_is_retriable_distinguishable_from_execution_failed(
     use app_lib::runtime::tools::executor::ToolError;
 
     let validation_err = ToolError::InputValidationError {
-        tool_name: "write_file".to_string(),
+        tool_name: "Write".to_string(),
         message: "field path is required".to_string(),
     };
     let exec_err = ToolError::ExecutionFailed("disk full".to_string());
@@ -288,7 +288,7 @@ mod l5_builtin_tool_validation {
     #[test]
     fn l5_bash_validates_missing_command_field() {
         let tool = BashTool;
-        let bad = json!({"timeout_secs": 30});
+        let bad = json!({"timeout": 30000});
         let result = tool.validate_input(&bad);
         assert!(result.is_some());
         assert!(matches!(
@@ -315,7 +315,7 @@ mod l5_builtin_tool_validation {
     #[test]
     fn l5_bash_accepts_valid_input_with_timeout() {
         let tool = BashTool;
-        let good = json!({"command": "sleep 1", "timeout_secs": 5});
+        let good = json!({"command": "sleep 1", "timeout": 5000});
         assert!(tool.validate_input(&good).is_none());
     }
 

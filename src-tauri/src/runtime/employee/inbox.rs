@@ -1,12 +1,43 @@
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::runtime::employee::store::EmployeeLifecycle;
+
+/// Returns true when the employee.json next to this inbox.jsonl exists and
+/// has lifecycle=Archived. Used by `list_all` and `unread_count` to skip
+/// archived employees from global aggregations — their reports / signals
+/// shouldn't surface in the sidebar badge or 汇报中心 list. Returns false
+/// on any read/parse failure (be permissive: don't lose data on a corrupt
+/// employee.json).
+fn is_archived_dir(employee_dir: &Path) -> bool {
+    let employee_json = employee_dir.join("employee.json");
+    let Ok(content) = fs::read_to_string(&employee_json) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    matches!(
+        value
+            .get("lifecycle")
+            .and_then(|v| v.as_str()),
+        Some("archived")
+    )
+        || matches!(
+            // Defensive: also handle the typed enum form in case serde changes.
+            serde_json::from_value::<EmployeeLifecycle>(
+                value.get("lifecycle").cloned().unwrap_or_default(),
+            ),
+            Ok(EmployeeLifecycle::Archived)
+        )
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +141,9 @@ impl InboxStore {
         let mut all = Vec::new();
         for entry in fs::read_dir(&self.employees_root)? {
             let dir = entry?.path();
+            if is_archived_dir(&dir) {
+                continue;
+            }
             let inbox_path = dir.join("inbox.jsonl");
             if !inbox_path.exists() {
                 continue;
@@ -196,9 +230,14 @@ impl InboxStore {
         let paths: Vec<PathBuf> = if let Some(id) = employee_id {
             vec![self.inbox_path(id)]
         } else {
+            // Skip archived employees so the sidebar badge doesn't keep
+            // counting unread reports from已解雇员工 (recoverable for 7 days
+            // but they shouldn't be visible in the global aggregation).
             fs::read_dir(&self.employees_root)?
                 .filter_map(|e| e.ok())
-                .map(|e| e.path().join("inbox.jsonl"))
+                .map(|e| e.path())
+                .filter(|p| !is_archived_dir(p))
+                .map(|p| p.join("inbox.jsonl"))
                 .collect()
         };
 
@@ -323,5 +362,40 @@ mod tests {
         store.push("emp-x", InboxKind::Report, "r".to_string(), None, None, None, None).unwrap();
         store.push("emp-y", InboxKind::Report, "r".to_string(), None, None, None, None).unwrap();
         assert_eq!(store.unread_count(None).unwrap(), 2);
+    }
+
+    #[test]
+    fn list_all_and_unread_skip_archived_employees() {
+        let dir = TempDir::new().unwrap();
+        let store = make_store(&dir);
+
+        store
+            .push("emp-active", InboxKind::Report, "active".into(), None, None, None, None)
+            .unwrap();
+        store
+            .push("emp-archived", InboxKind::Report, "archived".into(), None, None, None, None)
+            .unwrap();
+
+        assert_eq!(store.list_all(100).unwrap().len(), 2);
+        assert_eq!(store.unread_count(None).unwrap(), 2);
+
+        std::fs::write(
+            dir.path().join("emp-archived/employee.json"),
+            r#"{"id":"emp-archived","lifecycle":"archived"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("emp-active/employee.json"),
+            r#"{"id":"emp-active","lifecycle":"active"}"#,
+        )
+        .unwrap();
+
+        let all = store.list_all(100).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].employee_id, "emp-active");
+        assert_eq!(store.unread_count(None).unwrap(), 1);
+
+        // Per-employee path still works.
+        assert_eq!(store.unread_count(Some("emp-archived")).unwrap(), 1);
     }
 }

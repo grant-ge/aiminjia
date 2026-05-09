@@ -48,11 +48,11 @@ fn o1_chat_turn_outcome_variants_compile() {
     assert!(matches!(exec_err, ChatTurnOutcome::ExecutionError { .. }));
 
     let record = PermissionDenialRecord {
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         tool_call_id: "tc-001".to_string(),
         reason: "dangerous_pattern".to_string(),
     };
-    assert_eq!(record.tool_name, "bash");
+    assert_eq!(record.tool_name, "Bash");
 }
 
 #[test]
@@ -215,6 +215,10 @@ impl RuntimeLlmExecutor for ImmediateContentExecutor {
         _file_metas: &[serde_json::Value],
     ) -> Result<String, TurnError> {
         Ok("msg-test".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 

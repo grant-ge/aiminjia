@@ -6,6 +6,7 @@
 /// The concatenation order and separators intentionally mirror Block 13 of `chat_runtime_impl.rs`
 /// (lines ~2230-2291) so that the LLM sees an identical context layout regardless of which code
 /// path produces the string.
+use crate::storage::process_ext::NoWindowExt;
 pub fn build_iteration_context(
     core_memory: &str,
     project_memory: &str,
@@ -50,10 +51,6 @@ pub fn build_iteration_context(
     // 6. Internal connector context (browsing sessions / legacy app integrations)
     if let Some(connector) = connector_context {
         ctx.push_str("\n\n[内部系统浏览]\n");
-        ctx.push_str(
-            "你可以通过 browse_navigate 工具直接打开浏览器访问任意内部系统 URL，\
-             用户在 Chrome 中登录后即可读取数据。\n\n",
-        );
         ctx.push_str(connector);
         ctx.push_str("\n[/内部系统浏览]");
     }
@@ -122,11 +119,14 @@ pub async fn build_env_info(
         .unwrap_or_else(|| workspace_path.clone());
 
     if let Ok(output) = tokio::process::Command::new("git")
+        .arg("-c")
+        .arg("core.quotepath=false")
         .arg("-C")
         .arg(&effective_path)
         .arg("status")
         .arg("--short")
         .arg("--branch")
+        .no_window()
         .output()
         .await
     {
@@ -169,18 +169,32 @@ pub struct ManagedRuntimeEnvInfo {
 
 impl ManagedRuntimeEnvInfo {
     pub fn format_for_env_info(&self) -> String {
-        [
-            "Runtime: 已安装".to_string(),
-            format!("Runtime 当前目录: {}", self.runtime_root.display()),
-            format!("Python: {}", self.python_path.display()),
-            format!("Node: {}", self.node_path.display()),
-            format!("npm: {}", self.npm_path.display()),
-            format!("npx: {}", self.npx_path.display()),
-            format!("uv: {}", self.uv_path.display()),
-            format!("uvx: {}", self.uvx_path.display()),
-            "规则: 当用户要求运行 Python、Node、npm、npx、uv 或相关脚本时，默认使用以上 Runtime 绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。".to_string(),
-        ]
-        .join("\n")
+        format!(
+            r#"Runtime: 已安装
+Runtime 当前目录: {runtime_root}
+Python: {python}
+Node: {node}
+npm: {npm}
+npx: {npx}
+uv: {uv}
+uvx: {uvx}
+
+规则:
+1. 运行 Python / Node / npm / npx / uv 命令时，默认使用上面列出的绝对路径；只有用户明确要求系统环境时，才使用系统 PATH 中的命令。
+2. 安装第三方 Python 包必须使用以下模板（替换包名即可），禁止任何变体：
+
+   & "{uv}" pip install <包名> --python "{python}" --quiet
+
+3. 禁止使用 --system / 裸 pip / python -m pip / pip install 后省略 --python。
+4. uv 装包是幂等的：已安装的包会秒过（< 1s），不会重复下载，所以可以放心在每次需要时直接调用上述模板。"#,
+            runtime_root = self.runtime_root.display(),
+            python = self.python_path.display(),
+            node = self.node_path.display(),
+            npm = self.npm_path.display(),
+            npx = self.npx_path.display(),
+            uv = self.uv_path.display(),
+            uvx = self.uvx_path.display(),
+        )
     }
 }
 
@@ -398,9 +412,16 @@ mod tests {
         assert!(result.contains("npx: /cache/renlijia/node/bin/npx"));
         assert!(result.contains("uv: /cache/renlijia/uv/bin/uv"));
         assert!(result.contains("uvx: /cache/renlijia/uv/bin/uvx"));
-        assert!(result.contains("当用户要求运行 Python、Node、npm、npx、uv 或相关脚本时"));
-        assert!(result.contains("默认使用以上 Runtime 绝对路径"));
+        assert!(result.contains("默认使用上面列出的绝对路径"));
         assert!(result.contains("只有用户明确要求系统环境时"));
+        assert!(
+            result.contains(
+                r#"& "/cache/renlijia/uv/bin/uv" pip install <包名> --python "/cache/renlijia/python/bin/python3" --quiet"#
+            ),
+            "must include uv pip install template with concrete absolute paths, got:\n{result}"
+        );
+        assert!(result.contains("禁止使用 --system"));
+        assert!(result.contains("uv 装包是幂等的"));
         assert!(!result.contains("仁励家 Runtime"));
     }
 }

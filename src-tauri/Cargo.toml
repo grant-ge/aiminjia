@@ -1,6 +1,6 @@
 [package]
 name = "aijia"
-version = "0.5.6"
+version = "0.5.16"
 description = "AIjia — 组织专家，工作助手"
 authors = ["AIjia Team"]
 license = "MIT"
@@ -67,6 +67,7 @@ once_cell = "1"
 bytes = "1"
 sha2 = "0.10"
 shell-words = "1.1"
+globset = "0.4"
 
 # Browser automation (Playwright via Node.js sidecar, replaces chromiumoxide)
 url = "2"
@@ -91,6 +92,7 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 which = "6"
+encoding_rs = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

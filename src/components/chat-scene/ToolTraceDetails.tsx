@@ -34,7 +34,6 @@ export function ToolTraceDetails({ steps }: ToolTraceDetailsProps) {
               <ToolTraceIO
                 inputJson={step.inputJson}
                 output={step.output}
-                isError={step.status === 'error'}
               />
             ) : null}
           </div>

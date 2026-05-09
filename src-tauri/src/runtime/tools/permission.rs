@@ -25,6 +25,11 @@ pub enum PermissionDecision {
         remember_options: Vec<PermissionDestination>,
         default_destination: Option<PermissionDestination>,
         reason: PermissionReason,
+        /// Encodes the path-auth persistence kind for the Ask flow (§7.8).
+        /// - `Some("path:<canonical_path>")` — step-6 Ask; "永久允许" → append_working_dir
+        /// - `Some("pathwrite:<canonical_path>")` — step-4b write Ask; "永久允许" → append_path_allow_rule(Write)
+        /// - `None` — non-path Ask; persisted via capability_scopes as before
+        path_auth_scope: Option<String>,
     },
 }
 
@@ -52,6 +57,7 @@ pub enum PermissionMode {
     Default,
     Plan,
     DontAsk,
+    AcceptEdits,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -334,13 +340,14 @@ impl PermissionPipeline for StorePolicyPipeline {
                     return PermissionDecision::Ask {
                         message,
                         suggestions: vec![
-                            "Allow once".into(),
-                            "Always allow".into(),
-                            "Deny".into(),
+                            "仅本次允许".into(),
+                            "永久允许".into(),
+                            "拒绝".into(),
                         ],
                         remember_options: default_remember_options(),
                         default_destination: Some(PermissionDestination::Session),
                         reason: PermissionReason::UnknownScope,
+                        path_auth_scope: None,
                     };
                 }
                 None => {}

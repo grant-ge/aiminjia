@@ -48,10 +48,6 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        tmp.clone(),
-        None,
-    ));
     #[allow(deprecated)]
     app_lib::plugin::context::PluginContext {
         storage,
@@ -64,7 +60,6 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,
@@ -81,6 +76,7 @@ fn make_test_plugin_ctx(conversation_id: &str) -> app_lib::plugin::context::Plug
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+        permission_ctx: None,
     }
 }
 
@@ -175,19 +171,19 @@ async fn runtime_tool_takes_precedence_over_legacy_for_same_name() {
 
 #[tokio::test]
 async fn get_all_schemas_includes_runtime_tool_schema() {
-    // Use list_directory which IS in TOOL_CATALOG
-    use app_lib::runtime::tools::builtin::workspace::ListDirectoryRuntimeTool;
+    // Use read_workspace_file which IS in TOOL_CATALOG
+    use app_lib::runtime::tools::builtin::workspace::ReadWorkspaceFileRuntimeTool;
 
     let registry = ToolRegistry::new();
     registry
-        .register_runtime(Arc::new(ListDirectoryRuntimeTool))
+        .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))
         .await;
 
     let schemas = registry.get_all_schemas().await;
     let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
     assert!(
-        names.contains(&"list_directory"),
-        "Schema should include list_directory, got: {:?}",
+        names.contains(&"Read"),
+        "Schema should include read_workspace_file, got: {:?}",
         names
     );
 }

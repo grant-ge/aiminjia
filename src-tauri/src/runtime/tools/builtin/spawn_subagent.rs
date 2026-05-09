@@ -29,6 +29,7 @@ use crate::runtime::agent::definition::AgentModel;
 use crate::runtime::agent::registry::AgentRegistry;
 use crate::runtime::cancellation::CancellationToken;
 use crate::runtime::ids::{AgentId, RunId, SessionId, ToolCallId};
+use crate::runtime::path_auth::ToolPermissionContext;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
@@ -60,6 +61,11 @@ pub struct SpawnSubagentContext {
     pub cancellation: CancellationToken,
     pub permission_mode: PermissionMode,
     pub parent_tool_use_id: ToolCallId,
+    /// Phase 5: snapshot of the parent turn's merged ToolPermissionContext.
+    /// Carried from `ToolExecutionContext.capability.storage.permission_ctx` at
+    /// the point the parent calls spawn_subagent.  `None` when the tool is
+    /// invoked through a path where capability has not been set (tests, legacy).
+    pub permission_ctx: Option<Arc<ToolPermissionContext>>,
 }
 
 /// Outcome from the async launcher path.
@@ -110,8 +116,8 @@ impl SpawnSubagentRuntimeTool {
 impl RuntimeTool for SpawnSubagentRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("spawn_subagent")
-            .unwrap_or_else(|| ToolDefinition::new("spawn_subagent", "Spawn sub-agent"))
+            .get("Agent")
+            .unwrap_or_else(|| ToolDefinition::new("Agent", "Spawn sub-agent"))
     }
 
     /// Parallel spawn_subagent calls are independent — safe to run concurrently.
@@ -187,6 +193,13 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             cancellation: ctx.cancellation.clone(),
             permission_mode: ctx.permission_mode,
             parent_tool_use_id: ctx.tool_call_id.clone(),
+            // Phase 5: snapshot the parent turn's merged permission_ctx so the
+            // launcher can seed the child's QueryEngine with it.
+            permission_ctx: ctx
+                .capability
+                .as_ref()
+                .and_then(|cap| cap.storage.as_ref())
+                .map(|storage| storage.permission_ctx.clone()),
         };
 
         // ── Async path: launch detached sub-agent ─────────────────────────
@@ -198,13 +211,15 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
                 .map_err(|e| {
                     ToolError::ExecutionFailed(format!("async sub-agent launch failed: {e}"))
                 })?;
+            let agent_id_str = outcome.agent_id.to_string();
             let json = serde_json::json!({
                 "status": "async_launched",
-                "agent_id": outcome.agent_id.to_string(),
+                "agent_id": agent_id_str.clone(),
+                "task_id": agent_id_str,
                 "name": outcome.name,
             });
             return Ok(ToolResult::new(
-                "spawn_subagent",
+                "Agent",
                 json.to_string(),
                 None,
             ));
@@ -217,7 +232,7 @@ impl RuntimeTool for SpawnSubagentRuntimeTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("sub-agent launch failed: {e}")))?;
 
-        Ok(ToolResult::new("spawn_subagent", output, None))
+        Ok(ToolResult::new("Agent", output, None))
     }
 }
 
@@ -286,7 +301,7 @@ mod tests {
         let tool = build_tool_with_recorder(Arc::new(Mutex::new(Vec::new())));
         // Definition returned even without catalog pre-init in unit tests.
         let def = tool.definition();
-        assert_eq!(def.id, "spawn_subagent");
+        assert_eq!(def.id, "Agent");
     }
 
     #[tokio::test]
@@ -318,7 +333,7 @@ mod tests {
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         let err = tool
             .execute(
-                json!({ "subagent_type": "browse_data_agent", "description": "test" }),
+                json!({ "subagent_type": "explore", "description": "test" }),
                 ctx,
             )
             .await
@@ -369,7 +384,7 @@ mod tests {
         let result = tool
             .execute(
                 json!({
-                    "subagent_type": "browse_data_agent",
+                    "subagent_type": "explore",
                     "prompt": "scrape some data",
                     "description": "test background",
                     "run_in_background": true,
@@ -399,10 +414,10 @@ mod tests {
         let tool = build_tool_with_recorder(seen.clone());
         let ctx = ToolExecutionContext::for_test("conv-perm", "run-perm", "tc-perm")
             .with_permission_mode(PermissionMode::DontAsk);
-        // browse_data_agent is a builtin in AgentRegistry::with_builtins()
+        // explore is a builtin in AgentRegistry::with_builtins()
         tool.execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "extract table",
                 "description": "sync perm test"
             }),
@@ -412,7 +427,7 @@ mod tests {
         .expect("sync path should succeed with stub launcher");
         let reqs = seen.lock().unwrap();
         assert_eq!(reqs.len(), 1);
-        assert_eq!(reqs[0].subagent_type, "browse_data_agent");
+        assert_eq!(reqs[0].subagent_type, "explore");
     }
 
     #[tokio::test]
@@ -422,7 +437,7 @@ mod tests {
         let ctx = ToolExecutionContext::for_test("conv-1", "run-1", "tc-1");
         tool.execute(
             json!({
-                "subagent_type": "browse_data_agent",
+                "subagent_type": "explore",
                 "prompt": "test",
                 "description": "empty model",
                 "model": ""

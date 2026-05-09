@@ -43,10 +43,10 @@ describe('AboutPanel', () => {
     expect(screen.getByText('版本 0.9.30-26041603')).toBeInTheDocument()
     expect(screen.getByText('版权公告：仁励家网络科技(杭州)有限公司 版权所有')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument()
-    expect(screen.getByText('帮助与反馈')).toBeInTheDocument()
-    expect(screen.getByText('用户体验改进计划')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '隐私权政策' })).toHaveClass('text-primary')
-    expect(screen.getByRole('button', { name: /隐私政策/ })).toHaveClass('text-primary')
+    expect(screen.queryByText('帮助与反馈')).not.toBeInTheDocument()
+    expect(screen.queryByText('用户体验改进计划')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '隐私权政策' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /隐私政策/ })).not.toBeInTheDocument()
     expect(screen.getByText('开发者模式')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '上传日志' })).toBeInTheDocument()
   })
@@ -56,8 +56,7 @@ describe('AboutPanel', () => {
 
     expect(screen.getByRole('button', { name: '检查更新' })).toHaveAttribute('data-ui-button', 'true')
     expect(screen.getByRole('button', { name: '上传日志' })).toHaveAttribute('data-ui-button', 'true')
-    expect(screen.getByRole('button', { name: '重置' })).toHaveAttribute('data-ui-button', 'true')
-    expect(screen.getByRole('button', { name: '重置' })).toHaveAttribute('data-variant', 'destructive')
+    expect(screen.queryByRole('button', { name: '重置' })).not.toBeInTheDocument()
   })
 
   it('wires the still-active actions to their handlers', () => {
@@ -68,15 +67,20 @@ describe('AboutPanel', () => {
     expect(baseProps.onCheckUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('disables the help, feedback, and reset entries pending implementation', () => {
+  it('hides unavailable help and feedback entries', () => {
     render(<AboutPanel {...baseProps} />)
 
-    expect(screen.getByRole('switch', { name: '用户体验改进计划' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /在线客服/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /产品建议/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /服务条款/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '重置' })).toBeDisabled()
-    expect(screen.getAllByText('即将支持').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('switch', { name: '用户体验改进计划' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /在线客服/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /产品建议/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /服务条款/ })).not.toBeInTheDocument()
+  })
+
+  it('does not render reset while reset is unavailable', () => {
+    render(<AboutPanel {...baseProps} />)
+
+    expect(screen.queryByText('清除本地缓存')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重置' })).not.toBeInTheDocument()
   })
 
   it('enables the log-upload button and invokes the handler when clicked', async () => {
@@ -92,25 +96,23 @@ describe('AboutPanel', () => {
     expect(baseProps.onUploadLogs).toHaveBeenCalledTimes(1)
   })
 
-  it('defaults the user experience improvement opt-in to ON', () => {
+  it('does not render the user experience improvement opt-in while unavailable', () => {
     render(<AboutPanel {...baseProps} />)
 
-    const toggle = screen.getByRole('switch', { name: '用户体验改进计划' })
-    expect(toggle).toBeChecked()
+    expect(screen.queryByRole('switch', { name: '用户体验改进计划' })).not.toBeInTheDocument()
   })
 
-  it('renders 隐私保护 section with a toggle', () => {
+  it('does not render privacy protection section while it is hidden', () => {
     render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={() => {}} />)
-    expect(screen.getByText('隐私保护增强')).toBeInTheDocument()
-    const toggle = screen.getByRole('switch', { name: '隐私保护增强' })
-    expect(toggle).not.toBeChecked()
+    expect(screen.queryByText('隐私')).not.toBeInTheDocument()
+    expect(screen.queryByText('隐私保护增强')).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: '隐私保护增强' })).not.toBeInTheDocument()
   })
 
-  it('calls onDataMaskingChange with strict when toggle turned on', () => {
+  it('does not call onDataMaskingChange while privacy protection section is hidden', () => {
     const onChange = vi.fn()
     render(<AboutPanel {...baseProps} dataMaskingLevel="relaxed" onDataMaskingChange={onChange} />)
-    const toggle = screen.getByRole('switch', { name: '隐私保护增强' })
-    fireEvent.click(toggle)
-    expect(onChange).toHaveBeenCalledWith('strict')
+    expect(screen.queryByRole('switch', { name: '隐私保护增强' })).not.toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

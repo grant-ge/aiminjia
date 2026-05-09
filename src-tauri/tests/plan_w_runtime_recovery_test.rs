@@ -73,6 +73,10 @@ impl RuntimeLlmExecutor for RecordingExecutor {
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -288,6 +292,7 @@ async fn w4_orphaned_permission_is_cancelled_and_event_emitted() {
             args: json!({"value": 1}),
             purpose: None,
         },
+        path_auth_scope: None,
     };
     let resolution_rx = pending_store
         .insert(request)

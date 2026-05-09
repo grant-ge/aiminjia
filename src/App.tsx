@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { AuthGate } from '@/components/auth/AuthGate'
 import { ConfirmDialogHost } from '@/components/common/ConfirmDialogHost'
 import { ToastContainer } from '@/components/common/ToastContainer'
+import { UpdaterPanel } from '@/components/common/UpdaterPanel'
 import { PermissionAskDialog } from '@/components/common/PermissionAskDialog'
 import type { PermissionAskDecision } from '@/components/common/PermissionAskDialog'
 import { AskUserQuestionDialog } from '@/components/interactions/AskUserQuestionDialog'
@@ -11,6 +12,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { TitleBar } from '@/components/layout/TitleBar'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { ChatPage } from '@/features/chat/ChatPage'
+import { EmployeesPage } from '@/features/home/EmployeesPage'
 import { HomePage } from '@/features/home/HomePage'
 import { InboxPage } from '@/features/inbox/InboxPage'
 import { SchedulesPage } from '@/features/schedules/SchedulesPage'
@@ -18,6 +20,7 @@ import { SkillCenterPage } from '@/features/skill-center/SkillCenterPage'
 import { SkillDetailPage } from '@/features/skill-detail/SkillDetailPage'
 import { useStreaming } from '@/hooks/useStreaming'
 import { useUpdater } from '@/hooks/useUpdater'
+import { useDragDropListener } from '@/hooks/useDragDropListener'
 import {
   approvePermissionRequest,
   cancelPermissionRequest,
@@ -48,6 +51,8 @@ function RouteSwitch() {
   switch (route.kind) {
     case 'home':
       return <HomePage />
+    case 'employees':
+      return <EmployeesPage />
     case 'skill-center':
       return <SkillCenterPage />
     case 'skill-detail':
@@ -68,6 +73,7 @@ function AppShell() {
   const removeInteraction = useInteractionStore((s) => s.removeInteraction)
   const activeAsk = pendingAsks.size > 0 ? (pendingAsks.values().next().value ?? null) : null
   const activeInteraction = pendingInteractions[0] ?? null
+  useUpdater()
 
   const handleAllowAsk = async ({ remember, destination }: PermissionAskDecision) => {
     if (!activeAsk) return
@@ -130,13 +136,14 @@ function AppShell() {
           onClose={() => removeInteraction(activeInteraction.interactionId)}
         />
       ) : null}
+      <UpdaterPanel />
     </div>
   )
 }
 
 function App() {
   useStreaming()
-  useUpdater()
+  useDragDropListener()
   const { t } = useTranslation()
 
   useEffect(() => {

@@ -13,7 +13,8 @@ effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.0"
+version: "1.1"
+category: general
 metadata:
   label: 商务文档撰写
 ---

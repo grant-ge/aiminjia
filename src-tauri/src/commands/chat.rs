@@ -384,7 +384,6 @@ pub mod testsupport {
     use crate::plugin::builtin::tools::register_builtin_tools;
     use crate::plugin::context::PluginContext;
     use crate::plugin::registry::{RequestScopedRuntimeDeps, ToolRegistry};
-    use crate::python::session::PythonSessionManager;
     use crate::runtime::event_bus::RuntimeEventBus;
     use crate::runtime::identity::IdentityMapping;
     use crate::runtime::ids::RunId;
@@ -448,7 +447,6 @@ pub mod testsupport {
         std::fs::create_dir_all(&workspace_path)?;
         let storage = Arc::new(AppStorage::new(&workspace_path)?);
         let file_manager = Arc::new(FileManager::new(&workspace_path));
-        let session_manager = Arc::new(PythonSessionManager::new(workspace_path.clone(), None));
         let tool_registry = ToolRegistry::new();
         register_builtin_tools(&tool_registry).await;
 
@@ -480,7 +478,7 @@ pub mod testsupport {
         let visible_tool_defs = crate::transport::tauri_commands::chat::build_visible_tool_defs(
             &tool_registry,
             authorized_workspace.is_some(),
-            None,
+            crate::transport::tauri_commands::chat::chat_runtime_impl::ToolSchemaFilter::None,
         )
         .await;
 
@@ -495,7 +493,6 @@ pub mod testsupport {
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
-            session_manager,
             auth_manager: None,
             connector_engine: None,
             use_cloud: false,
@@ -512,6 +509,7 @@ pub mod testsupport {
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
             dingtalk_bridge: None,
+            permission_ctx: None,
         };
 
         // FIXME(S4): sub-agent cancel token 需要从 parent run 派生 child_token()
@@ -533,133 +531,20 @@ pub mod testsupport {
     }
 }
 
-const FILE_GEN_TOOLS: &[&str] = &[
-    "generate_report",
-    "generate_chart",
-    "export_data",
-    "generate_slides",
-];
-
-/// Returns true iff the most recent tool message in `messages` was produced
-/// by one of the file-generating tools.
-fn is_last_tool_file_generation(messages: &[crate::llm::streaming::ChatMessage]) -> bool {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "tool")
-        .and_then(|m| m.name.as_deref())
-        .map(|name| FILE_GEN_TOOLS.contains(&name))
-        .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod auto_capture_tests {
-    use super::is_last_tool_file_generation;
-    use crate::llm::streaming::ChatMessage;
-
-    fn user(content: &str) -> ChatMessage {
-        ChatMessage::text("user", content)
-    }
-    fn assistant(content: &str) -> ChatMessage {
-        ChatMessage::text("assistant", content)
-    }
-    fn tool(name: &str, content: &str) -> ChatMessage {
-        ChatMessage {
-            role: "tool".into(),
-            content: content.into(),
-            thinking: None,
-            thinking_blocks: None,
-            tool_calls: None,
-            tool_call_id: Some("tc-1".into()),
-            name: Some(name.into()),
-        }
-    }
-
-    #[test]
-    fn detects_generate_report_as_file_gen() {
-        let msgs = vec![
-            user("分析这份数据"),
-            assistant("好的"),
-            tool("execute_python", "df = pd.read_excel(...)"),
-            assistant("生成报告"),
-            tool("generate_report", "{\"file_id\":\"abc\"}"),
-            assistant("已生成"),
-        ];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn detects_generate_chart_as_file_gen() {
-        let msgs = vec![
-            tool("execute_python", "data ready"),
-            tool("generate_chart", "{\"file_id\":\"x\"}"),
-        ];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn detects_export_data_as_file_gen() {
-        let msgs = vec![tool("export_data", "ok")];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn detects_generate_slides_as_file_gen() {
-        let msgs = vec![tool("generate_slides", "ok")];
-        assert!(is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_last_tool_is_execute_python() {
-        // execute_python is the last tool — data step, should be captured
-        let msgs = vec![
-            user("clean data"),
-            assistant("分析中"),
-            tool("generate_report", "early generation"),
-            tool("execute_python", "stats: mean=5.2"),
-            assistant("均值是 5.2"),
-        ];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_no_tool_messages() {
-        // Pure dialog with no tool calls — not a file-gen step, capture normally
-        let msgs = vec![user("你好"), assistant("你好！请问有什么可以帮你？")];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_tool_is_save_analysis_note() {
-        // save_analysis_note is bookkeeping, not file gen — capture normally
-        let msgs = vec![
-            assistant("recording finding"),
-            tool("save_analysis_note", "saved"),
-        ];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-
-    #[test]
-    fn does_not_skip_when_tool_is_load_file() {
-        let msgs = vec![tool("load_file", "loaded 1095 rows")];
-        assert!(!is_last_tool_file_generation(&msgs));
-    }
-}
-
 #[cfg(test)]
 mod xml_strip_tests {
     use crate::llm::content_filter::strip_hallucinated_xml;
 
     #[test]
     fn test_strip_closed_function_calls() {
-        let input = "你好\n<function_calls>\n<invoke name=\"load_file\">\n<parameter name=\"file_id\">abc</parameter>\n</invoke>\n</function_calls>\n世界";
+        let input = "你好\n<function_calls>\n<invoke name=\"bash\">\n<parameter name=\"file_id\">abc</parameter>\n</invoke>\n</function_calls>\n世界";
         let result = strip_hallucinated_xml(input);
         assert_eq!(result, "你好\n\n世界");
     }
 
     #[test]
     fn test_strip_unclosed_function_calls() {
-        let input = "你好\n<function_calls>\n<invoke name=\"execute_python\">\n<parameter name=\"code\">print(1)</parameter>";
+        let input = "你好\n<function_calls>\n<invoke name=\"bash\">\n<parameter name=\"code\">print(1)</parameter>";
         let result = strip_hallucinated_xml(input);
         assert_eq!(result, "你好");
     }

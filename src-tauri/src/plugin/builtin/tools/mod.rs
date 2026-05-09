@@ -22,23 +22,17 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
     #[cfg(windows)]
     use crate::runtime::tools::builtin::powershell::PowerShellTool;
     use crate::runtime::tools::builtin::task_tools::{
-        TaskCreateRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
+        TaskCreateRuntimeTool, TaskGetRuntimeTool, TaskListRuntimeTool, TaskUpdateRuntimeTool,
     };
     use crate::runtime::tools::builtin::workspace::{
-        EditFileRuntimeTool, GetFileInfoRuntimeTool, ListDirectoryRuntimeTool,
+        EditFileRuntimeTool,
         ReadWorkspaceFileRuntimeTool, SearchFilesRuntimeTool, WriteFileRuntimeTool,
     };
-    registry
-        .register_runtime(Arc::new(ListDirectoryRuntimeTool))
-        .await;
     registry
         .register_runtime(Arc::new(ReadWorkspaceFileRuntimeTool))
         .await;
     registry
         .register_runtime(Arc::new(SearchFilesRuntimeTool))
-        .await;
-    registry
-        .register_runtime(Arc::new(GetFileInfoRuntimeTool))
         .await;
     registry
         .register_runtime(Arc::new(WriteFileRuntimeTool))
@@ -62,6 +56,9 @@ pub async fn register_builtin_tools(registry: &ToolRegistry) {
         .await;
     registry
         .register_runtime(Arc::new(TaskListRuntimeTool))
+        .await;
+    registry
+        .register_runtime(Arc::new(TaskGetRuntimeTool))
         .await;
     registry.validate_catalog_consistency().await;
 }

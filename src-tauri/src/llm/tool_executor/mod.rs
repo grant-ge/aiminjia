@@ -1,4 +1,4 @@
-//! Tool handler implementations for the 10 registered tools.
+//! Tool handler implementations.
 //!
 //! Each tool has a dedicated `handle_*` async function called by its
 //! corresponding `ToolPlugin` wrapper in `plugin/builtin/tools/`.
@@ -11,21 +11,16 @@
 //! `LegacyToolAdapter`.  Migrate individual handlers to `RuntimeTool` +
 //! `CapabilityContext` when touching them; do not add new handlers here.
 // Legacy tool handlers: PluginContext is intentionally used here.
-#![allow(deprecated)]
+// dead_code / unused_imports allowed module-wide because the entire
+// module is being phased out in favour of `runtime/tools/builtin/`.
+// Re-exports below preserve the public crate API for any straggler
+// callers; both the lints and these handlers will be removed together
+// once migration finishes.
+#![allow(deprecated, dead_code, unused_imports)]
 
-mod chart;
 mod dingtalk;
-mod export;
-pub(crate) mod file_load;
-mod internal_system;
-mod notes;
-mod progress;
-mod python;
-mod report;
 mod search;
-mod slides;
 pub(crate) mod spawn_subagent;
-mod stats;
 mod util;
 
 use anyhow::{anyhow, Result};
@@ -37,7 +32,8 @@ use crate::plugin::tool_trait::FileMeta;
 // Public types
 // ─────────────────────────────────────────────────
 
-/// Result from file-generating tool handlers (generate_report, generate_chart, export_data).
+/// Result from file-generating tool handlers (retained for compile compatibility
+/// with plugin/tool_trait.rs conversion implementations).
 pub struct FileGenResult {
     pub content: String,
     pub file_meta: FileMeta,
@@ -47,37 +43,11 @@ pub struct FileGenResult {
 
 // ─────────────────────────────────────────────────
 // Re-exports — preserve external import paths
-// ─────────────────────────────────────────────────
+// ───────────────────────────────────────────��─────
 
-pub(crate) use chart::build_chart_python;
-pub(crate) use chart::handle_generate_chart;
-pub(crate) use chart::handle_generate_chart_core;
-pub(crate) use chart::ChartCoreParams;
-pub(crate) use export::handle_export_data;
-pub(crate) use file_load::handle_load_file;
-pub(crate) use internal_system::execute_browse_data;
-pub(crate) use internal_system::handle_browse_and_extract;
-pub(crate) use internal_system::handle_browse_navigate;
-pub(crate) use internal_system::handle_extract_table_data;
-pub(crate) use internal_system::handle_extract_with_pagination;
-pub(crate) use internal_system::handle_page_execute_js;
-pub(crate) use internal_system::handle_read_page_content;
-pub(crate) use internal_system::DefaultBrowseDataLauncher;
-pub(crate) use notes::handle_save_analysis_note;
-pub(crate) use progress::handle_update_progress;
-pub(crate) use python::handle_execute_python;
-pub(crate) use python::handle_execute_python_core;
-pub(crate) use python::ExecutePythonCoreParams;
-pub(crate) use report::generate_report_bytes_core;
-pub(crate) use report::handle_generate_report;
-pub(crate) use report::handle_generate_report_core;
-pub(crate) use report::ReportCoreParams;
 pub(crate) use search::execute_web_search_core;
 pub(crate) use search::handle_web_search;
-pub(crate) use slides::handle_generate_slides;
 pub(crate) use spawn_subagent::DefaultSpawnSubagentLauncher;
-pub(crate) use stats::handle_detect_anomalies;
-pub(crate) use stats::handle_hypothesis_test;
 // DingTalk — AI Table (6)
 pub(crate) use dingtalk::handle_dingtalk_create_record;
 pub(crate) use dingtalk::handle_dingtalk_delete_record;
@@ -137,11 +107,11 @@ fn optional_f64(args: &Value, key: &str, default: f64) -> f64 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use serde_json::json;
+    use std::sync::Arc;
     use crate::plugin::context::PluginContext;
     use crate::storage::file_manager::FileManager;
     use crate::storage::file_store::AppStorage;
-    use serde_json::json;
-    use std::sync::Arc;
 
     // ── Test helpers ─────────────────────────────
 
@@ -168,9 +138,6 @@ pub(crate) mod tests {
             tavily_api_key: None,
             bocha_api_key: None,
             app_handle: None,
-            session_manager: Arc::new(crate::python::session::PythonSessionManager::new(
-                workspace, None,
-            )),
             auth_manager: None,
             connector_engine: None,
             dingtalk_bridge: None,
@@ -187,6 +154,7 @@ pub(crate) mod tests {
             cancellation: None,
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+            permission_ctx: None,
         }
     }
 

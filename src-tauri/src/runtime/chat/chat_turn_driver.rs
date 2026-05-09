@@ -6,9 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::llm::context_decay::{
-    context_window_for_provider, estimate_tokens_from_json, CONTEXT_OVERFLOW_THRESHOLD,
-};
+use crate::llm::context_decay::{context_window_for_provider, CONTEXT_OVERFLOW_THRESHOLD};
 use crate::runtime::agent::task_notification::{QueuedNotification, TaskNotificationQueue};
 use crate::runtime::cancellation::{CancellationReason, CancellationToken};
 use crate::runtime::chat::context_builder::build_iteration_context;
@@ -96,6 +94,12 @@ pub struct ChatTurnRequest {
     pub hook_registry: Option<Arc<HookRegistry>>,
     pub client_message_id: Option<String>,
     pub persona_id_override: Option<String>,
+    /// Working directories derived from this turn's attachments at the transport
+    /// layer (backend side only — frontend paths are untrusted).  These are merged
+    /// into the per-turn `ToolPermissionContext.additional_working_dirs` with
+    /// `RuleSource::Session` before tool execution.  Empty when there are no
+    /// attachments or all attachment paths failed validation.
+    pub session_attachment_dirs: Vec<std::path::PathBuf>,
 }
 
 impl ChatTurnRequest {
@@ -114,6 +118,7 @@ impl ChatTurnRequest {
             hook_registry: None,
             client_message_id: None,
             persona_id_override: None,
+            session_attachment_dirs: Vec::new(),
         }
     }
 
@@ -232,11 +237,9 @@ pub trait RuntimeLlmExecutor: Send + Sync {
 
     /// 返回本次 Turn 使用的 tool definitions（JSON schema）。
     ///
-    /// 默认实现返回空 vec（向后兼容旧 mock executor）。
-    /// 生产 executor（TauriLegacyTurnExecutor）必须 override。
-    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
-        Ok(vec![])
-    }
+    /// 不再提供默认实现——所有 mock executor 必须显式 override，
+    /// 否则会因为返回空 vec 让测试静默通过。
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError>;
 
     /// 加载 conversation 的历史对话消息（格式：[{role, content}, ...]）。
     ///
@@ -280,11 +283,11 @@ pub trait RuntimeLlmExecutor: Send + Sync {
         Ok(TurnConfigOverrides::default())
     }
 
-    /// 加载 AGENT.md user-context 文件。
-    async fn load_renlijia_md(
+    /// 加载 AGENTS.md user-context 文件。
+    async fn load_agents_md(
         &self,
-        _workspace_path: &Path,
-    ) -> Result<Vec<crate::runtime::renlijia_md::RenlijiaMdFile>, TurnError> {
+        _authorized_workspace: Option<&crate::runtime::store::AuthorizedWorkspaceRef>,
+    ) -> Result<Vec<crate::runtime::agents_md::AgentsMdFile>, TurnError> {
         Ok(vec![])
     }
 
@@ -479,14 +482,14 @@ fn mark_turn_cancelled_with_synthetic_results(
     state.stream_cancelled = true;
 }
 
-fn build_renlijia_md_context_message(
-    renlijia_md_files: &[crate::runtime::renlijia_md::RenlijiaMdFile],
+fn build_agents_md_context_message(
+    agents_md_files: &[crate::runtime::agents_md::AgentsMdFile],
 ) -> Option<serde_json::Value> {
-    if renlijia_md_files.is_empty() {
+    if agents_md_files.is_empty() {
         return None;
     }
 
-    let renlijia_md_section = renlijia_md_files
+    let agents_md_section = agents_md_files
         .iter()
         .map(|file| format!("{}:\n{}", file.path.display(), file.content))
         .collect::<Vec<_>>()
@@ -495,8 +498,8 @@ fn build_renlijia_md_context_message(
     Some(serde_json::json!({
         "role": "user",
         "content": format!(
-            "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# renlijiaMd\n{}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n",
-            renlijia_md_section
+            "<system-reminder>\nProject instructions are shown below. These instructions OVERRIDE any default behavior — you MUST follow them exactly as written.\n# agentsMd\n{}\n</system-reminder>\n",
+            agents_md_section
         ),
         "isMeta": true,
     }))
@@ -654,6 +657,7 @@ impl RuntimeChatTurnDriver {
                 suggestions,
                 remember_options,
                 default_destination,
+                path_auth_scope,
                 ..
             } = decision
             else {
@@ -673,6 +677,7 @@ impl RuntimeChatTurnDriver {
                 remember_options: remember_options.clone(),
                 default_destination: *default_destination,
                 original_request: original_request.clone(),
+                path_auth_scope: path_auth_scope.clone(),
             };
             let resolution_rx = control_plane.insert_pending_request(pending_request)?;
 
@@ -973,6 +978,14 @@ impl RuntimeChatTurnDriver {
         turn: &mut TurnState,
         request: &ChatTurnRequest,
     ) -> Result<()> {
+        // Merge this turn's attachment-derived directories into the session-scoped
+        // accumulator so they remain available for all subsequent tool calls.
+        // This must happen before any tool dispatching (both S4 and legacy paths).
+        if !request.session_attachment_dirs.is_empty() {
+            self.query_engine
+                .merge_session_attachment_dirs(&request.session_attachment_dirs);
+        }
+
         // S4 path: when an llm_executor is present, use the S4 driver loop.
         if let Some(ref executor) = self.llm_executor {
             return self
@@ -1062,10 +1075,15 @@ impl RuntimeChatTurnDriver {
             tool_defs: overrides.tool_defs.unwrap_or(tool_defs),
             allowed_tools: overrides.allowed_tools,
             max_iterations: overrides.max_iterations.unwrap_or(30),
-            token_budget: overrides.token_budget.unwrap_or(100000),
+            token_budget: overrides.token_budget.unwrap_or_else(|| {
+                crate::llm::max_tokens::default_max_tokens_for_model(
+                    &llm_settings.primary_model,
+                ) as usize
+            }),
             chunk_timeout_secs: 90,
             masking_level: llm_settings.masking_level.clone(),
             workspace_path: workspace_path.clone(),
+            authorized_workspace: overrides.authorized_workspace,
             llm_settings,
             conversation_id: request.conversation_id.clone(),
             run_id: request.run_id.clone(),
@@ -1099,24 +1117,24 @@ impl RuntimeChatTurnDriver {
         );
 
         // ── Step 2: Initialize iteration state ───────────────────────────────
-        // messages 顺序：[system-reminder, renlijia-md-meta?, ...history, current-user-content]
+        // messages 顺序：[system-reminder, agents-md-meta?, ...history, current-user-content]
         let now = chrono::Local::now();
         let today = now.format("%Y年%m月%d日").to_string();
         let today_iso = now.format("%Y-%m-%d").to_string();
         let system_reminder_message =
             crate::runtime::chat::prompt::ReminderBuilder::date_message(&today, &today_iso);
-        let renlijia_md_files = executor
-            .load_renlijia_md(&config.workspace_path)
+        let agents_md_files = executor
+            .load_agents_md(config.authorized_workspace.as_ref())
             .await
             .unwrap_or_else(|e| {
                 log::warn!(
-                    "[run_chat_turn_s4] load_renlijia_md failed for workspace '{}': {}",
+                    "[run_chat_turn_s4] load_agents_md failed for workspace '{}': {}",
                     config.workspace_path.display(),
                     e
                 );
                 Vec::new()
             });
-        let renlijia_md_context_message = build_renlijia_md_context_message(&renlijia_md_files);
+        let agents_md_context_message = build_agents_md_context_message(&agents_md_files);
 
         // Sentinel content sent by the frontend when a background sub-agent
         // completes — we want to wake the parent up so it drains pending
@@ -1164,8 +1182,8 @@ impl RuntimeChatTurnDriver {
 
         let mut initial_messages = Vec::with_capacity(2 + history.len() + 1);
         initial_messages.push(system_reminder_message);
-        if let Some(renlijia_md_context_message) = renlijia_md_context_message {
-            initial_messages.push(renlijia_md_context_message);
+        if let Some(agents_md_context_message) = agents_md_context_message {
+            initial_messages.push(agents_md_context_message);
         }
         initial_messages.extend(history);
         if !is_resume_for_task_notification {
@@ -1349,7 +1367,31 @@ impl RuntimeChatTurnDriver {
             );
 
             // Build the read-only executor input.
-            let estimated_tokens = estimate_tokens_from_json(&state.messages);
+            let system_chars = config.system_prompt.len();
+            let dynamic_chars = iteration_delta_context.len();
+            let messages_chars = serde_json::to_string(&state.messages)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let tools_chars = serde_json::to_string(&config.tool_defs)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let estimated_tokens =
+                (system_chars + dynamic_chars + messages_chars + tools_chars) / 4;
+            record_turn_diagnostic(
+                &config.workspace_path,
+                "turn.tokens.estimated",
+                turn.session_id(),
+                turn.run_id(),
+                None,
+                None,
+                Some(serde_json::json!({
+                    "system_chars": system_chars,
+                    "dynamic_chars": dynamic_chars,
+                    "messages_chars": messages_chars,
+                    "tools_chars": tools_chars,
+                    "estimated_input_tokens": estimated_tokens,
+                })),
+            );
             let context_window = context_window_for_provider(&config.llm_settings.primary_model);
             if (estimated_tokens as f64) > (context_window as f64 * CONTEXT_OVERFLOW_THRESHOLD) {
                 log::warn!(
@@ -2047,6 +2089,7 @@ mod tests {
                 remember_options: vec![],
                 default_destination: None,
                 reason: PermissionReason::Other("not-mode".to_string()),
+                path_auth_scope: None,
             },
         })];
 
@@ -2255,6 +2298,10 @@ mod tests {
                 system_prompt: self.override_system_prompt.clone(),
                 ..TurnConfigOverrides::default()
             })
+        }
+
+        async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+            Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
         }
     }
 

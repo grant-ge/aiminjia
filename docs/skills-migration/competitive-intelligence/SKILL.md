@@ -18,7 +18,8 @@ effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.0"
+version: "1.1"
+category: ops
 metadata:
   label: 行业/竞品调研
 ---

@@ -16,7 +16,8 @@ effort: high
 context: inline
 user-invocable: true
 disable-model-invocation: false
-version: "1.0"
+version: "1.1"
+category: sales
 metadata:
   label: 客户跟进规则判定
 ---

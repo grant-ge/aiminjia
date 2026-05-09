@@ -6,16 +6,17 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use crate::runtime::path_auth::{decide, Decision, PathOp};
 use crate::runtime::tools::capability::FileState;
 use crate::runtime::tools::catalog::TOOL_CATALOG;
 use crate::runtime::tools::context::ToolExecutionContext;
 use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
+use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
-use crate::storage::file_manager;
 
 /// Returns the root path for workspace file operations.
 ///
@@ -47,9 +48,217 @@ pub(crate) fn require_workspace_root(
         })
 }
 
-fn resolve_path(root: &Path, rel: &str) -> Result<std::path::PathBuf, ToolError> {
-    file_manager::resolve_local_reference(root, rel)
-        .map_err(|e| ToolError::PermissionDenied(e.to_string()))
+/// Resolve and authorize a path for a workspace tool operation.
+///
+/// Steps:
+/// 1. Extract StorageCapability from ctx (returns PermissionDenied if missing).
+/// 2. Determine primary root (authorized_workspace.root_path or workspace_path).
+/// 3. Canonicalize the input path (absolute as-is, relative joined to primary root).
+/// 4. Build an effective ToolPermissionContext that always has primary_root set,
+///    so that paths under the workspace are Allow without requiring Ask.
+/// 5. Call `path_auth::decide::is_path_allowed` with the effective ctx.
+///
+/// Why the effective_ctx override: `ToolPermissionContext::empty()` (used in tests
+/// and new sessions before Phase 4 is fully wired) has `primary_root = None`.
+/// Workspace tools should always allow access inside the primary workspace root, so
+/// we implicitly set `primary_root` from `cap.workspace_path` when not already set.
+pub(crate) async fn resolve_and_authorize_path(
+    ctx: &ToolExecutionContext,
+    input: &str,
+    op: PathOp,
+) -> Result<PathBuf, ToolError> {
+    let cap = ctx
+        .capability
+        .as_ref()
+        .and_then(|c| c.storage.as_ref())
+        .ok_or_else(|| {
+            ToolError::PermissionDenied(
+                "No capability context. Workspace tools require capability.".into(),
+            )
+        })?;
+
+    let perm_ctx = cap.permission_ctx.as_ref();
+
+    // Primary root: authorized_workspace or workspace_path.
+    let primary = cap
+        .authorized_workspace
+        .as_ref()
+        .map(|aw| aw.root_path.clone())
+        .unwrap_or_else(|| cap.workspace_path.clone());
+
+    // Canonicalize the path.
+    let raw = Path::new(input);
+    let canonical = if raw.is_absolute() {
+        decide::canonicalize_or_ancestor(raw)
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to resolve path: {e}")))?
+    } else {
+        decide::canonicalize_or_ancestor(&primary.join(input))
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to resolve path: {e}")))?
+    };
+
+    // Build effective context: if primary_root is not set, inject it from the
+    // workspace root so that relative-path tools continue to work without Ask.
+    let effective_ctx;
+    let ctx_ref = if perm_ctx.primary_root.is_none() {
+        effective_ctx = crate::runtime::path_auth::ToolPermissionContext {
+            primary_root: Some(primary.clone()),
+            ..(*perm_ctx).clone()
+        };
+        &effective_ctx
+    } else {
+        perm_ctx
+    };
+
+    // If the dispatcher injected permission_override=Allow (i.e. user just approved),
+    // skip the path-auth check entirely — the user's approval covers this path.
+    if matches!(
+        ctx.permission_override,
+        Some(crate::runtime::tools::permission::PermissionDecision::Allow { .. })
+    ) {
+        return Ok(canonical);
+    }
+
+    match decide::is_path_allowed(&canonical, op, ctx_ref) {
+        Decision::Allow => Ok(canonical),
+        Decision::Deny(msg) => Err(ToolError::PermissionDenied(msg)),
+        Decision::Ask { reason } => {
+            // Ask must be surfaced via check_permissions before execute is called.
+            // Reaching here means the tool was invoked without prior authorization.
+            Err(ToolError::PermissionDenied(format!(
+                "需要用户授权但权限请求未被处理：{reason}"
+            )))
+        }
+    }
+}
+
+/// Shared helper for `check_permissions` across all path-model tools.
+///
+/// Returns:
+/// - `None`  — Allow; let execute proceed.
+/// - `Some(PermissionDecision::Deny)`  — blocked.
+/// - `Some(PermissionDecision::Ask)`   — requires user confirmation.
+///
+/// Backward-compat: also consults `ctx.permission_store.get_for_path` for
+/// legacy `PathGlob` deny rules that pre-Phase-4 code may have written.
+/// These are not yet loaded into `permission_ctx.deny_rules` by the bridge.
+pub(crate) fn check_path_permission(
+    input: &Value,
+    ctx: &ToolExecutionContext,
+    op: PathOp,
+    tool_name: &str,
+) -> Option<PermissionDecision> {
+    let path_str = input.get("path").and_then(Value::as_str)?;
+
+    let cap = ctx.capability.as_ref().and_then(|c| c.storage.as_ref())?;
+    let perm_ctx = cap.permission_ctx.as_ref();
+
+    let primary = cap
+        .authorized_workspace
+        .as_ref()
+        .map(|aw| aw.root_path.clone())
+        .unwrap_or_else(|| cap.workspace_path.clone());
+
+    let raw = Path::new(path_str);
+    let canonical = if raw.is_absolute() {
+        decide::canonicalize_or_ancestor(raw).ok()?
+    } else {
+        decide::canonicalize_or_ancestor(&primary.join(path_str)).ok()?
+    };
+
+    // Build effective context with primary_root set (same logic as resolve_and_authorize_path).
+    let effective_ctx;
+    let ctx_ref = if perm_ctx.primary_root.is_none() {
+        effective_ctx = crate::runtime::path_auth::ToolPermissionContext {
+            primary_root: Some(primary.clone()),
+            ..(*perm_ctx).clone()
+        };
+        &effective_ctx
+    } else {
+        perm_ctx
+    };
+
+    // Backward-compat: check legacy PathGlob deny rules in PermissionStore.
+    // These are the old-style rules written via `record_to(..., PathGlob(...), AlwaysDeny)`.
+    // Until they are migrated into permission_ctx.deny_rules, we must still check them here.
+    if let Some(store) = ctx.permission_store.as_ref() {
+        use crate::runtime::store::permission_store::PolicyDecision;
+        let lookup_path = canonical.to_string_lossy().to_string();
+        match store.get_for_path(tool_name, &lookup_path) {
+            Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
+                return Some(PermissionDecision::Deny {
+                    message: format!(
+                        "Write to '{}' is blocked by stored PathGlob policy.",
+                        path_str
+                    ),
+                    reason: PermissionReason::StoredPolicy,
+                });
+            }
+            Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
+                return Some(PermissionDecision::Allow {
+                    updated_input: None,
+                    reason: PermissionReason::StoredPolicy,
+                });
+            }
+            None => {}
+        }
+    }
+
+    // Primary path-auth decision.
+    match decide::is_path_allowed(&canonical, op, ctx_ref) {
+        Decision::Allow => None, // let execute proceed
+        Decision::Deny(msg) => Some(PermissionDecision::Deny {
+            message: msg,
+            reason: PermissionReason::Capability,
+        }),
+        Decision::Ask { reason } => {
+            // Encode step-6 vs step-4b in the path_auth_scope field for persistence routing.
+            // Why §7.8 "Ask 中 path 的粒度": A 场景（step 6）的 path 应是包含目标文件的目录，
+            // 而非文件本身——否则"永久允许"加的是单文件 working_dir，同目录兄弟仍被拦。
+            // step-4b 写入用 working_dir 范围的 glob (canonical_dir/**)，写在 pathwrite: 后。
+            let scope_path: std::path::PathBuf = if canonical.is_dir() {
+                canonical.clone()
+            } else {
+                canonical.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| canonical.clone())
+            };
+            let path_auth_scope = if is_step_4b_write(&canonical, op, ctx_ref) {
+                format!("pathwrite:{}", scope_path.display())
+            } else {
+                format!("path:{}", scope_path.display())
+            };
+            Some(PermissionDecision::Ask {
+                message: reason,
+                suggestions: vec![
+                    "仅本次允许".into(),
+                    "永久允许".into(),
+                    "拒绝".into(),
+                ],
+                remember_options: vec![
+                    crate::runtime::tools::permission::PermissionDestination::Session,
+                    crate::runtime::tools::permission::PermissionDestination::User,
+                ],
+                default_destination: Some(
+                    crate::runtime::tools::permission::PermissionDestination::Session,
+                ),
+                reason: PermissionReason::Capability,
+                path_auth_scope: Some(path_auth_scope),
+            })
+        }
+    }
+}
+
+/// Returns true if this is a step-4b write Ask (inside additional_working_dirs, not primary).
+fn is_step_4b_write(
+    canonical: &Path,
+    op: PathOp,
+    ctx: &crate::runtime::path_auth::ToolPermissionContext,
+) -> bool {
+    if op != PathOp::Write {
+        return false;
+    }
+    ctx.additional_working_dirs.keys().any(|dir| {
+        let canonical_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone());
+        canonical.starts_with(&canonical_dir)
+    })
 }
 
 fn tool_result(tool_name: &str, value: Value) -> ToolResult {
@@ -105,69 +314,7 @@ fn update_file_state_cache(ctx: &ToolExecutionContext, resolved: &Path, content:
     }
 }
 
-// ── ListDirectoryRuntimeTool ──────────────────────────────────────────────
-
-pub struct ListDirectoryRuntimeTool;
-
-#[async_trait]
-impl RuntimeTool for ListDirectoryRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("list_directory")
-            .unwrap_or_else(|| ToolDefinition::new("list_directory", "List authorized directory"))
-    }
-
-    fn is_concurrency_safe(&self, _input: &Value) -> bool {
-        true
-    }
-
-    async fn execute(
-        &self,
-        input: Value,
-        ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
-        let rel = input.get("path").and_then(Value::as_str).unwrap_or(".");
-        let resolved = resolve_path(&root, rel)?;
-        if !resolved.is_dir() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "Not a directory: {rel}"
-            )));
-        }
-        let mut files = Vec::new();
-        for entry in std::fs::read_dir(&resolved)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
-            .flatten()
-        {
-            let meta = entry.metadata().ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            files.push(json!({
-                "name": entry.file_name().to_string_lossy(),
-                "type": if is_dir { "directory" } else { "file" },
-                "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
-            }));
-        }
-        files.sort_by(|a, b| {
-            b["type"]
-                .as_str()
-                .unwrap_or("")
-                .cmp(a["type"].as_str().unwrap_or(""))
-                .then(
-                    a["name"]
-                        .as_str()
-                        .unwrap_or("")
-                        .cmp(b["name"].as_str().unwrap_or("")),
-                )
-        });
-        let count = files.len();
-        Ok(tool_result(
-            "list_directory",
-            json!({ "path": rel, "files": files, "count": count }),
-        ))
-    }
-}
-
-// ── ReadWorkspaceFileRuntimeTool ──────���───────────────────────────────────
+// ── ReadWorkspaceFileRuntimeTool ──────────────────────────────────────────
 
 pub struct ReadWorkspaceFileRuntimeTool;
 
@@ -175,12 +322,20 @@ pub struct ReadWorkspaceFileRuntimeTool;
 impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("read_workspace_file")
-            .unwrap_or_else(|| ToolDefinition::new("read_workspace_file", "Read workspace file"))
+            .get("Read")
+            .unwrap_or_else(|| ToolDefinition::new("Read", "Read workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         true
+    }
+
+    async fn check_permissions(
+        &self,
+        input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Option<PermissionDecision> {
+        check_path_permission(input, ctx, PathOp::Read, "read_workspace_file")
     }
 
     async fn execute(
@@ -189,11 +344,10 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
         let capability = ctx.capability.as_ref();
-        let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let max_bytes = capability
             .and_then(|cap| cap.file_reading_limits.as_ref())
             .map(|limits| limits.max_size_bytes)
@@ -212,7 +366,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
             .get("limit")
             .and_then(Value::as_u64)
             .map(|v| v as usize);
-        let resolved = resolve_path(&root, rel)?;
+        let resolved = resolve_and_authorize_path(&ctx, rel, PathOp::Read).await?;
         if !resolved.is_file() {
             return Err(ToolError::ExecutionFailed(format!("Not a file: {rel}")));
         }
@@ -236,7 +390,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                             limit_text_content(&state.content, max_bytes);
                         let truncated = limit_truncated || metadata.len() as usize > content.len();
                         let mut result = json!({
-                            "path": rel,
+                            "file_path": rel,
                             "content": content,
                             "size": metadata.len(),
                             "cached": true,
@@ -244,7 +398,7 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                         if truncated {
                             result["truncated"] = json!(true);
                         }
-                        return Ok(tool_result("read_workspace_file", result));
+                        return Ok(tool_result("Read", result));
                     }
                 }
             }
@@ -267,11 +421,11 @@ impl RuntimeTool for ReadWorkspaceFileRuntimeTool {
                 );
             }
         }
-        let mut result = json!({ "path": rel, "content": content, "size": bytes.len() });
+        let mut result = json!({ "file_path": rel, "content": content, "size": bytes.len() });
         if truncated {
             result["truncated"] = json!(true);
         }
-        Ok(tool_result("read_workspace_file", result))
+        Ok(tool_result("Read", result))
     }
 }
 
@@ -354,12 +508,20 @@ fn walk_dir_collect(
 impl RuntimeTool for SearchFilesRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("search_files")
-            .unwrap_or_else(|| ToolDefinition::new("search_files", "Search files"))
+            .get("Glob")
+            .unwrap_or_else(|| ToolDefinition::new("Glob", "Search files"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
         true
+    }
+
+    async fn check_permissions(
+        &self,
+        input: &Value,
+        ctx: &ToolExecutionContext,
+    ) -> Option<PermissionDecision> {
+        check_path_permission(input, ctx, PathOp::Read, "search_files")
     }
 
     async fn execute(
@@ -367,7 +529,6 @@ impl RuntimeTool for SearchFilesRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
         let pattern = input
             .get("pattern")
             .and_then(Value::as_str)
@@ -377,7 +538,9 @@ impl RuntimeTool for SearchFilesRuntimeTool {
             .get("max_results")
             .and_then(Value::as_u64)
             .unwrap_or(100) as usize;
-        let base = resolve_path(&root, sub)?;
+        let base = resolve_and_authorize_path(&ctx, sub, PathOp::Read).await?;
+        // For walk, we use the authorized root as the display root.
+        let root = require_workspace_root(&ctx).unwrap_or_else(|_| base.clone());
         let file_pattern = Path::new(pattern)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -386,69 +549,9 @@ impl RuntimeTool for SearchFilesRuntimeTool {
         walk_dir_collect(&base, &file_pattern, &root, &mut matches, max);
         let count = matches.len();
         Ok(tool_result(
-            "search_files",
+            "Glob",
             json!({ "pattern": pattern, "path": sub, "matches": matches, "count": count }),
         ))
-    }
-}
-
-// ── GetFileInfoRuntimeTool ────────────────────────────────────────────────
-
-pub struct GetFileInfoRuntimeTool;
-
-#[async_trait]
-impl RuntimeTool for GetFileInfoRuntimeTool {
-    fn definition(&self) -> ToolDefinition {
-        TOOL_CATALOG
-            .get("get_file_info")
-            .unwrap_or_else(|| ToolDefinition::new("get_file_info", "Get file info"))
-    }
-
-    fn is_concurrency_safe(&self, _input: &Value) -> bool {
-        true
-    }
-
-    async fn execute(
-        &self,
-        input: Value,
-        ctx: ToolExecutionContext,
-    ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
-        let rel = input
-            .get("path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
-        let resolved = resolve_path(&root, rel)?;
-        if !resolved.exists() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "Path does not exist: {rel}"
-            )));
-        }
-        let meta =
-            std::fs::metadata(&resolved).map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let is_dir = meta.is_dir();
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs());
-        let mut info = json!({
-            "path": rel,
-            "name": resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-            "type": if is_dir { "directory" } else { "file" },
-            "size": meta.len(),
-        });
-        if let Some(ts) = modified {
-            info["modified_unix"] = json!(ts);
-        }
-        if !is_dir {
-            let ext = resolved
-                .extension()
-                .map(|e| e.to_string_lossy().to_string())
-                .unwrap_or_default();
-            info["extension"] = json!(ext);
-        }
-        Ok(tool_result("get_file_info", info))
     }
 }
 
@@ -460,8 +563,8 @@ pub struct WriteFileRuntimeTool;
 impl RuntimeTool for WriteFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("write_file")
-            .unwrap_or_else(|| ToolDefinition::new("write_file", "Write workspace file"))
+            .get("Write")
+            .unwrap_or_else(|| ToolDefinition::new("Write", "Write workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -472,39 +575,8 @@ impl RuntimeTool for WriteFileRuntimeTool {
         &self,
         input: &Value,
         ctx: &ToolExecutionContext,
-    ) -> Option<crate::runtime::tools::permission::PermissionDecision> {
-        use crate::runtime::store::permission_store::PolicyDecision;
-        use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-
-        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
-        if path.is_empty() {
-            return None;
-        }
-
-        let store = ctx.permission_store.as_ref()?;
-        let root = require_workspace_root(ctx).ok()?;
-        let _resolved = resolve_path(&root, path).ok()?;
-        let lookup_path = if Path::new(path).is_absolute() {
-            path.to_string()
-        } else {
-            root.join(path).to_string_lossy().into_owned()
-        };
-
-        match store.get_for_path("write_file", &lookup_path) {
-            Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
-                Some(PermissionDecision::Deny {
-                    message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
-                    reason: PermissionReason::StoredPolicy,
-                })
-            }
-            Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
-                Some(PermissionDecision::Allow {
-                    updated_input: None,
-                    reason: PermissionReason::StoredPolicy,
-                })
-            }
-            None => None,
-        }
+    ) -> Option<PermissionDecision> {
+        check_path_permission(input, ctx, PathOp::Write, "write_file")
     }
 
     async fn execute(
@@ -512,16 +584,15 @@ impl RuntimeTool for WriteFileRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let content = input
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: content".into()))?;
-        let resolved = resolve_path(&root, rel)?;
+        let resolved = resolve_and_authorize_path(&ctx, rel, PathOp::Write).await?;
 
         if let Some(parent) = resolved.parent() {
             std::fs::create_dir_all(parent)
@@ -534,9 +605,9 @@ impl RuntimeTool for WriteFileRuntimeTool {
         update_file_state_cache(&ctx, &resolved, content);
 
         Ok(tool_result(
-            "write_file",
+            "Write",
             json!({
-                "path": rel,
+                "file_path": rel,
                 "size": content.len(),
                 "created": true,
             }),
@@ -552,8 +623,8 @@ pub struct EditFileRuntimeTool;
 impl RuntimeTool for EditFileRuntimeTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("edit_file")
-            .unwrap_or_else(|| ToolDefinition::new("edit_file", "Edit workspace file"))
+            .get("Edit")
+            .unwrap_or_else(|| ToolDefinition::new("Edit", "Edit workspace file"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -564,39 +635,8 @@ impl RuntimeTool for EditFileRuntimeTool {
         &self,
         input: &Value,
         ctx: &ToolExecutionContext,
-    ) -> Option<crate::runtime::tools::permission::PermissionDecision> {
-        use crate::runtime::store::permission_store::PolicyDecision;
-        use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
-
-        let path = input.get("path").and_then(Value::as_str).unwrap_or("");
-        if path.is_empty() {
-            return None;
-        }
-
-        let store = ctx.permission_store.as_ref()?;
-        let root = require_workspace_root(ctx).ok()?;
-        let _resolved = resolve_path(&root, path).ok()?;
-        let lookup_path = if Path::new(path).is_absolute() {
-            path.to_string()
-        } else {
-            root.join(path).to_string_lossy().into_owned()
-        };
-
-        match store.get_for_path("edit_file", &lookup_path) {
-            Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
-                Some(PermissionDecision::Deny {
-                    message: format!("Write to '{}' is blocked by stored PathGlob policy.", path),
-                    reason: PermissionReason::StoredPolicy,
-                })
-            }
-            Some(PolicyDecision::AlwaysAllow) | Some(PolicyDecision::Allow) => {
-                Some(PermissionDecision::Allow {
-                    updated_input: None,
-                    reason: PermissionReason::StoredPolicy,
-                })
-            }
-            None => None,
-        }
+    ) -> Option<PermissionDecision> {
+        check_path_permission(input, ctx, PathOp::Write, "edit_file")
     }
 
     async fn execute(
@@ -604,11 +644,10 @@ impl RuntimeTool for EditFileRuntimeTool {
         input: Value,
         ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolError> {
-        let root = require_workspace_root(&ctx)?;
         let rel = input
-            .get("path")
+            .get("file_path")
             .and_then(Value::as_str)
-            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: path".into()))?;
+            .ok_or_else(|| ToolError::ExecutionFailed("Missing required: file_path".into()))?;
         let old_string = input
             .get("old_string")
             .and_then(Value::as_str)
@@ -617,8 +656,13 @@ impl RuntimeTool for EditFileRuntimeTool {
             .get("new_string")
             .and_then(Value::as_str)
             .ok_or_else(|| ToolError::ExecutionFailed("Missing required: new_string".into()))?;
+        let replace_all = input
+            .get("replace_all")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
-        let resolved = resolve_path(&root, rel)?;
+        // Authorize for write (the actual operation performed).
+        let resolved = resolve_and_authorize_path(&ctx, rel, PathOp::Write).await?;
 
         let original_content = if resolved.is_file() {
             std::fs::read_to_string(&resolved)
@@ -646,9 +690,9 @@ impl RuntimeTool for EditFileRuntimeTool {
                 .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
             update_file_state_cache(&ctx, &resolved, new_string);
             return Ok(tool_result(
-                "edit_file",
+                "Edit",
                 json!({
-                    "path": rel,
+                    "file_path": rel,
                     "operation": "create",
                     "bytes_written": new_string.len(),
                 }),
@@ -661,23 +705,28 @@ impl RuntimeTool for EditFileRuntimeTool {
                 "old_string not found in file: {rel}\nString: {old_string}"
             )));
         }
-        if matches > 1 {
+        if matches > 1 && !replace_all {
             return Err(ToolError::ExecutionFailed(format!(
-                "old_string found {matches} times in file: {rel}. Provide more context to uniquely identify the target.\nString: {old_string}"
+                "old_string found {matches} times in file: {rel}. Provide more context to uniquely identify the target, or pass replace_all: true to replace all occurrences.\nString: {old_string}"
             )));
         }
 
-        let updated_content = original_content.replacen(old_string, new_string, 1);
+        let updated_content = if replace_all {
+            original_content.replace(old_string, new_string)
+        } else {
+            original_content.replacen(old_string, new_string, 1)
+        };
         std::fs::write(&resolved, updated_content.as_bytes())
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to write file: {e}")))?;
         update_file_state_cache(&ctx, &resolved, &updated_content);
 
         Ok(tool_result(
-            "edit_file",
+            "Edit",
             json!({
-                "path": rel,
+                "file_path": rel,
                 "operation": "edit",
                 "bytes_written": updated_content.len(),
+                "replacements": matches,
             }),
         ))
     }

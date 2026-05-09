@@ -151,7 +151,7 @@ pub enum ToolError {
 )]
 #[async_trait]
 pub trait ToolPlugin: Send + Sync + 'static {
-    /// Unique tool identifier (e.g., "web_search").
+    /// Unique tool identifier (e.g., "WebSearch").
     fn name(&self) -> &str;
 
     /// Short description (LLM uses this to understand the tool's purpose).

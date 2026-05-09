@@ -82,7 +82,6 @@ runtime/                        ← L2: Session/Query Runtime（核心编排层�
   agent/                        ← L4: Task/Agent Runtime（子代理、任务生命周期）
   store/                        ← L5: State Store（repository trait + file-based 实现）
 llm/                            ← L6: Infra Adapter（LLM provider、tool_executor）
-python/                         ← L6: Infra Adapter（Python 沙箱执行）
 storage/                        ← L6: Infra Adapter（文件持久化、workspace 管理）
 plugin/                         ← 遗留工具插件系统（正在向 RuntimeTool 迁移）
 ```
@@ -111,7 +110,7 @@ invoke('send_message')
 
 - **RuntimeTool**（新）：在 `runtime/tools/dispatcher.rs` 注册，通过 `ToolExecutionContext` + `CapabilityContext` 获取能力，是长期目标路径
 - **LegacyToolAdapter**（旧）：将 `plugin/tool_trait.rs` 的 `ToolPlugin` 适配为 `RuntimeTool`，桥接层，不应新增
-- 工具实现主体在 `llm/tool_executor/`（upload/load/execute_python/report/chart 等）和 `plugin/builtin/tools/`（browse/extract 等）
+- 工具实现主体在 `llm/tool_executor/`（upload/dingtalk/search 等）和 `plugin/builtin/tools/`（echo_runtime 等）
 - **MCP 工具**（新）：位于 `runtime/mcp/`，通过 `McpConnection -> McpRuntimeTool -> ToolRegistry` 动态注册；对外工具名必须是 `mcp__<server>__<tool>`，disconnect / refresh 时必须同步清理 runtime tool pool 与 `TOOL_CATALOG`
 
 ### 事件协议
@@ -137,12 +136,6 @@ invoke('send_message')
 - `src-tauri/src/runtime/mcp/manager.rs`：管理 server 注册 / connect / refresh / disconnect / unregister 生命周期
 - Tauri 启动时会在 `src-tauri/src/lib.rs` 中 `app.manage(Arc<McpServerManager>)`
 - 当前仓库已具备 runtime 层 MCP 支持，但**还没有** end-user 配置加载器和前端管理面板
-
-### Python 沙箱
-
-- 配置入口：`python/sandbox.rs` — `SandboxConfig::for_workspace()` 设置允许路径（写死为 workspace 的 7 个子目录）
-- 执行入口：`python/runner.rs` — `PythonRunner`
-- 沙箱通过 `_safe_open` 限制写路径，通过 `validate_code()` 静态检查危险模式
 
 ### Skill 系统（新）
 
@@ -186,7 +179,6 @@ workspace 目录（用户可自定义，默认也是 `~/.renlijia/`）下存放�
 - `uploads/` — 用户上传文件副本
 - `reports/` / `charts/` / `analysis/` — 生成物
 - `logs/` — 运行日志
-- `temp/` — 临时 Python 脚本
 
 ## 重要架构决策与约束
 
@@ -280,3 +272,9 @@ python3 scripts/bump-homebrew.py X.Y.Z
 - 签名密钥（本地）：`~/.tauri/aijia.key` + Keychain `aijia-tauri-signer`
 - OSS 凭证（本地）：Keychain `aijia-oss`，或环境变量 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`
 - **数字员工 SKILL bundle + ResourceConfig + 派活前置补全（2026-05）**：5 个内置员工各带 `defaultSkillId / requiresAttachment / resourceConfigKind / requiresDingtalk` 元数据（`src/features/employees/templates.ts`）。派活前 `runTriggerPrechecks` 决定是否弹文件 picker / 资源 form / 钉钉 alert，因此**派活的唯一入口是 EmployeeDrawer 底部按钮**（卡片点击只打开 Drawer，不再有 inline 派活按钮）。SKILL 内容（`competitive-intelligence`, `sales-followup-rules`）以 managed global skills bundle 分发到 `~/.renlijia/skills/`。dispatch prompt 强制末尾"请立即开始按职责执行"以避免 LLM 等用户指示。详见 `../docs/plans/2026-05-05-employee-skills-and-resources-design.md`。
+- **数字员工状态机（v0.5.7）**：`EmployeeRecord.enabled: bool` 拆为 `lifecycle: EmployeeLifecycle`（Active / Paused / Archived）+ `cron_enabled: bool` 二维独立字段。旧文件通过 `#[serde(alias = "enabled")]` 自动迁移到 `cron_enabled`。运行态来自后端 `EmployeeActiveRuns` Mutex<HashMap>（不再用前端"10 分钟内 Running"启发式），由 `ActiveRunGuard` RAII Drop 守卫保证 panic / cancel / 提前 return 都不会泄漏。删除 = 软删除（lifecycle=Archived），调度器每 60s tick 自动 `purge_old_archived(7d)`，per-record 检查走 race-safe `purge_if_archived_older_than`（同一把锁内 re-check lifecycle + age，防止"用户刚恢复就被 purge"）。新增 Tauri 命令：`employee_active_run` / `employee_stop_run` / `employee_restore` / `employee_purge`。前端 deriveStatus 7 状态优先级：archived > running > has-report > paused > needs-setup > scheduled > idle。详见 `../docs/plans/2026-05-06-employee-state-machine-IMPLEMENTATION.md`。
+- **Windows 兼容性约定（v0.5.7）**：所有 git 子进程必须传 `-c core.quotepath=false`（中文文件名展示）；用户可编辑 JSON 文件（mcp_config / global_config）的读路径走 `storage::text_io::read_to_string_strip_bom`（剥 Win10 Notepad BOM）；外部 CLI 输出（dws / where.exe / tasklist）解码走 `storage::console_decode::decode_console_bytes`（Windows GBK fallback，靠 `encoding_rs`）；MCP 子进程 spawn 时强制 `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1` / `LANG=en_US.UTF-8`；hooks runner + skill `!cmd` 替换在 Windows 走 `powershell.exe -NoProfile -Command`（不能裸 `sh -c`）；用户/LLM 提供的文件名走 `storage::safe_filename::ensure_safe_filename`（CON/PRN/COM*/LPT* 保留名 + 禁字符 `<>:"\|?*` + 尾部 `.`/空格 + 长度 ≤ 200）；任何写到磁盘的状态文件优先 tmp + rename 原子写（参考 `runtime::employee::store::write_atomic`），目录删除走 `remove_dir_all_retry` 3×150–300ms backoff。
+- **Windows 子进程黑窗抑制（v0.5.8）**：所有 `Command::spawn` / `.output()` 必须先调 `.no_window()`（`storage::process_ext::NoWindowExt` trait extension），它在 Windows 上注入 `CREATE_NO_WINDOW = 0x08000000` 创建标志，其它平台是 no-op。漏一个就在 Windows 上看到 cmd.exe / conhost.exe 一闪而过。
+- **max_tokens 按模型自动选（v0.5.8）**：默认输出预算从写死的 4096/100000 改成 `llm::max_tokens::default_max_tokens_for_model(name)` 启发式查表（DeepSeek V4 = 384k、GPT-5 = 128k、GLM-4.5/4.6 = 96k、Claude Sonnet/Opus + Gemini-2 = 64k、Qwen3 / qwen-max-2025 = 16k、Qwen-max-longcontext = 30k、其他兜底 8192）。新增上限按模型加进表里。从 `chat_turn_driver` 调（`llm_settings.primary_model` 在 scope 内）；想覆盖的���用方传 `Some(value)` 即可，否则传 `None` 让 driver 走 per-model 默认。
+- **跨平台拖拽上传（v0.5.9）**：Tauri 2 webview 拦截 HTML5 drop 事件，React `onDrop` 永不触发；唯一靠谱的入口是 `getCurrentWebview().onDragDropEvent`。`useDragDropListener`（在 `App` 顶层 mount 一次）订阅 native 事件，把 resolved `PendingAttachment[]` push 进 `useDropInbox`（zustand pull queue），HomeTaskComposerCard / ChatBottomArea 各自 useEffect drain。新增附件路径校验（`useChatAttachments::isAcceptablePastedPath` / `makePendingAttachment` / `resolvePastedPaths`）必须支持 `[\\/]` 双分隔符 + Windows `C:\` 卷根 + 系统目录前缀拒绝。
+- **剪贴板图片粘贴**：`useComposerPaste.handlePaste` 支持截图/复制图片粘贴。流程：同步提取 `clipboardData.items` 中的 image blob（异步后 clipboardData 会被浏览器清空）→ 先尝试 native file paths（Finder 复制文件）→ 路径为空时 fallback 到 image blob → `saveClipboardImage()` 写入 `tmpImage/` → 添加为 `PendingAttachment`。`saveClipboardImage` 从 `useChatAttachments` 传入（Tauri IPC → Rust `save_clipboard_image_to_tmp`）。ChatBottomArea + HomeTaskComposerCard 两个 composer 均已接入。

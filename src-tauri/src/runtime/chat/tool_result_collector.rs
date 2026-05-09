@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn error_message_carries_is_error_for_persistence_reload() {
-        let results = vec![completed("tc-err", "bash", "failed", true)];
+        let results = vec![completed("tc-err", "Bash", "failed", true)];
         let out = collect_results(results);
         let msg = &out.tool_result_messages[0];
         assert_eq!(msg["isError"], true);
@@ -265,7 +265,7 @@ mod tests {
     fn context_modifier_messages_are_collected() {
         let results = vec![ToolRoundResult::Ok(RuntimeToolCallOutcome::Completed {
             tool_call_id: "tc1".to_string(),
-            tool_name: "edit_file".to_string(),
+            tool_name: "Edit".to_string(),
             content: "done".to_string(),
             is_error: false,
             msg_id: format!("tool-{}", uuid::Uuid::new_v4()),

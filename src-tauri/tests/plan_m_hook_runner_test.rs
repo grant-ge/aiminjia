@@ -104,7 +104,7 @@ async fn hook_runner_tool_filter_skips_non_matching() {
     let config = HookConfig {
         event: HookEvent::PreToolUse,
         command: "echo '{\"behavior\":\"deny\"}'".to_string(),
-        tool_filter: Some("write_file".to_string()),
+        tool_filter: Some("Write".to_string()),
         timeout_secs: Some(10),
     };
     let result = runner

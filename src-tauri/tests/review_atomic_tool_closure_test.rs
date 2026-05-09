@@ -20,10 +20,6 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(
         &workspace_path,
     ));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        workspace_path.clone(),
-        None,
-    ));
 
     PluginContext {
         storage,
@@ -36,7 +32,6 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,
@@ -53,6 +48,7 @@ fn build_test_plugin_ctx(workspace_path: std::path::PathBuf) -> PluginContext {
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+        permission_ctx: None,
     }
 }
 
@@ -70,13 +66,13 @@ async fn runtime_dispatcher_should_reject_browser_tool_without_browser_capabilit
     let exec_ctx = ToolExecutionContext::for_test("review-conv", "run-1", "tc-1");
     let err = match dispatcher
         .dispatch(
-            "browse_navigate",
+            "playwright_navigate",
             json!({"url": "https://example.com"}),
             exec_ctx,
         )
         .await
     {
-        Ok(_) => panic!("browse_navigate without browser capability should be rejected"),
+        Ok(_) => panic!("playwright_navigate without browser capability should be rejected"),
         Err(err) => err,
     };
 
@@ -96,10 +92,10 @@ async fn request_scoped_web_search_schema_should_come_from_catalog() {
         .get_all_schemas()
         .await
         .into_iter()
-        .find(|s| s.name == "web_search")
+        .find(|s| s.name == "WebSearch")
         .expect("web_search schema missing");
     let catalog = TOOL_CATALOG
-        .get_entry("web_search")
+        .get_entry("WebSearch")
         .expect("web_search missing from TOOL_CATALOG");
 
     assert_eq!(
@@ -109,30 +105,5 @@ async fn request_scoped_web_search_schema_should_come_from_catalog() {
     assert_eq!(
         schema.parameters, catalog.json_schema,
         "web_search JSON schema should come from ToolCatalog"
-    );
-}
-
-#[tokio::test]
-async fn request_scoped_load_file_filtered_schema_should_come_from_catalog() {
-    let registry = ToolRegistry::new();
-    register_builtin_tools(&registry).await;
-
-    let schema = registry
-        .get_schemas_filtered(&ToolFilter::Only(vec!["load_file".to_string()]))
-        .await
-        .into_iter()
-        .find(|s| s.name == "load_file")
-        .expect("load_file schema missing from filtered view");
-    let catalog = TOOL_CATALOG
-        .get_entry("load_file")
-        .expect("load_file missing from TOOL_CATALOG");
-
-    assert_eq!(
-        schema.description, catalog.definition.description,
-        "load_file filtered schema description should come from ToolCatalog"
-    );
-    assert_eq!(
-        schema.parameters, catalog.json_schema,
-        "load_file filtered JSON schema should come from ToolCatalog"
     );
 }

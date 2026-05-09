@@ -298,6 +298,8 @@ impl<'a> SubagentWorkerRuntime<'a> {
                 request.messages.len()
             );
 
+            let max_tokens =
+                crate::llm::max_tokens::default_max_tokens_for_model(&effective_settings.primary_model);
             let stream_result = self
                 .gateway
                 .stream_message(
@@ -307,7 +309,7 @@ impl<'a> SubagentWorkerRuntime<'a> {
                     worker_system_prompt_for_gateway(&request),
                     request.dynamic_context.as_deref(),
                     Some(request.tool_defs.clone()),
-                    4096,
+                    max_tokens,
                     Some(&sub_conv_id),
                 )
                 .await;
@@ -615,10 +617,6 @@ impl<'a> SubagentWorkerRuntime<'a> {
         };
 
         self.gateway.clear_task(&sub_conv_id);
-        self.runtime_deps
-            .session_manager
-            .destroy_run(&child_run_id)
-            .await;
 
         if let Some(handle) = child_handle.as_ref() {
             if cancelled {
@@ -727,13 +725,22 @@ impl<'a> SubagentWorkerRuntime<'a> {
             python_home,
         });
 
-        QueryEngine::with_dispatcher(dispatcher)
+        let engine = QueryEngine::with_dispatcher(dispatcher)
             .with_workspace_path(self.runtime_deps.workspace_path.clone())
             .with_authorized_workspace(self.runtime_deps.authorized_workspace.clone())
             .with_browser_available(self.runtime_deps.connector_engine.is_some())
             .with_file_ops(file_ops)
             .with_runtime_resolver(self.runtime_deps.runtime_resolver.clone())
-            .with_read_file_state(child_read_file_state)
+            .with_read_file_state(child_read_file_state);
+
+        // Phase 5: seed child QueryEngine with parent's permission_ctx snapshot
+        // so path tools see the same authorized dirs (UserSettings working dirs +
+        // session attachment dirs merged in at spawn time).
+        if let Some(ctx) = self.runtime_deps.permission_ctx.clone() {
+            engine.with_permission_ctx(ctx)
+        } else {
+            engine
+        }
     }
 }
 
@@ -832,6 +839,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         } => PermissionDecision::Ask {
             message: format!(
                 "Subagent tool '{}' (tool_call_id={}) requires confirmation: {}",
@@ -841,6 +849,7 @@ fn annotate_subagent_ask_decision(
             remember_options,
             default_destination,
             reason,
+            path_auth_scope,
         },
         other => other,
     }
@@ -929,7 +938,7 @@ mod tests {
         let config = SubAgentConfig {
             task: "collect data".to_string(),
             system_prompt: "system".to_string(),
-            allowed_tools: vec!["read_page_content".to_string()],
+            allowed_tools: vec!["Read".to_string()],
             max_iterations: 3,
             dynamic_context: String::new(),
             conversation_id: "conv-worker-mode".to_string(),
@@ -944,7 +953,7 @@ mod tests {
             disallowed_tools: vec![],
         };
 
-        let final_allowed = vec!["read_page_content".to_string()];
+        let final_allowed = vec!["Read".to_string()];
         let run_config =
             SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed);
 
@@ -979,8 +988,8 @@ mod tests {
             disallowed_tools: vec![],
         };
         let all_schemas = vec![
-            tool_schema("read_workspace_file"),
-            tool_schema("spawn_subagent"),
+            tool_schema("Read"),
+            tool_schema("Agent"),
         ];
         let available_names: Vec<String> = all_schemas
             .iter()
@@ -1002,21 +1011,21 @@ mod tests {
         let run_config =
             SubagentWorkerRuntime::build_run_config_with_allowed(&config, final_allowed.clone());
 
-        assert!(final_allowed.contains(&"read_workspace_file".to_string()));
-        assert!(!final_allowed.contains(&"spawn_subagent".to_string()));
+        assert!(final_allowed.contains(&"Read".to_string()));
+        assert!(!final_allowed.contains(&"Agent".to_string()));
         assert!(run_config
             .allowed_tools
-            .contains(&"read_workspace_file".to_string()));
+            .contains(&"Read".to_string()));
         assert!(!run_config
             .allowed_tools
-            .contains(&"spawn_subagent".to_string()));
+            .contains(&"Agent".to_string()));
         let tool_def_names: Vec<&str> = turn_request
             .tool_defs
             .iter()
             .map(|tool_def| tool_def.name.as_str())
             .collect();
-        assert!(tool_def_names.contains(&"read_workspace_file"));
-        assert!(!tool_def_names.contains(&"spawn_subagent"));
+        assert!(tool_def_names.contains(&"Read"));
+        assert!(!tool_def_names.contains(&"Agent"));
     }
 
     #[test]

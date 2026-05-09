@@ -40,7 +40,7 @@ fn tool_without_scope_is_always_allowed() {
 #[test]
 fn workspace_read_tool_rejected_without_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("list_directory", &["workspace:read"]);
+    let def = def_with_scope("Read", &["workspace:read"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
     assert!(
@@ -60,7 +60,7 @@ fn workspace_read_tool_rejected_without_capability() {
 fn workspace_read_tool_allowed_with_workspace_capability() {
     let tmp = TempDir::new().unwrap();
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("list_directory", &["workspace:read"]);
+    let def = def_with_scope("Read", &["workspace:read"]);
     let ctx = ctx_with_workspace(&tmp);
     assert!(is_allow(&pipeline.authorize(&def, &json!({}), &ctx)));
 }
@@ -68,7 +68,7 @@ fn workspace_read_tool_allowed_with_workspace_capability() {
 #[test]
 fn browser_tool_rejected_without_browser_capability() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("browse_navigate", &["browser"]);
+    let def = def_with_scope("playwright_navigate", &["browser"]);
     let ctx = ctx_no_capability();
     let result = pipeline.authorize(&def, &json!({}), &ctx);
     assert!(
@@ -81,7 +81,7 @@ fn browser_tool_rejected_without_browser_capability() {
 fn browser_tool_allowed_with_browser_available_capability() {
     let tmp = TempDir::new().unwrap();
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("browse_navigate", &["browser"]);
+    let def = def_with_scope("playwright_navigate", &["browser"]);
     // 构建带 browser_available=true 的 context
     let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws").with_browser();
     let ctx = ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));
@@ -95,7 +95,7 @@ fn browser_tool_allowed_with_browser_available_capability() {
 fn browser_tool_still_rejected_when_browser_available_false() {
     let tmp = TempDir::new().unwrap();
     let pipeline = CapabilityPermissionPipeline;
-    let def = def_with_scope("browse_navigate", &["browser"]);
+    let def = def_with_scope("playwright_navigate", &["browser"]);
     // 普通 workspace context，不调用 with_browser()
     let cap = CapabilityContext::with_workspace(tmp.path().to_path_buf(), "ws");
     let ctx = ToolExecutionContext::for_test("conv", "run", "tc").with_capability(Arc::new(cap));

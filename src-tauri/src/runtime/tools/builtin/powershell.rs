@@ -16,12 +16,13 @@ use crate::runtime::tools::definition::ToolDefinition;
 use crate::runtime::tools::executor::{ToolError, ToolResult};
 use crate::runtime::tools::permission::{PermissionDecision, PermissionReason};
 use crate::runtime::tools::RuntimeTool;
+use crate::storage::process_ext::NoWindowExt;
 
 use super::powershell_detect::{detect, PowerShellLocation};
 use super::shell_common::{
     collect_reader, content_from_output, format_cancel_message, format_command_failure,
-    interpret_command_result, kill_child_process_tree, read_merged_streams,
-    truncated_to_max_bytes, wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
+    interpret_command_result, kill_child_process_tree, read_merged_streams, truncated_to_max_bytes,
+    wait_for_cancellation, ExitKind, MAX_OUTPUT_BYTES,
 };
 use super::workspace::require_workspace_root;
 
@@ -50,10 +51,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
     ),
     ("format-volume", "Refusing: Format-Volume erases data"),
     ("clear-disk", "Refusing: Clear-Disk wipes a disk"),
-    (
-        "initialize-disk",
-        "Refusing: Initialize-Disk wipes a disk",
-    ),
+    ("initialize-disk", "Refusing: Initialize-Disk wipes a disk"),
     (
         "stop-computer",
         "Refusing: Stop-Computer shuts down the machine",
@@ -66,10 +64,7 @@ static DANGEROUS_PATTERNS: &[(&str, &str)] = &[
         "| invoke-expression",
         "Refusing: pipe-to-Invoke-Expression is remote code execution",
     ),
-    (
-        "| iex",
-        "Refusing: pipe-to-iex is remote code execution",
-    ),
+    ("| iex", "Refusing: pipe-to-iex is remote code execution"),
     (
         ").downloadstring(",
         "Refusing: WebClient.DownloadString followed by execution is RCE",
@@ -80,22 +75,25 @@ pub struct PowerShellTool;
 
 fn default_powershell_timeout_secs() -> u64 {
     TOOL_CATALOG
-        .get("powershell")
+        .get("PowerShell")
         .and_then(|def| def.default_timeout_secs)
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
 
 fn resolve_timeout_secs(input: &Value) -> u64 {
-    input
-        .get("timeout_secs")
+    // Input is `timeout` in milliseconds (aligned with claude-code-best).
+    // Convert to seconds for internal consumption.
+    let ms = input
+        .get("timeout")
         .and_then(Value::as_u64)
-        .unwrap_or_else(default_powershell_timeout_secs)
-        .min(MAX_TIMEOUT_SECS)
+        .unwrap_or_else(|| default_powershell_timeout_secs() * 1000);
+    let secs = ms.div_ceil(1000);
+    secs.min(MAX_TIMEOUT_SECS)
 }
 
 fn tool_result_powershell(content: String, data: Value) -> ToolResult {
     ToolResult {
-        tool_name: "powershell".to_string(),
+        tool_name: "PowerShell".to_string(),
         content,
         data: Some(data),
         file_meta: None,
@@ -108,8 +106,8 @@ fn tool_result_powershell(content: String, data: Value) -> ToolResult {
 impl RuntimeTool for PowerShellTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("powershell")
-            .unwrap_or_else(|| ToolDefinition::new("powershell", "Execute PowerShell command"))
+            .get("PowerShell")
+            .unwrap_or_else(|| ToolDefinition::new("PowerShell", "Execute PowerShell command"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -123,11 +121,11 @@ impl RuntimeTool for PowerShellTool {
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("command") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "powershell".to_string(),
+                tool_name: "PowerShell".to_string(),
                 message: "Missing required field: command (string)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "powershell".to_string(),
+                tool_name: "PowerShell".to_string(),
                 message: format!(
                     "Field 'command' must be a string, got: {}",
                     value.to_string().chars().take(40).collect::<String>()
@@ -156,7 +154,7 @@ impl RuntimeTool for PowerShellTool {
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
-            match store.get_for_command("powershell", command) {
+            match store.get_for_command("PowerShell", command) {
                 Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                     return Some(PermissionDecision::Deny {
                         message: format!(
@@ -197,14 +195,26 @@ impl RuntimeTool for PowerShellTool {
             )
         })?;
 
+        // Best-effort UTF-8 setup before running the user command. Managed
+        // Windows hosts may run PowerShell in ConstrainedLanguage mode, where
+        // OutputEncoding property setters fail; those setup failures must not
+        // pollute output or block the actual command.
+        let wrapped_command = format!(
+            "chcp 65001 > $null 2>$null; \
+             & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             {command}"
+        );
+
         let mut child = Command::new(&location.path)
             .arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
-            .arg(&command)
+            .arg(&wrapped_command)
             .current_dir(&root)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .no_window()
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn PowerShell: {e}")))?;
 
@@ -286,18 +296,20 @@ mod tests {
 
     #[test]
     fn resolve_timeout_secs_prefers_input_override() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 5 })), 5);
+        // 5000ms = 5s
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 5000 })), 5);
     }
 
     #[test]
     fn resolve_timeout_secs_caps_large_values() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
+        // 9_999_000ms would be 9999s, capped to MAX (600s)
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 9_999_000 })), 600);
     }
 
     #[test]
     fn resolve_timeout_secs_falls_back_to_catalog_default() {
         let expected = TOOL_CATALOG
-            .get("powershell")
+            .get("PowerShell")
             .and_then(|def| def.default_timeout_secs)
             .unwrap_or(DEFAULT_TIMEOUT_SECS);
         assert_eq!(resolve_timeout_secs(&json!({})), expected);

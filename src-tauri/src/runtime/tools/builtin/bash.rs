@@ -76,22 +76,25 @@ pub struct BashTool;
 
 fn default_bash_timeout_secs() -> u64 {
     TOOL_CATALOG
-        .get("bash")
+        .get("Bash")
         .and_then(|def| def.default_timeout_secs)
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
 
 fn resolve_timeout_secs(input: &Value) -> u64 {
-    input
-        .get("timeout_secs")
+    // Input is `timeout` in milliseconds (aligned with claude-code-best).
+    // Convert to seconds for internal consumption. Default in seconds.
+    let ms = input
+        .get("timeout")
         .and_then(Value::as_u64)
-        .unwrap_or_else(default_bash_timeout_secs)
-        .min(MAX_TIMEOUT_SECS)
+        .unwrap_or_else(|| default_bash_timeout_secs() * 1000);
+    let secs = ms.div_ceil(1000);
+    secs.min(MAX_TIMEOUT_SECS)
 }
 
 fn tool_result_bash(content: String, data: Value) -> ToolResult {
     ToolResult {
-        tool_name: "bash".to_string(),
+        tool_name: "Bash".to_string(),
         content,
         data: Some(data),
         file_meta: None,
@@ -123,8 +126,8 @@ fn configure_child_process_group(_command: &mut Command) {}
 impl RuntimeTool for BashTool {
     fn definition(&self) -> ToolDefinition {
         TOOL_CATALOG
-            .get("bash")
-            .unwrap_or_else(|| ToolDefinition::new("bash", "Execute shell command"))
+            .get("Bash")
+            .unwrap_or_else(|| ToolDefinition::new("Bash", "Execute shell command"))
     }
 
     fn is_concurrency_safe(&self, _input: &Value) -> bool {
@@ -138,11 +141,11 @@ impl RuntimeTool for BashTool {
     fn validate_input(&self, input: &Value) -> Option<ToolError> {
         match input.get("command") {
             None => Some(ToolError::InputValidationError {
-                tool_name: "bash".to_string(),
+                tool_name: "Bash".to_string(),
                 message: "Missing required field: command (string)".to_string(),
             }),
             Some(value) if !value.is_string() => Some(ToolError::InputValidationError {
-                tool_name: "bash".to_string(),
+                tool_name: "Bash".to_string(),
                 message: format!(
                     "Field 'command' must be a string, got: {}",
                     value.to_string().chars().take(40).collect::<String>()
@@ -170,7 +173,7 @@ impl RuntimeTool for BashTool {
         }
 
         if let Some(store) = ctx.permission_store.as_ref() {
-            match store.get_for_command("bash", command) {
+            match store.get_for_command("Bash", command) {
                 Some(PolicyDecision::AlwaysDeny) | Some(PolicyDecision::Deny) => {
                     return Some(PermissionDecision::Deny {
                         message: format!(
@@ -294,13 +297,14 @@ mod tests {
 
     #[test]
     fn resolve_timeout_secs_prefers_input_override() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 5 })), 5);
+        // 5000ms = 5s
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 5000 })), 5);
     }
 
     #[test]
     fn resolve_timeout_secs_falls_back_to_catalog_default() {
         let expected = TOOL_CATALOG
-            .get("bash")
+            .get("Bash")
             .and_then(|def| def.default_timeout_secs)
             .expect("bash should declare default timeout");
         assert_eq!(default_bash_timeout_secs(), expected);
@@ -309,6 +313,13 @@ mod tests {
 
     #[test]
     fn resolve_timeout_secs_caps_large_values() {
-        assert_eq!(resolve_timeout_secs(&json!({ "timeout_secs": 9999 })), 600);
+        // 9_999_000ms would be 9999s, capped to MAX (600s)
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 9_999_000 })), 600);
+    }
+
+    #[test]
+    fn resolve_timeout_secs_rounds_up_subsecond_ms() {
+        // 1500ms should round up to 2s (don't truncate to 1s)
+        assert_eq!(resolve_timeout_secs(&json!({ "timeout": 1500 })), 2);
     }
 }

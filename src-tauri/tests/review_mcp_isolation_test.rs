@@ -91,7 +91,7 @@ async fn review_unregister_runtime_tools_removes_only_dynamic_mcp_entries() {
         )])),
     });
 
-    assert!(TOOL_CATALOG.get("execute_python").is_some());
+    assert!(TOOL_CATALOG.get("Bash").is_some());
     let ids = registry.register_mcp_server(connection).await.unwrap();
     assert!(TOOL_CATALOG.get("mcp__review-server__lookup").is_some());
 
@@ -99,7 +99,7 @@ async fn review_unregister_runtime_tools_removes_only_dynamic_mcp_entries() {
 
     assert!(TOOL_CATALOG.get("mcp__review-server__lookup").is_none());
     assert!(
-        TOOL_CATALOG.get("execute_python").is_some(),
+        TOOL_CATALOG.get("Bash").is_some(),
         "builtins must survive dynamic MCP cleanup"
     );
 }

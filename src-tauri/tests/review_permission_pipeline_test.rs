@@ -44,7 +44,7 @@ fn deny_message(decision: &PermissionDecision) -> &str {
 #[test]
 fn no_capability_scope_tool_is_allowed_with_or_without_capability_context() {
     let pipeline = CapabilityPermissionPipeline;
-    let def = ToolDefinition::new("write_memory", "memory helper");
+    let def = ToolDefinition::new("WriteMemory", "memory helper");
     let no_capability = ctx_no_capability();
     let tmp = TempDir::new().expect("tempdir");
     let with_workspace = ctx_with_workspace(&tmp);
@@ -87,10 +87,10 @@ fn workspace_write_tool_is_allowed_with_workspace_capability() {
 }
 
 #[test]
-fn python_exec_scope_is_denied_without_workspace_capability() {
+fn workspace_write_scope_is_denied_without_workspace_capability() {
     let pipeline = CapabilityPermissionPipeline;
     let result = pipeline.authorize(
-        &def("execute_python", &["python:exec"]),
+        &def("Bash", &["workspace:write"]),
         &json!({}),
         &ctx_no_capability(),
     );
@@ -253,6 +253,7 @@ fn dont_ask_mode_transforms_ask_into_deny_without_permission_prompt() {
         remember_options: vec![PermissionDestination::Session],
         default_destination: Some(PermissionDestination::Session),
         reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+        path_auth_scope: None,
     };
 
     let transformed = apply_permission_mode(ask, "mcp__demo__action", PermissionMode::DontAsk);
@@ -275,6 +276,7 @@ fn plan_mode_transforms_ask_into_read_only_deny() {
         remember_options: vec![PermissionDestination::Session],
         default_destination: Some(PermissionDestination::Session),
         reason: app_lib::runtime::tools::permission::PermissionReason::UnknownScope,
+        path_auth_scope: None,
     };
 
     let transformed = apply_permission_mode(ask, "file_write", PermissionMode::Plan);

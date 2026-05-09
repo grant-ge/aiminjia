@@ -39,16 +39,16 @@ fn is_ask(d: &PermissionDecision) -> bool {
 fn test_always_allow_bypasses_capability_check() {
     let store = Arc::new(PermissionStore::in_memory());
     store.record(
-        "execute_python:python:exec".to_string(),
+        "bash:workspace:write".to_string(),
         PolicyDecision::AlwaysAllow,
     );
     store.record(
-        "execute_python:workspace:write".to_string(),
+        "bash:workspace:write".to_string(),
         PolicyDecision::AlwaysAllow,
     );
 
     let pipeline = StorePolicyPipeline::new(store);
-    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let def = TOOL_CATALOG.get("Bash").unwrap();
     let ctx = make_ctx(); // 无 capability
     assert!(is_allow(&pipeline.authorize(
         &def,
@@ -63,7 +63,7 @@ fn test_always_deny_blocks_tool() {
     store.record("web_search:network".to_string(), PolicyDecision::AlwaysDeny);
 
     let pipeline = StorePolicyPipeline::new(store);
-    let def = TOOL_CATALOG.get("web_search").unwrap();
+    let def = TOOL_CATALOG.get("WebSearch").unwrap();
     let ctx = make_ctx();
     assert!(is_deny(&pipeline.authorize(
         &def,
@@ -110,8 +110,8 @@ fn test_workspace_rule_overrides_user_rule() {
     store.record_to(
         PermissionDestination::User,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".to_string()),
+            "Bash",
+            PermissionScope::Scope("workspace:write".to_string()),
             PolicyDecision::AlwaysAllow,
             PermissionSource::User,
         ),
@@ -119,15 +119,15 @@ fn test_workspace_rule_overrides_user_rule() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".to_string()),
+            "Bash",
+            PermissionScope::Scope("workspace:write".to_string()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
         ),
     );
 
     let pipeline = StorePolicyPipeline::new(store);
-    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let def = TOOL_CATALOG.get("Bash").unwrap();
     let ctx = make_ctx();
     let decision = pipeline.authorize(&def, &serde_json::json!({}), &ctx);
 
@@ -143,8 +143,8 @@ fn test_session_rule_overrides_workspace_rule() {
     store.record_to(
         PermissionDestination::Workspace,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".to_string()),
+            "Bash",
+            PermissionScope::Scope("workspace:write".to_string()),
             PolicyDecision::AlwaysDeny,
             PermissionSource::Workspace,
         ),
@@ -152,8 +152,8 @@ fn test_session_rule_overrides_workspace_rule() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "execute_python",
-            PermissionScope::Scope("python:exec".to_string()),
+            "Bash",
+            PermissionScope::Scope("workspace:write".to_string()),
             PolicyDecision::Allow,
             PermissionSource::Session,
         ),
@@ -161,7 +161,7 @@ fn test_session_rule_overrides_workspace_rule() {
     store.record_to(
         PermissionDestination::Session,
         PermissionRule::simple(
-            "execute_python",
+            "Bash",
             PermissionScope::Scope("workspace:write".to_string()),
             PolicyDecision::Allow,
             PermissionSource::Session,
@@ -169,7 +169,7 @@ fn test_session_rule_overrides_workspace_rule() {
     );
 
     let pipeline = StorePolicyPipeline::new(store);
-    let def = TOOL_CATALOG.get("execute_python").unwrap();
+    let def = TOOL_CATALOG.get("Bash").unwrap();
     let ctx = make_ctx();
     let decision = pipeline.authorize(&def, &serde_json::json!({}), &ctx);
 

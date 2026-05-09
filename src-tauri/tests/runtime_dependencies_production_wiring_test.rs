@@ -41,10 +41,6 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager: Arc::new(app_lib::python::session::PythonSessionManager::new(
-            workspace.to_path_buf(),
-            None,
-        )),
         auth_manager: None,
         connector_engine: None,
         use_cloud: false,
@@ -60,6 +56,7 @@ fn request_scoped_deps(workspace: &std::path::Path) -> RequestScopedRuntimeDeps 
         cancellation: None,
         permission_mode: PermissionMode::Default,
         runtime_resolver: Some(managed_runtime_resolver()),
+        permission_ctx: None,
     }
 }
 
@@ -76,7 +73,6 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         tavily_api_key: request.tavily_api_key,
         bocha_api_key: request.bocha_api_key,
         app_handle: request.app_handle,
-        session_manager: request.session_manager,
         auth_manager: request.auth_manager,
         connector_engine: request.connector_engine,
         dingtalk_bridge: None,
@@ -93,6 +89,7 @@ fn plugin_context(workspace: &std::path::Path) -> PluginContext {
         cancellation: request.cancellation,
         permission_mode: request.permission_mode,
         runtime_resolver: request.runtime_resolver,
+        permission_ctx: None,
     }
 }
 
@@ -109,7 +106,6 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         session_id: parent.session_id.clone(),
         run_id: parent.run_id.clone(),
         agent_id: parent.agent_id.clone(),
-        session_manager: parent.session_manager.clone(),
         connector_engine: parent.connector_engine.clone(),
         agent_runtime: parent.agent_runtime.clone(),
         event_bus: parent.event_bus.clone(),
@@ -118,6 +114,7 @@ fn subagent_runtime_deps_preserve_managed_runtime_resolver() {
         app_handle: parent.app_handle.clone(),
         runtime_resolver: parent.runtime_resolver.clone(),
         skill_registry: None,
+        permission_ctx: None,
     };
 
     let child = subagent_deps.request_scoped_tool_deps(RunId::new("child-run"), None, None, None);

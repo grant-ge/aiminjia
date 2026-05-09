@@ -111,6 +111,10 @@ impl RuntimeLlmExecutor for RecordingExecutor {
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(std::env::temp_dir())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[async_trait]
@@ -148,6 +152,10 @@ impl RuntimeLlmExecutor for CancelingExecutor {
 
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(std::env::temp_dir())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 
@@ -223,6 +231,10 @@ impl RuntimeLlmExecutor for IterationDrainExecutor {
 
     async fn load_workspace_path(&self) -> Result<PathBuf, TurnError> {
         Ok(std::env::temp_dir())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 

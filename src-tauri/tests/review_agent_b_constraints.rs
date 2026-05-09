@@ -106,7 +106,7 @@ fn async_agent_default_disallows_ask_user_question() {
     let allowed = resolve_agent_tools(
         &[],  // def_allowed = empty (= all)
         &[],  // def_disallowed
-        &["ask_user_question".to_string(), "read_workspace_file".to_string()],  // available
+        &["ask_user_question".to_string(), "Read".to_string()],  // available
         true,  // is_async
         false, // allow_recursive_spawn
     );

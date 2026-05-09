@@ -108,31 +108,6 @@ impl ConnectorEngine {
         pw.api_fetch(url, method, body, headers).await
     }
 
-    pub async fn browser_extract_table_data(
-        &self,
-        save_path: &str,
-        max_pages: Option<u32>,
-        page_size: Option<u32>,
-    ) -> Result<Value, String> {
-        let pw = self.playwright_browser.read().await;
-        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
-        info!("[CONNECTOR] browser_extract_table_data");
-        pw.extract_table_data(save_path, max_pages, page_size).await
-    }
-
-    pub async fn browser_extract_with_pagination(
-        &self,
-        save_path: &str,
-        pagination_js: &str,
-        max_pages: Option<u32>,
-    ) -> Result<Value, String> {
-        let pw = self.playwright_browser.read().await;
-        let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
-        info!("[CONNECTOR] browser_extract_with_pagination");
-        pw.extract_with_pagination(save_path, pagination_js, max_pages)
-            .await
-    }
-
     pub async fn browser_frame_inspect(&self) -> Result<Value, String> {
         let pw = self.playwright_browser.read().await;
         let pw = pw.as_ref().ok_or("Playwright browser not initialized")?;
@@ -172,6 +147,6 @@ impl ConnectorEngine {
 
     /// Build context string injected into LLM dynamic context.
     pub async fn build_context(&self) -> String {
-        "如需从内部业务系统（ERP/OA/CRM 等）提取数据，使用 `browse_data(task, url?)` 工具描述需求，浏览器助手会自动完成。\n".to_string()
+        String::new()
     }
 }

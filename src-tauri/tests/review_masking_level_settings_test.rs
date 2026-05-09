@@ -140,6 +140,10 @@ impl RuntimeLlmExecutor for MaskingProbeExecutor {
     ) -> Result<String, TurnError> {
         Ok("msg-mask".to_string())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 fn make_turn(conversation_id: &str, content: &str) -> (TurnState, ChatTurnRequest) {

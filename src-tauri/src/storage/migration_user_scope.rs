@@ -139,43 +139,57 @@ pub fn migrate_legacy_config_if_needed(
 ) -> std::io::Result<()> {
     let legacy_config = root.join("config.json");
     let global_config = global_dir.join("config.json");
-    if global_config.exists() || !legacy_config.exists() {
+    let user_config = user_dir.join("config.json");
+
+    // case A: user already has its own config — fully migrated/seeded, nothing to do
+    if user_config.exists() {
         return Ok(());
     }
 
-    let text = fs::read_to_string(&legacy_config)?;
-    let map: HashMap<String, String> = serde_json::from_str(&text).unwrap_or_default();
-    let mut user_map = HashMap::new();
-    let mut global_map = HashMap::new();
+    // case B: legacy on disk + global not yet split — old-version-on-old-machine,
+    // first login of new build. Split legacy into user_cfg + global_cfg.
+    if legacy_config.exists() && !global_config.exists() {
+        let text = fs::read_to_string(&legacy_config)?;
+        let map: HashMap<String, String> = serde_json::from_str(&text).unwrap_or_default();
+        let mut user_map = HashMap::new();
+        let mut global_map = HashMap::new();
 
-    for (key, value) in &map {
-        if AUTH_KEYS.contains(&key.as_str()) {
-            let auth_dir = global_dir.join("auth");
-            fs::create_dir_all(&auth_dir)?;
-            let cloud_auth_path = auth_dir.join("cloud_auth");
-            if !cloud_auth_path.exists() {
-                fs::write(cloud_auth_path, value)?;
+        for (key, value) in &map {
+            if AUTH_KEYS.contains(&key.as_str()) {
+                let auth_dir = global_dir.join("auth");
+                fs::create_dir_all(&auth_dir)?;
+                let cloud_auth_path = auth_dir.join("cloud_auth");
+                if !cloud_auth_path.exists() {
+                    fs::write(cloud_auth_path, value)?;
+                }
+            } else if USER_CONFIG_KEYS.contains(&key.as_str()) || key.starts_with("apiKey:") {
+                user_map.insert(key.clone(), value.clone());
+            } else {
+                global_map.insert(key.clone(), value.clone());
             }
-        } else if USER_CONFIG_KEYS.contains(&key.as_str()) || key.starts_with("apiKey:") {
-            user_map.insert(key.clone(), value.clone());
-        } else {
-            global_map.insert(key.clone(), value.clone());
         }
-    }
 
-    if !user_map.is_empty() {
-        let user_config_path = user_dir.join("config.json");
-        if !user_config_path.exists() {
+        if !user_map.is_empty() {
+            fs::create_dir_all(user_dir)?;
             let text = serde_json::to_string_pretty(&user_map)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            fs::write(user_config_path, text)?;
+            fs::write(&user_config, text)?;
         }
+
+        fs::create_dir_all(global_dir)?;
+        let text = serde_json::to_string_pretty(&global_map)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        fs::write(global_config, text)?;
+        return Ok(());
     }
 
-    fs::create_dir_all(global_dir)?;
-    let text = serde_json::to_string_pretty(&global_map)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    fs::write(global_config, text)
+    // case C: brand-new user (no legacy / already-split / different account on this
+    // machine). Seed an empty user config so downstream readers don't fall back
+    // to AppSettings::default() — user-scoped storage must always have a backing
+    // file, otherwise newly-saved settings can land in the wrong store.
+    fs::create_dir_all(user_dir)?;
+    fs::write(&user_config, "{}\n")?;
+    Ok(())
 }
 
 pub fn bootstrap_cloud_auth_if_needed(root: &Path, global_dir: &Path) -> std::io::Result<()> {

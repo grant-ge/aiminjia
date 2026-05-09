@@ -81,6 +81,10 @@ impl RuntimeLlmExecutor for ErrorAfterHistoryExecutor {
     async fn load_history(&self, _conversation_id: &str) -> Result<Vec<JsonValue>, TurnError> {
         Ok(self.history.clone())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 struct CompactingExecutor {
@@ -158,6 +162,10 @@ impl RuntimeLlmExecutor for CompactingExecutor {
         self.boundaries.lock().unwrap().push(record);
         Ok(())
     }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
+    }
 }
 
 #[tokio::test]
@@ -166,7 +174,7 @@ async fn u2_turnerror_path_injects_synthetic_results_before_returning_error() {
         "role": "assistant",
         "content": "",
         "toolCalls": [
-            {"id": "call_abc", "name": "execute_python", "arguments": {}}
+            {"id": "call_abc", "name": "Bash", "arguments": {}}
         ]
     })];
     let executor = Arc::new(ErrorAfterHistoryExecutor { history });
@@ -187,7 +195,7 @@ fn u2_inject_synthetic_results_repairs_orphan_tool_calls() {
         "role": "assistant",
         "content": "",
         "toolCalls": [
-            {"id": "call_abc", "name": "execute_python", "arguments": {}},
+            {"id": "call_abc", "name": "Bash", "arguments": {}},
             {"id": "call_def", "name": "read_file", "arguments": {}}
         ]
     })];

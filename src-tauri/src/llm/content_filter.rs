@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn strips_invoke_with_attributes() {
-        let input = "Text <invoke name=\"execute_python\"><parameter>code</parameter></invoke> end";
+        let input = "Text <invoke name=\"bash\"><parameter>code</parameter></invoke> end";
         assert_eq!(strip_hallucinated_xml(input), "Text  end");
     }
 

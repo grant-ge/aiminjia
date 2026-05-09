@@ -104,7 +104,7 @@ async fn powershell_returns_error_on_timeout() {
     let ctx = make_ctx(&tmp);
     let result = PowerShellTool
         .execute(
-            json!({ "command": "Start-Sleep -Seconds 10", "timeout_secs": 1 }),
+            json!({ "command": "Start-Sleep -Seconds 10", "timeout": 1000 }),
             ctx,
         )
         .await;
@@ -269,5 +269,5 @@ async fn powershell_validate_input_rejects_non_string_command() {
 #[tokio::test]
 async fn powershell_definition_returns_powershell_name() {
     let def = PowerShellTool.definition();
-    assert_eq!(def.name, "powershell");
+    assert_eq!(def.name, "PowerShell");
 }

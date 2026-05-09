@@ -122,7 +122,7 @@ pub async fn handle_dingtalk_query_records(ctx: &PluginContext, args: &Value) ->
             let sample_json = serde_json::to_string_pretty(&sample)?;
             Ok(format!(
                 "Query returned {} records. Showing first 5:\n\n```json\n{}\n```\n\n\
-                 Use `load_file` with the full dataset for detailed analysis.",
+                 Use smaller filters to narrow down the result set for detailed analysis.",
                 count, sample_json
             ))
         } else {

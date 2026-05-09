@@ -76,18 +76,18 @@ fn u3_budget_preserves_recent_error_and_generated_file_results() {
     let messages = vec![
         assistant_tool_call("tc-old", "read_file"),
         tool_message("tc-old", "read_file", "A".repeat(240)),
-        assistant_tool_call("tc-error", "search_files"),
+        assistant_tool_call("tc-error", "Glob"),
         json!({
             "role": "tool",
             "toolCallId": "tc-error",
-            "name": "search_files",
+            "name": "Glob",
             "content": "command failed".repeat(30),
             "isError": true
         }),
-        assistant_tool_call("tc-file", "generate_report"),
+        assistant_tool_call("tc-file", "Bash"),
         tool_message(
             "tc-file",
-            "generate_report",
+            "Bash",
             format!(
                 "report generated\nfileId: {}\n{}",
                 uuid::Uuid::new_v4(),
@@ -412,6 +412,10 @@ impl RuntimeLlmExecutor for PromptTooLongRecoveryExecutor {
         _file_metas: &[Value],
     ) -> Result<String, TurnError> {
         Ok("assistant-msg".to_string())
+    }
+
+    async fn get_tool_defs(&self) -> Result<Vec<serde_json::Value>, TurnError> {
+        Ok(vec![])  // 显式声明此 mock 不关心 tool_defs
     }
 }
 

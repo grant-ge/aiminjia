@@ -56,20 +56,13 @@ async fn review_register_builtin_tools_preserves_catalog_consistency() {
 #[test]
 fn review_registered_workspace_and_request_scoped_tools_all_in_catalog() {
     for id in &[
-        "list_directory",
-        "read_workspace_file",
-        "search_files",
-        "get_file_info",
-        "write_file",
-        "edit_file",
-        "bash",
-        "grep_content",
-        "web_search",
-        "load_file",
-        "browse_data",
-        "execute_python",
-        "generate_report",
-        "generate_chart",
+        "Read",
+        "Glob",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "WebSearch",
     ] {
         assert!(
             TOOL_CATALOG.get_entry(id).is_some(),

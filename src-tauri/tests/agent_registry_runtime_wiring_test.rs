@@ -11,7 +11,7 @@ use app_lib::runtime::agent::registry_loader::load_registry_with_user_dir;
 fn lib_rs_pattern_loads_builtins_when_no_user_dir() {
     // Mimic lib.rs path: user not logged in → user_agents_dir = None
     let reg = load_registry_with_user_dir(None, None);
-    assert!(reg.get("browse_data_agent").is_some());
+    assert!(reg.get("explore").is_some());
     assert!(reg.get("daily_assistant_agent").is_some());
 }
 
@@ -28,5 +28,5 @@ fn lib_rs_pattern_loads_user_dir_when_present() {
     let reg = load_registry_with_user_dir(Some(dir.path()), None);
     assert!(reg.get("custom").is_some());
     // builtins still loaded
-    assert!(reg.get("browse_data_agent").is_some());
+    assert!(reg.get("explore").is_some());
 }

@@ -47,6 +47,7 @@ impl PermissionPipeline for AlwaysAskPermissionPipeline {
             remember_options: default_permission_ask().0,
             default_destination: default_permission_ask().1,
             reason: PermissionReason::UnknownScope,
+            path_auth_scope: None,
         }
     }
 }
@@ -276,10 +277,6 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         app_lib::storage::file_store::AppStorage::new(&tmp).expect("AppStorage::new failed"),
     );
     let file_manager = Arc::new(app_lib::storage::file_manager::FileManager::new(&tmp));
-    let session_manager = Arc::new(app_lib::python::session::PythonSessionManager::new(
-        tmp.clone(),
-        None,
-    ));
 
     #[allow(deprecated)]
     let ctx = app_lib::plugin::context::PluginContext {
@@ -293,7 +290,6 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         tavily_api_key: None,
         bocha_api_key: None,
         app_handle: None,
-        session_manager,
         auth_manager: None,
         connector_engine: None,
         dingtalk_bridge: None,
@@ -310,6 +306,7 @@ async fn registry_execute_unknown_scope_not_silently_allowed() {
         cancellation: None,
         permission_mode: app_lib::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
+        permission_ctx: None,
     };
 
     let result = registry

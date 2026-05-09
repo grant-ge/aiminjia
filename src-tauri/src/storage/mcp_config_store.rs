@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::runtime::mcp::McpServerConfig;
+use crate::storage::text_io::read_to_string_strip_bom;
 
 /// Persists MCP server configurations to a JSON file.
 #[derive(Debug, Clone)]
@@ -19,7 +20,7 @@ impl McpConfigStore {
             return Ok(vec![]);
         }
 
-        let content = fs::read_to_string(&self.path)
+        let content = read_to_string_strip_bom(&self.path)
             .map_err(|err| format!("Failed to read MCP config file: {err}"))?;
 
         if content.trim().is_empty() {

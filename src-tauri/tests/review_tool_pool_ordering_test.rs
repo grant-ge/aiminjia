@@ -78,7 +78,7 @@ impl McpConnection for MockMcpServerWithTools {
 
 async fn build_registry() -> ToolRegistry {
     let registry = ToolRegistry::new();
-    for id in ["write_file", "bash", "list_directory"] {
+    for id in ["Write", "Bash", "Glob"] {
         registry
             .register_runtime(Arc::new(FakeBuiltinTool { id }))
             .await;
@@ -177,7 +177,7 @@ async fn review_mcp_partition_is_internally_sorted() {
 #[tokio::test]
 async fn review_builtin_partition_is_stable_when_mcp_added() {
     let registry = ToolRegistry::new();
-    for id in ["write_file", "bash", "list_directory"] {
+    for id in ["Write", "Bash", "Glob"] {
         registry
             .register_runtime(Arc::new(FakeBuiltinTool { id }))
             .await;

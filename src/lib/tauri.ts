@@ -297,6 +297,20 @@ export function saveClipboardImageToTmp(
   })
 }
 
+export function saveClipboardImageToWorkspaceStaging(
+  bytes: number[],
+  mimeType: string,
+): Promise<SavedClipboardAttachmentPayload> {
+  return invoke<SavedClipboardAttachmentPayload>('save_clipboard_image_to_workspace_staging', {
+    bytes,
+    mimeType,
+  })
+}
+
+export function readLocalImageAsDataUrl(path: string): Promise<string> {
+  return invoke<string>('read_local_image_as_data_url', { path })
+}
+
 export function listAgents(): Promise<AgentInfo[]> {
   return invoke<AgentInfo[]>('list_agents')
 }
@@ -1780,7 +1794,8 @@ export interface EmployeeRecord {
   toolWhitelist: string[]
   cron: string | null
   timezone: string
-  enabled: boolean
+  lifecycle: 'active' | 'paused' | 'archived'
+  cronEnabled: boolean
   resourceConfig: Record<string, unknown>
   systemPromptExtra: string | null
   defaultSkillId: string | null
@@ -1799,7 +1814,8 @@ export interface CreateEmployeeRequest {
   toolWhitelist?: string[]
   cron?: string
   timezone?: string
-  enabled?: boolean
+  lifecycle?: 'active' | 'paused' | 'archived'
+  cronEnabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string
   defaultSkillId?: string | null
@@ -1814,7 +1830,8 @@ export interface UpdateEmployeeRequest {
   /** Pass null explicitly to clear cron; omit to leave unchanged. */
   cron?: string | null
   timezone?: string
-  enabled?: boolean
+  lifecycle?: 'active' | 'paused' | 'archived'
+  cronEnabled?: boolean
   resourceConfig?: Record<string, unknown>
   systemPromptExtra?: string | null
   defaultSkillId?: string | null
@@ -1840,6 +1857,16 @@ export function employeeDelete(id: string): Promise<boolean> {
   return invoke<boolean>('employee_delete', { id })
 }
 
+/** Restore an archived employee to Active. */
+export function employeeRestore(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_restore', { id })
+}
+
+/** Hard-delete an employee, bypassing the 7-day recovery window. */
+export function employeePurge(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_purge', { id })
+}
+
 export function employeeTrigger(
   id: string,
   promptOverride?: string,
@@ -1850,6 +1877,30 @@ export function employeeTrigger(
     promptOverride: promptOverride ?? null,
     attachments: attachments ?? [],
   })
+}
+
+export interface EmployeeActiveRunInfo {
+  employeeId: string
+  conversationId: string
+  startedAt: string
+  triggerKind: 'on_demand' | 'cron'
+}
+
+/**
+ * Stop an employee's currently running dispatch (delegates to stop_streaming
+ * via the conversation_id tracked in EmployeeActiveRuns). Returns true if a
+ * run was found and cancellation was requested, false if no active run.
+ */
+export function employeeStopRun(id: string): Promise<boolean> {
+  return invoke<boolean>('employee_stop_run', { id })
+}
+
+/**
+ * Returns the live ActiveRun info for an employee, or null if none.
+ * Polled by useEmployees to drive UI state.
+ */
+export function employeeActiveRun(id: string): Promise<EmployeeActiveRunInfo | null> {
+  return invoke<EmployeeActiveRunInfo | null>('employee_active_run', { id })
 }
 
 // ---------------------------------------------------------------------------

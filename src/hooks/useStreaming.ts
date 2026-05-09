@@ -58,6 +58,7 @@ import {
   onTaskStatusChanged,
   onTurnCompleted,
   onDiagnosticsEvent,
+  uploadDiagnosticLogs,
   TAURI_EVENTS,
 } from '@/lib/tauri'
 import type {
@@ -93,6 +94,8 @@ const STALE_STREAM_TIMEOUT_MS = 200_000
 /** How often (ms) the watchdog checks for stale streams. */
 const WATCHDOG_INTERVAL_MS = 10_000
 
+const autoUploadedFailedToolCalls = new Set<string>()
+
 function extractTaskCreateState(message: Message): ConversationTaskState | null {
   const match = message.toolResult?.content.match(/^Task #(\S+) created successfully: (.+)$/)
   if (!match) return null
@@ -102,6 +105,19 @@ function extractTaskCreateState(message: Message): ConversationTaskState | null 
     runId: message.runId ?? '',
     subject: match[2],
   }
+}
+
+function maybeAutoUploadDiagnosticsForToolError(message: Message): void {
+  const result = message.toolResult
+  if (!result?.isError) return
+
+  const key = `${message.conversationId}:${result.toolCallId}`
+  if (autoUploadedFailedToolCalls.has(key)) return
+  autoUploadedFailedToolCalls.add(key)
+
+  void uploadDiagnosticLogs().catch((err) => {
+    console.warn('[diagnostics:auto-upload] failed after tool error:', err)
+  })
 }
 
 /**
@@ -459,6 +475,7 @@ export function useStreaming() {
         store.upsertMessage(message)
       }
       if (message.toolResult) {
+        maybeAutoUploadDiagnosticsForToolError(message)
         if (message.toolResult.name === 'TaskCreate' && !message.toolResult.isError) {
           const task = extractTaskCreateState(message)
           if (task) {

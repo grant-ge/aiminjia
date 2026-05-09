@@ -14,6 +14,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 
+use crate::storage::process_ext::NoWindowExt;
+
 /// Authentication status for DingTalk connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +85,11 @@ impl DingtalkBridge {
         }
 
         // 3. System PATH fallback
-        if let Ok(output) = std::process::Command::new("which").arg("dws").output() {
+        if let Ok(output) = std::process::Command::new("which")
+            .arg("dws")
+            .no_window()
+            .output()
+        {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !path.is_empty() {
@@ -94,9 +100,13 @@ impl DingtalkBridge {
 
         // Windows: check where.exe
         #[cfg(target_os = "windows")]
-        if let Ok(output) = std::process::Command::new("where.exe").arg("dws").output() {
+        if let Ok(output) = std::process::Command::new("where.exe")
+            .arg("dws")
+            .no_window()
+            .output()
+        {
             if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout)
+                let path = crate::storage::console_decode::decode_console_bytes(&output.stdout)
                     .lines().next().unwrap_or("").trim().to_string();
                 if !path.is_empty() {
                     return Ok(PathBuf::from(path));
@@ -142,8 +152,8 @@ impl DingtalkBridge {
             .map_err(|_| anyhow!("dws command timed out after {}s", timeout_secs))?
             .context("dws process failed")?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::storage::console_decode::decode_console_bytes(&output.stdout);
+        let stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr);
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(-1);
@@ -265,7 +275,7 @@ impl DingtalkBridge {
             .context("dws auth login failed")?;
 
         if !output.status.success() {
-            let all_stderr = String::from_utf8_lossy(&output.stderr);
+            let all_stderr = crate::storage::console_decode::decode_console_bytes(&output.stderr);
             return Err(anyhow!("Login failed: {}", all_stderr.trim()));
         }
 
@@ -394,22 +404,6 @@ fn extract_auth_url(line: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Open a URL in the default system browser.
-fn open_url_in_browser(url: &str) {
-    let result = {
-        #[cfg(target_os = "macos")]
-        { std::process::Command::new("open").arg(url).spawn() }
-        #[cfg(target_os = "windows")]
-        { std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn() }
-        #[cfg(target_os = "linux")]
-        { std::process::Command::new("xdg-open").arg(url).spawn() }
-    };
-    match result {
-        Ok(_) => log::info!("[dws-login] Browser opened successfully"),
-        Err(e) => log::error!("[dws-login] Failed to open browser: {}. URL: {}", e, url),
-    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────

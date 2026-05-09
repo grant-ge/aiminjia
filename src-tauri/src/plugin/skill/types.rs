@@ -39,6 +39,11 @@ pub struct SkillFrontmatter {
     pub hooks: serde_yaml::Value,
     #[serde(default)]
     pub shell: Option<String>,
+    /// Category for skill marketplace browsing (e.g. "hr", "finance",
+    /// "legal", "sales", "ops", "general"). Optional; clients fall back
+    /// to "general" when missing.
+    #[serde(default)]
+    pub category: Option<String>,
     #[serde(default)]
     pub metadata: SkillMetadata,
 }

@@ -78,6 +78,7 @@ impl SpawnSubagentLauncher for StubLauncher {
                     state: AsyncTaskState::Running,
                     output_file: transcript_path.clone().unwrap_or_default(),
                     description: req.description.clone(),
+                    cancel_token: app_lib::runtime::cancellation::CancellationToken::new(),
                 },
             );
         }

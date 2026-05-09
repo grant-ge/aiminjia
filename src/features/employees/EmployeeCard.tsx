@@ -1,55 +1,94 @@
 import { useState } from 'react'
 import { Play, Pause, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { employeeUpdate, type EmployeeRecord, type InboxEntry } from '@/lib/tauri'
+import {
+  employeeUpdate,
+  type EmployeeActiveRunInfo,
+  type EmployeeRecord,
+  type InboxEntry,
+} from '@/lib/tauri'
 import { Button } from '@/components/ui/button'
 import { findTemplate } from './templates'
+import { formatRelativeNextRun } from './timeFormat'
 
 // ─── status derivation ───────────────────────────────────────────────────────
 
-export type EmployeeStatus = 'working' | 'has-report' | 'scheduled' | 'idle' | 'needs-setup'
+export type EmployeeStatus =
+  | 'running'
+  | 'has-report'
+  | 'paused'
+  | 'needs-setup'
+  | 'scheduled'
+  | 'idle'
+  | 'archived'
 
+/**
+ * Drive the card's primary visual state from a 2-dimensional state machine:
+ * - Lifecycle (Active / Paused / Archived): persistent, user-controlled
+ * - Activity (running / idle): real-time, derived from activeRun
+ *
+ * Priority (top wins):
+ *   1. archived  — overrides everything for hidden display
+ *   2. running   — backend truth, not inbox heuristic
+ *   3. has-report — unread Report or Signal (informational badge)
+ *   4. paused    — explicit lifecycle pause
+ *   5. needs-setup — template requires resource_config that's missing
+ *   6. scheduled — has cron + lifecycle=active + cron_enabled + nextRunAt
+ *   7. idle      — default
+ */
 export function deriveStatus(
   emp: EmployeeRecord,
   inboxEntries: InboxEntry[],
+  activeRun: EmployeeActiveRunInfo | null = null,
 ): EmployeeStatus {
+  // 1. Archived — hidden in main grid (Task 6); show 🗑 marker if rendered
+  if (emp.lifecycle === 'archived') return 'archived'
+
+  // 2. Running — backend truth (replaces 10-min inbox heuristic)
+  if (activeRun) return 'running'
+
+  // 3. Has unread report/signal
   const empEntries = inboxEntries.filter((e) => e.employeeId === emp.id)
-
-  // Working: Running entry in the last 10 min
-  const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
-  const isRunning = empEntries.some((e) => e.kind === 'running' && e.createdAt > tenMinAgo)
-  if (isRunning) return 'working'
-
-  // Has report: unread Report or Signal
-  const hasUnread = empEntries.some((e) => !e.read && (e.kind === 'report' || e.kind === 'signal'))
+  const hasUnread = empEntries.some(
+    (e) => !e.read && (e.kind === 'report' || e.kind === 'signal'),
+  )
   if (hasUnread) return 'has-report'
 
-  // Template-aware needs-setup check (after working/has-report so recent activity wins)
+  // 4. Paused — explicit lifecycle state
+  if (emp.lifecycle === 'paused') return 'paused'
+
+  // 5. Needs setup — template-aware resource check
   const template = findTemplate(emp.templateId)
   if (template) {
     if (template.resourceConfigKind === 'sales-table') {
-      // Soft requirement: show 🟠 only when neither baseId nor tableId is set.
-      // Configured employees fall through to 'scheduled' / 'idle'.
       const cfg = emp.resourceConfig as { baseId?: unknown; tableId?: unknown } | null
       const baseId = cfg?.baseId
       const tableId = cfg?.tableId
-      const configured = typeof baseId === 'string' && baseId.length > 0
-        && typeof tableId === 'string' && tableId.length > 0
-      if (!configured) {
-        return 'needs-setup'
-      }
+      const configured =
+        typeof baseId === 'string' &&
+        baseId.length > 0 &&
+        typeof tableId === 'string' &&
+        tableId.length > 0
+      if (!configured) return 'needs-setup'
     }
     if (template.resourceConfigKind === 'monitoring-urls') {
       const cfg = emp.resourceConfig as { monitoringTargets?: unknown[] } | null
-      if (!cfg || !Array.isArray(cfg.monitoringTargets) || cfg.monitoringTargets.length === 0) {
+      if (
+        !cfg ||
+        !Array.isArray(cfg.monitoringTargets) ||
+        cfg.monitoringTargets.length === 0
+      ) {
         return 'needs-setup'
       }
     }
   }
 
-  // Scheduled
-  if (emp.cron && emp.enabled && emp.nextRunAt) return 'scheduled'
+  // 6. Scheduled — cron and all gates align
+  if (emp.cron && emp.lifecycle === 'active' && emp.cronEnabled && emp.nextRunAt) {
+    return 'scheduled'
+  }
 
+  // 7. Idle — default
   return 'idle'
 }
 
@@ -58,34 +97,31 @@ export function deriveStatus(
 function StatusDot({ status }: { status: EmployeeStatus }) {
   const base = 'h-2 w-2 rounded-full shrink-0'
   switch (status) {
-    case 'working':
+    case 'running':
       return <span className={cn(base, 'bg-blue-500 animate-pulse')} />
     case 'has-report':
       return <span className={cn(base, 'bg-green-500')} />
-    case 'scheduled':
-      return <span className={cn(base, 'bg-amber-400')} />
+    case 'paused':
+      return <span className={cn(base, 'bg-slate-400')} />
     case 'needs-setup':
       return <span className={cn(base, 'bg-orange-400')} />
+    case 'scheduled':
+      return <span className={cn(base, 'bg-amber-400')} />
+    case 'archived':
+      return <span className={cn(base, 'bg-slate-300')} />
     default:
       return <span className={cn(base, 'bg-muted-foreground/30')} />
   }
 }
 
-function statusLabel(status: EmployeeStatus, emp: EmployeeRecord): string {
+function statusLabel(status: EmployeeStatus): string {
   switch (status) {
-    case 'working': return '工作中'
+    case 'running': return '运行中'
     case 'has-report': return '有新汇报'
-    case 'scheduled': {
-      if (!emp.nextRunAt) return '定时驻场'
-      const next = new Date(emp.nextRunAt)
-      const now = new Date()
-      const diffH = Math.round((next.getTime() - now.getTime()) / 3_600_000)
-      if (diffH < 1) return '即将触发'
-      if (diffH < 24) return `${diffH}h 后触发`
-      const diffD = Math.round(diffH / 24)
-      return `${diffD}天后触发`
-    }
+    case 'paused': return '已暂停'
     case 'needs-setup': return '需要配置'
+    case 'scheduled': return '定时驻场'
+    case 'archived': return '已解雇'
     default: return '空闲'
   }
 }
@@ -95,19 +131,20 @@ function statusLabel(status: EmployeeStatus, emp: EmployeeRecord): string {
 interface EmployeeCardProps {
   employee: EmployeeRecord
   inboxEntries: InboxEntry[]
+  activeRun?: EmployeeActiveRunInfo | null
   onClick: () => void
   onRefresh: () => Promise<void>
 }
 
-export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }: EmployeeCardProps) {
+export function EmployeeCard({ employee: emp, inboxEntries, activeRun = null, onClick, onRefresh }: EmployeeCardProps) {
   const [busy, setBusy] = useState(false)
-  const status = deriveStatus(emp, inboxEntries)
+  const status = deriveStatus(emp, inboxEntries, activeRun)
 
   const handleTogglePause = async (e: React.MouseEvent) => {
     e.stopPropagation()
     setBusy(true)
     try {
-      await employeeUpdate(emp.id, { enabled: !emp.enabled })
+      await employeeUpdate(emp.id, { cronEnabled: !emp.cronEnabled })
       await onRefresh()
     } catch (err) {
       console.error('[EmployeeCard] toggle error:', err)
@@ -123,8 +160,9 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
       className={cn(
         'group relative flex w-full flex-col gap-3 rounded-2xl border bg-card p-4 text-left transition-all hover:border-border/80 hover:shadow-sm',
         status === 'has-report' && 'border-green-200 bg-green-50/30',
-        status === 'working' && 'border-blue-200 bg-blue-50/20',
+        status === 'running' && 'border-blue-200 bg-blue-50/20',
         status === 'needs-setup' && 'border-orange-200',
+        status === 'archived' && 'opacity-60',
       )}
     >
       {/* Header */}
@@ -149,15 +187,24 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2">
-        <span className={cn(
-          'text-xs',
-          status === 'has-report' && 'font-medium text-green-600',
-          status === 'working' && 'font-medium text-blue-500',
-          status === 'needs-setup' && 'font-medium text-orange-500',
-          !['has-report', 'working', 'needs-setup'].includes(status) && 'text-muted-foreground',
-        )}>
-          {statusLabel(status, emp)}
-        </span>
+        <div className="flex flex-col">
+          <span className={cn(
+            'text-xs',
+            status === 'has-report' && 'font-medium text-green-600',
+            status === 'running' && 'font-medium text-blue-500',
+            status === 'needs-setup' && 'font-medium text-orange-500',
+            status === 'paused' && 'text-slate-500',
+            status === 'scheduled' && 'text-amber-700',
+            !['has-report', 'running', 'needs-setup', 'paused', 'scheduled'].includes(status) && 'text-muted-foreground',
+          )}>
+            {statusLabel(status)}
+          </span>
+          {status === 'scheduled' && emp.nextRunAt && (
+            <span className="text-xs text-amber-700/80">
+              下次：{formatRelativeNextRun(emp.nextRunAt) || '即将'}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {emp.cron && (
@@ -167,9 +214,9 @@ export function EmployeeCard({ employee: emp, inboxEntries, onClick, onRefresh }
               className="h-6 w-6"
               disabled={busy}
               onClick={handleTogglePause}
-              title={emp.enabled ? '暂停' : '恢复'}
+              title={emp.cronEnabled ? '暂停' : '恢复'}
             >
-              {emp.enabled
+              {emp.cronEnabled
                 ? <Pause className="h-3 w-3" />
                 : <Play className="h-3 w-3" />
               }

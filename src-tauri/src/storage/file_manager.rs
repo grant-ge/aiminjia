@@ -122,6 +122,7 @@ impl FileManager {
 
     /// Write content to a file in the workspace. Returns the stored_path relative to workspace.
     pub fn write_file(&self, subdir: &str, file_name: &str, content: &[u8]) -> Result<FileInfo> {
+        crate::storage::safe_filename::ensure_safe_filename(file_name)?;
         let dest_dir = self.workspace_path().join(subdir);
         fs::create_dir_all(&dest_dir)?;
         let dest_path = dest_dir.join(file_name);
@@ -154,7 +155,10 @@ impl FileManager {
 
         Ok(FileInfo {
             file_name: file_name.to_string(),
-            stored_path: format!("{}/{}", subdir, file_name),
+            stored_path: Path::new(subdir)
+                .join(file_name)
+                .to_string_lossy()
+                .replace('\\', "/"),
             file_size: content.len() as u64,
             file_type,
         })
@@ -231,12 +235,14 @@ impl FileManager {
     }
 }
 
-/// 通过 containment 校验解析相对路径到授权根目录下的绝对路径
+/// 纯 join+canonicalize：解析相对路径到根目录下的绝对路径。
+///
+/// 不再执行路径遏制检查（containment check 已移至 path_auth::decide::is_path_allowed，
+/// 由 resolve_and_authorize_path 在调用前执行）。
 pub fn resolve_local_reference(
     root_path: &std::path::Path,
     rel_path: &str,
 ) -> anyhow::Result<std::path::PathBuf> {
-    use anyhow::anyhow;
     let joined = root_path.join(rel_path);
 
     fn canonicalize_existing_ancestor(
@@ -246,7 +252,7 @@ pub fn resolve_local_reference(
         while !current.exists() {
             current = current
                 .parent()
-                .ok_or_else(|| anyhow!("Path traversal rejected: ancestor missing"))?;
+                .ok_or_else(|| anyhow::anyhow!("Path traversal rejected: ancestor missing"))?;
         }
         let canonical = current.canonicalize()?;
         let suffix = path
@@ -261,15 +267,6 @@ pub fn resolve_local_reference(
     } else {
         canonicalize_existing_ancestor(&joined)?
     };
-    let root_canonical = root_path
-        .canonicalize()
-        .unwrap_or_else(|_| root_path.to_path_buf());
-    if !canonical.starts_with(&root_canonical) {
-        return Err(anyhow!(
-            "Path traversal rejected: '{}' escapes authorized workspace",
-            rel_path
-        ));
-    }
     Ok(canonical)
 }
 
@@ -303,19 +300,24 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_symlink_escape_rejected() {
-        let root = std::env::temp_dir().join("lotus_ws_symlink_test");
+    fn test_symlink_resolves_without_containment_check() {
+        // resolve_local_reference is now a pure join+canonicalize utility.
+        // Containment/escape checks are enforced by path_auth::decide::is_path_allowed
+        // (called from resolve_and_authorize_path in workspace tools).
+        // This test verifies that the function itself no longer rejects symlinks.
+        let root = std::env::temp_dir().join("lotus_ws_symlink_test_v2");
         std::fs::create_dir_all(&root).unwrap();
-        let outside = std::env::temp_dir().join("lotus_ws_outside");
+        let outside = std::env::temp_dir().join("lotus_ws_outside_v2");
         std::fs::create_dir_all(&outside).unwrap();
         let link = root.join("escape_link");
         // 清理旧 link（测试可能重复跑）
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&outside, &link).unwrap();
+        // Now resolve_local_reference succeeds (no containment check here).
         let result = super::resolve_local_reference(&root, "escape_link");
         assert!(
-            result.is_err(),
-            "Symlink to outside root should be rejected"
+            result.is_ok(),
+            "resolve_local_reference must succeed (containment moved to path_auth)"
         );
         // 清理
         let _ = std::fs::remove_file(&link);

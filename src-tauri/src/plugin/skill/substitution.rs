@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
+#[cfg(target_os = "windows")]
+use crate::storage::process_ext::NoWindowExt;
+
 pub struct SkillSubstitutionContext {
     pub skill_dir: PathBuf,
     pub session_id: String,
@@ -59,6 +62,29 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
             return Ok(result);
         };
         let cmd = &after[..end];
+        // Windows: route through PowerShell since `bash` is not present unless
+        // Git Bash is on PATH. -NoProfile keeps startup snappy. The UTF-8
+        // prologue is required so Chinese / non-ASCII output isn't reduced to
+        // `?` by the default CP936 console encoding.
+        // Silently swallow encoding-setup failures (e.g. ConstrainedLanguage
+        // mode forbids property setters on .NET types). See powershell.rs for
+        // the same pattern.
+        #[cfg(target_os = "windows")]
+        let wrapped_cmd = format!(
+            "chcp 65001 > $null 2>$null; \
+             & {{ try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             & {{ try {{ $OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ }} }} 2>$null; \
+             {cmd}"
+        );
+        #[cfg(target_os = "windows")]
+        let output = std::process::Command::new("powershell.exe")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(&wrapped_cmd)
+            .no_window()
+            .output()
+            .with_context(|| format!("failed to execute skill shell command: {cmd}"))?;
+        #[cfg(not(target_os = "windows"))]
         let output = std::process::Command::new("bash")
             .arg("-lc")
             .arg(cmd)
@@ -67,10 +93,12 @@ fn execute_inline_shell_blocks(input: &str) -> Result<String> {
         if !output.status.success() {
             anyhow::bail!(
                 "Skill body shell command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                crate::storage::console_decode::decode_console_bytes(&output.stderr)
             );
         }
-        result.push_str(&String::from_utf8_lossy(&output.stdout));
+        result.push_str(&crate::storage::console_decode::decode_console_bytes(
+            &output.stdout,
+        ));
         rest = &after[end + 1..];
     }
     result.push_str(rest);
