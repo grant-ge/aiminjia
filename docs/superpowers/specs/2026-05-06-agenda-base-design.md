@@ -79,6 +79,9 @@ pub enum ItemStatus {
     Paused,
     Completed,
     Orphaned,
+    /// 软删除：item 仍保留在磁盘（含 occurrences），列表默认隐藏；
+    /// runner 的 take_due 只接 Active，不会再触发；可由 restore 改回 Active。
+    Cancelled,
 }
 ```
 
@@ -192,7 +195,15 @@ Active ─用户暂停─→ Paused
 Paused ─用户恢复─→ Active
 Active ─organizer删除─→ Orphaned
 Orphaned ─用户重指organizer─→ Active
+Active/Paused ─用户取消（软删除）─→ Cancelled
+Cancelled ─用户恢复─→ Active（重算 next_fire_at）
+Cancelled ─用户永久删除─→ 磁盘清除（含 .bak 与 occurrences）
 ```
+
+约束：
+- `Cancelled` 状态下 `next_fire_at = None`，runner 不触发
+- 列表默认过滤掉 `Cancelled`，需勾选「显示已取消」才看见
+- 永久删除（hard delete）只保留给 UI 入口，agent 工具 `cancel_agenda_item` 仅做软删除
 
 ### 1.9 本期严格约束（store 层校验）
 
@@ -430,7 +441,9 @@ fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTim
 | `get_agenda_item` | `(id: String)` | `AgendaItem` |
 | `create_agenda_item` | `CreateAgendaItemRequest` | `AgendaItem` |
 | `update_agenda_item` | `(id, UpdateAgendaItemRequest)` | `AgendaItem` |
-| `delete_agenda_item` | `(id: String)` | `bool` |
+| `delete_agenda_item` | `(id: String)` | `bool`（永久删除：清磁盘 + .bak + occurrences） |
+| `cancel_agenda_item` | `(id: String)` | `AgendaItem`（软删除：status=Cancelled, next_fire_at=None） |
+| `restore_agenda_item` | `(id: String)` | `AgendaItem`（仅 Cancelled 可恢复，重算 next_fire_at） |
 | `run_agenda_item_now` | `(id: String)` | `String`（occurrence_id，见下注） |
 | `skip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
 | `unskip_occurrence` | `(id: String, at: DateTime<Utc>)` | `AgendaItem` |
@@ -454,7 +467,7 @@ fn compute_next_fire_at(item: &AgendaItem, now: DateTime<Utc>) -> Option<DateTim
 | `create_agenda_item` | 创建日程，organizer 强制为当前 persona |
 | `list_agenda_items` | 查询当前 persona 的日程 |
 | `update_agenda_item` | 修改 title / prompt / rule / status |
-| `cancel_agenda_item` | 删除（实际调 store delete） |
+| `cancel_agenda_item` | 软删除（status=Cancelled，保留磁盘数据；不触发） |
 | `skip_occurrence` | 跳过循环里的某次 |
 | `list_agenda_occurrences` | 查执行历史 |
 

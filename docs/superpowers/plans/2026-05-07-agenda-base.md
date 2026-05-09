@@ -5526,6 +5526,43 @@ Employee 路径被 `setRoute({ kind: 'chat', conversationId: convId })` 主动�
 - 你在对话 A 正在聊 → 定时日程触发建 conv B → sidebar 多出 B 一行但**不切走**，你继续聊 A
 - 想看 B 跑得怎样，自己点 sidebar B
 
+## 补丁 C：软删除（cancel/restore）+「显示已取消」开关
+
+**动机**：原版 plan 只有 hard delete（`delete_agenda_item` 直接清磁盘）。手动烟测发现用户手滑删错只能重建，丢了 occurrences 历史。引入软删除：默认入口走 cancel（保盘），列表默认隐藏 Cancelled，需要时再勾选「显示已取消」翻出来 restore 或永久删除。
+
+与现有状态机的关系（同步进 spec §1.3 / §1.8）：
+- `ItemStatus` 新增 `Cancelled`，独立于 `Paused`（Paused 用户主动暂停，可见；Cancelled 软删除，默认隐藏）
+- `Cancelled` 的 `next_fire_at = None`，runner 的 `take_due` 只接 `Active`，自然过滤
+- agent 工具 `cancel_agenda_item` 仅做软删除；hard delete 只保留给 UI 入口（`delete_agenda_item` Tauri 命令）
+
+**改动**：
+
+1. `src-tauri/src/runtime/agenda/item.rs`：`ItemStatus` 加 `Cancelled` 变体（rename_all = "snake_case"，序列化为 `"cancelled"`）
+2. `src-tauri/src/runtime/agenda/store.rs`：
+   - 新增 `cancel(id, now) -> AgendaItem`：持锁读 → `status = Cancelled` + `next_fire_at = None` + `updated_at = now` → atomic_write
+   - 新增 `restore(id, now) -> AgendaItem`：持锁读 → 校验 `status == Cancelled`（否则 bail）→ `status = Active` + `updated_at = now` + `next_fire_at = compute_next_fire_at(&item, now)` → atomic_write
+   - `delete` 保持 hard delete 语义（清 .json + .bak + occurrences/{id}），但不再作为「取消」入口
+   - 单测：cancel 后 take_due 不返回；restore 后 next_fire_at 重新算出；restore 非 Cancelled item 报错
+3. `src-tauri/src/transport/tauri_commands/agenda.rs`：
+   - 新增 `cancel_agenda_item(id) -> AgendaItem` / `restore_agenda_item(id) -> AgendaItem`
+   - `delete_agenda_item` 保留（永久删除入口）
+   - 集成测试覆盖 cancel → list 默认看不到 → restore → 重新可见 → next_fire_at 非空
+4. `src-tauri/src/lib.rs`：在 `invoke_handler!` 注册新命令（紧挨 `delete_agenda_item`）
+5. `src/lib/tauri.ts`：加 `cancelAgendaItem(id)` / `restoreAgendaItem(id)`
+6. `src/features/agenda/useAgendaItems.ts`：
+   - `cancel(id)` 调 `cancelAgendaItem` → optimistic 更新本地缓存的 status
+   - `restore(id)` 调 `restoreAgendaItem` → optimistic 更新
+   - `delete(id)` 保持原义（永久删除）
+7. `src/pages/SchedulesPage.tsx`：
+   - 新增 `showCancelled: boolean` 本地 state（默认 false），右上角 toggle
+   - 列表过滤 `items.filter(i => showCancelled || i.status !== 'cancelled')`
+   - row 的 hover 按钮：Active/Paused → 「取消」（cancel）；Cancelled → 「恢复」（restore）+「永久删除」（delete）
+8. `src/components/schedules/ScheduleTaskRow.tsx`：Cancelled 状态视觉降级（灰字 + 删除线 title），徽章文案 `已取消`
+
+**与 PR-4 任务 50 的关系**：PR-4 `cancel_agenda_item` agent 工具的实现要从「调 store.delete」改为「调 store.cancel」，对应任务 50 的步骤里 `deps.store.delete(...)` → `deps.store.cancel(..., now)`，单测断言从「`deleted: true`」改为「`status == Cancelled` 且 list 仍可见」。任务 50 的 schema 文案保持「取消日程」即可。该改动已就地写入任务 50（PR-4 实施时直接照抄即可）。
+
+**测试基线维持**：后端 agenda lib 全绿（含新增 4-6 条 cancel/restore 单测）+ agenda integration 全绿（含 cancel/restore IPC 集成）+ 前端 agenda 套件全绿（含 SchedulesPage 软删除 toggle 测试）+ tsc 0 error。
+
 ---
 
 # PR-4：Agent 工具 + Persona 删除联动 + review tests + 删旧代码
@@ -6061,6 +6098,8 @@ git commit -m "feat(agenda): UpdateAgendaItemRuntimeTool with persona-ownership 
 
 ## 任务 50：实现 CancelAgendaItemRuntimeTool
 
+> **语义**：软删除（见 PR-3 补丁 C 与 spec §1.8）。调 `store.cancel`，不是 `store.delete`。`store.delete` 是 UI 「永久删除」入口，不暴露给 agent。
+
 **Files:**
 - Modify: `src-tauri/src/runtime/tools/builtin/agenda/cancel.rs`
 
@@ -6085,7 +6124,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_owned_item_returns_true() {
+    async fn cancel_owned_item_soft_deletes() {
         let dir = TempDir::new().unwrap();
         let id = make_item(dir.path(), "alice").await;
         let tool = CancelAgendaItemRuntimeTool {
@@ -6093,7 +6132,13 @@ mod tests {
         };
         let result = tool.execute(json!({ "id": id }), ToolExecutionContext::for_test("s", "r", "c")).await.unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result.content).unwrap();
-        assert_eq!(parsed["deleted"], true);
+        assert_eq!(parsed["status"], "cancelled");
+
+        // 软删除：item 仍在磁盘，list 仍可查到，但 status=Cancelled 且 next_fire_at=None
+        let store = AgendaStore::new(dir.path());
+        let fetched = store.get(&AgendaItemId(parsed["id"].as_str().unwrap().into())).unwrap();
+        assert!(matches!(fetched.status, crate::runtime::agenda::ItemStatus::Cancelled));
+        assert!(fetched.next_fire_at.is_none());
     }
 
     #[tokio::test]
@@ -6127,9 +6172,12 @@ async fn execute(&self, input: Value, _ctx: ToolExecutionContext) -> Result<Tool
             "can only cancel own agenda items".into(),
         ));
     }
-    let deleted = self.deps.store.delete(&id)
+    let cancelled = self.deps.store.cancel(&id, chrono::Utc::now())
         .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-    let json = serde_json::json!({ "id": id_str, "deleted": deleted });
+    let json = serde_json::json!({
+        "id": id_str,
+        "status": cancelled.status,
+    });
     Ok(ToolResult::new(
         "cancel_agenda_item",
         serde_json::to_string_pretty(&json).unwrap(),
