@@ -13,6 +13,25 @@ export interface KnowledgeSource {
   error?: string
 }
 
+/** Validate-and-coerce a raw record value into a `KnowledgeSource[]`. Drops malformed entries. */
+export function parseKnowledgeSources(v: unknown): KnowledgeSource[] {
+  if (!Array.isArray(v)) return []
+  return (v as unknown[]).flatMap((raw): KnowledgeSource[] => {
+    if (!raw || typeof raw !== 'object') return []
+    const r = raw as Record<string, unknown>
+    if (typeof r.path !== 'string' || typeof r.originalName !== 'string') return []
+    const status = r.status
+    return [{
+      path: r.path,
+      originalName: r.originalName,
+      size: typeof r.size === 'number' ? r.size : 0,
+      status: (status === 'pending' || status === 'indexing' || status === 'done' || status === 'failed') ? status : 'pending',
+      slicedCount: typeof r.slicedCount === 'number' ? r.slicedCount : 0,
+      error: typeof r.error === 'string' ? r.error : undefined,
+    }]
+  })
+}
+
 interface Props {
   value: KnowledgeSource[]
   onChange: (next: KnowledgeSource[]) => void
