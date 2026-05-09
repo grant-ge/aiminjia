@@ -509,7 +509,7 @@ fn build_agents_md_context_message(
     Some(serde_json::json!({
         "role": "user",
         "content": format!(
-            "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# agentsMd\n{}\n\nIMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n",
+            "<system-reminder>\nProject instructions are shown below. These instructions OVERRIDE any default behavior — you MUST follow them exactly as written.\n# agentsMd\n{}\n</system-reminder>\n",
             agents_md_section
         ),
         "isMeta": true,

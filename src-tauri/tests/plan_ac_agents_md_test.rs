@@ -337,8 +337,13 @@ async fn ac3_driver_inserts_separate_agents_md_context_message_after_system_remi
     );
     let context_message = first_call_messages[1]["content"].as_str().unwrap_or("");
     assert!(
-        context_message.contains("As you answer the user's questions"),
+        context_message.contains("Project instructions are shown below"),
         "messages[1] must be a separate meta context message, got: {}",
+        context_message
+    );
+    assert!(
+        context_message.contains("OVERRIDE any default behavior"),
+        "messages[1] must declare override semantics, got: {}",
         context_message
     );
     assert!(context_message.contains("# agentsMd"));
