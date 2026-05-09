@@ -643,6 +643,7 @@ fn build_default_catalog() -> ToolCatalog {
             .with_read_only(true),
         json!({
             "type": "object",
+            "required": [],
             "properties": {
                 "status_in": {
                     "type": "array",
