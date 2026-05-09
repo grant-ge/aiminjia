@@ -6,7 +6,7 @@ import { ScheduleEmptyState } from '@/components/schedules/ScheduleEmptyState'
 import { ScheduleListCard } from '@/components/schedules/ScheduleListCard'
 import { ScheduleTableHeader } from '@/components/schedules/ScheduleTableHeader'
 import { ScheduleTaskRow } from '@/components/schedules/ScheduleTaskRow'
-import { ScheduleTemplateCard } from '@/components/schedules/ScheduleTemplateCard'
+import { ScheduleTemplateCard, type ScheduleTemplate } from '@/components/schedules/ScheduleTemplateCard'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { PageSectionShell } from '@/components/shell/PageSectionShell'
 import { PageTopBar } from '@/components/shell/PageTopBar'
@@ -21,25 +21,24 @@ import {
   updateAgendaItem,
 } from '@/lib/tauri'
 
-const TEMPLATES: Array<{
-  title: string
-  desc: string
-  prompt: string
-}> = [
+const TEMPLATES: ScheduleTemplate[] = [
   {
     title: '日报汇总',
     desc: '每天 9 点自动汇总昨日数据生成日报。',
     prompt: '每天 9 点自动汇总昨日数据生成日报。',
+    rule: null,
   },
   {
     title: '门店巡检',
     desc: '每周一汇总各门店巡检结果并生成报表。',
     prompt: '每周一汇总各门店巡检结果并生成报表。',
+    rule: null,
   },
   {
     title: '周度复盘',
     desc: '每周五汇总周度 KPI 与团队复盘要点。',
     prompt: '每周五汇总周度 KPI 与团队复盘要点。',
+    rule: null,
   },
 ]
 
@@ -68,18 +67,15 @@ export function SchedulesPage() {
     }
   }, [])
 
-  const handleUseTemplate = useCallback(
-    (template: (typeof TEMPLATES)[number]) => {
-      setDraftFromTemplate({
-        title: template.title,
-        prompt: template.prompt,
-        rule: null,
-      })
-      setEditing(null)
-      setEditorOpen(true)
-    },
-    [],
-  )
+  const handleUseTemplate = useCallback((template: ScheduleTemplate) => {
+    setDraftFromTemplate({
+      title: template.title,
+      prompt: template.prompt,
+      rule: template.rule ?? null,
+    })
+    setEditing(null)
+    setEditorOpen(true)
+  }, [])
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -157,12 +153,8 @@ export function SchedulesPage() {
         {TEMPLATES.map((t) => (
           <ScheduleTemplateCard
             key={t.title}
-            title={t.title}
-            desc={t.desc}
-            cta={{
-              label: '使用模板',
-              onClick: () => handleUseTemplate(t),
-            }}
+            template={t}
+            onPick={handleUseTemplate}
           />
         ))}
       </div>
