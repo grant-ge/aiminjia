@@ -443,5 +443,71 @@
     "executionErrorDesc": "The agent encountered an error and this turn was aborted. Please retry or check settings.",
     "successSummaryTitle": "Turn complete",
     "successSummaryDesc": "Used {{tokens}} tokens, estimated cost ${{cost}}."
+  },
+  "employee": {
+    "config": {
+      "knowledge": {
+        "label": "Knowledge sources",
+        "hint": "Upload FAQ / product manual / tech docs. After hiring, files are sliced into memory in the background; the AI retrieves on demand via semantic search instead of stuffing the full text each turn.",
+        "upload": "Upload document",
+        "retry": "Retry",
+        "statusPending": "Pending",
+        "statusIndexing": "Indexing…",
+        "statusDone": "{{count}} chunks indexed",
+        "statusFailed": "Failed"
+      },
+      "groupMatch": {
+        "label": "Monitor groups (keyword matching)",
+        "include": "Include keywords",
+        "exclude": "Exclude keywords",
+        "addPlaceholder": "+ Add",
+        "matchedHint": "{{count}} groups matched"
+      },
+      "responseStyle": {
+        "label": "Response style",
+        "professional": "Professional",
+        "friendly": "Friendly",
+        "concise": "Concise"
+      },
+      "greeting": "Greeting",
+      "closing": "Closing",
+      "escalation": {
+        "label": "Escalation keywords (skip auto-reply, flag for human handling)",
+        "hint": "Messages containing these words will be flagged 🔴 for manual handling."
+      },
+      "techKeywords": {
+        "label": "Tech keywords (route to tech support)",
+        "hint": "Messages containing these words will be tagged 🔧 for tech support."
+      },
+      "summaryFreq": {
+        "label": "Conversation summary frequency",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "off": "Off"
+      },
+      "customerSupport": {
+        "title": "Customer support setup",
+        "intro": "The employee scans matching DingTalk groups for business inquiries, searches the knowledge base + past conversations, then drafts friendly replies for your review."
+      },
+      "techSupport": {
+        "title": "Tech support setup",
+        "intro": "The employee scans matching DingTalk groups for errors and integration questions, searches tech docs + past experience, then drafts replies for your review."
+      },
+      "monitoringUrls": {
+        "title": "Monitoring targets",
+        "label": "Monitor URLs",
+        "hint": "The researcher will periodically visit these URLs to detect changes.",
+        "addPlaceholder": "https://...",
+        "addButton": "Add"
+      },
+      "salesTable": {
+        "title": "Data source"
+      },
+      "weeklyReport": {
+        "title": "Weekly report preferences"
+      },
+      "save": "Save",
+      "cancel": "Cancel"
+    }
   }
 }

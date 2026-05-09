@@ -443,5 +443,71 @@
     "executionErrorDesc": "Agent 执行过程中出现错误，本轮已中止。请重试或检查设置。",
     "successSummaryTitle": "Turn 完成",
     "successSummaryDesc": "共消耗 {{tokens}} tokens，估算费用 ${{cost}}。"
+  },
+  "employee": {
+    "config": {
+      "knowledge": {
+        "label": "知识源",
+        "hint": "上传 FAQ / 产品手册 / 技术文档；雇佣完成后会在后台自动切片入库，AI 用语义检索按需调用，不再每次塞全文。",
+        "upload": "上传文档",
+        "retry": "重试",
+        "statusPending": "待切片",
+        "statusIndexing": "切片中…",
+        "statusDone": "已入库 {{count}} 条",
+        "statusFailed": "切片失败"
+      },
+      "groupMatch": {
+        "label": "监控群（关键词匹配）",
+        "include": "包含关键词",
+        "exclude": "排除关键词",
+        "addPlaceholder": "+ 添加",
+        "matchedHint": "已匹配 {{count}} 个群"
+      },
+      "responseStyle": {
+        "label": "回复风格",
+        "professional": "专业正式",
+        "friendly": "亲和友好",
+        "concise": "简洁直接"
+      },
+      "greeting": "回复开头",
+      "closing": "回复结尾",
+      "escalation": {
+        "label": "人工介入关键词（匹配到时跳过自动回复）",
+        "hint": "命中这些词的消息会被标注 🔴 转人工。"
+      },
+      "techKeywords": {
+        "label": "技术问题关键词（匹配到时建议转小工）",
+        "hint": "命中这些词的消息会被标注 🔧 转技术支持。"
+      },
+      "summaryFreq": {
+        "label": "对话总结频率",
+        "daily": "每日",
+        "weekly": "每周",
+        "off": "关闭"
+      },
+      "customerSupport": {
+        "title": "配置客服支持",
+        "intro": "客服会扫描匹配的钉钉群里的业务咨询，从知识库与历史对话检索答案，生成草稿等你确认。"
+      },
+      "techSupport": {
+        "title": "配置技术支持",
+        "intro": "技术支持会扫描匹配的钉钉群里的报错与集成问题，从技术文档与历史经验检索答案，生成草稿等你确认。"
+      },
+      "monitoringUrls": {
+        "title": "配置监测对象",
+        "label": "监测 URL",
+        "hint": "调研员将定期访问以下 URL 抓取变化。",
+        "addPlaceholder": "https://...",
+        "addButton": "添加"
+      },
+      "salesTable": {
+        "title": "配置数据源"
+      },
+      "weeklyReport": {
+        "title": "配置周报偏好"
+      },
+      "save": "保存",
+      "cancel": "取消"
+    }
   }
 }
