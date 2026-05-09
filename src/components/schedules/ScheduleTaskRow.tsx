@@ -13,11 +13,18 @@ interface ScheduleTaskRowProps {
   onToggleStatus: (item: AgendaItem) => void
 }
 
-const STATUS_CLASS: Record<AgendaItem['status'], string> = {
-  active: 'border-l-2 border-blue-500',
-  paused: 'opacity-70',
-  completed: '',
-  orphaned: 'border-l-2 border-red-500',
+const STATUS_LABEL: Record<AgendaItem['status'], string> = {
+  active: '已启用',
+  paused: '已暂停',
+  completed: '已完成',
+  orphaned: '组织者缺失',
+}
+
+const STATUS_BADGE: Record<AgendaItem['status'], string> = {
+  active: 'bg-blue-100 text-blue-700',
+  paused: 'bg-muted text-muted-foreground',
+  completed: 'bg-green-100 text-green-700',
+  orphaned: 'bg-red-100 text-red-700',
 }
 
 export function ScheduleTaskRow({
@@ -27,29 +34,50 @@ export function ScheduleTaskRow({
   onRunNow,
   onToggleStatus,
 }: ScheduleTaskRowProps) {
-  const statusClass = STATUS_CLASS[item.status]
   const isPaused = item.status === 'paused'
+  const dimmed = isPaused ? 'opacity-70' : ''
 
   return (
     <div
-      className={`group flex items-center gap-3 border-t border-border px-4 py-3 hover:bg-muted/50 ${statusClass}`}
+      className={`group grid grid-cols-4 items-center gap-3 border-t border-border px-5 py-3 text-[0.8125rem] hover:bg-muted/50 ${dimmed}`}
     >
-      <PersonaAvatar personaId={item.organizerPersonaId} size="sm" />
-      <div className="flex-1 min-w-0">
-        <div className="truncate font-medium text-foreground">{item.title}</div>
-        <div className="truncate text-xs text-muted-foreground">
-          {describeFrequency(item.rule, item.startAt, item.timezone)}
+      {/* 列 1：任务名称 */}
+      <div className="flex min-w-0 items-center gap-2">
+        <PersonaAvatar personaId={item.organizerPersonaId} size="sm" />
+        <div className="min-w-0">
+          <div className="truncate font-medium text-foreground">{item.title}</div>
           {item.workspacePath ? (
-            <span className="ml-2 text-muted-foreground/70" title={item.workspacePath}>
-              · 📁 {workspaceShortName(item.workspacePath)}
-            </span>
+            <div
+              className="truncate text-xs text-muted-foreground/70"
+              title={item.workspacePath}
+            >
+              📁 {workspaceShortName(item.workspacePath)}
+            </div>
           ) : null}
         </div>
       </div>
-      <div className="text-xs text-muted-foreground whitespace-nowrap">
-        {item.nextFireAt ? formatNextFire(item.nextFireAt) : '-'}
+
+      {/* 列 2：执行频率 */}
+      <div className="min-w-0 text-muted-foreground">
+        <div className="truncate">
+          {describeFrequency(item.rule, item.startAt, item.timezone)}
+        </div>
+        <div className="mt-1 truncate text-xs">
+          下次：{item.nextFireAt ? formatNextFire(item.nextFireAt) : '-'}
+        </div>
       </div>
-      <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+
+      {/* 列 3：状态 */}
+      <div className="min-w-0">
+        <span
+          className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[item.status]}`}
+        >
+          {STATUS_LABEL[item.status]}
+        </span>
+      </div>
+
+      {/* 列 4：操作（hover 显示） */}
+      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
         <Button
           variant="ghost"
           size="icon"
