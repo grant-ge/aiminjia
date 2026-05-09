@@ -1,4 +1,4 @@
-use app_lib::runtime::employee::knowledge::{chunk_markdown, KnowledgeChunk};
+use app_lib::runtime::employee::knowledge::chunk_markdown;
 
 #[test]
 fn chunk_markdown_splits_on_h2_headings() {
@@ -31,4 +31,47 @@ fn chunk_markdown_collapses_chunks_under_min_size() {
     let chunks = chunk_markdown(src);
     // "短" 和 "短2" 太短被合并
     assert!(chunks.len() <= 2);
+}
+
+#[test]
+fn chunk_markdown_respects_cognitive_memory_byte_limit() {
+    // The cognitive memory store enforces CONTENT_MAX_LEN bytes per entry.
+    // Chunks ultimately get prefixed with "【title】\n" before saving, so we
+    // assert a conservative bound: every produced chunk content (without the
+    // title prefix) must already fit within the limit, leaving headroom for
+    // the prefix.
+    use app_lib::storage::file_store::cognitive::CONTENT_MAX_LEN;
+
+    // 4500-char Chinese paragraph (each char is 3 bytes → ~13.5KB).
+    let huge_para: String = "这是一个非常长的段落用来测试硬切分策略。".repeat(120);
+    let src = format!("## 大段\n\n{}\n", huge_para);
+    let chunks = chunk_markdown(&src);
+    for (i, c) in chunks.iter().enumerate() {
+        // Title prefix worst case: "【…】\n" with title up to 100 bytes.
+        let title_overhead = c.title.as_ref().map(|t| t.len() + 6).unwrap_or(0);
+        let total_bytes = c.content.len() + title_overhead;
+        assert!(
+            total_bytes <= CONTENT_MAX_LEN,
+            "chunk #{i} too large: {} bytes (limit {}). content head: {:?}",
+            total_bytes,
+            CONTENT_MAX_LEN,
+            &c.content.chars().take(40).collect::<String>()
+        );
+    }
+    assert!(chunks.len() > 1, "expected huge paragraph to be hard-split");
+}
+
+#[test]
+fn chunk_markdown_short_chinese_paragraph_fits_byte_limit() {
+    use app_lib::storage::file_store::cognitive::CONTENT_MAX_LEN;
+    let src = "## 注册流程\n\n打开 App，点击右上角的注册按钮，输入手机号收到验证码后填写并提交即可。";
+    let chunks = chunk_markdown(src);
+    assert!(!chunks.is_empty());
+    for c in &chunks {
+        assert!(
+            c.content.len() <= CONTENT_MAX_LEN,
+            "chunk too large: {} bytes",
+            c.content.len()
+        );
+    }
 }

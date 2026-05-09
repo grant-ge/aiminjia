@@ -9,10 +9,17 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::runtime::employee::store::{EmployeeStore, KnowledgeSourceStatus};
+use crate::storage::file_store::cognitive::CONTENT_MAX_LEN;
 use crate::storage::file_store::AppStorage;
 
-const MIN_CHUNK_CHARS: usize = 40;
-const MAX_CHUNK_CHARS: usize = 1200;
+/// Minimum content length (in bytes) before a fragment is considered "real"
+/// and gets emitted as its own chunk vs. merged into the next chunk.
+const MIN_CHUNK_BYTES: usize = 80;
+
+/// Maximum content length (in bytes) per chunk. Sized to fit inside the
+/// cognitive memory store's `CONTENT_MAX_LEN` after we prepend the optional
+/// `【title】\n` prefix (worst case ~300 bytes for a long Chinese title).
+const MAX_CHUNK_BYTES: usize = CONTENT_MAX_LEN - 300;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct KnowledgeChunk {
@@ -20,20 +27,23 @@ pub struct KnowledgeChunk {
     pub content: String,
 }
 
-/// Heuristic chunker: prefers H2 headings, then Q/A pairs, then double-newline paragraphs.
+/// Heuristic chunker: prefers H2 headings, then Q/A pairs, then double-newline
+/// paragraphs. In all cases the output is post-processed so every chunk fits
+/// within `MAX_CHUNK_BYTES` (so `save_cognitive_memory` won't reject it).
 pub fn chunk_markdown(src: &str) -> Vec<KnowledgeChunk> {
-    let by_h2 = split_by_h2(src);
-    if by_h2.len() >= 2 {
-        // H2 path: may have a short preamble; collapse it into the first section.
-        return collapse_short(by_h2);
-    }
-    let by_qa = split_by_qa(src);
-    if by_qa.len() >= 2 {
+    let initial = if split_by_h2(src).len() >= 2 {
+        // H2 path: may have a short preamble; collapse it into the first section,
+        // then hard-split anything still too big.
+        collapse_short(split_by_h2(src))
+    } else if split_by_qa(src).len() >= 2 {
         // Q/A path: each pair is a complete unit; hard-split only oversized pairs.
-        return hard_split_only(by_qa);
-    }
-    // Paragraph split: each paragraph is its own chunk.
-    split_paragraphs(src)
+        hard_split_only(split_by_qa(src))
+    } else {
+        // Paragraph split: each paragraph is its own chunk.
+        split_paragraphs(src)
+    };
+    // Final safety net: every emitted chunk must fit inside MAX_CHUNK_BYTES.
+    hard_split_only(initial)
 }
 
 fn split_by_h2(src: &str) -> Vec<KnowledgeChunk> {
@@ -101,8 +111,8 @@ fn split_paragraphs(src: &str) -> Vec<KnowledgeChunk> {
 fn hard_split_only(chunks: Vec<KnowledgeChunk>) -> Vec<KnowledgeChunk> {
     let mut out = Vec::new();
     for c in chunks {
-        if c.content.chars().count() > MAX_CHUNK_CHARS {
-            for piece in hard_split(&c.content, MAX_CHUNK_CHARS) {
+        if c.content.len() > MAX_CHUNK_BYTES {
+            for piece in hard_split(&c.content, MAX_CHUNK_BYTES) {
                 out.push(KnowledgeChunk {
                     title: c.title.clone(),
                     content: piece,
@@ -119,8 +129,8 @@ fn collapse_short(chunks: Vec<KnowledgeChunk>) -> Vec<KnowledgeChunk> {
     // First pass: hard-split oversized chunks.
     let mut expanded: Vec<KnowledgeChunk> = Vec::new();
     for c in chunks {
-        if c.content.chars().count() > MAX_CHUNK_CHARS {
-            for piece in hard_split(&c.content, MAX_CHUNK_CHARS) {
+        if c.content.len() > MAX_CHUNK_BYTES {
+            for piece in hard_split(&c.content, MAX_CHUNK_BYTES) {
                 expanded.push(KnowledgeChunk {
                     title: c.title.clone(),
                     content: piece,
@@ -136,7 +146,7 @@ fn collapse_short(chunks: Vec<KnowledgeChunk>) -> Vec<KnowledgeChunk> {
     let mut out: Vec<KnowledgeChunk> = Vec::new();
     let mut pending_prefix: Option<String> = None;
     for c in expanded {
-        if c.title.is_none() && c.content.chars().count() < MIN_CHUNK_CHARS {
+        if c.title.is_none() && c.content.len() < MIN_CHUNK_BYTES {
             // Short untitled fragment: hold as prefix for next chunk.
             let prev = pending_prefix.take().unwrap_or_default();
             pending_prefix = Some(if prev.is_empty() {
@@ -172,12 +182,23 @@ fn collapse_short(chunks: Vec<KnowledgeChunk>) -> Vec<KnowledgeChunk> {
     out
 }
 
-fn hard_split(s: &str, max: usize) -> Vec<String> {
+/// Split `s` into pieces each ≤ `max_bytes` bytes, preferring sentence
+/// boundaries (`\n`, `。`, `.`) once we're past 70% of the budget. Falls back
+/// to hard char-boundary cuts so we never overflow `max_bytes`.
+fn hard_split(s: &str, max_bytes: usize) -> Vec<String> {
+    let soft_floor = max_bytes.saturating_sub(max_bytes / 3); // 67% of budget
     let mut out = Vec::new();
     let mut buf = String::new();
     for ch in s.chars() {
+        let ch_bytes = ch.len_utf8();
+        // If adding this char would exceed the hard ceiling, flush first.
+        if buf.len() + ch_bytes > max_bytes {
+            out.push(buf.trim().to_string());
+            buf.clear();
+        }
         buf.push(ch);
-        if buf.chars().count() >= max && (ch == '\n' || ch == '。' || ch == '.') {
+        // Once past the soft floor, opportunistically break on sentence punctuation.
+        if buf.len() >= soft_floor && (ch == '\n' || ch == '。' || ch == '.') {
             out.push(buf.trim().to_string());
             buf.clear();
         }
@@ -224,14 +245,23 @@ pub fn index_one(
                 format!("knowledge:{}", employee_id),
                 original_name.to_string(),
             ];
-            let _ = app_storage.save_cognitive_memory(
+            match app_storage.save_cognitive_memory(
                 &content,
                 &category,
                 &tags,
                 employee_id,
                 false,
-            )?;
-            written += 1;
+            ) {
+                Ok(_) => {
+                    written += 1;
+                }
+                // Same-content-same-day dedup is benign during retry — count it
+                // as written so a partial reindex doesn't show 0 slices.
+                Err(e) if e.to_string().contains("Duplicate memory") => {
+                    written += 1;
+                }
+                Err(e) => return Err(e),
+            }
         }
         Ok(written)
     })();

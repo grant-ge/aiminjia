@@ -100,8 +100,9 @@ fn knowledge_memory_hint(employee: &EmployeeRecord) -> Option<String> {
         return None;
     }
     Some(format!(
-        "- 知识库：已切片入 cognitive memory（category=`fact`，tag=`knowledge:{}`）。\
-         请用 memory_search 按用户问题检索，不要直接读 knowledgeSources[].path 全文。",
+        "- 知识库：已切片入 cognitive memory。请用 `memory_search` 检索答案，\
+         必须传 `category=\"fact\"` 和 `tag=\"knowledge:{}\"` 两个参数以仅检索本员工的知识，\
+         不要直接读 knowledgeSources[].path 全文。",
         employee.id
     ))
 }
