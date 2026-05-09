@@ -493,7 +493,6 @@ impl ToolRegistry {
                 let cap = CapabilityContext {
                     storage: Some(storage),
                     workspace_id: Some(ctx.conversation_id.clone()),
-                    browser_available: false,
                     file_ops: None,
                     read_file_state: ctx.read_file_state.clone(),
                     file_reading_limits: Some(
