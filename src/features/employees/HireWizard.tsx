@@ -7,6 +7,8 @@ import { BUILTIN_TEMPLATES, type EmployeeTemplate } from './templates'
 import { MonitoringUrlsForm } from './forms/MonitoringUrlsForm'
 import { SalesTableConfigForm } from './forms/SalesTableConfigForm'
 import { WeeklyReportConfigForm } from './forms/WeeklyReportConfigForm'
+import { TechSupportConfigForm } from './forms/TechSupportConfigForm'
+import { CustomerSupportConfigForm } from './forms/CustomerSupportConfigForm'
 
 // ─── wizard ───────────────────────────────────────────────────────────────────
 
@@ -225,6 +227,20 @@ export function HireWizard({ open, onClose, onHired }: HireWizardProps) {
             )}
             {selected.resourceConfigKind === 'weekly-report' && (
               <WeeklyReportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'tech-support' && (
+              <TechSupportConfigForm
+                initial={resourceConfig}
+                onSubmit={handleResourceSubmit}
+                onCancel={() => setStep(2)}
+              />
+            )}
+            {selected.resourceConfigKind === 'customer-support' && (
+              <CustomerSupportConfigForm
                 initial={resourceConfig}
                 onSubmit={handleResourceSubmit}
                 onCancel={() => setStep(2)}

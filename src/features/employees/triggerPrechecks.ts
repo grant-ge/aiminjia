@@ -62,6 +62,11 @@ function isResourceConfigRequired(template: EmployeeTemplate): boolean {
       // Soft requirement: employee can ask the user inside chat and persist
       // to memory (path A). The form is a convenience.
       return false
+    case 'tech-support':
+      // Soft: employee can work without pre-config — will scan all groups
+      return false
+    case 'customer-support':
+      return false
     case 'none':
       return false
   }
@@ -88,6 +93,15 @@ function isResourceConfigured(template: EmployeeTemplate, employee: EmployeeReco
       // Configured = template selected (defaults to 'standard' on first save).
       const tpl = cfg.template
       return typeof tpl === 'string' && tpl.length > 0
+    }
+    case 'tech-support': {
+      // Configured = at least groupMatch keywords are set
+      const gm = cfg.groupMatch as Record<string, unknown> | undefined
+      return !!gm && Array.isArray(gm.keywords) && gm.keywords.length > 0
+    }
+    case 'customer-support': {
+      const gm = cfg.groupMatch as Record<string, unknown> | undefined
+      return !!gm && Array.isArray(gm.keywords) && gm.keywords.length > 0
     }
     case 'none':
       return true

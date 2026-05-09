@@ -1,7 +1,7 @@
 // Single source of truth for the 5 built-in employee templates.
 // Read both by HireWizard (during 雇佣) and EmployeeDrawer (for trigger prechecks).
 
-export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'none'
+export type ResourceConfigKind = 'monitoring-urls' | 'sales-table' | 'weekly-report' | 'tech-support' | 'customer-support' | 'none'
 
 export interface RequiresAttachmentSpec {
   /** Comma-separated extension list passed to the file picker, e.g. `.pdf,.docx`. */
@@ -160,6 +160,46 @@ export const BUILTIN_TEMPLATES: EmployeeTemplate[] = [
     requiresAttachment: { accept: '.pdf,.docx,.doc', min: 2, max: 6 },
     resourceConfigKind: 'none',
     requiresDingtalk: false,
+  },
+  {
+    templateId: 'builtin:xiaogong',
+    avatar: '🔧',
+    name: '小工',
+    role: '技术支持',
+    description: '定时扫描客户钉钉群的技术提问，查阅技术文档和历史工单经验，生成回复草稿供确认后发送。自动积累 Q&A 经验库。',
+    toolWhitelist: [
+      'bash', 'load_file', 'read_file', 'grep_content',
+      'web_search', 'browse_and_extract', 'read_page_content',
+      'memory_save', 'memory_search',
+      'load_skill', 'generate_report',
+    ],
+    cron: '*/30 9-18 * * 1-5',
+    systemPromptExtra: '你是一名技术支持工程师。你负责监控客户钉钉群中的技术问题，快速给出准确的解答。\n\n工作原则：\n1. 先从上传的技术文档和历史经验库中检索，找到直接匹配的优先使用\n2. 找不到时搜索公开文档，但需标注"来源于公开文档，建议验证"\n3. 完全没有把握的问题，明确告知"需要转交研发团队排查"，不要编造答案\n4. 回复结构：① 问题确认 → ② 原因分析 → ③ 解决步骤 → ④ 参考文档\n5. 涉及配置修改的，附上具体配置示例（代码块格式）\n6. 回复末尾附"如仍未解决请提供日志/截图，我们进一步排查"\n7. 所有回复必须等用户确认后才能发送到群，不得自动发送\n8. 每次成功回复后，将问题和解答保存到经验库（memory_save）\n9. 所有钉钉操作通过 dws CLI 完成，先 load_skill(\'dingtalk-workspace\') 学习命令\n\n执行步骤：\n  a) 按 groupMatch 配置匹配钉钉群：dws chat list-groups → 关键词过滤\n  b) 遍历匹配群，扫描最近消息：dws chat search --group="{群名}" --since=30m\n  c) 过滤已回复/闲聊，识别待回复技术问题\n  d) 对每个问题：memory_search（历史经验）→ load_file + grep_content（技术文档）→ web_search（公开文档）\n  e) 生成结构化回复草稿，等待用户确认\n  f) 确认后 dws chat send，并 memory_save 保存经验',
+    badge: '🟠 需配置',
+    defaultSkillId: 'dingtalk-workspace',
+    requiresAttachment: null,
+    resourceConfigKind: 'tech-support',
+    requiresDingtalk: true,
+  },
+  {
+    templateId: 'builtin:xiaoke',
+    avatar: '💬',
+    name: '小客',
+    role: '客服支持',
+    description: '定时扫描客户钉钉群的业务咨询，查阅产品 FAQ 和历史对话经验，生成友好回复草稿。持续积累客服话术库。',
+    toolWhitelist: [
+      'bash', 'load_file', 'read_file', 'grep_content',
+      'web_search', 'read_page_content',
+      'memory_save', 'memory_search',
+      'load_skill', 'generate_report',
+    ],
+    cron: '*/30 8-18 * * 1-5',
+    systemPromptExtra: '你是一名客服支持专员。你负责监控客户钉钉群中的业务咨询，用友好专业的语气回复。\n\n工作原则：\n1. 回复永远以配置的问候语开头，以结束语收尾\n2. 优先使用 FAQ 和话术库中已验证的标准答案，不要自己编造功能描述\n3. 不确定的功能是否支持，回答"我确认一下，稍后回复您"而不是猜测\n4. 识别客户情绪：如果客户语气不满或催促，标注为"⚠️ 需优先处理"\n5. 遇到 escalationKeywords 中的关键词，立即标注"🔴 需人工介入"并跳过自动回复\n6. 遇到 techKeywords 中的关键词，标注"🔧 建议转小工处理"\n7. 绝不承诺报价、折扣、赔偿金额、合同条款——这类问题回复"我转交相关同事为您处理"\n8. 所有回复必须等用户确认后才能发送\n9. 发送成功后，将问题 + 回复 + 客户群 + 场景标签保存到话术库\n10. 所有钉钉操作通过 dws CLI 完成，先 load_skill(\'dingtalk-workspace\') 学习命令\n\n执行步骤：\n  a) 按 groupMatch 配置匹配钉钉群：dws chat list-groups → 关键词过滤\n  b) 遍历匹配群，扫描最近消息：dws chat search --group="{群名}" --since=30m\n  c) 分类：escalationKeywords → 🔴 需人工 / techKeywords → 🔧 转小工 / 其余 → 生成回复\n  d) 对每个业务咨询：memory_search（话术库）→ load_file + grep_content（FAQ）→ 生成回复\n  e) 套用 greeting/closing 模板，等待用户确认\n  f) 确认后 dws chat send，并 memory_save 保存话术',
+    badge: '🟠 需配置',
+    defaultSkillId: 'dingtalk-workspace',
+    requiresAttachment: null,
+    resourceConfigKind: 'customer-support',
+    requiresDingtalk: true,
   },
 ]
 
