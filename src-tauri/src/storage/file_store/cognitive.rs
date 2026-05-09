@@ -32,7 +32,7 @@ pub const SAVE_RATE_LIMIT: usize = 3;
 
 /// Content length bounds.
 pub const CONTENT_MIN_LEN: usize = 10;
-pub const CONTENT_MAX_LEN: usize = 500;
+pub const CONTENT_MAX_LEN: usize = 4000;
 
 /// Hit count threshold for promotion.
 const PROMOTE_HIT_THRESHOLD: u32 = 3;
@@ -536,11 +536,17 @@ pub fn save_memory(
 ///
 /// Returns matching entries (up to 10) sorted by relevance score.
 /// Call `record_search_hits` separately to update hit counts.
+///
+/// `tag_filter`: when `Some(tag)`, only daily entries whose `tags` contain the
+/// exact `tag` string are considered (core memory lines are skipped, since they
+/// don't carry tags). Used to scope per-employee knowledge so one employee's
+/// FAQ chunks don't surface in another employee's `memory_search` results.
 pub fn search_memory_readonly(
     base_dir: &Path,
     query: &str,
     category: Option<&str>,
     days: i64,
+    tag_filter: Option<&str>,
 ) -> Result<Vec<serde_json::Value>> {
     ensure_dirs(base_dir)?;
 
@@ -567,6 +573,12 @@ pub fn search_memory_readonly(
                 continue;
             }
         }
+        // Tag filter (exact match)
+        if let Some(tag) = tag_filter {
+            if !entry.tags.iter().any(|t| t == tag) {
+                continue;
+            }
+        }
 
         let score = score_entry(&entry.content, &entry.tags, &keywords);
         if score > 0.0 {
@@ -586,25 +598,28 @@ pub fn search_memory_readonly(
         }
     }
 
-    // 2. Search core memory lines
-    let core_text = load_core_memory(base_dir);
-    if !core_text.is_empty() {
-        for line in core_text.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let content = line.strip_prefix("- ").unwrap_or(line);
-            let score = score_text(content, &keywords);
-            if score > 0.0 {
-                scored.push((
-                    score + 5.0,
-                    serde_json::json!({
-                        "content": content,
-                        "source": "core",
-                    }),
-                    String::new(),
-                )); // core lines don't have individual IDs in index
+    // 2. Search core memory lines (skip when tag_filter is set — core lines
+    //    have no tags and would fail any tag scoping).
+    if tag_filter.is_none() {
+        let core_text = load_core_memory(base_dir);
+        if !core_text.is_empty() {
+            for line in core_text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let content = line.strip_prefix("- ").unwrap_or(line);
+                let score = score_text(content, &keywords);
+                if score > 0.0 {
+                    scored.push((
+                        score + 5.0,
+                        serde_json::json!({
+                            "content": content,
+                            "source": "core",
+                        }),
+                        String::new(),
+                    )); // core lines don't have individual IDs in index
+                }
             }
         }
     }
@@ -1193,7 +1208,7 @@ mod tests {
         )
         .unwrap();
 
-        let results = search_memory_readonly(&base, "box plot", None, 30).unwrap();
+        let results = search_memory_readonly(&base, "box plot", None, 30, None).unwrap();
         assert!(!results.is_empty());
         assert!(results[0]["content"]
             .as_str()
@@ -1224,7 +1239,7 @@ mod tests {
         )
         .unwrap();
 
-        let results = search_memory_readonly(&base, "box plots", Some("preference"), 30).unwrap();
+        let results = search_memory_readonly(&base, "box plots", Some("preference"), 30, None).unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -1243,7 +1258,7 @@ mod tests {
         .unwrap();
 
         // Search then record hits
-        let results = search_memory_readonly(&base, "box plots", None, 30).unwrap();
+        let results = search_memory_readonly(&base, "box plots", None, 30, None).unwrap();
         record_search_hits(&base, &results, "box plots", "conv2").unwrap();
 
         let index = load_index(&base).unwrap();
