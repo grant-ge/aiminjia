@@ -5480,6 +5480,54 @@ Tag `agenda-pr3-done`。
 
 ---
 
+# PR-3 补丁：每条 item 绑定 workspace + 后端创建对话通知前端
+
+> PR-3 手动烟测发现两个 plan 原版漏掉的问题，作为 PR-3 的延伸并在同一个 PR 里 commit。不再走 tag 标记。
+
+## 补丁 A：AgendaItem 绑定 workspace
+
+**动机**：spec 原版 item 不带 workspace 字段，触发时一律用"应用全局当前 workspace"。用户早上创建时 workspace=A、下午切到 workspace=B、到点用 B 触发——明显漂移。跟 `HomeTaskComposerCard.tsx:146` 的语义（conversation 创建时刻绑定 workspace）不平行。
+
+**改动**：
+
+1. `src-tauri/src/runtime/agenda/item.rs`：`AgendaItem` 加 `workspace_path: Option<String>` + `#[serde(default)]` 兼容旧文件
+2. `src-tauri/src/transport/tauri_commands/agenda.rs`：
+   - `CreateAgendaItemRequest.workspace_path: Option<String>`
+   - `UpdateAgendaItemRequest.workspace_path: Option<Option<String>>`（双层 Option，跟 `rule` 同语义：None=不改 / Some(None)=清空 / Some(Some(s))=改为 s）
+   - `build_agenda_item_from_create_request` / `apply_update_agenda_item_request` 写入
+3. `src-tauri/src/transport/tauri_commands/chat.rs:dispatch()`：创建 conversation 后，若 `item.workspace_path` 非空，从 `RuntimeRepositoryFacade` 拿 `authorized_workspace_store()`、`canonicalize(path)`、构造 `AuthorizedWorkspace { session_id: conv_id, root_path, ... }`、`replace_for_session`。失败 log warn，不阻塞触发
+4. `src/lib/tauri.ts`：`AgendaItem` / `CreateAgendaItemRequest` / `UpdateAgendaItemRequest` 加 `workspacePath`
+5. `src/features/agenda/AgendaItemEditor.tsx`：加"工作目录"字段：picker 按钮 + 展示��前路径 + 复用 `getDefaultFolder / pickLocalDirectory`。初始化优先级：`initial.workspacePath → initialDraft.workspacePath → homeStore.selectedWorkspace → getDefaultFolder()`
+6. `src/components/schedules/ScheduleTaskRow.tsx`：频率行右侧加 `📁 {短路径名}`，title 显示完整路径
+7. `src/features/agenda/AgendaItemDetail.tsx`：概览 Tab 加"工作目录"行
+
+**测试基线维持**：65/65 后端 + 17/17 前端 + tsc 0 error。
+
+## 补丁 B：`conversation:created` 事件让 sidebar 感知后端创建
+
+**动机**：dispatcher 后端直接调 `conversation_service::create_conversation` 建对话，绕开前端 `createNewConversation` 的乐观更新路径。前端 chatStore 从来不知道有新对话——sidebar 列表不刷新。
+
+**同类 bug 存在于**：
+- agenda dispatcher（`chat.rs:run_agenda_item_now` / scheduled）
+- employee dispatcher（`chat.rs:dispatch_employee_run`）
+- schedule_runner 老路径（PR-4 任务 57 会删）
+
+Employee 路径被 `setRoute({ kind: 'chat', conversationId: convId })` 主动切路由掩盖了（用户立刻被推到新对话页，没注意 sidebar 列表本身漏了一行）。agenda 场景因为用户停留在 SchedulesPage 就直接暴露了。
+
+**改动**：
+
+1. `src-tauri/src/transport/tauri_commands/chat.rs` 文件末尾加 `emit_conversation_created(app, conv_id, source, title)` 自由函数，emit `"conversation:created"` 事件，payload `{ conversationId, source, title }`
+2. agenda / employee / schedule_runner 三个 dispatcher 在 `create_conversation` 后各自调一次，`source` 分别为 `"agenda" / "employee" / "schedule"`
+3. `create_conversation` IPC 命令**不 emit**——前端 `createNewConversation` 已乐观更新，重复 emit 会触发多余 reload
+4. `src/lib/tauri.ts`：`TAURI_EVENTS.CONVERSATION_CREATED = 'conversation:created'` + `onConversationCreated(handler)`
+5. `src/App.tsx`：订阅 `onConversationCreated`，每次触发调 `getConversations()` → `useChatStore.getState().setConversations(convs)`。**不动 activeConversationId，不改路由**——用户可能正在别的对话里操作
+
+**UX 保证**：
+- 你在对话 A 正在聊 → 定时日程触发建 conv B → sidebar 多出 B 一行但**不切走**，你继续聊 A
+- 想看 B 跑得怎样，自己点 sidebar B
+
+---
+
 # PR-4：Agent 工具 + Persona 删除联动 + review tests + 删旧代码
 
 > 这一段补 6 个 RuntimeTool（让数字员工自管日程）、persona 删除时把 organizer 命中的 item 转 Orphaned、3 个 review test、删除老 schedule 模块。

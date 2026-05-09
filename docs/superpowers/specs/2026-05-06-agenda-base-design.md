@@ -59,6 +59,14 @@ pub struct AgendaItem {
     // —— 二期留口子
     pub override_of: Option<OverrideRef>,        // 本期恒为 None
 
+    // —— 工作目录绑定（PR-3 后期补充，跨 spec/plan）
+    /// 触发时绑定给新 conversation 的工作目录。
+    /// None 表示触发时跟随应用全局当前 workspace；Some(path) 表示
+    /// dispatcher 在创建 conversation 后会调
+    /// `authorized_workspace_store.replace_for_session(conv_id, path)`，
+    /// 跟首页 HomeTaskComposerCard 提交时一致。
+    pub workspace_path: Option<String>,
+
     // —— 元信息
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -371,6 +379,8 @@ pub fn spawn_agenda_runner(
    - 调 `AgendaRunDispatcher::dispatch(item, occurrence)`
 3. Dispatcher：
    - 新建 conversation
+   - **如果 `item.workspace_path.is_some()`**：调 `authorized_workspace_store.replace_for_session(conv_id, path)` 把目录授权给这条新对话（跟首页 HomeTaskComposerCard 提交时等价）。失败 log warn，不阻塞触发
+   - **emit `conversation:created` 事件**：payload `{ conversationId, source: "agenda", title }`，让前端 sidebar reload 列表（不切路由）。所有后端绕开前端 `createNewConversation` 路径都要 emit（agenda / employee / schedule_runner 共用 `emit_conversation_created` helper）
    - 切到 organizer persona
    - 发送 `item.prompt` 作为 user message
    - 走完整 agent 主链路
