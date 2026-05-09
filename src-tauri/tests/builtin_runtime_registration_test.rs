@@ -64,6 +64,7 @@ fn build_test_plugin_ctx(
             PathBuf::from("/tmp/renlijia-managed-python/site-packages"),
         ))),
         permission_ctx: None,
+        current_persona_id: None,
     }
 }
 

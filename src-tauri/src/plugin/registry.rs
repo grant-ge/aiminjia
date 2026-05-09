@@ -56,6 +56,11 @@ pub struct RequestScopedRuntimeDeps {
     /// parent's authorized paths into `StorageCapability` when executing tools.
     /// `None` for non-sub-agent paths (legacy tools, test helpers).
     pub permission_ctx: Option<Arc<crate::runtime::path_auth::ToolPermissionContext>>,
+    /// Active persona id resolved by the chat main path. Threaded via
+    /// `PluginContext.current_persona_id` so request-scoped tools (e.g. agenda)
+    /// can bind organizer identity at construction time. `None` for legacy /
+    /// test paths; tools that require it should `?` short-circuit.
+    pub current_persona_id: Option<String>,
 }
 
 impl RequestScopedRuntimeDeps {
@@ -87,6 +92,7 @@ impl RequestScopedRuntimeDeps {
             permission_mode: ctx.permission_mode,
             runtime_resolver: ctx.runtime_resolver.clone(),
             permission_ctx: ctx.permission_ctx.clone(),
+            current_persona_id: ctx.current_persona_id.clone(),
         }
     }
 
@@ -629,6 +635,7 @@ impl ToolRegistry {
                 runtime_resolver: ctx.runtime_resolver.clone(),
                 dingtalk_bridge: None,
                 permission_ctx: ctx.permission_ctx.clone(),
+                current_persona_id: ctx.current_persona_id.clone(),
             },
         )));
         let runtime_ctx = crate::runtime::tools::ToolExecutionContext::new(
@@ -1046,6 +1053,67 @@ impl SkillRegistry {
                 short_description_en: rs.skill.short_description_en().to_string(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod current_persona_id_tests {
+    use super::*;
+
+    fn make_plugin_ctx(persona_id: Option<String>) -> crate::plugin::context::PluginContext {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let storage =
+            Arc::new(crate::storage::file_store::AppStorage::new(tmp.path()).unwrap());
+        let file_manager =
+            Arc::new(crate::storage::file_manager::FileManager::new(tmp.path()));
+        let mut ctx = crate::plugin::context::PluginContext {
+            storage,
+            file_manager,
+            workspace_path: tmp.path().to_path_buf(),
+            conversation_id: "conv-current-persona-test".to_string(),
+            session_id: crate::runtime::ids::SessionId::new("conv-current-persona-test"),
+            run_id: None,
+            agent_id: None,
+            tavily_api_key: None,
+            bocha_api_key: None,
+            app_handle: None,
+            auth_manager: None,
+            connector_engine: None,
+            dingtalk_bridge: None,
+            use_cloud: false,
+            model: String::new(),
+            gateway: None,
+            tool_registry: None,
+            app_settings: None,
+            agent_runtime: None,
+            event_bus: None,
+            skill_registry: None,
+            authorized_workspace: None,
+            read_file_state: None,
+            cancellation: None,
+            permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
+            runtime_resolver: None,
+            permission_ctx: None,
+            current_persona_id: None,
+        };
+        ctx.current_persona_id = persona_id;
+        // 顺手保留 tmp 直到测试结束
+        std::mem::forget(tmp);
+        ctx
+    }
+
+    #[test]
+    fn from_plugin_context_propagates_current_persona_id() {
+        let plugin = make_plugin_ctx(Some("alice".into()));
+        let deps = RequestScopedRuntimeDeps::from_plugin_context(&plugin);
+        assert_eq!(deps.current_persona_id.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn from_plugin_context_persona_defaults_to_none() {
+        let plugin = make_plugin_ctx(None);
+        let deps = RequestScopedRuntimeDeps::from_plugin_context(&plugin);
+        assert!(deps.current_persona_id.is_none());
     }
 }
 

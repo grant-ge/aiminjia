@@ -2289,6 +2289,10 @@ impl TauriChatCommandAdapter {
             workspace_path.exists(),
             conversation_id
         );
+        let active_persona_id: Option<String> = match request.persona_id_override.as_deref() {
+            Some(id) => Some(id.to_string()),
+            None => self.services.db().get_active_persona_id().ok(),
+        };
         let request_scoped_runtime_deps = crate::plugin::registry::RequestScopedRuntimeDeps {
             storage: self.services.db().clone(),
             file_manager: self.services.file_mgr.clone(),
@@ -2319,6 +2323,7 @@ impl TauriChatCommandAdapter {
             permission_mode: request.permission_mode,
             runtime_resolver: self.services.runtime_resolver.clone(),
             permission_ctx: None,
+            current_persona_id: active_persona_id,
         };
         log::info!(
             "[send_message] building runtime_dispatcher conv={}",

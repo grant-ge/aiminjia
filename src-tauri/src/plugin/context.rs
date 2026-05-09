@@ -124,6 +124,12 @@ pub struct PluginContext {
     /// `None` for all non-sub-agent paths (legacy tools, test helpers) — they get
     /// `ToolPermissionContext::empty()` as before.
     pub permission_ctx: Option<Arc<ToolPermissionContext>>,
+    /// Active persona id resolved by the chat main path before tools are built.
+    /// Used by request-scoped tools (e.g. agenda) to bind organizer identity at
+    /// construction time so that LLM cannot forge it via tool input. `None` for
+    /// legacy / test paths where no persona context is available; tools that
+    /// require it should `?` short-circuit and decline to build.
+    pub current_persona_id: Option<String>,
 }
 
 impl PluginContext {

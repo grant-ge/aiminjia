@@ -155,6 +155,7 @@ pub(crate) mod tests {
             permission_mode: crate::runtime::tools::permission::PermissionMode::Default,
             runtime_resolver: None,
             permission_ctx: None,
+            current_persona_id: None,
         }
     }
 
