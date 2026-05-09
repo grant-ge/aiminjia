@@ -6,6 +6,7 @@ export type TriggerPrecheckResult =
   | { kind: 'attachments'; spec: RequiresAttachmentSpec }
   | { kind: 'resource'; resourceConfigKind: ResourceConfigKind }
   | { kind: 'dingtalk' }
+  | { kind: 'knowledge-indexing' }
 
 export interface RunTriggerPrechecksParams {
   template: EmployeeTemplate
@@ -48,7 +49,22 @@ export function runTriggerPrechecks(params: RunTriggerPrechecksParams): TriggerP
     return { kind: 'dingtalk' }
   }
 
+  if (hasPendingKnowledgeSources(employee)) {
+    return { kind: 'knowledge-indexing' }
+  }
+
   return { kind: 'ready' }
+}
+
+function hasPendingKnowledgeSources(employee: EmployeeRecord): boolean {
+  const cfg = employee.resourceConfig as Record<string, unknown> | null | undefined
+  const sources = cfg?.knowledgeSources
+  if (!Array.isArray(sources)) return false
+  return sources.some((s) => {
+    if (!s || typeof s !== 'object') return false
+    const status = (s as Record<string, unknown>).status
+    return status === 'pending' || status === 'indexing'
+  })
 }
 
 /** Whether the resource_config is mandatory before dispatch. */
