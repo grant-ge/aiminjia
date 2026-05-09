@@ -41,6 +41,7 @@ pub fn run() {
             aijia_home
                 .ensure_global_dirs()
                 .expect("Failed to create global dirs");
+            commands::file::cleanup_workspace_clipboard_staging(&aijia_home.default_folder(), 7);
             if let Err(e) = storage::migration::migrate_if_needed(&app_data_dir, aijia_home.root())
             {
                 log::warn!("[setup] migration warning (non-fatal): {}", e);
@@ -621,6 +622,8 @@ pub fn run() {
             file::upload_file,
             file::read_clipboard_file_paths,
             file::save_clipboard_image_to_tmp_dir,
+            file::save_clipboard_image_to_workspace_staging,
+            file::read_local_image_as_data_url,
             file::open_generated_file,
             file::reveal_file_in_folder,
             file::get_file_preview,
